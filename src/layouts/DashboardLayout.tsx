@@ -5,8 +5,8 @@ import { useTheme } from '../contexts/ThemeContext'
 import {
   Ticket as TicketIcon,
   Menu, LogOut, X, Sun, Moon,
-  ChevronRight, UserCircle, ChevronDown,
-  PanelLeftOpen, ClipboardList,
+  ChevronRight, ChevronLeft, UserCircle, ChevronDown,
+  PanelLeftOpen, ClipboardList, Search,
   User, Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
   Building2, Calendar, Landmark, Wifi, CircleDollarSign, ListOrdered, ShieldCheck,
   LayoutDashboard
@@ -53,6 +53,22 @@ const normalizeBranchDisplayName = (branchId?: string | null, branchName?: strin
   return formatBranchName(name || id)
 }
 
+const getBranchCode = (name: string) => {
+  if (!name) return ''
+  const upper = name.toUpperCase()
+  if (upper.includes('TAGUIG')) {
+    if (upper.includes('SERVICE')) return 'TS'
+    return 'TG'
+  }
+  if (upper.includes('BULACAN')) return 'BU'
+  const words = upper.split(/[\s-]+/).filter(Boolean)
+  if (words.length >= 2) {
+    return (words[0][0] + words[1][0]).substring(0, 2)
+  }
+  return upper.substring(0, 2)
+}
+
+
 interface BranchOption { id: string; name: string }
 
 type NavLinkDef = { name: string; path: string; icon: typeof TicketIcon; roles?: string[] }
@@ -78,6 +94,7 @@ function buildNavGroups(navLinks: NavLinkDef[]) {
       Icon: MdOutlinePeopleAlt,
       subItems: [
         { name: 'HRIS', icon: <MdOutlineDescription size={16} />, path: findPath('HRIS') },
+        { name: 'Operations Forms', icon: <MdOutlineDescription size={16} />, path: findPath('Operations Forms') },
         { name: 'Line-up', icon: <MdOutlinePlaylistAdd size={16} />, path: findPath('Lineup') },
         { name: 'Office tasks', icon: <MdOutlineChecklist size={16} />, path: findPath('Office tasks') },
       ].filter(s => navLinks.some(l => l.path === s.path)),
@@ -104,34 +121,36 @@ function buildNavGroups(navLinks: NavLinkDef[]) {
   ].filter(g => g.subItems.length > 0)
 }
 
-/** Collapsed rail: one icon per destination (no duplicate paths / redundant entries). */
 function buildCollapsedNavItems(navLinks: NavLinkDef[]) {
   const groups = buildNavGroups(navLinks)
-  const items: { key: string; name: string; path: string; icon: React.ReactNode }[] = []
-  const seenPaths = new Set<string>()
+  const items: { key: string; name: string; path: string; icon: React.ReactNode; groupPaths?: string[] }[] = []
 
-  const normalizePath = (path: string) => (path === '/tickets' ? '/schedules' : path)
-
-  const addItem = (name: string, path: string, icon: React.ReactNode) => {
-    if (!path || path === '#') return
-    const key = normalizePath(path)
-    if (seenPaths.has(key)) return
-    seenPaths.add(key)
-    items.push({ key, name, path, icon })
+  const covered = new Set(groups.flatMap(g => g.subItems.map(s => s.path)))
+  
+  for (const link of navLinks) {
+    const key = link.path
+    if (covered.has(key)) continue
+    const Icon = link.icon
+    items.push({
+      key: link.name,
+      name: link.name,
+      path: link.path,
+      icon: <Icon className="w-5 h-5 shrink-0" strokeWidth={2} />
+    })
   }
 
   for (const group of groups) {
-    for (const sub of group.subItems) {
-      addItem(sub.name, sub.path, sub.icon)
+    if (group.subItems.length > 0) {
+      const firstSub = group.subItems[0]
+      const Icon = group.Icon
+      items.push({
+        key: group.title,
+        name: group.title,
+        path: firstSub.path,
+        icon: <Icon size={20} className="shrink-0" />,
+        groupPaths: group.subItems.map(s => s.path)
+      })
     }
-  }
-
-  const covered = new Set(items.map(i => normalizePath(i.path)))
-  for (const link of navLinks) {
-    const key = normalizePath(link.path)
-    if (covered.has(key)) continue
-    const Icon = link.icon
-    addItem(link.name, link.path, <Icon className="w-4 h-4 shrink-0" strokeWidth={2} />)
   }
 
   return items
@@ -140,10 +159,13 @@ function buildCollapsedNavItems(navLinks: NavLinkDef[]) {
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen]         = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [isHoverExpanded, setIsHoverExpanded] = useState(false)
   const [profileOpen, setProfileOpen]           = useState(false)
+  const [branchDropdownOpen, setBranchDropdownOpen] = useState(false)
   const [openAccordion, setOpenAccordion]       = useState<string | null>(null)
   const [activeSubItem, setActiveSubItem]        = useState<string | null>(null)
   const profileRef = useRef<HTMLDivElement>(null)
+  const branchRef = useRef<HTMLDivElement>(null)
   const lastPathname = useRef<string | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
@@ -151,6 +173,20 @@ export default function DashboardLayout() {
   const { user, logout } = useAuth()
   const isLight = theme === 'light'
   const [branchLabel, setBranchLabel] = useState<string | null>(null)
+
+  const handleMouseEnter = () => {
+    if (sidebarCollapsed) {
+      setSidebarCollapsed(false)
+      setIsHoverExpanded(true)
+    }
+  }
+
+  const handleMouseLeave = () => {
+    if (isHoverExpanded) {
+      setSidebarCollapsed(true)
+      setIsHoverExpanded(false)
+    }
+  }
 
   const isPortalAdminUser = isPortalAdmin(user?.role)
   const [globalBranchId, setGlobalBranchId] = useState<string | null>(() => localStorage.getItem('ashcol-global-branch-id'))
@@ -272,17 +308,17 @@ export default function DashboardLayout() {
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false)
+      if (branchRef.current && !branchRef.current.contains(e.target as Node)) setBranchDropdownOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
   const allLinks = [
-    // { name: 'Overview',        path: '/dashboard-home',  icon: LayoutDashboard, roles: ['admin'] },
     { name: 'Schedules',       path: '/schedules',        icon: CalendarDays },
     { name: 'My Tickets',      path: '/my-tickets',       icon: ClipboardList,   roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Relays',          path: '/relays',           icon: Radio,           roles: ['admin', 'management'] },
-    { name: 'Overview',        path: '/tickets',          icon: LayoutDashboard },
+    { name: 'Search',          path: '/search',          icon: Search },
     { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Registration',    path: '/warranty-registration', icon: ShieldCheck, roles: ['admin', 'management'] },
     { name: 'Office tasks',    path: '/office-tasks',     icon: Building2,       roles: ['admin', 'management'] },
@@ -293,6 +329,7 @@ export default function DashboardLayout() {
     { name: 'Daily Transaction', path: '/audit-report',   icon: TrendingUp,      roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin', 'management'] },
     { name: 'HRIS',              path: '/admin-hris',       icon: Calendar,        roles: ['admin', 'management', 'manager'] },
+    { name: 'Operations Forms',  path: '/operations-forms', icon: ClipboardList, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Bills',             path: '/admin-bills',      icon: Landmark,        roles: ['admin', 'management', 'manager'] },
     { name: 'Telecoms',          path: '/admin-telecom',    icon: Wifi,            roles: ['admin', 'management', 'manager'] },
   ]
@@ -300,8 +337,8 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'management' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const salesWorkspaceLinks = ['My Tickets', 'Overview', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup']
-  const serviceWorkspaceLinks = ['My Tickets', 'Overview', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup']
+  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms']
+  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms']
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 
@@ -327,7 +364,9 @@ export default function DashboardLayout() {
 
     const isAllowed = navLinks.some(link => currentPath === link.path || currentPath.startsWith(link.path + '/'))
     if (!isAllowed && navLinks.length > 0) {
-      const fallback = isPortalAdmin(role) ? navLinks[0].path : getPortalHomePath(user)
+      const homePath = getPortalHomePath(user)
+      const hasHome = navLinks.some(l => l.path === homePath)
+      const fallback = hasHome ? homePath : navLinks[0].path
       navigate(fallback, { replace: true })
     }
   }, [location.pathname, navLinks, role, user, navigate])
@@ -363,7 +402,33 @@ export default function DashboardLayout() {
         return
       }
     }
+    
+    // If the new path doesn't match any accordion subItem, clear the active subItem
+    setActiveSubItem(null)
+    setOpenAccordion(null)
   }, [location.pathname, navGroups])
+
+  // Auto collapse on table-heavy tabs
+  useEffect(() => {
+    const isTablePage = ['/relays', '/my-tickets', '/schedules', '/service-report', '/search', '/lineup'].some(p => 
+      location.pathname === p || location.pathname.startsWith(p + '/')
+    )
+    if (isTablePage && window.innerWidth >= 768) {
+      setSidebarCollapsed(true)
+    }
+  }, [location.pathname])
+
+  // Prevent minimized state on mobile
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768 && sidebarCollapsed) {
+        setSidebarCollapsed(false)
+      }
+    }
+    handleResize()
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [sidebarCollapsed])
 
   const toggleAccordion = (title: string) => {
     setOpenAccordion(prev => (prev === title ? null : title))
@@ -392,7 +457,12 @@ export default function DashboardLayout() {
       )}
 
       {/* ── Sidebar ─────────────────────────────────────── */}
-      <aside
+      <div
+        className="relative flex shrink-0"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+      >
+        <aside
         className={`
           fixed md:static inset-y-0 left-0 z-50 flex flex-col overflow-hidden
           transition-all duration-300 ease-in-out
@@ -410,7 +480,7 @@ export default function DashboardLayout() {
           <img
             src={logoImg}
             alt="ASHCOL"
-            onClick={() => setSidebarCollapsed(c => !c)}
+            onClick={() => { setSidebarCollapsed(c => !c); setIsHoverExpanded(false) }}
             className={`w-9 h-9 object-contain rounded-lg shrink-0 transition-all duration-300 cursor-pointer hidden md:block ${sidebarCollapsed ? 'mx-auto' : ''}`}
           />
           <img
@@ -445,9 +515,9 @@ export default function DashboardLayout() {
             </div>
           )}
 
-          {/* ── Overview (expanded only) ─────── */}
-          {!sidebarCollapsed && navLinks.some(l => l.name === 'Overview') && (() => {
-            const link = navLinks.find(l => l.name === 'Overview')!
+          {/* ── Search (expanded only) ─────── */}
+          {!sidebarCollapsed && navLinks.some(l => l.name === 'Search') && (() => {
+            const link = navLinks.find(l => l.name === 'Search')!
             const isActive = location.pathname === link.path
             const Icon = link.icon
             return (
@@ -566,16 +636,19 @@ export default function DashboardLayout() {
             )
           })}
 
-          {/* Collapsed mode: deduplicated icon rail */}
           {sidebarCollapsed && collapsedNavItems.map((item) => {
-            const isActive = location.pathname === item.path
-              || location.pathname.startsWith(item.path + '/')
-              || (item.path === '/schedules' && location.pathname === '/tickets')
+            const isActive = item.groupPaths
+              ? item.groupPaths.some(p => location.pathname === p || location.pathname.startsWith(p + '/'))
+              : (location.pathname === item.path || location.pathname.startsWith(item.path + '/'))
+            
             return (
               <Link
                 key={item.key}
                 to={item.path}
-                onClick={() => setSidebarOpen(false)}
+                onClick={() => {
+                  setSidebarOpen(false)
+                  if (item.groupPaths) setOpenAccordion(item.name) // Auto open accordion if clicking group icon
+                }}
                 title={item.name}
                 className="flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-150 relative"
                 style={isActive
@@ -602,15 +675,7 @@ export default function DashboardLayout() {
             )
           })}
 
-          {sidebarCollapsed && (
-            <button
-              className="hidden md:flex items-center justify-center w-11 h-11 mt-2 rounded-xl transition-colors text-white/70 hover:text-white hover:bg-white/10"
-              title="Expand sidebar"
-              onClick={() => setSidebarCollapsed(false)}
-            >
-              <PanelLeftOpen className="w-4 h-4" />
-            </button>
-          )}
+
         </nav>
 
         {/* ── Admin Branch Switcher (only for admin) ── */}
@@ -623,12 +688,46 @@ export default function DashboardLayout() {
               {/* Branch Button (admin only) */}
               {showBranch && (
                 sidebarCollapsed ? (
-                  <div
-                    onClick={() => setSidebarCollapsed(false)}
-                    className="flex justify-center cursor-pointer py-3"
-                    title="Active Branch Switcher"
-                  >
-                    <Building2 className="w-5 h-5 text-white/70" />
+                  <div ref={branchRef} className="relative">
+                    {/* Branch dropdown popup */}
+                    {branchDropdownOpen && (
+                      <div
+                        className="absolute z-50 w-52 rounded-xl shadow-2xl overflow-hidden bottom-[calc(100%+8px)] left-0"
+                        style={{ backgroundColor: '#0d2818', border: '1px solid rgba(255,255,255,0.12)' }}
+                      >
+                        <div className="px-4 py-3 text-xs font-black uppercase tracking-wider text-white/40" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                          Active Branch
+                        </div>
+                        <div className="py-1.5 max-h-60 overflow-y-auto custom-scrollbar">
+                          {adminBranches.map((b) => {
+                            const isSelected = b.id === globalBranchId
+                            return (
+                              <button
+                                key={b.id}
+                                onClick={() => {
+                                  handleGlobalBranchChange(b.id)
+                                  setBranchDropdownOpen(false)
+                                }}
+                                className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-semibold transition-colors text-left ${
+                                  isSelected ? 'bg-white/15 text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'
+                                }`}
+                              >
+                                <span>{formatBranchName(b.name)}</span>
+                                {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={() => setBranchDropdownOpen(prev => !prev)}
+                      className="flex items-center justify-center w-11 h-11 rounded-xl border border-white/10 bg-[#1e732c] hover:bg-[#238533] transition-all text-white font-black text-[13px] shadow-sm uppercase"
+                      title={`Active Branch: ${branchLabel || ''}`}
+                    >
+                      {branchLabel ? getBranchCode(branchLabel) : <Building2 className="w-5 h-5 text-white/70" />}
+                    </button>
                   </div>
                 ) : (
                   <div className="flex flex-col gap-1.5">
@@ -690,8 +789,8 @@ export default function DashboardLayout() {
                 {/* Profile button */}
                 <button
                   onClick={() => setProfileOpen(p => !p)}
-                  className={`w-full flex items-center gap-3 text-left rounded-xl border border-white/10 bg-white/10 hover:bg-white/15 transition-all ${
-                    sidebarCollapsed ? 'p-2 justify-center w-11 h-11' : 'px-4 py-3'
+                  className={`flex items-center gap-3 text-left transition-all ${
+                    sidebarCollapsed ? 'justify-center w-11 h-11' : 'w-full px-4 py-3 rounded-xl border border-white/10 bg-white/10 hover:bg-white/15'
                   }`}
                 >
                   <UserAvatar
@@ -729,12 +828,13 @@ export default function DashboardLayout() {
 
 
       </aside>
+    </div>
 
       {/* ── Main Content Area ───────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         {/* ── Global Header (Mobile/Tablet/Desktop) ──────────────── */}
-        {currentPage !== 'Overview' && (
+        {currentPage !== 'Search' && (
           <header 
             className="flex-none z-50 backdrop-blur-md"
             style={{ 
@@ -754,14 +854,22 @@ export default function DashboardLayout() {
               </button>
 
               <div className="flex flex-col justify-center">
-                <span className="text-[10px] font-extrabold uppercase tracking-widest leading-none mb-1 opacity-70" style={{ color: textMuted }}>
-                  {currentPage}
-                </span>
-                {branchLabel ? (
-                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase" style={{ color: textPrimary }} title={branchLabel}>
-                    {branchLabel}
+                {currentPage === 'Relays' ? (
+                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase" style={{ color: textPrimary }}>
+                    Relays
                   </h1>
-                ) : null}
+                ) : (
+                  <>
+                    <span className="text-[10px] font-extrabold uppercase tracking-widest leading-none mb-1 opacity-70" style={{ color: textMuted }}>
+                      {currentPage}
+                    </span>
+                    {branchLabel ? (
+                      <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase" style={{ color: textPrimary }} title={branchLabel}>
+                        {branchLabel}
+                      </h1>
+                    ) : null}
+                  </>
+                )}
               </div>
             </div>
 
@@ -771,7 +879,7 @@ export default function DashboardLayout() {
               <button
                 onClick={toggleTheme}
                 title={isLight ? 'Switch to Dark' : 'Switch to Light'}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl transition-all hover:scale-105"
+                className="hidden md:flex items-center gap-2 px-3.5 py-2 rounded-xl transition-all hover:scale-105"
                 style={{
                   color: textMuted,
                   backgroundColor: hoverBg,
@@ -799,13 +907,11 @@ export default function DashboardLayout() {
 
         {/* ── Page Content ───────────────────────────────── */}
         <main className={
-          currentPage === 'Overview'
-            ? "flex-1 overflow-y-auto relative bg-[#fafafa] dark:bg-[#0a1120]"
-            : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration')
-              ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
-              : currentPage === 'HRIS'
-                ? "flex-1 overflow-y-auto pt-5 pb-20 px-0 sm:px-5 md:p-8 relative"
-                : "flex-1 overflow-y-auto p-5 md:p-8 relative"
+          (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration' || currentPage === 'Search')
+            ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
+            : currentPage === 'HRIS'
+              ? "flex-1 overflow-y-auto pt-5 pb-20 px-0 sm:px-5 md:p-8 relative"
+              : "flex-1 overflow-y-auto p-5 md:p-8 relative"
         }>
           {/* Subtle ambient gradient */}
           {!isLight && (
@@ -816,8 +922,9 @@ export default function DashboardLayout() {
                    zIndex: 0,
                  }} />
           )}
-          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
-            <Outlet key={location.pathname} context={{ setSidebarOpen }} />
+          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration' || currentPage === 'Search') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
+            {/* Do not key Outlet by pathname — that remounts Schedules on every nav and forces a reload spinner. */}
+            <Outlet context={{ setSidebarOpen }} />
           </div>
         </main>
       </div>

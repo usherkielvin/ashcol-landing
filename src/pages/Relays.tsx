@@ -4,13 +4,14 @@ import { ResponsiveTable, type ColumnDef as ResponsiveColumnDef } from '../compo
 import {
   Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
   Building2, Trash2, MapPin,
-  ChevronDown, Plus, CheckCircle2, AlertCircle, Package, FileUp, CalendarDays,
-  Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3, Clock, Check
+  ChevronDown, Plus, CheckCircle2, AlertCircle, Package, CalendarDays,
+  Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3, Clock, Check,
+  Store, UserRound, Wind, MessageSquare, Users, Settings
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage, parseCreatedTicketResponse, formatFetchError } from '../utils/api'
-import { readTabCache, readTabCacheEntry, relaysCacheKey, writeTabCache, isTabCacheFresh, type RelaysTabCache, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
+import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage, parseCreatedTicketResponse, formatFetchError, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, isTaguigServiceTicket, DEALERS_UPDATED_EVENT, notifyDealersUpdated } from '../utils/api'
+import { readTabCache, readTabCacheEntry, relaysCacheKey, writeTabCache, isTabCacheFresh, type RelaysTabCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
 import {
   hasRelayLeftQueue,
   normalizeRelayScheduleTicket,
@@ -21,11 +22,13 @@ import {
 } from '../utils/relayScheduleSync'
 import { fetchCachedBranches, fetchCachedEmployees } from '../utils/portalDirectoryCache'
 import { formatBrandCapacityLabel, parseBrandFromAcDetails } from '../utils/warrantyTicketDisplay'
+import { resolveScheduleStatusFields } from '../constants/ticketCategories'
 import { RelayEditTicketModal } from '../components/relays/RelayEditTicketModal'
-import type { RelayEditDraft } from '../components/relays/relayEditForm'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
-import * as XLSX from 'xlsx'
+import type { RelayEditDraft } from '../components/relays/relayEditForm'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
+import { DealerSelect } from '../components/DealerSelect'
+import { ROBINSON_APPLIANCES_RE } from '../utils/dealer'
 import type { ReactNode } from 'react'
 
 function RelayFormField({
@@ -43,39 +46,39 @@ function RelayFormField({
 }) {
   return (
     <div className={className}>
-      <label className={`font-bold uppercase tracking-wide block text-slate-500 dark:text-slate-400 ${compact ? 'text-[10px] mb-1' : 'text-[11px] mb-1.5'}`}>
-        {label}{required ? ' *' : ''}
+      <label className={`font-bold uppercase tracking-wide block text-slate-500 dark:text-slate-400 ${compact ? 'text-[10.5px] mb-1.5' : 'text-[11px] mb-1.5'}`}>
+        {label}{required ? <span className="text-emerald-500 ml-0.5">*</span> : null}
       </label>
       {children}
     </div>
   )
 }
 
-function RelayFormSectionHead({ title }: { title: string }) {
+function RelayFormSectionHead({
+  title,
+  subtitle,
+  step,
+  icon: Icon,
+}: {
+  title: string
+  subtitle?: string
+  step?: number
+  icon?: ReactNode
+}) {
   return (
-    <div className="pt-0.5 pb-1.5 border-b border-slate-200 dark:border-slate-700 mb-3">
-      <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600">{title}</p>
+    <div className="flex items-center gap-2.5 pt-0.5 pb-2.5 border-b border-slate-200 dark:border-slate-700 mb-4">
+      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/10 text-emerald-500 shrink-0">
+        {Icon ?? <span className="text-[11px] font-black">{step}</span>}
+      </div>
+      <div className="min-w-0">
+        <p className="text-[11.5px] font-black uppercase tracking-wider text-emerald-600 leading-tight">{title}</p>
+        {subtitle && <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 leading-tight mt-0.5">{subtitle}</p>}
+      </div>
     </div>
   )
 }
 
-const BUILT_IN_RELAY_STORES = ['Robinsons', 'Abenson'] as const
-const RELAY_CUSTOM_STORES_KEY = 'ashcol-relay-custom-stores'
 
-function readRelayCustomStores(): string[] {
-  try {
-    const raw = localStorage.getItem(RELAY_CUSTOM_STORES_KEY)
-    const parsed = raw ? JSON.parse(raw) : []
-    if (!Array.isArray(parsed)) return []
-    return [...new Set(parsed.map((s) => String(s).trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b))
-  } catch {
-    return []
-  }
-}
-
-function persistRelayCustomStores(stores: string[]) {
-  localStorage.setItem(RELAY_CUSTOM_STORES_KEY, JSON.stringify(stores))
-}
 
 interface Ticket {
   id: string
@@ -101,6 +104,7 @@ interface Ticket {
   preferredDate?: string
   createdAt: string
   updatedAt: string
+  dealer?: string
   sourceVendor?: string
   slaExpirationDate?: string
   priorityTag?: string
@@ -129,58 +133,37 @@ interface Ticket {
   promodiser_commission?: number | string
 }
 
-interface ParsedVoucher {
-  customerName?: string
-  contactPhone?: string
-  location?: string
-  sourceVendor?: string
-  unitType?: string
-  serviceType?: string
-  description?: string
-  priorityTag?: string
-  district?: string
-  commitType?: string
-  installerName?: string
-  serviceVehicle?: string
-  remarksUpdate?: string
-  installationCharges?: number
-  modeOfPayment?: string
-  controlNumber?: string
-  landmarks?: string
-  brand?: string
-  capacity?: string
-  sku?: string
-  serialNumber?: string
-  imagePath?: string
-  preferredDate?: string
-  relayedDate?: string
-  finalDate?: string
-}
 
-type StoreCategory = 'Robinsons' | 'Abenson' | 'Direct' | 'Other'
+type DealerCategory = 'Robinsons' | 'Abenson' | 'Direct' | 'Other'
 
-const parseStoreVendor = (sourceVendor?: string): { store: StoreCategory; branch: string; customStore?: string } => {
-  const sv = (sourceVendor || '').trim()
+const parseDealer = (dealerValue?: string): { store: DealerCategory; branch: string; customStore?: string } => {
+  const sv = (dealerValue || '').trim()
   const lower = sv.toLowerCase()
-  if (lower.includes('robinsons')) {
-    const branch = sv.replace(/^robinsons(\s+b2b)?\s*/i, '').trim()
-    return { store: 'Robinsons', branch }
-  }
-  if (lower.includes('abenson')) {
-    const branch = sv.replace(/^abenson(\s+b2b)?\s*/i, '').trim()
-    return { store: 'Abenson', branch }
-  }
-  if (lower === 'direct' || !sv) {
+
+  if (lower === 'direct') {
     return { store: 'Direct', branch: '' }
   }
-  // It's a custom store! Try to split by ' - ' to separate store name and branch name
+
+  // Robinson Appliances: saved as "RA <BRANCH>" going forward; also recognize legacy
+  // "Robinsons ..." / "Robinsons Appliances - <branch>" formats already in the database.
+  if (ROBINSON_APPLIANCES_RE.test(sv)) {
+    const branch = sv.replace(/^(robinsons?(\s+appliances)?|ra)\s*-?\s*/i, '').trim()
+    return { store: 'Robinsons', branch }
+  }
+
+  if (/^abenson/i.test(sv)) {
+    const branch = sv.replace(/^abenson(\s+appliances|\s+app|\s+appl|\s+store|\s+b2b)?\s*-?\s*/i, '').trim()
+    return { store: 'Abenson', branch }
+  }
+
+  // Fallback: split by ' - ' for any other/custom dealer
   const parts = sv.split(' - ')
-  const customStore = parts[0]?.trim() || ''
-  const branch = parts.slice(1).join(' - ').trim()
-  return { store: 'Other', branch, customStore }
+  const dealerName = parts[0]?.trim() || ''
+  const branchName = parts.slice(1).join(' - ').trim()
+  return { store: 'Other', branch: branchName, customStore: dealerName }
 }
 
-const combineStoreVendor = (store: StoreCategory, branch: string, customStore?: string): string => {
+const combineDealer = (store: DealerCategory, branch: string, customStore?: string): string => {
   if (store === 'Direct') return 'Direct'
   if (store === 'Other') {
     const s = (customStore || '').trim()
@@ -188,18 +171,26 @@ const combineStoreVendor = (store: StoreCategory, branch: string, customStore?: 
     if (!s) return 'Other'
     return b ? `${s} - ${b}` : s
   }
+  if (store === 'Robinsons') {
+    const b = branch.trim()
+    return b ? `RA ${b}` : 'RA'
+  }
   const b = branch.trim()
   if (!b) return store
   if (b.toLowerCase().startsWith(store.toLowerCase())) return b
   return `${store} ${b}`
 }
 
-function resolveRelayStoreForSubmit(sourceVendor: string, storeBranch: string) {
-  const vendor = (sourceVendor || 'Direct').trim()
-  if ((BUILT_IN_RELAY_STORES as readonly string[]).includes(vendor)) {
-    return combineStoreVendor(vendor as StoreCategory, storeBranch)
+function resolveRelayDealerForSubmit(dealerValue: string, dealerBranch: string) {
+  const vendor = (dealerValue || 'Direct').trim()
+  const lower = vendor.toLowerCase()
+  if (ROBINSON_APPLIANCES_RE.test(lower)) {
+    return combineDealer('Robinsons', dealerBranch)
   }
-  return combineStoreVendor('Other', storeBranch, vendor)
+  if (lower === 'abenson' || lower.startsWith('abenson')) {
+    return combineDealer('Abenson', dealerBranch)
+  }
+  return combineDealer('Other', dealerBranch, vendor)
 }
 
 const guessDistrict = (address: string): string => {
@@ -555,14 +546,22 @@ const resolveRelayNegotiatorName = (
   ticket: Ticket,
   employees: Array<{ id?: string; name?: string }>,
 ) => {
+  let fullName = ''
   const byField = (ticket.negotiatorName || '').trim()
-  if (byField) return byField
-  const uid = resolveNegotiatorUserId(ticket)
-  if (uid) {
-    const match = employees.find((e) => String(e.id || '') === uid)
-    if (match?.name) return String(match.name).trim()
+  if (byField) {
+    fullName = byField
+  } else {
+    const uid = resolveNegotiatorUserId(ticket)
+    if (uid) {
+      const match = employees.find((e) => String(e.id || '') === uid)
+      if (match?.name) fullName = String(match.name).trim()
+    }
   }
-  return (ticket.assignedEmployeeName || '').trim() || '—'
+  if (!fullName) {
+    fullName = (ticket.assignedEmployeeName || '').trim()
+  }
+  if (!fullName) return '—'
+  return fullName.split(/\s+/)[0]
 }
 
 const resolveEmployeePhone = (employees: Array<Record<string, unknown>>, userId?: string) => {
@@ -582,23 +581,35 @@ const getRelayStatusLabel = (ticket: Ticket) => {
   const status = (ticket.status || '').toUpperCase()
   const finalDate = resolveRelayFinalDate(ticket)
   const negotiatorId = (ticket.negotiatorId || ticket.negotiator_id || '').trim()
+  const details = parseAcDetails(ticket)
+  const hasScheduledDate = Boolean(details.scheduledDate?.trim() || details.scheduleIntake || status === 'SCHEDULED')
+  
   if (getTicketCategory(ticket) === 'Collection' && !isCollectionPaid(ticket)) return 'Pending'
   if (status === 'CANCELLED') return 'Cancelled'
-  if (status === 'COMPLETED' || !!(ticket.installationCharges && ticket.installationCharges > 0)) return 'Installed'
+  if (status === 'COMPLETED' || status === 'INSTALLED' || !!(ticket.installationCharges && ticket.installationCharges > 0)) return 'Installed'
+  
   // finalDate / schedule phase = on Schedules tab, not relay assigned queue
-  if (finalDate || hasRelayLeftQueue(ticket)) return 'Scheduled'
+  if (finalDate || hasRelayLeftQueue(ticket) || hasScheduledDate) return 'Scheduled'
+  
+  // Check specific backend lifecycle statuses before the generic "has a negotiator" fallback below,
+  // otherwise every assigned ticket collapses to "Assigned" regardless of its real stage.
+  if (status === 'SURVEY') return 'Survey'
+  if (status === 'FOR_APPROVAL') return 'For Approval'
+  if (status === 'CONTINUATION') return 'Continuation'
+  if (status === 'IN_PROGRESS') return 'In Progress'
+  if (status === 'ON_THE_WAY') return 'On the Way'
+  
   // Backend stores the negotiator on negotiatorId and clears assignedTo for relay intake.
   if (
     status === 'ASSIGNED'
-    || status === 'SCHEDULED'
     || status === 'RESCHED'
     || ticket.assignedTo
     || negotiatorId
+    || ticket.negotiatorName?.trim()
+    || ticket.assignedEmployeeName?.trim()
   ) {
     return 'Assigned'
   }
-  if (status === 'IN_PROGRESS') return 'In Progress'
-  if (status === 'ON_THE_WAY') return 'On the Way'
   return 'Pending'
 }
 
@@ -657,7 +668,7 @@ const isScheduledManualTicket = (ticket: Ticket): boolean => {
 
   // Store/source vendors are relay intake. Older builds wrongly stamped scheduleIntake on
   // those rows when preferredDate was set — keep them on Relays until finalDate is set.
-  const vendor = (ticket.sourceVendor || '').trim().toLowerCase()
+  const vendor = (ticket.dealer || ticket.sourceVendor || '').trim().toLowerCase()
   const isRelayVendor = Boolean(
     vendor
     && vendor !== 'direct'
@@ -707,12 +718,12 @@ const normalizeRelayTicketNumber = (ticket: Pick<Ticket, 'ticketNumber'>): strin
   const legacy = raw.match(/^TKT-0*(\d+)$/i)
   if (legacy) {
     const seq = parseInt(legacy[1], 10)
-    return Number.isFinite(seq) ? `AS-${String(seq).padStart(2, '0')}` : raw.toUpperCase()
+    return Number.isFinite(seq) ? `AS-${String(seq).padStart(3, '0')}` : raw.toUpperCase()
   }
   const ashcol = raw.match(/^AS-0*(\d+)$/i)
   if (ashcol) {
     const seq = parseInt(ashcol[1], 10)
-    return Number.isFinite(seq) ? `AS-${String(seq).padStart(2, '0')}` : raw.toUpperCase()
+    return Number.isFinite(seq) ? `AS-${String(seq).padStart(3, '0')}` : raw.toUpperCase()
   }
   return raw.toUpperCase()
 }
@@ -737,7 +748,7 @@ const normalizeRelayCustomerKey = (ticket: Ticket): string | null => {
   const phone = (ticket.contactPhone || '').replace(/\D/g, '').slice(-10)
   const preferred = (ticket.preferredDate || '').trim().slice(0, 10)
   const district = (ticket.district || '').trim().toLowerCase()
-  const vendor = (ticket.sourceVendor || '').trim().toLowerCase()
+  const vendor = (ticket.dealer || ticket.sourceVendor || '').trim().toLowerCase()
   const commit = (ticket.commitType || '').trim().toLowerCase()
   return `${name}|${branch}|${phone}|${preferred}|${district}|${vendor}|${commit}`
 }
@@ -837,7 +848,7 @@ const isCollectionPaid = (ticket: Ticket) => {
   return hasAmount && (hasPayment || remarks.includes('paid') || remarks.includes('collected'))
 }
 
-export default function ClientMasterlist() {
+export default function Relays() {
   const { theme } = useTheme()
   const { user } = useAuth()
   const isLight = theme === 'light'
@@ -853,7 +864,8 @@ export default function ClientMasterlist() {
   const inputBg = isLight ? '#f8fafc' : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
   const pageBg = isLight ? '#f1f5f9' : '#060B18'
-  const compactInput = `w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none transition-all duration-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20`
+  const hoverBg = isLight ? '#f1f5f9' : '#0F1A2E'
+  const compactInput = `w-full border rounded-xl px-3.5 py-2.5 text-[13px] outline-none transition-all duration-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15`
 
   // State
   const [tickets, setTickets] = useState<Ticket[]>([])
@@ -908,8 +920,6 @@ export default function ClientMasterlist() {
 
   const [loading, setLoading] = useState(true)
   const [lastUpdatedTicketId, setLastUpdatedTicketId] = useState<string | null>(null)
-  const [isCreateDropdownOpen, setIsCreateDropdownOpen] = useState(false)
-  const createDropdownRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (lastUpdatedTicketId) {
       const timer = setTimeout(() => {
@@ -946,10 +956,9 @@ export default function ClientMasterlist() {
     return isPriv ? 'ALL_PENDING' : 'MY_TICKETS'
   })
   const [isStoreFilterOpen, setIsStoreFilterOpen] = useState(false)
-  const [toolbarStoreDraft, setToolbarStoreDraft] = useState('')
-  const storeFilterRef = useRef<HTMLDivElement>(null)
+
   const [isBranchFilterOpen, setIsBranchFilterOpen] = useState(false)
-  const branchFilterRef = useRef<HTMLDivElement>(null)
+  const [isMonthFilterOpen, setIsMonthFilterOpen] = useState(false)
 
   useEffect(() => {
     const handleTabCacheUpdate = (e: Event) => {
@@ -968,14 +977,16 @@ export default function ClientMasterlist() {
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (createDropdownRef.current && !createDropdownRef.current.contains(event.target as Node)) {
-        setIsCreateDropdownOpen(false)
-      }
-      if (storeFilterRef.current && !storeFilterRef.current.contains(event.target as Node)) {
+      const target = event.target as HTMLElement
+      if (!target) return
+      if (!target.closest('[data-dropdown-id="store-filter"]') && !target.closest('[data-dropdown-id="store-dropdown"]')) {
         setIsStoreFilterOpen(false)
       }
-      if (branchFilterRef.current && !branchFilterRef.current.contains(event.target as Node)) {
+      if (!target.closest('[data-dropdown-id="branch-filter"]') && !target.closest('[data-dropdown-id="branch-dropdown"]')) {
         setIsBranchFilterOpen(false)
+      }
+      if (!target.closest('[data-dropdown-id="month-filter"]') && !target.closest('[data-dropdown-id="month-dropdown"]')) {
+        setIsMonthFilterOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -1013,15 +1024,9 @@ export default function ClientMasterlist() {
       .finally(() => setLoadingHistory(false))
   }, [selectedPreviewTicket, isViewModalOpen])
 
-  // Scanner State
-  const [scanning, setScanning] = useState(false)
-  const [scanError, setScanError] = useState('')
-  const scanFileInputRef = useRef<HTMLInputElement>(null)
-
   // Excel Bulk Upload State
   const [excelPreview, setExcelPreview] = useState<any[]>([])
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false)
-  const excelFileInputRef = useRef<HTMLInputElement>(null)
   const [bulkUploading, setBulkUploading] = useState(false)
   const [importTargetBranchId, setImportTargetBranchId] = useState('')
   const [previewView, setPreviewView] = useState<'grid' | 'list'>('grid')
@@ -1029,26 +1034,163 @@ export default function ClientMasterlist() {
 
   // Manual & Scan Add Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
-  const [relayCustomStores, setRelayCustomStores] = useState<string[]>(() => readRelayCustomStores())
-  const [addStoreDraft, setAddStoreDraft] = useState('')
-  const [showAddStoreField, setShowAddStoreField] = useState(false)
+  const [dealers, setDealers] = useState<{ id: string; name: string }[]>([])
+  
+  const relayCustomStores = useMemo(() => {
+    return dealers.map(d => d.name).sort((a, b) => a.localeCompare(b))
+  }, [dealers])
+
+  const fetchDealers = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/dealers`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const list = await res.json()
+        setDealers(list)
+      }
+    } catch (err) {
+      console.error('Error fetching dealers:', err)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchDealers()
+  }, [fetchDealers])
+
+  useEffect(() => {
+    window.addEventListener(DEALERS_UPDATED_EVENT, fetchDealers)
+    return () => window.removeEventListener(DEALERS_UPDATED_EVENT, fetchDealers)
+  }, [fetchDealers])
+
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
+  const [settingsNewDealerName, setSettingsNewDealerName] = useState('')
+  const [settingsEditingDealerIndex, setSettingsEditingDealerIndex] = useState<number | null>(null)
+  const [settingsEditDealerName, setSettingsEditDealerName] = useState('')
+
+  const handleSettingsAddDealer = async () => {
+    const name = settingsNewDealerName.trim().toUpperCase()
+    if (!name) return
+    if (dealers.some(d => d.name.toUpperCase() === name)) {
+      alert('Dealer already exists')
+      return
+    }
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/dealers`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ name })
+      })
+      if (res.ok) {
+        setSettingsNewDealerName('')
+        fetchDealers()
+        notifyDealersUpdated()
+      } else {
+        const errMsg = await res.text()
+        alert(errMsg || 'Failed to add dealer')
+      }
+    } catch (err) {
+      console.error('Error adding dealer:', err)
+    }
+  }
+
+  const handleSettingsSaveRename = async (index: number) => {
+    const oldDealer = dealers[index]
+    const newName = settingsEditDealerName.trim().toUpperCase()
+    if (!newName || newName === oldDealer.name.toUpperCase()) {
+      setSettingsEditingDealerIndex(null)
+      return
+    }
+    if (dealers.some((d, idx) => d.name.toUpperCase() === newName && idx !== index)) {
+      alert('Dealer already exists')
+      return
+    }
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/dealers/${oldDealer.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ name: newName })
+      })
+      if (res.ok) {
+        setSettingsEditingDealerIndex(null)
+        fetchDealers()
+        notifyDealersUpdated()
+      } else {
+        const errMsg = await res.text()
+        alert(errMsg || 'Failed to rename dealer')
+      }
+    } catch (err) {
+      console.error('Error renaming dealer:', err)
+    }
+  }
+
+  const handleSettingsDeleteDealer = async (dealerId: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete dealer "${name}"?`)) return
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/dealers/${dealerId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.ok) {
+        fetchDealers()
+        notifyDealersUpdated()
+      } else {
+        alert('Failed to delete dealer')
+      }
+    } catch (err) {
+      console.error('Error deleting dealer:', err)
+    }
+  }
+
+  const handlePersistCustomStores = async (nextStores: string[]) => {
+    const uppercaseStores = nextStores.map(s => s.trim().toUpperCase()).filter(Boolean)
+    const newStore = uppercaseStores.find(name => !dealers.some(d => d.name.toUpperCase() === name))
+    if (newStore) {
+      try {
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const res = await fetch(`${API_BASE_URL}/dealers`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ name: newStore })
+        })
+        fetchDealers()
+        if (res.ok) notifyDealersUpdated()
+      } catch (err) {
+        console.error('Error auto-creating dealer from edit drawer:', err)
+      }
+    }
+  }
+
   const [addPhoneNumbers, setAddPhoneNumbers] = useState<string[]>([''])
-  const [addForm, setAddForm] = useState({
+  const [addForm, _setAddForm] = useState({
     title: 'S/I service',
     description: '',
     serviceType: 'S/I',
     customerName: '',
     contactPhone: '',
     locationRaw: '',
-    sourceVendor: 'Robinsons',
+    dealer: '',
     otherStoreName: '',
-    storeBranch: '',
+    dealerBranch: '',
     unitType: 'Split AC',
     preferredDate: '',
     slaExpirationDate: '',
     priorityTag: '',
     district: '',
-    commitType: 'FREE FIRST 10 FEET',
+    commitType: '',
     installerName: '',
     serviceVehicle: '',
     remarksUpdate: '',
@@ -1064,11 +1206,26 @@ export default function ClientMasterlist() {
     serialNumber: '',
     alternatePhone: '',
     images: '',
-    status: 'PENDING',
+    status: 'S/I',
     branchId: '',
     relayedDate: new Date().toISOString().split('T')[0],
     finalDate: ''
   })
+
+  const setAddForm = (action: React.SetStateAction<typeof addForm>) => {
+    _setAddForm((prev) => {
+      const next = typeof action === 'function' ? (action as any)(prev) : action
+      const uppercased: any = {}
+      for (const key in next) {
+        if (typeof (next as any)[key] === 'string' && !['id', 'assignedTo', 'branchId'].includes(key)) {
+          uppercased[key] = (next as any)[key].toUpperCase()
+        } else {
+          uppercased[key] = (next as any)[key]
+        }
+      }
+      return uppercased as typeof addForm
+    })
+  }
   const [employees, setEmployees] = useState<any[]>([])
   const [globalBranchId, setGlobalBranchId] = useState<string | null>(
     () => localStorage.getItem('ashcol-global-branch-id')
@@ -1123,7 +1280,7 @@ export default function ClientMasterlist() {
       contactPhone: addPhoneNumbers[0] || addForm.contactPhone,
       preferredDate: addForm.preferredDate,
       district: addForm.district,
-      sourceVendor: resolveRelayStoreForSubmit(addForm.sourceVendor || 'Direct', addForm.storeBranch || ''),
+      dealer: resolveRelayDealerForSubmit(addForm.dealer || 'Direct', addForm.dealerBranch || ''),
       commitType: addForm.commitType,
     } as Ticket
     return openFieldTickets.find((t) => isRelayCustomerDuplicate(probe, t)) || null
@@ -1166,28 +1323,10 @@ export default function ClientMasterlist() {
     [negotiatorsForBranch, addForm.branchId, resolveRelayDefaultBranchId],
   )
 
-  const handleAddStoreFromToolbar = useCallback(() => {
-    const name = toolbarStoreDraft.trim()
-    if (!name) return
-    const isBuiltIn = (BUILT_IN_RELAY_STORES as readonly string[]).some(s => s.toLowerCase() === name.toLowerCase())
-    const isCustom = relayCustomStores.some(s => s.toLowerCase() === name.toLowerCase())
-    if (isBuiltIn || isCustom) {
-      alert('That store is already in the list.')
-      return
-    }
-    const next = [...new Set([...relayCustomStores, name])].sort((a, b) => a.localeCompare(b))
-    setRelayCustomStores(next)
-    persistRelayCustomStores(next)
-    setStoreFilter(name)
-    setToolbarStoreDraft('')
-    setIsStoreFilterOpen(false)
-  }, [toolbarStoreDraft, relayCustomStores])
 
   const openAddModal = useCallback(() => {
     const defaultBranch = resolveRelayDefaultBranchId()
     setAddPhoneNumbers([''])
-    setShowAddStoreField(false)
-    setAddStoreDraft('')
     setAddForm(prev => ({
       ...prev,
       branchId: defaultBranch || prev.branchId,
@@ -1198,7 +1337,7 @@ export default function ClientMasterlist() {
   // Action Drawer / Assign Modal State
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null)
   const [isActionDrawerOpen, setIsActionDrawerOpen] = useState(false)
-  const [actionSaving, setActionSaving] = useState(false)
+
   const [mergeTargetId, setMergeTargetId] = useState('')
   const [merging, setMerging] = useState(false)
 
@@ -1345,12 +1484,12 @@ export default function ClientMasterlist() {
 
   const tableRowBorder = isLight ? '#e2e8f0' : '#1e293b'
   const tableColBorder = `1px solid ${tableRowBorder}`
-  const cellPadY = 8
-  const cellPadX = 10
-  const headerPadY = 9
-  const tableFontSize = '11px'
-  const headerFontSize = '10px'
-  const TABLE_ROW_HEIGHT = 38
+  const cellPadY = 12
+  const cellPadX = 12
+  const headerPadY = 12
+  const tableFontSize = '13px'
+  const headerFontSize = '11px'
+  const TABLE_ROW_HEIGHT = 50
 
   const [expandedCell, setExpandedCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
 
@@ -1364,15 +1503,16 @@ export default function ClientMasterlist() {
   const columns = useMemo(() => {
     const rawCols = activeTab === 'MY_TICKETS' ? [
       { label: 'TICKET NO',        weight: 6,  expMul: 1.3,  sticky: true,  freeze: true,  center: true, right: false },
+      { label: 'CATEGORY',         weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'STATUS',           weight: 6,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
       { label: 'CUSTOMER NAME',    weight: 11, expMul: 1.45, sticky: false, freeze: false, center: false, right: false },
       { label: 'DISTRICT',         weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
       { label: 'BRAND',            weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
-      { label: 'STORE / SOURCE',   weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
+      { label: 'DEALER',           weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
       { label: 'COMMIT',           weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
-      { label: 'PREFERRED DATE',   weight: 8,  expMul: 1.3,  sticky: false, freeze: false, center: true, right: false },
-      { label: 'NEGOTIATOR',       weight: 10, expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
-      { label: 'FINAL DATE',       weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'BRANCH',           weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'NEGOTIATOR',       weight: 6,  expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
+      { label: 'SCHEDULED DATE',   weight: 9,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'REMARKS',          weight: 11, expMul: 1.45, sticky: false, freeze: false, center: false, right: true },
     ] : [
       { label: 'TICKET NO',    weight: 7,  expMul: 1.35, sticky: true,  freeze: true,  center: true, right: false },
@@ -1380,13 +1520,13 @@ export default function ClientMasterlist() {
       { label: 'CATEGORY',     weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'CUSTOMER NAME', weight: 14, expMul: 1.5,  sticky: false, freeze: false, center: false, right: false },
       { label: 'DISTRICT',     weight: 8,  expMul: 1.4,  sticky: false, freeze: false, center: false, right: false },
-      { label: 'STORE/SOURCE', weight: 9,  expMul: 1.4,  sticky: false, freeze: false, center: false, right: false },
+      { label: 'DEALER',       weight: 9,  expMul: 1.4,  sticky: false, freeze: false, center: false, right: false },
       { label: 'DATE RELAYED', weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'BRANCH',       weight: 7,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
       { label: 'COMMIT',       weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: false, right: false },
-      { label: 'NEGOTIATOR',   weight: 10, expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
-      { label: 'FINAL DATE',   weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
-      { label: 'LAST UPDATE',  weight: 14, expMul: 1.55, sticky: false, freeze: false, center: false, right: true },
+      { label: 'NEGOTIATOR',   weight: 6,  expMul: 1.55, sticky: false, freeze: false, center: true, right: false },
+      { label: 'SCHEDULED DATE', weight: 8,  expMul: 1.35, sticky: false, freeze: false, center: true, right: false },
+      { label: 'REMARKS',      weight: 14, expMul: 1.55, sticky: false, freeze: false, center: false, right: true },
     ]
 
     const weights = rawCols.map(col => {
@@ -1405,8 +1545,8 @@ export default function ClientMasterlist() {
 
   const columnCellStyle = (col: (typeof columns)[number]) => ({
     width: col.w,
-    minWidth: col.label === 'NEGOTIATOR' ? '6.75rem' : col.w,
-    maxWidth: col.label === 'NEGOTIATOR' ? '9rem' : col.w,
+    minWidth: col.w,
+    maxWidth: col.w,
     boxSizing: 'border-box' as const,
     overflow: 'hidden' as const,
   })
@@ -1494,7 +1634,7 @@ export default function ClientMasterlist() {
 
       const [tListRaw, branchList, employeeList] = await Promise.all([
         fetchTicketsPage(endpoint, token, {
-          size: 200,
+          size: 300,
           categoryGroup: ticketScope === 'ALL' ? 'FIELD' : undefined,
         }).catch(() => [] as unknown[]),
         skipMetaFetch ? Promise.resolve(null) : fetchCachedBranches(token).catch(() => null),
@@ -1565,255 +1705,37 @@ export default function ClientMasterlist() {
     void fetchData({ soft: hasCache })
   }, [fetchData, ticketScope, user, globalBranchId])
 
-  // Decoupled global branch sync for admin in Relay Monitoring to display all tickets by default.
-
-  // File Upload OCR (PDF/Image)
-  const handleVoucherScan = async (file: File) => {
-    setScanning(true)
-    setScanError('')
-    try {
+  useEffect(() => {
+    const reloadEmployees = async () => {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const formData = new FormData()
-      formData.append('file', file)
-
-      const res = await fetch(`${API_BASE_URL}/v1/tickets/scan`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData
-      })
-
-      if (!res.ok) {
-        throw new Error(`Voucher scanning failed (${res.status})`)
-      }
-
-      const parsed: ParsedVoucher = await res.json()
-      if (parsed.customerName) {
-        const locationVal = parsed.location || (parsed as any).address || ''
-        const customerNameVal = parsed.customerName || (parsed as any).name || ''
-        const contactPhoneVal = parsed.contactPhone || (parsed as any).phone || (parsed as any).mobile || (parsed as any).contact || ''
-        const brandVal = parsed.brand || ''
-        const capacityVal = parsed.capacity || ''
-        const skuVal = parsed.sku || (parsed as any).stock || (parsed as any).model || ''
-        const serialNumberVal = parsed.serialNumber || (parsed as any).serial || ''
-
-        const preferredDateRaw = parsed.preferredDate || (parsed as any).preferred_date || ''
-        let preferredDateFormatted = ''
-        if (preferredDateRaw) {
-          try {
-            const d = new Date(preferredDateRaw)
-            if (!isNaN(d.getTime())) {
-              preferredDateFormatted = d.toISOString().split('T')[0]
-            } else {
-              preferredDateFormatted = preferredDateRaw
-            }
-          } catch (e) {}
-        }
-
-        const rawSvc = parsed.serviceType || 'S/I'
-        let mappedSvc = rawSvc
-        const isInstall = rawSvc.toLowerCase().includes('install') || rawSvc.toUpperCase() === 'S/I'
-        const isSurvey = rawSvc.toLowerCase().includes('survey') || rawSvc.toUpperCase() === 'SURVEY'
-        if (isInstall) {
-          mappedSvc = 'S/I'
-        } else if (isSurvey) {
-          mappedSvc = 'SURVEY'
-        }
-
-        const defaultCommit = isInstall ? 'FREE FIRST 10 FEET' : (parsed.commitType || '')
-        const defaultRelayedDate = parsed.relayedDate || new Date().toISOString().split('T')[0]
-        const parsedStore = parseStoreVendor(parsed.sourceVendor || 'Robinsons')
-        const scannedStoreVendor = parsedStore.store === 'Other' && parsedStore.customStore
-          ? parsedStore.customStore
-          : parsedStore.store
-        if (parsedStore.store === 'Other' && parsedStore.customStore) {
-          setRelayCustomStores(prev => {
-            const name = parsedStore.customStore!.trim()
-            if (!name || prev.some(s => s.toLowerCase() === name.toLowerCase())) return prev
-            const next = [...prev, name].sort((a, b) => a.localeCompare(b))
-            persistRelayCustomStores(next)
-            return next
-          })
-        }
-
-        const scannedPhones = [contactPhoneVal, (parsed as any).alternatePhone || '']
-          .flatMap(p => String(p || '').split(','))
-          .map(p => p.trim())
-          .filter(Boolean)
-          .map(formatPhilippinePhoneInput)
-        setAddPhoneNumbers(scannedPhones.length ? scannedPhones : [''])
-
-        setAddForm({
-          title: `${mappedSvc} service`,
-          description: parsed.description || 'Voucher scanned via Gemini AI.',
-          serviceType: mappedSvc,
-          customerName: customerNameVal,
-          contactPhone: '',
-          locationRaw: locationVal,
-          sourceVendor: scannedStoreVendor,
-          otherStoreName: '',
-          storeBranch: parsedStore.branch,
-          unitType: parsed.unitType || (brandVal && capacityVal ? formatBrandCapacityLabel(brandVal, capacityVal) : 'Split AC'),
-          preferredDate: preferredDateFormatted,
-          slaExpirationDate: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString().split('T')[0],
-          priorityTag: parsed.priorityTag || '',
-          district: parsed.district || guessDistrict(locationVal) || '',
-          commitType: defaultCommit,
-          installerName: parsed.installerName || '',
-          serviceVehicle: parsed.serviceVehicle || '',
-          remarksUpdate: parsed.remarksUpdate || '',
-          installationCharges: parsed.installationCharges || 0,
-          modeOfPayment: parsed.modeOfPayment || '',
-          controlNumber: parsed.controlNumber || '',
-          ticketNumber: '',
-          assignedTo: '',
-          landmarks: parsed.landmarks || '',
-          brand: brandVal,
-          capacity: capacityVal,
-          sku: skuVal,
-          serialNumber: serialNumberVal,
-          alternatePhone: '',
-          images: parsed.imagePath || '',
-          status: 'PENDING',
-          branchId: '',
-          relayedDate: defaultRelayedDate,
-          finalDate: ''
-        })
-        setIsAddModalOpen(true)
-      } else {
-        setScanError('Failed to extract client details. Please try uploading another document or input details manually.')
-      }
-    } catch (err: any) {
-      setScanError(err.message || 'Scanning process failed. Ensure server connectivity.')
-    } finally {
-      setScanning(false)
-      if (scanFileInputRef.current) scanFileInputRef.current.value = ''
-    }
-  }
-
-  // Excel Bulk parsing
-  const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    const reader = new FileReader()
-    reader.onload = (evt) => {
+      if (!token) return
       try {
-        const bstr = evt.target?.result
-        const wb = XLSX.read(bstr, { type: 'binary' })
-        const ws = wb.Sheets[wb.SheetNames[0]]
-        const rawRows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1 })
-
-        if (!rawRows || rawRows.length === 0) {
-          alert('Excel sheet seems to be empty.')
-          return
+        const employeeList = await fetchCachedEmployees(token, undefined, { force: true })
+        const eList = employeeList.map((e) => ({
+          ...e,
+          branchId: e.branchId || e.branch_id || '',
+          jobTitle: e.jobTitle || e.job_title || '',
+        }))
+        setEmployees(eList as any[])
+        const cacheKey = relaysCacheKey(ticketScope, user, globalBranchId)
+        const cached = readTabCache<RelaysTabCache>(cacheKey)
+        if (cached) {
+          writeTabCache(cacheKey, { ...cached, employees: eList, lastSyncAt: Date.now() })
         }
-
-        // Find header row (the one containing client identifier keywords)
-        let headerIdx = 0
-        for (let i = 0; i < Math.min(rawRows.length, 10); i++) {
-          const row = rawRows[i]
-          if (row && row.some(cell => /customer|name|destination|contact|brand|dlr/i.test(String(cell)))) {
-            headerIdx = i
-            break
-          }
-        }
-
-        const headers = rawRows[headerIdx].map((h: any) => String(h || '').trim())
-        const dataRows = rawRows.slice(headerIdx + 1)
-
-        // Column indices mapping
-        const colIndices = {
-          priorityTag: 0, // default first column
-          customerName: 1,
-          location: 2,
-          district: 3,
-          contactPhone: 4,
-          unitType: 5,
-          sourceVendor: 6,
-          serviceType: 7,
-          commitType: 8,
-          installerName: 9,
-          serviceVehicle: 10,
-          remarksUpdate: 11,
-          installationCharges: 12,
-          modeOfPayment: 13,
-          controlNumber: 14
-        }
-
-        headers.forEach((header, idx) => {
-          const h = header.toLowerCase()
-          if (/customer/i.test(h) && /name/i.test(h)) colIndices.customerName = idx
-          else if (/destination/i.test(h) || /address/i.test(h)) colIndices.location = idx
-          else if (/district/i.test(h)) colIndices.district = idx
-          else if (/contact/i.test(h) || /phone/i.test(h) || /mobile/i.test(h)) colIndices.contactPhone = idx
-          else if (/brand/i.test(h) || /unit/i.test(h)) colIndices.unitType = idx
-          else if (/dlr/i.test(h) || /dealer/i.test(h) || /vendor/i.test(h)) colIndices.sourceVendor = idx
-          else if (/status/i.test(h)) colIndices.serviceType = idx
-          else if (/commit/i.test(h)) colIndices.commitType = idx
-          else if (/installer/i.test(h)) colIndices.installerName = idx
-          else if (/service/i.test(h)) colIndices.serviceVehicle = idx
-          else if (/update/i.test(h) || /remarks/i.test(h)) colIndices.remarksUpdate = idx
-          else if (/charge/i.test(h) || /cost/i.test(h) || /fee/i.test(h) || /installation.*charge/i.test(h)) colIndices.installationCharges = idx
-          else if (/payment/i.test(h) || /mode/i.test(h)) colIndices.modeOfPayment = idx
-          else if (/control/i.test(h) || /si/i.test(h)) colIndices.controlNumber = idx
-          else if (/priority/i.test(h) || /tag/i.test(h)) colIndices.priorityTag = idx
-        })
-
-        const getVal = (row: any[], index: number) => {
-          if (index < 0 || index >= row.length) return ''
-          const val = row[index]
-          return val !== undefined && val !== null ? String(val).trim() : ''
-        }
-
-        const mapped = dataRows
-          .filter(row => row && row.length > 0 && row.some(cell => cell !== null && cell !== ''))
-          .map((row, idx) => {
-            const chargesStr = getVal(row, colIndices.installationCharges)
-            const cleanCharges = chargesStr ? parseFloat(chargesStr.replace(/[^0-9.]/g, '')) || 0 : 0
-
-            const rawSvc = getVal(row, colIndices.serviceType) || 'S/I'
-            let mappedSvc = rawSvc
-            const isInstall = rawSvc.toLowerCase().includes('install') || rawSvc.toUpperCase() === 'S/I'
-            const isSurvey = rawSvc.toLowerCase().includes('survey') || rawSvc.toUpperCase() === 'SURVEY'
-            if (isInstall) {
-              mappedSvc = 'S/I'
-            } else if (isSurvey) {
-              mappedSvc = 'SURVEY'
-            }
-            const rawCommit = getVal(row, colIndices.commitType)
-            const defaultCommit = isInstall ? (rawCommit || 'FREE FIRST 10 FEET') : rawCommit
-
-            return {
-              id: `excel-${idx}-${Date.now()}`,
-              priorityTag: getVal(row, colIndices.priorityTag),
-              customerName: getVal(row, colIndices.customerName) || 'Unknown Customer',
-              location: getVal(row, colIndices.location).trim() || 'No Address Provided',
-              district: getVal(row, colIndices.district) || guessDistrict(getVal(row, colIndices.location)) || '',
-              contactPhone: getVal(row, colIndices.contactPhone),
-              unitType: getVal(row, colIndices.unitType) || 'Split AC',
-              sourceVendor: getVal(row, colIndices.sourceVendor) || 'Direct',
-              serviceType: mappedSvc,
-              commitType: defaultCommit,
-              installerName: getVal(row, colIndices.installerName),
-              serviceVehicle: getVal(row, colIndices.serviceVehicle),
-              remarksUpdate: getVal(row, colIndices.remarksUpdate),
-              installationCharges: cleanCharges,
-              modeOfPayment: getVal(row, colIndices.modeOfPayment),
-              controlNumber: getVal(row, colIndices.controlNumber),
-              description: getVal(row, colIndices.remarksUpdate) || 'Bulk Excel Imported Ticket'
-            }
-          })
-
-        setExcelPreview(mapped)
-        setIsExcelModalOpen(true)
-      } catch (err) {
-        console.error(err)
-        alert('Error parsing Excel file. Ensure it contains correct client fields.')
+      } catch {
+        // keep current list on refresh failure
       }
     }
-    reader.readAsBinaryString(file)
-    e.target.value = ''
-  }
+    const onDirectoryUpdated = () => { void reloadEmployees() }
+    window.addEventListener(EMPLOYEES_DIRECTORY_UPDATED_EVENT, onDirectoryUpdated)
+    window.addEventListener(PROFILE_UPDATED_EVENT, onDirectoryUpdated)
+    return () => {
+      window.removeEventListener(EMPLOYEES_DIRECTORY_UPDATED_EVENT, onDirectoryUpdated)
+      window.removeEventListener(PROFILE_UPDATED_EVENT, onDirectoryUpdated)
+    }
+  }, [ticketScope, user, globalBranchId])
+
+  // Decoupled global branch sync for admin in Relay Monitoring to display all tickets by default.
 
   // Bulk save Excel tickets
   const handleBulkUploadSubmit = async () => {
@@ -1841,7 +1763,7 @@ export default function ClientMasterlist() {
             unitType: item.unitType,
             contactPhone: item.contactPhone,
             location: item.location ? item.location.trim() : 'No Address Provided',
-            sourceVendor: item.sourceVendor,
+            dealer: item.dealer,
             priorityTag: item.priorityTag,
             district: item.district,
             commitType: item.commitType,
@@ -1888,6 +1810,13 @@ export default function ClientMasterlist() {
 
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
     const cleanedPhones = addPhoneNumbers.map(p => p.trim()).filter(Boolean)
+    // addForm.status carries the raw status-picker button value (CHECKUP, INSTALL, BACKJOB,
+    // DONE_CHECKUP, ...) which Ticket.Status has no enum constant for — resolve to a value the
+    // backend actually accepts before sending, same mapper used by Schedules/My Tickets saves.
+    // schedulePhase/scheduleOutcome carry the finer sub-type (e.g. BACKJOB vs plain SERVICES)
+    // that rows/labels read (getCategoryLabel, formatRelayTicketTypeShort) — must be in acDetails
+    // from the start, or a new BACKJOB/CHECKUP ticket shows the wrong type from row one.
+    const resolvedCreateStatus = resolveScheduleStatusFields(addForm.status)
     const acDetailsObj = {
       landmarks: addForm.landmarks || '',
       brand: addForm.brand || '',
@@ -1896,7 +1825,9 @@ export default function ClientMasterlist() {
       serialNumber: addForm.serialNumber || '',
       alternatePhone: cleanedPhones.slice(1).join(', '),
       relayedDate: addForm.relayedDate || new Date().toISOString().split('T')[0],
-      finalDate: '',
+      finalDate: addForm.finalDate || '',
+      ...(resolvedCreateStatus.schedulePhase !== undefined ? { schedulePhase: resolvedCreateStatus.schedulePhase } : {}),
+      ...(resolvedCreateStatus.scheduleOutcome !== undefined ? { scheduleOutcome: resolvedCreateStatus.scheduleOutcome } : {}),
     }
     const isCollectionTicket = /collect/i.test(`${addForm.serviceType} ${addForm.title}`)
     const writeBranchId = resolvePortalWriteBranchId(
@@ -1910,15 +1841,22 @@ export default function ClientMasterlist() {
       : addForm.ticketNumber?.trim()) || undefined
 
     const createBrandHp = formatBrandCapacityLabel(addForm.brand, addForm.capacity)
+    // Same as edits: a pending field-type sub-status (CLEANING/CHECKUP/BACKJOB/INSTALLATION/
+    // SERVICES) resolves to SCHEDULED regardless of whether a date was picked — with no date
+    // yet, the new ticket must show PENDING, not SCHEDULED.
+    const createStatus = (resolvedCreateStatus.status === 'SCHEDULED' && !addForm.finalDate?.trim() && !addForm.preferredDate?.trim())
+      ? 'PENDING'
+      : resolvedCreateStatus.status
     const createPayload = {
       title: addForm.title,
-      description: addForm.description || addForm.remarksUpdate || 'Manual client ticket',
+      description: addForm.description || addForm.remarksUpdate || '',
       customerName: addForm.customerName,
       serviceType: addForm.serviceType,
+      ticketCategory: resolvedCreateStatus.ticketCategory,
       unitType: createBrandHp || addForm.unitType,
       contactPhone: cleanedPhones[0] || undefined,
       location: addForm.locationRaw?.trim() || 'No Address Provided',
-      sourceVendor: resolveRelayStoreForSubmit(addForm.sourceVendor || 'Direct', addForm.storeBranch || ''),
+      dealer: resolveRelayDealerForSubmit(addForm.dealer || 'Direct', addForm.dealerBranch || ''),
       preferredDate: addForm.preferredDate || undefined,
       slaExpirationDate: addForm.slaExpirationDate ? new Date(addForm.slaExpirationDate).toISOString() : undefined,
       priorityTag: addForm.priorityTag || undefined,
@@ -1935,7 +1873,7 @@ export default function ClientMasterlist() {
       ticketNumber: syncTicketNumber,
       acDetails: JSON.stringify(acDetailsObj),
       images: addForm.images || undefined,
-      status: addForm.status,
+      status: createStatus,
       branchId: relayBranchId,
     }
 
@@ -1950,7 +1888,7 @@ export default function ClientMasterlist() {
       unitType: createPayload.unitType,
       contactPhone: createPayload.contactPhone,
       location: createPayload.location,
-      sourceVendor: createPayload.sourceVendor,
+      dealer: createPayload.dealer,
       preferredDate: createPayload.preferredDate,
       priorityTag: createPayload.priorityTag,
       district: createPayload.district,
@@ -1987,8 +1925,6 @@ export default function ClientMasterlist() {
     }
 
     setIsAddModalOpen(false)
-    setShowAddStoreField(false)
-    setAddStoreDraft('')
     setAddPhoneNumbers([''])
     setAddForm({
       title: 'Installation service',
@@ -1997,9 +1933,9 @@ export default function ClientMasterlist() {
       customerName: '',
       contactPhone: '',
       locationRaw: '',
-      sourceVendor: 'Robinsons',
+      dealer: '',
       otherStoreName: '',
-      storeBranch: '',
+      dealerBranch: '',
       unitType: 'Split AC',
       preferredDate: '',
       slaExpirationDate: '',
@@ -2124,24 +2060,54 @@ export default function ClientMasterlist() {
     }
 
     const isAssignedOrScheduled = finalStatus !== 'PENDING' && finalStatus !== 'CANCELLED'
-    if (isAssignedOrScheduled && !draft.assignTechId) {
-      alert('Negotiator is required')
-      return
-    }
+    const isUnassignedPending = finalStatus === 'PENDING' && !keepPendingAssignment
+
+    // finalStatus carries the raw status-picker button value (CHECKUP, INSTALL, BACKJOB,
+    // DONE_CHECKUP, ...) — Ticket.Status has no enum constant for those; resolve to what the
+    // backend actually accepts before sending (same mapper used at ticket creation and in
+    // Schedules/My Tickets saves). schedulePhase/scheduleOutcome carry the finer sub-type that
+    // status can't (e.g. BACKJOB vs plain SERVICES) — merged into acDetailsObj below.
+    const resolvedEditStatus = resolveScheduleStatusFields(finalStatus)
 
     const payload: Record<string, any> = {}
     let branchId = ''
     let assignedTo = ''
-    if ((finalStatus === 'PENDING' && !keepPendingAssignment) || finalStatus === 'CANCELLED') {
+
+    if (finalStatus === 'CANCELLED') {
       payload.branchId = ''
       payload.assignedTo = ''
       payload.status = finalStatus
     } else {
-      branchId = draft.assignBranchId || ''
-      assignedTo = draft.assignTechId || ''
+      const selectedNeg = employees.find((e: { id: string; branchId?: string; email?: string; jobTitle?: string }) => e.id === draft.assignTechId)
+      branchId = draft.assignBranchId
+        ? (resolvePortalWriteBranchId(draft.assignBranchId, selectedNeg?.email, selectedNeg?.jobTitle) || draft.assignBranchId)
+        : ''
+
+      if (isAssignedOrScheduled) {
+        if (!draft.assignTechId) {
+          alert('Negotiator is required')
+          return
+        }
+        assignedTo = draft.assignTechId
+      } else if (!isUnassignedPending) {
+        assignedTo = draft.assignTechId || ''
+      }
+
+      if (assignedTo && branchId && selectedNeg?.branchId
+        && !branchScopesMatch(selectedNeg.branchId, branchId, selectedNeg.email)) {
+        alert('Selected negotiator does not belong to the chosen branch zone. Pick a negotiator from that branch.')
+        return
+      }
+
       payload.branchId = branchId
       payload.assignedTo = assignedTo
-      payload.status = finalStatus
+      // Picking a pending field-type sub-status (CLEANING/CHECKUP/BACKJOB/INSTALLATION/SERVICES)
+      // always resolves to SCHEDULED regardless of whether a date was actually picked — a ticket
+      // with no final date must show PENDING, not SCHEDULED (that implies day-of placement).
+      payload.status = (resolvedEditStatus.status === 'SCHEDULED' && !existingDetails.finalDate?.trim())
+        ? 'PENDING'
+        : resolvedEditStatus.status
+      if (resolvedEditStatus.ticketCategory) payload.ticketCategory = resolvedEditStatus.ticketCategory
     }
     payload.customerName = draft.customerName || null
     payload.location = draft.location || null
@@ -2166,6 +2132,17 @@ export default function ClientMasterlist() {
     payload.modeOfPayment = draft.modeOfPayment || null
     payload.controlNumber = draft.controlNumber || null
     const acDetailsObj = {
+      // Start from the ticket's existing acDetails so keys this modal doesn't expose
+      // (negotiatorName, destination, etc. set by the Schedules/My Tickets edit path) survive
+      // a save from the Relays drawer.
+      ...existingDetails,
+      robinsonsTransactionId: draft.robinsonsTransactionId || '',
+      // schedulePhase/scheduleOutcome must follow whatever status button was just picked here —
+      // without this, they keep whatever value existingDetails had before (e.g. still SURVEY &
+      // INSTALL from before), so rows/labels reading schedulePhase (getCategoryLabel,
+      // formatRelayTicketTypeShort) keep showing the OLD type after switching to BACKJOB/CHECKUP.
+      ...(resolvedEditStatus.schedulePhase !== undefined ? { schedulePhase: resolvedEditStatus.schedulePhase } : {}),
+      ...(resolvedEditStatus.scheduleOutcome !== undefined ? { scheduleOutcome: resolvedEditStatus.scheduleOutcome } : {}),
       landmarks: draft.landmarks || '',
       brand: draft.brand || '',
       capacity: draft.capacity || '',
@@ -2194,14 +2171,17 @@ export default function ClientMasterlist() {
     payload.warrantyDocsStatus = draft.warrantyStatus || null
     payload.images = draft.images || null
     payload.contactPhone = draft.phoneNumbers[0] || null
-    payload.sourceVendor = resolveRelayStoreForSubmit(draft.storeVendor, draft.storeBranch) || null
+    payload.dealer = resolveRelayDealerForSubmit(draft.dealerName, draft.dealerBranch) || null
     const brandHpLabel = formatBrandCapacityLabel(draft.brand, draft.capacity)
     payload.unitType = brandHpLabel || draft.unitType || null
     payload.serviceType = draft.serviceType || null
 
     const optimisticTicket: Ticket = {
       ...selectedTicket,
-      status: finalStatus,
+      // Use the resolved backend status (payload.status), not the raw picker value (finalStatus,
+      // e.g. 'BACKJOB') — the raw value has no Ticket.Status enum constant and previously leaked
+      // into the local ticket's status field until a hard refresh replaced it with server data.
+      status: payload.status ?? finalStatus,
       branchId: branchId || undefined,
       assignedTo: assignedTo || undefined,
       negotiatorId: draft.assignTechId || '',
@@ -2225,7 +2205,7 @@ export default function ClientMasterlist() {
       warrantyDocsStatus: draft.warrantyStatus || selectedTicket.warrantyDocsStatus,
       images: draft.images || selectedTicket.images,
       contactPhone: draft.phoneNumbers[0] || selectedTicket.contactPhone,
-      sourceVendor: payload.sourceVendor || selectedTicket.sourceVendor,
+      dealer: payload.dealer || selectedTicket.dealer || selectedTicket.sourceVendor,
       unitType: brandHpLabel || draft.unitType || selectedTicket.unitType,
       serviceType: draft.serviceType || selectedTicket.serviceType,
       updatedAt: new Date().toISOString(),
@@ -2235,36 +2215,6 @@ export default function ClientMasterlist() {
     setIsActionDrawerOpen(false)
     setSelectedTicket(null)
     queueRelayPatch(original, payload, optimisticTicket)
-  }
-
-  const handleDeleteTicket = (ticketId: string, customerName?: string) => {
-    if (!window.confirm(`Are you sure you want to delete the client ticket for "${customerName || 'Direct Client'}"?\n\nThis action cannot be undone.`)) return
-
-    const rollback = tickets.find(t => t.id === ticketId)
-      || openFieldTickets.find(t => t.id === ticketId)
-      || selectedTicket
-    setIsActionDrawerOpen(false)
-    setSelectedTicket(null)
-    applyRelayTicketLocally(ticketId, null)
-
-    void (async () => {
-      try {
-        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-        const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}))
-          throw new Error(err.message || `Failed to delete ticket (HTTP ${res.status})`)
-        }
-        clearRelaysCache()
-        clearWarrantyCache()
-      } catch (err: any) {
-        if (rollback) applyRelayTicketLocally(ticketId, rollback)
-        alert(err.message || 'Error occurred while deleting ticket.')
-      }
-    })()
   }
 
   const handleMergeTickets = async () => {
@@ -2304,54 +2254,10 @@ export default function ClientMasterlist() {
     }
   }
 
-  const handleDeleteAllTickets = async () => {
-    const count = filtered.length
-    if (count === 0) { alert('No client tickets to delete with the current filters.'); return }
-    if (!window.confirm(
-      `⚠️ DANGER ZONE\n\nYou are about to permanently delete ALL ${count} currently visible client ticket${count !== 1 ? 's' : ''}.\n\nThis action CANNOT be undone. Are you absolutely sure?`
-    )) return
-    // Second confirmation for safety
-    const confirmText = window.prompt(`Type "DELETE ALL" to confirm removing all ${count} tickets permanently:`)
-    if (confirmText?.trim() !== 'DELETE ALL') {
-      alert('Cancelled — confirmation text did not match.')
-      return
-    }
-
-    setActionSaving(true)
-    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-    let successCount = 0
-    let failCount = 0
-    for (const ticket of filtered) {
-      try {
-        const res = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` }
-        })
-        if (res.ok) successCount++
-        else failCount++
-      } catch {
-        failCount++
-      }
-    }
-    setActionSaving(false)
-    fetchData({ soft: true })
-    alert(`Deleted ${successCount} of ${count} client ticket${count !== 1 ? 's' : ''}.${failCount > 0 ? ` (${failCount} failed)` : ''}`)
-  }
-
   // Open action drawer for a ticket
   const openDrawer = (ticket: Ticket) => {
     setSelectedTicket(ticket)
     setMergeTargetId('')
-    const parsedStore = parseStoreVendor(ticket.sourceVendor)
-    if (parsedStore.store === 'Other' && parsedStore.customStore) {
-      setRelayCustomStores(prev => {
-        const name = parsedStore.customStore!.trim()
-        if (!name || prev.some(s => s.toLowerCase() === name.toLowerCase())) return prev
-        const next = [...prev, name].sort((a, b) => a.localeCompare(b))
-        persistRelayCustomStores(next)
-        return next
-      })
-    }
     setIsActionDrawerOpen(true)
   }
 
@@ -2374,7 +2280,7 @@ export default function ClientMasterlist() {
       }
 
       if (storeFilter !== 'ALL') {
-        const vendorLower = (t.sourceVendor || 'Direct').toLowerCase()
+        const vendorLower = (t.dealer || t.sourceVendor || 'Direct').toLowerCase()
         if (!vendorLower.includes(storeFilter.toLowerCase())) return false
       }
       if (activeBranch && activeBranch !== 'ALL' && activeBranch !== 'ALL_BRANCHES') {
@@ -2443,7 +2349,7 @@ export default function ClientMasterlist() {
 
     // Vendor filter
     if (storeFilter !== 'ALL') {
-      const vendorLower = (t.sourceVendor || 'Direct').toLowerCase()
+      const vendorLower = (t.dealer || t.sourceVendor || 'Direct').toLowerCase()
       const filterLower = storeFilter.toLowerCase()
       if (!vendorLower.includes(filterLower)) return false
     }
@@ -2473,7 +2379,7 @@ export default function ClientMasterlist() {
       const loc = (t.location || '').toLowerCase()
       const ctrlNum = (t.controlNumber || '').toLowerCase()
       const phone = (t.contactPhone || '').toLowerCase()
-      const vendor = (t.sourceVendor || '').toLowerCase()
+      const vendor = (t.dealer || t.sourceVendor || '').toLowerCase()
       const svcType = (t.serviceType || '').toLowerCase()
       const commit = (t.commitType || '').toLowerCase()
       const installer = (t.installerName || '').toLowerCase()
@@ -2608,16 +2514,19 @@ export default function ClientMasterlist() {
   }, [filtered, selectedPreviewTicket, selectedColIndex, columns.length])
 
   // Store style mappings
-  const getStoreStyle = (store?: string) => {
-    const s = (store || 'Direct').toLowerCase()
-    if (s.includes('robinsons')) {
-      return { bg: 'rgba(239,68,68,0.1)', color: '#EF4444', label: store || 'Robinsons' }
-    } else if (s.includes('abenson')) {
-      return { bg: 'rgba(245,158,11,0.1)', color: '#F59E0B', label: store || 'Abenson' }
-    } else if (s.includes('direct')) {
+  const getDealerStyle = (dealerValue?: string) => {
+    const parsed = parseDealer(dealerValue || '')
+    if (parsed.store === 'Robinsons') {
+      const displayLabel = parsed.branch ? `RA ${parsed.branch}` : 'RA'
+      return { bg: 'rgba(239,68,68,0.1)', color: '#EF4444', label: displayLabel }
+    } else if (parsed.store === 'Abenson') {
+      const displayLabel = parsed.branch ? `Abenson ${parsed.branch}` : 'Abenson'
+      return { bg: 'rgba(245,158,11,0.1)', color: '#F59E0B', label: displayLabel }
+    } else if (parsed.store === 'Direct') {
       return { bg: 'rgba(99,102,241,0.1)', color: '#6366F1', label: 'Direct Client' }
     }
-    return { bg: 'rgba(100,116,139,0.1)', color: '#64748B', label: store || 'Other Store' }
+    const displayLabel = parsed.branch ? `${parsed.customStore} - ${parsed.branch}` : (parsed.customStore || 'Other Store')
+    return { bg: 'rgba(100,116,139,0.1)', color: '#64748B', label: displayLabel }
   }
 
   
@@ -2637,30 +2546,59 @@ export default function ClientMasterlist() {
   }
 
   const getCategoryLabel = (ticket: Ticket) => {
+    // schedulePhase is authoritative for CHECKUP/BACKJOB — the generic serviceType/title text a
+    // saved schedule status leaves behind ("Service") can't distinguish them from plain SERVICE,
+    // and a stale pre-patch title still containing "Install" would otherwise win below. Check first.
+    const phase = String(parseAcDetails(ticket).schedulePhase || '').trim().toUpperCase().replace(/\s+/g, '_')
+    if (phase === 'CHECKUP') return 'CHECKUP'
+    if (phase === 'BACKJOB') return 'BACKJOB'
+    if (phase === 'CLEANING') return 'CLEANING'
+
+    const rawStatus = (ticket.status || '').trim().toUpperCase()
+    if (rawStatus === 'S/I') return 'SURVEY & INSTALL'
+
     const svc = (ticket.serviceType || '').trim().toUpperCase()
-    if (/S\/I|\bSI\b|INSTALL/.test(svc)) return 'S/I'
+    if (/S\/I|\bSI\b|INSTALL|SURVEY\s*&\s*INSTALL/.test(svc)) return 'SURVEY & INSTALL'
     if (svc.includes('SURVEY')) return 'SURVEY'
     if (svc.includes('INSTALLATION')) return 'INSTALLATION'
     if (svc.includes('SERVICE') || svc.includes('CLEAN')) return 'SERVICE'
     const cat = getTicketCategory(ticket)
-    if (cat === 'Survey & Install') return 'S/I'
+    if (cat === 'Survey & Install') return 'SURVEY & INSTALL'
     if (cat === 'Survey') return 'SURVEY'
     if (cat === 'Service') return 'SERVICE'
     return svc || 'SERVICE'
   }
 
+  // STATUS is the relay workflow stage only — never a field-type sub-status (BACKJOB, CHECKUP,
+  // SURVEY & INSTALL, ...). Those belong on CATEGORY (getCategoryLabel). Purely a function of
+  // negotiator assignment + final date, per the relay intake flow: no negotiator = PENDING,
+  // negotiator but no final date = ASSIGNED, negotiator + final date = SCHEDULED.
   const getRelayStatusShort = (ticket: Ticket) => {
-    if (hasRelayLeftQueue(ticket)) return 'SCHEDULED'
-    const label = getRelayStatusLabel(ticket)
-    if (label === 'Pending') return 'PENDING'
-    if (label === 'Cancelled') return 'CANCELLED'
-    if (label === 'Scheduled') return 'SCHEDULED'
-    return 'ASSIGNED'
+    const status = (ticket.status || '').toUpperCase()
+    if (status === 'CANCELLED') return 'CANCELLED'
+    if (getRelayStatusLabel(ticket) === 'Installed') return 'INSTALLED'
+
+    const finalDate = resolveRelayFinalDate(ticket)
+    const negotiatorId = (ticket.negotiatorId || ticket.negotiator_id || '').trim()
+    const hasNegotiator = Boolean(
+      negotiatorId || ticket.assignedTo || ticket.negotiatorName?.trim() || ticket.assignedEmployeeName?.trim(),
+    )
+    if (finalDate && hasNegotiator) return 'SCHEDULED'
+    if (hasNegotiator) return 'ASSIGNED'
+    return 'PENDING'
   }
 
-  const formatBranchTableLabel = (branchId?: string) => {
-    const full = formatAssignedBranchLabel(branchId)
+  const formatBranchTableLabel = (branchId?: string, ticket?: Ticket) => {
+    let full = formatAssignedBranchLabel(branchId)
+    
+    if (full.startsWith('TAGUIG') && ticket) {
+      const isService = isTaguigServiceTicket(ticket as any)
+      full = isService ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES'
+    }
+
     if (full === '—') return '—'
+    if (full === 'TAGUIG - SALES') return 'TAGUIG SALES'
+    if (full === 'TAGUIG - SERVICES') return 'TAGUIG SERVICES'
     if (full.startsWith('TAGUIG')) return 'TAGUIG'
     return full
   }
@@ -2705,295 +2643,253 @@ export default function ClientMasterlist() {
     <div className="flex flex-col flex-1 w-full min-h-0 h-full" style={{ backgroundColor: pageBg }}>
       {/* ── Portal: Toolbar into header slot ────────────────── */}
       {ReactDOM.createPortal(
-        <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2">
-          <div className="flex flex-wrap items-center gap-2">
-          {/* Enhanced Branch Filter */}
-          <div className="relative shrink-0" ref={branchFilterRef}>
-            <button
-              type="button"
-              disabled={!isAdmin}
-              onClick={() => setIsBranchFilterOpen(prev => !prev)}
-              className={`flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold shadow-sm transition-all ${
-                isAdmin ? 'hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer' : 'cursor-not-allowed opacity-80'
-              }`}
-              style={{
-                backgroundColor: isAdmin ? inputBg : (isLight ? '#f1f5f9' : '#1e293b'),
-                borderColor: inputBorder,
-                color: isAdmin ? textPrimary : textMuted
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <Building2 className="w-4 h-4 shrink-0" style={{ color: '#10B981' }} />
-                <span>
-                  {branchFilter === 'ALL'
-                    ? 'All Branches'
-                    : formatBranchName(branches.find(b => b.id === branchFilter)?.name || branchFilter)}
-                </span>
-              </div>
-              {isAdmin && <ChevronDown className="w-3 h-3 opacity-60" style={{ color: textMuted }} />}
-            </button>
+        <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-col md:flex-row md:items-center md:justify-between gap-3 relative">
+          
+          {/* ── Left Side: Filters & Search ── */}
+          <div className="flex flex-col md:flex-row md:items-center gap-3 flex-1 min-w-0">
             
-            {isAdmin && isBranchFilterOpen && (
-              <div className="absolute left-0 top-full mt-2 w-64 rounded-2xl border shadow-2xl z-[90] p-3 flex flex-col gap-2.5 animate-in fade-in-50 zoom-in-95 duration-150"
-                style={{ backgroundColor: cardBg, borderColor: border }}>
-                <span className="text-[10px] font-black uppercase tracking-widest px-2" style={{ color: textMuted }}>Select Branch</span>
-                <div className="max-h-60 overflow-y-auto flex flex-col gap-1 pr-1">
-                  <button
-                    type="button"
-                    onClick={() => { setBranchFilter('ALL'); setIsBranchFilterOpen(false); }}
-                    className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${branchFilter === 'ALL' ? 'bg-emerald-500/10 text-emerald-500' : 'hover:bg-slate-500/10'}`}
-                  >
-                    <span>All Branches</span>
-                    {branchFilter === 'ALL' && <Check className="w-3.5 h-3.5 text-emerald-500" />}
-                  </button>
-                  {branches.map(b => (
+            {/* Filter chips */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+              {/* Branch Chip */}
+              <div>
+                <button
+                  type="button"
+                  disabled={!isAdmin}
+                  data-dropdown-id="branch-filter"
+                  onClick={() => setIsBranchFilterOpen(prev => !prev)}
+                  className={`flex items-center gap-1.5 md:gap-2 h-8 md:h-10 pl-2.5 md:pl-4 pr-3 md:pr-5 rounded-full border text-[11px] md:text-[13px] font-semibold whitespace-nowrap transition-all ${
+                    isAdmin ? 'cursor-pointer hover:opacity-80 active:scale-95' : 'opacity-60 cursor-default'
+                  }`}
+                  style={{
+                    backgroundColor: branchFilter !== 'ALL'
+                      ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.12)')
+                      : inputBg,
+                    borderColor: branchFilter !== 'ALL' ? '#10B981' : inputBorder,
+                    color: branchFilter !== 'ALL' ? '#10B981' : textMuted,
+                  }}
+                >
+                  <Building2 className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: 'inherit' }} />
+                  <span>
+                    {branchFilter === 'ALL'
+                      ? 'Branch'
+                      : formatBranchName(branches.find(b => b.id === branchFilter)?.name || branchFilter)}
+                  </span>
+                  {isAdmin && <ChevronDown className="w-3 h-3 md:w-3.5 md:h-3.5 opacity-50 -mr-0.5" />}
+                </button>
+              </div>
+
+              {/* Dealer Chip */}
+              <div>
+                <button
+                  type="button"
+                  data-dropdown-id="store-filter"
+                  onClick={() => setIsStoreFilterOpen(prev => !prev)}
+                  className="flex items-center gap-1.5 md:gap-2 h-8 md:h-10 pl-2.5 md:pl-4 pr-3 md:pr-5 rounded-full border text-[11px] md:text-[13px] font-semibold whitespace-nowrap transition-all cursor-pointer hover:opacity-80 active:scale-95"
+                  style={{
+                    backgroundColor: storeFilter !== 'ALL'
+                      ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.12)')
+                      : inputBg,
+                    borderColor: storeFilter !== 'ALL' ? '#10B981' : inputBorder,
+                    color: storeFilter !== 'ALL' ? '#10B981' : textMuted,
+                  }}
+                >
+                  <Package className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: 'inherit' }} />
+                  <span>{storeFilter === 'ALL' ? 'Dealer' : storeFilter}</span>
+                  <ChevronDown className="w-3 h-3 md:w-3.5 md:h-3.5 opacity-50 -mr-0.5" />
+                </button>
+              </div>
+
+              {/* Month Chip */}
+              <div>
+                <button
+                  type="button"
+                  data-dropdown-id="month-filter"
+                  onClick={() => setIsMonthFilterOpen(prev => !prev)}
+                  className="flex items-center gap-1.5 md:gap-2 h-8 md:h-10 pl-2.5 md:pl-4 pr-3 md:pr-5 rounded-full border text-[11px] md:text-[13px] font-semibold whitespace-nowrap transition-all cursor-pointer hover:opacity-80 active:scale-95 shrink-0"
+                  style={{
+                    backgroundColor: monthFilter !== 'all'
+                      ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.12)')
+                      : inputBg,
+                    borderColor: monthFilter !== 'all' ? '#10B981' : inputBorder,
+                    color: monthFilter !== 'all' ? '#10B981' : textMuted,
+                  }}
+                >
+                  <CalendarDays className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: 'inherit' }} />
+                  <span>{monthFilter === 'all' ? 'Month' : monthLabel(monthFilter)}</span>
+                  <ChevronDown className="w-3 h-3 md:w-3.5 md:h-3.5 opacity-50 -mr-0.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Search bar (Next to Month Chip on Desktop) */}
+            <div className="flex items-center gap-2.5 w-full md:w-[240px] lg:w-[320px] h-9 md:h-11 px-3 md:px-4 rounded-xl md:rounded-2xl border transition-all shrink-0"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+              <Search className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: textMuted }} />
+              <input
+                type="text"
+                placeholder="Search names, phone…"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="bg-transparent outline-none text-[12px] md:text-sm flex-1 min-w-0"
+                style={{ color: textPrimary }}
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="shrink-0 p-1 md:p-1.5 rounded-full hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }}>
+                  <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Right: Action buttons */}
+          {isAdmin && (
+            <div className="flex items-center gap-1.5 shrink-0 relative justify-end md:justify-end">
+              {/* Settings icon */}
+              <button
+                type="button"
+                onClick={() => setIsSettingsModalOpen(true)}
+                className="w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full border transition-all hover:opacity-80 active:scale-90"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
+                title="Manage Dealer Settings"
+              >
+                <Settings className="w-4 h-4 md:w-4.5 md:h-4.5" />
+              </button>
+              {/* Create Ticket Button */}
+              <button
+                type="button"
+                onClick={openAddModal}
+                className="flex items-center gap-1.5 md:gap-2 h-8 md:h-10 px-4 md:px-6 rounded-full font-bold text-[12px] md:text-[14px] text-white hover:opacity-90 active:scale-95 transition-all shrink-0 shadow-md"
+                style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
+              >
+                <Plus className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                <span>New Ticket</span>
+              </button>
+            </div>
+          )}
+
+          {/* ── Absolute Dropdowns (placed here to prevent scroll-clipping) ── */}
+
+          {/* Branch Dropdown */}
+          {isAdmin && isBranchFilterOpen && (
+            <div data-dropdown-id="branch-dropdown" className="absolute left-3 top-[36px] w-48 rounded-xl border shadow-lg z-[100] p-1.5 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150"
+              style={{ backgroundColor: cardBg, borderColor: border }}>
+              <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5" style={{ color: textMuted }}>Select Branch</span>
+              <div className="max-h-60 overflow-y-auto flex flex-col gap-0.5 pr-1">
+                <button
+                  type="button"
+                  onClick={() => { setBranchFilter('ALL'); setIsBranchFilterOpen(false); }}
+                  className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                  style={{
+                    backgroundColor: branchFilter === 'ALL' ? hoverBg : 'transparent',
+                    color: branchFilter === 'ALL' ? textPrimary : textMuted
+                  }}
+                >
+                  <span>All Branches</span>
+                  {branchFilter === 'ALL' && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
+                </button>
+                {branches.map(b => {
+                  const isSelected = branchFilter === b.id
+                  return (
                     <button
                       key={b.id}
                       type="button"
                       onClick={() => { setBranchFilter(b.id); setIsBranchFilterOpen(false); }}
-                      className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${branchFilter === b.id ? 'bg-emerald-500/10 text-emerald-500' : 'hover:bg-slate-500/10'}`}
+                      className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                      style={{
+                        backgroundColor: isSelected ? hoverBg : 'transparent',
+                        color: isSelected ? textPrimary : textMuted
+                      }}
                     >
                       <span>{formatBranchName(b.name)}</span>
-                      {branchFilter === b.id && <Check className="w-3.5 h-3.5 text-emerald-500" />}
+                      {isSelected && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
                     </button>
-                  ))}
-                </div>
+                  )
+                })}
               </div>
-            )}
-          </div>
-
-          {/* Enhanced Store Filter */}
-          <div className="relative shrink-0" ref={storeFilterRef}>
-            <button
-              type="button"
-              onClick={() => setIsStoreFilterOpen(prev => !prev)}
-              className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold shadow-sm transition-all hover:bg-slate-50 dark:hover:bg-slate-800"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-            >
-              <div className="flex items-center gap-2">
-                <Package className="w-4 h-4 text-blue-500 shrink-0" />
-                <span>{storeFilter === 'ALL' ? 'All Stores' : storeFilter === 'Direct' ? 'Direct Store' : storeFilter}</span>
-              </div>
-              <ChevronDown className="w-3 h-3 opacity-60" style={{ color: textMuted }} />
-            </button>
-            
-            {isStoreFilterOpen && (
-              <div className="absolute left-0 top-full mt-2 w-64 rounded-2xl border shadow-2xl z-[90] p-3 flex flex-col gap-2.5 animate-in fade-in-50 zoom-in-95 duration-150"
-                style={{ backgroundColor: cardBg, borderColor: border }}>
-                <span className="text-[10px] font-black uppercase tracking-widest px-2" style={{ color: textMuted }}>Filter by Store</span>
-                <div className="max-h-60 overflow-y-auto flex flex-col gap-1 pr-1">
-                  <button
-                    type="button"
-                    onClick={() => { setStoreFilter('ALL'); setIsStoreFilterOpen(false); }}
-                    className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${storeFilter === 'ALL' ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-slate-500/10'}`}
-                  >
-                    <span>All Stores</span>
-                    {storeFilter === 'ALL' && <Check className="w-3.5 h-3.5 text-blue-500" />}
-                  </button>
-                  {['Robinsons', 'Abenson', 'Direct'].map(st => (
-                    <button
-                      key={st}
-                      type="button"
-                      onClick={() => { setStoreFilter(st); setIsStoreFilterOpen(false); }}
-                      className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${storeFilter === st ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-slate-500/10'}`}
-                    >
-                      <span>{st === 'Direct' ? 'Direct Store' : st}</span>
-                      {storeFilter === st && <Check className="w-3.5 h-3.5 text-blue-500" />}
-                    </button>
-                  ))}
-                  {/* Custom Stores */}
-                  {relayCustomStores.map(st => {
-                    if (['Robinsons', 'Abenson', 'Direct'].includes(st)) return null
-                    return (
-                      <button
-                        key={st}
-                        type="button"
-                        onClick={() => { setStoreFilter(st); setIsStoreFilterOpen(false); }}
-                        className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all ${storeFilter === st ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-slate-500/10'}`}
-                      >
-                        <span>{st}</span>
-                        {storeFilter === st && <Check className="w-3.5 h-3.5 text-blue-500" />}
-                      </button>
-                    )
-                  })}
-                </div>
-                
-                {/* Add Custom Store directly in filter */}
-                <div className="border-t pt-2.5" style={{ borderColor: border }}>
-                  <span className="text-[9px] font-bold uppercase tracking-wide px-2 block mb-1.5" style={{ color: textMuted }}>Add New Store</span>
-                  <div className="flex gap-1.5 px-1">
-                    <input
-                      type="text"
-                      value={toolbarStoreDraft}
-                      onChange={e => setToolbarStoreDraft(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          handleAddStoreFromToolbar()
-                        }
-                      }}
-                      placeholder="e.g. S&R, Anson's"
-                      className="w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-blue-500"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddStoreFromToolbar}
-                      className="px-3 rounded-lg text-xs font-bold text-white shrink-0 hover:opacity-90 transition-all"
-                      style={{ background: 'linear-gradient(135deg, #3B82F6, #1D4ED8)' }}
-                    >
-                      Add
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Month Filter */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold shadow-sm shrink-0"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-            <CalendarDays className="w-4 h-4 shrink-0 text-amber-500" />
-            <select
-              value={monthFilter}
-              onChange={e => setMonthFilter(e.target.value)}
-              className="bg-transparent outline-none cursor-pointer font-bold pr-2"
-              style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
-            >
-              <option value="all" style={{ backgroundColor: cardBg, color: textPrimary }}>All Months</option>
-              {monthOptions.map(ym => (
-                <option key={ym} value={ym} style={{ backgroundColor: cardBg, color: textPrimary }}>
-                  {monthLabel(ym)}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none opacity-60" style={{ color: textMuted }} />
-          </div>
-
-          {/* Search */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border flex-1 min-w-[160px] max-w-sm md:max-w-md lg:max-w-xl"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-            <input type="text" placeholder="Search client, phone, SI #..." value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="bg-transparent outline-none text-xs flex-1" style={{ color: textPrimary }} />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="shrink-0" style={{ color: textMuted }}>
-                <X className="w-3 h-3" />
-              </button>
-            )}
-          </div>
-
-          {/* Hidden file inputs */}
-          <input ref={scanFileInputRef} type="file" accept="image/*,application/pdf" className="hidden"
-            onChange={e => { const file = e.target.files?.[0]; if (file) handleVoucherScan(file) }} />
-          <input ref={excelFileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelImport} />
-
-          {/* Action buttons wrapper with right alignment */}
-          {isAdmin && (
-            <div className="flex items-center gap-2 ml-auto shrink-0 relative" ref={createDropdownRef}>
-              {/* Delete All Action */}
-              {filtered.length > 0 && (
-                <button type="button" onClick={handleDeleteAllTickets} disabled={actionSaving}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50 bg-transparent text-red-600 border border-red-600 hover:bg-red-50 dark:text-red-500 dark:border-red-500 dark:hover:bg-red-950/30"
-                  title={(searchQuery || storeFilter !== 'ALL' || branchFilter !== 'ALL' || activeTab !== 'ALL_PENDING')
-                    ? 'Only matching filtered records will be deleted'
-                    : 'Deletes all records permanently'}>
-                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                  <span className="hidden sm:inline">{actionSaving ? 'Deleting...' : `Delete All ${filtered.length} Records`}</span>
-                  <span className="sm:hidden">{actionSaving ? 'Deleting...' : 'Delete All'}</span>
-                </button>
-              )}
-
-              <div className="flex items-center rounded-lg overflow-hidden shadow-sm border transition-all"
-                style={{
-                  borderColor: isLight ? '#059669' : '#10B981',
-                  background: 'linear-gradient(135deg, #10B981, #059669)'
-                }}>
-                <button
-                  type="button"
-                  onClick={openAddModal}
-                  disabled={scanning}
-                  className="flex items-center gap-1.5 px-3 py-1.5 font-bold text-xs text-white hover:opacity-95 disabled:opacity-60 transition-all shrink-0 border-r"
-                  style={{ borderColor: 'rgba(255,255,255,0.15)' }}
-                >
-                  {scanning ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Scanning...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Create Ticket</span>
-                    </>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsCreateDropdownOpen(prev => !prev)}
-                  disabled={scanning}
-                  className="flex items-center justify-center px-2.5 py-1.5 text-white hover:opacity-95 disabled:opacity-60 transition-all shrink-0"
-                >
-                  <ChevronDown className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              {/* Dropdown Menu */}
-              {isCreateDropdownOpen && (
-                <div className="absolute right-0 top-full mt-1.5 z-50 w-48 rounded-xl shadow-2xl overflow-hidden py-1 border transition-all animate-fade-in"
-                  style={{ backgroundColor: cardBg, borderColor: border }}>
-                  <button
-                    type="button"
-                    disabled={scanning}
-                    onClick={() => {
-                      setIsCreateDropdownOpen(false)
-                      scanFileInputRef.current?.click()
-                    }}
-                    className="flex items-center gap-2 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10 disabled:opacity-60"
-                    style={{ color: textPrimary }}
-                  >
-                    {scanning ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
-                    ) : (
-                      <FileUp className="w-3.5 h-3.5 text-emerald-500" />
-                    )}
-                    <span>{scanning ? 'Scanning...' : 'Scan PDF'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsCreateDropdownOpen(false)
-                      excelFileInputRef.current?.click()
-                    }}
-                    className="flex items-center gap-2 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10"
-                    style={{ color: textPrimary }}
-                  >
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-blue-500" />
-                    <span>Import Excel</span>
-                  </button>
-                </div>
-              )}
             </div>
           )}
-          </div>
+
+          {/* Dealer Dropdown */}
+          {isStoreFilterOpen && (
+            <div data-dropdown-id="store-dropdown" className="absolute left-3 md:left-20 top-[36px] w-48 rounded-xl border shadow-lg z-[100] p-1.5 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150"
+              style={{ backgroundColor: cardBg, borderColor: border }}>
+              <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5" style={{ color: textMuted }}>Filter by Dealer</span>
+              <div className="max-h-60 overflow-y-auto flex flex-col gap-0.5 pr-1">
+                <button
+                  type="button"
+                  onClick={() => { setStoreFilter('ALL'); setIsStoreFilterOpen(false); }}
+                  className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                  style={{
+                    backgroundColor: storeFilter === 'ALL' ? hoverBg : 'transparent',
+                    color: storeFilter === 'ALL' ? textPrimary : textMuted
+                  }}
+                >
+                  <span>All Dealers</span>
+                  {storeFilter === 'ALL' && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
+                </button>
+                {['ABENSONS', 'ROBINSONS APPLIANCES'].map(dealerName => {
+                  const isSelected = storeFilter === dealerName
+                  return (
+                    <button
+                      key={dealerName}
+                      type="button"
+                      onClick={() => { setStoreFilter(dealerName); setIsStoreFilterOpen(false); }}
+                      className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                      style={{
+                        backgroundColor: isSelected ? hoverBg : 'transparent',
+                        color: isSelected ? textPrimary : textMuted
+                      }}
+                    >
+                      <span>{dealerName}</span>
+                      {isSelected && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          {/* Month Dropdown */}
+          {isMonthFilterOpen && (
+            <div data-dropdown-id="month-dropdown" className="absolute left-3 md:left-40 top-[36px] w-48 rounded-xl border shadow-lg z-[100] p-1.5 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150"
+              style={{ backgroundColor: cardBg, borderColor: border }}>
+              <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5" style={{ color: textMuted }}>Filter by Month</span>
+              <div className="max-h-60 overflow-y-auto flex flex-col gap-0.5 pr-1">
+                <button
+                  type="button"
+                  onClick={() => { setMonthFilter('all'); setIsMonthFilterOpen(false); }}
+                  className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                  style={{
+                    backgroundColor: monthFilter === 'all' ? hoverBg : 'transparent',
+                    color: monthFilter === 'all' ? textPrimary : textMuted
+                  }}
+                >
+                  <span>All Months</span>
+                  {monthFilter === 'all' && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
+                </button>
+                {monthOptions.map(ym => {
+                  const isSelected = monthFilter === ym
+                  return (
+                    <button
+                      key={ym}
+                      type="button"
+                      onClick={() => { setMonthFilter(ym); setIsMonthFilterOpen(false); }}
+                      className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                      style={{
+                        backgroundColor: isSelected ? hoverBg : 'transparent',
+                        color: isSelected ? textPrimary : textMuted
+                      }}
+                    >
+                      <span>{monthLabel(ym)}</span>
+                      {isSelected && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body
-      )}
-
-      {/* ── Scan Error Banner ──────────────────────────────────── */}
-      {scanError && (
-        <div className="mx-3 mt-2 p-3 rounded-lg border flex items-center justify-between gap-3"
-          style={{ backgroundColor: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.2)' }}>
-          <div className="flex items-center gap-2 text-xs font-semibold text-red-500">
-            <AlertTriangle className="w-4 h-4 shrink-0" />
-            <span>{scanError}</span>
-          </div>
-          <button onClick={() => setScanError('')} className="p-1 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
       )}
 
       <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}>
@@ -3102,7 +2998,7 @@ export default function ClientMasterlist() {
           <div className="hidden md:block w-full">
           <table
             key={activeTab}
-            className="w-full"
+            className="w-full hidden md:table"
             style={{
               width: '100%',
               tableLayout: 'fixed',
@@ -3124,13 +3020,13 @@ export default function ClientMasterlist() {
                       padding: `${headerPadY}px ${cellPadX}px`,
                       textAlign: 'center',
                       color: col.isExpanded ? (isLight ? '#10B981' : '#34D399') : textMuted,
-                      fontWeight: 700,
+                      fontWeight: 800,
                       whiteSpace: 'nowrap',
                       textOverflow: 'ellipsis',
                       borderRight: tableColBorder,
                       borderBottom: `2px solid ${tableRowBorder}`,
                       fontSize: headerFontSize,
-                      letterSpacing: '0.07em',
+                      letterSpacing: '0.09em',
                       backgroundColor: inputBg,
                       cursor: col.label !== 'ACTIONS' ? 'pointer' : 'default',
                       userSelect: 'none',
@@ -3174,9 +3070,9 @@ export default function ClientMasterlist() {
                 </tr>
               ) : (
                 filtered.map((ticket, idx) => {
-                  const storeStyle = getStoreStyle(ticket.sourceVendor)
+                  const storeStyle = getDealerStyle(ticket.dealer || ticket.sourceVendor)
                   const details = parseAcDetails(ticket)
-                  const branchName = formatBranchTableLabel(ticket.branchId)
+                  const branchName = formatBranchTableLabel(ticket.branchId, ticket)
                   const category = getTicketCategory(ticket)
                   const categoryLabel = getCategoryLabel(ticket)
                   const negotiator = resolveRelayNegotiatorName(ticket, employees)
@@ -3191,10 +3087,13 @@ export default function ClientMasterlist() {
                     return guessDistrict(loc) || '—'
                   })()
                   const relayedDate = formatRelayDate(details.relayedDate || (ticket.createdAt ? ticket.createdAt.split('T')[0] : ''))
-                  const lastUpdate = ticket.remarksUpdate || ticket.description || (ticket.updatedAt ? `Updated ${formatRelayDate(ticket.updatedAt)}` : '—')
+                  const lastUpdate = ticket.remarksUpdate || ticket.description || '—'
                   const isSelected = selectedPreviewTicket?.id === ticket.id || contextMenu?.ticket.id === ticket.id
+                  const isBackjob = categoryLabel === 'BACKJOB'
                   const categoryTint = !isSelected
-                    ? category === 'Survey'
+                    ? isBackjob
+                      ? (isLight ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.1)')
+                      : category === 'Survey'
                       ? (isLight ? 'rgba(234,179,8,0.07)' : 'rgba(234,179,8,0.06)')
                       : category === 'Survey & Install' ? (isLight ? '#f0fdf9' : 'rgba(16,185,129,0.06)')
                       : null
@@ -3205,7 +3104,9 @@ export default function ClientMasterlist() {
                     : isSelected
                       ? (isLight ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.12)')
                       : categoryTint || (idx % 2 === 0 ? (isLight ? '#ffffff' : '#060B18') : (isLight ? '#fafafa' : '#080f1c'))
-                  const rowHoverBg = category === 'Survey'
+                  const rowHoverBg = isBackjob
+                    ? (isLight ? 'rgba(239,68,68,0.14)' : 'rgba(239,68,68,0.16)')
+                    : category === 'Survey'
                     ? (isLight ? 'rgba(234,179,8,0.13)' : 'rgba(234,179,8,0.11)')
                     : category === 'Survey & Install' ? (isLight ? '#e6faf4' : 'rgba(16,185,129,0.09)')
                     : (isLight ? '#f1f5f9' : '#0f1e36')
@@ -3213,7 +3114,7 @@ export default function ClientMasterlist() {
                   const cleanTicketNo = ticketNo.replace(/^\d+\.\s*/, '')
                   const relayStatus = getRelayStatusShort(ticket)
                   const statusIsAssigned = relayStatus === 'ASSIGNED'
-                  const statusIsScheduled = relayStatus === 'SCHEDULED'
+                  const statusIsScheduled = relayStatus === 'SCHEDULED' || relayStatus === 'INSTALLED'
                   const finalDateKey = resolveRelayFinalDate(ticket)
                   const finalDateLabel = finalDateKey ? formatRelayDate(finalDateKey) : ''
                   const cells: Array<{ value: React.ReactNode; right?: boolean }> = activeTab === 'MY_TICKETS' ? [
@@ -3221,14 +3122,20 @@ export default function ClientMasterlist() {
                     { value: (
                       <div className="flex items-center w-full min-w-0" title={cleanTicketNo}>
                         <span className="text-slate-400 dark:text-slate-500 mr-2 shrink-0 font-semibold text-xs">{idx + 1}.</span>
-                        <span className="font-mono font-bold truncate block" style={{ color: textPrimary }}>
+                        <span className="font-black tracking-wide truncate block" style={{ color: textPrimary }}>
                           {displayUpper(cleanTicketNo)}
                         </span>
                       </div>
                     ) },
+                    // CATEGORY
+                    { value: (
+                      <span className="truncate block w-full font-bold" style={{ color: textPrimary }} title={categoryLabel}>
+                        {categoryLabel}
+                      </span>
+                    ) },
                     // STATUS
                     { value: (
-                      <span className="font-semibold w-full truncate block" style={{
+                      <span className="font-bold w-full truncate block tracking-wide" style={{
                         color: statusIsAssigned || statusIsScheduled ? '#10B981' : '#F59E0B'
                       }}>
                         {relayStatus}
@@ -3236,108 +3143,126 @@ export default function ClientMasterlist() {
                     ) },
                     // CUSTOMER NAME
                     { value: (
-                      <span className="truncate block font-semibold w-full" title={displayUpper(ticket.customerName || 'Direct Client')} style={{ color: textPrimary }}>
+                      <span className="truncate block font-bold w-full" title={displayUpper(ticket.customerName || 'Direct Client')} style={{ color: textPrimary }}>
                         {displayUpper(ticket.customerName || 'Direct Client')}
                       </span>
                     ) },
                     // DISTRICT
                     { value: (
-                      <span className="truncate block w-full text-xs font-semibold" title={displayUpper(district)}>
+                      <span className="truncate block w-full font-semibold" title={displayUpper(district)}>
                         {displayUpper(district)}
                       </span>
                     ) },
                     // BRAND
                     { value: (
-                      <span className="truncate block w-full text-xs font-semibold" title={displayUpper(brandLabel)} style={{ color: textPrimary }}>
+                      <span className="truncate block w-full font-semibold" title={displayUpper(brandLabel)} style={{ color: textPrimary }}>
                         {displayUpper(brandLabel) || '—'}
                       </span>
                     ) },
-                    // STORE / SOURCE
+                    // DEALER
                     { value: (
-                      <span className="truncate block w-full text-xs" title={displayUpper(storeStyle.label)}>
+                      <span className="truncate block w-full font-semibold" title={displayUpper(storeStyle.label)} style={{ color: textPrimary }}>
                         {displayUpper(storeStyle.label)}
                       </span>
                     ) },
                     // COMMIT
                     { value: (
-                      <span className="truncate block w-full text-xs" title={displayUpper(ticket.commitType || '')} style={{ color: textMuted }}>
+                      <span className="truncate block w-full font-semibold" title={displayUpper(ticket.commitType || '')} style={{ color: textMuted }}>
                         {displayUpper(ticket.commitType || '') || '—'}
                       </span>
                     ) },
-                    // PREFERRED DATE
-                    { value: <span className="whitespace-nowrap block w-full">{displayUpper(formatRelayDate(ticket.preferredDate || ''))}</span> },
+                    // BRANCH
+                    { value: <span className="truncate block w-full font-semibold" title={displayUpper(branchName)}>{displayUpper(branchName)}</span> },
                     // NEGOTIATOR
                     { value: (
-                      <span className="truncate block w-full font-semibold max-w-full" title={displayUpper(negotiator)} style={{ color: textPrimary }}>
+                      <span className="truncate block w-full font-bold max-w-full" title={displayUpper(negotiator)} style={{ color: textPrimary }}>
                         {displayUpper(negotiator)}
                       </span>
                     ) },
-                    // FINAL DATE (read-only — set by negotiator when scheduling)
+                    // SCHEDULED DATE — click to open edit drawer and set/change date
                     { value: (
-                      <span
-                        className="whitespace-nowrap block w-full font-semibold"
-                        style={{ color: finalDateLabel ? '#10B981' : textMuted }}
-                        title={finalDateLabel || 'Pending negotiator schedule'}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); openDrawer(ticket) }}
+                        className="whitespace-nowrap block w-full font-bold text-left cursor-pointer"
+                        style={{
+                          color: finalDateLabel ? '#10B981' : (isLight ? '#94a3b8' : '#475569'),
+                          background: 'none', border: 'none', padding: 0,
+                        }}
+                        title={finalDateLabel ? `Scheduled: ${finalDateLabel} — click to edit` : 'Click to add schedule date'}
                       >
-                        {finalDateLabel ? displayUpper(finalDateLabel) : '—'}
-                      </span>
+                        {finalDateLabel ? displayUpper(finalDateLabel) : (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.04em', opacity: 0.7 }}>
+                            <span style={{ fontSize: '0.85em' }}>+</span> ADD DATE
+                          </span>
+                        )}
+                      </button>
                     ) },
                     // REMARKS
                     { value: (
-                      <span className="truncate block w-full text-xs" title={ticket.remarksUpdate || ''}>
-                        {ticket.remarksUpdate || lastUpdate || '—'}
+                      <span className="truncate block w-full font-semibold" title={(ticket.remarksUpdate || lastUpdate || '').toUpperCase()}>
+                        {(ticket.remarksUpdate || lastUpdate || '—').toUpperCase()}
                       </span>
                     ) }
                   ] : [
                     { value: (
                       <div className="flex items-center w-full min-w-0" title={cleanTicketNo}>
                         <span className="text-slate-400 dark:text-slate-500 mr-2 shrink-0 font-semibold text-xs">{idx + 1}.</span>
-                        <span className="font-mono font-bold truncate block" style={{ color: textPrimary }}>
+                        <span className="font-black tracking-wide truncate block" style={{ color: textPrimary }}>
                           {displayUpper(cleanTicketNo)}
                         </span>
                       </div>
                     ) },
                     { value: (
                       <span
-                        className="font-semibold w-full truncate block"
+                        className="font-bold w-full truncate block tracking-wide"
                         title={relayStatus}
                         style={{ color: statusIsAssigned || statusIsScheduled ? '#10B981' : relayStatus === 'CANCELLED' ? '#EF4444' : '#F59E0B' }}>
                         {relayStatus}
                       </span>
                     ) },
                     { value: (
-                      <span className="truncate block w-full font-semibold" style={{ color: textPrimary }} title={categoryLabel}>
+                      <span className="truncate block w-full font-bold" style={{ color: textPrimary }} title={categoryLabel}>
                         {categoryLabel}
                       </span>
                     ) },
                     { value: (
                       <span
-                        className={`${!columns[3].isExpanded ? 'truncate' : 'break-words'} block font-semibold w-full`}
+                        className={`${!columns[3].isExpanded ? 'truncate' : 'break-words'} block font-bold w-full`}
                         title={displayUpper(ticket.customerName || 'Direct Client')}
                         style={{ color: textPrimary }}>
                         {displayUpper(ticket.customerName || 'Direct Client')}
                       </span>
                     ) },
-                    { value: <span className="block w-full truncate">{displayUpper(district)}</span> },
-                    { value: <span className="truncate block w-full" title={displayUpper(storeStyle.label)}>{displayUpper(storeStyle.label)}</span> },
-                    { value: <span className="whitespace-nowrap block w-full">{displayUpper(relayedDate)}</span> },
-                    { value: <span className="truncate block w-full" title={displayUpper(branchName)}>{displayUpper(branchName)}</span> },
-                    { value: <span className="truncate block w-full text-xs" title={displayUpper(ticket.commitType || '')}>{displayUpper(ticket.commitType || '') || '—'}</span> },
+                    { value: <span className="block w-full truncate font-semibold">{displayUpper(district)}</span> },
+                    { value: <span className="truncate block w-full font-semibold" title={displayUpper(storeStyle.label)}>{displayUpper(storeStyle.label)}</span> },
+                    { value: <span className="whitespace-nowrap block w-full font-semibold">{displayUpper(relayedDate)}</span> },
+                    { value: <span className="truncate block w-full font-semibold" title={displayUpper(branchName)}>{displayUpper(branchName)}</span> },
+                    { value: <span className="truncate block w-full font-semibold" title={displayUpper(ticket.commitType || '')}>{displayUpper(ticket.commitType || '') || '—'}</span> },
                     { value: (
-                      <span className="truncate block w-full max-w-full" title={displayUpper(negotiator)}>
+                      <span className="truncate block w-full font-bold max-w-full" title={displayUpper(negotiator)}>
                         {displayUpper(negotiator)}
                       </span>
                     ) },
                     { value: (
-                      <span
-                        className="whitespace-nowrap block w-full font-semibold"
-                        style={{ color: finalDateLabel ? '#10B981' : textMuted }}
-                        title={finalDateLabel || 'Pending negotiator schedule'}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); openDrawer(ticket) }}
+                        className="whitespace-nowrap block w-full font-bold text-left cursor-pointer"
+                        style={{
+                          color: finalDateLabel ? '#10B981' : (isLight ? '#94a3b8' : '#475569'),
+                          background: 'none', border: 'none', padding: 0,
+                        }}
+                        title={finalDateLabel ? `Scheduled: ${finalDateLabel} — click to edit` : 'Click to add schedule date'}
                       >
-                        {finalDateLabel ? displayUpper(finalDateLabel) : '—'}
-                      </span>
+                        {finalDateLabel ? displayUpper(finalDateLabel) : (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.04em', opacity: 0.7 }}>
+                            <span style={{ fontSize: '0.85em' }}>+</span> ADD DATE
+                          </span>
+                        )}
+                      </button>
                     ) },
-                    { value: <span className={`${!columns[11].isExpanded ? 'truncate' : 'break-words'} block w-full`} title={lastUpdate || ''}>{lastUpdate || '—'}</span> },
+                    { value: <span className={`${!columns[11].isExpanded ? 'truncate' : 'break-words'} block w-full font-semibold`} title={(lastUpdate || '').toUpperCase()}>{(lastUpdate || '—').toUpperCase()}</span> },
                   ]
                   return (
                     <tr key={ticket.id}
@@ -3424,8 +3349,91 @@ export default function ClientMasterlist() {
               )}
             </tbody>
           </table>
+          {/* Mobile Card View */}
+          <div className="flex flex-col md:hidden p-3 gap-3 w-full">
+             {loading && tickets.length === 0 ? (
+                <div className="py-20 text-center">
+                  <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-[#10B981]" />
+                  <p className="text-sm font-semibold" style={{ color: textMuted }}>Loading masterlist...</p>
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="py-20 text-center">
+                  <FileText className="w-12 h-12 opacity-20 mx-auto mb-3" style={{ color: textMuted }} />
+                  <p className="text-sm font-bold" style={{ color: textPrimary }}>No client tickets found</p>
+                  <p className="text-xs mt-1" style={{ color: textMuted }}>Try adjusting filters or upload a spreadsheet.</p>
+                </div>
+              ) : (
+                filtered.map((ticket) => {
+                  const storeStyle = getDealerStyle(ticket.dealer || ticket.sourceVendor)
+                  const branchName = formatBranchTableLabel(ticket.branchId, ticket)
+                  const negotiator = resolveRelayNegotiatorName(ticket, employees)
+                  const district = (() => {
+                    if (ticket.district?.trim()) return ticket.district.trim()
+                    const loc = ticket.location || ''
+                    const paren = loc.match(/\(([^)]+)\)\s*$/)
+                    if (paren?.[1]?.trim()) return paren[1].trim()
+                    return guessDistrict(loc) || '—'
+                  })()
+                  
+                  const ticketNo = getTicketNumber(ticket)
+                  const cleanTicketNo = ticketNo.replace(/^\d+\.\s*/, '')
+                  const relayStatus = getRelayStatusShort(ticket)
+                  const statusIsAssigned = relayStatus === 'ASSIGNED'
+                  const statusIsScheduled = relayStatus === 'SCHEDULED' || relayStatus === 'INSTALLED'
+                  
+                  const isHighlighted = ticket.id === lastUpdatedTicketId
+                  const isSelected = selectedPreviewTicket?.id === ticket.id || contextMenu?.ticket.id === ticket.id
+                  const rowBaseBg = isHighlighted
+                    ? (isLight ? '#dcfce7' : 'rgba(22,163,74,0.25)')
+                    : isSelected
+                      ? (isLight ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.12)')
+                      : (isLight ? '#ffffff' : '#060B18')
+
+                  return (
+                    <div
+                      key={`card-${ticket.id}`}
+                      onClick={() => setSelectedPreviewTicket(ticket)}
+                      className="w-full rounded-xl p-3 flex flex-col gap-2 shadow-sm border transition-transform active:scale-[0.98] cursor-pointer"
+                      style={{
+                        backgroundColor: rowBaseBg,
+                        borderColor: tableRowBorder,
+                      }}
+                    >
+                      <div className="flex justify-between items-start">
+                        <h4 className="font-bold text-sm truncate mr-2" style={{ color: textPrimary }}>
+                          {displayUpper(ticket.customerName || 'Direct Client')}
+                        </h4>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase shrink-0" style={{
+                          backgroundColor: isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)',
+                          color: statusIsAssigned || statusIsScheduled ? '#10B981' : '#F59E0B'
+                        }}>
+                          {relayStatus}
+                        </span>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-xs" style={{ color: textMuted }}>
+                        <div className="flex items-center gap-1.5">
+                           <FileText className="w-3 h-3 shrink-0" />
+                           <span className="font-semibold truncate" style={{color: textPrimary}}>{displayUpper(cleanTicketNo)}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-right justify-end">
+                           <span className="truncate">{displayUpper(branchName)}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 col-span-2">
+                           <span className="truncate">{displayUpper(district)} • {displayUpper(storeStyle.label)}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 col-span-2">
+                           <span className="font-medium" style={{color: negotiator ? (isLight ? '#0369a1' : '#7dd3fc') : undefined}}>
+                             {displayUpper(negotiator || 'Unassigned')}
+                           </span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
           </div>
-          </div>
+        </div>
 
         {/* ── Combined Stats Counter & Danger Zone Footer Strip ─────────────────────────────── */}
         <div className="flex items-center justify-between gap-3 px-3 py-2 flex-wrap shrink-0" style={{ borderTop: `1px solid ${border}` }}>
@@ -3451,6 +3459,7 @@ export default function ClientMasterlist() {
       {/* Centered Manage/Edit Ticket Modal */}
       {isActionDrawerOpen && selectedTicket && (
         <RelayEditTicketModal
+          surface="relay"
           ticket={selectedTicket}
           ticketNumberLabel={getTicketNumber(selectedTicket)}
           isAdmin={isAdmin}
@@ -3463,24 +3472,20 @@ export default function ClientMasterlist() {
           inputBorder={inputBorder}
           compactInput={compactInput}
           branches={branches}
-          employees={employees}
           relayCustomStores={relayCustomStores}
-          onPersistCustomStores={persistRelayCustomStores}
-          parseStoreVendor={parseStoreVendor}
+          onPersistCustomStores={handlePersistCustomStores}
+          dealers={dealers}
+          onDealersChanged={fetchDealers}
+          parseStoreVendor={parseDealer}
           resolveBranch={resolveBranch}
           negotiatorsForBranch={negotiatorsForBranch}
-          renderNegotiatorPhone={(phone) => <FormatPhone raw={phone} />}
           mergeCandidates={mergeCandidates}
           mergeTargetId={mergeTargetId}
           merging={merging}
-          actionSaving={actionSaving}
+          actionSaving={false}
           onMergeTargetChange={setMergeTargetId}
           onMerge={handleMergeTickets}
           onClose={() => setIsActionDrawerOpen(false)}
-          onDelete={() => {
-            handleDeleteTicket(selectedTicket.id, selectedTicket.customerName)
-            setIsActionDrawerOpen(false)
-          }}
           onSave={handleDrawerActionSave}
           getTicketNumber={(t) => getTicketNumber(t as Ticket)}
           parseAcDetails={(t) => parseAcDetails(t as Ticket)}
@@ -3488,15 +3493,7 @@ export default function ClientMasterlist() {
       )}
       {/* Centered Create Ticket Modal */}
       {isAddModalOpen && ReactDOM.createPortal((() => {
-        const addCategory = /collect/i.test(`${addForm.serviceType} ${addForm.title}`)
-          ? 'Collection'
-          : /install|s\/i|\bsi\b/i.test(`${addForm.serviceType} ${addForm.title}`)
-          ? 'Survey & Install'
-          : /survey/i.test(`${addForm.serviceType} ${addForm.title}`)
-          ? 'Survey'
-          : /service|clean/i.test(`${addForm.serviceType} ${addForm.title}`)
-          ? 'Service'
-          : 'Survey & Install'
+
         const fieldStyle = (value?: string) => ({
           backgroundColor: isFieldExtracted(value) ? (isLight ? 'rgba(16,185,129,0.04)' : 'rgba(16,185,129,0.08)') : inputBg,
           borderColor: isFieldExtracted(value) ? '#10B981' : inputBorder,
@@ -3504,99 +3501,34 @@ export default function ClientMasterlist() {
           fontFamily: 'inherit',
           textTransform: 'none' as const,
         })
-        const addInput = 'w-full border rounded-lg px-3 py-2 text-sm outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 normal-case'
-        const addInputSm = 'w-full border rounded-lg px-2.5 py-1.5 text-xs outline-none transition-all focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/15 normal-case'
-        const categoryOptions = [
-          { label: 'S / I', value: 'Survey & Install', title: 'Installation service' },
-          { label: 'Service', value: 'Service', title: 'Service ticket' },
-          { label: 'Survey', value: 'Survey', title: 'Survey ticket' },
-          { label: 'Collection', value: 'Collection', title: 'Collection ticket' },
-        ]
-        const storeOptions = [...BUILT_IN_RELAY_STORES, ...relayCustomStores.filter(s => !(BUILT_IN_RELAY_STORES as readonly string[]).includes(s))]
-        const addCustomStore = () => {
-          const name = addStoreDraft.trim()
-          if (!name) return
-          if ((BUILT_IN_RELAY_STORES as readonly string[]).some(s => s.toLowerCase() === name.toLowerCase())) {
-            alert('That store is already in the list.')
-            return
-          }
-          const next = [...new Set([...relayCustomStores, name])].sort((a, b) => a.localeCompare(b))
-          setRelayCustomStores(next)
-          persistRelayCustomStores(next)
-          setAddForm(prev => ({ ...prev, sourceVendor: name }))
-          setAddStoreDraft('')
-          setShowAddStoreField(false)
-        }
-        const applyCategory = (value: string) => {
-          const option = categoryOptions.find(item => item.value === value)
-          if (!option) return
-          setAddForm(prev => ({
-            ...prev,
-            serviceType: option.value,
-            title: option.title,
-            status: option.value === 'Collection' ? 'PENDING' : prev.status,
-            commitType: option.value === 'Survey & Install' ? 'FREE FIRST 10 FEET' : prev.commitType,
-            installationCharges: option.value === 'Collection' ? prev.installationCharges : 0,
-            modeOfPayment: option.value === 'Collection' ? prev.modeOfPayment : '',
-          }))
-        }
+        const addInput = 'w-full border rounded-xl px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 normal-case'
+
         return (
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
-          style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)' }}
+          style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)' }}
         >
           <div
-            className="flex flex-col w-full max-w-5xl rounded-2xl overflow-hidden shadow-2xl border animate-in zoom-in-95 duration-200"
-            style={{ backgroundColor: cardBg, borderColor: border, maxHeight: '92vh' }}
+            className="flex flex-col w-full max-w-6xl rounded-2xl overflow-hidden shadow-2xl border animate-in zoom-in-95 duration-200"
+            style={{ backgroundColor: cardBg, borderColor: border, maxHeight: '94vh' }}
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="shrink-0 border-b" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
-              <div className="px-5 sm:px-6 py-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-emerald-500/10 text-emerald-500 shrink-0">
-                    <Plus className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <h2 className="font-black text-base leading-tight" style={{ color: textPrimary }}>Create Relay Ticket</h2>
-                    <p className="text-[10px] mt-0.5 truncate" style={{ color: textMuted }}>Ticket no. & relay date auto-filled</p>
-                  </div>
+            <div className="shrink-0" style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}` }}>
+              {/* Top row: title + close */}
+              <div className="px-6 sm:px-8 pt-6 pb-6 flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-black leading-none uppercase tracking-wide" style={{ color: textPrimary }}>CREATE TICKET</h2>
                 </div>
                 <button type="button" onClick={() => setIsAddModalOpen(false)}
-                  className="p-1.5 rounded-lg border transition-colors hover:bg-slate-500/10 shrink-0"
-                  style={{ borderColor: inputBorder, color: textMuted }}>
-                  <X className="w-4 h-4" />
+                  className="p-2 rounded-xl transition-all hover:bg-slate-500/10 shrink-0"
+                  style={{ color: textMuted }}>
+                  <X className="w-5 h-5" />
                 </button>
               </div>
-              <div className="px-5 sm:px-6 pb-3 flex flex-wrap items-end gap-3">
-                <div className="w-36">
-                  <label className="text-[9px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 block mb-1">Category *</label>
-                  <select
-                    value={addCategory}
-                    onChange={e => applyCategory(e.target.value)}
-                    className={`${addInputSm} font-semibold`}
-                    style={fieldStyle(addCategory)}
-                  >
-                    {categoryOptions.map(option => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="w-32">
-                  <label className="text-[9px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 block mb-1">Status</label>
-                  <select
-                    value={addForm.status}
-                    onChange={e => setAddForm(prev => ({ ...prev, status: e.target.value }))}
-                    className={`${addInputSm} font-semibold`}
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  >
-                    <option value="PENDING">Pending</option>
-                    <option value="ASSIGNED">Assigned</option>
-                    <option value="SCHEDULED">Scheduled</option>
-                  </select>
-                </div>
-              </div>
             </div>
+
+
 
             {addForm.images && (
               <div className="mx-6 sm:mx-8 mt-4 rounded-xl border px-4 py-3 flex items-center justify-between gap-3"
@@ -3614,18 +3546,129 @@ export default function ClientMasterlist() {
               </div>
             )}
             
-            {/* Form */}
             <form onSubmit={handleFormCreateTicket} className="flex-1 flex flex-col overflow-hidden min-h-0">
-              <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-4 space-y-5">
-                {/* Customer + aircon */}
+              <div className="flex-1 overflow-y-auto px-5 sm:px-7 py-5 space-y-6">
+
+                <div className="flex flex-col gap-5 pb-6 border-b" style={{ borderColor: border }}>
+                  <div className="flex flex-col gap-5">
+                    {(() => {
+                      const renderStatusButton = (st: { value: string, label: string }) => {
+                         const isSelected = addForm.status === st.value
+                         return (
+                           <button
+                             key={st.value}
+                             type="button"
+                             onClick={() => {
+                               if (!isSelected) {
+                                 if (window.confirm(`Are you sure you want to set the status to ${st.label}?`)) {
+                                   setAddForm(prev => ({
+                                     ...prev,
+                                     status: st.value,
+                                     serviceType: st.value,
+                                     ticketCategory: resolveScheduleStatusFields(st.value).ticketCategory || 'INSTALLATION'
+                                   }))
+                                 }
+                               }
+                             }}
+                             className="flex items-center justify-center py-3 px-2 rounded-xl border font-black text-[11px] uppercase tracking-wide transition-all duration-150 select-none cursor-pointer"
+                             style={isSelected ? {
+                               backgroundColor: '#10B981',
+                               borderColor: '#10B981',
+                               color: 'white',
+                               boxShadow: '0 2px 8px rgba(16,185,129,0.3)'
+                             } : {
+                               backgroundColor: isLight ? '#f8fafc' : 'rgba(255,255,255,0.02)',
+                               borderColor: border,
+                               color: textMuted
+                             }}
+                           >
+                             {st.label}
+                           </button>
+                         )
+                      }
+                      
+                      return (
+                        <>
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider mb-2" style={{ color: textMuted }}>Pending</p>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                              {[
+                                { value: 'S/I', label: 'SURVEY & INSTALL' },
+                                { value: 'INSTALL', label: 'INSTALL' },
+                                { value: 'SURVEY', label: 'SURVEY' },
+                                { value: 'CLEANING', label: 'CLEANING' },
+                                { value: 'CHECKUP', label: 'CHECKUP' },
+                                { value: 'BACKJOB', label: 'BACKJOB' },
+                                { value: 'SERVICE', label: 'SERVICE' },
+                                { value: 'RESCHED', label: 'RESCHED' },
+                                { value: 'CONTINUATION', label: 'CONTINUATION' },
+                                { value: 'FOR APPROVAL', label: 'FOR APPROVAL' }
+                              ].map(renderStatusButton)}
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider mb-2" style={{ color: textMuted }}>Closing</p>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                              {[
+                                { value: 'DONE_INSTALLED', label: 'DONE INSTALL' },
+                                { value: 'DONE_CLEANING', label: 'DONE CLEANING' },
+                                { value: 'DONE_SURVEY', label: 'DONE SURVEY' },
+                                { value: 'DONE_CHECKUP', label: 'DONE CHECKUP' },
+                                { value: 'DONE_BACKJOB', label: 'DONE BACKJOB' },
+                                { value: 'CANCELLED', label: 'CANCELLED' }
+                              ].map(renderStatusButton)}
+                            </div>
+                          </div>
+                        </>
+                      )
+                    })()}
+                  </div>
+                </div>
+
+                {/* 1. Dealer & Transaction */}
                 <section>
-                  <RelayFormSectionHead title="Customer & Unit" />
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                  <RelayFormSectionHead step={1} icon={<Store className="w-3.5 h-3.5" />} title="Dealer" subtitle="Where the relay came from" />
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
+                    <RelayFormField label="Dealer" compact className="md:col-span-4">
+                      <DealerSelect
+                        value={addForm.dealer}
+                        dealers={dealers}
+                        onChange={(name) => setAddForm(prev => ({ ...prev, dealer: name }))}
+                        onDealersChanged={fetchDealers}
+                        isLight={isLight}
+                        inputBg={inputBg}
+                        inputBorder={inputBorder}
+                        textPrimary={textPrimary}
+                        textMuted={textMuted}
+                      />
+                    </RelayFormField>
+                    <RelayFormField label="Dealer Branch" compact className="md:col-span-4">
+                      <input
+                        type="text"
+                        value={addForm.dealerBranch}
+                        onChange={e => setAddForm(prev => ({ ...prev, dealerBranch: e.target.value.toUpperCase() }))}
+                        placeholder="Branch"
+                        className={`${addInput} uppercase`}
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
+                      />
+                    </RelayFormField>
+                    {ROBINSON_APPLIANCES_RE.test(addForm.dealer || '') && (
+                      <RelayFormField label="Transaction ID" compact className="md:col-span-4">
+                        <input type="text" value={addForm.controlNumber} onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))} placeholder="Robinsons Transaction ID" className={addInput} style={fieldStyle(addForm.controlNumber)} />
+                      </RelayFormField>
+                    )}
+                  </div>
+                </section>
+
+                {/* 2. Customer details */}
+                <section>
+                  <RelayFormSectionHead step={2} icon={<UserRound className="w-3.5 h-3.5" />} title="Customer Details" subtitle="Who and where to deliver service" />
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
                     <RelayFormField label="Customer Name" required compact className="md:col-span-5">
                       <input type="text" required value={addForm.customerName} onChange={e => setAddForm(prev => ({ ...prev, customerName: e.target.value }))} placeholder="Full name" className={addInput} style={fieldStyle(addForm.customerName)} />
                     </RelayFormField>
                     {addFormSyncTarget && (
-                      <div className="md:col-span-12 border rounded-xl px-3 py-2.5 flex flex-col gap-1"
+                      <div className="md:col-span-12 border rounded-xl px-3.5 py-3 flex flex-col gap-1"
                         style={{ backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.08)', borderColor: isLight ? '#a7f3d0' : 'rgba(16,185,129,0.25)' }}>
                         <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
                           <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
@@ -3643,9 +3686,9 @@ export default function ClientMasterlist() {
                       </div>
                     )}
                     {addFormDuplicate && !addFormSyncTarget && (
-                      <div className="md:col-span-12 border rounded-xl px-3 py-2.5 flex flex-col gap-1"
+                      <div className="md:col-span-12 border rounded-xl px-3.5 py-3 flex flex-col gap-1"
                         style={{ backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.06)', borderColor: isLight ? '#fde68a' : 'rgba(251,191,36,0.2)' }}>
-                        <span className="text-xs font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-amber-600 dark:amber-400 flex items-center gap-1.5">
                           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                           Duplicate customer on Relays
                         </span>
@@ -3708,28 +3751,7 @@ export default function ClientMasterlist() {
                         ))}
                       </div>
                     </RelayFormField>
-                    <RelayFormField label="Brand" compact className="md:col-span-3">
-                      <input type="text" value={addForm.brand} onChange={e => setAddForm(prev => ({ ...prev, brand: e.target.value }))} placeholder="Brand" className={addInput} style={fieldStyle(addForm.brand)} />
-                    </RelayFormField>
-                    <RelayFormField label="Capacity" compact className="md:col-span-2">
-                      <input type="text" value={addForm.capacity} onChange={e => setAddForm(prev => ({ ...prev, capacity: e.target.value }))} placeholder="1.5 HP" className={addInput} style={fieldStyle(addForm.capacity)} />
-                    </RelayFormField>
-                    <RelayFormField label="SKU" compact className="md:col-span-3">
-                      <input type="text" value={addForm.sku} onChange={e => setAddForm(prev => ({ ...prev, sku: e.target.value }))} placeholder="SKU" className={addInput} style={fieldStyle(addForm.sku)} />
-                    </RelayFormField>
-                    <RelayFormField label="Serial No." compact className="md:col-span-4">
-                      <input type="text" value={addForm.serialNumber} onChange={e => setAddForm(prev => ({ ...prev, serialNumber: e.target.value }))} placeholder="Serial" className={addInput} style={fieldStyle(addForm.serialNumber)} />
-                    </RelayFormField>
-                    <RelayFormField label="District" compact className="md:col-span-4">
-                      <input type="text" value={addForm.district} onChange={e => setAddForm(prev => ({ ...prev, district: e.target.value }))} placeholder="Area" className={addInput} style={fieldStyle(addForm.district)} />
-                    </RelayFormField>
-                    <RelayFormField label="Landmark" compact className="md:col-span-4">
-                      <input type="text" value={addForm.landmarks} onChange={e => setAddForm(prev => ({ ...prev, landmarks: e.target.value }))} placeholder="Nearest landmark" className={addInput} style={fieldStyle(addForm.landmarks)} />
-                    </RelayFormField>
-                    <RelayFormField label="Commit / Promo" compact className="md:col-span-4">
-                      <input type="text" value={addForm.commitType} onChange={e => setAddForm(prev => ({ ...prev, commitType: e.target.value }))} placeholder="Promo terms" className={addInput} style={fieldStyle(addForm.commitType)} />
-                    </RelayFormField>
-                    <RelayFormField label="Address" required compact className="md:col-span-12">
+                    <RelayFormField label="Address" required compact className="md:col-span-8">
                       <textarea
                         required
                         value={addForm.locationRaw}
@@ -3746,72 +3768,42 @@ export default function ClientMasterlist() {
                         style={fieldStyle(addForm.locationRaw)}
                       />
                     </RelayFormField>
+                    <RelayFormField label="District" compact className="md:col-span-2">
+                      <input type="text" value={addForm.district} onChange={e => setAddForm(prev => ({ ...prev, district: e.target.value }))} placeholder="Area" className={addInput} style={fieldStyle(addForm.district)} />
+                    </RelayFormField>
+                    <RelayFormField label="Landmark" compact className="md:col-span-2">
+                      <input type="text" value={addForm.landmarks} onChange={e => setAddForm(prev => ({ ...prev, landmarks: e.target.value }))} placeholder="Nearest landmark" className={addInput} style={fieldStyle(addForm.landmarks)} />
+                    </RelayFormField>
                   </div>
                 </section>
 
-                {/* Store & assignment */}
+                {/* 3. Aircon / unit details */}
                 <section>
-                  <RelayFormSectionHead title="Store & Assignment" />
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-                    <RelayFormField label="Store" compact className="md:col-span-3">
-                      <select
-                        value={showAddStoreField ? '__add_store__' : addForm.sourceVendor}
-                        onChange={e => {
-                          const val = e.target.value
-                          if (val === '__add_store__') {
-                            setShowAddStoreField(true)
-                            return
-                          }
-                          setShowAddStoreField(false)
-                          setAddStoreDraft('')
-                          setAddForm(prev => ({
-                            ...prev,
-                            sourceVendor: val,
-                          }))
-                        }}
-                        className={addInput}
-                        style={fieldStyle(addForm.sourceVendor)}
-                      >
-                        {storeOptions.map(store => (
-                          <option key={store} value={store}>{store}</option>
-                        ))}
-                        <option value="__add_store__">+ Add store...</option>
-                      </select>
+                  <RelayFormSectionHead step={3} icon={<Wind className="w-3.5 h-3.5" />} title="Aircon Details" subtitle="Unit being serviced or installed" />
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
+                    <RelayFormField label="Brand" compact className="md:col-span-3">
+                      <input type="text" value={addForm.brand} onChange={e => setAddForm(prev => ({ ...prev, brand: e.target.value }))} placeholder="Brand" className={addInput} style={fieldStyle(addForm.brand)} />
                     </RelayFormField>
-                    {showAddStoreField && (
-                      <RelayFormField label="New Store Name" compact className="md:col-span-4">
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={addStoreDraft}
-                            onChange={e => setAddStoreDraft(e.target.value)}
-                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomStore() } }}
-                            placeholder="e.g. S&R, Anson's"
-                            className={addInput}
-                            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                          />
-                          <button
-                            type="button"
-                            onClick={addCustomStore}
-                            className="px-3 py-1.5 rounded-lg text-xs font-bold text-white shrink-0"
-                            style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
-                          >
-                            Add
-                          </button>
-                        </div>
-                      </RelayFormField>
-                    )}
-                    <RelayFormField label="Store Branch" compact className="md:col-span-3">
-                      <input
-                        type="text"
-                        value={addForm.storeBranch}
-                        onChange={e => setAddForm(prev => ({ ...prev, storeBranch: e.target.value }))}
-                        placeholder="Branch"
-                        className={addInput}
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                      />
+                    <RelayFormField label="Capacity" compact className="md:col-span-2">
+                      <input type="text" value={addForm.capacity} onChange={e => setAddForm(prev => ({ ...prev, capacity: e.target.value }))} placeholder="1.5 HP" className={addInput} style={fieldStyle(addForm.capacity)} />
                     </RelayFormField>
-                    <RelayFormField label="Branch Zone" compact className="md:col-span-3">
+                    <RelayFormField label="SKU" compact className="md:col-span-3">
+                      <input type="text" value={addForm.sku} onChange={e => setAddForm(prev => ({ ...prev, sku: e.target.value }))} placeholder="SKU" className={addInput} style={fieldStyle(addForm.sku)} />
+                    </RelayFormField>
+                    <RelayFormField label="Serial No." compact className="md:col-span-4">
+                      <input type="text" value={addForm.serialNumber} onChange={e => setAddForm(prev => ({ ...prev, serialNumber: e.target.value }))} placeholder="Serial" className={addInput} style={fieldStyle(addForm.serialNumber)} />
+                    </RelayFormField>
+                    <RelayFormField label="Commit / Promo" compact className="md:col-span-12">
+                      <input type="text" value={addForm.commitType} onChange={e => setAddForm(prev => ({ ...prev, commitType: e.target.value }))} placeholder="Promo terms" className={addInput} style={fieldStyle(addForm.commitType)} />
+                    </RelayFormField>
+                  </div>
+                </section>
+
+                {/* 4. Ashcol branch & assignment */}
+                <section>
+                  <RelayFormSectionHead step={4} icon={<Users className="w-3.5 h-3.5" />} title="Branch & Assignment" subtitle="Which Ashcol branch & negotiator owns this" />
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
+                    <RelayFormField label="Branch Zone" compact className="md:col-span-5">
                       <select
                         value={addForm.branchId}
                         onChange={e => setAddForm(prev => ({ ...prev, branchId: e.target.value, assignedTo: '' }))}
@@ -3822,7 +3814,7 @@ export default function ClientMasterlist() {
                         {branches.map(b => <option key={b.id} value={b.id}>{formatBranchName(b.name)}</option>)}
                       </select>
                     </RelayFormField>
-                    <RelayFormField label="Negotiator" required compact className="md:col-span-5">
+                    <RelayFormField label="Negotiator" required compact className="md:col-span-7">
                       <select
                         required
                         value={addForm.assignedTo || ''}
@@ -3834,7 +3826,9 @@ export default function ClientMasterlist() {
                             assignedTo: val,
                             installerName: foundEmp ? foundEmp.name : '',
                             branchId: (foundEmp && foundEmp.branchId) ? foundEmp.branchId : prev.branchId,
-                            status: val ? 'ASSIGNED' : prev.status,
+                            // Only promote PENDING to ASSIGNED — don't clobber a status/service-type already
+                            // chosen via the status buttons above (SURVEY, INSTALL, CONTINUATION, etc).
+                            status: (val && prev.status === 'PENDING') ? 'ASSIGNED' : prev.status,
                           }))
                         }}
                         className={addInput}
@@ -3842,48 +3836,88 @@ export default function ClientMasterlist() {
                       >
                         <option value="">Select negotiator...</option>
                         {addModalNegotiators.map(emp => {
-                          const branchName = emp.branchId ? (resolveBranch(emp.branchId)?.name || '') : ''
-                          const nameWithBranch = branchName ? `${emp.name} (${branchName})` : emp.name
+                          const branchRaw = emp.branchId ? (resolveBranch(emp.branchId)?.name || '') : ''
+                          const branchName = formatBranchName(branchRaw)
+                          const firstName = (emp.name || '').split(' ')[0]
+                          const nameWithBranch = branchName ? `${firstName} - ${branchName}` : firstName
                           return (
-                            <option key={emp.id} value={emp.id}>{nameWithBranch}</option>
+                            <option key={emp.id} value={emp.id}>{nameWithBranch.toUpperCase()}</option>
                           )
                         })}
                       </select>
                     </RelayFormField>
-                    {addForm.sourceVendor === 'Robinsons' && (
-                      <RelayFormField label="Transaction ID" compact className="md:col-span-4">
-                        <input type="text" value={addForm.controlNumber} onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))} placeholder="Robinsons Transaction ID" className={addInput} style={fieldStyle(addForm.controlNumber)} />
-                      </RelayFormField>
-                    )}
                   </div>
                 </section>
 
-                {/* Schedule & notes */}
+                {/* 5. Scheduling */}
                 <section>
-                  <RelayFormSectionHead title="Schedule & Notes" />
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-                    <RelayFormField label="Requested" compact className="md:col-span-3">
-                      <input type="date" value={addForm.preferredDate} onChange={e => setAddForm(prev => ({ ...prev, preferredDate: e.target.value }))} className={addInput} style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }} />
+                  <RelayFormSectionHead step={5} icon={<CalendarDays className="w-3.5 h-3.5" />} title="Scheduling" subtitle="Requested date & collection details" />
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
+                    {/* Requested Date */}
+                    <RelayFormField label="Requested Date" compact className="md:col-span-4">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          const input = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
+                          if (input && input.showPicker) input.showPicker();
+                        }}
+                        className={`${addInput} font-bold text-center relative flex flex-col items-center justify-center`}
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }}
+                      >
+                        {addForm.preferredDate ? new Date(addForm.preferredDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase() : 'ADD DATE'}
+                        <input type="date" value={addForm.preferredDate} onChange={e => setAddForm(prev => ({ ...prev, preferredDate: e.target.value }))} className="absolute opacity-0 pointer-events-none w-0 h-0" style={{ pointerEvents: 'none' }} />
+                      </button>
                     </RelayFormField>
-                    {addCategory === 'Collection' && (
-                      <>
-                        <RelayFormField label="Amount" compact className="md:col-span-3">
-                          <input type="number" min="0" step="0.01" value={addForm.installationCharges} onChange={e => setAddForm(prev => ({ ...prev, installationCharges: Number(e.target.value) || 0 }))} placeholder="0.00" className={addInput} style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
-                        </RelayFormField>
-                        <RelayFormField label="Payment" compact className="md:col-span-3">
-                          <input type="text" value={addForm.modeOfPayment} onChange={e => setAddForm(prev => ({ ...prev, modeOfPayment: e.target.value }))} placeholder="Cash / GCash" className={addInput} style={fieldStyle(addForm.modeOfPayment)} />
-                        </RelayFormField>
-                      </>
-                    )}
-                    <RelayFormField label="Remarks" compact className="md:col-span-12">
-                      <input type="text" value={addForm.description} onChange={e => setAddForm(prev => ({ ...prev, description: e.target.value, remarksUpdate: e.target.value }))} placeholder="Latest notes or dispatch update" className={addInput} style={fieldStyle(addForm.description)} />
+                    {/* Schedule Date */}
+                    <RelayFormField label="Schedule Date" compact className="md:col-span-4">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          const input = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
+                          if (input && input.showPicker) input.showPicker();
+                        }}
+                        className={`${addInput} font-bold text-center relative flex flex-col items-center justify-center`}
+                        style={{
+                          backgroundColor: addForm.finalDate ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)') : inputBg,
+                          borderColor: addForm.finalDate ? (isLight ? '#86efac' : 'rgba(22,163,74,0.4)') : inputBorder,
+                          color: addForm.finalDate ? '#10B981' : textPrimary,
+                          colorScheme: isLight ? 'light' : 'dark',
+                          fontWeight: addForm.finalDate ? 700 : undefined,
+                        }}
+                      >
+                        {addForm.finalDate ? new Date(addForm.finalDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase() : 'ADD DATE'}
+                        <input
+                          type="date"
+                          value={addForm.finalDate}
+                          onChange={e => setAddForm(prev => ({ ...prev, finalDate: e.target.value }))}
+                          className="absolute opacity-0 pointer-events-none w-0 h-0"
+                          style={{ pointerEvents: 'none' }}
+                        />
+                      </button>
+                    </RelayFormField>
+                  </div>
+                </section>
+
+                {/* 6. Comment / remarks */}
+                <section>
+                  <RelayFormSectionHead step={6} icon={<MessageSquare className="w-3.5 h-3.5" />} title="Comment / Remarks" subtitle="Latest notes or dispatch update" />
+                  <div className="grid grid-cols-1 gap-3.5">
+                    <RelayFormField label="Remarks" compact>
+                      <textarea
+                        value={addForm.description}
+                        onChange={e => setAddForm(prev => ({ ...prev, description: e.target.value, remarksUpdate: e.target.value }))}
+                        placeholder="Latest notes or dispatch update"
+                        rows={3}
+                        className={`${addInput} resize-none`}
+                        style={fieldStyle(addForm.description)}
+                      />
                     </RelayFormField>
                   </div>
                 </section>
               </div>
 
               {/* Footer */}
-              <div className="shrink-0 px-5 sm:px-6 py-3 flex items-center justify-between border-t" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+              <div className="shrink-0 px-5 sm:px-7 py-3.5 flex items-center justify-between border-t" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
                 <p className="text-[11px] font-medium hidden sm:block" style={{ color: textMuted }}>
                   Required: customer name, address, negotiator
                 </p>
@@ -3901,6 +3935,152 @@ export default function ClientMasterlist() {
         </div>
         )
       })(), document.body)}
+
+      {/* Settings Modal */}
+      {isSettingsModalOpen && ReactDOM.createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setIsSettingsModalOpen(false)}>
+          <div className="w-full max-w-2xl rounded-2xl shadow-2xl border flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+            style={{ backgroundColor: cardBg, borderColor: border, maxHeight: '85vh' }}
+            onClick={e => e.stopPropagation()}>
+            
+            {/* Header */}
+            <div className="px-6 py-4 flex items-center justify-between border-b" style={{ borderColor: border }}>
+              <div className="flex items-center gap-2">
+                <Settings className="w-5 h-5 text-emerald-500" />
+                <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>Masterlist Settings</h3>
+              </div>
+              <button onClick={() => setIsSettingsModalOpen(false)} style={{ color: textMuted }} className="hover:opacity-85">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Tabs */}
+            <div className="flex border-b" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#090f1b' }}>
+              <button
+                type="button"
+                className="px-6 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all"
+                style={{
+                  borderColor: '#10B981',
+                  color: '#10B981',
+                }}
+              >
+                Dealers / Store Vendors
+              </button>
+            </div>
+
+            {/* Tab Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Add New Dealer */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Add New Custom Dealer</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. S&R, ANSON'S"
+                    value={settingsNewDealerName}
+                    onChange={e => setSettingsNewDealerName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        handleSettingsAddDealer()
+                      }
+                    }}
+                    className="flex-1 border rounded-xl px-3 py-2.5 text-xs outline-none uppercase"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSettingsAddDealer}
+                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all shrink-0"
+                  >
+                    Add Dealer
+                  </button>
+                </div>
+              </div>
+
+              {/* List of Dealers */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Manage Active Dealers</label>
+                  <span className="text-[10px] font-bold" style={{ color: textMuted }}>{dealers.length} Total</span>
+                </div>
+                
+                <div className="border rounded-xl divide-y overflow-hidden" style={{ borderColor: border }}>
+                  {/* Custom Dealers */}
+                  {dealers.map((dealer, index) => {
+                    const store = dealer.name
+                    const isEditing = settingsEditingDealerIndex === index
+                    return (
+                      <div key={dealer.id} className="flex justify-between items-center p-3 text-xs font-semibold">
+                        {isEditing ? (
+                          <div className="flex gap-2 flex-1 mr-4">
+                            <input
+                              type="text"
+                              value={settingsEditDealerName}
+                              onChange={e => setSettingsEditDealerName(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault()
+                                  handleSettingsSaveRename(index)
+                                }
+                              }}
+                              className="flex-1 border rounded-lg px-2 py-1.5 text-xs outline-none uppercase"
+                              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSettingsSaveRename(index)}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSettingsEditingDealerIndex(null)}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold border"
+                              style={{ borderColor: inputBorder, color: textPrimary }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <span style={{ color: textPrimary, textTransform: 'uppercase' }}>{store}</span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSettingsEditingDealerIndex(index)
+                                  setSettingsEditDealerName(store)
+                                }}
+                                className="p-1.5 rounded-lg hover:bg-slate-500/15"
+                                style={{ color: textMuted }}
+                                title="Rename"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSettingsDeleteDealer(dealer.id, store)}
+                                className="p-1.5 rounded-lg text-red-500 hover:bg-red-500/10"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
 
       {/* ── Excel Sheet Preview Modal ────────────────────────── */}
@@ -4044,7 +4224,7 @@ export default function ClientMasterlist() {
                                 <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-slate-500/10 text-slate-500 border border-slate-500/20">Standard</span>
                               )}
                               <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
-                                item.serviceType === 'S/I' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' :
+                                item.serviceType === 'S/I' || item.serviceType === 'SURVEY & INSTALL' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' :
                                 item.serviceType === 'SURVEY' ? 'bg-purple-500/10 text-purple-500 border border-purple-500/20' :
                                 'bg-slate-500/10 text-slate-500 border border-slate-500/20'
                               }`}>{item.serviceType}</span>
@@ -4077,7 +4257,7 @@ export default function ClientMasterlist() {
                             <div><span className="block text-[8px] uppercase font-black" style={{ color: textMuted }}>AC / Unit</span>
                               <span className="font-bold block truncate" style={{ color: textPrimary }}>{item.unitType || 'Split AC'}</span></div>
                             <div><span className="block text-[8px] uppercase font-black" style={{ color: textMuted }}>Vendor</span>
-                              <span className="font-bold block truncate" style={{ color: textPrimary }}>{item.sourceVendor || 'Direct'}</span></div>
+                              <span className="font-bold block truncate" style={{ color: textPrimary }}>{item.dealer || 'Direct'}</span></div>
                             <div><span className="block text-[8px] uppercase font-black" style={{ color: textMuted }}>Control #</span>
                               <span className="font-mono font-bold block truncate" style={{ color: textPrimary }}>{item.controlNumber || '—'}</span></div>
                             <div><span className="block text-[8px] uppercase font-black" style={{ color: textMuted }}>Charge</span>
@@ -4153,7 +4333,7 @@ export default function ClientMasterlist() {
                               : null
                             }
                             <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${
-                              item.serviceType === 'S/I' ? 'bg-emerald-500/10 text-emerald-500' :
+                              item.serviceType === 'S/I' || item.serviceType === 'SURVEY & INSTALL' ? 'bg-emerald-500/10 text-emerald-500' :
                               item.serviceType === 'SURVEY' ? 'bg-purple-500/10 text-purple-500' : 'bg-slate-500/10 text-slate-400'
                             }`}>{item.serviceType}</span>
                           </div>
@@ -4161,7 +4341,7 @@ export default function ClientMasterlist() {
                           {/* Unit type */}
                           <div className="shrink-0 text-[10px] font-semibold" style={{ color: textMuted, minWidth: 80, maxWidth: 100 }}>
                             <div className="truncate">{item.unitType || '—'}</div>
-                            <div className="text-[9px] truncate">{item.sourceVendor || '—'}</div>
+                            <div className="text-[9px] truncate">{item.dealer || '—'}</div>
                           </div>
 
                           {/* Address */}
@@ -4240,7 +4420,7 @@ export default function ClientMasterlist() {
         const referralFee = t.storeReferralFee ?? t.store_referral_fee
         const promodiserName = det.promodiserName || '—'
         const bn  = formatAssignedBranchLabel(t.branchId)
-        const storeInfo = parseStoreVendor(t.sourceVendor)
+        const storeInfo = parseDealer(t.dealer || t.sourceVendor)
 
         const DField = ({ label, value, green, className = "" }: { label: string; value: React.ReactNode; green?: boolean; className?: string }) => (
           <div className={`flex flex-col gap-0.5 py-2 px-3 rounded-lg ${className}`} style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
@@ -4399,6 +4579,9 @@ export default function ClientMasterlist() {
                       <DField label="Commit Type" value={t.commitType} />
                       <DField label="Brand / HP" value={formatBrandCapacityLabel(det.brand, det.capacity) || '—'} />
                       <DField label="Control No. / SI" value={t.controlNumber || '—'} />
+                      {ROBINSON_APPLIANCES_RE.test(storeInfo.store || '') && (
+                        <DField label="Transaction ID" value={det.robinsonsTransactionId || '—'} />
+                      )}
                     </div>
                   </div>
 
@@ -4525,9 +4708,9 @@ export default function ClientMasterlist() {
                                       Scheduled: <span className="font-bold opacity-80">{h.previousPreferredDate || 'none'}</span> ➔ <span className="font-bold text-amber-500">{h.newPreferredDate}</span>
                                     </p>
                                   )}
-                                  {h.newAssignedToName && (
+                                  {h.newAssignedTo !== h.previousAssignedTo && (
                                     <p className="text-[10px]">
-                                      Assigned: <span className="font-bold text-teal-500"><EmployeeNameLink nameOrId={h.newAssignedToName} /></span>
+                                      Assigned: <span className="font-bold opacity-80"><EmployeeNameLink nameOrId={h.previousAssignedToName || 'none'} /></span> ➔ <span className="font-bold text-teal-500"><EmployeeNameLink nameOrId={h.newAssignedToName || 'none'} /></span>
                                     </p>
                                   )}
                                 </div>
@@ -4556,12 +4739,6 @@ export default function ClientMasterlist() {
                   <button type="button" onClick={() => { openDrawer(t); setIsViewModalOpen(false); setSelectedPreviewTicket(null); }}
                     className="px-5 py-2 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all">
                     Edit
-                  </button>
-                )}
-                {isAdmin && (
-                  <button type="button" onClick={() => { handleDeleteTicket(t.id, t.customerName); setIsViewModalOpen(false); setSelectedPreviewTicket(null); }}
-                    className="px-5 py-2 rounded-lg text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition-all">
-                    Delete
                   </button>
                 )}
                 <button type="button" onClick={() => setIsViewModalOpen(false)}

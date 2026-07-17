@@ -34,6 +34,20 @@ type FormState = {
   date: string
 } & Record<ScanKey, string>
 
+const DRAFT_STORAGE_KEY = 'ashcol-dtr-scanner-draft'
+
+const loadDraftForm = (): FormState | null => {
+  try {
+    const raw = localStorage.getItem(DRAFT_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    return { ...emptyForm(), ...parsed }
+  } catch {
+    return null
+  }
+}
+
 const emptyForm = (): FormState => ({
   branchId: '',
   branchName: '',
@@ -90,13 +104,22 @@ export default function DTRScanner() {
 
   const [branches,      setBranches]      = useState<BranchOption[]>([])
   const [scanning,      setScanning]      = useState(false)
-  const [scanPreview,   setScanPreview]   = useState<string | null>(null)
+  const [scanPreviews,  setScanPreviews]  = useState<string[]>([])
   const [scannedFields, setScannedFields] = useState<Set<string>>(new Set())
   const [scanError,     setScanError]     = useState('')
   const [submitting,    setSubmitting]    = useState(false)
   const [success,       setSuccess]       = useState(false)
-  const [form,          setForm]          = useState<FormState>(emptyForm)
+  const [form,          setForm]          = useState<FormState>(() => loadDraftForm() || emptyForm())
   const [focusedField,  setFocusedField]  = useState<string | null>(null)
+
+  // Persist the in-progress draft so a page reload (e.g. to pick up a frontend update) or a
+  // failed submit doesn't wipe out data the user already scanned/typed — cleared on successful
+  // submit or explicit reset via resetReportForm.
+  useEffect(() => {
+    try {
+      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(form))
+    } catch { /* storage unavailable/full — draft persistence is best-effort */ }
+  }, [form])
 
   // Load branches (used to pre-fill manager's branch, and for manual override)
   useEffect(() => {
@@ -121,10 +144,11 @@ export default function DTRScanner() {
 
   const processImage = async (file: File) => {
     const url = URL.createObjectURL(file)
-    setScanPreview(url)
+    // Append rather than replace — pasting/uploading another DTR image (e.g. a second page)
+    // should add to the batch and merge its extracted fields, not wipe out what's already there.
+    setScanPreviews(prev => [...prev, url])
     setScanning(true)
     setScanError('')
-    setScannedFields(new Set())
 
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -198,7 +222,10 @@ export default function DTRScanner() {
       })
       return next
     })
-    setScannedFields(filled)
+    // Union with fields already marked from a previous pasted image in this batch, rather than
+    // replacing — so scanning a second/third image doesn't lose the "from scan" highlight on
+    // fields the earlier image already filled.
+    setScannedFields(prev => new Set([...prev, ...filled]))
   }
 
   const handleScanImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -273,6 +300,11 @@ export default function DTRScanner() {
     setForm(prev => ({ ...prev, branchId, branchName: found?.name || '' }))
   }
 
+  // Backend restarts (e.g. a redeploy) briefly return 5xx/network errors — retry a few times
+  // with backoff before surfacing anything, so the user isn't forced to notice and resubmit
+  // manually (the draft is already preserved via DRAFT_STORAGE_KEY either way).
+  const RETRY_DELAYS_MS = [1000, 2500, 5000]
+
   const handleSubmit = async () => {
     if (!form.branchId) {
       alert('Branch could not be detected. Please scan a valid DTR image or select a branch manually.')
@@ -299,19 +331,81 @@ export default function DTRScanner() {
         remarks: 'CHECKED',
       }
 
-      const res = await fetch(`${API_BASE_URL}/v1/reports/audit-summary`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(payload),
-      })
-      if (!res.ok) throw new Error('Submission failed')
+      let lastError: Error | null = null
+      let succeeded = false
+      for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+        try {
+          const res = await fetch(`${API_BASE_URL}/v1/reports/audit-summary`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify(payload),
+          })
+          if (!res.ok) {
+            // Surface the server's actual reason (permission denial, validation error, etc.) instead
+            // of a generic message — this was silently swallowed before, which made a real 403/500
+            // from the API indistinguishable from a plain network failure.
+            let detail = ''
+            try {
+              const body = await res.json()
+              detail = body?.error || body?.message || ''
+            } catch { /* response wasn't JSON */ }
+            const err = new Error(detail || `Submission failed (HTTP ${res.status})`)
+            // Only 5xx is worth retrying — a 4xx (validation, permission) will fail again identically.
+            if (res.status < 500 || attempt === RETRY_DELAYS_MS.length) throw err
+            lastError = err
+          } else {
+            succeeded = true
+            break
+          }
+        } catch (err) {
+          // TypeError with no HTTP status = fetch itself failed (network unreachable, backend
+          // process not accepting connections mid-restart) — also worth retrying.
+          if (!(err instanceof TypeError) || attempt === RETRY_DELAYS_MS.length) throw err
+          lastError = err
+        }
+        setScanError(`Server is temporarily unavailable — retrying (${attempt + 1}/${RETRY_DELAYS_MS.length})…`)
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS_MS[attempt]))
+      }
+      if (!succeeded && lastError) throw lastError
+
+      try { localStorage.removeItem(DRAFT_STORAGE_KEY) } catch { /* best-effort */ }
+      setScanError('')
       setSuccess(true)
     } catch (e) {
       console.error(e)
-      alert('Failed to submit DTR audit report.')
+      const message = e instanceof Error ? e.message : String(e)
+      // A TypeError with no HTTP status reaching this catch means fetch itself failed
+      // (network unreachable, CORS, DNS) — distinguish that from a server-returned error.
+      const isNetworkFailure = e instanceof TypeError
+      alert(
+        isNetworkFailure
+          ? `Could not reach the server to submit the DTR audit report. Check your connection and try again. (${message})`
+          : `Failed to submit DTR audit report: ${message}`
+      )
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const resetReportForm = () => {
+    setScanPreviews(prev => { prev.forEach(url => URL.revokeObjectURL(url)); return [] })
+    setScannedFields(new Set())
+    setScanError('')
+    const base = emptyForm()
+    if (isBranchRestricted && user?.branchId) {
+      const myBranch = branches.find(b => b.id === user.branchId)
+      base.branchId = user.branchId
+      base.branchName = myBranch?.name || ''
+    }
+    setForm(base)
+    try { localStorage.removeItem(DRAFT_STORAGE_KEY) } catch { /* best-effort */ }
+  }
+
+  // Remove a single pasted/uploaded image from the batch without touching extracted form data —
+  // clearing an individual thumbnail is just tidying the review list, not a "start over."
+  const removeScanPreview = (url: string) => {
+    setScanPreviews(prev => prev.filter(u => u !== url))
+    URL.revokeObjectURL(url)
   }
 
   const scannedStyle = (key: string): React.CSSProperties =>
@@ -333,7 +427,7 @@ export default function DTRScanner() {
         </p>
         <div className="flex gap-3 mt-2">
           <button
-            onClick={() => { setSuccess(false); setScanPreview(null); setScannedFields(new Set()); setForm(emptyForm()) }}
+            onClick={() => { setSuccess(false); resetReportForm() }}
             className="px-5 py-2.5 rounded-xl text-sm font-bold border transition-all hover:scale-105"
             style={{ borderColor: inputBorder, color: textMuted }}
           >
@@ -439,25 +533,55 @@ export default function DTRScanner() {
               <FileSpreadsheet size={16} style={{ color: accent }} /> DTR Document
             </h3>
 
-            {scanPreview ? (
-              <div style={{ position: 'relative' }}>
-                <img
-                  src={scanPreview}
-                  alt="Scanned DTR"
-                  style={{ width: '100%', borderRadius: 12, border: `2px solid ${scanning ? inputBorder : scanBorder}44`, objectFit: 'contain' }}
-                />
-                {scanning && (
-                  <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-                    <Loader2 size={32} className="animate-spin" style={{ color: '#3B82F6' }} />
-                    <span style={{ color: '#fff', fontSize: 13, fontWeight: 'bold' }}>Extracting data with AI...</span>
-                  </div>
-                )}
+            {scanPreviews.length > 0 ? (
+              <div className="flex flex-col gap-3">
+                <div className="grid grid-cols-2 gap-2">
+                  {scanPreviews.map((url, idx) => {
+                    const isLast = idx === scanPreviews.length - 1
+                    return (
+                      <div key={url} style={{ position: 'relative' }}>
+                        <img
+                          src={url}
+                          alt={`Scanned DTR ${idx + 1}`}
+                          style={{ width: '100%', aspectRatio: '1', borderRadius: 12, border: `2px solid ${scanning && isLast ? inputBorder : scanBorder}44`, objectFit: 'cover' }}
+                        />
+                        {scanning && isLast && (
+                          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                            <Loader2 size={22} className="animate-spin" style={{ color: '#3B82F6' }} />
+                            <span style={{ color: '#fff', fontSize: 10, fontWeight: 'bold', textAlign: 'center', padding: '0 6px' }}>Extracting...</span>
+                          </div>
+                        )}
+                        {!(scanning && isLast) && (
+                          <button
+                            type="button"
+                            onClick={() => removeScanPreview(url)}
+                            className="absolute top-1 right-1 p-1 rounded-lg bg-black/50 text-white hover:bg-red-500/80 transition-colors"
+                            aria-label="Remove this image"
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
+                  <button
+                    type="button"
+                    disabled={scanning}
+                    onClick={() => fileRef.current?.click()}
+                    className="flex flex-col items-center justify-center gap-1 border-2 border-dashed rounded-xl hover:border-blue-400 transition-colors disabled:opacity-50"
+                    style={{ borderColor: inputBorder, backgroundColor: inputBg, aspectRatio: '1' }}
+                  >
+                    <Upload size={16} style={{ color: textMuted }} />
+                    <span className="text-[10px] font-semibold" style={{ color: textMuted }}>Add page</span>
+                  </button>
+                </div>
                 <button
                   type="button"
-                  onClick={() => { setScanPreview(null); setScannedFields(new Set()); setScanError('') }}
-                  className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/50 text-white hover:bg-red-500/80 transition-colors"
+                  onClick={resetReportForm}
+                  className="text-xs font-semibold self-start px-2 py-1 rounded-lg transition-colors hover:bg-red-500/10"
+                  style={{ color: danger }}
                 >
-                  <X size={14} />
+                  Clear all &amp; start over
                 </button>
               </div>
             ) : (

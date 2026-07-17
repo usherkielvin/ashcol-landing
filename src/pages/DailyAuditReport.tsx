@@ -258,7 +258,7 @@ export default function DailyAuditReport() {
             fetchAudit()
           } else {
             const err = await res.json().catch(() => ({}))
-            alert(err.error || `Clear failed (HTTP ${res.status})`)
+            alert(err.error || err.message || `Clear failed (HTTP ${res.status})`)
           }
         } catch {
           alert('Failed to clear row data')
@@ -1484,6 +1484,9 @@ export default function DailyAuditReport() {
                 const rebateItems = items.filter(it => it.type === 'REBATE')
                 // Collections Breakdown
                 const forCollItems = items.filter(it => it.type === 'COLLECTION')
+                // Incentives Breakdown
+                const incentiveItems = items.filter(it => it.type === 'INCENTIVE')
+                const totalIncentives = incentiveItems.reduce((sum, it) => sum + (it.amount || 0), 0)
 
                 const renderItemTable = (title: string, itemsList: any[], columns: { label: string; render: (item: any) => React.ReactNode; align?: 'left' | 'right' | 'center' }[], customTotal?: number) => {
                   if (itemsList.length === 0) return null
@@ -1622,6 +1625,7 @@ export default function DailyAuditReport() {
                             { label: 'Online Collection', value: `₱${peso(selectedRow.totalOnlineCollection)}`, color: '#3B82F6' },
                             { label: 'For Collection', value: `₱${peso(selectedRow.forCollection)}`, color: '#F59E0B' },
                             { label: 'Rebates', value: `₱${peso(selectedRow.rebatesForCollection)}`, color: textMuted },
+                            { label: 'Incentives', value: `₱${peso(totalIncentives)}`, color: '#EF4444' },
                           ].map(r => (
                             <div key={r.label} className="flex items-center justify-between gap-3">
                               <span className="text-xs" style={{ color: textMuted }}>{r.label}</span>
@@ -1654,6 +1658,16 @@ export default function DailyAuditReport() {
                         ))}
                       </div>
                     </div>
+
+                    {/* Incentives Summary stats grid */}
+                    {totalIncentives > 0 && (
+                      <div className="px-6 py-5 flex flex-col gap-3" style={{ borderBottom: `1px solid ${border}` }}>
+                        <div className="flex items-center justify-between gap-3 pb-2 border-b" style={{ borderColor: border }}>
+                          <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: textPrimary }}>Incentives Summary</span>
+                          <span className="text-[11px] font-black tabular-nums" style={{ color: '#EF4444' }}>₱{peso(totalIncentives)}</span>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Detailed Lists */}
                     {rowExpensesLoading ? (
@@ -1765,6 +1779,34 @@ export default function DailyAuditReport() {
                           { label: 'Installer/Negotiator', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description)}</span> },
                           { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
                           { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums text-amber-500">₱{peso(item.amount)}</span> },
+                          {
+                            label: 'Status',
+                            align: 'center',
+                            render: (item) => (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
+                                backgroundColor: item.collectionResolved ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
+                                color: item.collectionResolved ? '#10B981' : '#F59E0B'
+                              }}>
+                                {item.collectionResolved ? 'RESOLVED' : 'PENDING'}
+                              </span>
+                            )
+                          }
+                        ])}
+
+                        {/* Incentives Breakdown */}
+                        {renderItemTable('Incentives Breakdown', incentiveItems, [
+                          { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
+                          { label: 'Brand', render: (item) => <span style={{ color: textPrimary }}>{item.company || '—'}</span> },
+                          { label: 'Promodiser', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.promodiser || item.description?.split('|')[1] || '—'}</span> },
+                          {
+                            label: 'HP',
+                            render: (item) => (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-50/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
+                                {item.hp || item.description?.split('|')[2] || '—'}
+                              </span>
+                            )
+                          },
+                          { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums text-red-500">₱{peso(item.amount)}</span> },
                           {
                             label: 'Status',
                             align: 'center',

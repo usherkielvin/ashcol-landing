@@ -80,7 +80,12 @@ export function branchAuditLineIsService(auditLine?: string | null, name?: strin
 }
 
 /** Normalize admin global branch id or user branch id for list matching. */
-export function parseGlobalBranchScope(globalOrBranchId?: string | null, email?: string | null): {
+/** Taguig Sales vs Services classification precedence: explicit id > job title > email > default Sales (mirrors resolveTaguigAuditLine on the backend). */
+export function parseGlobalBranchScope(
+  globalOrBranchId?: string | null,
+  email?: string | null,
+  jobTitle?: string | null,
+): {
   branchId: string
   auditLine: string | null
   branchName: string
@@ -88,6 +93,7 @@ export function parseGlobalBranchScope(globalOrBranchId?: string | null, email?:
   const raw = (globalOrBranchId || '').trim()
   const lower = raw.toLowerCase()
   const emailLower = (email || '').toLowerCase()
+  const jobTitleLower = (jobTitle || '').toLowerCase()
 
   if (isTaguigBranchRef(raw)) {
     let isServices: boolean
@@ -104,6 +110,8 @@ export function parseGlobalBranchScope(globalOrBranchId?: string | null, email?:
       || lower.includes('sales')
     ) {
       isServices = false
+    } else if (jobTitleLower.includes('service')) {
+      isServices = true
     } else {
       isServices = emailLower.includes('service')
     }
@@ -171,9 +179,9 @@ export function branchEntryMatchesGlobal(
 }
 
 /** True when branch scope is Taguig Services (not Sales). */
-export function isTaguigServicesScope(branchId?: string | null, email?: string | null): boolean {
+export function isTaguigServicesScope(branchId?: string | null, email?: string | null, jobTitle?: string | null): boolean {
   if (!isTaguigBranchRef(branchId)) return false
-  return parseGlobalBranchScope(branchId, email).auditLine === 'TAGUIG_SERVICE'
+  return parseGlobalBranchScope(branchId, email, jobTitle).auditLine === 'TAGUIG_SERVICE'
 }
 
 export function getCleanBranchName(name?: string | null): string {
@@ -371,7 +379,7 @@ export function isTaguigServiceTicket(ticket: Record<string, unknown>): boolean 
     branchId,
     serviceType: String(ticket.serviceType || ticket.service_type || ''),
     statusCode: String(ticket.statusCode || ticket.status_code || meta.statusCode || ''),
-    dealer: String(ticket.sourceVendor || ticket.source_vendor || meta.dealer || meta.dlr || ''),
+    dealer: String(ticket.dealer || ticket.sourceVendor || ticket.source_vendor || meta.dealer || meta.dlr || ''),
     technicianName: installer,
     remarks: String(ticket.remarks || ticket.remarksUpdate || meta.update || meta.remarksUpdate || ''),
     note: String(ticket.note || meta.note || ''),
@@ -415,30 +423,18 @@ export type BranchStaffOption = {
   email?: string | null
   role?: string | null
   jobTitle?: string | null
+  phone?: string | null
 }
 
-/** Staff who may appear as negotiator (office roles incl. OIC; excludes field crew). */
+/** Staff who may appear as negotiator — any branch employee (incl. field crew and OIC/management). */
 export function isNegotiatorCandidate(user: {
   role?: string | null
   jobTitle?: string | null
 }): boolean {
   const roleLower = (user.role || '').toLowerCase().replace(/\s+/g, '_')
-  const jobLower = (user.jobTitle || '').toLowerCase()
   if (roleLower === 'customer') return false
-
-  const officeRoles = ['admin', 'management', 'administrator', 'manager', 'oic', 'employee', 'staff']
-  if (officeRoles.includes(roleLower)) return true
-  if (
-    jobLower.includes('oic')
-    || jobLower.includes('office in charge')
-    || jobLower.includes('negotiator')
-    || jobLower.includes('manager')
-  ) {
-    return true
-  }
-
-  const fieldJobs = ['technician', 'installer', 'driver', 'helper', 'crew', 'lineman']
-  if (fieldJobs.some((k) => jobLower.includes(k))) return false
+  // Only exclude system-wide admin accounts — they aren't tied to a single branch.
+  if (roleLower === 'admin' || roleLower === 'administrator') return false
 
   return roleLower !== ''
 }
@@ -459,8 +455,7 @@ export function filterBranchNegotiators(
       u.branchId.toUpperCase() === 'ALL' ||
       u.branchId.toUpperCase() === 'ALL_BRANCHES' ||
       u.role?.toLowerCase() === 'admin' ||
-      u.role?.toLowerCase() === 'administrator' ||
-      u.role?.toLowerCase() === 'management'
+      u.role?.toLowerCase() === 'administrator'
     if (isGlobal) return true
 
     const normalizedSource = branchSource.toUpperCase()
@@ -661,6 +656,32 @@ export function resolveImageUrl(path: string | null | undefined): string {
 }
 
 export const PROFILE_UPDATED_EVENT = 'ashcol-profile-updated'
+export const EMPLOYEES_DIRECTORY_UPDATED_EVENT = 'ashcol-employees-directory-updated'
+export const DEALERS_UPDATED_EVENT = 'ashcol-dealers-updated'
+
+export function notifyDealersUpdated(): void {
+  window.dispatchEvent(new Event(DEALERS_UPDATED_EVENT))
+}
+
+export function isPortalStaffUser(role?: string | null): boolean {
+  return (role || '').toLowerCase() !== 'customer'
+}
+
+export function notifyEmployeesDirectoryUpdated(): void {
+  try {
+    const keysToRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key.includes('portal-dir:') && key.includes(':employees:')) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k))
+  } catch {
+    // ignore cache clear errors
+  }
+  window.dispatchEvent(new Event(EMPLOYEES_DIRECTORY_UPDATED_EVENT))
+}
 export { ARCHIVE_UPDATED_EVENT, notifyArchiveUpdated } from './ticketArchive'
 
 const NAME_PARTICLES = new Set(['de', 'del', 'dela', 'la', 'las', 'los', 'y', 'san', 'santa', 'sto'])
@@ -829,17 +850,112 @@ export function isServiceWorkspaceUser(user?: PortalUserLike | null) {
     || jobTitle.includes('service')
 }
 
-export function getPortalHomePath(user?: PortalUserLike | null) {
-  const role = normalizeUserValue(user?.role)
-  if (isPortalAdmin(role)) return '/audit-report'
-  if (isSalesWorkspaceUser(user)) return '/audit-report?tab=submit'
-  if (isServiceWorkspaceUser(user)) return '/service-report'
-  // Negotiator / field-sales employees (EMPLOYEE role, not service/coordinator) → My Tickets
-  if (role === 'employee' || role === 'staff') return '/my-tickets'
-  return '/audit-report?tab=submit'
+export function getPortalHomePath(_user?: PortalUserLike | null) {
+  return '/search'
 }
 
 /** Fetch tickets; retries without categoryGroup if the API rejects the filter (older DB / deploy). */
+export type TicketsPageResult = {
+  tickets: unknown[]
+  currentPage: number
+  totalPages: number
+  totalTickets: number
+}
+
+const ticketsPageInFlight = new Map<string, Promise<TicketsPageResult>>()
+
+function ticketsPageCacheKey(
+  endpoint: string,
+  options: {
+    page?: number
+    size?: number
+    categoryGroup?: string
+    status?: string
+    date?: string
+    statusGroup?: string
+    branchId?: string
+  },
+): string {
+  return [
+    endpoint,
+    options.page ?? 0,
+    options.size ?? 200,
+    options.categoryGroup || '',
+    options.status || '',
+    options.date || '',
+    options.statusGroup || '',
+    options.branchId || '',
+  ].join('|')
+}
+
+async function fetchTicketsPageOnce(
+  endpoint: string,
+  token: string,
+  options: {
+    page?: number
+    size?: number
+    categoryGroup?: 'FIELD' | 'OFFICE'
+    status?: string
+    date?: string
+    statusGroup?: string
+    branchId?: string
+    signal?: AbortSignal
+  } = {},
+): Promise<TicketsPageResult> {
+  const size = options.size ?? 200
+  const page = options.page ?? 0
+  const key = ticketsPageCacheKey(endpoint, { ...options, page, size })
+  const existing = ticketsPageInFlight.get(key)
+  if (existing) return existing
+
+  const headers = { Authorization: `Bearer ${token}` }
+  const base: Record<string, string> = { page: String(page), size: String(size) }
+  if (options.status) base.status = options.status
+  if (options.date) base.date = options.date
+  if (options.statusGroup) base.statusGroup = options.statusGroup
+  if (options.branchId) base.branchId = options.branchId
+
+  const attempts: Record<string, string>[] = options.categoryGroup
+    ? [{ ...base, categoryGroup: options.categoryGroup }, base]
+    : [base]
+
+  const job = (async (): Promise<TicketsPageResult> => {
+    let lastStatus = 0
+    let lastBody = ''
+    for (const params of attempts) {
+      const res = await fetch(`${API_BASE_URL}${endpoint}?${new URLSearchParams(params)}`, {
+        headers,
+        signal: options.signal,
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const payload = data?.data ?? data ?? {}
+        const tickets = payload?.tickets || data?.tickets || []
+        const currentPage = Number(payload?.currentPage ?? page)
+        const totalPages = Math.max(1, Number(payload?.totalPages ?? 1))
+        const totalTickets = Number(payload?.totalTickets ?? tickets.length)
+        return { tickets, currentPage, totalPages, totalTickets }
+      }
+      lastStatus = res.status
+      lastBody = await res.text().catch(() => '')
+      if (params.categoryGroup) {
+        console.warn(
+          `Tickets fetch with categoryGroup=${params.categoryGroup} failed (${res.status}), retrying without filter`,
+          lastBody.slice(0, 200),
+        )
+      }
+    }
+    throw new Error(lastBody || `Tickets fetch failed (${lastStatus})`)
+  })()
+
+  ticketsPageInFlight.set(key, job)
+  try {
+    return await job
+  } finally {
+    if (ticketsPageInFlight.get(key) === job) ticketsPageInFlight.delete(key)
+  }
+}
+
 export async function fetchTicketsPage(
   endpoint: string,
   token: string,
@@ -849,38 +965,60 @@ export async function fetchTicketsPage(
     status?: string
     date?: string
     statusGroup?: string
+    branchId?: string
+    /** When true, fetches additional pages (max 5). Default: single page only. */
+    paginate?: boolean
+    maxPages?: number
   } = {},
 ): Promise<unknown[]> {
-  const size = options.size ?? 200
-  const headers = { Authorization: `Bearer ${token}` }
-  const base: Record<string, string> = { page: '0', size: String(size) }
-  if (options.status) base.status = options.status
-  if (options.date) base.date = options.date
-  if (options.statusGroup) base.statusGroup = options.statusGroup
+  const pageSize = options.size ?? 200
+  const paginate = options.paginate === true
+  const maxPages = options.maxPages ?? 5
 
-  const attempts: Record<string, string>[] = options.categoryGroup
-    ? [{ ...base, categoryGroup: options.categoryGroup }, base]
-    : [base]
-
-  let lastStatus = 0
-  let lastBody = ''
-  for (const params of attempts) {
-    const res = await fetch(`${API_BASE_URL}${endpoint}?${new URLSearchParams(params)}`, { headers })
-    if (res.ok) {
-      const data = await res.json()
-      return data?.data?.tickets || data?.tickets || []
-    }
-    lastStatus = res.status
-    lastBody = await res.text().catch(() => '')
-    if (params.categoryGroup) {
-      console.warn(
-        `Tickets fetch with categoryGroup=${params.categoryGroup} failed (${res.status}), retrying without filter`,
-        lastBody.slice(0, 200),
-      )
-    }
+  if (!paginate) {
+    const result = await fetchTicketsPageOnce(endpoint, token, { ...options, page: 0, size: pageSize })
+    return result.tickets
   }
 
-  throw new Error(lastBody || `Tickets fetch failed (${lastStatus})`)
+  const all: unknown[] = []
+  let page = 0
+  let totalPages = 1
+  while (page < totalPages && page < maxPages) {
+    const result = await fetchTicketsPageOnce(endpoint, token, { ...options, page, size: pageSize })
+    if (result.tickets.length === 0) break
+    all.push(...result.tickets)
+    totalPages = Math.max(1, result.totalPages)
+    page += 1
+    if (result.tickets.length < pageSize) break
+    if (page >= totalPages) break
+  }
+  return all
+}
+
+export async function fetchTicketByNumber(token: string, ticketNumber: string): Promise<unknown | null> {
+  const tn = ticketNumber.trim()
+  if (!tn || !token) return null
+  const res = await fetch(`${API_BASE_URL}/tickets/by-number/${encodeURIComponent(tn)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) return null
+  const data = await res.json()
+  return parseCreatedTicketResponse(data)
+}
+
+export async function fetchTicketsByNumbers(token: string, ticketNumbers: string[]): Promise<unknown[]> {
+  const numbers = [...new Set(ticketNumbers.map(n => n.trim().toUpperCase()).filter(Boolean))]
+  if (!numbers.length || !token) return []
+  const res = await fetch(
+    `${API_BASE_URL}/tickets/by-numbers?numbers=${encodeURIComponent(numbers.join(','))}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  if (!res.ok) return []
+  const data = await res.json()
+  const payload = data?.data ?? data
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload?.tickets)) return payload.tickets
+  return []
 }
 
 export function parseCreatedTicketResponse(payload: unknown): any {

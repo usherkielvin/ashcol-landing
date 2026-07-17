@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { Upload, Receipt, ReceiptText, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays, Camera } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatRole, formatDisplayUserLabel, isSameBaseBranch, isPortalAdmin, resolveArchivesBranchFilter } from '../utils/api'
@@ -80,6 +81,7 @@ export default function AuditFinanceExpenses() {
     newExpense: AuditExpense;
   } | null>(null)
   const [detailRow, setDetailRow] = useState<AuditExpense | null>(null)
+  const [actionMenuRow, setActionMenuRow] = useState<AuditExpense | null>(null)
   const [isEditingInModal, setIsEditingInModal] = useState(false)
   const [form, setForm] = useState(emptyForm)
   const activeAccent = editing ? editAccent : accent
@@ -94,6 +96,7 @@ export default function AuditFinanceExpenses() {
   const [scanError, setScanError] = useState('')
   const [savingReceipt, setSavingReceipt] = useState(false)
   const scanRef = useRef<HTMLInputElement>(null)
+  const cameraRef = useRef<HTMLInputElement>(null)
   const [branchEmployees, setBranchEmployees] = useState<string[]>([])
 
   // --- Tab state ---
@@ -261,7 +264,10 @@ export default function AuditFinanceExpenses() {
       }
       
       return false
-    })
+    }).map(e => ({
+      ...e,
+      date: parseSmartDate(e.date) || e.date
+    }))
   }, [expenses, branchId])
 
   // Suggestions derived from past expenses (limited to current branch)
@@ -291,27 +297,14 @@ export default function AuditFinanceExpenses() {
     }
     let targetDate = new Date()
     if (maxDateStr) {
-      const parts = maxDateStr.split('-')
-      if (parts.length === 3) {
-        const d = parseInt(parts[0])
-        const mStr = parts[1].toLowerCase()
-        const y = parseInt(parts[2])
-        const fullYear = y < 100 ? 2000 + y : y
-        const monthNames: Record<string, number> = {
-          jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
-          jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
-        }
-        const mIdx = monthNames[mStr]
-        if (mIdx !== undefined) {
-          targetDate = new Date(fullYear, mIdx, d)
-        }
-      }
+      const parsed = new Date(maxDateStr)
+      if (!isNaN(parsed.getTime())) targetDate = parsed
     }
     return targetDate.toLocaleDateString('en-US', {
       month: 'long',
       day: 'numeric',
       year: 'numeric'
-    })
+    }).toUpperCase()
   }, [branchExpenses])
 
   const loadBranches = useCallback(async () => {
@@ -481,20 +474,17 @@ export default function AuditFinanceExpenses() {
 
   const availableMonths = useMemo(() => {
     const months = new Set<string>()
-    // Always include current month
-    const parts = formatTodayReceiptDate().split('-')
-    if (parts.length === 3) months.add(`${parts[1]} 20${parts[2]}`)
+    const now = new Date()
+    months.add(now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).toUpperCase())
     
     for (const e of branchExpenses) {
       if (!e.date) continue
-      const p = e.date.split('-')
-      if (p.length === 3) months.add(`${p[1]} 20${p[2]}`)
+      const d = new Date(e.date)
+      if (!isNaN(d.getTime())) {
+        months.add(d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).toUpperCase())
+      }
     }
-    return Array.from(months).sort((a, b) => {
-      const timeA = new Date(`01 ${a}`).getTime()
-      const timeB = new Date(`01 ${b}`).getTime()
-      return timeB - timeA
-    })
+    return Array.from(months).sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
   }, [branchExpenses])
 
   const filtered = useMemo(() => {
@@ -503,9 +493,10 @@ export default function AuditFinanceExpenses() {
 
     if (filterMonth !== 'All') {
       rows = rows.filter(e => {
-        const parts = e.date.split('-')
-        if (parts.length === 3) {
-          return `${parts[1]} 20${parts[2]}` === filterMonth
+        if (!e.date) return false
+        const d = new Date(e.date)
+        if (!isNaN(d.getTime())) {
+          return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).toUpperCase() === filterMonth
         }
         return false
       })
@@ -924,6 +915,19 @@ export default function AuditFinanceExpenses() {
     await processImage(file)
   }
 
+  const handleCameraClick = () => {
+    if (!showForm) {
+      setEditing(null)
+      setForm({ ...emptyForm(resolveFormBranchId(branchId)), date: '' })
+      setDateRaw('')
+      setDateError('')
+      setShowForm(true)
+      setTimeout(() => cameraRef.current?.click(), 150)
+    } else {
+      cameraRef.current?.click()
+    }
+  }
+
   const processImageRef = useRef(processImage)
   useEffect(() => {
     processImageRef.current = processImage
@@ -1001,157 +1005,222 @@ export default function AuditFinanceExpenses() {
   if (!canAccess) return <div className="p-8 text-center" style={{ color: textMuted }}>Expense records are available for branch employees, managers, and admins only.</div>
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: bg }} className="flex flex-col gap-4 p-4 md:p-6 pb-12">
+    <div style={{ minHeight: '100vh', backgroundColor: bg }} className="flex flex-col gap-3 px-2 py-3 md:p-6 pb-12">
 
-      {/* ── HEADER ── */}
-      <div className="rounded-xl px-4 py-2.5 flex flex-row items-center justify-between gap-3"
+      {/* ── HEADER & FILTERS COMBINED ── */}
+      <div className="rounded-xl px-4 py-3 flex flex-col gap-3"
         style={{ backgroundColor: cardBg, border: `1px solid ${border}`, boxShadow: isLight ? '0 1px 2px rgba(0,0,0,0.05)' : '0 1px 2px rgba(0,0,0,0.2)' }}>
-        <div className="flex items-center gap-2 min-w-0">
-          <ClipboardList size={18} style={{ color: accent }} className="shrink-0" />
-          <h1 className="text-sm md:text-base font-black tracking-tight" style={{ color: textPrimary }}>Expense Records</h1>
-        </div>
-        {activeTab === 'expenses' && (
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                if (showForm) {
-                  setShowForm(false); setEditing(null)
-                } else {
-                  setEditing(null); setForm({ ...emptyForm(resolveFormBranchId(branchId)), date: '' }); setDateRaw(''); setDateError(''); setShowForm(true)
-                }
-              }}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition-all duration-200"
-              style={{ backgroundColor: showForm ? '#EF4444' : accent }}
-            >
-              {showForm
-                ? <><X size={13} /> Close</>
-                : <><Plus size={13} /> Add Record</>
-              }
-            </button>
-            <button type="button" disabled={!branchId || importing} onClick={() => fileRef.current?.click()}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
-              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-              <Upload size={13} />{importing ? 'Importing…' : 'Import'}
-            </button>
-            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImport} />
+        
+        {/* Header Row */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <ClipboardList size={18} style={{ color: accent }} className="shrink-0" />
+            <h1 className="text-sm md:text-base font-black tracking-tight" style={{ color: textPrimary }}>Expense Records</h1>
           </div>
-        )}
-      </div>
+          {activeTab === 'expenses' && (
+            <>
+              {/* ── Mobile: 3-column action grid ── */}
+              <div className="grid grid-cols-3 gap-2 sm:hidden w-full">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (showForm) {
+                      setShowForm(false); setEditing(null)
+                    } else {
+                      setEditing(null); setForm({ ...emptyForm(resolveFormBranchId(branchId)), date: '' }); setDateRaw(''); setDateError(''); setShowForm(true)
+                    }
+                  }}
+                  className="flex flex-col items-center justify-center gap-1.5 py-3.5 rounded-xl text-xs font-bold text-white transition-all active:scale-95 shadow-sm"
+                  style={{ backgroundColor: showForm ? '#EF4444' : accent }}
+                >
+                  {showForm ? <X size={20} /> : <Plus size={20} />}
+                  <span>{showForm ? 'Close' : 'Add Record'}</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={scanning}
+                  onClick={handleCameraClick}
+                  className="flex flex-col items-center justify-center gap-1.5 py-3.5 rounded-xl text-xs font-bold text-white transition-all active:scale-95 shadow-sm"
+                  style={{ backgroundColor: '#6366F1', opacity: scanning ? 0.6 : 1 }}
+                  title="Open camera to scan receipt"
+                >
+                  <Camera size={20} />
+                  <span>Scan</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!branchId || importing}
+                  onClick={() => fileRef.current?.click()}
+                  className="flex flex-col items-center justify-center gap-1.5 py-3.5 rounded-xl text-xs font-bold transition-all active:scale-95 shadow-sm"
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                >
+                  <Upload size={20} />
+                  <span>{importing ? 'Importing…' : 'Import'}</span>
+                </button>
+              </div>
 
+              {/* ── Desktop: original inline buttons ── */}
+              <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (showForm) {
+                      setShowForm(false); setEditing(null)
+                    } else {
+                      setEditing(null); setForm({ ...emptyForm(resolveFormBranchId(branchId)), date: '' }); setDateRaw(''); setDateError(''); setShowForm(true)
+                    }
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition-all duration-200"
+                  style={{ backgroundColor: showForm ? '#EF4444' : accent }}
+                >
+                  {showForm
+                    ? <><X size={13} /> Close</>
+                    : <><Plus size={13} /> Add Record</>
+                  }
+                </button>
+                <button type="button" disabled={!branchId || importing} onClick={() => fileRef.current?.click()}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+                  <Upload size={13} />{importing ? 'Importing…' : 'Import'}
+                </button>
+              </div>
 
-
-      {/* ── FILTERS ── */}
-      <div className="rounded-xl px-4 py-2.5 flex flex-wrap items-center gap-2"
-        style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-        {/* Branch selector */}
-        <div style={{ position: 'relative' }} className="w-full sm:w-64">
-          <Building2 size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
-          <select
-            value={branchId}
-            onChange={(e) => {
-              const val = e.target.value
-              setBranchId(val)
-              if (isAdmin) {
-                localStorage.setItem('ashcol-global-branch-id', val)
-                window.dispatchEvent(new Event('ashcol-global-branch-change'))
-              }
-            }}
-            disabled={true}
-            className="w-full rounded-lg pl-7 pr-7 py-2 text-xs appearance-none outline-none cursor-not-allowed font-medium bg-slate-100 dark:bg-slate-900/50"
-            style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', border: `1px solid ${inputBorder}`, color: textMuted, colorScheme: isLight ? 'light' : 'dark' }}
-          >
-            {branches.length === 0
-              ? <option value="">Loading…</option>
-              : <option value="" disabled>Select branch…</option>
-            }
-            {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-          <ChevronDown size={11} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
-        </div>
-
-        {/* Month selector */}
-        {activeTab === 'expenses' && branchId && (
-          <div style={{ position: 'relative' }} className="w-full sm:w-36">
-            <CalendarDays size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
-            <select
-              value={filterMonth}
-              onChange={(e) => setFilterMonth(e.target.value)}
-              className="w-full rounded-lg pl-7 pr-7 py-2 text-base sm:text-xs appearance-none outline-none cursor-pointer font-bold"
-              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }}
-            >
-              <option value="All">All Months</option>
-              {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-            <ChevronDown size={11} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
-          </div>
-        )}
-
-
-
-        {/* Search */}
-        <div style={{ position: 'relative' }} className="flex-1 min-w-[200px] w-full">
-          <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={activeTab === 'expenses' ? "Search company, description, date, receipt no…" : "Search description, branch, receipt no…"}
-            className="w-full rounded-lg pl-7 pr-7 py-2 text-base sm:text-xs outline-none"
-            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-          />
-          {search && (
-            <button type="button" onClick={() => setSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: textMuted }}>
-              <X size={12} />
-            </button>
+              {/* Hidden inputs */}
+              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImport} />
+              <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleScanImage} />
+            </>
           )}
         </div>
 
-        {/* Summary — right magnet */}
+        {/* Divider line */}
+        <div style={{ height: '1px', backgroundColor: border }} className="w-full opacity-60" />
+
+        {/* Filters Row */}
+        <div className="flex flex-nowrap items-center gap-2">
+          {/* Branch selector — hidden on mobile */}
+          <div style={{ position: 'relative' }} className="hidden sm:block w-64 shrink-0">
+            <Building2 size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
+            <select
+              value={branchId}
+              onChange={(e) => {
+                const val = e.target.value
+                setBranchId(val)
+                if (isAdmin) {
+                  localStorage.setItem('ashcol-global-branch-id', val)
+                  window.dispatchEvent(new Event('ashcol-global-branch-change'))
+                }
+              }}
+              disabled={true}
+              className="w-full rounded-lg pl-7 pr-7 py-2 text-xs appearance-none outline-none cursor-not-allowed font-medium"
+              style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', border: `1px solid ${inputBorder}`, color: textMuted, colorScheme: isLight ? 'light' : 'dark' }}
+            >
+              {branches.length === 0
+                ? <option value="">Loading…</option>
+                : <option value="" disabled>Select branch…</option>
+              }
+              {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+            <ChevronDown size={11} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
+          </div>
+
+          {/* Month picker — compact on mobile */}
+          {activeTab === 'expenses' && branchId && (
+            <div style={{ position: 'relative' }} className="shrink-0">
+              <CalendarDays size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
+              <select
+                value={filterMonth}
+                onChange={(e) => setFilterMonth(e.target.value)}
+                className="rounded-lg pl-6 pr-5 py-2 text-xs appearance-none outline-none cursor-pointer font-bold"
+                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, colorScheme: isLight ? 'light' : 'dark', maxWidth: 130 }}
+              >
+                <option value="All">All Months</option>
+                {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <ChevronDown size={10} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
+            </div>
+          )}
+
+          {/* Search — compact */}
+          <div style={{ position: 'relative' }} className="flex-1 min-w-0">
+            <Search size={12} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search…"
+              className="w-full rounded-lg pl-7 pr-7 py-2 text-sm sm:text-xs outline-none"
+              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+            />
+            {search && (
+              <button type="button" onClick={() => setSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: textMuted }}>
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* ── ENTRY FORM ── */}
-      {showForm && (
-        <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ backgroundColor: cardBg, border: `1px solid ${activeAccent}55`, boxShadow: `0 0 0 2px ${activeAccent}22` }}>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 w-full">
+      {/* ── ENTRY FORM (PORTALED) ── */}
+      {showForm && typeof document !== 'undefined' && createPortal(
+        <>
+          <div className="sm:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" onClick={() => { setShowForm(false); setEditing(null); setScanPreview(null) }} />
+          
+          <div
+          className="fixed sm:static inset-0 sm:inset-auto z-[100] sm:z-auto rounded-none sm:rounded-2xl flex flex-col gap-4 p-5 pb-8 sm:p-4 overflow-y-auto overscroll-contain h-[100dvh] sm:h-auto sm:max-h-none"
+          style={{ backgroundColor: cardBg, boxShadow: `0 -8px 30px rgba(0,0,0,0.2)` }}
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 w-full pt-2 sm:pt-0">
             <div className="flex items-center justify-between w-full sm:w-auto">
-              <h2 className="font-bold text-base flex items-center gap-2" style={{ color: textPrimary }}>
-                <div className="rounded-lg p-1.5" style={{ backgroundColor: `${activeAccent}22` }}><Receipt size={16} style={{ color: activeAccent }} /></div>
+              <h2 className="font-bold text-lg flex items-center gap-2" style={{ color: textPrimary }}>
+                <div className="rounded-lg p-2" style={{ backgroundColor: `${activeAccent}22` }}><ReceiptText size={18} style={{ color: activeAccent }} /></div>
                 {editing ? (
-                  <span className="flex items-center gap-2">
-                    Edit Expense Record
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider text-white" style={{ backgroundColor: editAccent }}>
+                  <span className="flex items-center gap-2 tracking-wide uppercase">
+                    EDIT RECEIPT
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider text-white" style={{ backgroundColor: editAccent }}>
                       EDITING
                     </span>
                   </span>
                 ) : (
-                  'New Expense Record'
+                  <span className="tracking-wide uppercase">ADD NEW RECEIPT</span>
                 )}
               </h2>
-              <button type="button" onClick={() => { setShowForm(false); setEditing(null); setScanPreview(null) }} className="sm:hidden text-slate-400 hover:text-red-500 transition-colors" style={{ color: textMuted }}><X size={20} /></button>
+              <button type="button" onClick={() => { setShowForm(false); setEditing(null); setScanPreview(null) }} className="sm:hidden p-2 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-500 hover:text-red-500 transition-colors"><X size={20} /></button>
             </div>
             
-            <div className="grid grid-cols-2 sm:flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
+            <div className="grid grid-cols-3 sm:flex items-center gap-2 sm:gap-2 w-full sm:w-auto">
               <button
                 type="button"
                 disabled={scanning}
                 onClick={handlePasteClick}
-                className="flex items-center justify-center gap-1 px-2.5 py-2 sm:px-3 sm:py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-105"
+                className="flex items-center justify-center gap-1 px-2.5 py-2.5 sm:px-3 sm:py-1.5 rounded-xl sm:rounded-lg text-xs font-semibold transition-all hover:scale-105"
                 style={{ backgroundColor: scanning ? `${accent}11` : `${accent}18`, border: `1px solid ${accent}44`, color: accent }}
                 title="Paste an image from your clipboard"
               >
-                <ClipboardPaste size={13} />
-                <span>Paste<span className="hidden sm:inline"> Image</span></span>
+                <ClipboardPaste size={15} />
+                <span className="hidden sm:inline">Paste Image</span>
+                <span className="sm:hidden">Paste</span>
               </button>
               <button
                 type="button"
                 disabled={scanning}
                 onClick={() => scanRef.current?.click()}
-                className="flex items-center justify-center gap-1 px-2.5 py-2 sm:px-3 sm:py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-105 text-white"
+                className="flex items-center justify-center gap-1 px-2.5 py-2.5 sm:px-3 sm:py-1.5 rounded-xl sm:rounded-lg text-xs font-semibold transition-all hover:scale-105 text-white"
                 style={{ backgroundColor: accent }}
                 title="Upload receipt image"
               >
-                <Upload size={13} />
-                <span>Upload<span className="hidden sm:inline"> Receipt</span></span>
+                <Upload size={15} />
+                <span className="hidden sm:inline">Upload Receipt</span>
+                <span className="sm:hidden">Upload</span>
+              </button>
+              <button
+                type="button"
+                disabled={scanning}
+                onClick={() => cameraRef.current?.click()}
+                className="flex items-center justify-center gap-1 px-2.5 py-2.5 sm:hidden rounded-xl text-xs font-bold text-white transition-all active:scale-95"
+                style={{ backgroundColor: '#6366F1', opacity: scanning ? 0.6 : 1 }}
+                title="Open camera"
+              >
+                <Camera size={15} />
+                <span>Camera</span>
               </button>
               <input ref={scanRef} type="file" accept="image/*" className="hidden" onChange={handleScanImage} />
             </div>
@@ -1200,12 +1269,12 @@ export default function AuditFinanceExpenses() {
             )}
 
             {/* Form grid */}
-            <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2" onKeyDown={handleFormKeyDown}>
+            <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-2" onKeyDown={handleFormKeyDown}>
               {/* Branch */}
               {field(
                 'Branch',
                 <div style={{ position: 'relative' }}>
-                  <Building2 size={12} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
+                  <Building2 size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
                   <select
                     id="receipt-branch"
                     value={form.branchId}
@@ -1214,12 +1283,12 @@ export default function AuditFinanceExpenses() {
                       setForm((f) => ({ ...f, branchId: selectedId }))
                     }}
                     disabled={true}
-                    className="w-full rounded-lg pl-7 pr-7 py-1.5 text-xs appearance-none outline-none cursor-not-allowed font-medium bg-slate-100 dark:bg-slate-900/50"
+                    className="w-full rounded-xl sm:rounded-lg pl-9 pr-9 py-2.5 sm:py-1.5 text-base sm:text-xs appearance-none outline-none cursor-not-allowed font-medium bg-slate-100 dark:bg-slate-900/50"
                     style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', border: `1px solid ${inputBorder}`, color: textMuted, colorScheme: isLight ? 'light' : 'dark' }}
                   >
                     {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>
-                  <ChevronDown size={12} style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
+                  <ChevronDown size={14} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
                 </div>
               )}
 
@@ -1234,7 +1303,7 @@ export default function AuditFinanceExpenses() {
                     onChange={(e) => { setDateRaw(e.target.value); setDateError(''); clearScanned('date') }}
                     onBlur={(e) => handleDateBlur(e.target.value)}
                     placeholder={latestDateStr}
-                    className="w-full rounded-lg px-2.5 py-1.5 text-base sm:text-xs outline-none transition-all"
+                    className="w-full rounded-xl sm:rounded-lg px-3.5 py-2.5 sm:px-2.5 sm:py-1.5 text-base sm:text-xs outline-none transition-all"
                     style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, ...scannedStyle('date') }} />
                   {dateError
                     ? <p className="text-xs mt-0.5" style={{ color: danger }}>{dateError}</p>
@@ -1250,8 +1319,7 @@ export default function AuditFinanceExpenses() {
                   onChange={(v) => { setForm((f) => ({ ...f, incurredBy: v })); clearScanned('incurredBy') }}
                   suggestions={suggestions.people} placeholder="Who incurred this?"
                   {...{ inputBg, textPrimary, textMuted, accent }}
-                  inputClassName="text-base sm:text-xs"
-                  inputStyle={{ padding: '6px 10px' }}
+                  inputClassName="text-base sm:text-xs rounded-xl sm:rounded-lg px-3.5 py-2.5 sm:px-2.5 sm:py-1.5"
                   inputBorder={scannedFields.has('incurredBy') ? scanBorder : inputBorder} />
               )}
 
@@ -1263,8 +1331,7 @@ export default function AuditFinanceExpenses() {
                   onChange={(v) => { setForm((f) => ({ ...f, description: v })); clearScanned('description') }}
                   suggestions={suggestions.descs} placeholder="What was purchased?"
                   {...{ inputBg, textPrimary, textMuted, accent }}
-                  inputClassName="text-base sm:text-xs"
-                  inputStyle={{ padding: '6px 10px' }}
+                  inputClassName="text-base sm:text-xs rounded-xl sm:rounded-lg px-3.5 py-2.5 sm:px-2.5 sm:py-1.5"
                   inputBorder={scannedFields.has('description') ? scanBorder : inputBorder} />
               )}
 
@@ -1273,11 +1340,10 @@ export default function AuditFinanceExpenses() {
                 <span className="flex items-center gap-1">Company / Vendor {scannedFields.has('company') && <span style={{ color: scanBorder, fontSize: 10 }}>✦ from scan</span>}</span> as unknown as string,
                 <AutoSuggestInput value={form.company}
                   id="receipt-company"
-                  onChange={(v) => { setForm((f) => ({ ...f, company: v })); clearScanned('company') }}
-                  suggestions={suggestions.companies} placeholder="Store or vendor name"
+                  onChange={(v) => { setForm((f) => ({ ...f, company: v.toUpperCase() })); clearScanned('company') }}
+                  suggestions={suggestions.companies} placeholder="STORE OR VENDOR NAME"
                   {...{ inputBg, textPrimary, textMuted, accent }}
-                  inputClassName="text-base sm:text-xs"
-                  inputStyle={{ padding: '6px 10px' }}
+                  inputClassName="text-base sm:text-xs rounded-xl sm:rounded-lg px-3.5 py-2.5 sm:px-2.5 sm:py-1.5 uppercase"
                   inputBorder={scannedFields.has('company') ? scanBorder : inputBorder} />
               )}
 
@@ -1288,7 +1354,7 @@ export default function AuditFinanceExpenses() {
                   id="receipt-receiptNo"
                   onChange={(e) => { setForm((f) => ({ ...f, receiptNo: e.target.value })); clearScanned('receiptNo') }}
                   placeholder="OR / SI number"
-                  className="w-full rounded-lg px-2.5 py-1.5 text-base sm:text-xs outline-none transition-all"
+                  className="w-full rounded-xl sm:rounded-lg px-3.5 py-2.5 sm:px-2.5 sm:py-1.5 text-base sm:text-xs outline-none transition-all"
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, ...scannedStyle('receiptNo') }} />
               )}
 
@@ -1305,7 +1371,7 @@ export default function AuditFinanceExpenses() {
                     }
                   }}
                   placeholder="0.00"
-                  className="w-full rounded-lg px-2.5 py-1.5 text-base sm:text-xs outline-none transition-all"
+                  className="w-full rounded-xl sm:rounded-lg px-3.5 py-2.5 sm:px-2.5 sm:py-1.5 text-base sm:text-xs font-semibold outline-none transition-all"
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, ...scannedStyle('amount') }} />
               )}
 
@@ -1317,8 +1383,7 @@ export default function AuditFinanceExpenses() {
                   onChange={(v) => { setForm((f) => ({ ...f, sourceOfFunds: v })); clearScanned('sourceOfFunds') }}
                   suggestions={suggestions.sources} placeholder="Petty cash, reimbursement…"
                   {...{ inputBg, textPrimary, textMuted, accent }}
-                  inputClassName="text-base sm:text-xs"
-                  inputStyle={{ padding: '6px 10px' }}
+                  inputClassName="text-base sm:text-xs rounded-xl sm:rounded-lg px-3.5 py-2.5 sm:px-2.5 sm:py-1.5"
                   inputBorder={scannedFields.has('sourceOfFunds') ? scanBorder : inputBorder} />
               )}
             </div>
@@ -1447,19 +1512,26 @@ export default function AuditFinanceExpenses() {
             </div>
           </div>
 
-          <div className="flex gap-2 justify-end pt-2">
-            <button type="button" onClick={() => { setShowForm(false); setEditing(null) }} className="px-4 py-2 text-sm rounded-lg" style={{ color: textMuted, backgroundColor: inputBg, border: `1px solid ${inputBorder}` }} disabled={savingReceipt}>Cancel</button>
-            <button type="button" onClick={submitReceipt} className="px-5 py-2 rounded-xl text-sm font-semibold text-white shadow flex items-center gap-2 justify-center transition-all active:scale-95" style={{ backgroundColor: activeAccent }} disabled={savingReceipt}>
+          <div className="flex flex-col sm:flex-row gap-3 justify-end pt-6 sm:pt-4 mt-2 border-t"
+            style={{ borderColor: inputBorder }}>
+            <button type="button" onClick={() => { setShowForm(false); setEditing(null) }}
+              className="flex-1 sm:flex-none px-4 py-3 sm:py-2 text-sm rounded-xl sm:rounded-lg font-semibold"
+              style={{ color: textMuted, backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}
+              disabled={savingReceipt}>Cancel</button>
+            <button type="button" onClick={submitReceipt}
+              className="flex-1 sm:flex-none px-5 py-3 sm:py-2 rounded-xl text-sm font-bold text-white shadow flex items-center gap-2 justify-center transition-all active:scale-95"
+              style={{ backgroundColor: activeAccent }} disabled={savingReceipt}>
               {savingReceipt ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : (editing ? 'Apply Updates' : 'Save Record')}
             </button>
           </div>
         </div>
+        </>, document.body
       )}
 
       {/* ── RECEIPT TABLE / DAILY LOG / PURCHASES ── */}
       {activeTab === 'expenses' && branchId && (
         <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-          <div className="flex flex-row items-center justify-between gap-3 px-4 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
+          <div className="hidden sm:flex flex-row items-center justify-between gap-3 px-4 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
             <div className="min-w-0">
               <h2 className="text-xs font-black truncate" style={{ color: textPrimary }}>
                 {branchName} — Expenses
@@ -1480,69 +1552,130 @@ export default function AuditFinanceExpenses() {
               No expense records found. {!search && 'Add records manually or import from Excel.'}
             </div>
           ) : (
-            // ── Table view (Redesigned 6-column layout) ──
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs min-w-[850px]">
-                <thead>
-                  <tr style={{ backgroundColor: `${accent}18` }}>
-                    <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Date & Incurred By</th>
-                    <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Company / Vendor</th>
-                    <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Description</th>
-                    <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Category & Source</th>
-                    <th className="px-3 py-3 text-right font-bold" style={{ color: textMuted }}>Amount</th>
-                    <th className="px-3 py-3"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((row, i) => (
-                    <tr key={row.id}
-                      onClick={() => openDetails(row)}
-                      onContextMenu={(e) => openDetails(row, e)}
-                      title="Click to view details"
-                      className="transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
-                      style={{ borderTop: `1px solid ${border}`, backgroundColor: i % 2 ? (isLight ? '#f8fafc' : '#0d1520') : undefined, cursor: 'pointer' }}>
-                      <td className="px-3 py-2.5">
-                        <div className="font-semibold" style={{ color: textPrimary }}>{row.date}</div>
-                        <div className="text-[10px]" style={{ color: textMuted }}>By: <EmployeeNameLink nameOrId={row.incurredBy} /></div>
-                      </td>
-                      <td className="px-3 py-2.5 font-medium" style={{ color: textPrimary }}>
-                        {row.company || '—'}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="font-medium truncate max-w-xs md:max-w-sm" style={{ color: textPrimary }} title={row.description}>{row.description}</div>
+            <>
+              {/* ── Mobile Card View ── */}
+              <div className="block sm:hidden">
+                {filtered.map((row) => (
+                  <div
+                    key={row.id}
+                    className="flex items-center gap-2 px-3 py-3 cursor-pointer transition-colors active:bg-black/[0.03] dark:active:bg-white/[0.04]"
+                    style={{ borderTop: `1px solid ${border}` }}
+                  >
+                    {/* Main content — tappable */}
+                    <div className="flex-1 min-w-0" onClick={() => setActionMenuRow(row)}>
+                      {/* Row 1: Company + Amount */}
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-sm font-bold leading-tight truncate" style={{ color: textPrimary }}>
+                          {row.company || '—'}
+                        </span>
+                        <span className="text-sm font-bold shrink-0 tabular-nums" style={{ color: textPrimary }}>
+                          ₱{peso(row.amount)}
+                        </span>
+                      </div>
+                      {/* Row 2: Description */}
+                      {row.description && (
+                        <div className="text-xs mt-0.5 truncate" style={{ color: textMuted }}>{row.description}</div>
+                      )}
+                      {/* Row 3: Meta — date · by · txn no */}
+                      <div className="flex items-center gap-2 flex-wrap mt-1">
+                        <span className="text-[11px]" style={{ color: textMuted }}>{row.date}</span>
+                        <span className="text-[11px]" style={{ color: isLight ? '#cbd5e1' : '#334155' }}>·</span>
+                        <span className="text-[11px]" style={{ color: textMuted }}>
+                          <EmployeeNameLink nameOrId={row.incurredBy} />
+                        </span>
                         {row.receiptNo && (
-                          <div className="text-[10px]" style={{ color: textMuted }}>Receipt: {row.receiptNo}</div>
+                          <>
+                            <span className="text-[11px]" style={{ color: isLight ? '#cbd5e1' : '#334155' }}>·</span>
+                            <span className="text-[11px] font-medium" style={{ color: textMuted }}>
+                              Txn #{row.receiptNo}
+                            </span>
+                          </>
                         )}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <span className="uppercase font-semibold" style={{ color: textPrimary }}>
+                      </div>
+                      {/* Row 4: Category */}
+                      <div className="mt-1">
+                        <span
+                          className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded"
+                          style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e2d48', color: textMuted }}
+                        >
                           {row.expenseCategory}
                         </span>
-                        {row.sourceOfFunds && (
-                          <div className="text-[10px] mt-0.5" style={{ color: textMuted }}>Source: {row.sourceOfFunds}</div>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-right font-bold" style={{ color: textPrimary }}>
-                        ₱{peso(row.amount)}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex gap-2 justify-end" onClick={e => e.stopPropagation()}>
-                          <button type="button" onClick={() => startEdit(row)} className="p-1 rounded hover:bg-slate-500/10"><Pencil size={13} style={{ color: textMuted }} /></button>
-                          <button type="button" onClick={() => void handleDeleteRecord(row)} className="p-1 rounded hover:bg-rose-500/10"><Trash2 size={13} style={{ color: danger }} /></button>
-                        </div>
-                      </td>
+                      </div>
+                    </div>
+
+                  </div>
+                ))}
+                {/* Total row */}
+                <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: `1px solid ${border}` }}>
+                  <span className="text-xs font-semibold" style={{ color: textMuted }}>{filtered.length} record{filtered.length !== 1 ? 's' : ''}</span>
+                  <span className="text-sm font-bold tabular-nums" style={{ color: textPrimary }}>₱{peso(totalFiltered)}</span>
+                </div>
+              </div>
+
+              {/* ── Desktop Table View ── */}
+              <div className="hidden sm:block overflow-x-auto">
+                <table className="w-full text-xs min-w-[850px]">
+                  <thead>
+                    <tr style={{ backgroundColor: `${accent}18` }}>
+                      <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Date &amp; Incurred By</th>
+                      <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Company / Vendor</th>
+                      <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Description</th>
+                      <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Category &amp; Source</th>
+                      <th className="px-3 py-3 text-right font-bold" style={{ color: textMuted }}>Amount</th>
+                      <th className="px-3 py-3"></th>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr style={{ borderTop: `2px solid ${border}` }}>
-                    <td colSpan={4} className="px-3 py-2.5 font-bold text-right" style={{ color: textMuted }}>TOTAL</td>
-                    <td className="px-3 py-2.5 text-right font-bold" style={{ color: accent }}>₱{peso(totalFiltered)}</td>
-                    <td />
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {filtered.map((row, i) => (
+                      <tr key={row.id}
+                        onClick={() => openDetails(row)}
+                        onContextMenu={(e) => openDetails(row, e)}
+                        title="Click to view details"
+                        className="transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
+                        style={{ borderTop: `1px solid ${border}`, backgroundColor: i % 2 ? (isLight ? '#f8fafc' : '#0d1520') : undefined, cursor: 'pointer' }}>
+                        <td className="px-3 py-2.5">
+                          <div className="font-semibold" style={{ color: textPrimary }}>{row.date}</div>
+                          <div className="text-[10px]" style={{ color: textMuted }}>By: <EmployeeNameLink nameOrId={row.incurredBy} /></div>
+                        </td>
+                        <td className="px-3 py-2.5 font-medium" style={{ color: textPrimary }}>
+                          {row.company || '—'}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <div className="font-medium truncate max-w-xs md:max-w-sm" style={{ color: textPrimary }} title={row.description}>{row.description}</div>
+                          {row.receiptNo && (
+                            <div className="text-[10px]" style={{ color: textMuted }}>Receipt: {row.receiptNo}</div>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className="uppercase font-semibold" style={{ color: textPrimary }}>
+                            {row.expenseCategory}
+                          </span>
+                          {row.sourceOfFunds && (
+                            <div className="text-[10px] mt-0.5" style={{ color: textMuted }}>Source: {row.sourceOfFunds}</div>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-bold" style={{ color: textPrimary }}>
+                          ₱{peso(row.amount)}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <div className="flex gap-2 justify-end" onClick={e => e.stopPropagation()}>
+                            <button type="button" onClick={() => startEdit(row)} className="p-1 rounded hover:bg-slate-500/10"><Pencil size={13} style={{ color: textMuted }} /></button>
+                            <button type="button" onClick={() => void handleDeleteRecord(row)} className="p-1 rounded hover:bg-rose-500/10"><Trash2 size={13} style={{ color: danger }} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ borderTop: `2px solid ${border}` }}>
+                      <td colSpan={4} className="px-3 py-2.5 font-bold text-right" style={{ color: textMuted }}>TOTAL</td>
+                      <td className="px-3 py-2.5 text-right font-bold" style={{ color: accent }}>₱{peso(totalFiltered)}</td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </>
           )}
 
           {/* ── Danger zone footer ── */}
@@ -1580,7 +1713,7 @@ export default function AuditFinanceExpenses() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}
           onClick={() => { if (!isEditingInModal) setDetailRow(null) }}>
-          <div className="w-full max-w-xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]"
+          <div className="w-full sm:max-w-xl rounded-t-2xl sm:rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[100dvh] sm:max-h-[92vh]"
             style={{ backgroundColor: cardBg, border: `1px solid ${isLight ? '#e2e8f0' : '#1e2d48'}`, boxShadow: '0 25px 60px rgba(0,0,0,0.4)' }}
             onClick={(e) => e.stopPropagation()}>
 
@@ -1769,7 +1902,7 @@ export default function AuditFinanceExpenses() {
               <div className="px-6 py-5 flex flex-col gap-4 overflow-y-auto">
 
                 {/* ── Info Grid ── */}
-                <div className="grid grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5">
                   {[
                     { label: 'Submitted By', value: formatDisplayUserLabel(detailRow.inputBy), isPerson: true },
                     { label: 'Incurred By', value: detailRow.incurredBy || '—', isPerson: true },
@@ -1788,7 +1921,7 @@ export default function AuditFinanceExpenses() {
                   ))}
 
                   {/* Description spans full width */}
-                  <div className="col-span-2 rounded-xl px-3.5 py-3"
+                  <div className="col-span-1 sm:col-span-2 rounded-xl px-3.5 py-3"
                     style={{ backgroundColor: isLight ? '#f8fafc' : '#0c1829', border: `1px solid ${isLight ? '#e2e8f0' : '#1a2d47'}` }}>
                     <span className="text-[10px] font-bold uppercase tracking-widest block mb-1" style={{ color: textMuted }}>Description</span>
                     <span className="text-sm font-semibold whitespace-pre-wrap" style={{ color: textPrimary }}>{detailRow.description || '—'}</span>
@@ -1882,7 +2015,8 @@ export default function AuditFinanceExpenses() {
                     style={{ color: textMuted, backgroundColor: isLight ? '#f1f5f9' : '#0f1c30', border: `1px solid ${isLight ? '#e2e8f0' : '#1a2d47'}` }}>
                     Close
                   </button>
-                  <div className="flex items-center gap-2">
+                  {/* Edit / Delete — desktop only; hidden on mobile to prevent misclicks */}
+                  <div className="hidden sm:flex items-center gap-2">
                     <button type="button" onClick={() => startEditInModal(detailRow)}
                       className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white transition-all duration-150 active:scale-95"
                       style={{ backgroundColor: '#334155', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
@@ -1901,7 +2035,7 @@ export default function AuditFinanceExpenses() {
         </div>
       )}
 
-      {duplicateModal && (
+      {duplicateModal && typeof document !== 'undefined' && createPortal(
         <div style={{
           position: 'fixed',
           top: 0,
@@ -2099,9 +2233,23 @@ export default function AuditFinanceExpenses() {
             </div>
 
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
+      {actionMenuRow && typeof document !== 'undefined' && createPortal(
+        <>
+          <div className="sm:hidden fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm" onClick={() => setActionMenuRow(null)} />
+          <div className="sm:hidden fixed inset-x-0 bottom-0 z-[100] p-4 flex flex-col gap-2 pb-8" style={{ animation: 'slideUp 0.2s ease-out' }}>
+            <div className="rounded-2xl overflow-hidden shadow-2xl flex flex-col" style={{ backgroundColor: cardBg }}>
+              <button type="button" onClick={() => { openDetails(actionMenuRow); setActionMenuRow(null) }} className="w-full px-5 py-4 text-center text-sm font-bold border-b transition-colors active:bg-black/5" style={{ color: textPrimary, borderColor: border }}>View Details</button>
+              <button type="button" onClick={() => { startEdit(actionMenuRow); setActionMenuRow(null) }} className="w-full px-5 py-4 text-center text-sm font-bold border-b transition-colors active:bg-black/5" style={{ color: textPrimary, borderColor: border }}>Edit Record</button>
+              <button type="button" onClick={() => { void handleDeleteRecord(actionMenuRow); setActionMenuRow(null) }} className="w-full px-5 py-4 text-center text-sm font-bold transition-colors active:bg-black/5" style={{ color: danger }}>Delete Record</button>
+            </div>
+            <button type="button" onClick={() => setActionMenuRow(null)} className="w-full px-5 py-4 text-center text-sm font-bold rounded-2xl shadow-2xl transition-colors active:bg-black/5 mt-1" style={{ backgroundColor: cardBg, color: textMuted }}>Cancel</button>
+          </div>
+        </>, document.body
+      )}
 
     </div>
   )

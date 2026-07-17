@@ -202,6 +202,7 @@ export default function WarrantyRegistration() {
         r.acDetails,
         r.installerName,
         r.negotiatorName,
+        r.dealer,
         r.sourceVendor,
         r.remarksUpdate,
       ].filter(Boolean).join(' ').toLowerCase()

@@ -3,15 +3,21 @@ import {
   Search, Wrench, Mail, Phone, RefreshCw, Building2,
   CheckCircle, XCircle, Pencil, Trash2, X, Plus, Copy,
   Check, Eye, EyeOff, ShieldCheck,
-  Camera, Calendar, Tag, User,
-  ChevronDown, ChevronUp,
+  Camera, Calendar, User,
   Loader2
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import UserAvatar from '../components/UserAvatar'
-import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName } from '../utils/api'
+import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName, notifyEmployeesDirectoryUpdated } from '../utils/api'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
+
+function formatDisplayDate(dateStr?: string | null): string {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Employee {
@@ -32,6 +38,7 @@ interface Employee {
   street?: string
   landmark?: string
   skills?: string
+  dateHired?: string
   createdAt?: string
   updatedAt?: string
 }
@@ -167,32 +174,13 @@ const formatJobTitleLabel = (title: string) => {
     .replace(/\b\w/g, char => char.toUpperCase())
 }
 
-const formatRoleLevelLabel = (level: string) => {
-  if (!level?.trim() || level === '—') return '—'
-  return formatJobTitleLabel(level.replace(/_/g, ' '))
-}
+
 
 const CREATE_STEPS = [
   { id: 1 as const, label: 'Account', hint: 'Name and login details' },
   { id: 2 as const, label: 'Role', hint: 'Role and branch' },
   { id: 3 as const, label: 'Details', hint: 'Optional profile info' },
 ]
-
-const parseSkills = (skillsStr?: string): string[] => {
-  if (!skillsStr) return []
-  try {
-    const parsed = JSON.parse(skillsStr)
-    if (Array.isArray(parsed)) return parsed.map(s => String(s).trim().toUpperCase()).filter(Boolean)
-  } catch {
-    return skillsStr.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
-  }
-  return []
-}
-
-const getRoleLevel = (skillsStr?: string): string => {
-  const list = parseSkills(skillsStr)
-  return list[0] ? formatRoleLevelLabel(list[0]) : '—'
-}
 
 // ── Input helper ────────────────────────────────────────────────────────────
 interface FieldProps {
@@ -256,9 +244,6 @@ export default function Employees() {
 
   // Custom Job Titles / Role Levels (localStorage)
   const [customJobTitles, setCustomJobTitles] = useState<string[]>([])
-  const [showRoleManager, setShowRoleManager] = useState(false)
-  const [newRoleInput, setNewRoleInput] = useState('')
-
   // Drawer details panel state
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -298,7 +283,7 @@ export default function Employees() {
     branchId: '', isActive: true, newPassword: '',
     personalEmail: '', region: '', city: '',
     barangay: '', street: '', landmark: '',
-    skills: '',
+    dateHired: '',
     profileImage: '',
   })
   const [showPass, setShowPass] = useState(false)
@@ -311,7 +296,7 @@ export default function Employees() {
     role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
     phone: '', personalEmail: '', region: '',
     city: '', barangay: '', street: '',
-    landmark: '', skills: '',
+    landmark: '', dateHired: '',
     profileImage: '',
   })
   const [createSaving, setCreateSaving] = useState(false)
@@ -326,7 +311,7 @@ export default function Employees() {
     setCreateForm({
       name: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
       phone: '', personalEmail: '', region: '', city: '', barangay: '', street: '',
-      landmark: '', skills: '', profileImage: '',
+      landmark: '', dateHired: '', profileImage: '',
     })
   }
 
@@ -336,7 +321,7 @@ export default function Employees() {
     setCreateForm({
       name: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
       phone: '', personalEmail: '', region: '', city: '', barangay: '', street: '',
-      landmark: '', skills: '', profileImage: '',
+      landmark: '', dateHired: '', profileImage: '',
     })
     setShowCreate(true)
   }
@@ -353,26 +338,7 @@ export default function Employees() {
     }
   }, [])
 
-  const handleAddCustomRole = (e: React.FormEvent) => {
-    e.preventDefault()
-    const clean = newRoleInput.trim().toUpperCase()
-    if (!clean) return
-    const combined = [...DEFAULT_JOB_TITLES, ...customJobTitles]
-    if (combined.includes(clean)) {
-      alert('Role title already exists.')
-      return
-    }
-    const updated = [...customJobTitles, clean]
-    setCustomJobTitles(updated)
-    localStorage.setItem('ashcol-custom-job-titles', JSON.stringify(updated))
-    setNewRoleInput('')
-  }
 
-  const handleRemoveCustomRole = (roleTitle: string) => {
-    const updated = customJobTitles.filter(t => t !== roleTitle)
-    setCustomJobTitles(updated)
-    localStorage.setItem('ashcol-custom-job-titles', JSON.stringify(updated))
-  }
 
   const allJobTitles = [...DEFAULT_JOB_TITLES, ...customJobTitles]
 
@@ -529,7 +495,7 @@ export default function Employees() {
           barangay:    s.barangay    || '',
           street:      s.street      || '',
           landmark:    s.landmark    || '',
-          skills:      s.skills      || '',
+          dateHired:   s.dateHired   || '',
           createdAt:   s.createdAt,
           updatedAt:   s.updatedAt,
         }
@@ -675,7 +641,7 @@ export default function Employees() {
       barangay: s.barangay || '',
       street: s.street || '',
       landmark: s.landmark || '',
-      skills: s.skills || '',
+      dateHired: s.dateHired || '',
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
     }
@@ -707,7 +673,7 @@ export default function Employees() {
       barangay: emp.barangay || '',
       street: emp.street || '',
       landmark: emp.landmark || '',
-      skills: emp.skills ? (emp.skills.startsWith('[') ? parseSkills(emp.skills)[0] || '' : emp.skills) : '',
+      dateHired: emp.dateHired || '',
       profileImage: emp.profileImage || '',
     })
     setFormErr('')
@@ -726,12 +692,6 @@ export default function Employees() {
         ? `${API_BASE_URL}/admin/users/${editTarget.id}`
         : `${API_BASE_URL}/manager/employees/${editTarget.id}`
 
-      const skillsArray = editForm.skills
-        .split(',')
-        .map(s => s.trim().toUpperCase())
-        .filter(Boolean)
-      const skillsJson = JSON.stringify(skillsArray)
-
       const payload: Record<string, unknown> = {
         name: formatPersonName(editForm.name.trim()),
         email: editForm.email.trim(),
@@ -745,7 +705,7 @@ export default function Employees() {
         barangay: editForm.barangay.trim(),
         street: editForm.street.trim(),
         landmark: editForm.landmark.trim(),
-        skills: skillsJson,
+        dateHired: editForm.dateHired || null,
         profileImage: editForm.profileImage,
       }
       if (editForm.newPassword.trim()) payload.password = editForm.newPassword.trim()
@@ -786,7 +746,6 @@ export default function Employees() {
             ...editTarget,
             ...payload,
             isActive: editForm.isActive,
-            skills: skillsJson,
             role: editForm.role,
             jobTitle: editForm.jobTitle,
             branchId: editForm.branchId,
@@ -799,6 +758,7 @@ export default function Employees() {
 
       const roleChanged = editForm.role !== editTarget.role
       setEditTarget(null)
+      notifyEmployeesDirectoryUpdated()
       showToast('success', roleChanged
         ? `${refreshed.name} updated — role changed to ${formatRoleLabel(editForm.role)}.`
         : `${refreshed.name} saved successfully.`)
@@ -939,12 +899,6 @@ export default function Employees() {
 
       // Save additional profile details immediately after successful registration
       if (u?.id) {
-        const skillsArray = createForm.skills
-          .split(',')
-          .map(s => s.trim().toUpperCase())
-          .filter(Boolean)
-        const skillsJson = JSON.stringify(skillsArray)
-
         const updateUrl = isAdmin
           ? `${API_BASE_URL}/admin/users/${u.id}`
           : `${API_BASE_URL}/manager/employees/${u.id}`
@@ -960,13 +914,14 @@ export default function Employees() {
             barangay: createForm.barangay.trim(),
             street: createForm.street.trim(),
             landmark: createForm.landmark.trim(),
-            skills: skillsJson,
+            dateHired: createForm.dateHired || null,
             profileImage: createForm.profileImage,
           }),
         })
       }
 
       if (u?.temporaryPassword && u?.email) setNewTechCreds({ email: u.email, password: u.temporaryPassword })
+      notifyEmployeesDirectoryUpdated()
       showToast('success', `${formattedName} created as ${formatRoleLabel(createForm.role)}.`)
       resetCreateFlow()
       fetchEmployees()
@@ -991,8 +946,7 @@ export default function Employees() {
       e.role.toLowerCase().includes(q) ||
       e.jobTitle.toLowerCase().includes(q) ||
       e.branchName.toLowerCase().includes(q) ||
-      e.phone.toLowerCase().includes(q) ||
-      (e.skills || '').toLowerCase().includes(q)
+      e.phone.toLowerCase().includes(q)
     )
   })
 
@@ -1064,16 +1018,6 @@ export default function Employees() {
 
         {/* Actions */}
         <div className="flex items-center gap-1.5">
-          {isAdmin && (
-            <button
-              onClick={() => setShowRoleManager(!showRoleManager)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all"
-              style={{ backgroundColor: cardBg, borderColor: border, color: textMuted }}
-            >
-              <Tag className="w-3.5 h-3.5" />
-              Roles {showRoleManager ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            </button>
-          )}
           {(isAdmin || isManager) && (
             <button
               onClick={openCreateFlow}
@@ -1094,45 +1038,6 @@ export default function Employees() {
         </div>
       </div>
 
-      {/* ── Admin Custom Job Titles / Role Levels Panel ── */}
-      {isAdmin && showRoleManager && (
-        <div className="rounded-xl p-4 flex flex-col gap-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold" style={{ color: textPrimary }}>Job Title / Role Levels</span>
-            <span className="text-[10px]" style={{ color: textMuted }}>Manage job titles for dropdown fields</span>
-          </div>
-          
-          <div className="flex flex-wrap gap-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border" style={{ borderColor: border, color: textMuted }}>Default:</span>
-            {DEFAULT_JOB_TITLES.map(title => (
-              <span key={title} className="text-xs font-medium px-2 py-1 rounded text-emerald-600 bg-emerald-500/10 border border-emerald-500/20">{formatJobTitleLabel(title)}</span>
-            ))}
-          </div>
-
-          {customJobTitles.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border" style={{ borderColor: border, color: textMuted }}>Custom:</span>
-              {customJobTitles.map(title => (
-                <span key={title} className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded text-blue-600 bg-blue-500/10 border border-blue-500/20">
-                  {formatJobTitleLabel(title)}
-                  <button onClick={() => handleRemoveCustomRole(title)} className="hover:text-red-500 transition-colors"><X className="w-2.5 h-2.5" /></button>
-                </span>
-              ))}
-            </div>
-          )}
-
-          <form onSubmit={handleAddCustomRole} className="flex gap-2 max-w-xs">
-            <input
-              type="text" placeholder="New title…" value={newRoleInput}
-              onChange={e => setNewRoleInput(e.target.value)}
-              className="flex-1 rounded-lg px-2.5 py-1.5 text-xs outline-none"
-              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-            />
-            <button type="submit" className="px-3 py-1.5 rounded-lg text-xs font-bold text-white" style={{ backgroundColor: '#10B981' }}>Add</button>
-          </form>
-        </div>
-      )}
-
       {/* ── Main Table Card ── */}
       <div className="rounded-xl overflow-hidden flex flex-col" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
 
@@ -1142,7 +1047,7 @@ export default function Employees() {
             <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
             <input
               type="text"
-              placeholder="Search name, email, level, branch…"
+              placeholder="Search name, email, branch…"
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="bg-transparent text-xs outline-none w-full"
@@ -1197,7 +1102,7 @@ export default function Employees() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#080f1c', borderBottom: `1px solid ${border}` }}>
-                {['Employee', 'Role / Title', 'Branch', 'Contact', 'Level', 'Status', ''].map(h => (
+                {['Employee', 'Role / Title', 'Branch', 'Contact', 'Date Hired', 'Status', ''].map(h => (
                   <th key={h} className="px-4 py-2.5 text-left text-xs font-medium whitespace-nowrap" style={{ color: textMuted }}>{h}</th>
                 ))}
               </tr>
@@ -1274,14 +1179,14 @@ export default function Employees() {
                       )}
                     </td>
 
-                    {/* Role Level */}
-                    <td className="px-4 py-2.5">
-                      {e.skills && getRoleLevel(e.skills) !== '—' ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium text-blue-600 bg-blue-500/10 border border-blue-500/15 whitespace-nowrap">
-                          {getRoleLevel(e.skills)}
+                    {/* Date Hired */}
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {formatDisplayDate(e.dateHired) !== '—' ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                          {formatDisplayDate(e.dateHired)}
                         </span>
                       ) : (
-                        <span className="text-[10px] italic" style={{ color: textMuted }}>—</span>
+                        <span className="text-gray-400">—</span>
                       )}
                     </td>
 
@@ -1457,7 +1362,7 @@ export default function Employees() {
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <DetailField label="System role" value={formatRoleLabel(selectedEmployee.role)} icon={<ShieldCheck className="w-4 h-4" />} />
                       <DetailField label="Job title" value={selectedEmployee.jobTitle ? formatJobTitleLabel(selectedEmployee.jobTitle) : ''} icon={<Wrench className="w-4 h-4" />} emptyLabel="—" />
-                      <DetailField label="Level" value={getRoleLevel(selectedEmployee.skills)} icon={<Tag className="w-4 h-4" />} />
+                      <DetailField label="Date Hired" value={formatDisplayDate(selectedEmployee.dateHired)} icon={<Calendar className="w-4 h-4" />} />
                     </div>
                   </div>
 
@@ -1801,24 +1706,22 @@ export default function Employees() {
                   </div>
                 </div>
 
-                {/* ── Section: Role Level ── */}
+                {/* ── Section: Date Hired ── */}
                 <div className="border-t pt-4" style={{ borderColor: border }}>
-                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Role Level</h4>
-                  <Field label="Employee Role Level" labelColor={textMuted}>
-                    <select
-                      className={inputCls}
-                      style={inputStyle}
-                      value={editForm.skills ? (editForm.skills.startsWith('[') ? parseSkills(editForm.skills)[0] || '' : editForm.skills) : ''}
-                      onChange={e => setEditForm(p => ({ ...p, skills: e.target.value }))}
-                    >
-                      <option value="">— Select Level —</option>
-                      <option value="JUNIOR LEVEL">JUNIOR LEVEL</option>
-                      <option value="MID LEVEL">MID LEVEL</option>
-                      <option value="SENIOR LEVEL">SENIOR LEVEL</option>
-                      <option value="LEAD LEVEL">LEAD LEVEL</option>
-                      <option value="SUPERVISOR LEVEL">SUPERVISOR LEVEL</option>
-                      <option value="EXECUTIVE LEVEL">EXECUTIVE LEVEL</option>
-                    </select>
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-blue-500 mb-3">Date Hired</h4>
+                  <Field label="Employee Date Hired" labelColor={textMuted}>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                        <Calendar className="w-4 h-4" />
+                      </div>
+                      <input
+                        type="date"
+                        className={inputCls}
+                        style={inputStyle}
+                        value={editForm.dateHired}
+                        onChange={e => setEditForm(p => ({ ...p, dateHired: e.target.value }))}
+                      />
+                    </div>
                   </Field>
                 </div>
 
@@ -2011,13 +1914,19 @@ export default function Employees() {
                       </Field>
                     </div>
                   </div>
-                  <Field label="Role level (optional)" labelColor={textMuted}>
-                    <select className={inputCls} style={inputStyle} value={createForm.skills} onChange={e => setCreateForm(p => ({ ...p, skills: e.target.value }))}>
-                      <option value="">Select level</option>
-                      {['JUNIOR LEVEL', 'MID LEVEL', 'SENIOR LEVEL', 'LEAD LEVEL', 'SUPERVISOR LEVEL', 'EXECUTIVE LEVEL'].map(level => (
-                        <option key={level} value={level}>{formatRoleLevelLabel(level)}</option>
-                      ))}
-                    </select>
+                  <Field label="Date Hired (optional)" labelColor={textMuted}>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                        <Calendar className="w-4 h-4" />
+                      </div>
+                      <input
+                        type="date"
+                        className={inputCls}
+                        style={inputStyle}
+                        value={createForm.dateHired}
+                        onChange={e => setCreateForm(p => ({ ...p, dateHired: e.target.value }))}
+                      />
+                    </div>
                   </Field>
                   <p className="text-sm rounded-xl px-4 py-3 border" style={{ color: textMuted, borderColor: border, backgroundColor: inputBg }}>
                     A temporary password will be emailed automatically. You can copy it on the next screen right after creation.

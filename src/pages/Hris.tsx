@@ -244,7 +244,7 @@ export default function Hris() {
         }
       } else {
         const err = await res.json().catch(() => ({}))
-        alert(err.error || `Scan failed (HTTP ${res.status})`)
+        alert(err.error || err.message || `Scan failed (HTTP ${res.status})`)
       }
     } catch (err: any) {
       alert('Error scanning sheet: ' + err.message)
@@ -281,7 +281,7 @@ export default function Hris() {
         fetchData()
       } else {
         const err = await res.json().catch(() => ({}))
-        alert(err.error || 'Failed to save sheet')
+        alert(err.error || err.message || 'Failed to save sheet')
       }
     } catch (err: any) {
       alert('Error saving sheet: ' + err.message)

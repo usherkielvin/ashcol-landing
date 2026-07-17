@@ -159,10 +159,10 @@ Mirrors relay board logic in `Tickets.tsx` for consistent queue labels.
 
 | Key | Meaning |
 |-----|---------|
-| `finalDate` | Negotiator’s scheduled install date — **moves ticket to Schedules** |
+| `finalDate` | Negotiator’s scheduled install date — **moves ticket to Schedules**. Single source of truth for "where this ticket is now"; editable at any time (including past dates), and moving it always relocates the ticket in place — no duplicate/ghost row is left on the old date. |
 | `relayedDate` | When store relayed the job |
 | `scheduleOutcome` | Installed / cleaning / survey result |
-| `previousScheduleDates` | Reschedule history |
+| `previousScheduleDates` | **Completed-job** ghost history only (drives the muted row on the date a job was actually installed, if viewed from a different day). No longer written on a plain reschedule/date-move — the resched-ghost-row mechanism was removed because staleness in it caused rows to vanish or duplicate across Schedules dates. |
 
 ---
 

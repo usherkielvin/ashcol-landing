@@ -3,6 +3,49 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 
+// Centralized QuotaExceededError interceptor for Storage.
+// Pruned in tiers, least-destructive first — all of these are recomputable from the server,
+// so clearing them just costs a re-fetch, never data loss. Per-ticket lookup keys
+// ("ashcol-ticket:", "ashcol-schedule-date-index:") are written one-per-ticket-number/date with
+// no cap or TTL (see ticketNumberStore.ts), so months of use silently accumulates thousands of
+// them — that's usually what actually exhausts the quota, not the handful of "ashcol-cache:" list
+// caches this used to prune alone, which is why pruning only those often still left saves failing.
+const PRUNE_TIERS = ['ashcol-cache:', 'ashcol-ticket:', 'ashcol-schedule-date-index:']
+const originalSetItem = Storage.prototype.setItem
+Storage.prototype.setItem = function (key, value) {
+  try {
+    originalSetItem.call(this, key, value)
+  } catch (err: any) {
+    const isQuotaError =
+      err instanceof DOMException && (
+        err.name === 'QuotaExceededError' ||
+        err.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+        err.code === 22 ||
+        err.code === 1014
+      )
+    const errStr = String(err).toLowerCase()
+    if (this === localStorage && (isQuotaError || errStr.includes('quota') || errStr.includes('exceeded'))) {
+      for (const prefix of PRUNE_TIERS) {
+        console.warn(`Storage quota exceeded! Pruning ${prefix}* keys from localStorage...`)
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const k = localStorage.key(i)
+          if (k && k.startsWith(prefix)) {
+            localStorage.removeItem(k)
+          }
+        }
+        try {
+          originalSetItem.call(this, key, value)
+          return
+        } catch {
+          // Still exceeded — prune the next tier before giving up.
+        }
+      }
+      console.error('Storage pruning failed or space still exceeded after clearing all known cache prefixes.')
+    }
+    throw err
+  }
+}
+
 // Global fetch interceptor to handle session expiration (401/403)
 const originalFetch = window.fetch
 window.fetch = async (...args) => {

@@ -33,6 +33,7 @@ interface ForCollRow   { id: string; installer: string; customer: string; amount
 interface RebateRow    { id: string; customer: string; company: string; raNumber: string; hp: string; amount: string }
 interface OrderRow     { id: string; customer: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 interface ExpenseRow   { id: string; name: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
+interface IncentiveRow { id: string; customer: string; company: string; hp: string; promodiser: string; amount: string; collectionResolved?: boolean }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -218,6 +219,13 @@ const mkColl = (): ForCollRow  => ({ id: uid(), installer: '', customer: '', amo
 const mkReb  = (): RebateRow   => ({ id: uid(), customer: '', company: '', raNumber: '', hp: '', amount: '' })
 const mkOrd  = (): OrderRow    => ({ id: uid(), customer: '', description: '', amount: '', receiptReturned: false })
 const mkExp  = (): ExpenseRow  => ({ id: uid(), name: '', description: '', amount: '', receiptReturned: false })
+const mkInc  = (): IncentiveRow => ({ id: uid(), customer: '', company: '', hp: '', promodiser: '', amount: '', collectionResolved: false })
+
+// Temporarily hidden: saving a report with INCENTIVE items crashes the production backend
+// (Jackson classpath mismatch — NoClassDefFoundError: JsonMappingException$Reference) until
+// it's redeployed with a clean build. Hides the section and strips INCENTIVE rows from the
+// submit payload so previously-saved incentive data doesn't retrigger the crash either.
+const INCENTIVES_ENABLED = false
 
 const getTrNoPrefix = (branchName: string, auditLine?: string | null) => {
   const clean = branchName.toUpperCase()
@@ -286,16 +294,36 @@ const getWorkerName = (p: any) => {
 
 // ── Helper Components ─────────────────────────────────────────
 
-const SectionHeader = ({ label, total }: { label: string; total?: number }) => (
-  <div className="px-3 py-2 flex items-center justify-between gap-2 bg-slate-100/70 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800">
-    <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">{label}</span>
-    {total !== undefined && (
-      <span className="text-xs font-black tabular-nums" style={{ color: '#10B981' }}>
-        ₱{total.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-      </span>
-    )}
-  </div>
-)
+const SectionHeader = ({ label, total, variant = 'neutral' }: { label: string; total?: number; variant?: 'income' | 'expense' | 'neutral' }) => {
+  const styles = {
+    income: {
+      wrap: 'bg-emerald-50 dark:bg-emerald-900/20 border-b border-emerald-200 dark:border-emerald-900/40',
+      label: 'text-emerald-800 dark:text-emerald-300',
+      total: '#059669',
+    },
+    expense: {
+      wrap: 'bg-red-50 dark:bg-red-900/20 border-b border-red-200 dark:border-red-900/40',
+      label: 'text-red-800 dark:text-red-300',
+      total: '#DC2626',
+    },
+    neutral: {
+      wrap: 'bg-slate-100/70 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800',
+      label: 'text-slate-700 dark:text-slate-200',
+      total: '#10B981',
+    },
+  }[variant]
+
+  return (
+    <div className={`px-3 py-2 flex items-center justify-between gap-2 ${styles.wrap}`}>
+      <span className={`text-xs font-bold uppercase tracking-wider ${styles.label}`}>{label}</span>
+      {total !== undefined && (
+        <span className="text-xs font-black tabular-nums" style={{ color: styles.total }}>
+          ₱{total.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+      )}
+    </div>
+  )
+}
 
 const AddRowBtn = ({ onClick, label }: { onClick: () => void; label: string }) => (
   <button onClick={onClick} className="flex items-center gap-1 text-[11px] font-bold mt-1.5 mb-1 text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 transition-colors self-start ml-2">
@@ -620,6 +648,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const [expReceipt, setExpReceipt]     = useState<ExpenseRow[]>([mkExp()])
   // Expenses for Purchase
   const [expPurch, setExpPurch]         = useState<ExpenseRow[]>([mkExp()])
+  // Incentives
+  const [incentives, setIncentives]     = useState<IncentiveRow[]>([mkInc()])
   // Unit summary
   const [scheduledUnits, setScheduledUnits]     = useState('0')
   const [surveyOnlyUnits, setSurveyOnlyUnits]   = useState('0')
@@ -841,6 +871,36 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         })
       }
       setRebates(rebatesList.length > 0 ? rebatesList : [mkReb()])
+
+      // Populate incentives
+      const incentivesList: IncentiveRow[] = []
+      if (data.items && Array.isArray(data.items)) {
+        data.items.forEach((item: any) => {
+          if (item.type === 'INCENTIVE') {
+            // Dedicated hp/promodiser columns (V100 migration) are the source of truth — fall
+            // back to parsing the legacy packed description for rows saved before that existed.
+            let hp = item.hp || ''
+            let promodiser = item.promodiser || ''
+            if (!hp && !promodiser) {
+              const desc = item.description || ''
+              const parts = desc.startsWith('INCENTIVE|') ? desc.split('|') : ['', '', '']
+              promodiser = parts[1] || ''
+              hp = (parts[2] || '').replace(/hp/i, '').trim()
+            }
+            const amt = item.amount != null ? String(item.amount) : ''
+            incentivesList.push({
+              id: uid(),
+              customer: item.customer || '',
+              company: item.company || '',
+              hp,
+              promodiser,
+              amount: amt,
+              collectionResolved: item.collectionResolved || false
+            })
+          }
+        })
+      }
+      setIncentives(incentivesList.length > 0 ? incentivesList : [mkInc()])
 
       // Populate units
       setScheduledUnits(data.totalUnitsScheduled != null ? String(data.totalUnitsScheduled) : '0')
@@ -1283,10 +1343,12 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   }, [location.search])
 
   // ── DTR Scanner Logic ────────────────────────────────────────────
+  // Pasting/uploading another DTR photo (a second page, a different table) must add to what's
+  // already on the form, not wipe it — clearForm() used to run on every scan, which meant the
+  // 2nd/3rd pasted image silently erased everything the 1st image had already filled in.
   const processImage = async (file: File) => {
     setScanning(true)
     setScanError(null)
-    clearForm(true) // Clear form state completely on new upload
 
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -1331,63 +1393,116 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     }
   }
 
+  // A row created by mkCash()/mkRet()/etc is "blank" (every field empty/false besides its id) —
+  // safe to drop when merging in newly scanned rows, but real data must never be dropped this way.
+  const isRowBlank = (row: Record<string, any>): boolean =>
+    Object.entries(row).every(([key, value]) => key === 'id' || value === '' || value === false || value == null)
+
+  // Merge newly scanned rows into whatever's already on the form instead of replacing it —
+  // pasting a 2nd/3rd DTR image (a different page/table) must add to the batch, not erase it.
+  function mergeScannedRows<T extends { id: string }>(
+    setter: React.Dispatch<React.SetStateAction<T[]>>,
+    newRows: T[],
+    fallback: () => T,
+  ) {
+    setter(prev => {
+      const kept = prev.filter(r => !isRowBlank(r))
+      if (newRows.length > 0) return [...kept, ...newRows]
+      return kept.length > 0 ? kept : [fallback()]
+    })
+  }
+
   const applyScannedData = (data: Record<string, any>) => {
     isApplyingScannedData.current = true
     const activeBranchName = branchName
 
-    if (data.cohPreviousDay != null || data.fundFromHo != null) {
+    // Only overwrite COH/Fund-from-HO when this image actually reports them — otherwise a 2nd
+    // image that only shows (say) rebates would silently reset these back to 0.
+    if (data.cohPreviousDay != null) {
       ignoreNextCohFetch.current = true
+      setCashOnHand(String(data.cohPreviousDay))
     }
-    setCashOnHand(data.cohPreviousDay != null ? String(data.cohPreviousDay) : '0')
-    setFundFromHo(data.fundFromHo != null ? String(data.fundFromHo) : '0')
+    if (data.fundFromHo != null) {
+      ignoreNextCohFetch.current = true
+      setFundFromHo(String(data.fundFromHo))
+    }
 
     if (data.cashTransactions && Array.isArray(data.cashTransactions) && data.cashTransactions.length > 0) {
-      setCashTx(data.cashTransactions.map((scanned: any) => ({
+      mergeScannedRows(setCashTx, data.cashTransactions.map((scanned: any) => ({
         id: uid(),
         customer: scanned.customer || '',
         installer: cleanInstallerName(scanned.name || scanned.installer || '', activeBranchName),
         amount: scanned.amount != null ? String(scanned.amount) : ''
-      })))
+      })), mkCash)
     } else if (data.totalCashCollection) {
-      setCashTx([{ id: uid(), customer: '', installer: '', amount: String(data.totalCashCollection) }])
-    } else {
-      setCashTx([mkCash()])
+      mergeScannedRows(setCashTx, [{ id: uid(), customer: '', installer: '', amount: String(data.totalCashCollection) }], mkCash)
     }
 
     if (data.cashReturnsList && Array.isArray(data.cashReturnsList) && data.cashReturnsList.length > 0) {
-      setCashRet(data.cashReturnsList.map((scanned: any) => ({
+      mergeScannedRows(setCashRet, data.cashReturnsList.map((scanned: any) => ({
         id: uid(),
         name: cleanInstallerName(scanned.name || '', activeBranchName),
         amount: scanned.amount != null ? String(scanned.amount) : ''
-      })))
+      })), mkRet)
     } else if (data.cashReturns != null) {
-      setCashRet([{ id: uid(), name: '', amount: String(data.cashReturns) }])
-    } else {
-      setCashRet([mkRet()])
+      mergeScannedRows(setCashRet, [{ id: uid(), name: '', amount: String(data.cashReturns) }], mkRet)
     }
 
     if (data.onlineTransactions && Array.isArray(data.onlineTransactions) && data.onlineTransactions.length > 0) {
-      setOnlineTx(data.onlineTransactions.map((scanned: any) => ({
+      mergeScannedRows(setOnlineTx, data.onlineTransactions.map((scanned: any) => ({
         id: uid(),
         installer: cleanInstallerName(scanned.installer || '', activeBranchName),
         customer: (scanned.customer || '').trim(),
         bank: (scanned.bank || '').trim(),
         amount: scanned.amount != null ? String(scanned.amount) : ''
-      })))
+      })), mkOnl)
     } else if (data.totalOnlineCollection) {
-      setOnlineTx([{ id: uid(), installer: '', customer: '', bank: '', amount: String(data.totalOnlineCollection) }])
-    } else {
-      setOnlineTx([mkOnl()])
+      mergeScannedRows(setOnlineTx, [{ id: uid(), installer: '', customer: '', bank: '', amount: String(data.totalOnlineCollection) }], mkOnl)
     }
 
-    if (data.forCollection) {
-      setForColl([{ id: uid(), installer: '', customer: '', amount: String(data.forCollection) }])
-    } else {
-      setForColl([mkColl()])
+    if (data.checkRemits && Array.isArray(data.checkRemits) && data.checkRemits.length > 0) {
+      mergeScannedRows(setCheckRem, data.checkRemits.map((scanned: any) => ({
+        id: uid(),
+        installer: cleanInstallerName(scanned.installer || '', activeBranchName),
+        customer: (scanned.customer || '').trim(),
+        bank: (scanned.bank || '').trim(),
+        amount: scanned.amount != null ? String(scanned.amount) : ''
+      })), mkChk)
+    }
+
+    if (data.partsSales && Array.isArray(data.partsSales) && data.partsSales.length > 0) {
+      mergeScannedRows(setPartsSales, data.partsSales.map((scanned: any) => ({
+        id: uid(),
+        customer: (scanned.customer || '').trim(),
+        description: (scanned.description || '').trim(),
+        capital: scanned.capital != null ? String(scanned.capital) : '',
+        salePrice: scanned.salePrice != null ? String(scanned.salePrice) : ''
+      })), mkPart)
+    }
+
+    if (data.partsOrders && Array.isArray(data.partsOrders) && data.partsOrders.length > 0) {
+      mergeScannedRows(setOrders, data.partsOrders.map((scanned: any) => ({
+        id: uid(),
+        customer: (scanned.customer || '').trim(),
+        description: (scanned.description || '').trim(),
+        amount: scanned.amount != null ? String(scanned.amount) : ''
+      })), mkOrd)
+    }
+
+    if (data.forCollectionList && Array.isArray(data.forCollectionList) && data.forCollectionList.length > 0) {
+      mergeScannedRows(setForColl, data.forCollectionList.map((scanned: any) => ({
+        id: uid(),
+        installer: cleanInstallerName(scanned.installer || '', activeBranchName),
+        customer: (scanned.customer || '').trim(),
+        amount: scanned.amount != null ? String(scanned.amount) : '',
+        collectionResolved: false
+      })), mkColl)
+    } else if (data.forCollection) {
+      mergeScannedRows(setForColl, [{ id: uid(), installer: '', customer: '', amount: String(data.forCollection), collectionResolved: false }], mkColl)
     }
 
     if (data.rebates && Array.isArray(data.rebates) && data.rebates.length > 0) {
-      setRebates(data.rebates.map((scanned: any) => {
+      mergeScannedRows(setRebates, data.rebates.map((scanned: any) => {
         const sAmount = scanned.amount != null ? String(scanned.amount) : ''
         return {
           id: uid(),
@@ -1397,43 +1512,55 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           hp: '',
           amount: sAmount
         }
-      }))
+      }), mkReb)
     } else if (data.rebatesForCollection) {
-      setRebates([{ id: uid(), customer: '', company: 'Scanned Rebates', raNumber: '', hp: '', amount: String(data.rebatesForCollection) }])
-    } else {
-      setRebates([mkReb()])
+      mergeScannedRows(setRebates, [{ id: uid(), customer: '', company: 'Scanned Rebates', raNumber: '', hp: '', amount: String(data.rebatesForCollection) }], mkReb)
     }
 
     if (data.expReceipt && Array.isArray(data.expReceipt) && data.expReceipt.length > 0) {
-      setExpReceipt(data.expReceipt.map((scanned: any) => ({
+      mergeScannedRows(setExpReceipt, data.expReceipt.map((scanned: any) => ({
         id: uid(),
         name: (scanned.name || '').trim(),
         description: (scanned.description || '').trim(),
         amount: scanned.amount != null ? String(scanned.amount) : ''
-      })))
+      })), mkExp)
     } else if (data.totalExpenses != null && Number(data.totalExpenses) > 0) {
-      setExpReceipt([{ id: uid(), name: 'Scanned Expenses', description: '', amount: String(data.totalExpenses) }])
-    } else {
-      setExpReceipt([mkExp()])
+      mergeScannedRows(setExpReceipt, [{ id: uid(), name: 'Scanned Expenses', description: '', amount: String(data.totalExpenses) }], mkExp)
     }
 
     if (data.expPurch && Array.isArray(data.expPurch) && data.expPurch.length > 0) {
-      setExpPurch(data.expPurch.map((scanned: any) => ({
+      mergeScannedRows(setExpPurch, data.expPurch.map((scanned: any) => ({
         id: uid(),
         name: (scanned.name || '').trim(),
         description: (scanned.description || '').trim(),
         amount: scanned.amount != null ? String(scanned.amount) : ''
-      })))
+      })), mkExp)
     } else if (data.totalForPurchase != null && Number(data.totalForPurchase) > 0) {
-      setExpPurch([{ id: uid(), name: 'Scanned Purchases', description: '', amount: String(data.totalForPurchase) }])
-    } else {
-      setExpPurch([mkExp()])
+      mergeScannedRows(setExpPurch, [{ id: uid(), name: 'Scanned Purchases', description: '', amount: String(data.totalForPurchase) }], mkExp)
     }
 
-    // Unit summary from scan
-    if (data.totalUnitsInstalledServiced != null) {
-      setInstalledUnits(String(data.totalUnitsInstalledServiced))
+    if (data.incentives && Array.isArray(data.incentives) && data.incentives.length > 0) {
+      mergeScannedRows(setIncentives, data.incentives.map((scanned: any) => ({
+        id: uid(),
+        customer: (scanned.customer || '').trim(),
+        company: (scanned.company || '').trim(),
+        hp: (scanned.hp || '').trim(),
+        promodiser: (scanned.promodiser || '').trim(),
+        amount: scanned.amount != null ? String(scanned.amount) : '',
+        collectionResolved: false
+      })), mkInc)
     }
+
+    // Unit summary from scan — each count only applied when this image actually reports it,
+    // so an image showing just one section doesn't zero out counts another image already filled.
+    if (data.totalUnitsScheduled != null) setScheduledUnits(String(data.totalUnitsScheduled))
+    if (data.totalUnitsRescheduled != null) setRescheduledUnits(String(data.totalUnitsRescheduled))
+    if (data.totalUnitsInstalled != null) setInstalledUnits(String(data.totalUnitsInstalled))
+    else if (data.totalUnitsInstalledServiced != null) setInstalledUnits(String(data.totalUnitsInstalledServiced))
+    if (data.totalUnitsServiced != null) setServicedUnits(String(data.totalUnitsServiced))
+    if (data.totalUnitsCancelled != null) setCancelledUnits(String(data.totalUnitsCancelled))
+    if (data.totalFreeInstallUnits != null) setFreeInstallUnits(String(data.totalFreeInstallUnits))
+    if (data.totalUnitsSurveyOnly != null) setSurveyOnlyUnits(String(data.totalUnitsSurveyOnly))
   }
 
   const handleScanImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1500,6 +1627,9 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const totalOrders          = sumArr(orders.map(r => r.amount))
   const totalExpReceipt      = sumArr(expReceipt.map(r => r.amount))
   const totalExpPurch        = sumArr(expPurch.map(r => r.amount))
+  const totalIncentives      = sumArr(incentives.map(r => r.amount))
+  // Incentives reduce Gross Sales (applied server-side in ReportService), but they're not cash
+  // that left the branch's hand — they must NOT be subtracted from Cash on Hand / Deposit here.
   const grandTotalExpenses   = totalExpReceipt + totalExpPurch
   const totalFundReceived    = num(cashOnHand) + num(fundFromHo) + totalCashCollection + totalCashReturns
   const totalCashOnHand      = totalFundReceived - grandTotalExpenses
@@ -1616,6 +1746,18 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           amount: parseFloat(r.amount) || 0,
           collectionResolved: r.collectionResolved || false
         })),
+        ...(INCENTIVES_ENABLED ? incentives.filter(r => r.customer || r.promodiser || r.amount).map(r => ({
+          type: 'INCENTIVE',
+          customer: r.customer,
+          company: r.company,
+          amount: parseFloat(r.amount) || 0,
+          // Kept for backward-compat display on older backend builds — hp/promodiser below are
+          // the source of truth once the backend has the dedicated columns (V100 migration).
+          description: `INCENTIVE|${r.promodiser}|${r.hp}`,
+          hp: r.hp,
+          promodiser: r.promodiser,
+          collectionResolved: r.collectionResolved || false
+        })) : []),
       ]
 
       const payload = {
@@ -1979,16 +2121,19 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         </div>
       )}
 
-      {/* ── Two-Column Layout for Sections ──────────────────────────── */}
+      {/* ── Sections ───────────────────────────────────────────────── */}
       <div className={isViewOnlyReport ? 'opacity-80 pointer-events-none select-none' : undefined}>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="flex flex-col gap-4">
 
-        {/* ── LEFT COLUMN ── */}
-        <div className="flex flex-col gap-4">
+        {/* Money In (left) | Money Out (right) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+
+          {/* ── LEFT: Money In ─────────────────────────────────────────── */}
+          <div className="flex flex-col gap-4">
 
           {/* Cash Transactions */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="Cash Transactions" total={totalCashCollection} />
+            <SectionHeader label="Cash Transactions" total={totalCashCollection} variant="income" />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -2020,7 +2165,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                         )}
                       </td>
                       <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
                           onValueChange={(values) => setCashTx(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
                           className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
@@ -2039,7 +2184,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
           {/* Cash Returns */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="Cash Returns" total={totalCashReturns} />
+            <SectionHeader label="Cash Returns" total={totalCashReturns} variant="income" />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -2075,7 +2220,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                         )}
                       </td>
                       <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
                           onValueChange={(values) => setCashRet(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
                           className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
@@ -2094,7 +2239,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
           {/* Fund Transfer from HO */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="HO Transfers & Cash on Hand" />
+            <SectionHeader label="HO Transfers & Cash on Hand" variant="income" />
             <div className="p-2">
               <table className="w-full text-left border-collapse text-xs">
                 <tbody>
@@ -2145,7 +2290,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
           {/* Online Transactions */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="Online Transactions" total={totalOnline} />
+            <SectionHeader label="Online Transactions" total={totalOnline} variant="income" />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -2182,7 +2327,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                           className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
                           onValueChange={(values) => setOnlineTx(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
                           className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
@@ -2201,7 +2346,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
           {/* Check Remits */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="Check Remits" total={totalCheck} />
+            <SectionHeader label="Check Remits" total={totalCheck} variant="income" />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -2238,7 +2383,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                           className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
                           onValueChange={(values) => setCheckRem(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
                           className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
@@ -2257,7 +2402,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
           {/* Parts Sales / Unit Sales */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="Parts Sales / Unit Sales" total={sumArr(partsSales.map(r => r.salePrice))} />
+            <SectionHeader label="Parts Sales / Unit Sales" total={sumArr(partsSales.map(r => r.salePrice))} variant="income" />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -2283,12 +2428,12 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                           className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.capital} 
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.capital}
                           onValueChange={(values) => setPartsSales(p => p.map(r => r.id === row.id ? { ...r, capital: values.value } : r))}
                           className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.salePrice} 
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.salePrice}
                           onValueChange={(values) => setPartsSales(p => p.map(r => r.id === row.id ? { ...r, salePrice: values.value } : r))}
                           className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
@@ -2305,108 +2450,14 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
             </div>
           </div>
 
-          {/* For Collection */}
-          <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="For Collection" total={totalForColl} />
-            <div className="p-2">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr>
-                    <th className={tableTh}>Customer</th>
-                    <th className={tableTh}>Installer</th>
-                    <th className={tableTh + ' text-right w-28'}>Amount</th>
-                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {forColl.map(row => (
-                    <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
-                      <td className={tableTd}>
-                        <input type="text" placeholder="Customer" value={row.customer}
-                          onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
-                          className={flushInput} disabled={isFormDisabled} />
-                      </td>
-                      <td className={tableTd}>
-                        {isFormDisabled ? (
-                          <div className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
-                            <EmployeeNameLink nameOrId={row.installer} />
-                          </div>
-                        ) : (
-                          <input type="text" placeholder="Installer" value={row.installer}
-                            onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
-                            className={flushInput} />
-                        )}
-                      </td>
-                      <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
-                          onValueChange={(values) => setForColl(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                          className={flushInputNumber} disabled={isFormDisabled} />
-                      </td>
-                      {canSubmit && !reviewMode && (
-                        <td className={tableTd + ' text-center'}>
-                          <DelBtn onClick={() => setForColl(p => p.filter(r => r.id !== row.id))} />
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setForColl(p => [...p, mkColl()])} label="Add row" />}
-            </div>
           </div>
 
-        </div>
-
-        {/* ── RIGHT COLUMN ── */}
-        <div className="flex flex-col gap-4">
-
-          {/* Parts Order / Units Order */}
-          <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="Parts Order / Units Order" total={totalOrders} />
-            <div className="p-2">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr>
-                    <th className={tableTh}>Customer</th>
-                    <th className={tableTh}>Description</th>
-                    <th className={tableTh + ' text-right w-28'}>Amount</th>
-                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {orders.map(row => (
-                    <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
-                      <td className={tableTd}>
-                        <input type="text" placeholder="Customer" value={row.customer}
-                          onChange={e => setOrders(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
-                          className={flushInput} disabled={isFormDisabled} />
-                      </td>
-                      <td className={tableTd}>
-                        <input type="text" placeholder="Description" value={row.description}
-                          onChange={e => setOrders(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
-                          className={flushInput} disabled={isFormDisabled} />
-                      </td>
-                      <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
-                          onValueChange={(values) => setOrders(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                          className={flushInputNumber} disabled={isFormDisabled} />
-                      </td>
-                      {canSubmit && !reviewMode && (
-                        <td className={tableTd + ' text-center'}>
-                          <DelBtn onClick={() => setOrders(p => p.filter(r => r.id !== row.id))} />
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setOrders(p => [...p, mkOrd()])} label="Add row" />}
-            </div>
-          </div>
+          {/* ── RIGHT: Money Out ───────────────────────────────────────── */}
+          <div className="flex flex-col gap-4">
 
           {/* Expenses with Receipts */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="Expenses with Receipts" total={totalExpReceipt} />
+            <SectionHeader label="Expenses with Receipts" total={totalExpReceipt} variant="expense" />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -2437,7 +2488,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                           className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
                           onValueChange={(values) => setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
                           className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
@@ -2456,7 +2507,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
           {/* Expenses for Purchase */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="Expenses for Purchase" total={totalExpPurch} />
+            <SectionHeader label="Expenses for Purchase" total={totalExpPurch} variant="expense" />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -2487,7 +2538,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                           className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount} 
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
                           onValueChange={(values) => setExpPurch(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
                           className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
@@ -2503,6 +2554,227 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
               {canSubmit && !reviewMode && <AddRowBtn onClick={() => setExpPurch(p => [...p, mkExp()])} label="Add row" />}
             </div>
           </div>
+
+          {/* Parts Order / Units Order */}
+          <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+            <SectionHeader label="Parts Order / Units Order" total={totalOrders} variant="expense" />
+            <div className="p-2">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr>
+                    <th className={tableTh}>Customer</th>
+                    <th className={tableTh}>Description</th>
+                    <th className={tableTh + ' text-right w-28'}>Amount</th>
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {orders.map(row => (
+                    <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Customer" value={row.customer}
+                          onChange={e => setOrders(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Description" value={row.description}
+                          onChange={e => setOrders(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
+                          onValueChange={(values) => setOrders(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
+                          className={flushInputNumber} disabled={isFormDisabled} />
+                      </td>
+                      {canSubmit && !reviewMode && (
+                        <td className={tableTd + ' text-center'}>
+                          <DelBtn onClick={() => setOrders(p => p.filter(r => r.id !== row.id))} />
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setOrders(p => [...p, mkOrd()])} label="Add row" />}
+            </div>
+          </div>
+
+          {/* Incentives */}
+          {INCENTIVES_ENABLED && (
+          <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+            <SectionHeader label="Incentives" total={totalIncentives} variant="expense" />
+            <div className="p-2">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr>
+                    <th className={tableTh}>Customer</th>
+                    <th className={tableTh}>Brand</th>
+                    <th className={tableTh + ' w-20 text-center'}>HP</th>
+                    <th className={tableTh}>Promodiser</th>
+                    <th className={tableTh + ' text-right w-32'}>Amount</th>
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {incentives.map(row => (
+                    <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Customer name" value={row.customer}
+                          onChange={e => setIncentives(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        <input type="text" placeholder="e.g. MIDEA" value={row.company}
+                          onChange={e => setIncentives(p => p.map(r => r.id === row.id ? { ...r, company: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        <input type="text" placeholder="1.5" value={row.hp}
+                          onChange={e => setIncentives(p => p.map(r => r.id === row.id ? { ...r, hp: e.target.value } : r))}
+                          className={`${flushInput} text-center`} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        {isFormDisabled ? (
+                          <div className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                            <EmployeeNameLink nameOrId={row.promodiser} />
+                          </div>
+                        ) : (
+                          <input type="text" placeholder="Promodiser name" value={row.promodiser}
+                            onChange={e => setIncentives(p => p.map(r => r.id === row.id ? { ...r, promodiser: e.target.value } : r))}
+                            className={flushInput} />
+                        )}
+                      </td>
+                      <td className={tableTd}>
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
+                          onValueChange={(values) => setIncentives(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
+                          className={flushInputNumber} disabled={isFormDisabled} />
+                      </td>
+                      {canSubmit && !reviewMode && (
+                        <td className={tableTd + ' text-center'}>
+                          <DelBtn onClick={() => setIncentives(p => p.filter(r => r.id !== row.id))} />
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setIncentives(p => [...p, mkInc()])} label="Add row" />}
+            </div>
+          </div>
+          )}
+
+          </div>
+
+        </div>
+
+        {/* For Collection */}
+        <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 mt-4">
+          <SectionHeader label="For Collection" total={totalForColl} variant="income" />
+          <div className="p-2">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr>
+                  <th className={tableTh}>Customer</th>
+                  <th className={tableTh}>Installer</th>
+                  <th className={tableTh + ' text-right w-28'}>Amount</th>
+                  {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {forColl.map(row => (
+                  <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                    <td className={tableTd}>
+                      <input type="text" placeholder="Customer" value={row.customer}
+                        onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      {isFormDisabled ? (
+                        <div className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                          <EmployeeNameLink nameOrId={row.installer} />
+                        </div>
+                      ) : (
+                        <input type="text" placeholder="Installer" value={row.installer}
+                          onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, installer: e.target.value } : r))}
+                          className={flushInput} />
+                      )}
+                    </td>
+                    <td className={tableTd}>
+                      <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
+                        onValueChange={(values) => setForColl(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
+                        className={flushInputNumber} disabled={isFormDisabled} />
+                    </td>
+                    {canSubmit && !reviewMode && (
+                      <td className={tableTd + ' text-center'}>
+                        <DelBtn onClick={() => setForColl(p => p.filter(r => r.id !== row.id))} />
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {canSubmit && !reviewMode && <AddRowBtn onClick={() => setForColl(p => [...p, mkColl()])} label="Add row" />}
+          </div>
+        </div>
+
+        {/* Rebates for Collection */}
+        <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 mt-4">
+          <SectionHeader label="Rebates for Collection" total={totalRebates} variant="income" />
+          <div className="p-2">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr>
+                  <th className={tableTh}>Customer</th>
+                  <th className={tableTh}>Company / RA No.</th>
+                  <th className={tableTh}>Brand</th>
+                  <th className={tableTh + ' w-20 text-center'}>HP</th>
+                  <th className={tableTh + ' text-right w-32'}>Amount</th>
+                  {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {rebates.map(row => (
+                  <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                    <td className={tableTd}>
+                      <input type="text" placeholder="Customer name" value={row.customer}
+                        onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <input type="text" placeholder="e.g. ROBINSONS" value={row.raNumber}
+                        onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, raNumber: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <input type="text" placeholder="e.g. MIDEA" value={row.company}
+                        onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, company: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <input type="text" placeholder="1.5" value={row.hp}
+                        onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, hp: e.target.value } : r))}
+                        className={`${flushInput} text-center`} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
+                        onValueChange={(values) => setRebates(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
+                        className={flushInputNumber} disabled={isFormDisabled} />
+                    </td>
+                    {canSubmit && !reviewMode && (
+                      <td className={tableTd + ' text-center'}>
+                        <DelBtn onClick={() => setRebates(p => p.filter(r => r.id !== row.id))} />
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {canSubmit && !reviewMode && <AddRowBtn onClick={() => setRebates(p => [...p, mkReb()])} label="Add row" />}
+          </div>
+        </div>
+
+        {/* Row: Unit Summary | Final Summary */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
 
           {/* Unit Summary */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
@@ -2535,8 +2807,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                           allowNegative={false}
                           placeholder="0"
                           value={value}
-                          onValueChange={(values) => setter(values.value)}
-                          className={`w-20 bg-slate-50 dark:bg-slate-900 border text-center text-xs font-bold rounded focus:outline-none py-0.5 px-2 text-slate-800 dark:text-slate-200 ${submitAttempted && value.trim() === '' ? 'border-red-500 ring-2 ring-red-500/20' : 'border-slate-200 dark:border-slate-800 focus:ring-1 focus:ring-emerald-500/30'}`}
+                          onValueChange={(values) => setter(values.value || '')}
+                          className={`w-20 bg-slate-50 dark:bg-slate-900 border text-center text-xs font-bold rounded focus:outline-none py-0.5 px-2 text-slate-800 dark:text-slate-200 ${submitAttempted && (!value || value.trim() === '') ? 'border-red-500 ring-2 ring-red-500/20' : 'border-slate-200 dark:border-slate-800 focus:ring-1 focus:ring-emerald-500/30'}`}
                           disabled={isFormDisabled}
                           autoComplete="off"
                         />
@@ -2562,6 +2834,12 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                     <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">Grand Total Expenses</td>
                     <td className="px-3 py-2 text-right font-bold text-red-500">{php(grandTotalExpenses)}</td>
                   </tr>
+                  {INCENTIVES_ENABLED && totalIncentives > 0 && (
+                    <tr className="border-b border-slate-100 dark:border-slate-800/40">
+                      <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">Incentives (affects Gross Sales only)</td>
+                      <td className="px-3 py-2 text-right font-bold text-red-500">{php(totalIncentives)}</td>
+                    </tr>
+                  )}
                   <tr className="bg-slate-50 dark:bg-slate-900/40 font-bold">
                     <td className="px-3 py-2.5 text-slate-800 dark:text-slate-200 font-bold text-sm">Total Cash on Hand / Deposit</td>
                     <td className="px-3 py-2.5 text-right text-base text-emerald-600 dark:text-emerald-400 font-black">
@@ -2578,62 +2856,6 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
         </div>
 
-      </div>
-
-      {/* ── Rebates for Collection — full width ──────────────────────── */}
-      <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-        <SectionHeader label="Rebates for Collection" total={totalRebates} />
-        <div className="p-2">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr>
-                <th className={tableTh}>Customer</th>
-                <th className={tableTh}>Company / RA No.</th>
-                <th className={tableTh}>Brand</th>
-                <th className={tableTh + ' w-20 text-center'}>HP</th>
-                <th className={tableTh + ' text-right w-32'}>Amount</th>
-                {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {rebates.map(row => (
-                <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
-                  <td className={tableTd}>
-                    <input type="text" placeholder="Customer name" value={row.customer}
-                      onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
-                      className={flushInput} disabled={isFormDisabled} />
-                  </td>
-                  <td className={tableTd}>
-                    <input type="text" placeholder="e.g. ROBINSONS" value={row.raNumber}
-                      onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, raNumber: e.target.value } : r))}
-                      className={flushInput} disabled={isFormDisabled} />
-                  </td>
-                  <td className={tableTd}>
-                    <input type="text" placeholder="e.g. MIDEA" value={row.company}
-                      onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, company: e.target.value } : r))}
-                      className={flushInput} disabled={isFormDisabled} />
-                  </td>
-                  <td className={tableTd}>
-                    <input type="text" placeholder="1.5" value={row.hp}
-                      onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, hp: e.target.value } : r))}
-                      className={`${flushInput} text-center`} disabled={isFormDisabled} />
-                  </td>
-                  <td className={tableTd}>
-                    <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
-                      onValueChange={(values) => setRebates(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                      className={flushInputNumber} disabled={isFormDisabled} />
-                  </td>
-                  {canSubmit && !reviewMode && (
-                    <td className={tableTd + ' text-center'}>
-                      <DelBtn onClick={() => setRebates(p => p.filter(r => r.id !== row.id))} />
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {canSubmit && !reviewMode && <AddRowBtn onClick={() => setRebates(p => [...p, mkReb()])} label="Add row" />}
-        </div>
       </div>
       </div>
 

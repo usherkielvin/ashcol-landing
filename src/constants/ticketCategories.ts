@@ -65,7 +65,7 @@ export function categoryDefaultServiceType(value: TicketCategoryValue): string {
     ADMIN_TASK: 'Admin task',
     CLAIMS: 'Claims',
     HR_TASKS: 'HR tasks',
-    INSTALLATION: 'S/I',
+    INSTALLATION: 'SURVEY & INSTALL',
     PARTS_SALES: 'Parts Sales',
     PAYROLL_TASKS: 'Payroll tasks',
     QUOTATION: 'Quotation',
@@ -75,6 +75,71 @@ export function categoryDefaultServiceType(value: TicketCategoryValue): string {
     WTY_REGISTRATION: 'Wty Registration',
   }
   return map[value]
+}
+
+export type ResolvedScheduleStatus = {
+  /** Always a valid com.ashcol.model.Ticket.Status constant — safe to send as `status`. */
+  status: string
+  ticketCategory?: TicketCategoryValue
+  serviceType?: string
+  schedulePhase?: string
+  scheduleOutcome?: string
+}
+
+/**
+ * Maps a status-picker button value (CHECKUP, INSTALL, BACKJOB, DONE_CHECKUP, ...) to a
+ * status the backend's Ticket.Status enum actually has, plus the ticketCategory/serviceType/
+ * schedulePhase metadata needed to reconstruct the finer label for display. Ticket.Status has
+ * no CHECKUP/INSTALL/BACKJOB/DONE_* constants — those are field-type distinctions carried via
+ * ticketCategory + acDetails.schedulePhase/scheduleOutcome, not the status column itself.
+ * Sending one of those raw button values straight through as `status` throws
+ * "No enum constant com.ashcol.model.Ticket.Status.X" on save.
+ */
+export function resolveScheduleStatusFields(rawValue: string): ResolvedScheduleStatus {
+  const val = (rawValue || '').toUpperCase().replace(/\s+/g, '_')
+
+  switch (val) {
+    case 'DONE_CLEANING':
+      return { status: 'COMPLETED', ticketCategory: 'SERVICES', scheduleOutcome: 'DONE_CLEANING', schedulePhase: '' }
+    case 'DONE_CHECKUP':
+      return { status: 'COMPLETED', ticketCategory: 'SERVICES', scheduleOutcome: 'DONE_CHECKUP', schedulePhase: '' }
+    case 'DONE_BACKJOB':
+      return { status: 'COMPLETED', ticketCategory: 'SERVICES', scheduleOutcome: 'DONE_BACKJOB', schedulePhase: '' }
+    case 'DONE_SURVEY':
+      return { status: 'COMPLETED', ticketCategory: 'SURVEY', scheduleOutcome: 'DONE_SURVEY', schedulePhase: '' }
+    case 'DONE_INSTALLED':
+      return { status: 'INSTALLED', ticketCategory: 'INSTALLATION', scheduleOutcome: 'DONE_INSTALLED', schedulePhase: '' }
+    case 'FOR_QUOTATION':
+      return { status: 'FOR_APPROVAL', scheduleOutcome: '' }
+    case 'CLEANING':
+      return { status: 'SCHEDULED', ticketCategory: 'SERVICES', serviceType: categoryDefaultServiceType('SERVICES'), scheduleOutcome: '', schedulePhase: 'CLEANING' }
+    case 'CHECKUP':
+      return { status: 'SCHEDULED', ticketCategory: 'SERVICES', serviceType: categoryDefaultServiceType('SERVICES'), scheduleOutcome: '', schedulePhase: 'CHECKUP' }
+    case 'BACKJOB':
+      return { status: 'SCHEDULED', ticketCategory: 'SERVICES', serviceType: categoryDefaultServiceType('SERVICES'), scheduleOutcome: '', schedulePhase: 'BACKJOB' }
+    case 'INSTALLATION':
+    case 'S/I':
+    case 'S_I':
+    case 'SI':
+    case 'INSTALL':
+      return { status: 'SCHEDULED', ticketCategory: 'INSTALLATION', serviceType: categoryDefaultServiceType('INSTALLATION'), scheduleOutcome: '', schedulePhase: 'INSTALLATION' }
+    case 'SERVICES':
+    case 'SERVICE':
+      return { status: 'SCHEDULED', ticketCategory: 'SERVICES', serviceType: categoryDefaultServiceType('SERVICES'), scheduleOutcome: '', schedulePhase: 'SERVICES' }
+    case 'SURVEY':
+      return { status: 'SURVEY', ticketCategory: 'SURVEY', serviceType: categoryDefaultServiceType('SURVEY'), scheduleOutcome: '', schedulePhase: 'SURVEY' }
+    case 'RESCHED':
+      return { status: 'RESCHED', scheduleOutcome: '' }
+    case 'FOR_APPROVAL':
+      return { status: 'FOR_APPROVAL', scheduleOutcome: '' }
+    case 'CONTINUATION':
+      return { status: 'CONTINUATION', scheduleOutcome: '' }
+    case 'CANCELLED':
+      return { status: 'CANCELLED', scheduleOutcome: '' }
+    default:
+      // Already a plain backend status (PENDING, ASSIGNED, SCHEDULED, ...) — pass through.
+      return { status: val }
+  }
 }
 
 export function inferCategoryFromTicket(ticket: {

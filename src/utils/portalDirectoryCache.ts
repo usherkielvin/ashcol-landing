@@ -11,22 +11,44 @@ function branchesKey() {
   return `portal-dir:v${VERSION}:branches`
 }
 
-function lineupKey(kind: 'installer-index' | 'driver-names') {
+function lineupKey(kind: 'installer-index' | 'driver-names' | 'suggestions') {
   return `portal-dir:v${VERSION}:lineup:${kind}`
+}
+
+function lineupSuggestionsKey(branchId: string) {
+  return `${lineupKey('suggestions')}:${branchId}`
 }
 
 function authHeaders(token: string) {
   return { Authorization: `Bearer ${token}` }
 }
 
+export function clearPortalEmployeesCache(): void {
+  try {
+    const keysToRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key.includes('portal-dir:') && key.includes(':employees:')) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k))
+  } catch (e) {
+    console.warn('Error clearing portal employees cache:', e)
+  }
+}
+
 export async function fetchCachedEmployees(
   token: string,
   role?: string,
+  options?: { force?: boolean },
 ): Promise<Array<Record<string, unknown>>> {
   const key = employeesKey(role)
   const cached = readTabCacheEntry<Array<Record<string, unknown>>>(key)
-  if (cached && isTabCacheFresh(cached.savedAt)) {
-    return cached.data
+  if (!options?.force) {
+    if (cached && isTabCacheFresh(cached.savedAt)) {
+      return cached.data
+    }
   }
 
   const qs = role ? `?role=${encodeURIComponent(role)}` : ''
@@ -77,6 +99,35 @@ export async function fetchCachedLineupInstallerIndex(token: string): Promise<un
   }
   const list = await res.json()
   const normalized = Array.isArray(list) ? list : []
+  writeTabCache(key, normalized)
+  return normalized
+}
+
+export async function fetchCachedLineupSuggestions(
+  token: string,
+  branchId: string,
+  options?: { force?: boolean },
+): Promise<{ drivers: string[]; installers: string[] }> {
+  const apiId = branchId.replace(/-(sales|services|service)$/i, '')
+  const key = lineupSuggestionsKey(apiId)
+  const cached = readTabCacheEntry<{ drivers: string[]; installers: string[] }>(key)
+  if (!options?.force && cached && isTabCacheFresh(cached.savedAt)) {
+    return cached.data
+  }
+
+  const res = await fetch(
+    `${API_BASE_URL}/v1/lineup/suggestions?branchId=${encodeURIComponent(apiId)}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    if (cached?.data) return cached.data
+    return { drivers: [], installers: [] }
+  }
+  const data = await res.json()
+  const normalized = {
+    drivers: Array.isArray(data?.drivers) ? data.drivers.filter(Boolean) : [],
+    installers: Array.isArray(data?.installers) ? data.installers.filter(Boolean) : [],
+  }
   writeTabCache(key, normalized)
   return normalized
 }

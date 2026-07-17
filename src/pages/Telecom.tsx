@@ -219,7 +219,7 @@ export default function Telecom() {
         fetchData()
       } else {
         const err = await res.json().catch(() => ({}))
-        alert(err.error || `Import failed (HTTP ${res.status})`)
+        alert(err.error || err.message || `Import failed (HTTP ${res.status})`)
       }
     } catch (err) {
       console.error(err)

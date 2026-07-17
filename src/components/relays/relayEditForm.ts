@@ -1,11 +1,13 @@
 import { formatBrandCapacityLabel } from '../../utils/warrantyTicketDisplay'
+import { ROBINSON_APPLIANCES_RE } from '../../utils/dealer'
 
 export type RelayEditDraft = {
   customerName: string
   controlNumber: string
+  robinsonsTransactionId: string
   phoneNumbers: string[]
-  storeVendor: string
-  storeBranch: string
+  dealerName: string
+  dealerBranch: string
   location: string
   district: string
   landmarks: string
@@ -42,12 +44,24 @@ export type RelayEditDraft = {
   modeOfPayment: string
   images: string
   priorityTag: string
+  /** Field schedules / my-tickets / overview */
+  ticketNumber: string
+  ticketCategory: string
+  /** Vehicle code only (e.g. "T2") — driver name is tracked separately in driverName. */
+  serviceDriver: string
+  driverName: string
+  finalDate: string
+  scheduleStatus: string
+  reschedulePending: boolean
+  remarks: string
+  commitTerms: string
 }
 
 type TicketLike = {
   customerName?: string
   controlNumber?: string
   contactPhone?: string
+  dealer?: string
   sourceVendor?: string
   location?: string
   district?: string
@@ -74,6 +88,19 @@ type TicketLike = {
   warrantyDocsStatus?: string
   warrantyRegistrationCompleted?: boolean
   warrantyRegistrationCompletedBy?: string
+  ticketNumber?: string
+  ticket_number?: string
+  ticketCategory?: string
+  ticket_category?: string
+  serviceDriver?: string
+  service_driver?: string
+  driverName?: string
+  driver_name?: string
+  finalDate?: string
+  final_date?: string
+  remarks?: string
+  reschedulePending?: boolean
+  commitTerms?: string
 }
 
 type ParsedStore = { store: string; branch: string; customStore?: string }
@@ -82,8 +109,9 @@ type BranchRef = { id: string }
 
 export function buildRelayEditDraft(
   ticket: TicketLike,
-  parseStoreVendor: (sourceVendor?: string) => ParsedStore,
+  parseDealer: (dealer?: string) => ParsedStore,
   resolveBranch?: (branchId?: string) => BranchRef | null,
+  extensions?: Partial<RelayEditDraft>,
 ): RelayEditDraft {
   let parsedDetails: Record<string, string> = {}
   if (ticket.acDetails) {
@@ -94,10 +122,25 @@ export function buildRelayEditDraft(
     }
   }
 
-  const parsedStore = parseStoreVendor(ticket.sourceVendor)
-  const openedStoreVendor = parsedStore.store === 'Other' && parsedStore.customStore
-    ? parsedStore.customStore
-    : parsedStore.store
+  const parsedDealer = parseDealer(ticket.dealer || ticket.sourceVendor)
+  const openedDealerName = parsedDealer.store === 'Other' && parsedDealer.customStore
+    ? parsedDealer.customStore
+    : parsedDealer.store === 'Robinsons'
+    ? 'ROBINSON APPLIANCES'
+    : parsedDealer.store === 'Abenson'
+    ? 'ABENSONS'
+    : parsedDealer.store
+
+  const isRobinsons = ROBINSON_APPLIANCES_RE.test(openedDealerName)
+  const hasRobinsonsTxId = parsedDetails.robinsonsTransactionId !== undefined
+
+  const robinsonsTxId = hasRobinsonsTxId
+    ? (parsedDetails.robinsonsTransactionId || '')
+    : (isRobinsons ? (ticket.controlNumber || '') : '')
+
+  const ctrlNumber = hasRobinsonsTxId
+    ? (ticket.controlNumber || '')
+    : (isRobinsons ? '' : (ticket.controlNumber || ''))
 
   const phonesList = [ticket.contactPhone || '']
     .concat(parsedDetails.alternatePhone
@@ -107,10 +150,11 @@ export function buildRelayEditDraft(
 
   return {
     customerName: ticket.customerName || '',
-    controlNumber: ticket.controlNumber || '',
+    controlNumber: ctrlNumber,
+    robinsonsTransactionId: robinsonsTxId,
     phoneNumbers: phonesList.length ? phonesList : [''],
-    storeVendor: openedStoreVendor,
-    storeBranch: parsedStore.branch,
+    dealerName: openedDealerName,
+    dealerBranch: parsedDealer.branch,
     location: ticket.location || '',
     district: ticket.district || '',
     landmarks: parsedDetails.landmarks || '',
@@ -155,5 +199,15 @@ export function buildRelayEditDraft(
     modeOfPayment: ticket.modeOfPayment || '',
     images: ticket.images || '',
     priorityTag: ticket.priorityTag || '',
+    ticketNumber: ticket.ticketNumber || ticket.ticket_number || '',
+    ticketCategory: ticket.ticketCategory || ticket.ticket_category || 'INSTALLATION',
+    serviceDriver: ticket.serviceVehicle || ticket.serviceDriver || ticket.service_driver || '',
+    driverName: ticket.driverName || ticket.driver_name || parsedDetails.driverName || '',
+    finalDate: parsedDetails.finalDate || ticket.finalDate || ticket.final_date || '',
+    scheduleStatus: ticket.status || 'INSTALLATION',
+    reschedulePending: Boolean(parsedDetails.reschedulePending),
+    remarks: ticket.remarks || ticket.remarksUpdate || '',
+    commitTerms: ticket.commitType || ticket.commitTerms || '',
+    ...extensions,
   }
 }

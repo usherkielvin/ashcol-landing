@@ -11,6 +11,7 @@ export type WarrantyTicket = {
   unitType?: string | null
   acDetails?: string | null
   unitBrandDisplay?: string | null
+  dealer?: string | null
   sourceVendor?: string | null
   district?: string | null
   branchId?: string | null
@@ -187,20 +188,6 @@ export async function refreshWarrantyRegistrations(
   }
   writeWarrantyCache(branchId, result)
   return result
-}
-
-export async function createWarrantyRegistration(
-  token: string,
-  body: { parentTicketId?: string; serviceReportId?: string },
-): Promise<WarrantyTicket> {
-  const res = await fetch(`${API_BASE_URL}/tickets/warranty-registrations`, {
-    method: 'POST',
-    headers: authHeaders(token),
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) throw new Error(await readApiError(res))
-  const payload = await res.json()
-  return payload?.data || payload
 }
 
 export async function markWarrantyRegistered(token: string, ticketId: string): Promise<WarrantyTicket> {

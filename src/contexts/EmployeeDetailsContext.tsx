@@ -4,7 +4,7 @@ import {
   Wrench, Tag, Globe, Map, Home, Mailbox, MapPin, User, Calendar, RefreshCw
 } from 'lucide-react'
 import { useTheme } from './ThemeContext'
-import { formatPersonName } from '../utils/api'
+import { formatPersonName, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT } from '../utils/api'
 import { isTabCacheFresh, readTabCacheEntry } from '../utils/ticketTabCache'
 import { fetchCachedBranches, fetchCachedEmployees } from '../utils/portalDirectoryCache'
 import UserAvatar from '../components/UserAvatar'
@@ -138,7 +138,7 @@ export const EmployeeDetailsProvider: React.FC<{ children: React.ReactNode }> = 
       }
 
       const [list, branches] = await Promise.all([
-        fetchCachedEmployees(token),
+        fetchCachedEmployees(token, undefined, { force }),
         fetchCachedBranches(token),
       ])
       const branchMap = buildBranchMap(branches)
@@ -154,6 +154,16 @@ export const EmployeeDetailsProvider: React.FC<{ children: React.ReactNode }> = 
   // Pre-load on mount
   useEffect(() => {
     void fetchEmployees()
+  }, [])
+
+  useEffect(() => {
+    const onDirectoryUpdated = () => { void fetchEmployees(true) }
+    window.addEventListener(EMPLOYEES_DIRECTORY_UPDATED_EVENT, onDirectoryUpdated)
+    window.addEventListener(PROFILE_UPDATED_EVENT, onDirectoryUpdated)
+    return () => {
+      window.removeEventListener(EMPLOYEES_DIRECTORY_UPDATED_EVENT, onDirectoryUpdated)
+      window.removeEventListener(PROFILE_UPDATED_EVENT, onDirectoryUpdated)
+    }
   }, [])
 
   const openEmployeeDetails = async (idOrName: string) => {

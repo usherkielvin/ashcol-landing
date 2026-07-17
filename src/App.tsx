@@ -11,7 +11,7 @@ import OfficeTasks from './pages/OfficeTasks'
 import Employees from './pages/Employees'
 import Profile from './pages/Profile'
 import Branches from './pages/Branches'
-import ClientMasterlist from './pages/ClientMasterlist'
+import Relays from './pages/Relays'
 
 import DailyAuditReport from './pages/DailyAuditReport'
 import AuditFinanceExpenses from './pages/AuditFinanceExpenses'
@@ -23,6 +23,7 @@ import LineUp from './pages/LineUp'
 import Hris from './pages/Hris'
 import Bills from './pages/Bills'
 import Telecom from './pages/Telecom'
+import OperationsForms from './pages/OperationsForms'
 
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
@@ -79,16 +80,16 @@ export default function App() {
         {/* Portal Routes */}
         <Route element={<DashboardLayout />}>
           <Route path="/dashboard" element={<DashboardRedirect />} />
-          <Route path="/dashboard-home" element={<Navigate to="/schedules" replace />} />
-          <Route path="/tickets" element={<Tickets />} />
+          <Route path="/search" element={<Tickets />} />
+          <Route path="/tickets" element={<Navigate to="/search" replace />} />
           <Route path="/tickets/create" element={<CreateTicket />} />
           <Route path="/create-ticket" element={<CreateTicket />} />
           <Route path="/schedules" element={<Tickets />} />
-          <Route path="/relays" element={<ClientMasterlist />} />
+          <Route path="/relays" element={<Relays />} />
           <Route path="/my-tickets" element={<Tickets />} />
           <Route path="/office-tasks" element={<OfficeTasks />} />
           <Route path="/branches" element={<Branches />} />
-          <Route path="/assigned-tickets" element={<Navigate to="/tickets" replace />} />
+          <Route path="/assigned-tickets" element={<Navigate to="/search" replace />} />
           <Route path="/employees" element={<Employees />} />
           <Route path="/profile" element={<Profile />} />
 
@@ -103,6 +104,7 @@ export default function App() {
           <Route path="/warranty-registration" element={<WarrantyRegistration />} />
 
           <Route path="/admin-hris" element={<Hris />} />
+          <Route path="/operations-forms" element={<OperationsForms />} />
           <Route path="/admin-bills" element={<Bills />} />
           <Route path="/admin-telecom" element={<Telecom />} />
         </Route>

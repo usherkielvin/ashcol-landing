@@ -11,8 +11,10 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, resolveScopedBranchId } from '../utils/api'
+import { ROBINSON_APPLIANCES_RE } from '../utils/dealer'
 import CalendarPicker from '../components/CalendarPicker'
 import PhAddressPicker, { type AddressValue } from '../components/PhAddressPicker'
+import { parseStoreVendor } from '../utils/parseStoreVendor'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface UnitDetail {
@@ -192,10 +194,33 @@ export default function CreateTicket() {
   })
   const [description, setDescription] = useState('')
   const [selectedDate, setSelectedDate] = useState('')
-  const [sourceVendor, setSourceVendor] = useState('Direct')
+  const [selectedDealer, setSelectedDealer] = useState('Direct')
+  const [dealerBranch, setDealerBranch] = useState('')
+  const [controlNumber, setControlNumber] = useState('')
+  const [dealers, setDealers] = useState<{ id: string; name: string }[]>([])
   const [images, setImages] = useState<{ file: File; url: string }[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const fetchDealers = async () => {
+      try {
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const res = await fetch(`${API_BASE_URL}/dealers`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        if (res.ok) {
+          const list = await res.json()
+          setDealers(list)
+        }
+      } catch (err) {
+        console.error('Error fetching dealers in CreateTicket:', err)
+      }
+    }
+    fetchDealers()
+    window.addEventListener('ashcol-dealers-updated', fetchDealers)
+    return () => window.removeEventListener('ashcol-dealers-updated', fetchDealers)
+  }, [])
 
   const location = useLocation()
   const scannedData = location.state?.scannedData
@@ -226,9 +251,19 @@ export default function CreateTicket() {
         } catch (e) {}
       }
       
-      // Set sourceVendor if valid
-      if (scannedData.sourceVendor) {
-        setSourceVendor(scannedData.sourceVendor)
+      // Set dealer if valid
+      if (scannedData.dealer || scannedData.sourceVendor) {
+        const parsed = parseStoreVendor(scannedData.dealer || scannedData.sourceVendor)
+        if (parsed.store === 'Direct') {
+          setSelectedDealer('Direct')
+          setDealerBranch('')
+        } else if (parsed.store === 'Other') {
+          setSelectedDealer(parsed.customStore || 'Direct')
+          setDealerBranch(parsed.branch)
+        } else {
+          setSelectedDealer(parsed.store)
+          setDealerBranch(parsed.branch)
+        }
       }
       
       // Parse address details
@@ -344,16 +379,21 @@ export default function CreateTicket() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          customerName: fullName.trim(),
-          title: `${selectedService} service`,
-          description: fullDesc,
-          serviceType: selectedService,
-          unitType: unitNames,
-          acDetails: JSON.stringify(sel.map(u => ({ unitType: u.name, quantity: u.quantity, details: u.details }))),
+          customerName: fullName.trim().toUpperCase(),
+          title: `${selectedService} service`.toUpperCase(),
+          description: fullDesc.toUpperCase(),
+          serviceType: selectedService.toUpperCase(),
+          unitType: unitNames.toUpperCase(),
+          acDetails: JSON.stringify(sel.map(u => ({ unitType: u.name.toUpperCase(), quantity: u.quantity, details: u.details }))),
           contactPhone: contactPhone.trim(),
           preferredDate: selectedDate || undefined,
-          location: fullLoc.trim(),
-          sourceVendor: sourceVendor,
+          location: fullLoc.trim().toUpperCase(),
+          dealer: selectedDealer === 'Direct'
+            ? 'DIRECT'
+            : ROBINSON_APPLIANCES_RE.test(selectedDealer)
+            ? (dealerBranch.trim() ? `RA ${dealerBranch.trim().toUpperCase()}` : 'RA')
+            : (dealerBranch.trim() ? `${selectedDealer.toUpperCase()} - ${dealerBranch.trim().toUpperCase()}` : selectedDealer.toUpperCase()),
+          controlNumber: ROBINSON_APPLIANCES_RE.test(selectedDealer) ? controlNumber.trim().toUpperCase() : undefined,
           branchId,
         })
       })
@@ -521,37 +561,41 @@ export default function CreateTicket() {
             </div>
             {isStaffOrAdmin && (
               <div>
-                <FL label="Store / B2B Vendor Source" />
+                <FL label="Dealer" />
                 <select
-                  value={
-                    (sourceVendor || '').toLowerCase().includes('robinsons')
-                      ? 'Robinsons B2B'
-                      : (sourceVendor || '').toLowerCase().includes('abenson')
-                      ? 'Abenson B2B'
-                      : 'Direct'
-                  }
-                  onChange={e => setSourceVendor(e.target.value)}
+                  value={selectedDealer}
+                  onChange={e => {
+                    setSelectedDealer(e.target.value)
+                    if (e.target.value === 'Direct') setDealerBranch('')
+                  }}
                   className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981]"
                   style={inputSty}>
                   <option value="Direct">Direct Client</option>
-                  <option value="Robinsons B2B">Robinsons B2B</option>
-                  <option value="Abenson B2B">Abenson B2B</option>
+                  {dealers.map(d => (
+                    <option key={d.id} value={d.name}>{d.name.toUpperCase()}</option>
+                  ))}
                 </select>
-                {((sourceVendor || '').toLowerCase().includes('robinsons') || (sourceVendor || '').toLowerCase().includes('abenson')) && (
+                {selectedDealer !== 'Direct' && (
                   <div className="mt-3">
-                    <FL label={((sourceVendor || '').toLowerCase().includes('robinsons') ? 'Robinsons' : 'Abenson') + ' Branch Name'} />
+                    <FL label={`${selectedDealer.toUpperCase()} Branch Name`} />
                     <input
                       type="text"
-                      value={
-                        sourceVendor === 'Robinsons B2B' || sourceVendor === 'Abenson B2B'
-                          ? ''
-                          : sourceVendor
-                      }
-                      onChange={e => {
-                        const prefix = (sourceVendor || '').toLowerCase().includes('robinsons') ? 'Robinsons B2B' : 'Abenson B2B'
-                        setSourceVendor(e.target.value || prefix)
-                      }}
-                      placeholder={(sourceVendor || '').toLowerCase().includes('robinsons') ? "e.g. Robinsons Tagaytay" : "e.g. Abenson Silang"}
+                      value={dealerBranch}
+                      onChange={e => setDealerBranch(e.target.value.toUpperCase())}
+                      placeholder="e.g. MALABON"
+                      className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] uppercase"
+                      style={{ ...inputSty, textTransform: 'uppercase' }}
+                    />
+                  </div>
+                )}
+                {ROBINSON_APPLIANCES_RE.test(selectedDealer) && (
+                  <div className="mt-3">
+                    <FL label="Transaction ID" />
+                    <input
+                      type="text"
+                      value={controlNumber}
+                      onChange={e => setControlNumber(e.target.value)}
+                      placeholder="Robinsons Transaction ID"
                       className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981]"
                       style={inputSty}
                     />

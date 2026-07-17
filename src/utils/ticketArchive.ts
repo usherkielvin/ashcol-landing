@@ -277,7 +277,7 @@ export function buildArchivePayloadFromTicket(
     serviceType: freeInstall ? 'FREE_INSTALLATION' : 'INSTALLATION',
     statusCode: 'I',
     commitTerms,
-    dealer: getField(ticket, 'sourceVendor', 'source_vendor', 'dealer'),
+    dealer: getField(ticket, 'dealer', 'sourceVendor', 'source_vendor'),
     unitBrandModel: parseBrandFromTicket(ticket) || getField(ticket, 'unitType', 'unit_type'),
     technicianName: getField(ticket, 'installerName', 'installer_name') || String(meta.installerName || meta.installer || ''),
     negotiator: parseNegotiatorFromTicket(ticket) || undefined,
