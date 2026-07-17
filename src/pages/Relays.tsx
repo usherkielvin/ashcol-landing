@@ -2135,6 +2135,7 @@ export default function Relays() {
       // (negotiatorName, destination, etc. set by the Schedules/My Tickets edit path) survive
       // a save from the Relays drawer.
       ...existingDetails,
+      robinsonsTransactionId: draft.robinsonsTransactionId || '',
       // schedulePhase/scheduleOutcome must follow whatever status button was just picked here —
       // without this, they keep whatever value existingDetails had before (e.g. still SURVEY &
       // INSTALL from before), so rows/labels reading schedulePhase (getCategoryLabel,
@@ -4476,6 +4477,9 @@ export default function Relays() {
                       <DField label="Commit Type" value={t.commitType} />
                       <DField label="Brand / HP" value={formatBrandCapacityLabel(det.brand, det.capacity) || '—'} />
                       <DField label="Control No. / SI" value={t.controlNumber || '—'} />
+                      {ROBINSON_APPLIANCES_RE.test(storeInfo.store || '') && (
+                        <DField label="Transaction ID" value={det.robinsonsTransactionId || '—'} />
+                      )}
                     </div>
                   </div>
 

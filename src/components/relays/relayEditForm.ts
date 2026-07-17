@@ -1,8 +1,10 @@
 import { formatBrandCapacityLabel } from '../../utils/warrantyTicketDisplay'
+import { ROBINSON_APPLIANCES_RE } from '../../utils/dealer'
 
 export type RelayEditDraft = {
   customerName: string
   controlNumber: string
+  robinsonsTransactionId: string
   phoneNumbers: string[]
   dealerName: string
   dealerBranch: string
@@ -129,6 +131,17 @@ export function buildRelayEditDraft(
     ? 'ABENSONS'
     : parsedDealer.store
 
+  const isRobinsons = ROBINSON_APPLIANCES_RE.test(openedDealerName)
+  const hasRobinsonsTxId = parsedDetails.robinsonsTransactionId !== undefined
+
+  const robinsonsTxId = hasRobinsonsTxId
+    ? (parsedDetails.robinsonsTransactionId || '')
+    : (isRobinsons ? (ticket.controlNumber || '') : '')
+
+  const ctrlNumber = hasRobinsonsTxId
+    ? (ticket.controlNumber || '')
+    : (isRobinsons ? '' : (ticket.controlNumber || ''))
+
   const phonesList = [ticket.contactPhone || '']
     .concat(parsedDetails.alternatePhone
       ? parsedDetails.alternatePhone.split(',').map((s: string) => s.trim())
@@ -137,7 +150,8 @@ export function buildRelayEditDraft(
 
   return {
     customerName: ticket.customerName || '',
-    controlNumber: ticket.controlNumber || '',
+    controlNumber: ctrlNumber,
+    robinsonsTransactionId: robinsonsTxId,
     phoneNumbers: phonesList.length ? phonesList : [''],
     dealerName: openedDealerName,
     dealerBranch: parsedDealer.branch,

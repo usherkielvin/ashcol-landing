@@ -32,6 +32,7 @@ import {
 } from '../utils/branchRoster'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import { notifyArchiveUpdated } from '../utils/ticketArchive'
+import { ROBINSON_APPLIANCES_RE } from '../utils/dealer'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
@@ -222,8 +223,8 @@ function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: 
   if (normalized === 'SURVEY') {
     return { color: isLight ? '#6d28d9' : '#c4b5fd', backgroundColor: isLight ? '#ede9fe' : 'rgba(139,92,246,0.18)', borderColor: isLight ? '#c4b5fd' : 'rgba(139,92,246,0.35)' }
   }
-  if (normalized === 'DONE_SURVEY') {
-    return { color: isLight ? '#5b21b6' : '#ddd6fe', backgroundColor: isLight ? '#f3e8ff' : 'rgba(139,92,246,0.28)', borderColor: isLight ? '#c4b5fd' : 'rgba(167,139,250,0.45)' }
+  if (normalized === 'DONE_SURVEY' || normalized === 'DONE_CHECKUP') {
+    return { color: isLight ? '#a16207' : '#fbbf24', backgroundColor: isLight ? '#fef9c3' : 'rgba(251,191,36,0.14)', borderColor: isLight ? '#fcd34d' : 'rgba(251,191,36,0.35)' }
   }
   if (normalized === 'RESCHED') {
     return { color: isLight ? '#a16207' : '#fbbf24', backgroundColor: isLight ? '#fef9c3' : 'rgba(251,191,36,0.14)', borderColor: isLight ? '#fcd34d' : 'rgba(251,191,36,0.35)' }
@@ -239,7 +240,6 @@ function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: 
     normalized === 'INSTALLED' ||
     normalized === 'COMPLETED' ||
     normalized === 'DONE_CLEANING' ||
-    normalized === 'DONE_CHECKUP' ||
     normalized === 'DONE_BACKJOB'
   ) {
     return { color: isLight ? '#15803d' : '#86efac', backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.18)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)' }
@@ -839,11 +839,17 @@ function getScheduleRowColors(
     }
     if (outcome === 'DONE_SURVEY') {
       return {
-        baseBg: isLight ? '#f3e8ff' : 'rgba(139,92,246,0.22)',
-        accent: '#8B5CF6',
+        baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.14)',
+        accent: '#fbbf24',
       }
     }
-    if (outcome === 'DONE_CHECKUP' || outcome === 'DONE_BACKJOB') {
+    if (outcome === 'DONE_CHECKUP') {
+      return {
+        baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.14)',
+        accent: '#fbbf24',
+      }
+    }
+    if (outcome === 'DONE_BACKJOB') {
       return {
         baseBg: isLight ? '#dbeafe' : 'rgba(59,130,246,0.22)',
         accent: '#3B82F6',
@@ -871,8 +877,8 @@ function getScheduleRowColors(
 
   if (outcome === 'DONE_SURVEY') {
     return {
-      baseBg: isLight ? '#f3e8ff' : 'rgba(139,92,246,0.18)',
-      accent: '#8B5CF6',
+      baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.1)',
+      accent: '#fbbf24',
     }
   }
 
@@ -883,7 +889,14 @@ function getScheduleRowColors(
     }
   }
 
-  if (outcome === 'DONE_CHECKUP' || outcome === 'DONE_BACKJOB') {
+  if (outcome === 'DONE_CHECKUP') {
+    return {
+      baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.1)',
+      accent: '#fbbf24',
+    }
+  }
+
+  if (outcome === 'DONE_BACKJOB') {
     return {
       baseBg: isLight ? '#eff6ff' : 'rgba(59,130,246,0.14)',
       accent: '#3B82F6',
@@ -3362,6 +3375,7 @@ export default function Tickets() {
     // ticketEditBridge.ts. Left undefined when saved via ScheduleEditTicketModal so commitSaveEditTicket
     // knows not to touch these acDetails keys (and not clobber them with undefined).
     landmarks?: string; capacity?: string; sku?: string; serialNumber?: string; relayedDate?: string; alternatePhone?: string
+    robinsonsTransactionId?: string
     storeReferralFee?: string; referralRecipient?: string; referralAmount?: string; referralStatus?: string
     referralDatePaid?: string; referralReferenceNo?: string
     rebatesClaim?: string; rebatesCompany?: string; rebatesAmountDue?: string; rebatesStatus?: string; rebatesReferenceNo?: string
@@ -4628,6 +4642,7 @@ export default function Tickets() {
       // provided — spreading an explicit `undefined` would still shadow the prior acDetails
       // value once JSON.stringify drops it, wiping the field on every plain Schedules save.
       const overviewAcExtras: Record<string, unknown> = {}
+      if (activeForm.robinsonsTransactionId !== undefined) overviewAcExtras.robinsonsTransactionId = activeForm.robinsonsTransactionId
       if (activeForm.landmarks !== undefined) overviewAcExtras.landmarks = activeForm.landmarks
       if (activeForm.capacity !== undefined) overviewAcExtras.capacity = activeForm.capacity
       if (activeForm.sku !== undefined) overviewAcExtras.sku = activeForm.sku
@@ -7078,14 +7093,14 @@ export default function Tickets() {
           }
           if (outcome === 'DONE_SURVEY') {
             return (
-              <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#5b21b6' : '#ddd6fe' }} title="Done Survey">
+              <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#a16207' : '#fbbf24' }} title="Done Survey">
                 DONE SURVEY
               </span>
             )
           }
           if (outcome === 'DONE_CHECKUP') {
             return (
-              <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#1d4ed8' : '#93c5fd' }} title="Done Checkup">
+              <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#a16207' : '#fbbf24' }} title="Done Checkup">
                 DONE CHECKUP
               </span>
             )
@@ -8602,6 +8617,9 @@ export default function Tickets() {
                       <DField label={isTaguigServices ? "Endorsed By" : "Dealer (DLR)"} value={dealer || EMPTY_CELL} />
                       <DField label="Ticket No." value={t.ticketNumber || t.ticket_number || EMPTY_CELL} />
                       <DField label="Control No. / SI" value={t.controlNumber || t.control_number || EMPTY_CELL} />
+                      {ROBINSON_APPLIANCES_RE.test(dealer || '') && (
+                        <DField label="Transaction ID" value={String(parseAcMeta(t).robinsonsTransactionId || '') || EMPTY_CELL} />
+                      )}
                     </div>
                   </div>
 

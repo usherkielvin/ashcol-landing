@@ -22,6 +22,7 @@ export type ScheduleEditFormShape = {
   branchId?: string
   ticketNumber?: string
   controlNumber?: string
+  robinsonsTransactionId?: string
   ticketCategory?: TicketCategoryValue
   status?: string
   installationCharges?: number
@@ -76,6 +77,7 @@ export function mapRelayDraftToScheduleEditForm(
     branchId: draft.assignBranchId !== undefined ? draft.assignBranchId : base.branchId,
     ticketNumber: draft.ticketNumber !== undefined ? draft.ticketNumber : base.ticketNumber,
     controlNumber: draft.controlNumber !== undefined ? draft.controlNumber : base.controlNumber,
+    robinsonsTransactionId: draft.robinsonsTransactionId !== undefined ? draft.robinsonsTransactionId : base.robinsonsTransactionId,
     ticketCategory: (draft.ticketCategory || base.ticketCategory || 'INSTALLATION') as TicketCategoryValue,
     status: draft.scheduleStatus || draft.updateStatus || base.status,
     preferredDate: draft.finalDate || draft.preferredDate || base.preferredDate,
