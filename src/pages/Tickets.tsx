@@ -2860,6 +2860,7 @@ export default function Tickets() {
       setActiveTab('schedules')
       setDateFilter(resolveInitialScheduleDate('/schedules'))
     } else if (location.pathname === '/my-tickets') {
+      setActiveTab('schedules')
       setDateFilter('')
     }
   }, [location.pathname])
