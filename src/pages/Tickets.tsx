@@ -1597,8 +1597,9 @@ function getSchedulePaymentDisplay(
   const amountStr = amount != null && amount > 0
     ? Math.round(amount).toLocaleString('en-PH')
     : ''
+  const breakdownStr = mode === 'HYBRID' ? formatPaymentBreakdownText(getPaymentBreakdown(ticket)) : ''
 
-  if (mode && amountStr) return `${amountStr} ${mode}`
+  if (mode && amountStr) return breakdownStr ? `${amountStr} ${mode} ${breakdownStr}` : `${amountStr} ${mode}`
   if (mode) return mode
   if (amountStr) return amountStr
   return ''
@@ -1616,6 +1617,29 @@ function formatCombinedPayment(ticket: Ticket): string {
 
 function getPaymentMode(ticket: Ticket): string {
   return resolveTicketPayment(ticket).mode
+}
+
+type PaymentBreakdownEntry = { mode: string; amount: number }
+
+/** Split payment lines (e.g. CASH 1,000 + GCASH 9,000) stashed in acDetails when mode is HYBRID. */
+function getPaymentBreakdown(ticket: Ticket): PaymentBreakdownEntry[] {
+  const meta = parseAcMeta(ticket)
+  const raw = meta.paymentBreakdown
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((entry): PaymentBreakdownEntry | null => {
+      if (!entry || typeof entry !== 'object') return null
+      const mode = sanitizeDisplayText(String((entry as Record<string, unknown>).mode || '')).toUpperCase()
+      const amount = parseImportMoney((entry as Record<string, unknown>).amount as string | number | null | undefined)
+      if (!mode || amount == null || amount <= 0) return null
+      return { mode, amount }
+    })
+    .filter((entry): entry is PaymentBreakdownEntry => entry != null)
+}
+
+function formatPaymentBreakdownText(breakdown: PaymentBreakdownEntry[]): string {
+  if (!breakdown.length) return ''
+  return `(${breakdown.map(e => `${e.mode} ${Math.round(e.amount).toLocaleString('en-PH')}`).join(' + ')})`
 }
 
 function ticketHasPaymentInfo(ticket: Partial<Ticket>): boolean {
@@ -3214,6 +3238,8 @@ export default function Tickets() {
   const [paymentPrompt, setPaymentPrompt] = useState<{ ticket: Ticket; nextStatus: string } | null>(null)
   const [promptAmount, setPromptAmount] = useState<string>('')
   const [promptMode, setPromptMode] = useState<string>('CASH')
+  const [promptHybridCash, setPromptHybridCash] = useState<string>('')
+  const [promptHybridGcash, setPromptHybridGcash] = useState<string>('')
 
   useEffect(() => {
     if (isMyTickets) {
@@ -6531,7 +6557,7 @@ export default function Tickets() {
     ticket: Ticket,
     colLabel: string,
     value: string,
-    injectedPayment?: { amount?: number; modeOfPayment: string }
+    injectedPayment?: { amount?: number; modeOfPayment: string; breakdown?: PaymentBreakdownEntry[] }
   ) => {
     const liveTicket = resolveLiveScheduleTicket(ticket)
 
@@ -6547,6 +6573,11 @@ export default function Tickets() {
     if (injectedPayment) {
       body.modeOfPayment = injectedPayment.modeOfPayment
       body.installationCharges = injectedPayment.amount
+      body.acDetails = mergeAcMeta(liveTicket, {
+        paymentBreakdown: injectedPayment.breakdown && injectedPayment.breakdown.length
+          ? injectedPayment.breakdown
+          : undefined,
+      })
     }
 
     // Remarks always save in-cell Ã¢â‚¬â€ never open a payment popup.
@@ -7383,6 +7414,9 @@ export default function Tickets() {
       const combined = sanitizeDisplayText(getSchedulePaymentDisplay(ticket, dateFilter, ghostKind))
       const mode = getPaymentMode(ticket).trim().toUpperCase()
       const amountStr = formatPaymentAmount(ticket)
+      const isHybrid = mode === 'HYBRID'
+      const breakdown = isHybrid ? getPaymentBreakdown(ticket) : []
+      const breakdownStr = formatPaymentBreakdownText(breakdown)
       if (cellExpanded) {
         return (
           <>
@@ -7403,6 +7437,15 @@ export default function Tickets() {
                   <div>
                     <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Amount </span>
                     <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: textPrimary }}>{formatPesoPrefix(amountStr)}</span>
+                  </div>
+                ) : null}
+                {isHybrid && breakdown.length ? (
+                  <div className="flex flex-col gap-0.5">
+                    {breakdown.map((entry, i) => (
+                      <div key={`${entry.mode}-${i}`} className="text-[10.5px]" style={{ color: textMuted }}>
+                        {entry.mode} <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: textPrimary }}>{Math.round(entry.amount).toLocaleString('en-PH')}</span>
+                      </div>
+                    ))}
                   </div>
                 ) : null}
               </div>
@@ -7431,6 +7474,11 @@ export default function Tickets() {
               {mode}
             </span>
           )}
+          {isHybrid && breakdownStr ? (
+            <span style={{ fontWeight: 500, color: textMuted, marginLeft: 4 }}>
+              {breakdownStr}
+            </span>
+          ) : null}
         </span>
       )
     }
@@ -8840,6 +8888,8 @@ export default function Tickets() {
               setPaymentPrompt({ ticket: pickerTicket, nextStatus: value })
               setPromptAmount('')
               setPromptMode('CASH')
+              setPromptHybridCash('')
+              setPromptHybridGcash('')
               return
             }
           }
@@ -10297,8 +10347,21 @@ export default function Tickets() {
       {paymentPrompt && (() => {
         const { ticket } = paymentPrompt
         const isFreeOrPending = promptMode === 'FREE' || promptMode === 'FREE INSTALL' || promptMode === 'PENDING'
+        const isHybrid = promptMode === 'HYBRID'
+        const hybridCashNum = parseFloat(promptHybridCash) || 0
+        const hybridGcashNum = parseFloat(promptHybridGcash) || 0
+        const hybridTotal = hybridCashNum + hybridGcashNum
         const handleSubmit = (e: React.FormEvent) => {
           e.preventDefault()
+          if (isHybrid) {
+            if (hybridTotal <= 0) return
+            const breakdown: PaymentBreakdownEntry[] = []
+            if (hybridCashNum > 0) breakdown.push({ mode: 'CASH', amount: hybridCashNum })
+            if (hybridGcashNum > 0) breakdown.push({ mode: 'GCASH', amount: hybridGcashNum })
+            void saveCellEdit(ticket, 'STATUS', paymentPrompt.nextStatus, { amount: hybridTotal, modeOfPayment: 'HYBRID', breakdown })
+            setPaymentPrompt(null)
+            return
+          }
           const amt = isFreeOrPending ? undefined : parseFloat(promptAmount) || 0
           void saveCellEdit(ticket, 'STATUS', paymentPrompt.nextStatus, { amount: amt, modeOfPayment: promptMode })
           setPaymentPrompt(null)
@@ -10348,26 +10411,67 @@ export default function Tickets() {
                       <option value="BANK TRANSFER">BANK TRANSFER</option>
                       <option value="GCASH">GCASH</option>
                       <option value="CHEQUE">CHEQUE</option>
+                      <option value="HYBRID">HYBRID (SPLIT PAYMENT)</option>
                       <option value="FREE INSTALL">FREE INSTALL</option>
                       <option value="PENDING">PENDING</option>
                     </select>
                   </div>
 
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Payment Amount (\u20B1)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      required={!isFreeOrPending}
-                      disabled={isFreeOrPending}
-                      placeholder="0.00"
-                      value={promptAmount}
-                      onChange={e => setPromptAmount(e.target.value)}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full disabled:opacity-60"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                    />
-                  </div>
+                  {isHybrid ? (
+                    <div className="flex flex-col gap-3">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Cash Amount (\u20B1)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="0.00"
+                          value={promptHybridCash}
+                          onChange={e => setPromptHybridCash(e.target.value)}
+                          className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>GCash Amount (\u20B1)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="0.00"
+                          value={promptHybridGcash}
+                          onChange={e => setPromptHybridGcash(e.target.value)}
+                          className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
+                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                        />
+                      </div>
+                      <div className="p-2.5 rounded-lg flex items-center justify-between" style={{ backgroundColor: isLight ? '#f0fdf4' : '#0d2a1a' }}>
+                        <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Total</span>
+                        <span className="text-sm font-black" style={{ color: isLight ? '#047857' : '#6ee7b7', fontVariantNumeric: 'tabular-nums' }}>
+                          {`\u20B1${hybridTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`}
+                        </span>
+                      </div>
+                      {hybridTotal <= 0 ? (
+                        <p className="text-[10.5px] font-semibold" style={{ color: '#dc2626' }}>Enter at least one amount above zero.</p>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Payment Amount (\u20B1)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        required={!isFreeOrPending}
+                        disabled={isFreeOrPending}
+                        placeholder="0.00"
+                        value={promptAmount}
+                        onChange={e => setPromptAmount(e.target.value)}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full disabled:opacity-60"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div className="px-6 py-4 flex justify-end gap-3 border-t" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
