@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect, type DragEvent } from 'react'
 import { useLocation, useOutletContext } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
@@ -2235,6 +2235,103 @@ function compareNameSiteStrings(a: string, b: string): number {
   const byName = pa.name.localeCompare(pb.name, undefined, { sensitivity: 'base' })
   if (byName !== 0) return byName
   return pa.site - pb.site
+}
+
+/** Vehicle name + red trip # — shrinks the name font so the number never gets clipped. */
+function VehicleTripLabel({
+  name,
+  tripNumber,
+  nameColor,
+  tripColor,
+  opacity,
+  title,
+  canDrag,
+  onDragStart,
+  onDragEnd,
+}: {
+  name: string
+  tripNumber: string
+  nameColor: string
+  tripColor: string
+  opacity?: number
+  title?: string
+  canDrag?: boolean
+  onDragStart?: (e: DragEvent<HTMLSpanElement>) => void
+  onDragEnd?: (e: DragEvent<HTMLSpanElement>) => void
+}) {
+  const wrapRef = useRef<HTMLSpanElement>(null)
+  const nameRef = useRef<HTMLSpanElement>(null)
+  const tripRef = useRef<HTMLSpanElement>(null)
+
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current
+    const nameEl = nameRef.current
+    if (!wrap || !nameEl || !name) return
+
+    const MIN_PX = 7
+    const fit = () => {
+      const base = parseFloat(getComputedStyle(wrap).fontSize) || 12.5
+      let size = base
+      nameEl.style.fontSize = `${size}px`
+      nameEl.style.overflow = 'visible'
+      nameEl.style.textOverflow = 'clip'
+      if (tripRef.current) tripRef.current.style.fontSize = `${size}px`
+
+      let guard = 28
+      while (guard-- > 0 && wrap.scrollWidth > wrap.clientWidth + 0.5 && size > MIN_PX) {
+        size -= 0.5
+        nameEl.style.fontSize = `${size}px`
+        // Keep trip number a touch more readable than a heavily shrunk name
+        if (tripRef.current) tripRef.current.style.fontSize = `${Math.max(size, 9)}px`
+      }
+
+      // Still overflowing at minimum size — ellipsis the name, never the red number
+      if (wrap.scrollWidth > wrap.clientWidth + 0.5) {
+        nameEl.style.overflow = 'hidden'
+        nameEl.style.textOverflow = 'ellipsis'
+      }
+    }
+
+    fit()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(fit)
+    ro.observe(wrap)
+    return () => ro.disconnect()
+  }, [name, tripNumber])
+
+  return (
+    <span
+      ref={wrapRef}
+      draggable={canDrag}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      className="flex w-full min-w-0 max-w-full items-center justify-center font-bold tracking-wide uppercase leading-tight rounded whitespace-nowrap"
+      style={{
+        color: nameColor,
+        opacity,
+        cursor: canDrag ? 'grab' : undefined,
+        gap: 4,
+      }}
+      title={title}
+    >
+      <span
+        ref={nameRef}
+        className="min-w-0 shrink"
+        style={{ whiteSpace: 'nowrap' }}
+      >
+        {name}
+      </span>
+      {tripNumber ? (
+        <span
+          ref={tripRef}
+          className="shrink-0"
+          style={{ color: tripColor }}
+        >
+          {tripNumber}
+        </span>
+      ) : null}
+    </span>
+  )
 }
 
 /**
@@ -7511,9 +7608,25 @@ export default function Tickets() {
       const parsedVehicle = parseNameSiteToken(vehicleCode)
       const vehicleBaseName = parsedVehicle.name || vehicleCode
       const vehicleTripNumber = parsedVehicle.site === Number.MAX_SAFE_INTEGER ? '' : String(parsedVehicle.site)
+      if (!vehicleCode) {
+        return (
+          <span
+            className="block w-full text-center font-bold tracking-wide uppercase leading-tight rounded"
+            style={{ color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }}
+          >
+            {EMPTY_CELL}
+          </span>
+        )
+      }
       return (
-        <span
-          draggable={canDragVehicle}
+        <VehicleTripLabel
+          name={vehicleBaseName}
+          tripNumber={vehicleTripNumber}
+          nameColor={ghostMuted}
+          tripColor={isLight ? '#DC2626' : '#F87171'}
+          opacity={rowGhost ? 0.72 : 1}
+          title={vehicleCode}
+          canDrag={canDragVehicle}
           onDragStart={e => {
             e.stopPropagation()
             e.dataTransfer.effectAllowed = 'move'
@@ -7528,25 +7641,7 @@ export default function Tickets() {
             setDraggedVehicleTicketId(null)
             setVehicleDropTargetId(null)
           }}
-          className="block w-full text-center font-bold tracking-wide uppercase leading-tight rounded"
-          style={{
-            color: ghostMuted,
-            opacity: rowGhost ? 0.72 : 1,
-            cursor: canDragVehicle ? 'grab' : undefined,
-          }}
-          title={vehicleCode}
-        >
-          {vehicleCode ? (
-            <>
-              {vehicleBaseName}
-              {vehicleTripNumber && (
-                <span style={{ color: isLight ? '#DC2626' : '#F87171', marginLeft: 4 }}>
-                  {vehicleTripNumber}
-                </span>
-              )}
-            </>
-          ) : EMPTY_CELL}
-        </span>
+        />
       )
     }
 
@@ -8378,7 +8473,7 @@ export default function Tickets() {
                                         }`}
                                       style={{ minHeight: TABLE_ROW_HEIGHT - 2 }}
                                     >
-                                      <div className={`min-w-0 overflow-hidden ${col.align === 'center' ? 'w-auto max-w-full' : 'w-full'}`}>
+                                      <div className={`min-w-0 overflow-hidden ${col.align === 'center' && col.label !== 'VEHICLE' ? 'w-auto max-w-full' : 'w-full'}`}>
                                         {renderCell(ticket, col, idx, isGhost, ghostKind, false)}
                                       </div>
                                     </div>
