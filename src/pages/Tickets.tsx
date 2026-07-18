@@ -2356,7 +2356,7 @@ function compareNameSiteStrings(a: string, b: string): number {
   return pa.site - pb.site
 }
 
-/** Vehicle name + red trip # — shrinks the name font so the number never gets clipped. */
+/** Vehicle name + red trip # — shrinks the name font to fit the cell; trip # stays readable. */
 function VehicleTripLabel({
   name,
   tripNumber,
@@ -2387,25 +2387,59 @@ function VehicleTripLabel({
     const nameEl = nameRef.current
     if (!wrap || !nameEl || !name) return
 
-    const MIN_PX = 7
+    const MIN_PX = 6
+    const TRIP_MIN_PX = 9
     const fit = () => {
+      // Prefer the cell's fixed width — without a hard cap the wrap grows with content
+      // and scrollWidth === clientWidth, so the shrink loop never runs.
+      const parent = wrap.parentElement
+      const available = Math.max(
+        0,
+        (parent?.clientWidth && parent.clientWidth > 0 ? parent.clientWidth : wrap.clientWidth) - 2,
+      )
+      if (available <= 0) return
+
+      wrap.style.width = '100%'
+      wrap.style.maxWidth = `${available}px`
+
       const base = parseFloat(getComputedStyle(wrap).fontSize) || 12.5
-      let size = base
-      nameEl.style.fontSize = `${size}px`
+      let lo = MIN_PX
+      let hi = base
+      let best = MIN_PX
+
       nameEl.style.overflow = 'visible'
       nameEl.style.textOverflow = 'clip'
-      if (tripRef.current) tripRef.current.style.fontSize = `${size}px`
+      nameEl.style.maxWidth = 'none'
 
-      let guard = 28
-      while (guard-- > 0 && wrap.scrollWidth > wrap.clientWidth + 0.5 && size > MIN_PX) {
-        size -= 0.5
+      const overflows = (size: number) => {
         nameEl.style.fontSize = `${size}px`
-        // Keep trip number a touch more readable than a heavily shrunk name
-        if (tripRef.current) tripRef.current.style.fontSize = `${Math.max(size, 9)}px`
+        if (tripRef.current) tripRef.current.style.fontSize = `${Math.max(size, TRIP_MIN_PX)}px`
+        // Include the flex gap between name and red counter in the fit check
+        return wrap.scrollWidth > available + 0.5
       }
 
-      // Still overflowing at minimum size — ellipsis the name, never the red number
-      if (wrap.scrollWidth > wrap.clientWidth + 0.5) {
+      // Start a bit smaller than the cell's base font so long names don't look packed
+      hi = Math.min(base, 11.5)
+
+      // Binary search the largest name font that still fits the cell
+      for (let i = 0; i < 14; i++) {
+        const mid = (lo + hi) / 2
+        if (!overflows(mid)) {
+          best = mid
+          lo = mid
+        } else {
+          hi = mid
+        }
+      }
+
+      nameEl.style.fontSize = `${best}px`
+      if (tripRef.current) tripRef.current.style.fontSize = `${Math.max(best, TRIP_MIN_PX)}px`
+
+      // Still overflowing at minimum — ellipsis the name only; never clip the red trip #
+      if (wrap.scrollWidth > available + 0.5) {
+        const tripW = tripRef.current?.offsetWidth ?? 0
+        const gap = tripNumber ? 10 : 0
+        nameEl.style.maxWidth = `${Math.max(12, available - tripW - gap)}px`
         nameEl.style.overflow = 'hidden'
         nameEl.style.textOverflow = 'ellipsis'
       }
@@ -2415,6 +2449,7 @@ function VehicleTripLabel({
     if (typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(fit)
     ro.observe(wrap)
+    if (wrap.parentElement) ro.observe(wrap.parentElement)
     return () => ro.disconnect()
   }, [name, tripNumber])
 
@@ -2424,12 +2459,16 @@ function VehicleTripLabel({
       draggable={canDrag}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      className="flex w-full min-w-0 max-w-full items-center justify-center font-bold tracking-wide uppercase leading-tight rounded whitespace-nowrap"
+      className="flex w-full min-w-0 max-w-full items-center justify-center font-bold uppercase leading-tight rounded whitespace-nowrap overflow-hidden"
       style={{
         color: nameColor,
         opacity,
         cursor: canDrag ? 'grab' : undefined,
-        gap: 4,
+        gap: 8,
+        width: '100%',
+        maxWidth: '100%',
+        boxSizing: 'border-box',
+        letterSpacing: '0.01em',
       }}
       title={title}
     >
@@ -2444,7 +2483,7 @@ function VehicleTripLabel({
         <span
           ref={tripRef}
           className="shrink-0"
-          style={{ color: tripColor }}
+          style={{ color: tripColor, paddingLeft: 2 }}
         >
           {tripNumber}
         </span>
@@ -5791,7 +5830,7 @@ export default function Tickets() {
       { label: 'NEGOTIATOR', display: 'NEGOTIATOR', weight: 8, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'INSTALLER', display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'SERVICE', display: "DRIVER", weight: 9, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'VEHICLE', display: "VEHICLE", weight: 7, expMul: 1.2, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'VEHICLE', display: "VEHICLE", weight: 9, expMul: 1.2, sticky: false, freeze: false, align: 'center' as const },
       { label: 'STATUS', display: "STATUS", weight: 9, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
       { label: 'UPDATE', display: "REMARKS", weight: 14, expMul: 1.55, sticky: false, freeze: false, align: 'right' as const },
       { label: 'PAYMENT', display: "PAYMENT", weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'right' as const },
@@ -7927,7 +7966,8 @@ export default function Tickets() {
       // "MIRAGE - 2" splits into a plain name and a red trip number that live-updates as the
       // ticket's position in its vehicle group changes (drag-and-drop) — never manually typed.
       const parsedVehicle = parseNameSiteToken(vehicleCode)
-      const vehicleBaseName = parsedVehicle.name || vehicleCode
+      // .label keeps full crew/vehicle text and strips only the "- N" trip suffix
+      const vehicleBaseName = parsedVehicle.label || vehicleCode
       const vehicleTripNumber = parsedVehicle.site === Number.MAX_SAFE_INTEGER ? '' : String(parsedVehicle.site)
       if (!vehicleCode) {
         return (
