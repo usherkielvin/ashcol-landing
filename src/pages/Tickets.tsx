@@ -169,30 +169,31 @@ type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY' | 'DON
 type ScheduleStatusGroup = 'pending' | 'closing'
 
 const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatusGroup }[] = [
-  // Pending first
+  // Pending
   { value: 'S/I', label: 'SURVEY & INSTALL', group: 'pending' },
   { value: 'INSTALL', label: 'INSTALL', group: 'pending' },
   { value: 'SURVEY', label: 'SURVEY', group: 'pending' },
   { value: 'CLEANING', label: 'CLEANING', group: 'pending' },
   { value: 'CHECKUP', label: 'CHECKUP', group: 'pending' },
   { value: 'BACKJOB', label: 'BACKJOB', group: 'pending' },
-  { value: 'INSTALLATION', label: 'INSTALLATION', group: 'pending' },
-  { value: 'SERVICES', label: 'SERVICE', group: 'pending' },
+  { value: 'SERVICE', label: 'SERVICE', group: 'pending' },
   { value: 'RESCHED', label: 'RESCHED', group: 'pending' },
   { value: 'CONTINUATION', label: 'CONTINUATION', group: 'pending' },
   { value: 'FOR_APPROVAL', label: 'FOR APPROVAL', group: 'pending' },
+  { value: 'SYSTEM_REPROCESS', label: 'SYSTEM REPROCESS', group: 'pending' },
   // Closing
   { value: 'DONE_INSTALLED', label: 'DONE INSTALL', group: 'closing' },
   { value: 'DONE_CLEANING', label: 'DONE CLEANING', group: 'closing' },
   { value: 'DONE_SURVEY', label: 'DONE SURVEY', group: 'closing' },
   { value: 'DONE_CHECKUP', label: 'DONE CHECKUP', group: 'closing' },
   { value: 'DONE_BACKJOB', label: 'DONE BACKJOB', group: 'closing' },
+  { value: 'DONE_SYSTEM_REPROCESS', label: 'DONE SYSTEM REPROCESS', group: 'closing' },
   { value: 'CANCELLED', label: 'CANCELLED', group: 'closing' },
 ]
 
 const SCHEDULE_PENDING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group === 'pending')
 const SCHEDULE_CLOSING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group === 'closing')
-const CLOSING_SCHEDULE_STATUSES = new Set(['DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB'])
+const CLOSING_SCHEDULE_STATUSES = new Set(['DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB', 'DONE_SYSTEM_REPROCESS'])
 const SCHEDULE_PENDING_STATUS_VALUES = new Set(SCHEDULE_PENDING_OPTS.map(o => o.value))
 const SCHEDULE_CLOSING_STATUS_VALUES = new Set(SCHEDULE_CLOSING_OPTS.map(o => o.value))
 
@@ -2330,9 +2331,11 @@ function getTicketNegotiatorName(ticket: Ticket, employees?: { id: string; name:
   return firstName.toUpperCase()
 }
 
+// VEHICLE is deliberately excluded — double-click there selects the cell (green highlight) for
+// arrow-key reordering instead of opening the text editor.
 const INLINE_EDIT_COLUMNS = new Set([
   'INSTALLER', 'NEGOTIATOR', 'COMMIT', 'BRAND', 'DLR', "CUSTOMER'S NAME",
-  'FINAL DATE', 'SERVICE', 'VEHICLE', 'UPDATE', 'DESTINATION', 'NOTE',
+  'FINAL DATE', 'SERVICE', 'UPDATE', 'DESTINATION', 'NOTE',
 ])
 const DEFAULT_MY_TICKETS_SORT = { column: 'NEGOTIATOR', direction: 'asc' as const }
 const DEFAULT_SCHEDULE_SORT = { column: 'VEHICLE', direction: 'asc' as const }
@@ -3161,6 +3164,33 @@ export default function Tickets() {
   const dateFilterInputRef = useRef<HTMLInputElement>(null)
   const [hoveredRow, setHoveredRow] = useState<string | null>(null)
   const [hoveredCell, setHoveredCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
+  const [draggedVehicleTicketId, setDraggedVehicleTicketId] = useState<string | null>(null)
+  const [vehicleDropTargetId, setVehicleDropTargetId] = useState<string | null>(null)
+  // Per-row dragover/drop relies on native hit-testing, which gets ambiguous once sibling rows
+  // are mid-slide (translateY + z-index during the "make room" animation) — the browser can end
+  // up firing drop on a row other than the one visually under the cursor, so the reorder silently
+  // no-ops and everything reverts once the drag state clears. Tracking the target row directly
+  // from cursor Y position against the table body sidesteps that hit-testing ambiguity entirely.
+  const vehicleDragTbodyRef = useRef<HTMLTableSectionElement>(null)
+  const getVehicleDragRowIndex = useCallback((clientY: number): number => {
+    const el = vehicleDragTbodyRef.current
+    if (!el) return -1
+    const rect = el.getBoundingClientRect()
+    return Math.floor((clientY - rect.top) / TABLE_ROW_HEIGHT)
+  }, [])
+  // Double-click a VEHICLE cell to select it (green highlight) instead of opening a text editor —
+  // arrow keys then move that ticket up/down within its vehicle group.
+  const [selectedVehicleTicketId, setSelectedVehicleTicketId] = useState<string | null>(null)
+  // A live table row rendered as a native drag-image looks garbled (browsers don't snapshot
+  // table layout cleanly) — preload a transparent 1x1 pixel once and use that as the drag image
+  // instead, so nothing follows the cursor. The row stays put in place (dimmed) and the "make
+  // room" slide animation on the other rows communicates the move instead of a ghost.
+  const dragGhostImgRef = useRef<HTMLImageElement | null>(null)
+  useEffect(() => {
+    const img = new Image()
+    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBTAA7'
+    dragGhostImgRef.current = img
+  }, [])
   const [expandedCell, setExpandedCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
   const [expandedPopoverPos, setExpandedPopoverPos] = useState<{ left: number; top: number; width: number } | null>(null)
   const pendingSavesRef = useRef(new Map<string, PendingTicketSave>())
@@ -5917,7 +5947,8 @@ export default function Tickets() {
         list = list.filter(t =>
           [t.customerName, t.customer_name, t.contactPhone, t.assignedEmployeeName,
           t.assigned_employee_name, t.serviceType, t.service_type, t.description,
-          t.remarks, t.note, t.id, t.ticketNumber, t.ticket_number].some(v => v?.toLowerCase().includes(q))
+          t.remarks, t.note, t.id, t.ticketNumber, t.ticket_number,
+          resolveNegotiatorDisplayName(t, branchEmployees)].some(v => v?.toLowerCase().includes(q))
           || formatAddress(t.location).toLowerCase().includes(q)
         )
       }
@@ -5990,7 +6021,8 @@ export default function Tickets() {
       list = list.filter(t =>
         [t.customerName, t.customer_name, t.contactPhone, t.assignedEmployeeName,
         t.assigned_employee_name, t.serviceType, t.service_type, t.description,
-        t.remarks, t.note, t.id, t.ticketNumber, t.ticket_number].some(v => v?.toLowerCase().includes(q))
+        t.remarks, t.note, t.id, t.ticketNumber, t.ticket_number,
+        resolveNegotiatorDisplayName(t, branchEmployees)].some(v => v?.toLowerCase().includes(q))
         || formatAddress(t.location).toLowerCase().includes(q)
       )
     }
@@ -6033,6 +6065,47 @@ export default function Tickets() {
     })
     return list
   }, [filtered, sortConfig, isMyTickets, branchEmployees, activeBranchId, vehicleTripLabels])
+
+  // Each ticket's position within its contiguous vehicle-group run in `visible` — visible is
+  // already sorted with same-vehicle rows contiguous, so this is a single linear scan. Used to
+  // animate the "make room" row slide while dragging a VEHICLE cell.
+  const vehicleGroupPositions = useMemo(() => {
+    const map = new Map<string, { base: string; relIndex: number }>()
+    let i = 0
+    while (i < visible.length) {
+      const parsed = parseNameSiteToken(getTicketVehicleDisplay(visible[i]))
+      if (!parsed.name) { i += 1; continue }
+      let j = i
+      let rel = 0
+      while (j < visible.length && parseNameSiteToken(getTicketVehicleDisplay(visible[j])).name === parsed.name) {
+        map.set(visible[j].id, { base: parsed.name, relIndex: rel })
+        rel += 1
+        j += 1
+      }
+      i = j
+    }
+    return map
+  }, [visible])
+
+  // The would-be order of the currently-dragged vehicle group if dropped on the current hover
+  // target — drives both the live row-slide animation and (on drop) what actually gets saved, so
+  // what the user sees sliding into place is exactly what gets persisted.
+  const vehicleDragPreview = useMemo(() => {
+    if (!draggedVehicleTicketId || !vehicleDropTargetId || draggedVehicleTicketId === vehicleDropTargetId) return null
+    const draggedPos = vehicleGroupPositions.get(draggedVehicleTicketId)
+    const targetPos = vehicleGroupPositions.get(vehicleDropTargetId)
+    if (!draggedPos || !targetPos || draggedPos.base !== targetPos.base) return null
+    const groupIds = visible
+      .filter(t => vehicleGroupPositions.get(t.id)?.base === draggedPos.base)
+      .map(t => t.id)
+    const fromIndex = groupIds.indexOf(draggedVehicleTicketId)
+    const toIndex = groupIds.indexOf(vehicleDropTargetId)
+    if (fromIndex === -1 || toIndex === -1) return null
+    const reordered = [...groupIds]
+    const [moved] = reordered.splice(fromIndex, 1)
+    reordered.splice(toIndex, 0, moved)
+    return { base: draggedPos.base, order: reordered }
+  }, [draggedVehicleTicketId, vehicleDropTargetId, vehicleGroupPositions, visible])
 
   const sortDiffersFromDefault =
     sortConfig.column !== defaultSortForSchedulesView(isMyTickets).column
@@ -6684,11 +6757,52 @@ export default function Tickets() {
   }
   saveCellEditRef.current = (ticket, colLabel, value, injectedPayment) => { void saveCellEdit(ticket, colLabel, value, injectedPayment) }
 
-  // Manual reorder within a vehicle's trip group (hover arrows on the VEHICLE cell). Only swaps
-  // with the immediate neighbor inside the same vehicle group — visible is already sorted with
-  // same-vehicle rows contiguous, so a move that would leave the group is simply a no-op rather
-  // than spilling into a different vehicle's rows.
-  const moveVehicleTripOrder = useCallback((ticket: Ticket, direction: 'up' | 'down') => {
+  // Writes a new trip order (1..N) for a vehicle group, skipping tickets whose PARSED position
+  // already matches — legacy formatting quirks (extra spaces, lowercase) otherwise look
+  // "different" every render and force a rewrite (and a save) of the whole group on every single
+  // move, which is what made this feel unreliable/slow.
+  const persistVehicleGroupOrder = useCallback((orderedGroup: Ticket[], baseName: string) => {
+    orderedGroup.forEach((t, i) => {
+      const existing = parseNameSiteToken(getTicketVehicleDisplay(t))
+      if (existing.name === baseName && existing.site === i + 1) return
+      const nextLabel = `${baseName} - ${i + 1}`
+      const body = buildCellPatchBody(t, 'VEHICLE', nextLabel, branchEmployees)
+      if (Object.keys(body).length > 0) queueTicketPatch(t, body)
+    })
+  }, [branchEmployees, queueTicketPatch])
+
+  // Click-and-drag reorder: commits directly from whichever row the drop actually landed on,
+  // recomputed fresh at drop time — not from the separately-tracked hover-preview state, which
+  // can only ever be as current as the last dragover event. Trusting that indirection was the
+  // likely source of drops that visually landed but silently failed to save.
+  const commitVehicleDrop = useCallback((targetTicket: Ticket) => {
+    if (!draggedVehicleTicketId || draggedVehicleTicketId === targetTicket.id) return
+    const draggedTicket = visible.find(t => t.id === draggedVehicleTicketId)
+      || tickets.find(t => t.id === draggedVehicleTicketId)
+    if (!draggedTicket) return
+    const parsed = parseNameSiteToken(getTicketVehicleDisplay(draggedTicket))
+    if (!parsed.name) return
+    const targetParsed = parseNameSiteToken(getTicketVehicleDisplay(targetTicket))
+    if (targetParsed.name !== parsed.name) return
+
+    const group = visible.filter(t => parseNameSiteToken(getTicketVehicleDisplay(t)).name === parsed.name)
+    const fromIndex = group.findIndex(t => t.id === draggedTicket.id)
+    const toIndex = group.findIndex(t => t.id === targetTicket.id)
+    if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return
+
+    const reordered = [...group]
+    const [moved] = reordered.splice(fromIndex, 1)
+    reordered.splice(toIndex, 0, moved)
+    persistVehicleGroupOrder(reordered, parsed.name)
+  }, [draggedVehicleTicketId, visible, tickets, persistVehicleGroupOrder])
+
+  // Keyboard reorder: with a VEHICLE cell selected (double-click), Up/Down swaps it with its
+  // immediate neighbor in the same vehicle group — same rule as drag-and-drop, never crosses into
+  // a different vehicle's rows.
+  const moveSelectedVehicleTrip = useCallback((direction: 'up' | 'down') => {
+    if (!selectedVehicleTicketId) return
+    const ticket = visible.find(t => t.id === selectedVehicleTicketId) || tickets.find(t => t.id === selectedVehicleTicketId)
+    if (!ticket) return
     const parsed = parseNameSiteToken(getTicketVehicleDisplay(ticket))
     if (!parsed.name) return
     const group = visible.filter(t => parseNameSiteToken(getTicketVehicleDisplay(t)).name === parsed.name)
@@ -6700,14 +6814,33 @@ export default function Tickets() {
     const reordered = [...group]
     const [moved] = reordered.splice(currentIndex, 1)
     reordered.splice(targetIndex, 0, moved)
+    persistVehicleGroupOrder(reordered, parsed.name)
+  }, [selectedVehicleTicketId, visible, tickets, persistVehicleGroupOrder])
 
-    reordered.forEach((t, i) => {
-      const nextLabel = `${parsed.name} - ${i + 1}`
-      if (getTicketVehicleDisplay(t) === nextLabel) return
-      const body = buildCellPatchBody(t, 'VEHICLE', nextLabel, branchEmployees)
-      if (Object.keys(body).length > 0) queueTicketPatch(t, body)
-    })
-  }, [visible, branchEmployees, queueTicketPatch])
+  useEffect(() => {
+    if (!selectedVehicleTicketId) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault()
+        moveSelectedVehicleTrip(e.key === 'ArrowUp' ? 'up' : 'down')
+      } else if (e.key === 'Escape') {
+        setSelectedVehicleTicketId(null)
+      }
+    }
+    // Any click outside the currently-selected VEHICLE cell deselects it.
+    const handleClickAway = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      const cell = target.closest('[data-cell-key]')
+      if (cell?.getAttribute('data-cell-key') === `${selectedVehicleTicketId}:VEHICLE`) return
+      setSelectedVehicleTicketId(null)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('click', handleClickAway)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('click', handleClickAway)
+    }
+  }, [selectedVehicleTicketId, moveSelectedVehicleTrip])
 
   const openReschedDialog = (ticket: Ticket) => {
     commitCellEdit()
@@ -7088,52 +7221,6 @@ export default function Tickets() {
     )
   }
 
-  // Hover arrows on the VEHICLE cell let staff nudge a ticket's trip order up/down within its
-  // own vehicle group (e.g. "STRADA - 1"/"STRADA - 2") — never across into a different vehicle's
-  // rows. The boundary of the group is the boundary of what the arrows can do; at either edge of
-  // the group the corresponding arrow is simply omitted.
-  function withVehicleTripReorder(content: React.ReactNode, ticket: Ticket, rowGhost?: boolean) {
-    if (!canEdit || rowGhost) return content
-    const isHovered = hoveredCell?.ticketId === ticket.id && hoveredCell?.colLabel === 'VEHICLE'
-    if (!isHovered) return content
-    const parsed = parseNameSiteToken(getTicketVehicleDisplay(ticket))
-    if (!parsed.name) return content
-    const group = visible.filter(t => parseNameSiteToken(getTicketVehicleDisplay(t)).name === parsed.name)
-    const idx = group.findIndex(t => t.id === ticket.id)
-    const canMoveUp = idx > 0
-    const canMoveDown = idx >= 0 && idx < group.length - 1
-    if (!canMoveUp && !canMoveDown) return content
-    return (
-      <div className="relative flex items-center justify-center">
-        <div style={{ paddingLeft: 16, paddingRight: 16 }}>{content}</div>
-        {canMoveUp && (
-          <button
-            type="button"
-            onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
-            onClick={e => { e.stopPropagation(); moveVehicleTripOrder(ticket, 'up') }}
-            title="Move up within this vehicle's trips"
-            className="absolute top-0 left-0 flex items-center justify-center w-4 h-4 rounded hover:bg-blue-500/15"
-            style={{ color: textMuted, lineHeight: 1 }}
-          >
-            <ArrowUp className="w-3 h-3" />
-          </button>
-        )}
-        {canMoveDown && (
-          <button
-            type="button"
-            onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
-            onClick={e => { e.stopPropagation(); moveVehicleTripOrder(ticket, 'down') }}
-            title="Move down within this vehicle's trips"
-            className="absolute bottom-0 left-0 flex items-center justify-center w-4 h-4 rounded hover:bg-blue-500/15"
-            style={{ color: textMuted, lineHeight: 1 }}
-          >
-            <ArrowDown className="w-3 h-3" />
-          </button>
-        )}
-      </div>
-    )
-  }
-
   const copyTextToClipboard = async (text: string) => {
     if (!text.trim()) return
     try {
@@ -7358,8 +7445,9 @@ export default function Tickets() {
 
     if (label === 'SERVICE') {
       // Driver name only — val is already getTicketDriverDisplay's clean driverName-only read
-      // (no vehicle text ever leaks in here, no re-parsing needed).
-      const driverName = val
+      // (no vehicle text ever leaks in here, no re-parsing needed). Strip any legacy "- N"
+      // suffix some older tickets still carry — trip numbering now lives on VEHICLE only.
+      const driverName = parseNameSiteToken(val).name || val
       if (!driverName && canEdit && !isMyTickets && !rowGhost) {
         return (
           <button
@@ -7417,18 +7505,48 @@ export default function Tickets() {
           </button>
         )
       }
-      return withVehicleTripReorder(
-        withEditPencil(
-          <span
-            className="block w-full text-center font-bold tracking-wide uppercase leading-tight"
-            style={{ color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }}
-            title={vehicleCode}
-          >
-            {vehicleCode || EMPTY_CELL}
-          </span>,
-          ticket, label, rowGhost, rowIndex,
-        ),
-        ticket, rowGhost,
+      const canDragVehicle = canEdit && !rowGhost && Boolean(vehicleCode)
+      // "MIRAGE - 2" splits into a plain name and a red trip number that live-updates as the
+      // ticket's position in its vehicle group changes (drag-and-drop) — never manually typed.
+      const parsedVehicle = parseNameSiteToken(vehicleCode)
+      const vehicleBaseName = parsedVehicle.name || vehicleCode
+      const vehicleTripNumber = parsedVehicle.site === Number.MAX_SAFE_INTEGER ? '' : String(parsedVehicle.site)
+      return (
+        <span
+          draggable={canDragVehicle}
+          onDragStart={e => {
+            e.stopPropagation()
+            e.dataTransfer.effectAllowed = 'move'
+            // No visible drag ghost — a live table row rendered as a drag image comes out garbled
+            // (overlapping/duplicated text). The row stays exactly where it is horizontally AND
+            // vertically; the slide animation on the other rows is what shows the move happening.
+            if (dragGhostImgRef.current) e.dataTransfer.setDragImage(dragGhostImgRef.current, 0, 0)
+            setDraggedVehicleTicketId(ticket.id)
+          }}
+          onDragEnd={e => {
+            e.stopPropagation()
+            setDraggedVehicleTicketId(null)
+            setVehicleDropTargetId(null)
+          }}
+          className="block w-full text-center font-bold tracking-wide uppercase leading-tight rounded"
+          style={{
+            color: ghostMuted,
+            opacity: rowGhost ? 0.72 : 1,
+            cursor: canDragVehicle ? 'grab' : undefined,
+          }}
+          title={vehicleCode}
+        >
+          {vehicleCode ? (
+            <>
+              {vehicleBaseName}
+              {vehicleTripNumber && (
+                <span style={{ color: isLight ? '#DC2626' : '#F87171', marginLeft: 4 }}>
+                  {vehicleTripNumber}
+                </span>
+              )}
+            </>
+          ) : EMPTY_CELL}
+        </span>
       )
     }
 
@@ -7631,6 +7749,7 @@ export default function Tickets() {
         )
       }
 
+      const displayInstaller = curToken.name || rawInstaller
       return withEditPencil(
         <span
           style={{
@@ -7640,9 +7759,9 @@ export default function Tickets() {
             paddingTop: isNewInstallerGroup ? 8 : 0,
             marginTop: isNewInstallerGroup ? 4 : 0,
           }}
-          title={rawInstaller}
+          title={displayInstaller}
         >
-          {rawInstaller}
+          {displayInstaller}
         </span>,
         ticket, label, rowGhost, rowIndex,
       )
@@ -8045,7 +8164,31 @@ export default function Tickets() {
                       })}
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody
+                    ref={vehicleDragTbodyRef}
+                    onDragOver={e => {
+                      if (!draggedVehicleTicketId) return
+                      const idx = getVehicleDragRowIndex(e.clientY)
+                      const targetTicket = visible[idx]
+                      if (!targetTicket) return
+                      const draggedTicket = visible.find(t => t.id === draggedVehicleTicketId)
+                      if (!draggedTicket) return
+                      const draggedBase = parseNameSiteToken(getTicketVehicleDisplay(draggedTicket)).name
+                      const targetBase = parseNameSiteToken(getTicketVehicleDisplay(targetTicket)).name
+                      if (!draggedBase || draggedBase !== targetBase) return
+                      e.preventDefault()
+                      setVehicleDropTargetId(prev => (prev === targetTicket.id ? prev : targetTicket.id))
+                    }}
+                    onDrop={e => {
+                      if (!draggedVehicleTicketId) return
+                      e.preventDefault()
+                      const idx = getVehicleDragRowIndex(e.clientY)
+                      const targetTicket = visible[idx]
+                      if (targetTicket) commitVehicleDrop(targetTicket)
+                      setDraggedVehicleTicketId(null)
+                      setVehicleDropTargetId(null)
+                    }}
+                  >
                     {visible.length === 0 ? (
                       <tr>
                         <td colSpan={columns.length} style={{ borderBottom: `1px solid ${tableBorder}`, padding: '40px 10px' }}>
@@ -8086,12 +8229,30 @@ export default function Tickets() {
                         const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(getCustomerDisplayName(ticket)))
                         const rowColors = getScheduleRowColors(ticket, ghostKind, isLight, idx, rowEven, rowOdd, isDuplicateName)
                         const baseBg = rowColors.baseBg
-                        const bg = isHovered && !isGhost ? rowHover : baseBg
+                        const isDragSourceRow = draggedVehicleTicketId === ticket.id
+                        const isDropTargetRow = vehicleDropTargetId === ticket.id && draggedVehicleTicketId !== null && !isDragSourceRow
+                        const dropTargetBg = isLight ? 'rgba(16,185,129,0.22)' : 'rgba(16,185,129,0.28)'
+                        const bg = isDropTargetRow ? dropTargetBg : (isHovered && !isGhost ? rowHover : baseBg)
                         const ghostAccent = rowColors.accent
                         const rowIsActive = columns.some(col =>
                           (editingCell?.ticketId === ticket.id && editingCell?.rowIndex === idx && editingCell?.colLabel === col.label)
                           || (expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label),
                         )
+                        // "Make room" slide: every row in the affected vehicle group — INCLUDING
+                        // the dragged one — animates to its previewed slot. Exempting the dragged
+                        // row from this (leaving it static while its neighbor slid onto it) is what
+                        // caused the two rows to visually overlap; sliding both is what a normal
+                        // reorder-list swap looks like, and nothing else is left static to collide with.
+                        let vehicleDragOffsetPx = 0
+                        if (vehicleDragPreview) {
+                          const groupPos = vehicleGroupPositions.get(ticket.id)
+                          if (groupPos && groupPos.base === vehicleDragPreview.base) {
+                            const previewRel = vehicleDragPreview.order.indexOf(ticket.id)
+                            if (previewRel !== -1 && previewRel !== groupPos.relIndex) {
+                              vehicleDragOffsetPx = (previewRel - groupPos.relIndex) * TABLE_ROW_HEIGHT
+                            }
+                          }
+                        }
                         return (
                           // Key must never include idx — visible re-sorts on every edit (installer/customer
                           // grouping), and an index-based key made React remount the row each time instead of
@@ -8102,9 +8263,15 @@ export default function Tickets() {
                             style={{
                               borderBottom: `1px solid ${tableBorder}`,
                               boxShadow: ghostAccent ? `inset 3px 0 0 ${ghostAccent}` : undefined,
-                              position: rowIsActive ? 'relative' : undefined,
-                              zIndex: rowIsActive ? 80 : undefined,
+                              position: (rowIsActive || vehicleDragOffsetPx) ? 'relative' : undefined,
+                              zIndex: rowIsActive ? 80 : (isDragSourceRow ? 20 : (vehicleDragOffsetPx ? 10 : undefined)),
                               height: rowIsActive ? undefined : TABLE_ROW_HEIGHT,
+                              // Dimmed so it's obvious which row is being moved, but it slides right
+                              // along with everyone else in the group — it never sits still while
+                              // another row slides onto it (that's what caused the overlap).
+                              opacity: isDragSourceRow ? 0.65 : undefined,
+                              transform: vehicleDragOffsetPx ? `translateY(${vehicleDragOffsetPx}px)` : undefined,
+                              transition: 'transform 150ms ease, opacity 150ms ease',
                             }}
                             onMouseEnter={() => setHoveredRow(ticket.id)}
                             onMouseLeave={() => setHoveredRow(null)}
@@ -8129,6 +8296,7 @@ export default function Tickets() {
                               const emptyCellBg = isCellEmpty
                                 ? (isLight ? 'rgba(251,146,60,0.13)' : 'rgba(251,146,60,0.18)')
                                 : undefined
+                              const isSelectedVehicleCell = col.label === 'VEHICLE' && selectedVehicleTicketId === ticket.id
                               return (
                                 <td key={col.label}
                                   data-cell-key={`${ticket.id}:${col.label}`}
@@ -8154,6 +8322,9 @@ export default function Tickets() {
                                       openStatusPicker(ticket, 'inline', e.currentTarget as HTMLElement)
                                       return
                                     }
+                                    // VEHICLE is drag-to-reorder now — a tap-to-view-details popup
+                                    // on the same cell just gets in the way of grabbing it.
+                                    if (col.label === 'VEHICLE') return
                                     setExpandedCell(prev =>
                                       prev?.ticketId === ticket.id && prev?.colLabel === col.label
                                         ? null
@@ -8164,6 +8335,10 @@ export default function Tickets() {
                                     e.preventDefault()
                                     e.stopPropagation()
                                     if (!canEdit || isGhost || isEditingCell) return
+                                    if (col.label === 'VEHICLE') {
+                                      setSelectedVehicleTicketId(prev => (prev === ticket.id ? null : ticket.id))
+                                      return
+                                    }
                                     if (INLINE_EDIT_COLUMNS.has(col.label)) {
                                       startCellEdit(ticket, col.label, undefined, idx)
                                     }
@@ -8172,7 +8347,7 @@ export default function Tickets() {
                                     padding: isEditingCell ? '6px' : '0 12px',
                                     color: isGhost ? textMuted : textPrimary,
                                     fontSize: '12.5px', fontWeight: isGhost ? 500 : 600,
-                                    backgroundColor: emptyCellBg ?? bg,
+                                    backgroundColor: isSelectedVehicleCell ? `${green}22` : (emptyCellBg ?? bg),
                                     borderRight: `1px solid ${tableBorder}`,
                                     borderBottom: `1px solid ${tableBorder}`,
                                     width: col.w,
@@ -8182,15 +8357,18 @@ export default function Tickets() {
                                     maxHeight: isEditingCell ? undefined : TABLE_ROW_HEIGHT,
                                     overflow: 'visible',
                                     textOverflow: 'ellipsis',
-                                    transition: 'background-color 0.1s ease',
+                                    transition: isDropTargetRow ? 'background-color 1s ease' : 'background-color 0.1s ease',
                                     cursor: canEdit && !isGhost && INLINE_EDIT_COLUMNS.has(col.label) ? 'text' : 'default',
                                     verticalAlign: 'middle',
                                     textAlign: col.align || 'left',
                                     userSelect: isEditingCell ? 'text' : (canEdit && !isGhost ? 'none' : undefined),
                                     WebkitUserSelect: isEditingCell ? 'text' : (canEdit && !isGhost ? 'none' : undefined),
                                     ...(col.sticky
-                                      ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: (isEditingCell || isExpandedCell) ? 95 : 5, boxShadow: `2px 0 0 ${tableBorder}` }
+                                      ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: (isEditingCell || isExpandedCell) ? 95 : 5 }
                                       : { position: 'relative' as const, zIndex: (isEditingCell || isExpandedCell) ? (isEditingCell ? 90 : 85) : undefined }),
+                                    boxShadow: isSelectedVehicleCell
+                                      ? `inset 0 0 0 2px ${green}`
+                                      : (col.sticky ? `2px 0 0 ${tableBorder}` : undefined),
                                   }}>
                                   {isEditingCell ? (
                                     renderCell(ticket, col, idx, isGhost, ghostKind, false)
@@ -8212,6 +8390,96 @@ export default function Tickets() {
                         )
                       }))}
                   </tbody>
+                  {(() => {
+                    let totalCash = 0;
+                    let totalGcash = 0;
+                    let totalBankTransfer = 0;
+                    let totalOther = 0;
+
+                    visible.forEach(ticket => {
+                      const rawMode = getPaymentMode(ticket).trim().toUpperCase();
+                      const amountStr = formatPaymentAmount(ticket);
+                      let amount = parseFloat(amountStr.replace(/,/g, ''));
+                      if (isNaN(amount)) amount = 0;
+
+                      if (rawMode === 'HYBRID') {
+                        const breakdown = getPaymentBreakdown(ticket);
+                        breakdown.forEach(entry => {
+                          const subRawMode = entry.mode.toUpperCase();
+                          const subAmount = entry.amount;
+                          if (subRawMode === 'CASH') totalCash += subAmount;
+                          else if (subRawMode === 'GCASH') totalGcash += subAmount;
+                          else if (subRawMode === 'BANK TRANSFER') totalBankTransfer += subAmount;
+                          else totalOther += subAmount;
+                        });
+                      } else {
+                        if (rawMode === 'CASH') totalCash += amount;
+                        else if (rawMode === 'GCASH') totalGcash += amount;
+                        else if (rawMode === 'BANK TRANSFER') totalBankTransfer += amount;
+                        else totalOther += amount;
+                      }
+                    });
+
+                    const totalEstimated = totalCash + totalGcash + totalBankTransfer + totalOther;
+
+                    return (
+                      <tfoot style={{ position: 'relative' }}>
+                        <tr>
+                          <td colSpan={columns.length - 2} style={{ border: 'none', background: 'transparent' }}></td>
+                          <td className="px-3 py-2 text-right font-black" style={{ backgroundColor: '#16a34a', color: '#fff', border: `1px solid ${tableBorder}` }}>
+                            TOTAL COLLECTION
+                          </td>
+                          <td className="px-3 py-2 text-right font-black tracking-wide" style={{ backgroundColor: '#16a34a', color: '#fff', border: `1px solid ${tableBorder}` }}>
+                            {totalEstimated.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                        {totalGcash > 0 && (
+                          <tr>
+                            <td colSpan={columns.length - 2} style={{ border: 'none', background: 'transparent' }}></td>
+                            <td className="px-3 py-2 text-right font-bold" style={{ backgroundColor: '#dbeafe', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              GCASH
+                            </td>
+                            <td className="px-3 py-2 text-right font-bold tracking-wide" style={{ backgroundColor: '#dbeafe', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              {totalGcash.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        )}
+                        {totalCash > 0 && (
+                          <tr>
+                            <td colSpan={columns.length - 2} style={{ border: 'none', background: 'transparent' }}></td>
+                            <td className="px-3 py-2 text-right font-bold" style={{ backgroundColor: '#dcfce7', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              CASH
+                            </td>
+                            <td className="px-3 py-2 text-right font-bold tracking-wide" style={{ backgroundColor: '#dcfce7', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              {totalCash.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        )}
+                        {totalBankTransfer > 0 && (
+                          <tr>
+                            <td colSpan={columns.length - 2} style={{ border: 'none', background: 'transparent' }}></td>
+                            <td className="px-3 py-2 text-right font-bold" style={{ backgroundColor: '#f3e8ff', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              BANK TRANSFER
+                            </td>
+                            <td className="px-3 py-2 text-right font-bold tracking-wide" style={{ backgroundColor: '#f3e8ff', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              {totalBankTransfer.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        )}
+                        {totalOther > 0 && (
+                          <tr>
+                            <td colSpan={columns.length - 2} style={{ border: 'none', background: 'transparent' }}></td>
+                            <td className="px-3 py-2 text-right font-bold" style={{ backgroundColor: '#f3e8ff', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              OTHER
+                            </td>
+                            <td className="px-3 py-2 text-right font-bold tracking-wide" style={{ backgroundColor: '#f3e8ff', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              {totalOther.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        )}
+                      </tfoot>
+                    );
+                  })()}
                 </table>
                 {/* Mobile Card View */}
                 <div className="flex flex-col md:hidden p-3 gap-3">
