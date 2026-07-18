@@ -1,5 +1,8 @@
-import { X, FileText, User, MapPin, Phone, Calendar, Building2, Wrench, DollarSign, Clock, CheckCircle, AlertCircle } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { X, FileText, User, MapPin, Phone, Calendar, Building2, Wrench, DollarSign, Clock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
+import { API_BASE_URL } from '../utils/api'
+import { EmployeeNameLink } from './EmployeeNameLink'
 
 interface SearchResult {
   id: string
@@ -37,6 +40,29 @@ interface SearchResultDetailModalProps {
 export default function SearchResultDetailModal({ result, onClose }: SearchResultDetailModalProps) {
   const { theme } = useTheme()
   const isLight = theme === 'light'
+  
+  const [history, setHistory] = useState<any[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+
+  useEffect(() => {
+    if (result?.type === 'ticket' && result.id) {
+      setLoadingHistory(true)
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
+      fetch(`${API_BASE_URL}/tickets/${result.id}/history`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+        .then(res => res.json())
+        .then(res => {
+          if (res.success && Array.isArray(res.data)) {
+            setHistory(res.data)
+          }
+        })
+        .catch(err => console.error('Error fetching history:', err))
+        .finally(() => setLoadingHistory(false))
+    } else {
+      setHistory([])
+    }
+  }, [result])
 
   if (!result) return null
 
@@ -346,8 +372,85 @@ export default function SearchResultDetailModal({ result, onClose }: SearchResul
             </div>
           )}
 
-          {/* Service History Timeline */}
-          {timeline.length > 0 && (
+          {/* Service History Timeline / Ticket Update History */}
+          {result.type === 'ticket' ? (
+            <div className="mt-6 rounded-xl p-4" style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
+              <h3 className="text-sm font-bold mb-4 flex items-center gap-2" style={{ color: textPrimary }}>
+                <Clock className="w-4 h-4" style={{ color: '#10B981' }} />
+                Update History
+              </h3>
+              
+              {loadingHistory ? (
+                <div className="flex justify-center py-6">
+                  <Loader2 className="w-6 h-6 animate-spin" style={{ color: textMuted }} />
+                </div>
+              ) : (
+                <div className="relative border-l ml-3 pl-5 space-y-6" style={{ borderColor: border }}>
+                  {(() => {
+                    const listToRender = [...history]
+                    listToRender.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                    
+                    if (listToRender.length === 0) {
+                      return (
+                        <div className="text-xs font-semibold py-4" style={{ color: textMuted }}>
+                          No update history recorded.
+                        </div>
+                      )
+                    }
+
+                    return listToRender.map((h, idx) => {
+                      const dt = new Date(h.createdAt).toLocaleString('en-PH', {
+                        month: 'short', day: 'numeric', year: 'numeric',
+                        hour: 'numeric', minute: '2-digit', hour12: true
+                      })
+
+                      return (
+                        <div key={h.id || idx} className="relative">
+                          <span className="absolute -left-[27px] top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2"
+                            style={{
+                              borderColor: idx === 0 ? '#10B981' : border,
+                              backgroundColor: idx === 0 ? '#10B981' : cardBg
+                            }} />
+
+                          <div className="text-xs">
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="font-extrabold leading-tight" style={{ color: textPrimary }}>
+                                {h.changeNote || 'Ticket details updated'}
+                              </span>
+                              <span className="text-[9px] font-semibold opacity-60 shrink-0 mt-0.5" style={{ color: textMuted }}>
+                                {dt}
+                              </span>
+                            </div>
+
+                            <div className="mt-1 space-y-0.5" style={{ color: textMuted }}>
+                              <p className="text-[10px] font-semibold">
+                                By: <span className="font-bold" style={{ color: textPrimary }}><EmployeeNameLink nameOrId={h.changedByUserName} /></span>
+                              </p>
+                              {h.newStatus && h.newStatus !== h.previousStatus && (
+                                <p className="text-[10px]">
+                                  Status: <span className="font-bold opacity-80">{h.previousStatus || 'NONE'}</span> ➔ <span className="font-bold text-indigo-500">{h.newStatus}</span>
+                                </p>
+                              )}
+                              {h.newPreferredDate && h.newPreferredDate !== h.previousPreferredDate && (
+                                <p className="text-[10px]">
+                                  Scheduled: <span className="font-bold opacity-80">{h.previousPreferredDate || 'none'}</span> ➔ <span className="font-bold text-amber-500">{h.newPreferredDate}</span>
+                                </p>
+                              )}
+                              {h.newAssignedToName && (
+                                <p className="text-[10px]">
+                                  Assigned: <span className="font-bold text-teal-500"><EmployeeNameLink nameOrId={h.newAssignedToName} /></span>
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })
+                  })()}
+                </div>
+              )}
+            </div>
+          ) : timeline.length > 0 && (
             <div className="mt-6 rounded-xl p-4" style={{ backgroundColor: inputBg, border: `1px solid ${border}` }}>
               <h3 className="text-sm font-bold mb-4 flex items-center gap-2" style={{ color: textPrimary }}>
                 <Calendar className="w-4 h-4" style={{ color: '#3B82F6' }} />

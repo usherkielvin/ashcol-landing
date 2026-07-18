@@ -5,7 +5,9 @@ import Login from './pages/Login'
 import ForgotPassword from './pages/ForgotPassword'
 import CreateAccount from './pages/CreateAccount'
 import DashboardLayout from './layouts/DashboardLayout'
-import Tickets from './pages/Tickets'
+import Schedules from './pages/Schedules'
+import SearchTab from './pages/SearchTab'
+import MyTicketsTab from './pages/MyTicketsTab'
 import CreateTicket from './pages/CreateTicket'
 import OfficeTasks from './pages/OfficeTasks'
 import Employees from './pages/Employees'
@@ -80,13 +82,13 @@ export default function App() {
         {/* Portal Routes */}
         <Route element={<DashboardLayout />}>
           <Route path="/dashboard" element={<DashboardRedirect />} />
-          <Route path="/search" element={<Tickets />} />
+          <Route path="/search" element={<SearchTab />} />
           <Route path="/tickets" element={<Navigate to="/search" replace />} />
           <Route path="/tickets/create" element={<CreateTicket />} />
           <Route path="/create-ticket" element={<CreateTicket />} />
-          <Route path="/schedules" element={<Tickets />} />
+          <Route path="/schedules" element={<Schedules />} />
           <Route path="/relays" element={<Relays />} />
-          <Route path="/my-tickets" element={<Tickets />} />
+          <Route path="/my-tickets" element={<MyTicketsTab />} />
           <Route path="/office-tasks" element={<OfficeTasks />} />
           <Route path="/branches" element={<Branches />} />
           <Route path="/assigned-tickets" element={<Navigate to="/search" replace />} />

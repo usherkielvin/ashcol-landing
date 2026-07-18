@@ -5,11 +5,11 @@ import { ResponsiveTable, type ColumnDef as ResponsiveColumnDef } from '../compo
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, CalendarDays,
   Eye, ChevronDown, Loader2, Pencil, Clock, Car,
-  ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Moon, Sun, Maximize2,
+  ArrowUp, ArrowDown, ArrowUpDown, Copy, Maximize2, MapPin,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import { readTabCache, readTabCacheEntry, readSchedulesTabCache, isTabCacheFresh, SCHEDULES_CACHE_TTL_MS, schedulesCacheKey, writeSchedulesTabCache, getInitialSchedulesFromCache, markSchedulesSessionLoaded, isSchedulesSessionLoaded, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
 import { applyRelayScheduleSyncToPatch, mergeRelayScheduleTicketPatch, normalizeRelayScheduleTicket, normalizeRelayScheduleTicketList } from '../utils/relayScheduleSync'
 import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex, fetchCachedBranches } from '../utils/portalDirectoryCache'
@@ -264,24 +264,6 @@ function getScheduleStatusLabel(value: string): string {
   return (found?.label ?? value.replace(/_/g, ' ')).toUpperCase()
 }
 
-/** Overview search cards: one badge — workflow status (SCHEDULED) beats duplicate INSTALLATION phase. */
-function getOverviewStatusBadge(ticket: Ticket): { value: string; label: string } {
-  const workflow = (ticket.status || '').toUpperCase().replace(/\s+/g, '_')
-  if (workflow === 'ASSIGNED' && hasFinalScheduleDate(ticket)) {
-    return { value: 'SCHEDULED', label: getScheduleStatusLabel('SCHEDULED') }
-  }
-  const workflowStatuses = new Set([
-    'SCHEDULED', 'ASSIGNED', 'RESCHED', 'PENDING', 'IN_PROGRESS', 'ON_THE_WAY',
-    'FOR_APPROVAL', 'FOR_QUOTATION', 'CANCELLED', 'COMPLETED', 'INSTALLED',
-  ])
-  if (workflowStatuses.has(workflow)) {
-    const norm = workflow === 'FOR_QUOTATION' ? 'FOR_APPROVAL' : workflow
-    return { value: norm, label: getScheduleStatusLabel(norm) }
-  }
-  const phase = getScheduleStatusValue(ticket)
-  return { value: phase, label: getScheduleStatusLabel(phase) }
-}
-
 /** True when ticket still carries reschedule ghost metadata (old date row / Moved to…). */
 function ticketHasRescheduleMeta(ticket: Ticket): boolean {
   if ((ticket.status || '').toUpperCase() === 'RESCHED') return true
@@ -501,18 +483,24 @@ function getScheduleRowColors(
     }
     if (outcome === 'DONE_SURVEY') {
       return {
-        baseBg: isLight ? '#f3e8ff' : 'rgba(139,92,246,0.22)',
-        accent: '#8B5CF6',
+        baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.14)',
+        accent: '#fbbf24',
       }
     }
     if (outcome === 'DONE_CHECKUP') {
+      return {
+        baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.14)',
+        accent: '#fbbf24',
+      }
+    }
+    if (outcome === 'DONE_BACKJOB') {
       return {
         baseBg: isLight ? '#dbeafe' : 'rgba(59,130,246,0.22)',
         accent: '#3B82F6',
       }
     }
     return {
-      baseBg: isLight ? '#dcfce7' : 'rgba(22,163,74,0.2)',
+      baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.2)',
       accent: '#16A34A',
     }
   }
@@ -526,15 +514,15 @@ function getScheduleRowColors(
 
   if (outcome === 'DONE_INSTALLED') {
     return {
-      baseBg: isLight ? '#dcfce7' : 'rgba(22,163,74,0.2)',
+      baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.2)',
       accent: '#16A34A',
     }
   }
 
   if (outcome === 'DONE_SURVEY') {
     return {
-      baseBg: isLight ? '#f3e8ff' : 'rgba(139,92,246,0.18)',
-      accent: '#8B5CF6',
+      baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.1)',
+      accent: '#fbbf24',
     }
   }
 
@@ -546,6 +534,13 @@ function getScheduleRowColors(
   }
 
   if (outcome === 'DONE_CHECKUP') {
+    return {
+      baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.1)',
+      accent: '#fbbf24',
+    }
+  }
+
+  if (outcome === 'DONE_BACKJOB') {
     return {
       baseBg: isLight ? '#eff6ff' : 'rgba(59,130,246,0.14)',
       accent: '#3B82F6',
@@ -565,7 +560,7 @@ function getScheduleRowColors(
       accent: '#8B5CF6',
     }
   }
-  if (statusVal === 'CLEANING') {
+  if (statusVal === 'CLEANING' || statusVal === 'CHECKUP' || statusVal === 'BACKJOB') {
     return {
       baseBg: isLight ? '#f0f9ff' : 'rgba(14,165,233,0.1)',
       accent: '#0EA5E9',
@@ -1566,6 +1561,28 @@ function todayDateKey() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+function currentWeekMondayDateKey() {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  const dow = d.getDay()
+  const offset = dow === 0 ? -6 : 1 - dow
+  d.setDate(d.getDate() + offset)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+const SCHEDULES_ACTIVE_DATE_KEY = 'ashcol-schedules-active-date'
+
+function resolveInitialScheduleDate(pathname: string): string {
+  if (pathname === '/my-tickets') return ''
+  try {
+    const persisted = sessionStorage.getItem(SCHEDULES_ACTIVE_DATE_KEY)
+    if (persisted && /^\d{4}-\d{2}-\d{2}$/.test(persisted)) return persisted
+  } catch {
+    // ignore
+  }
+  return todayDateKey()
+}
+
 function formatDateToKey(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
@@ -2034,17 +2051,15 @@ function buildCellPatchBody(
   return applyRelayScheduleSyncToPatch(body, ticket)
 }
 
-export default function Tickets() {
-  const { theme, toggleTheme } = useTheme()
+export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boolean } = {}) {
+  const { theme } = useTheme()
   const { user } = useAuth()
   const location = useLocation()
-  const { setSidebarOpen } = useOutletContext<{ setSidebarOpen: (v: boolean) => void }>() || {}
-  const isMyTickets = location.pathname === '/my-tickets'
+  
+  const isMyTickets = isMyTicketsProp || location.pathname === '/my-tickets'
   const isLight = theme === 'light'
 
-  const [activeTab, setActiveTab] = useState<'schedules' | 'overview'>(
-    () => location.pathname === '/tickets' ? 'overview' : 'schedules'
-  )
+  const [activeTab] = useState<'schedules'>('schedules')
 
   useEffect(() => {
     const handleTabCacheUpdate = (e: Event) => {
@@ -2061,18 +2076,7 @@ export default function Tickets() {
     return () => window.removeEventListener(TAB_CACHE_UPDATED, handleTabCacheUpdate)
   }, [])
 
-  useEffect(() => {
-    if (location.pathname === '/tickets') {
-      setActiveTab('overview')
-    } else if (location.pathname === '/schedules') {
-      setActiveTab('schedules')
-    }
-  }, [location.pathname])
 
-  const [overviewSearchInput, setOverviewSearchInput] = useState('')
-  const [overviewSearchFocused, setOverviewSearchFocused] = useState(false)
-  const [overviewResults, setOverviewResults] = useState<Ticket[]>([])
-  const [overviewLoading, setOverviewLoading] = useState(false)
 
   // ── Bulk Assign modal state ─────────────────────────────────────────────────
   const [bulkAssignOpen, setBulkAssignOpen] = useState(false)
@@ -2085,57 +2089,7 @@ export default function Tickets() {
   void bulkAssignTrip
   const [bulkAssignSaving, setBulkAssignSaving] = useState(false)
 
-  const fetchOverviewTickets = useCallback(async (query: string) => {
-    if (!query.trim()) {
-      setOverviewResults([])
-      return
-    }
-    setOverviewLoading(true)
-    try {
-      const tokenStr = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const headers = { Authorization: `Bearer ${tokenStr}` }
-      const url = `${API_BASE_URL}/tickets?q=${encodeURIComponent(query)}&size=100`
-      const res = await fetch(url, { headers })
-      if (res.ok) {
-        const data = await res.json()
-        const list = data?.data?.tickets || data?.tickets || []
-        setOverviewResults(list)
-      } else {
-        console.error('Failed to search tickets:', res.statusText)
-      }
-    } catch (err) {
-      console.error('Error searching tickets:', err)
-    } finally {
-      setOverviewLoading(false)
-    }
-  }, [])
 
-  useEffect(() => {
-    if (activeTab !== 'overview') return
-    const trimmed = overviewSearchInput.trim()
-    if (!trimmed) {
-      setOverviewResults([])
-      return
-    }
-
-    const timer = setTimeout(() => {
-      void fetchOverviewTickets(trimmed)
-    }, 300)
-
-    return () => clearTimeout(timer)
-  }, [overviewSearchInput, activeTab, fetchOverviewTickets])
-
-  const highlightMatch = (text: string, query: string) => {
-    if (!query.trim()) return text
-    const parts = text.split(new RegExp(`(${query})`, 'gi'))
-    return parts.map((part, i) =>
-      part.toLowerCase() === query.toLowerCase() ? (
-        <mark key={i} style={{ backgroundColor: '#fef08a', color: '#000', fontWeight: 600 }}>{part}</mark>
-      ) : (
-        part
-      )
-    )
-  }
 
   const role = (user?.role || '').toLowerCase()
   const isCustomer = role === 'customer'
@@ -2158,22 +2112,24 @@ export default function Tickets() {
   const isTaguig = isTaguigBranchRef(activeBranchId)
   const isTaguigServices = isTaguigServicesScope(activeBranchId, user?.email)
 
-  // ── Color tokens ──────────────────────────────────────────────────────────
-  const cardBg = isLight ? '#ffffff' : '#0A1120'
+  // ── Color tokens (aligned with origin/main Schedules table) ───────────────
+  const cardBg = isLight ? '#ffffff' : '#111827'
   const border = isLight ? '#cbd5e1' : '#334155'
-  const tableBorder = isLight ? '#94a3b8' : '#3d4f66'
-  const tableBorderStrong = isLight ? '#64748b' : '#526480'
+  const tableBorder = isLight ? '#e2e8f0' : '#1a2d42'
   const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
   const textMuted = isLight ? '#64748b' : '#7A95B8'
   const inputBg = isLight ? '#f8fafc' : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
-  const theadBg = isLight ? '#e8edf3' : '#060C18'
-  const myTicketsTheadBg = isLight ? 'rgba(22,163,74,0.14)' : 'rgba(16,185,129,0.16)'
+  const theadBg = isLight ? '#e8edf3' : '#0d1b2e'
+  const myTicketsTheadBg = isLight ? '#DEF2E6' : '#0B2C30'
   const myTicketsTheadText = isLight ? '#14532D' : '#6EE7B7'
   const myTicketsTheadBorder = isLight ? 'rgba(22,163,74,0.42)' : 'rgba(74,222,128,0.35)'
-  const rowEven = isLight ? '#ffffff' : '#0A1120'
-  const rowOdd = isLight ? '#f4f6f8' : '#0d1626'
-  const rowHover = isLight ? '#f1f5f9' : '#0f1e36'
+  const schedTheadBg = isLight ? '#E3F4E9' : '#0B272D'
+  const schedTheadText = isLight ? '#166534' : '#86EFAC'
+  const schedTheadBorder = isLight ? 'rgba(22,163,74,0.38)' : 'rgba(74,222,128,0.28)'
+  const rowEven = isLight ? '#ffffff' : '#111827'
+  const rowOdd = isLight ? '#f7fbf8' : '#131f30'
+  const rowHover = isLight ? '#edf7f1' : '#172438'
   const green = '#16A34A'
 
   // ── Data state ────────────────────────────────────────────────────────────
@@ -2224,7 +2180,7 @@ export default function Tickets() {
   useEffect(() => {
     setSortConfig(defaultSortForSchedulesView(isMyTickets))
   }, [isMyTickets])
-  const [dateFilter, setDateFilter] = useState(() => (location.pathname === '/my-tickets' ? '' : todayDateKey()))
+  const [dateFilter, setDateFilter] = useState(() => resolveInitialScheduleDate(location.pathname))
   const dateFilterInputRef = useRef<HTMLInputElement>(null)
   const [hoveredRow, setHoveredRow] = useState<string | null>(null)
   const [hoveredCell, setHoveredCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
@@ -2287,15 +2243,21 @@ export default function Tickets() {
     hydrateFromTabCache()
   }, [isMyTickets, hydrateFromTabCache, dateFilter, globalBranchId, user])
 
-  // ── Weekly Tabs Calculation ───────────────────────────────────────────────
+  // ── Weekly Tabs Calculation (Mon–Sun week, matches origin/main) ─────────
   const weeklyTabs = useMemo(() => {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
+    const todayKey = formatDateToKey(today)
+    const dow = today.getDay()
+    const offset = dow === 0 ? -6 : 1 - dow
+    const monday = new Date(today)
+    monday.setDate(today.getDate() + offset)
+
     return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(today)
-      d.setDate(today.getDate() - (6 - i))
+      const d = new Date(monday)
+      d.setDate(monday.getDate() + i)
       const key = formatDateToKey(d)
-      const isToday = i === 6
+      const isToday = key === todayKey
       const dayName = isToday ? 'Today' : d.toLocaleDateString('en-PH', { weekday: 'short' })
       const dateLabel = d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
       return { key, dayName, dateLabel }
@@ -2307,6 +2269,7 @@ export default function Tickets() {
   }, [dateFilter, weeklyTabs])
 
   const handleDateFilterChange = useCallback((next: string) => {
+    if (next) { try { sessionStorage.setItem(SCHEDULES_ACTIVE_DATE_KEY, next) } catch { /* ignore */ } }
     setDateFilter(next)
     resetTicketTableScroll()
   }, [])
@@ -2327,7 +2290,13 @@ export default function Tickets() {
       return
     }
     if (isTaguig) {
-      setDateFilter(todayDateKey())
+      try {
+        const persisted = sessionStorage.getItem(SCHEDULES_ACTIVE_DATE_KEY)
+        if (persisted && /^\d{4}-\d{2}-\d{2}$/.test(persisted)) return
+      } catch {
+        // ignore
+      }
+      setDateFilter(currentWeekMondayDateKey())
     }
   }, [isMyTickets, isTaguig])
 
@@ -4158,10 +4127,10 @@ export default function Tickets() {
       { label: 'BRAND', display: "BRAND", weight: 11, expMul: 1.5, sticky: false, freeze: false, align: 'center' as const },
       { label: 'DLR', display: isTaguigServices ? "ENDORSED BY" : "DEALER", weight: 10, expMul: 1.4, sticky: false, freeze: false, align: 'center' as const },
       { label: 'COMMIT', display: "COMMIT", weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'NEGOTIATOR', display: 'NEGOTIATOR', weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'NEGOTIATOR', display: 'NEGOTIATOR', weight: 8, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'INSTALLER', display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'SERVICE', display: "DRIVER", weight: 9, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
       { label: 'VEHICLE', display: "VEHICLE", weight: 7, expMul: 1.2, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'SERVICE', display: "DRIVER", weight: 8, expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
       { label: 'STATUS', display: "STATUS", weight: 9, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
       { label: 'UPDATE', display: "REMARKS", weight: 14, expMul: 1.55, sticky: false, freeze: false, align: 'right' as const },
       { label: 'PAYMENT', display: "PAYMENT", weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'right' as const },
@@ -5592,13 +5561,14 @@ export default function Tickets() {
         onChange={handleScanFilePicked}
       />
 
-      {/* ── Portal: Toolbar into header slot ────────────────── */}
+      {/* ── Portal: Toolbar into header slot (matches origin/main) ── */}
       {!isMyTickets && ReactDOM.createPortal(
-        <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2">
-          <div className="flex flex-wrap items-center gap-2 w-full">
-            {/* Weekly Date Tabs Picker */}
+        <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+
+          {/* Left: Date chips & search */}
+          <div className="flex flex-col md:flex-row md:items-center gap-3 flex-1 min-w-0">
             {activeTab === 'schedules' && (
-              <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar py-0.5 max-w-xs md:max-w-md lg:max-w-xl">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
                 {weeklyTabs.map(tab => {
                   const isActive = dateFilter === tab.key
                   return (
@@ -5606,11 +5576,12 @@ export default function Tickets() {
                       type="button"
                       key={tab.key}
                       onClick={() => handleDateFilterChange(tab.key)}
-                      className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
+                      className="h-8 md:h-10 px-3 md:px-5 rounded-full text-[11px] md:text-[13px] font-semibold border whitespace-nowrap shrink-0 transition-all active:scale-95"
                       style={{
-                        backgroundColor: isActive ? green : 'transparent',
+                        backgroundColor: isActive ? green : inputBg,
                         borderColor: isActive ? green : inputBorder,
                         color: isActive ? '#ffffff' : textMuted,
+                        boxShadow: isActive ? '0 2px 8px rgba(16,185,129,0.35)' : 'none',
                       }}
                     >
                       {tab.dayName} {tab.dateLabel}
@@ -5622,8 +5593,8 @@ export default function Tickets() {
                   <button
                     type="button"
                     onClick={() => dateFilterInputRef.current?.showPicker?.()}
-                    className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0"
-                    style={{ backgroundColor: green, borderColor: green, color: '#ffffff' }}
+                    className="h-8 md:h-10 px-3 md:px-5 rounded-full text-[11px] md:text-[13px] font-semibold border whitespace-nowrap shrink-0 active:scale-95"
+                    style={{ backgroundColor: green, borderColor: green, color: '#ffffff', boxShadow: '0 2px 8px rgba(16,185,129,0.35)' }}
                   >
                     {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
                   </button>
@@ -5632,11 +5603,11 @@ export default function Tickets() {
                 <button
                   type="button"
                   onClick={() => dateFilterInputRef.current?.showPicker?.()}
-                  className="flex items-center justify-center px-1.5 py-1 rounded-md border shrink-0"
-                  style={{ borderColor: inputBorder, color: textMuted }}
+                  className="w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full border shrink-0 transition-all hover:opacity-80 active:scale-90"
+                  style={{ borderColor: inputBorder, backgroundColor: inputBg }}
                   title="Pick date"
                 >
-                  <CalendarDays className="w-3.5 h-3.5" style={{ color: green }} />
+                  <CalendarDays className="w-4 h-4" style={{ color: green }} />
                 </button>
 
                 <input
@@ -5648,70 +5619,68 @@ export default function Tickets() {
                   className="absolute opacity-0 pointer-events-none w-0 h-0"
                   aria-label="Ticket date filter"
                 />
-
-                <button
-                  type="button"
-                  onClick={() => handleDateFilterChange('')}
-                  className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
-                  style={{
-                    backgroundColor: dateFilter === '' ? green : 'transparent',
-                    borderColor: dateFilter === '' ? green : inputBorder,
-                    color: dateFilter === '' ? '#ffffff' : textMuted,
-                  }}
-                >
-                  All
-                </button>
               </div>
             )}
 
-            {/* Search bar */}
             {activeTab === 'schedules' && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border flex-1 min-w-[120px] max-w-xs"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-                <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+              <div
+                className="flex items-center gap-2.5 w-full md:w-[240px] lg:w-[320px] h-9 md:h-11 px-3 md:px-4 rounded-xl md:rounded-2xl border transition-all shrink-0"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+              >
+                <Search className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: textMuted }} />
                 <input
                   type="text"
-                  placeholder="Search..."
+                  placeholder="Search names, phone…"
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  className="bg-transparent outline-none text-xs flex-1 min-w-0"
+                  className="bg-transparent outline-none text-[12px] md:text-sm flex-1 min-w-0"
                   style={{ color: textPrimary }}
                   onClick={e => e.stopPropagation()}
                 />
                 {searchQuery && (
-                  <button type="button" onClick={e => { e.stopPropagation(); setSearchQuery('') }} style={{ color: textMuted }}>
-                    <X className="w-3.5 h-3.5" />
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); setSearchQuery('') }}
+                    className="shrink-0 p-1 md:p-1.5 rounded-full hover:bg-slate-500/10 transition-colors"
+                    style={{ color: textMuted }}
+                  >
+                    <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
                   </button>
                 )}
               </div>
             )}
+          </div>
 
-            {/* Assign Drivers button */}
-            {activeTab === 'schedules' && canEdit && !isMyTickets && (
+          {/* Assign Drivers */}
+          {activeTab === 'schedules' && canEdit && !isMyTickets && (
+            <button
+              type="button"
+              id="bulk-assign-driver-btn"
+              onClick={(e) => { e.stopPropagation(); setBulkAssignOpen(true) }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs md:text-sm font-black tracking-wide shrink-0 transition-all hover:opacity-90 active:scale-95"
+              style={{
+                background: 'linear-gradient(135deg, #2563EB, #1d4ed8)',
+                color: '#ffffff',
+                boxShadow: '0 2px 12px rgba(37,99,235,0.45)',
+                border: '1.5px solid rgba(255,255,255,0.12)',
+              }}
+              title="Assign driver and vehicle to an installer's tickets"
+            >
+              <Car className="w-4 h-4" />
+              Assign Drivers
+            </button>
+          )}
+
+          {/* Showcase */}
+          {activeTab === 'schedules' && !isMyTickets && (
+            <div className="flex items-center gap-1.5 shrink-0 relative justify-end hidden md:flex">
               <button
                 type="button"
-                id="bulk-assign-driver-btn"
-                onClick={(e) => { e.stopPropagation(); setBulkAssignOpen(true) }}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-black tracking-wide shrink-0 transition-all hover:opacity-90 active:scale-95"
-                style={{
-                  background: 'linear-gradient(135deg, #2563EB, #1d4ed8)',
-                  color: '#ffffff',
-                  boxShadow: '0 2px 12px rgba(37,99,235,0.45)',
-                  border: '1.5px solid rgba(255,255,255,0.12)',
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowcaseOpen(true)
                 }}
-                title="Assign driver and vehicle to an installer's tickets"
-              >
-                <Car className="w-4 h-4" />
-                Assign Drivers
-              </button>
-            )}
-
-            {/* Showcase button */}
-            {activeTab === 'schedules' && !isMyTickets && (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setShowcaseOpen(true) }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 active:scale-95 ml-auto"
+                className="flex items-center gap-1.5 md:gap-2 h-8 md:h-10 px-4 md:px-6 rounded-full text-[12px] md:text-[14px] font-bold transition-all shrink-0 active:scale-95"
                 style={{
                   backgroundColor: showcaseOpen ? 'transparent' : green,
                   border: `1.5px solid ${green}`,
@@ -5720,13 +5689,11 @@ export default function Tickets() {
                 }}
                 title="Open fullscreen schedule showcase for print / PDF"
               >
-                <Maximize2 className="w-3.5 h-3.5" />
-                <span>{showcaseOpen ? 'Active' : 'Showcase'}</span>
+                <Maximize2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                <span className="hidden sm:inline">{showcaseOpen ? 'Active' : 'Showcase'}</span>
               </button>
-            )}
-
-            {/* Action Button: Add Schedule — removed, replaced by Showcase */}
-          </div>
+            </div>
+          )}
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body
       )}
@@ -5758,7 +5725,7 @@ export default function Tickets() {
       {/* ── Table card ── */}
       <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}
         onClick={e => e.stopPropagation()}>
-        {activeTab === 'schedules' ? (
+        {(
           loading && !hasHydratedOnce && tickets.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4 select-none animate-in fade-in duration-300"
               style={{ backgroundColor: cardBg }}>
@@ -5907,7 +5874,97 @@ export default function Tickets() {
                 </div>
               )}
 
-              <div className={isMyTickets ? "hidden md:block w-full" : "w-full"}>
+              {/* Schedules mobile card view (matches production / main) */}
+              {!isMyTickets && (
+                <div className="flex flex-col md:hidden p-3 gap-3">
+                  {visible.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center gap-3 py-12">
+                      <p className="text-sm font-semibold" style={{ color: textMuted }}>
+                        {searchQuery ? 'No records found' : 'No records'}
+                      </p>
+                      {searchQuery && (
+                        <button onClick={() => setSearchQuery('')} className="text-xs font-bold hover:underline" style={{ color: green }}>
+                          Clear search
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    visible.map((ticket, idx) => {
+                      const ghostKind = dateFilter ? getScheduleGhostKind(ticket, dateFilter) : null
+                      const isGhost = Boolean(ghostKind)
+                      const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(getCustomerDisplayName(ticket)))
+                      const rowColors = getScheduleRowColors(ticket, ghostKind, isLight, idx, rowEven, rowOdd, isDuplicateName)
+                      const isInstalled = isInstalledWorkflowStatus(ticket.status) || ['DONE_INSTALLED', 'DONE_CLEANING'].includes(ticket.status || '')
+                      const ticketNo = ticket.ticketNumber || ticket.ticket_number || ticket.controlNumber || ticket.control_number || getCellDisplay(ticket, 'TICKET NO') || '—'
+                      const district = getCellDisplay(ticket, 'DESTINATION') || ticket.district || '—'
+                      const brand = getCellDisplay(ticket, 'BRAND') || '—'
+                      const installer = getInstallerDisplay(ticket, branchEmployees, activeBranchId) || 'Unassigned'
+
+                      return (
+                        <div
+                          key={`${ticket.id}${isGhost ? `-ghost-${ghostKind}` : ''}`}
+                          onClick={() => setDetailTicket(ticket)}
+                          className="w-full rounded-xl p-3 flex flex-col gap-2 shadow-sm border transition-transform active:scale-[0.98] cursor-pointer"
+                          style={{
+                            backgroundColor: rowColors.baseBg,
+                            borderColor: tableBorder,
+                            borderLeft: rowColors.accent ? `4px solid ${rowColors.accent}` : undefined,
+                            opacity: isGhost ? 0.72 : 1,
+                          }}
+                        >
+                          <div className="flex justify-between items-start">
+                            <h4
+                              className="font-bold text-sm truncate mr-2"
+                              style={{ color: isDuplicateName ? (isLight ? '#9f1239' : '#f43f5e') : textPrimary }}
+                            >
+                              {getCustomerDisplayName(ticket) || '—'}
+                            </h4>
+                            {ticket.status && (
+                              <span
+                                className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase shrink-0"
+                                style={{
+                                  backgroundColor: isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)',
+                                  color: isInstalled ? (isLight ? '#059669' : '#34d399') : (isLight ? '#0284c7' : '#38bdf8'),
+                                }}
+                              >
+                                {ticket.status}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-xs" style={{ color: textMuted }}>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <Copy className="w-3 h-3 shrink-0" />
+                              <span className="font-semibold truncate" style={{ color: textPrimary }}>{ticketNo}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-right justify-end min-w-0">
+                              <span className="truncate">{district}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 col-span-2 min-w-0">
+                              <MapPin className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{district} · {brand}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 col-span-2 min-w-0">
+                              <span
+                                className="font-medium truncate"
+                                style={{
+                                  color: installer !== 'Unassigned'
+                                    ? (isLight ? '#0369a1' : '#7dd3fc')
+                                    : undefined,
+                                }}
+                              >
+                                {installer}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+              )}
+
+              <div className="hidden md:block w-full">
                 <table key={dateFilter || 'all'} className="text-xs w-full" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
                   <colgroup>
                     {columns.map(col => (
@@ -5917,8 +5974,8 @@ export default function Tickets() {
                   <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                     <tr
                       style={{
-                        backgroundColor: isMyTickets ? myTicketsTheadBg : theadBg,
-                        borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `2px solid ${tableBorderStrong}`,
+                        backgroundColor: isMyTickets ? myTicketsTheadBg : schedTheadBg,
+                        borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`,
                       }}
                     >
                       {columns.map(rawCol => {
@@ -5928,6 +5985,7 @@ export default function Tickets() {
                         const SortIcon = isSorted
                           ? (sortConfig!.direction === 'asc' ? ArrowUp : ArrowDown)
                           : ArrowUpDown
+                        const headBorder = isMyTickets ? myTicketsTheadBorder : schedTheadBorder
                         return (
                           <th key={col.label}
                             onClick={e => {
@@ -5942,22 +6000,22 @@ export default function Tickets() {
                             }}
                             title={canSort ? 'Click to widen column · Use arrow to sort' : 'Click to widen column'}
                             style={{
-                              padding: '11px 12px',
+                              padding: '13px 12px',
                               color: (col.isExpanded || isSorted)
                                 ? (isLight ? '#16A34A' : '#4ADE80')
-                                : (isMyTickets ? myTicketsTheadText : (isLight ? '#475569' : '#94a3b8')),
+                                : (isMyTickets ? myTicketsTheadText : schedTheadText),
                               fontWeight: 700, whiteSpace: 'nowrap',
-                              borderRight: `1px solid ${tableBorder}`,
-                              borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `2px solid ${tableBorderStrong}`,
+                              borderRight: `1px solid ${headBorder}`,
+                              borderBottom: `1px solid ${headBorder}`,
                               fontSize: '10px', letterSpacing: '0.08em',
                               width: col.w, minWidth: 0, maxWidth: col.w,
                               overflow: 'hidden', textOverflow: 'ellipsis',
-                              backgroundColor: isMyTickets ? myTicketsTheadBg : theadBg,
+                              backgroundColor: isMyTickets ? myTicketsTheadBg : schedTheadBg,
                               cursor: 'pointer',
                               userSelect: 'none',
                               transition: 'color 0.15s ease',
                               textAlign: col.align || 'left',
-                              ...(col.sticky ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: 15, boxShadow: `2px 0 0 ${tableBorder}` } : {}),
+                              ...(col.sticky ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: 15, boxShadow: `2px 0 0 ${headBorder}` } : {}),
                             }}>
                             <div className={`flex items-center gap-1 w-full ${col.align === 'center' ? 'justify-center text-center' :
                               col.align === 'right' ? 'justify-end text-right' :
@@ -5977,7 +6035,7 @@ export default function Tickets() {
                                 >
                                   <SortIcon
                                     className="w-3 h-3 shrink-0 opacity-70"
-                                    style={{ color: isSorted ? green : textMuted }}
+                                    style={{ color: isSorted ? green : (isMyTickets ? myTicketsTheadText : schedTheadText) }}
                                   />
                                 </button>
                               )}
@@ -6043,7 +6101,7 @@ export default function Tickets() {
                               const isEditingCell = editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label
                               const isExpandedCell = expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label
                               const isStatusCol = col.label === 'STATUS'
-                              const SKIP_EMPTY_HIGHLIGHT = new Set(['STATUS', 'INSTALLER', 'NOTE', 'UPDATE', 'PAYMENT', 'TICKET NO'])
+                              const SKIP_EMPTY_HIGHLIGHT = new Set(['STATUS', 'INSTALLER', 'NOTE', 'UPDATE', 'PAYMENT', 'TICKET NO', 'FINAL DATE'])
                               const cellVal = getCellDisplay(ticket, col.label)
                               const isCellEmpty = !SKIP_EMPTY_HIGHLIGHT.has(col.label) && !isGhost && !isEditingCell && !cellVal.trim()
                               const emptyCellBg = isCellEmpty
@@ -6139,192 +6197,7 @@ export default function Tickets() {
                 </table>
               </div>
             </div>
-          )) : (
-          /* Render Overview Search Panel */
-          <div className="flex-1 flex flex-col min-h-0 w-full overflow-hidden bg-white dark:bg-[#0a1120]">
-            {/* Mobile Top Header (< md) */}
-            <header className="flex md:hidden items-center justify-between w-full p-4 bg-white dark:bg-[#0a1120] border-b border-gray-200 dark:border-gray-800 shrink-0">
-              <button
-                onClick={() => setSidebarOpen?.(true)}
-                className="bg-slate-100 dark:bg-slate-800 p-2 rounded-lg text-gray-600 dark:text-gray-300 transition-colors"
-              >
-                <Menu className="w-5 h-5" />
-              </button>
-              <div className="flex flex-col items-center justify-center">
-                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">OVERVIEW</span>
-                <span className="text-sm font-bold text-gray-900 dark:text-gray-100">
-                  {isPortalAdmin(user?.role) && localStorage.getItem('ashcol-global-branch-id') ? (localStorage.getItem('ashcol-global-branch-id') === 'BR-TAGUIG-SERVICES' ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES') : 'TAGUIG - SALES'}
-                </span>
-              </div>
-              <button
-                onClick={toggleTheme}
-                className="flex items-center gap-2 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 transition-colors"
-              >
-                {isLight ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" style={{ color: '#F59E0B' }} />}
-              </button>
-            </header>
-
-            <div className="flex-1 flex flex-col min-h-0 overflow-y-auto px-4 py-6 md:px-8 bg-transparent">
-              <div className="max-w-4xl w-full mx-auto flex flex-col gap-6 animate-in fade-in duration-200">
-
-                {/* Header Section */}
-                <div className="text-center">
-                  <h2 className="text-xl font-black tracking-tight" style={{ color: textPrimary }}>
-                    Portal Overview Search
-                  </h2>
-                  <p className="text-xs mt-1" style={{ color: textMuted }}>
-                    Search across all tickets in the portal by customer name, ticket number, control number, contact phone, or location.
-                  </p>
-                </div>
-
-                {/* Search Input Box */}
-                <div
-                  className="flex items-center gap-3 px-4 py-3 rounded-2xl shadow-sm border-2 transition-all duration-200"
-                  style={{
-                    backgroundColor: cardBg,
-                    borderColor: overviewSearchFocused ? green : border,
-                    boxShadow: overviewSearchFocused ? `0 0 0 3px ${green}15` : 'none'
-                  }}
-                >
-                  <Search className="w-4 h-4 shrink-0" style={{ color: green }} />
-                  <input
-                    type="text"
-                    placeholder="Search customer, ticket #, contact, location..."
-                    value={overviewSearchInput}
-                    onChange={e => setOverviewSearchInput(e.target.value)}
-                    onFocus={() => setOverviewSearchFocused(true)}
-                    onBlur={() => setOverviewSearchFocused(false)}
-                    className="bg-transparent outline-none text-xs md:text-sm flex-1 min-w-0 font-medium"
-                    style={{ color: textPrimary }}
-                  />
-                  {overviewSearchInput && (
-                    <button
-                      type="button"
-                      onClick={() => { setOverviewSearchInput(''); setOverviewResults([]); }}
-                      style={{ color: textMuted }}
-                      className="hover:scale-110 transition-transform"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-
-                {/* Results Section */}
-                {overviewLoading ? (
-                  <div className="flex flex-col items-center justify-center py-12 gap-3">
-                    <Loader2 className="w-6 h-6 animate-spin" style={{ color: green }} />
-                    <span className="text-xs font-semibold" style={{ color: textMuted }}>Searching portal database...</span>
-                  </div>
-                ) : overviewResults.length > 0 ? (
-                  <div className="flex flex-col gap-4">
-                    <div className="flex justify-between items-center px-1">
-                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
-                        Found {overviewResults.length} {overviewResults.length === 1 ? 'ticket' : 'tickets'}
-                      </span>
-                    </div>
-
-                    {/* Results Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {overviewResults.map(ticket => {
-                        const ticketNum = ticket.ticketNumber || ticket.ticket_number || ticket.id;
-                        const customer = ticket.customerName || ticket.customer_name || 'No Customer Name';
-                        const { value: statusVal, label: statusLabel } = getOverviewStatusBadge(ticket);
-                        const statusStyle = getScheduleStatusBadgeStyle(statusVal, isLight);
-                        const rawBranch = ticket.branchId || ticket.branch_id || null;
-                        const branchLabel = getBranchDisplayName(
-                          resolveScopedBranchId(rawBranch) || rawBranch,
-                        );
-
-                        return (
-                          <div
-                            key={ticket.id}
-                            className="rounded-2xl p-4 border shadow-sm transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 flex flex-col justify-between"
-                            style={{ backgroundColor: cardBg, borderColor: border }}
-                          >
-                            <div>
-                              {/* Card Header */}
-                              <div className="flex justify-between items-start gap-2 mb-2">
-                                <span className="text-[10px] font-extrabold tracking-wide uppercase" style={{ color: textMuted }}>
-                                  {ticketNum}
-                                </span>
-                                <div className="flex gap-1.5 items-center flex-wrap justify-end">
-                                  {branchLabel && branchLabel !== '—' && (
-                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textMuted }}>
-                                      {branchLabel}
-                                    </span>
-                                  )}
-                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ backgroundColor: statusStyle.backgroundColor, color: statusStyle.color }}>
-                                    {statusLabel}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Customer & Location */}
-                              <h3 className="font-bold text-sm leading-tight mb-2" style={{ color: textPrimary }}>
-                                {highlightMatch(customer, overviewSearchInput)}
-                              </h3>
-
-                              <div className="flex flex-col gap-1 text-[11px] mb-3" style={{ color: textMuted }}>
-                                <div className="flex items-center gap-1.5">
-                                  <MapPin className="w-3 h-3 shrink-0" style={{ color: green }} />
-                                  <span className="truncate">{formatAddress(ticket.location)}</span>
-                                </div>
-                                {ticket.contactPhone && (
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-bold">Contact:</span>
-                                    <span>{ticket.contactPhone}</span>
-                                  </div>
-                                )}
-                                {ticket.assignedEmployeeName && (
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-bold">Technician:</span>
-                                    <span>{ticket.assignedEmployeeName}</span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Card Footer */}
-                            <div className="flex justify-between items-center pt-2.5 border-t border-dashed" style={{ borderColor: border }}>
-                              <span className="text-[10px]" style={{ color: textMuted }}>
-                                Date: {ticket.preferredDate || 'No Date'}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => openEditModal(ticket)}
-                                className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-white transition-opacity hover:opacity-90"
-                                style={{ backgroundColor: green }}
-                              >
-                                View Details
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : overviewSearchInput.trim() ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <AlertTriangle className="w-8 h-8 mb-2" style={{ color: textMuted }} />
-                    <h3 className="font-bold text-xs" style={{ color: textPrimary }}>No results found</h3>
-                    <p className="text-[11px] max-w-xs mt-1" style={{ color: textMuted }}>
-                      We couldn't find any tickets matching "{overviewSearchInput}". Try another search term.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-12 text-center opacity-80">
-                    <Search className="w-10 h-10 mb-2" style={{ color: textMuted }} />
-                    <h3 className="font-bold text-xs" style={{ color: textPrimary }}>Ready to Search</h3>
-                    <p className="text-[11px] max-w-md mt-1" style={{ color: textMuted }}>
-                      Start typing to search tickets by customer name, ticket/control number, technician, contact phone, or address.
-                    </p>
-                  </div>
-                )}
-
-              </div>
-            </div>
-          </div>
-        )}
+          ))}
       </div>
 
       {/* ── Right-click context menu ── */}
