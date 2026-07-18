@@ -3,7 +3,7 @@ import { useLocation, useOutletContext } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, X, Edit3, AlertTriangle, CalendarDays,
-  Eye, Loader2, Pencil, Clock, Moon, Sun, Car,
+  Eye, Loader2, Pencil, Clock, Moon, Sun, Car, Trash2,
   ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Maximize2,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -593,6 +593,12 @@ function mergeTicketPatch(ticket: Ticket, body: Record<string, unknown>): Ticket
     const cleared = sv == null || sv === ''
     merged.serviceVehicle = cleared ? undefined : String(sv)
     merged.service_vehicle = merged.serviceVehicle
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'driverName') || Object.prototype.hasOwnProperty.call(body, 'driver_name')) {
+    const dn = body.driverName !== undefined ? body.driverName : body.driver_name
+    const cleared = dn == null || dn === ''
+    merged.driverName = cleared ? undefined : String(dn)
+    merged.driver_name = merged.driverName
   }
   return merged
 }
@@ -3225,6 +3231,7 @@ export default function Tickets() {
   void bulkAssignTrip
   void setBulkAssignTrip
   const [bulkAssignSaving, setBulkAssignSaving] = useState(false)
+  const [bulkClearSaving, setBulkClearSaving] = useState(false)
 
   useEffect(() => {
     if (loading) {
@@ -6748,6 +6755,77 @@ export default function Tickets() {
     }
     return Promise.resolve()
   }, [applyTicketLocally, flushTicketSave])
+
+  /** Clear driver + vehicle on every active (non-ghost) schedule row for the current date. */
+  const clearAllDriversAndVehiclesForDate = useCallback(() => {
+    const dateKey = dateFilter || todayDateKey()
+    const targets = tickets.filter(t => {
+      const stat = (t.status || '').toUpperCase()
+      if (stat === 'CANCELLED') return false
+      if (!isFieldCategory(inferCategoryFromTicket(t))) return false
+      if (!ticketBelongsOnScheduleDate(t, dateKey)) return false
+      if (isScheduleGhostOnDate(t, dateKey)) return false
+      if (
+        activeBranchId
+        && activeBranchId !== 'ALL_BRANCHES'
+        && !ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email, user?.jobTitle)
+      ) {
+        return false
+      }
+      return Boolean(getTicketDriverDisplay(t) || getTicketVehicleDisplay(t))
+    })
+
+    if (targets.length === 0) {
+      showToast('No drivers or vehicles to clear on this date.')
+      return
+    }
+
+    setConfirmModal({
+      title: 'Clear all drivers & vehicles?',
+      message: `Remove driver and vehicle from all ${targets.length} ticket${targets.length === 1 ? '' : 's'} on ${dateKey}.`,
+      detail: 'Applies to every row on this schedule date (current branch). Installer assignments stay. This cannot be undone from here.',
+      variant: 'danger',
+      confirmText: 'Clear All',
+      onConfirm: () => {
+        setBulkClearSaving(true)
+        void (async () => {
+          try {
+            await Promise.all(
+              targets.map(t =>
+                queueTicketPatch(t, {
+                  driverName: '',
+                  serviceVehicle: '',
+                  acDetails: mergeAcMeta(t, {
+                    driverName: '',
+                    driver_name: '',
+                    serviceVehicle: '',
+                    service_vehicle: '',
+                  }),
+                }),
+              ),
+            )
+            showToast(`Cleared drivers & vehicles on ${targets.length} ticket${targets.length === 1 ? '' : 's'}`)
+            setBulkAssignOpen(false)
+            setBulkAssignInstaller('')
+            setBulkAssignDriver('')
+            setBulkAssignVehicle('')
+          } catch (err: unknown) {
+            alert(`Clear failed: ${formatFetchError(err)}`)
+          } finally {
+            setBulkClearSaving(false)
+          }
+        })()
+      },
+    })
+  }, [
+    tickets,
+    dateFilter,
+    activeBranchId,
+    user?.email,
+    user?.jobTitle,
+    queueTicketPatch,
+    showToast,
+  ])
 
   const saveCellEdit = (
     ticket: Ticket,
@@ -11130,28 +11208,54 @@ export default function Tickets() {
             </form>
 
             {/* Footer */}
-            <div className="flex justify-end gap-3 px-5 py-4 border-t" style={{ borderColor: 'rgba(37,99,235,0.2)', backgroundColor: isLight ? '#eff6ff' : 'rgba(37,99,235,0.06)' }}>
+            <div
+              className="flex flex-col gap-2.5 px-5 py-4 border-t"
+              style={{ borderColor: 'rgba(37,99,235,0.2)', backgroundColor: isLight ? '#eff6ff' : 'rgba(37,99,235,0.06)' }}
+            >
               <button
                 type="button"
-                onClick={() => setBulkAssignOpen(false)}
-                className="px-4 py-2 rounded-xl text-xs font-bold border"
-                style={{ borderColor: inputBorder, color: textMuted }}
+                onClick={clearAllDriversAndVehiclesForDate}
+                disabled={bulkAssignSaving || bulkClearSaving}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider border transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
+                style={{
+                  borderColor: isLight ? 'rgba(239,68,68,0.35)' : 'rgba(248,113,113,0.4)',
+                  color: isLight ? '#DC2626' : '#F87171',
+                  backgroundColor: isLight ? 'rgba(254,242,242,0.9)' : 'rgba(239,68,68,0.12)',
+                }}
+                title="Clear driver and vehicle on every row for this schedule date"
               >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                form="bulk-assign-form"
-                disabled={bulkAssignSaving}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black text-white transition-all hover:opacity-90 active:scale-95 shadow-lg disabled:opacity-60"
-                style={{ background: 'linear-gradient(135deg, #2563EB, #1d4ed8)', boxShadow: '0 3px 14px rgba(37,99,235,0.5)' }}
-              >
-                {bulkAssignSaving ? (
-                  <>⏳ Saving&hellip;</>
+                {bulkClearSaving ? (
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Clearing…</>
                 ) : (
-                  <><Car className="w-4 h-4" /> Assign Drivers</>
+                  <><Trash2 className="w-3.5 h-3.5" /> Clear All Drivers &amp; Vehicles</>
                 )}
               </button>
+              <p className="text-[10px] font-semibold text-center" style={{ color: textMuted }}>
+                Clears driver + vehicle on all rows for {dateFilter || todayDateKey()} (current branch)
+              </p>
+              <div className="flex justify-end gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setBulkAssignOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border"
+                  style={{ borderColor: inputBorder, color: textMuted }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  form="bulk-assign-form"
+                  disabled={bulkAssignSaving || bulkClearSaving}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black text-white transition-all hover:opacity-90 active:scale-95 shadow-lg disabled:opacity-60"
+                  style={{ background: 'linear-gradient(135deg, #2563EB, #1d4ed8)', boxShadow: '0 3px 14px rgba(37,99,235,0.5)' }}
+                >
+                  {bulkAssignSaving ? (
+                    <>⏳ Saving&hellip;</>
+                  ) : (
+                    <><Car className="w-4 h-4" /> Assign Drivers</>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>,
