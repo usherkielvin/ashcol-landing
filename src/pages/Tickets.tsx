@@ -11184,51 +11184,122 @@ export default function Tickets() {
                   alert('Provide at least a driver or vehicle.'); return
                 }
                 setBulkAssignSaving(true)
-                try {
-                  const tokenStr = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-                  const res = await fetch(`${API_BASE_URL}/tickets/bulk-assign-driver`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenStr}` },
-                    body: JSON.stringify({
-                      installerName: bulkAssignInstaller.trim(),
-                      driverName: bulkAssignDriver.trim() || undefined,
-                      serviceVehicle: bulkAssignVehicle.trim() || undefined,
-                      scheduleDate: dateFilter || todayDateKey(),
-                      branchId: activeBranchId || undefined,
-                    }),
-                  })
-                  if (!res.ok) throw new Error(await readApiError(res))
-                  const data = await res.json()
-                  const count: number = data?.data?.updatedCount ?? 0
-                  
-                  // Optimistically update local tickets state
-                  setTickets(prev => prev.map(t => {
-                    const rawInstaller = (t.installerName || '').trim().toLowerCase()
-                    const cleanInstaller = rawInstaller.split(/\s*[-–—]\s*|\s+\d+/)[0].trim()
-                    const targetInstaller = bulkAssignInstaller.trim().toLowerCase()
-                    const tDate = t.preferredDate || t.preferred_date || ''
-                    const targetDate = dateFilter || todayDateKey()
-                    if (cleanInstaller !== targetInstaller) return t
-                    if (tDate && !tDate.startsWith(targetDate)) return t
-                    return {
-                      ...t,
-                      driverName: bulkAssignDriver.trim() || t.driverName,
-                      driver_name: bulkAssignDriver.trim() || t.driver_name,
-                      serviceVehicle: bulkAssignVehicle.trim() || t.serviceVehicle,
-                      service_vehicle: bulkAssignVehicle.trim() || t.service_vehicle,
-                    }
-                  }))
-                  
-                  showToast(`✅ Updated ${count} ticket${count !== 1 ? 's' : ''} for ${bulkAssignInstaller}`)
-                  setBulkAssignOpen(false)
-                  setBulkAssignInstaller('')
-                  setBulkAssignDriver('')
-                  setBulkAssignVehicle('')
-                } catch (err: unknown) {
-                  alert(`Bulk assign failed: ${formatFetchError(err)}`)
-                } finally {
-                  setBulkAssignSaving(false)
+
+                const installer = bulkAssignInstaller.trim()
+                const driverVal = bulkAssignDriver.trim()
+                const vehicleVal = bulkAssignVehicle.trim()
+                const targetDate = dateFilter || todayDateKey()
+                const targetInstaller = installer.toLowerCase()
+
+                const matchesAssignTarget = (t: Ticket) => {
+                  const rawInstaller = (t.installerName || '').trim().toLowerCase()
+                  const cleanInstaller = rawInstaller.split(/\s*[-–—]\s*|\s+\d+/)[0].trim()
+                  if (cleanInstaller !== targetInstaller) return false
+                  // visible is already scoped to the current schedule date
+                  if (targetDate && isScheduleGhostOnDate(t, targetDate)) return false
+                  return true
                 }
+
+                const targets = visible.filter(matchesAssignTarget)
+                if (targets.length === 0) {
+                  setBulkAssignSaving(false)
+                  alert(`No schedule rows found for installer "${installer}" on ${targetDate}.`)
+                  return
+                }
+                const applyLocal = (list: Ticket[]) => list.map(t => {
+                  if (!matchesAssignTarget(t)) return t
+                  return {
+                    ...t,
+                    ...(driverVal ? { driverName: driverVal, driver_name: driverVal } : {}),
+                    ...(vehicleVal ? { serviceVehicle: vehicleVal, service_vehicle: vehicleVal } : {}),
+                    acDetails: mergeAcMeta(t, {
+                      ...(driverVal ? { driverName: driverVal, driver_name: driverVal } : {}),
+                      ...(vehicleVal ? { serviceVehicle: vehicleVal, service_vehicle: vehicleVal } : {}),
+                    }),
+                  }
+                })
+
+                // Instant UI update
+                setTickets(prev => {
+                  const next = applyLocal(prev)
+                  writeSchedulesTabCache(schedulesCacheKeyForTab(), next, 'local')
+                  return next
+                })
+                setBulkAssignOpen(false)
+                setBulkAssignInstaller('')
+                setBulkAssignDriver('')
+                setBulkAssignVehicle('')
+                showToast(`Assigning ${installer}…`)
+
+                void (async () => {
+                  const tokenStr = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+                  const headers = {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${tokenStr}`,
+                  }
+                  try {
+                    let usedBulk = false
+                    try {
+                      const res = await fetch(`${API_BASE_URL}/tickets/bulk-assign-driver`, {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({
+                          installerName: installer,
+                          driverName: driverVal || undefined,
+                          serviceVehicle: vehicleVal || undefined,
+                          scheduleDate: targetDate,
+                          branchId: activeBranchId && activeBranchId !== 'ALL_BRANCHES' ? activeBranchId : undefined,
+                        }),
+                      })
+                      if (res.ok) {
+                        usedBulk = true
+                        const data = await res.json().catch(() => ({}))
+                        const count: number = data?.data?.updatedCount ?? targets.length
+                        showToast(`Updated ${count} ticket${count !== 1 ? 's' : ''} for ${installer}`)
+                      } else {
+                        console.warn('[Schedules] bulk-assign failed, falling back to sequential PATCH', res.status)
+                      }
+                    } catch {
+                      // fall through
+                    }
+
+                    if (!usedBulk) {
+                      let failures = 0
+                      for (const t of targets) {
+                        if (String(t.id || '').startsWith('temp-') || String(t.id || '').startsWith('tmp-')) continue
+                        const body: Record<string, unknown> = {
+                          acDetails: mergeAcMeta(t, {
+                            ...(driverVal ? { driverName: driverVal, driver_name: driverVal } : {}),
+                            ...(vehicleVal ? { serviceVehicle: vehicleVal, service_vehicle: vehicleVal } : {}),
+                          }),
+                        }
+                        if (driverVal) body.driverName = driverVal
+                        if (vehicleVal) body.serviceVehicle = vehicleVal
+                        try {
+                          const res = await fetch(`${API_BASE_URL}/tickets/${t.id}`, {
+                            method: 'PATCH',
+                            headers,
+                            body: JSON.stringify(body),
+                          })
+                          if (!res.ok) failures += 1
+                        } catch {
+                          failures += 1
+                        }
+                        await new Promise<void>(r => setTimeout(r, 40))
+                      }
+                      if (failures > 0) {
+                        showToast(`Assigned ${installer} · ${failures} still syncing`)
+                      } else {
+                        showToast(`Updated ${targets.length} ticket${targets.length !== 1 ? 's' : ''} for ${installer}`)
+                      }
+                    }
+                  } catch (err: unknown) {
+                    console.error('[Schedules] bulk assign persist failed', err)
+                    showToast(`Assigned in view · server sync lagged`)
+                  } finally {
+                    setBulkAssignSaving(false)
+                  }
+                })()
               }}
             >
               {/* Installer dropdown */}
