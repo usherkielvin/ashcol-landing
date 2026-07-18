@@ -6780,6 +6780,8 @@ export default function Tickets() {
       return
     }
 
+    const targetIds = new Set(targets.map(t => t.id))
+
     setConfirmModal({
       title: 'Clear all drivers & vehicles?',
       message: `Remove driver and vehicle from all ${targets.length} ticket${targets.length === 1 ? '' : 's'} on ${dateKey}.`,
@@ -6788,29 +6790,60 @@ export default function Tickets() {
       confirmText: 'Clear All',
       onConfirm: () => {
         setBulkClearSaving(true)
+
+        // Drop any in-flight per-ticket driver/vehicle patches so they can't undo the bulk clear
+        for (const id of targetIds) {
+          pendingSavesRef.current.delete(id)
+          optimisticTicketsRef.current.delete(id)
+        }
+
+        // Instant UI clear — one bulk API call instead of N individual PATCHes
+        setTickets(prev => {
+          const next = prev.map(t => {
+            if (!targetIds.has(t.id)) return t
+            const cleared = {
+              ...t,
+              driverName: undefined,
+              driver_name: undefined,
+              serviceVehicle: undefined,
+              service_vehicle: undefined,
+              acDetails: mergeAcMeta(t, {
+                driverName: '',
+                driver_name: '',
+                serviceVehicle: '',
+                service_vehicle: '',
+              }),
+            }
+            optimisticTicketsRef.current.set(t.id, cleared)
+            return cleared
+          })
+          writeSchedulesTabCache(schedulesCacheKeyForTab(), next, 'local')
+          return next
+        })
+
         void (async () => {
           try {
-            await Promise.all(
-              targets.map(t =>
-                queueTicketPatch(t, {
-                  driverName: '',
-                  serviceVehicle: '',
-                  acDetails: mergeAcMeta(t, {
-                    driverName: '',
-                    driver_name: '',
-                    serviceVehicle: '',
-                    service_vehicle: '',
-                  }),
-                }),
-              ),
-            )
-            showToast(`Cleared drivers & vehicles on ${targets.length} ticket${targets.length === 1 ? '' : 's'}`)
+            const tokenStr = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+            const res = await fetch(`${API_BASE_URL}/tickets/bulk-clear-driver-vehicle`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenStr}` },
+              body: JSON.stringify({
+                scheduleDate: dateKey,
+                branchId: activeBranchId && activeBranchId !== 'ALL_BRANCHES' ? activeBranchId : undefined,
+              }),
+            })
+            if (!res.ok) throw new Error(await readApiError(res))
+            const data = await res.json().catch(() => ({}))
+            const count: number = data?.data?.updatedCount ?? targets.length
+            showToast(`Cleared drivers & vehicles on ${count} ticket${count !== 1 ? 's' : ''}`)
             setBulkAssignOpen(false)
             setBulkAssignInstaller('')
             setBulkAssignDriver('')
             setBulkAssignVehicle('')
           } catch (err: unknown) {
             alert(`Clear failed: ${formatFetchError(err)}`)
+            // Reload so UI matches server if the bulk call failed after optimistic clear
+            void fetchTickets({ soft: true, force: true })
           } finally {
             setBulkClearSaving(false)
           }
@@ -6823,8 +6856,9 @@ export default function Tickets() {
     activeBranchId,
     user?.email,
     user?.jobTitle,
-    queueTicketPatch,
     showToast,
+    fetchTickets,
+    schedulesCacheKeyForTab,
   ])
 
   const saveCellEdit = (
