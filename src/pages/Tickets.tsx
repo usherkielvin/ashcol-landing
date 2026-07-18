@@ -2236,10 +2236,55 @@ function compareNameSiteStrings(a: string, b: string): number {
   return pa.site - pb.site
 }
 
+/**
+ * Auto-computed vehicle trip label ("STRADA - 2") for Schedules ordering. The vehicle (not the
+ * driver) is the dispatch unit, so rows group by vehicle and are numbered by trip automatically —
+ * staff type a plain vehicle name ("STRADA"), no manual "- 1"/"- 2" suffix needed. Legacy tickets
+ * that already carry an explicit "- N" suffix in the Vehicle field keep that number as a pin;
+ * auto-numbered trips continue the sequence after the highest pinned number in the group.
+ */
+function buildVehicleTripLabels(ticketsList: Ticket[]): Map<string, string> {
+  type Entry = { ticket: Ticket; explicitSite: number | null }
+  const groups = new Map<string, Entry[]>()
+  for (const t of ticketsList) {
+    if (!t.id) continue
+    const raw = getTicketVehicleDisplay(t)
+    if (!raw) continue
+    const parsed = parseNameSiteToken(raw)
+    if (!parsed.name) continue
+    const explicitSite = parsed.site === Number.MAX_SAFE_INTEGER ? null : parsed.site
+    const arr = groups.get(parsed.name) || []
+    arr.push({ ticket: t, explicitSite })
+    groups.set(parsed.name, arr)
+  }
+  const labels = new Map<string, string>()
+  for (const [base, entries] of groups) {
+    let nextAuto = entries.reduce((m, e) => (e.explicitSite != null ? Math.max(m, e.explicitSite) : m), 0)
+    const autoOrdered = entries
+      .filter(e => e.explicitSite == null)
+      .sort((a, b) => {
+        const at = a.ticket.createdAt || a.ticket.created_at || ''
+        const bt = b.ticket.createdAt || b.ticket.created_at || ''
+        if (at && bt && at !== bt) return at.localeCompare(bt)
+        const an = a.ticket.ticketNumber || a.ticket.ticket_number || a.ticket.id || ''
+        const bn = b.ticket.ticketNumber || b.ticket.ticket_number || b.ticket.id || ''
+        return an.localeCompare(bn, undefined, { numeric: true })
+      })
+    for (const e of autoOrdered) {
+      nextAuto += 1
+      labels.set(e.ticket.id, `${base} - ${nextAuto}`)
+    }
+    for (const e of entries) {
+      if (e.explicitSite != null) labels.set(e.ticket.id, `${base} - ${e.explicitSite}`)
+    }
+  }
+  return labels
+}
+
 function ticketColumnText(
   ticket: Ticket,
   colLabel: string,
-  options?: { myTickets?: boolean; employees?: BranchStaffOption[]; branchId?: string | null },
+  options?: { myTickets?: boolean; employees?: BranchStaffOption[]; branchId?: string | null; vehicleTripLabels?: Map<string, string> },
 ): string {
   const myTickets = options?.myTickets ?? false
   const employees = options?.employees
@@ -2256,7 +2301,7 @@ function ticketColumnText(
     case 'INSTALLER': return getInstallerSortKey(ticket, employees, branchId)
     case 'NEGOTIATOR': return getTicketNegotiatorName(ticket, employees)
     case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : getTicketDriverDisplay(ticket)
-    case 'VEHICLE': return myTickets ? '' : getTicketVehicleDisplay(ticket)
+    case 'VEHICLE': return myTickets ? '' : (options?.vehicleTripLabels?.get(ticket.id || '') || getTicketVehicleDisplay(ticket))
     case 'UPDATE': return getScheduleUpdateDisplay(ticket)
     default: return ''
   }
@@ -2266,7 +2311,7 @@ function compareTicketsByColumn(
   a: Ticket,
   b: Ticket,
   colLabel: string,
-  options?: { myTickets?: boolean; employees?: BranchStaffOption[]; branchId?: string | null },
+  options?: { myTickets?: boolean; employees?: BranchStaffOption[]; branchId?: string | null; vehicleTripLabels?: Map<string, string> },
 ): number {
   const av = ticketColumnText(a, colLabel, options)
   const bv = ticketColumnText(b, colLabel, options)
@@ -2290,7 +2335,7 @@ const INLINE_EDIT_COLUMNS = new Set([
   'FINAL DATE', 'SERVICE', 'VEHICLE', 'UPDATE', 'DESTINATION', 'NOTE',
 ])
 const DEFAULT_MY_TICKETS_SORT = { column: 'NEGOTIATOR', direction: 'asc' as const }
-const DEFAULT_SCHEDULE_SORT = { column: 'SERVICE', direction: 'asc' as const }
+const DEFAULT_SCHEDULE_SORT = { column: 'VEHICLE', direction: 'asc' as const }
 
 function defaultSortForSchedulesView(isMyTickets: boolean) {
   return isMyTickets ? DEFAULT_MY_TICKETS_SORT : DEFAULT_SCHEDULE_SORT
@@ -5952,24 +5997,28 @@ export default function Tickets() {
     return list
   }, [tickets, isMyTickets, activeBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, installerLineupIndex, driverOnlyNames])
 
+  // Auto-numbered vehicle trip labels ("STRADA - 1", "STRADA - 2") for the current filtered set —
+  // the vehicle is now the dispatch unit, so staff never type a manual "- N" suffix into the
+  // Driver or Vehicle fields; the trip number is derived from assignment order instead.
+  const vehicleTripLabels = useMemo(() => buildVehicleTripLabels(filtered), [filtered])
+
   const visible = useMemo(() => {
     let list = filtered
-    const cmpOpts = { myTickets: isMyTickets, employees: branchEmployees, branchId: activeBranchId }
+    const cmpOpts = { myTickets: isMyTickets, employees: branchEmployees, branchId: activeBranchId, vehicleTripLabels }
     list = [...list].sort((a, b) => {
-      // Schedules: always group rows by driver/vehicle first — that's the actual dispatch
-      // unit (one driver + vehicle runs a sequence of jobs), so it must stay contiguous even
-      // though the same driver may work under different installers across the day. Vehicle
-      // codes (e.g. "T2-1", "T2-2") are grouped by base name then ordered numerically by site.
+      // Schedules: always group rows by vehicle first — the vehicle (e.g. "STRADA - 1",
+      // "STRADA - 2") is the actual dispatch unit and trip order, auto-numbered from assignment
+      // order. Driver name is the secondary tiebreaker so rows stay readable within a vehicle group.
       if (!isMyTickets) {
-        const byDriver = compareTicketsByColumn(a, b, 'SERVICE', cmpOpts)
-        if (byDriver !== 0) {
-          const desc = sortConfig.column === 'SERVICE' && sortConfig.direction === 'desc'
-          return desc ? -byDriver : byDriver
-        }
         const byVehicle = compareTicketsByColumn(a, b, 'VEHICLE', cmpOpts)
         if (byVehicle !== 0) {
           const desc = sortConfig.column === 'VEHICLE' && sortConfig.direction === 'desc'
           return desc ? -byVehicle : byVehicle
+        }
+        const byDriver = compareTicketsByColumn(a, b, 'SERVICE', cmpOpts)
+        if (byDriver !== 0) {
+          const desc = sortConfig.column === 'SERVICE' && sortConfig.direction === 'desc'
+          return desc ? -byDriver : byDriver
         }
       }
       if (isMyTickets || (sortConfig.column !== 'SERVICE' && sortConfig.column !== 'VEHICLE')) {
@@ -5983,7 +6032,7 @@ export default function Tickets() {
       return compareTicketsByColumn(a, b, 'TICKET NO', cmpOpts)
     })
     return list
-  }, [filtered, sortConfig, isMyTickets, branchEmployees, activeBranchId])
+  }, [filtered, sortConfig, isMyTickets, branchEmployees, activeBranchId, vehicleTripLabels])
 
   const sortDiffersFromDefault =
     sortConfig.column !== defaultSortForSchedulesView(isMyTickets).column
@@ -6081,7 +6130,7 @@ export default function Tickets() {
         case 'NEGOTIATOR': return getTicketNegotiatorName(ticket, branchEmployees)
         case 'NOTE': return ticket.note || ''
         case 'SERVICE': return isMyTickets ? formatRelayTicketTypeShort(ticket) : getTicketDriverDisplay(ticket)
-        case 'VEHICLE': return isMyTickets ? '' : getTicketVehicleDisplay(ticket)
+        case 'VEHICLE': return isMyTickets ? '' : (vehicleTripLabels.get(ticket.id || '') || getTicketVehicleDisplay(ticket))
         case 'UPDATE': return getScheduleUpdateDisplay(ticket)
         default: return ''
       }
@@ -6635,6 +6684,31 @@ export default function Tickets() {
   }
   saveCellEditRef.current = (ticket, colLabel, value, injectedPayment) => { void saveCellEdit(ticket, colLabel, value, injectedPayment) }
 
+  // Manual reorder within a vehicle's trip group (hover arrows on the VEHICLE cell). Only swaps
+  // with the immediate neighbor inside the same vehicle group — visible is already sorted with
+  // same-vehicle rows contiguous, so a move that would leave the group is simply a no-op rather
+  // than spilling into a different vehicle's rows.
+  const moveVehicleTripOrder = useCallback((ticket: Ticket, direction: 'up' | 'down') => {
+    const parsed = parseNameSiteToken(getTicketVehicleDisplay(ticket))
+    if (!parsed.name) return
+    const group = visible.filter(t => parseNameSiteToken(getTicketVehicleDisplay(t)).name === parsed.name)
+    const currentIndex = group.findIndex(t => t.id === ticket.id)
+    if (currentIndex === -1) return
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+    if (targetIndex < 0 || targetIndex >= group.length) return
+
+    const reordered = [...group]
+    const [moved] = reordered.splice(currentIndex, 1)
+    reordered.splice(targetIndex, 0, moved)
+
+    reordered.forEach((t, i) => {
+      const nextLabel = `${parsed.name} - ${i + 1}`
+      if (getTicketVehicleDisplay(t) === nextLabel) return
+      const body = buildCellPatchBody(t, 'VEHICLE', nextLabel, branchEmployees)
+      if (Object.keys(body).length > 0) queueTicketPatch(t, body)
+    })
+  }, [visible, branchEmployees, queueTicketPatch])
+
   const openReschedDialog = (ticket: Ticket) => {
     commitCellEdit()
     const preferred = getPreferredDateKey(ticket)
@@ -7014,6 +7088,52 @@ export default function Tickets() {
     )
   }
 
+  // Hover arrows on the VEHICLE cell let staff nudge a ticket's trip order up/down within its
+  // own vehicle group (e.g. "STRADA - 1"/"STRADA - 2") — never across into a different vehicle's
+  // rows. The boundary of the group is the boundary of what the arrows can do; at either edge of
+  // the group the corresponding arrow is simply omitted.
+  function withVehicleTripReorder(content: React.ReactNode, ticket: Ticket, rowGhost?: boolean) {
+    if (!canEdit || rowGhost) return content
+    const isHovered = hoveredCell?.ticketId === ticket.id && hoveredCell?.colLabel === 'VEHICLE'
+    if (!isHovered) return content
+    const parsed = parseNameSiteToken(getTicketVehicleDisplay(ticket))
+    if (!parsed.name) return content
+    const group = visible.filter(t => parseNameSiteToken(getTicketVehicleDisplay(t)).name === parsed.name)
+    const idx = group.findIndex(t => t.id === ticket.id)
+    const canMoveUp = idx > 0
+    const canMoveDown = idx >= 0 && idx < group.length - 1
+    if (!canMoveUp && !canMoveDown) return content
+    return (
+      <div className="relative flex items-center justify-center">
+        <div style={{ paddingLeft: 16, paddingRight: 16 }}>{content}</div>
+        {canMoveUp && (
+          <button
+            type="button"
+            onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
+            onClick={e => { e.stopPropagation(); moveVehicleTripOrder(ticket, 'up') }}
+            title="Move up within this vehicle's trips"
+            className="absolute top-0 left-0 flex items-center justify-center w-4 h-4 rounded hover:bg-blue-500/15"
+            style={{ color: textMuted, lineHeight: 1 }}
+          >
+            <ArrowUp className="w-3 h-3" />
+          </button>
+        )}
+        {canMoveDown && (
+          <button
+            type="button"
+            onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
+            onClick={e => { e.stopPropagation(); moveVehicleTripOrder(ticket, 'down') }}
+            title="Move down within this vehicle's trips"
+            className="absolute bottom-0 left-0 flex items-center justify-center w-4 h-4 rounded hover:bg-blue-500/15"
+            style={{ color: textMuted, lineHeight: 1 }}
+          >
+            <ArrowDown className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+    )
+  }
+
   const copyTextToClipboard = async (text: string) => {
     if (!text.trim()) return
     try {
@@ -7297,15 +7417,18 @@ export default function Tickets() {
           </button>
         )
       }
-      return withEditPencil(
-        <span
-          className="block w-full text-center font-bold tracking-wide uppercase leading-tight"
-          style={{ color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }}
-          title={vehicleCode}
-        >
-          {vehicleCode || EMPTY_CELL}
-        </span>,
-        ticket, label, rowGhost, rowIndex,
+      return withVehicleTripReorder(
+        withEditPencil(
+          <span
+            className="block w-full text-center font-bold tracking-wide uppercase leading-tight"
+            style={{ color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }}
+            title={vehicleCode}
+          >
+            {vehicleCode || EMPTY_CELL}
+          </span>,
+          ticket, label, rowGhost, rowIndex,
+        ),
+        ticket, rowGhost,
       )
     }
 
@@ -8357,7 +8480,10 @@ export default function Tickets() {
                                 )}
                                 <button
                                   type="button"
-                                  onClick={() => openEditModal(ticket)}
+                                  onClick={() => {
+                                    setDetailTicket(ticket);
+                                    setShowHistoryPanel(true);
+                                  }}
                                   className="flex-1 sm:w-auto px-3 py-2 sm:py-1 rounded-lg text-[11px] sm:text-[10px] font-bold text-white transition-opacity hover:opacity-90 active:opacity-80"
                                   style={{ backgroundColor: green }}
                                 >
