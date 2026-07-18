@@ -1162,16 +1162,16 @@ export default function AuditFinanceExpenses() {
       {/* ── ENTRY FORM (PORTALED) ── */}
       {showForm && typeof document !== 'undefined' && createPortal(
         <>
-          <div className="sm:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" onClick={() => { setShowForm(false); setEditing(null); setScanPreview(null) }} />
-          
+          <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm sm:flex sm:items-center sm:justify-center sm:p-6" onClick={() => { setShowForm(false); setEditing(null); setScanPreview(null) }}>
           <div
-          className="fixed sm:static inset-0 sm:inset-auto z-[100] sm:z-auto rounded-none sm:rounded-2xl flex flex-col gap-4 p-5 pb-8 sm:p-4 overflow-y-auto overscroll-contain h-[100dvh] sm:h-auto sm:max-h-none"
-          style={{ backgroundColor: cardBg, boxShadow: `0 -8px 30px rgba(0,0,0,0.2)` }}
+          onClick={(e) => e.stopPropagation()}
+          className="fixed sm:relative inset-0 sm:inset-auto z-[100] sm:z-auto rounded-none sm:rounded-2xl flex flex-col gap-5 p-5 pb-8 sm:p-6 overflow-y-auto overscroll-contain h-[100dvh] sm:h-auto sm:max-h-[90vh] sm:w-full sm:max-w-3xl sm:mx-auto"
+          style={{ backgroundColor: cardBg, boxShadow: `0 8px 40px rgba(0,0,0,0.35)` }}
         >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 w-full pt-2 sm:pt-0">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 w-full pt-2 sm:pt-0 pb-4 sm:pb-3 border-b" style={{ borderColor: inputBorder }}>
             <div className="flex items-center justify-between w-full sm:w-auto">
               <h2 className="font-bold text-lg flex items-center gap-2" style={{ color: textPrimary }}>
-                <div className="rounded-lg p-2" style={{ backgroundColor: `${activeAccent}22` }}><ReceiptText size={18} style={{ color: activeAccent }} /></div>
+                <div className="rounded-lg p-2 shrink-0" style={{ backgroundColor: `${activeAccent}22` }}><ReceiptText size={18} style={{ color: activeAccent }} /></div>
                 {editing ? (
                   <span className="flex items-center gap-2 tracking-wide uppercase">
                     EDIT RECEIPT
@@ -1185,46 +1185,48 @@ export default function AuditFinanceExpenses() {
               </h2>
               <button type="button" onClick={() => { setShowForm(false); setEditing(null); setScanPreview(null) }} className="sm:hidden p-2 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-500 hover:text-red-500 transition-colors"><X size={20} /></button>
             </div>
-            
-            <div className="grid grid-cols-3 sm:flex items-center gap-2 sm:gap-2 w-full sm:w-auto">
-              <button
-                type="button"
-                disabled={scanning}
-                onClick={handlePasteClick}
-                className="flex items-center justify-center gap-1 px-2.5 py-2.5 sm:px-3 sm:py-1.5 rounded-xl sm:rounded-lg text-xs font-semibold transition-all hover:scale-105"
-                style={{ backgroundColor: scanning ? `${accent}11` : `${accent}18`, border: `1px solid ${accent}44`, color: accent }}
-                title="Paste an image from your clipboard"
-              >
-                <ClipboardPaste size={15} />
-                <span className="hidden sm:inline">Paste Image</span>
-                <span className="sm:hidden">Paste</span>
-              </button>
-              <button
-                type="button"
-                disabled={scanning}
-                onClick={() => scanRef.current?.click()}
-                className="flex items-center justify-center gap-1 px-2.5 py-2.5 sm:px-3 sm:py-1.5 rounded-xl sm:rounded-lg text-xs font-semibold transition-all hover:scale-105 text-white"
-                style={{ backgroundColor: accent }}
-                title="Upload receipt image"
-              >
-                <Upload size={15} />
-                <span className="hidden sm:inline">Upload Receipt</span>
-                <span className="sm:hidden">Upload</span>
-              </button>
-              <button
-                type="button"
-                disabled={scanning}
-                onClick={() => cameraRef.current?.click()}
-                className="flex items-center justify-center gap-1 px-2.5 py-2.5 sm:hidden rounded-xl text-xs font-bold text-white transition-all active:scale-95"
-                style={{ backgroundColor: '#6366F1', opacity: scanning ? 0.6 : 1 }}
-                title="Open camera"
-              >
-                <Camera size={15} />
-                <span>Camera</span>
-              </button>
-              <input ref={scanRef} type="file" accept="image/*" className="hidden" onChange={handleScanImage} />
+
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              <div className="grid grid-cols-3 sm:flex items-center gap-2 flex-1 sm:flex-none">
+                <button
+                  type="button"
+                  disabled={scanning}
+                  onClick={handlePasteClick}
+                  className="flex items-center justify-center gap-1 px-2.5 py-2.5 sm:px-3 sm:py-1.5 rounded-xl sm:rounded-lg text-xs font-semibold transition-all hover:scale-105"
+                  style={{ backgroundColor: scanning ? `${accent}11` : `${accent}18`, border: `1px solid ${accent}44`, color: accent }}
+                  title="Paste an image from your clipboard"
+                >
+                  <ClipboardPaste size={15} />
+                  <span className="hidden sm:inline">Paste Image</span>
+                  <span className="sm:hidden">Paste</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={scanning}
+                  onClick={() => scanRef.current?.click()}
+                  className="flex items-center justify-center gap-1 px-2.5 py-2.5 sm:px-3 sm:py-1.5 rounded-xl sm:rounded-lg text-xs font-semibold transition-all hover:scale-105 text-white"
+                  style={{ backgroundColor: accent }}
+                  title="Upload receipt image"
+                >
+                  <Upload size={15} />
+                  <span className="hidden sm:inline">Upload Receipt</span>
+                  <span className="sm:hidden">Upload</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={scanning}
+                  onClick={() => cameraRef.current?.click()}
+                  className="flex items-center justify-center gap-1 px-2.5 py-2.5 sm:hidden rounded-xl text-xs font-bold text-white transition-all active:scale-95"
+                  style={{ backgroundColor: '#6366F1', opacity: scanning ? 0.6 : 1 }}
+                  title="Open camera"
+                >
+                  <Camera size={15} />
+                  <span>Camera</span>
+                </button>
+                <input ref={scanRef} type="file" accept="image/*" className="hidden" onChange={handleScanImage} />
+              </div>
+              <button type="button" onClick={() => { setShowForm(false); setEditing(null); setScanPreview(null) }} className="hidden sm:flex shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-colors" style={{ color: textMuted }}><X size={18} /></button>
             </div>
-            <button type="button" onClick={() => { setShowForm(false); setEditing(null); setScanPreview(null) }} className="hidden sm:block text-slate-400 hover:text-red-500 transition-colors" style={{ color: textMuted }}><X size={18} /></button>
           </div>
 
           {editing && (
@@ -1269,7 +1271,7 @@ export default function AuditFinanceExpenses() {
             )}
 
             {/* Form grid */}
-            <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-2" onKeyDown={handleFormKeyDown}>
+            <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4 sm:gap-x-4 sm:gap-y-3" onKeyDown={handleFormKeyDown}>
               {/* Branch */}
               {field(
                 'Branch',
@@ -1390,8 +1392,8 @@ export default function AuditFinanceExpenses() {
           </div>
 
           {/* Category chips */}
-          <div>
-            <div className="flex items-center justify-between">
+          <div className="pt-1 border-t" style={{ borderColor: inputBorder }}>
+            <div className="flex items-center justify-between pt-4">
               <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: textMuted }}>Expense Category</label>
               <button
                 type="button"
@@ -1515,15 +1517,16 @@ export default function AuditFinanceExpenses() {
           <div className="flex flex-col sm:flex-row gap-3 justify-end pt-6 sm:pt-4 mt-2 border-t"
             style={{ borderColor: inputBorder }}>
             <button type="button" onClick={() => { setShowForm(false); setEditing(null) }}
-              className="flex-1 sm:flex-none px-4 py-3 sm:py-2 text-sm rounded-xl sm:rounded-lg font-semibold"
+              className="flex-1 sm:flex-none px-4 py-3 sm:py-2.5 text-sm rounded-xl sm:rounded-lg font-semibold"
               style={{ color: textMuted, backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}
               disabled={savingReceipt}>Cancel</button>
             <button type="button" onClick={submitReceipt}
-              className="flex-1 sm:flex-none px-5 py-3 sm:py-2 rounded-xl text-sm font-bold text-white shadow flex items-center gap-2 justify-center transition-all active:scale-95"
+              className="flex-1 sm:flex-none px-5 py-3 sm:py-2.5 rounded-xl text-sm font-bold text-white shadow flex items-center gap-2 justify-center transition-all active:scale-95"
               style={{ backgroundColor: activeAccent }} disabled={savingReceipt}>
               {savingReceipt ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : (editing ? 'Apply Updates' : 'Save Record')}
             </button>
           </div>
+        </div>
         </div>
         </>, document.body
       )}

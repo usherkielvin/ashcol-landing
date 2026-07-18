@@ -3,7 +3,7 @@ import { useLocation, useOutletContext } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, X, Edit3, AlertTriangle, CalendarDays,
-  Eye, Loader2, Pencil, Clock, Moon, Sun,
+  Eye, Loader2, Pencil, Clock, Moon, Sun, Car,
   ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Maximize2,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -3071,6 +3071,16 @@ export default function Tickets() {
   const [hasHydratedOnce, setHasHydratedOnce] = useState(() => initialSchedulesReady)
   const [progress, setProgress] = useState(0)
 
+  // ── Assign Drivers state ───────────────────────────────────────
+  const [bulkAssignOpen, setBulkAssignOpen] = useState(false)
+  const [bulkAssignInstaller, setBulkAssignInstaller] = useState('')
+  const [bulkAssignDriver, setBulkAssignDriver] = useState('')
+  const [bulkAssignVehicle, setBulkAssignVehicle] = useState('')
+  const [bulkAssignTrip, setBulkAssignTrip] = useState<string>('1')
+  void bulkAssignTrip
+  void setBulkAssignTrip
+  const [bulkAssignSaving, setBulkAssignSaving] = useState(false)
+
   useEffect(() => {
     if (loading) {
       setProgress(0)
@@ -5999,40 +6009,7 @@ export default function Tickets() {
     )
   }, [visible])
 
-  const counts = useMemo(() => {
-    let installation = 0
-    let survey = 0
-    let resched = 0
-    let forApproval = 0
-
-    visible.forEach(t => {
-      if (dateFilter && isScheduleGhostOnDate(t, dateFilter)) return
-      const scheduleValue = getScheduleStatusValue(t)
-      if (scheduleValue === 'RESCHED') {
-        resched++
-      } else if (scheduleValue === 'SURVEY' || scheduleValue === 'DONE_SURVEY') {
-        survey++
-      } else if (scheduleValue === 'FOR_APPROVAL') {
-        forApproval++
-      } else if (
-        scheduleValue === 'INSTALLATION'
-        || scheduleValue === 'SERVICES'
-        || scheduleValue === 'CLEANING'
-        || scheduleValue === 'DONE_INSTALLED'
-        || scheduleValue === 'DONE_CLEANING'
-        || scheduleValue === 'DONE_CHECKUP'
-      ) {
-        installation++
-      }
-    })
-
-    return {
-      installation,
-      survey,
-      resched,
-      forApproval,
-    }
-  }, [visible, dateFilter])
+  // counts removed — stats bar removed from UI
 
   const showcaseDateLabel = useMemo(
     () => (dateFilter ? formatDateKeyLabel(dateFilter) : 'All Dates'),
@@ -7690,6 +7667,26 @@ export default function Tickets() {
             )}
           </div>
 
+          {/* Assign Drivers button */}
+          {activeTab === 'schedules' && canEdit && !isMyTickets && (
+            <button
+              type="button"
+              id="bulk-assign-driver-btn"
+              onClick={(e) => { e.stopPropagation(); setBulkAssignOpen(true) }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs md:text-sm font-black tracking-wide shrink-0 transition-all hover:opacity-90 active:scale-95"
+              style={{
+                background: 'linear-gradient(135deg, #2563EB, #1d4ed8)',
+                color: '#ffffff',
+                boxShadow: '0 2px 12px rgba(37,99,235,0.45)',
+                border: '1.5px solid rgba(255,255,255,0.12)',
+              }}
+              title="Assign driver and vehicle to an installer's tickets"
+            >
+              <Car className="w-4 h-4" />
+              Assign Drivers
+            </button>
+          )}
+
           {/* ── Right: Showcase button ─────────────── */}
           {activeTab === 'schedules' && !isMyTickets && (
             <div className="flex items-center gap-1.5 shrink-0 relative justify-end hidden md:flex">
@@ -7740,37 +7737,18 @@ export default function Tickets() {
         document.getElementById('header-toolbar-slot') ?? document.body
       )}
 
-      {/* Stats bar */}
-      {!isMyTickets && activeTab === 'schedules' && (hasHydratedOnce || tickets.length > 0) && (
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 border-b text-xs shrink-0"
+      {/* Sort reset strip — replaces the old stats bar */}
+      {!isMyTickets && activeTab === 'schedules' && sortDiffersFromDefault && (
+        <div className="flex items-center justify-end px-4 py-1.5 border-b shrink-0"
           style={{ backgroundColor: cardBg, borderColor: border }}>
-          <span style={{ color: textMuted }} className="text-[10px] font-bold uppercase tracking-wide">Active</span>
-          <div className="flex items-center gap-1">
-            <span style={{ color: textMuted }}>Installation</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(59,130,246,0.15)', color: '#3B82F6' }}>{counts.installation}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <span style={{ color: textMuted }}>Survey</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(139,92,246,0.15)', color: '#8B5CF6' }}>{counts.survey}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <span style={{ color: textMuted }}>Resched</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(251,191,36,0.15)', color: '#d97706' }}>{counts.resched}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <span style={{ color: textMuted }}>For Approval</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10B981' }}>{counts.forApproval}</span>
-          </div>
-          {sortDiffersFromDefault && (
-            <button
-              type="button"
-              onClick={() => setSortConfig(defaultSortForSchedulesView(isMyTickets))}
-              className="ml-auto text-[10px] font-bold uppercase tracking-wide hover:underline"
-              style={{ color: green }}
-            >
-              Reset sort
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setSortConfig(defaultSortForSchedulesView(isMyTickets))}
+            className="text-[10px] font-bold uppercase tracking-wide hover:underline"
+            style={{ color: green }}
+          >
+            Reset sort
+          </button>
         </div>
       )}
 
@@ -10493,6 +10471,203 @@ export default function Tickets() {
           document.body
         )
       })()}
+
+      {/* ── Assign Drivers Modal ──────────────────────────────────────── */}
+      {bulkAssignOpen && ReactDOM.createPortal(
+        <div
+          className="fixed inset-0 z-[9990] flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}
+          onClick={() => setBulkAssignOpen(false)}
+        >
+          <div
+            className="rounded-2xl shadow-2xl w-full max-w-sm border overflow-hidden"
+            style={{ backgroundColor: cardBg, borderColor: 'rgba(37,99,235,0.35)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div
+              className="flex items-center justify-between px-5 py-4 border-b"
+              style={{
+                borderColor: 'rgba(37,99,235,0.2)',
+                background: isLight
+                  ? 'linear-gradient(135deg, #eff6ff, #dbeafe)'
+                  : 'linear-gradient(135deg, rgba(37,99,235,0.18), rgba(29,78,216,0.12))',
+              }}
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="flex items-center justify-center w-8 h-8 rounded-xl" style={{ background: 'linear-gradient(135deg, #2563EB, #1d4ed8)', boxShadow: '0 2px 8px rgba(37,99,235,0.4)' }}>
+                  <Car className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <div className="text-sm font-black tracking-wide" style={{ color: textPrimary }}>Assign Drivers</div>
+                  <div className="text-[10px] font-semibold" style={{ color: textMuted }}>Bulk update driver &amp; vehicle for an installer</div>
+                </div>
+              </div>
+              <button type="button" onClick={() => setBulkAssignOpen(false)} style={{ color: textMuted }}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <form
+              id="bulk-assign-form"
+              className="px-5 py-4 flex flex-col gap-3"
+              onSubmit={async e => {
+                e.preventDefault()
+                if (!bulkAssignInstaller.trim()) { alert('Select an installer.'); return }
+                if (!bulkAssignDriver.trim() && !bulkAssignVehicle.trim()) {
+                  alert('Provide at least a driver or vehicle.'); return
+                }
+                setBulkAssignSaving(true)
+                try {
+                  const tokenStr = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+                  const res = await fetch(`${API_BASE_URL}/tickets/bulk-assign-driver`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenStr}` },
+                    body: JSON.stringify({
+                      installerName: bulkAssignInstaller.trim(),
+                      driverName: bulkAssignDriver.trim() || undefined,
+                      serviceVehicle: bulkAssignVehicle.trim() || undefined,
+                      scheduleDate: dateFilter || todayDateKey(),
+                      branchId: activeBranchId || undefined,
+                    }),
+                  })
+                  if (!res.ok) throw new Error(await readApiError(res))
+                  const data = await res.json()
+                  const count: number = data?.data?.updatedCount ?? 0
+                  
+                  // Optimistically update local tickets state
+                  setTickets(prev => prev.map(t => {
+                    const rawInstaller = (t.installerName || '').trim().toLowerCase()
+                    const cleanInstaller = rawInstaller.split(/\s*[-–—]\s*|\s+\d+/)[0].trim()
+                    const targetInstaller = bulkAssignInstaller.trim().toLowerCase()
+                    const tDate = t.preferredDate || t.preferred_date || ''
+                    const targetDate = dateFilter || todayDateKey()
+                    if (cleanInstaller !== targetInstaller) return t
+                    if (tDate && !tDate.startsWith(targetDate)) return t
+                    return {
+                      ...t,
+                      driverName: bulkAssignDriver.trim() || t.driverName,
+                      driver_name: bulkAssignDriver.trim() || t.driver_name,
+                      serviceVehicle: bulkAssignVehicle.trim() || t.serviceVehicle,
+                      service_vehicle: bulkAssignVehicle.trim() || t.service_vehicle,
+                    }
+                  }))
+                  
+                  showToast(`✅ Updated ${count} ticket${count !== 1 ? 's' : ''} for ${bulkAssignInstaller}`)
+                  setBulkAssignOpen(false)
+                  setBulkAssignInstaller('')
+                  setBulkAssignDriver('')
+                  setBulkAssignVehicle('')
+                } catch (err: unknown) {
+                  alert(`Bulk assign failed: ${formatFetchError(err)}`)
+                } finally {
+                  setBulkAssignSaving(false)
+                }
+              }}
+            >
+              {/* Installer dropdown */}
+              <label className="flex flex-col gap-1">
+                <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: textMuted }}>
+                  Installer *
+                </span>
+                <select
+                  id="bulk-assign-installer"
+                  value={bulkAssignInstaller}
+                  onChange={e => setBulkAssignInstaller(e.target.value)}
+                  className="rounded-lg px-3 py-2 text-xs font-semibold outline-none"
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                  required
+                >
+                  <option value="">— Select installer —</option>
+                  {[...new Set(
+                    visible
+                      .map(t => (t.installerName || '').split(/\s*[-–—]\s*|\s+\d+/)[0].trim())
+                      .filter(Boolean)
+                  )].sort().map(name => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </label>
+
+              {/* Driver input */}
+              <label className="flex flex-col gap-1">
+                <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: textMuted }}>
+                  Driver
+                </span>
+                <input
+                  id="bulk-assign-driver"
+                  type="text"
+                  list="bulk-assign-driver-list"
+                  value={bulkAssignDriver}
+                  onChange={e => setBulkAssignDriver(e.target.value)}
+                  placeholder="e.g. IAN"
+                  className="rounded-lg px-3 py-2 text-xs font-semibold outline-none"
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                />
+                <datalist id="bulk-assign-driver-list">
+                  {driverOnlyNames.map(name => <option key={name} value={name} />)}
+                  {[...new Set(
+                    visible
+                      .map(t => (t.driverName || t.driver_name || '').trim())
+                      .filter(n => n && !driverOnlyNames.includes(n))
+                  )].map(name => <option key={`t-${name}`} value={name} />)}
+                </datalist>
+              </label>
+
+              {/* Vehicle input */}
+              <label className="flex flex-col gap-1">
+                <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: textMuted }}>
+                  Vehicle
+                </span>
+                <input
+                  id="bulk-assign-vehicle"
+                  type="text"
+                  list="bulk-assign-vehicle-list"
+                  value={bulkAssignVehicle}
+                  onChange={e => setBulkAssignVehicle(e.target.value)}
+                  placeholder="e.g. FB19 or T2"
+                  className="rounded-lg px-3 py-2 text-xs font-semibold outline-none"
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                />
+                <datalist id="bulk-assign-vehicle-list">
+                  {[...new Set(
+                    visible
+                      .map(t => (t.serviceVehicle || t.service_vehicle || '').trim())
+                      .filter(Boolean)
+                  )].sort().map(name => <option key={name} value={name} />)}
+                </datalist>
+              </label>
+            </form>
+
+            {/* Footer */}
+            <div className="flex justify-end gap-3 px-5 py-4 border-t" style={{ borderColor: 'rgba(37,99,235,0.2)', backgroundColor: isLight ? '#eff6ff' : 'rgba(37,99,235,0.06)' }}>
+              <button
+                type="button"
+                onClick={() => setBulkAssignOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold border"
+                style={{ borderColor: inputBorder, color: textMuted }}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="bulk-assign-form"
+                disabled={bulkAssignSaving}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black text-white transition-all hover:opacity-90 active:scale-95 shadow-lg disabled:opacity-60"
+                style={{ background: 'linear-gradient(135deg, #2563EB, #1d4ed8)', boxShadow: '0 3px 14px rgba(37,99,235,0.5)' }}
+              >
+                {bulkAssignSaving ? (
+                  <>⏳ Saving&hellip;</>
+                ) : (
+                  <><Car className="w-4 h-4" /> Assign Drivers</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {!isMyTickets && (
         <SchedulesShowcase
