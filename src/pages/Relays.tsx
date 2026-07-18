@@ -595,6 +595,10 @@ const getRelayStatusLabel = (ticket: Ticket) => {
   if (status === 'SURVEY') return 'Survey'
   if (status === 'FOR_APPROVAL') return 'For Approval'
   if (status === 'CONTINUATION') return 'Continuation'
+  if (status === 'SYSTEM_REPROCESS') return 'System Reprocess'
+  if (status === 'DONE_SYSTEM_REPROCESS') return 'Done System Reprocess'
+  if (status === 'DISMANTLE') return 'Dismantle'
+  if (status === 'DONE_DISMANTLE') return 'Done Dismantle'
   if (status === 'IN_PROGRESS') return 'In Progress'
   if (status === 'ON_THE_WAY') return 'On the Way'
   
@@ -3500,7 +3504,9 @@ export default function Relays() {
                                 { value: 'SERVICE', label: 'SERVICE' },
                                 { value: 'RESCHED', label: 'RESCHED' },
                                 { value: 'CONTINUATION', label: 'CONTINUATION' },
-                                { value: 'FOR APPROVAL', label: 'FOR APPROVAL' }
+                                { value: 'FOR APPROVAL', label: 'FOR APPROVAL' },
+                                { value: 'SYSTEM_REPROCESS', label: 'SYSTEM REPROCESS' },
+                                { value: 'DISMANTLE', label: 'DISMANTLE' },
                               ].map(renderStatusButton)}
                             </div>
                           </div>
@@ -3513,7 +3519,9 @@ export default function Relays() {
                                 { value: 'DONE_SURVEY', label: 'DONE SURVEY' },
                                 { value: 'DONE_CHECKUP', label: 'DONE CHECKUP' },
                                 { value: 'DONE_BACKJOB', label: 'DONE BACKJOB' },
-                                { value: 'CANCELLED', label: 'CANCELLED' }
+                                { value: 'DONE_SYSTEM_REPROCESS', label: 'DONE SYSTEM REPROCESS' },
+                                { value: 'DONE_DISMANTLE', label: 'DONE DISMANTLE' },
+                                { value: 'CANCELLED', label: 'CANCELLED' },
                               ].map(renderStatusButton)}
                             </div>
                           </div>

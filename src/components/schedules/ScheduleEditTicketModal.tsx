@@ -117,7 +117,8 @@ export function ScheduleEditTicketModal({
   onSave,
 }: ScheduleEditTicketModalProps) {
   const CLOSING_STATUSES = new Set([
-    'DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP',
+    'DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB',
+    'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE',
     'CANCELLED', 'COMPLETED', 'INSTALLED',
   ])
 

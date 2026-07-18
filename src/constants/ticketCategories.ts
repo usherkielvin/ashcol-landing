@@ -109,6 +109,14 @@ export function resolveScheduleStatusFields(rawValue: string): ResolvedScheduleS
       return { status: 'COMPLETED', ticketCategory: 'SURVEY', scheduleOutcome: 'DONE_SURVEY', schedulePhase: '' }
     case 'DONE_INSTALLED':
       return { status: 'INSTALLED', ticketCategory: 'INSTALLATION', scheduleOutcome: 'DONE_INSTALLED', schedulePhase: '' }
+    case 'DONE_SYSTEM_REPROCESS':
+      return { status: 'DONE_SYSTEM_REPROCESS', ticketCategory: 'SERVICES', scheduleOutcome: 'DONE_SYSTEM_REPROCESS', schedulePhase: '' }
+    case 'DONE_DISMANTLE':
+      return { status: 'DONE_DISMANTLE', ticketCategory: 'SERVICES', scheduleOutcome: 'DONE_DISMANTLE', schedulePhase: '' }
+    case 'SYSTEM_REPROCESS':
+      return { status: 'SYSTEM_REPROCESS', ticketCategory: 'SERVICES', serviceType: 'SYSTEM REPROCESS', scheduleOutcome: '', schedulePhase: 'SYSTEM_REPROCESS' }
+    case 'DISMANTLE':
+      return { status: 'DISMANTLE', ticketCategory: 'SERVICES', serviceType: 'DISMANTLE', scheduleOutcome: '', schedulePhase: 'DISMANTLE' }
     case 'FOR_QUOTATION':
       return { status: 'FOR_APPROVAL', scheduleOutcome: '' }
     case 'CLEANING':

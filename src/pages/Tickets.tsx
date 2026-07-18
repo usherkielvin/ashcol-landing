@@ -156,7 +156,11 @@ type ImportUnmatchedRow = {
 
 
 
-const STATUS_OPTS = ['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR_APPROVAL', 'SURVEY', 'INSTALLED', 'COMPLETED', 'CONTINUATION']
+const STATUS_OPTS = [
+  'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR_APPROVAL', 'SURVEY',
+  'INSTALLED', 'COMPLETED', 'CONTINUATION',
+  'SYSTEM_REPROCESS', 'DONE_SYSTEM_REPROCESS', 'DISMANTLE', 'DONE_DISMANTLE',
+]
 const TABLE_ROW_HEIGHT = 48
 
 /** Schedule install closed — DB uses INSTALLED; legacy rows may still be COMPLETED. */
@@ -165,7 +169,7 @@ function isInstalledWorkflowStatus(status?: string | null): boolean {
   return s === 'INSTALLED' || s === 'COMPLETED'
 }
 
-type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY' | 'DONE_CHECKUP' | 'DONE_BACKJOB'
+type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY' | 'DONE_CHECKUP' | 'DONE_BACKJOB' | 'DONE_SYSTEM_REPROCESS' | 'DONE_DISMANTLE'
 type ScheduleStatusGroup = 'pending' | 'closing'
 
 const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatusGroup }[] = [
@@ -181,6 +185,7 @@ const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatu
   { value: 'CONTINUATION', label: 'CONTINUATION', group: 'pending' },
   { value: 'FOR_APPROVAL', label: 'FOR APPROVAL', group: 'pending' },
   { value: 'SYSTEM_REPROCESS', label: 'SYSTEM REPROCESS', group: 'pending' },
+  { value: 'DISMANTLE', label: 'DISMANTLE', group: 'pending' },
   // Closing
   { value: 'DONE_INSTALLED', label: 'DONE INSTALL', group: 'closing' },
   { value: 'DONE_CLEANING', label: 'DONE CLEANING', group: 'closing' },
@@ -188,12 +193,16 @@ const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatu
   { value: 'DONE_CHECKUP', label: 'DONE CHECKUP', group: 'closing' },
   { value: 'DONE_BACKJOB', label: 'DONE BACKJOB', group: 'closing' },
   { value: 'DONE_SYSTEM_REPROCESS', label: 'DONE SYSTEM REPROCESS', group: 'closing' },
+  { value: 'DONE_DISMANTLE', label: 'DONE DISMANTLE', group: 'closing' },
   { value: 'CANCELLED', label: 'CANCELLED', group: 'closing' },
 ]
 
 const SCHEDULE_PENDING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group === 'pending')
 const SCHEDULE_CLOSING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group === 'closing')
-const CLOSING_SCHEDULE_STATUSES = new Set(['DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB', 'DONE_SYSTEM_REPROCESS'])
+const CLOSING_SCHEDULE_STATUSES = new Set([
+  'DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB',
+  'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE',
+])
 const SCHEDULE_PENDING_STATUS_VALUES = new Set(SCHEDULE_PENDING_OPTS.map(o => o.value))
 const SCHEDULE_CLOSING_STATUS_VALUES = new Set(SCHEDULE_CLOSING_OPTS.map(o => o.value))
 
@@ -220,6 +229,12 @@ function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: 
   }
   if (normalized === 'BACKJOB') {
     return { color: isLight ? '#c2410c' : '#fdba74', backgroundColor: isLight ? '#ffedd5' : 'rgba(234,88,12,0.16)', borderColor: isLight ? '#fdba74' : 'rgba(234,88,12,0.35)' }
+  }
+  if (normalized === 'SYSTEM_REPROCESS' || normalized === 'DONE_SYSTEM_REPROCESS') {
+    return { color: isLight ? '#4338ca' : '#a5b4fc', backgroundColor: isLight ? '#e0e7ff' : 'rgba(99,102,241,0.18)', borderColor: isLight ? '#a5b4fc' : 'rgba(99,102,241,0.35)' }
+  }
+  if (normalized === 'DISMANTLE' || normalized === 'DONE_DISMANTLE') {
+    return { color: isLight ? '#be123c' : '#fb7185', backgroundColor: isLight ? '#ffe4e6' : 'rgba(244,63,94,0.16)', borderColor: isLight ? '#fb7185' : 'rgba(244,63,94,0.35)' }
   }
   if (normalized === 'SURVEY') {
     return { color: isLight ? '#6d28d9' : '#c4b5fd', backgroundColor: isLight ? '#ede9fe' : 'rgba(139,92,246,0.18)', borderColor: isLight ? '#c4b5fd' : 'rgba(139,92,246,0.35)' }
@@ -257,7 +272,15 @@ function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: 
 function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | null {
   const meta = parseAcMeta(ticket as Ticket)
   const explicit = String(meta.scheduleOutcome || '').toUpperCase()
-  if (explicit === 'DONE_CLEANING' || explicit === 'DONE_INSTALLED' || explicit === 'DONE_SURVEY' || explicit === 'DONE_CHECKUP' || explicit === 'DONE_BACKJOB') {
+  if (
+    explicit === 'DONE_CLEANING'
+    || explicit === 'DONE_INSTALLED'
+    || explicit === 'DONE_SURVEY'
+    || explicit === 'DONE_CHECKUP'
+    || explicit === 'DONE_BACKJOB'
+    || explicit === 'DONE_SYSTEM_REPROCESS'
+    || explicit === 'DONE_DISMANTLE'
+  ) {
     return explicit
   }
   const remarks = ticketRemarksText(ticket as Ticket).toLowerCase()
@@ -270,6 +293,8 @@ function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | null {
     if (isInstalledRemarks(remarks)) return 'DONE_INSTALLED'
   }
   if (stat === 'SURVEY' && /done.*survey|survey.*done|surveyed/i.test(remarks)) return 'DONE_SURVEY'
+  if (stat === 'DONE_SYSTEM_REPROCESS') return 'DONE_SYSTEM_REPROCESS'
+  if (stat === 'DONE_DISMANTLE') return 'DONE_DISMANTLE'
   return null
 }
 
@@ -285,6 +310,8 @@ function getScheduleStatusValue(ticket: Ticket): string {
   if (phase === 'SERVICES' || phase === 'SERVICE') return 'SERVICES'
   if (phase === 'CHECKUP') return 'CHECKUP'
   if (phase === 'BACKJOB') return 'BACKJOB'
+  if (phase === 'SYSTEM_REPROCESS') return 'SYSTEM_REPROCESS'
+  if (phase === 'DISMANTLE') return 'DISMANTLE'
 
   let stat = (ticket.status || 'SCHEDULED').toUpperCase().replace(/\s+/g, '_')
   if (stat === 'S/I' || stat === 'S_I' || stat === 'SI') return 'S/I'
@@ -296,6 +323,10 @@ function getScheduleStatusValue(ticket: Ticket): string {
   if (stat === 'SURVEY') return 'SURVEY'
   if (stat === 'FOR_APPROVAL') return 'FOR_APPROVAL'
   if (stat === 'CONTINUATION') return 'CONTINUATION'
+  if (stat === 'SYSTEM_REPROCESS') return 'SYSTEM_REPROCESS'
+  if (stat === 'DONE_SYSTEM_REPROCESS') return 'DONE_SYSTEM_REPROCESS'
+  if (stat === 'DISMANTLE') return 'DISMANTLE'
+  if (stat === 'DONE_DISMANTLE') return 'DONE_DISMANTLE'
   if (stat === 'CANCELLED') return 'CANCELLED'
   if (stat === 'INSTALLED' || stat === 'COMPLETED') return 'DONE_INSTALLED'
 
@@ -437,6 +468,8 @@ function getOverviewStatusBadge(ticket: Ticket): { value: string; label: string 
   const workflowStatuses = new Set([
     'SCHEDULED', 'ASSIGNED', 'RESCHED', 'PENDING', 'IN_PROGRESS', 'ON_THE_WAY',
     'FOR_APPROVAL', 'FOR_QUOTATION', 'CANCELLED', 'COMPLETED', 'INSTALLED',
+    'CONTINUATION', 'SURVEY',
+    'SYSTEM_REPROCESS', 'DONE_SYSTEM_REPROCESS', 'DISMANTLE', 'DONE_DISMANTLE',
   ])
   if (workflowStatuses.has(workflow)) {
     const norm = workflow === 'FOR_QUOTATION' ? 'FOR_APPROVAL' : workflow
@@ -512,6 +545,28 @@ function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record
     acUpdates.schedulePhase = ''
   } else if (val === 'DONE_SURVEY') {
     setClosing('DONE_SURVEY')
+  } else if (val === 'DONE_SYSTEM_REPROCESS') {
+    body.status = 'DONE_SYSTEM_REPROCESS'
+    body.scheduleOutcome = 'DONE_SYSTEM_REPROCESS'
+    acUpdates.scheduleOutcome = 'DONE_SYSTEM_REPROCESS'
+    acUpdates.schedulePhase = ''
+  } else if (val === 'DONE_DISMANTLE') {
+    body.status = 'DONE_DISMANTLE'
+    body.scheduleOutcome = 'DONE_DISMANTLE'
+    acUpdates.scheduleOutcome = 'DONE_DISMANTLE'
+    acUpdates.schedulePhase = ''
+  } else if (val === 'SYSTEM_REPROCESS') {
+    body.status = 'SYSTEM_REPROCESS'
+    body.ticketCategory = 'SERVICES'
+    body.serviceType = 'SYSTEM REPROCESS'
+    acUpdates.scheduleOutcome = ''
+    acUpdates.schedulePhase = 'SYSTEM_REPROCESS'
+  } else if (val === 'DISMANTLE') {
+    body.status = 'DISMANTLE'
+    body.ticketCategory = 'SERVICES'
+    body.serviceType = 'DISMANTLE'
+    acUpdates.scheduleOutcome = ''
+    acUpdates.schedulePhase = 'DISMANTLE'
   } else if (val === 'FOR_QUOTATION') {
     body.status = 'FOR_APPROVAL'
     acUpdates.scheduleOutcome = ''
@@ -856,12 +911,24 @@ function getScheduleRowColors(
         accent: '#fbbf24',
       }
     }
-    if (outcome === 'DONE_BACKJOB') {
-      return {
-        baseBg: isLight ? '#dbeafe' : 'rgba(59,130,246,0.22)',
-        accent: '#3B82F6',
-      }
+  if (outcome === 'DONE_BACKJOB') {
+    return {
+      baseBg: isLight ? '#dbeafe' : 'rgba(59,130,246,0.22)',
+      accent: '#3B82F6',
     }
+  }
+  if (outcome === 'DONE_SYSTEM_REPROCESS') {
+    return {
+      baseBg: isLight ? '#e0e7ff' : 'rgba(99,102,241,0.2)',
+      accent: '#6366F1',
+    }
+  }
+  if (outcome === 'DONE_DISMANTLE') {
+    return {
+      baseBg: isLight ? '#ffe4e6' : 'rgba(244,63,94,0.2)',
+      accent: '#F43F5E',
+    }
+  }
     return {
       baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.2)',
       accent: '#16A34A',
@@ -910,6 +977,20 @@ function getScheduleRowColors(
     }
   }
 
+  if (outcome === 'DONE_SYSTEM_REPROCESS') {
+    return {
+      baseBg: isLight ? '#eef2ff' : 'rgba(99,102,241,0.14)',
+      accent: '#6366F1',
+    }
+  }
+
+  if (outcome === 'DONE_DISMANTLE') {
+    return {
+      baseBg: isLight ? '#fff1f2' : 'rgba(244,63,94,0.14)',
+      accent: '#F43F5E',
+    }
+  }
+
   const statusVal = getScheduleStatusValue(ticket)
   if (statusVal === 'RESCHED') {
     return {
@@ -927,6 +1008,18 @@ function getScheduleRowColors(
     return {
       baseBg: isLight ? '#f0f9ff' : 'rgba(14,165,233,0.1)',
       accent: '#0EA5E9',
+    }
+  }
+  if (statusVal === 'SYSTEM_REPROCESS') {
+    return {
+      baseBg: isLight ? '#eef2ff' : 'rgba(99,102,241,0.1)',
+      accent: '#6366F1',
+    }
+  }
+  if (statusVal === 'DISMANTLE') {
+    return {
+      baseBg: isLight ? '#fff1f2' : 'rgba(244,63,94,0.1)',
+      accent: '#F43F5E',
     }
   }
   if (statusVal === 'INSTALLATION' || statusVal === 'SERVICES') {
@@ -955,7 +1048,14 @@ function shouldArchiveCompletedSchedule(ticket: Ticket, body: Record<string, unk
     ...body,
     acDetails: typeof body.acDetails === 'string' ? body.acDetails : ticket.acDetails,
   } as Ticket)
-  if (outcome === 'DONE_CLEANING' || outcome === 'DONE_SURVEY' || outcome === 'DONE_CHECKUP' || outcome === 'DONE_BACKJOB') return false
+  if (
+    outcome === 'DONE_CLEANING'
+    || outcome === 'DONE_SURVEY'
+    || outcome === 'DONE_CHECKUP'
+    || outcome === 'DONE_BACKJOB'
+    || outcome === 'DONE_SYSTEM_REPROCESS'
+    || outcome === 'DONE_DISMANTLE'
+  ) return false
   if (outcome === 'DONE_INSTALLED') return true
   return qualifiesForInstallComplete(ticket, body as Partial<Ticket>)
 }
@@ -1094,11 +1194,17 @@ function getRelayQueueLabel(ticket: Ticket): string {
   if (outcome === 'DONE_BACKJOB') return 'DONE BACKJOB'
   if (outcome === 'DONE_CLEANING') return 'DONE CLEANING'
   if (outcome === 'DONE_SURVEY') return 'DONE SURVEY'
+  if (outcome === 'DONE_SYSTEM_REPROCESS') return 'DONE SYSTEM REPROCESS'
+  if (outcome === 'DONE_DISMANTLE') return 'DONE DISMANTLE'
   if (outcome === 'DONE_INSTALLED') return 'DONE INSTALL'
+  if (status === 'SYSTEM_REPROCESS') return 'SYSTEM REPROCESS'
+  if (status === 'DISMANTLE') return 'DISMANTLE'
+  if (status === 'DONE_SYSTEM_REPROCESS') return 'DONE SYSTEM REPROCESS'
+  if (status === 'DONE_DISMANTLE') return 'DONE DISMANTLE'
   if (isInstalledWorkflowStatus(status)) return 'INSTALLED'
 
   if (hasFinalScheduleDate(ticket)) return 'Scheduled'
-  if (['SCHEDULED', 'RESCHED', 'IN_PROGRESS', 'ON_THE_WAY', 'FOR_APPROVAL', 'SURVEY'].includes(status)) {
+  if (['SCHEDULED', 'RESCHED', 'IN_PROGRESS', 'ON_THE_WAY', 'FOR_APPROVAL', 'SURVEY', 'CONTINUATION', 'SYSTEM_REPROCESS', 'DISMANTLE'].includes(status)) {
     return 'Scheduled'
   }
 
@@ -1771,7 +1877,13 @@ function importBrandsMatch(rowBrand: string, ticket: Ticket): boolean {
 /** Match import row to ticket Ã¢â‚¬â€ same customer + phone may have multiple units (different brand). */
 function importRowMatchesTicket(row: ImportUnmatchedRow, ticket: Ticket): boolean {
   const status = (ticket.status || '').toUpperCase()
-  if (status === 'COMPLETED' || status === 'CANCELLED' || status === 'INSTALLED') return false
+  if (
+    status === 'COMPLETED'
+    || status === 'CANCELLED'
+    || status === 'INSTALLED'
+    || status === 'DONE_SYSTEM_REPROCESS'
+    || status === 'DONE_DISMANTLE'
+  ) return false
 
   const rowCtrl = (row.controlNo || '').trim().toLowerCase()
   const tCtrl = (ticket.controlNumber || ticket.control_number || '').trim().toLowerCase()
@@ -2171,7 +2283,8 @@ function isDriverPlaceholderToken(raw: string): boolean {
     'INSTALLATION', 'INSTALL', 'INSTALLED', 'SERVICE', 'SERVICES', 'SURVEY', 'CLEANING',
     'RESCHED', 'FOR_APPROVAL', 'FOR_QUOTATION', 'SCHEDULED', 'PENDING', 'ASSIGNED',
     'IN_PROGRESS', 'ON_THE_WAY', 'COMPLETED', 'CANCELLED',
-    'DONE_INSTALLED', 'DONE_SURVEY', 'DONE_CLEANING', 'DONE_CHECKUP',
+    'DONE_INSTALLED', 'DONE_SURVEY', 'DONE_CLEANING', 'DONE_CHECKUP', 'DONE_BACKJOB',
+    'SYSTEM_REPROCESS', 'DONE_SYSTEM_REPROCESS', 'DISMANTLE', 'DONE_DISMANTLE',
     'FREE_INSTALLATION', 'ADMIN_TASK', 'CLAIMS', 'HR_TASKS', 'PARTS_SALES',
     'PAYROLL_TASKS', 'QUOTATION', 'REQUEST_FOR_FUND', 'WTY_REGISTRATION',
     'SURVEY_&_INSTALL', 'SURVEY_AND_INSTALL',
@@ -2475,6 +2588,12 @@ function statusColor(s: string, light: boolean) {
     case 'IN_PROGRESS': return { text: '#10B981', bg: light ? '#f0fdf4' : 'rgba(16,185,129,0.13)', b: 'rgba(16,185,129,0.4)' }
     case 'CANCELLED': return { text: '#EF4444', bg: light ? '#fef2f2' : 'rgba(239,68,68,0.10)', b: 'rgba(239,68,68,0.35)' }
     case 'CONTINUATION': return { text: '#7C3AED', bg: light ? '#F3E8FF' : 'rgba(124,58,237,0.18)', b: 'rgba(124,58,237,0.35)' }
+    case 'SYSTEM_REPROCESS':
+    case 'DONE_SYSTEM_REPROCESS':
+      return { text: '#6366F1', bg: light ? '#eef2ff' : 'rgba(99,102,241,0.15)', b: 'rgba(99,102,241,0.4)' }
+    case 'DISMANTLE':
+    case 'DONE_DISMANTLE':
+      return { text: '#F43F5E', bg: light ? '#fff1f2' : 'rgba(244,63,94,0.15)', b: 'rgba(244,63,94,0.4)' }
     default: return { text: '#94A3B8', bg: 'transparent', b: 'rgba(148,163,184,0.3)' }
   }
 }
@@ -4541,8 +4660,9 @@ export default function Tickets() {
     if (!form.location?.trim()) return 'Destination/Address is required'
 
     const targetStatus = (form.status || '').toUpperCase().replace(/\s+/g, '_')
-    const isClosing = ['DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB', 'COMPLETED', 'INSTALLED'].includes(targetStatus)
-    if (isClosing) {
+    const isClosing = CLOSING_SCHEDULE_STATUSES.has(targetStatus)
+      || ['COMPLETED', 'INSTALLED', 'CANCELLED'].includes(targetStatus)
+    if (isClosing && targetStatus !== 'CANCELLED') {
       const missing = getEmptyRequiredColumnsForClose(form)
       if (missing.length > 0) {
         return `Cannot close ticket because the following columns are empty:\n\u2022 ${missing.join('\n\u2022 ')}`
@@ -6092,7 +6212,10 @@ export default function Tickets() {
         || Boolean(getPreferredDateKey(t))
         || Boolean(String(parseAcMeta(t).scheduledDate || '').trim())
         || getContinuationDates(t).length > 0
-      const isScheduledOrActive = ['SCHEDULED', 'RESCHED', 'IN_PROGRESS', 'ON_THE_WAY', 'FOR_APPROVAL', 'SURVEY', 'CONTINUATION'].includes(stat)
+      const isScheduledOrActive = [
+        'SCHEDULED', 'RESCHED', 'IN_PROGRESS', 'ON_THE_WAY', 'FOR_APPROVAL', 'SURVEY', 'CONTINUATION',
+        'SYSTEM_REPROCESS', 'DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE',
+      ].includes(stat)
       if (!hasScheduleDate && !isScheduledOrActive) return false
 
       const scheduleValue = getScheduleStatusValue(t)
@@ -6101,10 +6224,12 @@ export default function Tickets() {
       const isForApproval = stat === 'FOR APPROVAL' || stat === 'FOR_APPROVAL' || stat === 'FOR QUOTATION' || stat === 'FOR_QUOTATION' || stat.includes('QUOTATION') || scheduleValue === 'FOR_APPROVAL'
       const isSurvey = scheduleValue === 'SURVEY' || scheduleValue === 'DONE_SURVEY'
       const isCleaning = scheduleValue === 'CLEANING' || scheduleValue === 'DONE_CLEANING'
+      const isSystemReprocess = scheduleValue === 'SYSTEM_REPROCESS' || scheduleValue === 'DONE_SYSTEM_REPROCESS'
+      const isDismantle = scheduleValue === 'DISMANTLE' || scheduleValue === 'DONE_DISMANTLE'
       const isInstallation = scheduleValue === 'INSTALLATION' || scheduleValue === 'SERVICES' || scheduleValue === 'DONE_INSTALLED' || scheduleValue === 'DONE_CHECKUP' || scheduleValue === 'DONE_BACKJOB'
       const isActiveSchedule = ['SCHEDULED', 'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'ON_THE_WAY'].includes(stat) || hasScheduleDate
 
-      return isInstallation || isCleaning || isResched || isContinuation || isForApproval || isSurvey || isActiveSchedule
+      return isInstallation || isCleaning || isSystemReprocess || isDismantle || isResched || isContinuation || isForApproval || isSurvey || isActiveSchedule
     })
     if (!isMyTickets) {
       if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
@@ -7597,6 +7722,20 @@ export default function Tickets() {
             return (
               <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#c2410c' : '#fdba74' }} title="Done Backjob">
                 DONE BACKJOB
+              </span>
+            )
+          }
+          if (outcome === 'DONE_SYSTEM_REPROCESS') {
+            return (
+              <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#4338ca' : '#a5b4fc' }} title="Done System Reprocess">
+                DONE SYSTEM REPROCESS
+              </span>
+            )
+          }
+          if (outcome === 'DONE_DISMANTLE') {
+            return (
+              <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#be123c' : '#fb7185' }} title="Done Dismantle">
+                DONE DISMANTLE
               </span>
             )
           }
@@ -9162,7 +9301,11 @@ export default function Tickets() {
         const archivedSched = formatDateKeyLabel(getArchivedScheduleDate(t))
         const installedDate = formatDateKeyLabel(getInstalledDateKey(t))
         const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(custName))
-        const updateColor = scheduleStatusValue === 'DONE_CLEANING' || scheduleStatusValue === 'DONE_CHECKUP' || scheduleStatusValue === 'DONE_BACKJOB'
+        const updateColor = scheduleStatusValue === 'DONE_CLEANING'
+          || scheduleStatusValue === 'DONE_CHECKUP'
+          || scheduleStatusValue === 'DONE_BACKJOB'
+          || scheduleStatusValue === 'DONE_SYSTEM_REPROCESS'
+          || scheduleStatusValue === 'DONE_DISMANTLE'
           ? (isLight ? '#1d4ed8' : '#93c5fd')
           : green
         const branchName = formatAssignedBranchLabel(t.branchId || t.branch_id)
@@ -9503,7 +9646,9 @@ export default function Tickets() {
             setEditForm(prev => ({ ...prev, status: value }))
             return
           }
-          const isClosing = ['DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB', 'COMPLETED', 'INSTALLED'].includes(value.toUpperCase())
+          const picked = value.toUpperCase().replace(/\s+/g, '_')
+          const isClosing = CLOSING_SCHEDULE_STATUSES.has(picked)
+            || ['COMPLETED', 'INSTALLED'].includes(picked)
           if (isClosing) {
             const missing = getEmptyRequiredColumnsForClose(pickerTicket)
             if (missing.length > 0) {
@@ -9581,7 +9726,9 @@ export default function Tickets() {
               <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-2">
                 {([
                   { title: 'PENDING', opts: SCHEDULE_PENDING_OPTS },
-                  ...(activeTab === 'schedules' ? [{ title: 'CLOSING', opts: SCHEDULE_CLOSING_OPTS }] : []),
+                  ...((activeTab === 'schedules' || pickerMode === 'edit-form')
+                    ? [{ title: 'CLOSING', opts: SCHEDULE_CLOSING_OPTS }]
+                    : []),
                 ] as const).map((section, sectionIdx) => (
                   <div
                     key={section.title}

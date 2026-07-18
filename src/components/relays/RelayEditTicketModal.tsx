@@ -308,7 +308,9 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                           { value: 'SERVICE', label: 'SERVICE' },
                           { value: 'RESCHED', label: 'RESCHED' },
                           { value: 'CONTINUATION', label: 'CONTINUATION' },
-                          { value: 'FOR APPROVAL', label: 'FOR APPROVAL' }
+                          { value: 'FOR APPROVAL', label: 'FOR APPROVAL' },
+                          { value: 'SYSTEM_REPROCESS', label: 'SYSTEM REPROCESS' },
+                          { value: 'DISMANTLE', label: 'DISMANTLE' },
                         ].map(renderStatusButton)}
                       </div>
                     </div>
@@ -321,7 +323,9 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                           { value: 'DONE_SURVEY', label: 'DONE SURVEY' },
                           { value: 'DONE_CHECKUP', label: 'DONE CHECKUP' },
                           { value: 'DONE_BACKJOB', label: 'DONE BACKJOB' },
-                          { value: 'CANCELLED', label: 'CANCELLED' }
+                          { value: 'DONE_SYSTEM_REPROCESS', label: 'DONE SYSTEM REPROCESS' },
+                          { value: 'DONE_DISMANTLE', label: 'DONE DISMANTLE' },
+                          { value: 'CANCELLED', label: 'CANCELLED' },
                         ].map(renderStatusButton)}
                       </div>
                     </div>
