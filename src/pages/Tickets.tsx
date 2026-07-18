@@ -6835,6 +6835,7 @@ export default function Tickets() {
             Authorization: `Bearer ${tokenStr}`,
           }
 
+          // Prod Hikari pool is tiny (often 3). Never fire more than 2 concurrent PATCHes.
           const clearOne = async (t: Ticket) => {
             const body = {
               driverName: '',
@@ -6855,7 +6856,7 @@ export default function Tickets() {
           }
 
           const clearBatched = async () => {
-            const concurrency = 10
+            const concurrency = 2
             let nextIdx = 0
             let failures = 0
             const workers = Array.from(
@@ -6876,8 +6877,7 @@ export default function Tickets() {
           }
 
           try {
-            // Prefer one-shot bulk endpoint when the API has it (local / newly deployed).
-            // Production may still return 405 until that endpoint is deployed — fall back to PATCH.
+            // Prefer one-shot bulk UPDATE (1 connection). Falls back to throttled PATCH on old APIs.
             let usedBulk = false
             try {
               const res = await fetch(`${API_BASE_URL}/tickets/bulk-clear-driver-vehicle`, {
@@ -6886,6 +6886,7 @@ export default function Tickets() {
                 body: JSON.stringify({
                   scheduleDate: dateKey,
                   branchId: activeBranchId && activeBranchId !== 'ALL_BRANCHES' ? activeBranchId : undefined,
+                  ticketIds: targets.map(t => t.id),
                 }),
               })
               if (res.ok) {
@@ -6894,7 +6895,6 @@ export default function Tickets() {
                 const count: number = data?.data?.updatedCount ?? targets.length
                 showToast(`Cleared drivers & vehicles on ${count} ticket${count !== 1 ? 's' : ''}`)
               } else if (res.status !== 404 && res.status !== 405) {
-                // Unexpected error from bulk — still try batched PATCH before giving up
                 console.warn('[Schedules] bulk-clear failed, falling back to PATCH', res.status)
               }
             } catch {
