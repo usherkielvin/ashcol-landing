@@ -6370,8 +6370,13 @@ export default function Tickets() {
   const showcaseRows = useMemo<ScheduleShowcaseRow[]>(() => {
     if (isMyTickets) return []
     // Mirror exactly what the schedules grid shows (all visible rows, including ghosts).
+    // INSTALLER / DRIVER (SERVICE column): name only — never trip "- N" suffixes.
+    // VEHICLE (exported as service): use the same auto trip labels as the table.
     return visible.map((ticket, index) => {
       const live = optimisticTicketsRef.current.get(ticket.id) || ticket
+      const installerRaw = getInstallerDisplay(live, branchEmployees, activeBranchId)
+      const driverRaw = getTicketDriverDisplay(live) || getTicketDriverName(live) || formatServiceDriver(live) || ''
+      const vehicleTrip = vehicleTripLabels.get(live.id || '') || getTicketVehicleDisplay(live) || ''
       return {
         id: String(live.id ?? index),
         index: index + 1,
@@ -6384,14 +6389,14 @@ export default function Tickets() {
         dealer: getF(live, 'dealer', 'sourceVendor', 'source_vendor') || '',
         status: getScheduleStatusLabel(getScheduleStatusValue(live)),
         commit: getF(live, 'commitType', 'commitTerms', 'description'),
-        installer: getInstallerDisplay(live, branchEmployees, activeBranchId),
+        installer: parseNameSiteToken(installerRaw).label || installerRaw,
         update: getScheduleUpdateDisplay(live),
         payment: getSchedulePaymentDisplay(live, dateFilter, dateFilter ? getScheduleGhostKind(live, dateFilter) : null),
-        driver: getTicketDriverName(live) || formatServiceDriver(live) || '',
-        service: getTicketVehicleDisplay(live) || '',
+        driver: parseNameSiteToken(driverRaw).label || driverRaw,
+        service: vehicleTrip,
       }
     })
-  }, [visible, isMyTickets, branchEmployees, activeBranchId, tickets, dateFilter])
+  }, [visible, isMyTickets, branchEmployees, activeBranchId, tickets, dateFilter, vehicleTripLabels])
 
   const showcasePaymentByRowId = useMemo(() => {
     const map: Record<string, string> = {}
@@ -7859,7 +7864,8 @@ export default function Tickets() {
       // Driver name only — val is already getTicketDriverDisplay's clean driverName-only read
       // (no vehicle text ever leaks in here, no re-parsing needed). Strip any legacy "- N"
       // suffix some older tickets still carry — trip numbering now lives on VEHICLE only.
-      const driverName = parseNameSiteToken(val).name || val
+      // Use .label (not .name) so "MANNY / ROMAR - 2" keeps both names.
+      const driverName = parseNameSiteToken(val).label || val
       if (!driverName && canEdit && !isMyTickets && !rowGhost) {
         return (
           <button
@@ -7894,8 +7900,8 @@ export default function Tickets() {
     }
 
     if (label === 'VEHICLE' && !isMyTickets) {
-      // val is already getTicketVehicleDisplay's clean serviceVehicle-only read.
-      const vehicleCode = val
+      // Prefer auto trip label ("STRADA - 2") so the red number always matches table ordering.
+      const vehicleCode = vehicleTripLabels.get(ticket.id || '') || getTicketVehicleDisplay(ticket) || val
       if (!vehicleCode && canEdit && !rowGhost) {
         return (
           <button
@@ -8159,7 +8165,8 @@ export default function Tickets() {
         )
       }
 
-      const displayInstaller = curToken.name || rawInstaller
+      // Use .label (strips "- N" trip suffix) not .name — .name also chops "MANNY / ROMAR" to "MANNY".
+      const displayInstaller = curToken.label || rawInstaller
       return withEditPencil(
         <span
           style={{
@@ -8831,6 +8838,8 @@ export default function Tickets() {
                     });
 
                     const totalEstimated = totalCash + totalGcash + totalBankTransfer + totalOther;
+                    // Hide the green TOTAL COLLECTION footer when nothing has been paid yet.
+                    if (totalEstimated <= 0) return null;
 
                     return (
                       <tfoot style={{ position: 'relative' }}>

@@ -16,9 +16,9 @@ export type ScheduleShowcaseRow = {
   installer: string
   update: string
   payment: string
-  /** Driver / vehicle for driver list sheet */
+  /** Driver name for driver list sheet (no trip number) */
   driver: string
-  /** Service type (S/I, Survey, etc.) for driver list sheet */
+  /** Vehicle + auto trip label (e.g. "STRADA - 2") — same as Schedules VEHICLE column */
   service: string
 }
 
@@ -177,7 +177,7 @@ function buildDriverHeaders() {
     'DISTRICT',
     'STATUS',
     'DRIVER',
-    'SERVICE',
+    'VEHICLE',
   ]
 }
 
