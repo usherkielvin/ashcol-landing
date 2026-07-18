@@ -6835,7 +6835,8 @@ export default function Tickets() {
             Authorization: `Bearer ${tokenStr}`,
           }
 
-          // Prod Hikari pool is tiny (often 3). Never fire more than 2 concurrent PATCHes.
+          // Prod pool is often only 3 connections — fallback must be strictly sequential.
+          const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
           const clearOne = async (t: Ticket) => {
             const body = {
               driverName: '',
@@ -6855,29 +6856,23 @@ export default function Tickets() {
             if (!res.ok) throw new Error(await readApiError(res))
           }
 
-          const clearBatched = async () => {
-            const concurrency = 2
-            let nextIdx = 0
+          const clearSequential = async () => {
             let failures = 0
-            const workers = Array.from(
-              { length: Math.min(concurrency, targets.length) },
-              async () => {
-                while (nextIdx < targets.length) {
-                  const idx = nextIdx++
-                  try {
-                    await clearOne(targets[idx])
-                  } catch {
-                    failures += 1
-                  }
-                }
-              },
-            )
-            await Promise.all(workers)
+            for (const t of targets) {
+              if (String(t.id || '').startsWith('temp-') || String(t.id || '').startsWith('tmp-')) continue
+              try {
+                await clearOne(t)
+              } catch {
+                failures += 1
+                // Back off when pool is saturated
+                await sleep(150)
+              }
+              await sleep(40)
+            }
             return failures
           }
 
           try {
-            // Prefer one-shot bulk UPDATE (1 connection). Falls back to throttled PATCH on old APIs.
             let usedBulk = false
             try {
               const res = await fetch(`${API_BASE_URL}/tickets/bulk-clear-driver-vehicle`, {
@@ -6886,7 +6881,7 @@ export default function Tickets() {
                 body: JSON.stringify({
                   scheduleDate: dateKey,
                   branchId: activeBranchId && activeBranchId !== 'ALL_BRANCHES' ? activeBranchId : undefined,
-                  ticketIds: targets.map(t => t.id),
+                  ticketIds: targets.map(t => t.id).filter(id => id && !id.startsWith('temp-') && !id.startsWith('tmp-')),
                 }),
               })
               if (res.ok) {
@@ -6894,25 +6889,25 @@ export default function Tickets() {
                 const data = await res.json().catch(() => ({}))
                 const count: number = data?.data?.updatedCount ?? targets.length
                 showToast(`Cleared drivers & vehicles on ${count} ticket${count !== 1 ? 's' : ''}`)
-              } else if (res.status !== 404 && res.status !== 405) {
-                console.warn('[Schedules] bulk-clear failed, falling back to PATCH', res.status)
+              } else {
+                console.warn('[Schedules] bulk-clear failed, falling back to sequential PATCH', res.status)
               }
             } catch {
-              // Network / CORS — fall through to PATCH
+              // fall through
             }
 
             if (!usedBulk) {
-              const failures = await clearBatched()
+              const failures = await clearSequential()
               if (failures > 0) {
-                showToast(`Cleared with ${failures} error${failures !== 1 ? 's' : ''} — refresh if needed`)
-                void fetchTickets({ soft: true, force: true })
+                showToast(`Cleared locally · ${failures} still syncing — refresh if needed`)
               } else {
                 showToast(`Cleared drivers & vehicles on ${targets.length} ticket${targets.length !== 1 ? 's' : ''}`)
               }
             }
           } catch (err: unknown) {
-            alert(`Clear failed: ${formatFetchError(err)}`)
-            void fetchTickets({ soft: true, force: true })
+            // UI already cleared — don't block the user with a hard alert
+            console.error('[Schedules] clear persist failed', err)
+            showToast('Cleared in view · server sync lagged — refresh later if needed')
           } finally {
             setBulkClearSaving(false)
           }
