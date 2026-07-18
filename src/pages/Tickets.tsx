@@ -4422,12 +4422,13 @@ export default function Tickets() {
       list = list.filter(t =>
         [t.customerName, t.customer_name, t.contactPhone, t.assignedEmployeeName,
         t.assigned_employee_name, t.serviceType, t.service_type, t.description,
-        t.remarks, t.note, t.id, t.ticketNumber, t.ticket_number].some(v => v?.toLowerCase().includes(q))
+        t.remarks, t.note, t.id, t.ticketNumber, t.ticket_number,
+        resolveNegotiatorDisplayName(t, branchEmployees)].some(v => v?.toLowerCase().includes(q))
         || formatAddress(t.location).toLowerCase().includes(q)
       )
     }
     return list
-  }, [tickets, isAdmin, isMyTickets, globalBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, installerLineupIndex, driverOnlyNames])
+  }, [tickets, isAdmin, isMyTickets, globalBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, installerLineupIndex, driverOnlyNames, branchEmployees])
 
   const visible = useMemo(() => {
     let list = filtered
