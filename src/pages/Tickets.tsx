@@ -6797,7 +6797,7 @@ export default function Tickets() {
           optimisticTicketsRef.current.delete(id)
         }
 
-        // Instant UI clear — one bulk API call instead of N individual PATCHes
+        // Instant UI clear
         setTickets(prev => {
           const next = prev.map(t => {
             if (!targetIds.has(t.id)) return t
@@ -6821,28 +6821,97 @@ export default function Tickets() {
           return next
         })
 
+        // Close modal immediately — persist in background
+        setBulkAssignOpen(false)
+        setBulkAssignInstaller('')
+        setBulkAssignDriver('')
+        setBulkAssignVehicle('')
+        showToast(`Clearing ${targets.length} ticket${targets.length !== 1 ? 's' : ''}…`)
+
         void (async () => {
-          try {
-            const tokenStr = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-            const res = await fetch(`${API_BASE_URL}/tickets/bulk-clear-driver-vehicle`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenStr}` },
-              body: JSON.stringify({
-                scheduleDate: dateKey,
-                branchId: activeBranchId && activeBranchId !== 'ALL_BRANCHES' ? activeBranchId : undefined,
+          const tokenStr = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+          const headers = {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${tokenStr}`,
+          }
+
+          const clearOne = async (t: Ticket) => {
+            const body = {
+              driverName: '',
+              serviceVehicle: '',
+              acDetails: mergeAcMeta(t, {
+                driverName: '',
+                driver_name: '',
+                serviceVehicle: '',
+                service_vehicle: '',
               }),
+            }
+            const res = await fetch(`${API_BASE_URL}/tickets/${t.id}`, {
+              method: 'PATCH',
+              headers,
+              body: JSON.stringify(body),
             })
             if (!res.ok) throw new Error(await readApiError(res))
-            const data = await res.json().catch(() => ({}))
-            const count: number = data?.data?.updatedCount ?? targets.length
-            showToast(`Cleared drivers & vehicles on ${count} ticket${count !== 1 ? 's' : ''}`)
-            setBulkAssignOpen(false)
-            setBulkAssignInstaller('')
-            setBulkAssignDriver('')
-            setBulkAssignVehicle('')
+          }
+
+          const clearBatched = async () => {
+            const concurrency = 10
+            let nextIdx = 0
+            let failures = 0
+            const workers = Array.from(
+              { length: Math.min(concurrency, targets.length) },
+              async () => {
+                while (nextIdx < targets.length) {
+                  const idx = nextIdx++
+                  try {
+                    await clearOne(targets[idx])
+                  } catch {
+                    failures += 1
+                  }
+                }
+              },
+            )
+            await Promise.all(workers)
+            return failures
+          }
+
+          try {
+            // Prefer one-shot bulk endpoint when the API has it (local / newly deployed).
+            // Production may still return 405 until that endpoint is deployed — fall back to PATCH.
+            let usedBulk = false
+            try {
+              const res = await fetch(`${API_BASE_URL}/tickets/bulk-clear-driver-vehicle`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                  scheduleDate: dateKey,
+                  branchId: activeBranchId && activeBranchId !== 'ALL_BRANCHES' ? activeBranchId : undefined,
+                }),
+              })
+              if (res.ok) {
+                usedBulk = true
+                const data = await res.json().catch(() => ({}))
+                const count: number = data?.data?.updatedCount ?? targets.length
+                showToast(`Cleared drivers & vehicles on ${count} ticket${count !== 1 ? 's' : ''}`)
+              } else if (res.status !== 404 && res.status !== 405) {
+                // Unexpected error from bulk — still try batched PATCH before giving up
+                console.warn('[Schedules] bulk-clear failed, falling back to PATCH', res.status)
+              }
+            } catch {
+              // Network / CORS — fall through to PATCH
+            }
+
+            if (!usedBulk) {
+              const failures = await clearBatched()
+              if (failures > 0) {
+                showToast(`Cleared with ${failures} error${failures !== 1 ? 's' : ''} — refresh if needed`)
+                void fetchTickets({ soft: true, force: true })
+              } else {
+                showToast(`Cleared drivers & vehicles on ${targets.length} ticket${targets.length !== 1 ? 's' : ''}`)
+              }
+            }
           } catch (err: unknown) {
             alert(`Clear failed: ${formatFetchError(err)}`)
-            // Reload so UI matches server if the bulk call failed after optimistic clear
             void fetchTickets({ soft: true, force: true })
           } finally {
             setBulkClearSaving(false)
