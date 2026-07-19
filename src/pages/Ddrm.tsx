@@ -92,6 +92,7 @@ function emptyRow() {
     departureTime: '',
     arrivalTime: '',
     sites: [],
+    remarks: '',
   }
 }
 
@@ -977,6 +978,7 @@ export default function Ddrm() {
                   <col key={`dep-${i}`} style={{ minWidth: 88 }} />,
                   <col key={`idle-${i}`} style={{ minWidth: 96 }} />,
                 ])}
+                <col style={{ minWidth: 240 }} />
               </colgroup>
               <thead>
                 <tr>
@@ -1001,6 +1003,12 @@ export default function Ddrm() {
                       {tone.label} SITE
                     </th>
                   ))}
+                  <th
+                    rowSpan={2}
+                    style={{ backgroundColor: isLight ? '#f8fafc' : '#0F1A2E', color: textMuted }}
+                  >
+                    Remarks
+                  </th>
                 </tr>
                 <tr>
                   <th style={{ backgroundColor: isLight ? '#ffffff' : '#0A1120' }} />
@@ -1140,6 +1148,16 @@ export default function Ddrm() {
                           </Fragment>
                         )
                       })}
+                      <td>
+                        <textarea
+                          className="ddrm-remarks"
+                          value={row.remarks || ''}
+                          onChange={e => updateRowField(rIdx, 'remarks', e.target.value)}
+                          style={{ color: textPrimary }}
+                          placeholder="Installer name, reason for delay, etc."
+                          rows={2}
+                        />
+                      </td>
                     </tr>
                   )
                 })}
