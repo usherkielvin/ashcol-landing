@@ -1,10 +1,10 @@
-import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, isPortalAdmin } from '../utils/api'
 import {
   FileSpreadsheet, Calendar, CreditCard, Plus, Check, X,
-  Search, Filter, AlertCircle, Upload, Trash2, Eye, Loader2
+  Search, Filter, AlertCircle, Eye
 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -75,7 +75,7 @@ export default function Hris() {
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
   const excelGreen  = '#10B981'
 
-  const [activeTab, setActiveTab] = useState<'leaves' | 'advances' | 'drivers'>('leaves')
+  const [activeTab, setActiveTab] = useState<'leaves' | 'advances'>('leaves')
 
   const [error, setError] = useState<string | null>(null)
 
@@ -89,14 +89,6 @@ export default function Hris() {
     return () => window.removeEventListener('ashcol-global-branch-change', sync)
   }, [])
 
-  // Driver Route Sheets States
-  const [driverSheets, setDriverSheets] = useState<any[]>([])
-  const [showDriverSheetModal, setShowDriverSheetModal] = useState(false)
-  const [scanning, setScanning] = useState(false)
-  const [editingSheet, setEditingSheet] = useState<any | null>(null)
-
-  const driverFileInputRef = useRef<HTMLInputElement>(null)
-  
   // Data lists
   const [users, setUsers] = useState<User[]>([])
   const [leaves, setLeaves] = useState<LeaveRequest[]>([])
@@ -157,9 +149,6 @@ export default function Hris() {
       } else if (activeTab === 'advances') {
         const advancesRes = await fetch(`${API_BASE_URL}/hris/cash-advances`, { headers })
         if (advancesRes.ok) setAdvances(await advancesRes.json())
-      } else if (activeTab === 'drivers') {
-        const sheetsRes = await fetch(`${API_BASE_URL}/hris/driver-routes`, { headers })
-        if (sheetsRes.ok) setDriverSheets(await sheetsRes.json())
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to sync data with the server.')
@@ -194,148 +183,6 @@ export default function Hris() {
   }
 
   // ── Action Handlers ───────────────────────────────────────────────
-  
-  // Scan Driver Sheet (Vision OCR)
-  const handleScanDriverSheet = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    setScanning(true)
-    setError(null)
-    const fd = new FormData()
-    fd.append('file', file)
-
-    try {
-      const token = getToken()
-      const res = await fetch(`${API_BASE_URL}/hris/driver-routes/scan`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd
-      })
-      if (res.ok) {
-        const data = await res.json()
-        if (data.error) {
-          alert(data.error)
-        } else {
-          // Setup editing state
-          setEditingSheet({
-            dateFiled: data.dateFiled || new Date().toISOString().substring(0, 10),
-            filedBy: data.filedBy || '',
-            driverName: data.driverName || '',
-            position: data.position || 'Driver',
-            branch: data.branch || '',
-            cutOffPeriod: data.cutOffPeriod || '',
-            validatedBy: data.validatedBy || '',
-            totalApprovedOt: data.totalApprovedOt || '',
-            remarksOic: data.remarksOic || '',
-            idleTimeRemarks: data.idleTimeRemarks || '',
-            rows: (data.rows || []).map((r: any) => ({
-              logDate: r.logDate || '',
-              postedSchedule: r.postedSchedule || '',
-              bioTimeIn: r.bioTimeIn || '',
-              bioTimeOut: r.bioTimeOut || '',
-              departureTime: r.departureTime || '',
-              arrivalTime: r.arrivalTime || '',
-              sites: r.sites || []
-            }))
-          })
-          setShowDriverSheetModal(true)
-        }
-      } else {
-        const err = await res.json().catch(() => ({}))
-        alert(err.error || err.message || `Scan failed (HTTP ${res.status})`)
-      }
-    } catch (err: any) {
-      alert('Error scanning sheet: ' + err.message)
-    } finally {
-      setScanning(false)
-      if (driverFileInputRef.current) driverFileInputRef.current.value = ''
-    }
-  }
-
-  // Save/Update Driver Sheet
-  const handleSaveDriverSheet = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!editingSheet) return
-
-    const token = getToken()
-    const url = editingSheet.id 
-      ? `${API_BASE_URL}/hris/driver-routes/${editingSheet.id}`
-      : `${API_BASE_URL}/hris/driver-routes/save`
-    const method = editingSheet.id ? 'PUT' : 'POST'
-
-    try {
-      const res = await fetch(url, {
-        method,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(editingSheet)
-      })
-
-      if (res.ok) {
-        setShowDriverSheetModal(false)
-        setEditingSheet(null)
-        fetchData()
-      } else {
-        const err = await res.json().catch(() => ({}))
-        alert(err.error || err.message || 'Failed to save sheet')
-      }
-    } catch (err: any) {
-      alert('Error saving sheet: ' + err.message)
-    }
-  }
-
-  // Delete Driver Sheet
-  const handleDeleteDriverSheet = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this driver route sheet and all its logs?')) return
-    const token = getToken()
-    try {
-      const res = await fetch(`${API_BASE_URL}/hris/driver-routes/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        fetchData()
-      } else {
-        alert('Failed to delete sheet')
-      }
-    } catch (err: any) {
-      alert('Error deleting sheet: ' + err.message)
-    }
-  }
-
-  // View Sheet details
-  const handleViewSheetDetails = async (id: string) => {
-    const token = getToken()
-    try {
-      const res = await fetch(`${API_BASE_URL}/hris/driver-routes/${id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const data = await res.json()
-        const sheetData = data.sheet
-        const logs = data.logs.map((l: any) => {
-          try {
-            return {
-              ...l,
-              sites: l.sitesJson ? JSON.parse(l.sitesJson) : []
-            }
-          } catch (e) {
-            return { ...l, sites: [] }
-          }
-        })
-        sheetData.rows = logs
-        setEditingSheet(sheetData)
-        setShowDriverSheetModal(true)
-      } else {
-        alert('Failed to fetch details')
-      }
-    } catch (err: any) {
-      alert('Error fetching details: ' + err.message)
-    }
-  }
 
   // Submit Leave Request
   const handleLeaveRequest = async (e: React.FormEvent) => {
@@ -584,7 +431,6 @@ export default function Hris() {
           {[
             { id: 'leaves', label: 'Leaves Sheet', icon: Calendar },
             { id: 'advances', label: 'Cash Advances Sheet', icon: CreditCard },
-            { id: 'drivers', label: 'Drivers Monitoring Ledger', icon: FileSpreadsheet }
           ].map(tab => {
             const TabIcon = tab.icon
             const active = activeTab === tab.id
@@ -676,63 +522,6 @@ export default function Hris() {
               >
                 <Plus className="w-4 h-4" /> Request Cash Advance
               </button>
-            )}
-            {activeTab === 'drivers' && (
-              <div className="flex items-center gap-2">
-                <input
-                  ref={driverFileInputRef}
-                  type="file"
-                  accept="image/*,application/pdf"
-                  className="hidden"
-                  onChange={handleScanDriverSheet}
-                />
-                <button
-                  onClick={() => driverFileInputRef.current?.click()}
-                  disabled={scanning}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-[#10B981]/10 text-[#10B981] hover:bg-[#10B981]/25 transition-all"
-                >
-                  {scanning ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Scanning...
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="w-4 h-4" />
-                      Import Scan (Pic/PDF)
-                    </>
-                  )}
-                </button>
-                <button
-                  onClick={() => {
-                    setEditingSheet({
-                      dateFiled: new Date().toISOString().substring(0, 10),
-                      filedBy: '',
-                      driverName: '',
-                      position: 'Driver',
-                      branch: '',
-                      cutOffPeriod: '',
-                      validatedBy: '',
-                      totalApprovedOt: '',
-                      remarksOic: '',
-                      idleTimeRemarks: '',
-                      rows: Array.from({ length: 7 }, (_, i) => ({
-                        logDate: `June ${i + 2}`,
-                        postedSchedule: '7:00 AM',
-                        bioTimeIn: '',
-                        bioTimeOut: '',
-                        departureTime: '',
-                        arrivalTime: '',
-                        sites: []
-                      }))
-                    })
-                    setShowDriverSheetModal(true)
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-[#10B981] text-white hover:opacity-90 transition-all shadow-md"
-                >
-                  <Plus className="w-4 h-4" /> Add Driver Sheet
-                </button>
-              </div>
             )}
           </div>
         </div>
@@ -966,66 +755,6 @@ export default function Hris() {
                   <td className="font-bold text-emerald-600 dark:text-emerald-400">₱{advancesSummary.originalSum.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                   <td colSpan={4} className="text-xs text-slate-400 font-medium">Total cash advances requested</td>
                 </tr>
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* ── Drivers Sheets List View ───────────────────────────── */}
-        {activeTab === 'drivers' && (
-          <div className="overflow-x-auto">
-            <table className="excel-table">
-              <thead>
-                <tr>
-                  <th>Driver Name</th>
-                  <th>Branch</th>
-                  <th>Position</th>
-                  <th>Cut-Off Period</th>
-                  <th>Date Filed</th>
-                  <th>Validated By</th>
-                  <th>Total OT</th>
-                  <th style={{ width: 150 }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {driverSheets.filter(s => {
-                  const q = searchQuery.toLowerCase()
-                  return s.driverName.toLowerCase().includes(q) ||
-                         (s.branch && s.branch.toLowerCase().includes(q))
-                }).map(s => (
-                  <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                    <td className="font-semibold">{s.driverName}</td>
-                    <td>{s.branch || '—'}</td>
-                    <td>{s.position || '—'}</td>
-                    <td className="font-medium">{s.cutOffPeriod || '—'}</td>
-                    <td>{s.dateFiled ? new Date(s.dateFiled).toLocaleDateString() : '—'}</td>
-                    <td>{s.validatedBy || '—'}</td>
-                    <td className="font-bold">{s.totalApprovedOt || '—'}</td>
-                    <td>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => handleViewSheetDetails(s.id)}
-                          className="px-2 py-1 rounded bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 text-[10px] font-bold flex items-center gap-1"
-                        >
-                          <Eye className="w-3 h-3" /> View/Edit
-                        </button>
-                        <button
-                          onClick={() => handleDeleteDriverSheet(s.id)}
-                          className="px-2 py-1 rounded bg-red-500/10 text-red-500 hover:bg-red-500/20 text-[10px] font-bold flex items-center gap-1"
-                        >
-                          <Trash2 className="w-3 h-3" /> Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {driverSheets.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="text-center py-6 text-slate-400 font-semibold">
-                      No driver sheets found. Click "Import Scan" to scan a driver monitoring sheet.
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
@@ -1432,341 +1161,6 @@ export default function Hris() {
         </div>
       )}
 
-      {/* ── Modals: Driver Route Sheet Preview/Edit ─────────────── */}
-      {showDriverSheetModal && editingSheet && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setShowDriverSheetModal(false); setEditingSheet(null); }} />
-          <div className="relative w-full max-w-6xl rounded-2xl overflow-hidden p-6 shadow-2xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-            <h3 className="text-lg font-black mb-4">Drivers Daily Route Monitoring & Overtime Form</h3>
-            <form onSubmit={handleSaveDriverSheet} className="space-y-4">
-              
-              {/* Header Inputs */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-50 dark:bg-slate-800/10 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Driver Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={editingSheet.driverName || ''}
-                    onChange={e => setEditingSheet({ ...editingSheet, driverName: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold focus:outline-none"
-                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Branch</label>
-                  <input
-                    type="text"
-                    value={editingSheet.branch || ''}
-                    onChange={e => setEditingSheet({ ...editingSheet, branch: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold focus:outline-none"
-                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Position</label>
-                  <input
-                    type="text"
-                    value={editingSheet.position || ''}
-                    onChange={e => setEditingSheet({ ...editingSheet, position: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold focus:outline-none"
-                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Filed By</label>
-                  <input
-                    type="text"
-                    value={editingSheet.filedBy || ''}
-                    onChange={e => setEditingSheet({ ...editingSheet, filedBy: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold focus:outline-none"
-                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Date Filed</label>
-                  <input
-                    type="date"
-                    value={editingSheet.dateFiled || ''}
-                    onChange={e => setEditingSheet({ ...editingSheet, dateFiled: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold focus:outline-none"
-                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Cut-Off Period</label>
-                  <input
-                    type="text"
-                    placeholder="E.g., June 2-8, 2026"
-                    value={editingSheet.cutOffPeriod || ''}
-                    onChange={e => setEditingSheet({ ...editingSheet, cutOffPeriod: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold focus:outline-none"
-                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Validated By</label>
-                  <input
-                    type="text"
-                    value={editingSheet.validatedBy || ''}
-                    onChange={e => setEditingSheet({ ...editingSheet, validatedBy: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold focus:outline-none"
-                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                  />
-                </div>
-              </div>
-
-              {/* Rows spreadsheet view */}
-              <div className="overflow-x-auto border rounded-xl max-h-[350px]" style={{ borderColor: border }}>
-                <table className="excel-table" style={{ minWidth: 1800 }}>
-                  <thead>
-                    <tr>
-                      <th style={{ width: 100 }}>Date</th>
-                      <th style={{ width: 100 }}>Schedule</th>
-                      <th style={{ width: 85 }}>Bio In</th>
-                      <th style={{ width: 85 }}>Bio Out</th>
-                      <th style={{ width: 100 }}>Garage Dep</th>
-                      <th style={{ width: 100 }}>Garage Arr</th>
-                      <th colSpan={4} className="text-center bg-[#10B981]/10 text-emerald-500 font-bold border-r">1ST SITE VISIT</th>
-                      <th colSpan={4} className="text-center bg-blue-500/10 text-blue-500 font-bold border-r">2ND SITE VISIT</th>
-                      <th colSpan={4} className="text-center bg-purple-500/10 text-purple-500 font-bold border-r">3RD SITE VISIT</th>
-                      <th colSpan={4} className="text-center bg-amber-500/10 text-amber-500 font-bold border-r">4TH SITE VISIT</th>
-                      <th colSpan={4} className="text-center bg-rose-500/10 text-rose-500 font-bold border-r">5TH SITE VISIT</th>
-                    </tr>
-                    <tr>
-                      <th colSpan={6} className="border-r"></th>
-                      {/* 1st Site */}
-                      <th>CX Name</th><th>Arrival</th><th>Departure</th><th className="border-r">Idle</th>
-                      {/* 2nd Site */}
-                      <th>CX Name</th><th>Arrival</th><th>Departure</th><th className="border-r">Idle</th>
-                      {/* 3rd Site */}
-                      <th>CX Name</th><th>Arrival</th><th>Departure</th><th className="border-r">Idle</th>
-                      {/* 4th Site */}
-                      <th>CX Name</th><th>Arrival</th><th>Departure</th><th className="border-r">Idle</th>
-                      {/* 5th Site */}
-                      <th>CX Name</th><th>Arrival</th><th>Departure</th><th className="border-r">Idle</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(editingSheet.rows || []).map((row: any, rIdx: number) => (
-                      <tr key={rIdx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                        <td>
-                          <input
-                            type="text"
-                            value={row.logDate || ''}
-                            onChange={e => {
-                              const newRows = [...editingSheet.rows]
-                              newRows[rIdx].logDate = e.target.value
-                              setEditingSheet({ ...editingSheet, rows: newRows })
-                            }}
-                            className="w-full bg-transparent border-0 text-xs font-semibold focus:ring-1 focus:ring-[#10B981]"
-                            style={{ color: textPrimary }}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="text"
-                            value={row.postedSchedule || ''}
-                            onChange={e => {
-                              const newRows = [...editingSheet.rows]
-                              newRows[rIdx].postedSchedule = e.target.value
-                              setEditingSheet({ ...editingSheet, rows: newRows })
-                            }}
-                            className="w-full bg-transparent border-0 text-xs font-mono focus:ring-1 focus:ring-[#10B981]"
-                            style={{ color: textPrimary }}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="text"
-                            value={row.bioTimeIn || ''}
-                            onChange={e => {
-                              const newRows = [...editingSheet.rows]
-                              newRows[rIdx].bioTimeIn = e.target.value
-                              setEditingSheet({ ...editingSheet, rows: newRows })
-                            }}
-                            className="w-full bg-transparent border-0 text-xs font-mono focus:ring-1 focus:ring-[#10B981]"
-                            style={{ color: textPrimary }}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="text"
-                            value={row.bioTimeOut || ''}
-                            onChange={e => {
-                              const newRows = [...editingSheet.rows]
-                              newRows[rIdx].bioTimeOut = e.target.value
-                              setEditingSheet({ ...editingSheet, rows: newRows })
-                            }}
-                            className="w-full bg-transparent border-0 text-xs font-mono focus:ring-1 focus:ring-[#10B981]"
-                            style={{ color: textPrimary }}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="text"
-                            value={row.departureTime || ''}
-                            onChange={e => {
-                              const newRows = [...editingSheet.rows]
-                              newRows[rIdx].departureTime = e.target.value
-                              setEditingSheet({ ...editingSheet, rows: newRows })
-                            }}
-                            className="w-full bg-transparent border-0 text-xs font-mono focus:ring-1 focus:ring-[#10B981]"
-                            style={{ color: textPrimary }}
-                          />
-                        </td>
-                        <td className="border-r">
-                          <input
-                            type="text"
-                            value={row.arrivalTime || ''}
-                            onChange={e => {
-                              const newRows = [...editingSheet.rows]
-                              newRows[rIdx].arrivalTime = e.target.value
-                              setEditingSheet({ ...editingSheet, rows: newRows })
-                            }}
-                            className="w-full bg-transparent border-0 text-xs font-mono focus:ring-1 focus:ring-[#10B981]"
-                            style={{ color: textPrimary }}
-                          />
-                        </td>
-                        
-                        {/* 5 Sites loops */}
-                        {Array.from({ length: 5 }).map((_, sIdx) => {
-                          const site = row.sites?.[sIdx] || { cxName: '', arrival: '', departure: '', idleTime: '' }
-                          return (
-                            <Fragment key={sIdx}>
-                              <td>
-                                <input
-                                  type="text"
-                                  value={site.cxName || ''}
-                                  onChange={e => {
-                                    const newRows = [...editingSheet.rows]
-                                    if (!newRows[rIdx].sites) newRows[rIdx].sites = []
-                                    while (newRows[rIdx].sites.length <= sIdx) {
-                                      newRows[rIdx].sites.push({ cxName: '', arrival: '', departure: '', idleTime: '' })
-                                    }
-                                    newRows[rIdx].sites[sIdx].cxName = e.target.value
-                                    setEditingSheet({ ...editingSheet, rows: newRows })
-                                  }}
-                                  className="w-full bg-transparent border-0 text-xs focus:ring-1 focus:ring-[#10B981]"
-                                  style={{ color: textPrimary }}
-                                />
-                              </td>
-                              <td>
-                                <input
-                                  type="text"
-                                  value={site.arrival || ''}
-                                  onChange={e => {
-                                    const newRows = [...editingSheet.rows]
-                                    if (!newRows[rIdx].sites) newRows[rIdx].sites = []
-                                    while (newRows[rIdx].sites.length <= sIdx) {
-                                      newRows[rIdx].sites.push({ cxName: '', arrival: '', departure: '', idleTime: '' })
-                                    }
-                                    newRows[rIdx].sites[sIdx].arrival = e.target.value
-                                    setEditingSheet({ ...editingSheet, rows: newRows })
-                                  }}
-                                  className="w-full bg-transparent border-0 text-xs font-mono focus:ring-1 focus:ring-[#10B981]"
-                                  style={{ color: textPrimary }}
-                                />
-                              </td>
-                              <td>
-                                <input
-                                  type="text"
-                                  value={site.departure || ''}
-                                  onChange={e => {
-                                    const newRows = [...editingSheet.rows]
-                                    if (!newRows[rIdx].sites) newRows[rIdx].sites = []
-                                    while (newRows[rIdx].sites.length <= sIdx) {
-                                      newRows[rIdx].sites.push({ cxName: '', arrival: '', departure: '', idleTime: '' })
-                                    }
-                                    newRows[rIdx].sites[sIdx].departure = e.target.value
-                                    setEditingSheet({ ...editingSheet, rows: newRows })
-                                  }}
-                                  className="w-full bg-transparent border-0 text-xs font-mono focus:ring-1 focus:ring-[#10B981]"
-                                  style={{ color: textPrimary }}
-                                />
-                              </td>
-                              <td className="border-r">
-                                <input
-                                  type="text"
-                                  value={site.idleTime || ''}
-                                  onChange={e => {
-                                    const newRows = [...editingSheet.rows]
-                                    if (!newRows[rIdx].sites) newRows[rIdx].sites = []
-                                    while (newRows[rIdx].sites.length <= sIdx) {
-                                      newRows[rIdx].sites.push({ cxName: '', arrival: '', departure: '', idleTime: '' })
-                                    }
-                                    newRows[rIdx].sites[sIdx].idleTime = e.target.value
-                                    setEditingSheet({ ...editingSheet, rows: newRows })
-                                  }}
-                                  className="w-full bg-transparent border-0 text-xs font-mono focus:ring-1 focus:ring-[#10B981]"
-                                  style={{ color: textPrimary }}
-                                />
-                              </td>
-                            </Fragment>
-                          )
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Footer Fields */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-50 dark:bg-slate-800/10 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Total Approved OT</label>
-                  <input
-                    type="text"
-                    value={editingSheet.totalApprovedOt || ''}
-                    onChange={e => setEditingSheet({ ...editingSheet, totalApprovedOt: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold focus:outline-none"
-                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Remarks of OIC/BC</label>
-                  <input
-                    type="text"
-                    value={editingSheet.remarksOic || ''}
-                    onChange={e => setEditingSheet({ ...editingSheet, remarksOic: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold focus:outline-none"
-                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Idle Time Remarks</label>
-                  <input
-                    type="text"
-                    value={editingSheet.idleTimeRemarks || ''}
-                    onChange={e => setEditingSheet({ ...editingSheet, idleTimeRemarks: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold focus:outline-none"
-                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                  />
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex justify-end gap-2 pt-2 border-t" style={{ borderColor: border }}>
-                <button
-                  type="button"
-                  onClick={() => { setShowDriverSheetModal(false); setEditingSheet(null); }}
-                  className="px-4 py-2 rounded-xl text-xs font-bold"
-                  style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#10B981]"
-                >
-                  Save Route Sheet
-                </button>
-              </div>
-
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

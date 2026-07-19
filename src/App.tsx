@@ -21,6 +21,7 @@ import WarrantyRegistration from './pages/WarrantyRegistration'
 import LineUp from './pages/LineUp'
 
 import Hris from './pages/Hris'
+import Ddrm from './pages/Ddrm'
 import Bills from './pages/Bills'
 import Telecom from './pages/Telecom'
 import OperationsForms from './pages/OperationsForms'
@@ -104,6 +105,7 @@ export default function App() {
           <Route path="/warranty-registration" element={<WarrantyRegistration />} />
 
           <Route path="/admin-hris" element={<Hris />} />
+          <Route path="/ddrm" element={<Ddrm />} />
           <Route path="/operations-forms" element={<OperationsForms />} />
           <Route path="/admin-bills" element={<Bills />} />
           <Route path="/admin-telecom" element={<Telecom />} />
