@@ -906,7 +906,7 @@ function sanitizeTicketPatchBody(body: Record<string, unknown>): Record<string, 
 
 function getScheduleRowColors(
   ticket: Ticket,
-  ghostKind: 'completed' | 'resched' | null,
+  ghostKind: 'completed' | 'resched' | 'cancelled' | null,
   isLight: boolean,
   idx: number,
   rowEven: string,
@@ -919,7 +919,7 @@ function getScheduleRowColors(
   // as a subtle tint over the base surface, not a saturated block — the accent color still carries
   // the full-strength hue as a thin 3px left border (see boxShadow at the call site), which is
   // enough signal without turning the whole table into a wall of neon on black.
-  if (!ghostKind && (ticket.status || '').toUpperCase() === 'CANCELLED') {
+  if (ghostKind === 'cancelled' || (ticket.status || '').toUpperCase() === 'CANCELLED') {
     return {
       baseBg: isLight ? '#fee2e2' : 'rgba(239,68,68,0.10)',
       accent: '#EF4444',
@@ -1295,7 +1295,7 @@ function getRescheduleTargetDateKey(ticket: Ticket): string {
 
 function shouldBlankReschedGhostPayment(
   dateKey?: string,
-  ghostKind?: 'completed' | 'resched' | null,
+  ghostKind?: 'completed' | 'resched' | 'cancelled' | null,
 ): boolean {
   if (!dateKey) return false
   if (ghostKind === 'resched') return true
@@ -1514,9 +1514,13 @@ function isRescheduledGhostOnDate(): boolean {
   return false
 }
 
-function getScheduleGhostKind(ticket: Ticket, dateKey: string): 'completed' | 'resched' | null {
+function getScheduleGhostKind(ticket: Ticket, dateKey: string): 'completed' | 'resched' | 'cancelled' | null {
   if (!dateKey) return null
   if (isCompletedGhostOnDate(ticket, dateKey)) return 'completed'
+  // Cancelled tickets keep their one schedule-date row (no duplicate-date bookkeeping like
+  // completed/resched ghosts) — just render read-only + muted so staff can still see the
+  // cancellation instead of the ticket silently vanishing off Schedules.
+  if ((ticket.status || '').toUpperCase() === 'CANCELLED') return 'cancelled'
   return null
 }
 
@@ -1617,7 +1621,7 @@ function isScheduleGhostOnDate(ticket: Ticket, dateKey: string): boolean {
 
 function formatGhostRemarks(
   ticket: Ticket,
-  ghostKind: 'completed' | 'resched' | null,
+  ghostKind: 'completed' | 'resched' | 'cancelled' | null,
   dateKey?: string,
 ): string {
   const base = sanitizeDisplayText(stripArchivedRemarkSuffix((ticket.remarksUpdate || ticket.remarks || '').trim()))
@@ -1720,7 +1724,7 @@ function formatPaymentAmount(ticket: Ticket): string {
 function getSchedulePaymentDisplay(
   ticket: Ticket,
   dateKey?: string,
-  ghostKind?: 'completed' | 'resched' | null,
+  ghostKind?: 'completed' | 'resched' | 'cancelled' | null,
 ): string {
   if (shouldBlankReschedGhostPayment(dateKey, ghostKind)) return ''
   const resolved = resolveTicketPayment(ticket)
@@ -5785,7 +5789,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     ticket: Ticket
     x: number
     y: number
-    ghostKind?: 'completed' | 'resched' | null
+    ghostKind?: 'completed' | 'resched' | 'cancelled' | null
   } | null>(null)
   const [finalDatePicker, setFinalDatePicker] = useState<{
     ticket: Ticket
@@ -6298,8 +6302,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         return true
       })
       list = [...list].sort((a, b) => {
-        const aGhost = isScheduleGhostOnDate(a, dateFilter)
-        const bGhost = isScheduleGhostOnDate(b, dateFilter)
+        const aGhost = isScheduleGhostOnDate(a, dateFilter) || (a.status || '').toUpperCase() === 'CANCELLED'
+        const bGhost = isScheduleGhostOnDate(b, dateFilter) || (b.status || '').toUpperCase() === 'CANCELLED'
         if (aGhost === bGhost) return 0
         return aGhost ? 1 : -1
       })
@@ -6318,7 +6322,10 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
     let list = tickets.filter(t => {
       const stat = (t.status || '').toUpperCase()
-      if (stat === 'CANCELLED') return false
+      // Cancelled tickets stay off the negotiator's My Tickets queue (shouldShowOnMyTickets
+      // below also excludes them), but they should still surface on Schedules as a muted ghost
+      // row on their scheduled date instead of vanishing outright.
+      if (stat === 'CANCELLED' && isMyTickets) return false
 
       if (isMyTickets) {
         if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
@@ -6383,8 +6390,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     if (dateFilter) {
       list = list.filter(t => ticketBelongsOnScheduleDate(t, dateFilter))
       list = [...list].sort((a, b) => {
-        const aGhost = isScheduleGhostOnDate(a, dateFilter)
-        const bGhost = isScheduleGhostOnDate(b, dateFilter)
+        const aGhost = isScheduleGhostOnDate(a, dateFilter) || (a.status || '').toUpperCase() === 'CANCELLED'
+        const bGhost = isScheduleGhostOnDate(b, dateFilter) || (b.status || '').toUpperCase() === 'CANCELLED'
         if (aGhost === bGhost) return 0
         return aGhost ? 1 : -1
       })
@@ -6653,7 +6660,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const openScheduleDetailsPopup = useCallback((
     ticket: Ticket,
     anchorEl?: HTMLElement | null,
-    ghostKind?: 'completed' | 'resched' | null,
+    ghostKind?: 'completed' | 'resched' | 'cancelled' | null,
   ) => {
     commitCellEditRef.current()
     setExpandedCell(null)
@@ -7788,7 +7795,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     }
   }
 
-  function renderCell(ticket: Ticket, col: (typeof columns)[0], idx?: number, rowGhost?: boolean, ghostKind?: 'completed' | 'resched' | null, cellExpanded = false) {
+  function renderCell(ticket: Ticket, col: (typeof columns)[0], idx?: number, rowGhost?: boolean, ghostKind?: 'completed' | 'resched' | 'cancelled' | null, cellExpanded = false) {
     const { label } = col
     const rowIndex = idx ?? visible.findIndex(t => t.id === ticket.id)
 
@@ -7798,7 +7805,10 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     // Ã¢â€â‚¬Ã¢â€â‚¬ DISPLAY STATE Ã¢â€â‚¬Ã¢â€â‚¬
     const val = getCellDisplay(ticket, label)
     const ghostMuted = rowGhost
-      ? (ghostKind === 'completed' ? (isLight ? '#166534' : '#86efac') : ghostKind === 'resched' ? (isLight ? '#a16207' : '#fbbf24') : textMuted)
+      ? (ghostKind === 'completed' ? (isLight ? '#166534' : '#86efac')
+        : ghostKind === 'resched' ? (isLight ? '#a16207' : '#fbbf24')
+        : ghostKind === 'cancelled' ? (isLight ? '#dc2626' : '#f87171')
+        : textMuted)
       : textPrimary
     const showExpanded = cellExpanded
     const truncStyle: React.CSSProperties = showExpanded
@@ -7893,6 +7903,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           return (
             <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#15803d' : '#86efac' }} title={`Installed ${EMPTY_CELL} see Archives tab`}>
               INSTALLED
+            </span>
+          )
+        }
+        if (ghostKind === 'cancelled') {
+          return (
+            <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#dc2626' : '#f87171' }} title="Cancelled">
+              CANCELLED
             </span>
           )
         }
@@ -8147,6 +8164,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         : getScheduleUpdateDisplay(ticket)
       if (cellExpanded) {
         const isCompletedGhost = ghostKind === 'completed' || isCompletedGhostOnDate(ticket, dateFilter)
+        const ghostRemarkColor = isCompletedGhost
+          ? (isLight ? '#15803d' : '#86efac')
+          : ghostKind === 'cancelled' ? (isLight ? '#dc2626' : '#f87171') : (isLight ? '#a16207' : '#fbbf24')
         return (
           <>
             <div className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: textMuted }}>Remarks</div>
@@ -8154,9 +8174,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
               className="whitespace-normal break-words leading-relaxed"
               style={{
                 color: remarksText
-                  ? (rowGhost
-                    ? (isCompletedGhost ? (isLight ? '#15803d' : '#86efac') : (isLight ? '#a16207' : '#fbbf24'))
-                    : textGreen)
+                  ? (rowGhost ? ghostRemarkColor : textGreen)
                   : textMuted,
                 fontWeight: remarksText ? 600 : 400,
                 fontStyle: rowGhost ? 'italic' : undefined,
@@ -8170,11 +8188,14 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       if (rowGhost) {
         const ghostRemarks = remarksText
         const isCompletedGhost = ghostKind === 'completed' || isCompletedGhostOnDate(ticket, dateFilter)
+        const ghostRemarkColor = isCompletedGhost
+          ? (isLight ? '#15803d' : '#86efac')
+          : ghostKind === 'cancelled' ? (isLight ? '#dc2626' : '#f87171') : (isLight ? '#a16207' : '#fbbf24')
         return (
           <span
             style={{
               ...truncStyle,
-              color: isCompletedGhost ? (isLight ? '#15803d' : '#86efac') : (isLight ? '#a16207' : '#fbbf24'),
+              color: ghostRemarkColor,
               fontWeight: 600,
               fontStyle: 'italic',
             }}
