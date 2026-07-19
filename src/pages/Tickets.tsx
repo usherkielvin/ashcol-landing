@@ -8271,21 +8271,39 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
     if (label === "CUSTOMER'S NAME") {
       const phoneNum = getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
+      const formattedPhone = phoneNum ? fmtPhone(phoneNum) || phoneNum : ''
+      if (cellExpanded) {
+        return (
+          <>
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <div className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Contact Number</div>
+              {phoneNum && (
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation()
+                    void copyTextToClipboard(phoneNum)
+                  }}
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-slate-500/10"
+                  style={{ color: textMuted }}
+                  title="Copy phone number"
+                  aria-label="Copy phone number"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <div
+              className="whitespace-normal break-words text-left normal-case font-semibold leading-relaxed"
+              style={{ color: textPrimary }}
+            >
+              {formattedPhone || 'No contact number available'}
+            </div>
+          </>
+        )
+      }
       return withEditPencil(
-        <span
-          style={{ ...truncStyle, fontWeight: 600, cursor: 'pointer' }}
-          title={phoneNum ? `${val} - Click to show phone number` : val}
-          onClick={e => {
-            if (phoneNum) {
-              e.stopPropagation()
-              void navigator.clipboard.writeText(phoneNum)
-              alert(`Customer Name: ${val}\nPhone Number: ${phoneNum}\n\n(Phone number has been copied to clipboard)`)
-            } else {
-              e.stopPropagation()
-              alert(`Customer Name: ${val}\nNo phone number available`)
-            }
-          }}
-        >
+        <span style={{ ...truncStyle, fontWeight: 600 }} title={val}>
           {val}
         </span>,
         ticket, label, rowGhost, rowIndex,
@@ -9150,14 +9168,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                           <div className="flex justify-between items-start">
                             <h4
                               onClick={e => {
+                                e.stopPropagation()
                                 const phoneNum = getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
                                 if (phoneNum) {
-                                  e.stopPropagation()
-                                  void navigator.clipboard.writeText(phoneNum)
-                                  alert(`Customer Name: ${getCustomerDisplayName(ticket)}\nPhone Number: ${phoneNum}\n\n(Phone number has been copied to clipboard)`)
+                                  void copyTextToClipboard(phoneNum)
+                                  showToast(`Copied ${getCustomerDisplayName(ticket)}'s number: ${fmtPhone(phoneNum) || phoneNum}`)
                                 } else {
-                                  e.stopPropagation()
-                                  alert(`Customer Name: ${getCustomerDisplayName(ticket)}\nNo phone number available`)
+                                  showToast(`No contact number for ${getCustomerDisplayName(ticket)}`)
                                 }
                               }}
                               className="font-bold text-sm truncate mr-2 hover:underline cursor-pointer"
