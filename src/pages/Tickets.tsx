@@ -2582,7 +2582,7 @@ function ticketColumnText(
   switch (colLabel) {
     case 'TICKET NO': return getTicketNumberDisplay(ticket)
     case "CUSTOMER'S NAME": return getF(ticket, 'customerName', 'customer_name') || ticket.title || ''
-    case 'DESTINATION': return formatAddress(ticket.location)
+    case 'DESTINATION': return resolveTicketDistrict(ticket)
     case 'BRAND': return parseBrand(ticket)
     case 'DLR': return getF(ticket, 'dealer', 'sourceVendor', 'source_vendor') || ''
     case 'STATUS': return ticket.status || ''
@@ -5890,7 +5890,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     const scheduleCols = [
       { label: 'TICKET NO', display: 'TICKET NO', weight: 9, expMul: 1.2, sticky: true, freeze: false, align: 'center' as const },
       { label: "CUSTOMER'S NAME", display: "CUSTOMER", weight: 15, expMul: 1.5, sticky: true, freeze: false, align: 'left' as const },
-      { label: 'DESTINATION', display: 'DISTRICT', weight: 8, expMul: 1.5, sticky: true, freeze: true, align: 'center' as const },
+      { label: 'DESTINATION', display: 'DISTRICT', weight: 8, expMul: 1.5, sticky: true, freeze: true, align: 'center' as const, sortable: true },
       { label: 'BRAND', display: "BRAND", weight: 11, expMul: 1.5, sticky: false, freeze: false, align: 'center' as const },
       { label: 'DLR', display: isTaguigServices ? "ENDORSED BY" : "DEALER", weight: 10, expMul: 1.4, sticky: false, freeze: false, align: 'center' as const },
       { label: 'COMMIT', display: "COMMIT", weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
@@ -5905,7 +5905,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     const myTicketsCols = [
       { label: 'TICKET NO', display: 'TICKET NO', weight: 9, expMul: 1.2, sticky: true, freeze: false, align: 'center' as const },
       { label: "CUSTOMER'S NAME", display: 'CUSTOMER', weight: 14, expMul: 1.5, sticky: true, freeze: false, align: 'left' as const },
-      { label: 'DESTINATION', display: 'DISTRICT', weight: 8, expMul: 1.5, sticky: true, freeze: true, align: 'center' as const },
+      { label: 'DESTINATION', display: 'DISTRICT', weight: 8, expMul: 1.5, sticky: true, freeze: true, align: 'center' as const, sortable: true },
       { label: 'BRAND', display: 'BRAND', weight: 10, expMul: 1.45, sticky: false, freeze: false, align: 'center' as const },
       { label: 'DLR', display: isTaguigServices ? 'ENDORSED BY' : 'DEALER', weight: 9, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'COMMIT', display: 'COMMIT', weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
@@ -7903,7 +7903,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         )
       }
       const statusVal = getScheduleStatusValue(ticket)
-      const badgeStyle = getScheduleStatusBadgeStyle(statusVal, isLight)
+      const statusColor = getScheduleStatusBadgeStyle(statusVal, isLight).color
       const display = getScheduleStatusDisplay(ticket) || EMPTY_CELL
       let displayLabel = display === 'INSTALLATION' ? 'INSTALL' : ((display === 'FOR APPROVAL' || display === 'FOR QUOTATION') ? 'QUOTATION' : display)
       if (display === 'CONTINUATION') {
@@ -7919,20 +7919,19 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       const statusTitle = showsDetails
         ? `${display} ${EMPTY_CELL} click to view remarks & payment`
         : (canEdit ? `${display} ${EMPTY_CELL} click to change` : display)
-      const { display: _disp, ...restTrunc } = truncStyle
       return (
         <span
-          className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide cursor-pointer select-none border"
           style={{
-            ...restTrunc,
-            color: badgeStyle.color,
-            backgroundColor: badgeStyle.backgroundColor,
-            borderColor: badgeStyle.borderColor,
-            maxWidth: '100%',
+            ...truncStyle,
+            fontWeight: 700,
+            color: statusColor,
+            cursor: 'pointer',
+            textTransform: 'uppercase',
+            letterSpacing: '0.02em',
           }}
           title={statusTitle}
         >
-          <span className="truncate">{displayLabel}</span>
+          {displayLabel}
         </span>
       )
     }
@@ -9120,8 +9119,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       const isGhost = Boolean(ghostKind)
                       const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(getCustomerDisplayName(ticket)))
                       const rowColors = getScheduleRowColors(ticket, ghostKind, isLight, idx, rowEven, rowOdd, isDuplicateName)
-                      const isInstalled = isInstalledWorkflowStatus(ticket.status) || ['DONE_INSTALLED', 'DONE_CLEANING'].includes(ticket.status || '')
-                      
+
                       return (
                         <div
                           key={`${ticket.id}${isGhost ? `-ghost-${ghostKind}` : ''}`}
@@ -9137,14 +9135,20 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                             <h4 className="font-bold text-sm truncate mr-2" style={{ color: isDuplicateName ? (isLight ? '#9f1239' : '#f43f5e') : textPrimary }}>
                               {getCustomerDisplayName(ticket)}
                             </h4>
-                            {ticket.status && (
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase shrink-0" style={{
-                                backgroundColor: isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)',
-                                color: isInstalled ? (isLight ? '#059669' : '#34d399') : (isLight ? '#0284c7' : '#38bdf8')
-                              }}>
-                                {ticket.status}
-                              </span>
-                            )}
+                            {(() => {
+                              const statusVal = getScheduleStatusValue(ticket)
+                              const statusColor = getScheduleStatusBadgeStyle(statusVal, isLight).color
+                              const display = getScheduleStatusDisplay(ticket) || ticket.status || ''
+                              if (!display) return null
+                              return (
+                                <span
+                                  className="text-[10px] font-bold uppercase shrink-0 tracking-wide"
+                                  style={{ color: statusColor }}
+                                >
+                                  {display === 'INSTALLATION' ? 'INSTALL' : display}
+                                </span>
+                              )
+                            })()}
                           </div>
                           
                           <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-xs" style={{ color: textMuted }}>
@@ -9570,11 +9574,10 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       <h2 className="text-base font-black leading-tight uppercase tracking-wide" style={{ color: textPrimary }}>
                         {custName || 'Direct Client'}
                       </h2>
-                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 uppercase" style={{
-                        backgroundColor: scheduleBadgeStyle.backgroundColor,
-                        color: scheduleBadgeStyle.color,
-                        border: `1px solid ${scheduleBadgeStyle.borderColor || 'transparent'}`,
-                      }}>
+                      <span
+                        className="text-[11px] font-bold shrink-0 uppercase tracking-wide"
+                        style={{ color: scheduleBadgeStyle.color }}
+                      >
                         {scheduleStatusDisplay}
                       </span>
                       {branchName && branchName !== EMPTY_CELL && (
@@ -10059,8 +10062,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     {customerName || EMPTY_CELL}
                   </p>
                   <span
-                    className="inline-flex items-center mt-1.5 px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide border"
-                    style={{ color: statusStyle.color, backgroundColor: statusStyle.backgroundColor, borderColor: statusStyle.borderColor }}
+                    className="inline-block mt-1.5 text-[11px] font-bold uppercase tracking-wide"
+                    style={{ color: statusStyle.color }}
                   >
                     {statusLabel}
                   </span>
