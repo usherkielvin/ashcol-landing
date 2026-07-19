@@ -292,6 +292,19 @@ export default function Ddrm() {
         background: rgba(16,185,129,0.08);
         box-shadow: 0 0 0 1.5px rgba(16,185,129,0.45);
       }
+      .ddrm-sheet-table textarea.ddrm-remarks {
+        display: block; box-sizing: border-box;
+        width: 100%; min-width: 15rem; min-height: 44px;
+        background: transparent; border: 0; outline: none; resize: vertical;
+        font-family: "DM Sans", system-ui, sans-serif !important;
+        font-size: 12px; font-weight: 600; line-height: 1.3;
+        padding: 6px 8px; border-radius: 5px;
+        text-align: left;
+      }
+      .ddrm-sheet-table textarea.ddrm-remarks:focus {
+        background: rgba(16,185,129,0.08);
+        box-shadow: 0 0 0 1.5px rgba(16,185,129,0.45);
+      }
       .ddrm-scroll-x {
         overflow: auto;
         cursor: grab;
@@ -440,6 +453,7 @@ export default function Ddrm() {
               departureTime: r.departureTime || '',
               arrivalTime: r.arrivalTime || '',
               sites: r.sites || [],
+              remarks: r.remarks || '',
             })),
           })
         }
