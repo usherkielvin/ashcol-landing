@@ -8270,8 +8270,24 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     }
 
     if (label === "CUSTOMER'S NAME") {
+      const phoneNum = getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
       return withEditPencil(
-        <span style={{ ...truncStyle, fontWeight: 600 }} title={val}>{val}</span>,
+        <span
+          style={{ ...truncStyle, fontWeight: 600, cursor: 'pointer' }}
+          title={phoneNum ? `${val} - Click to show phone number` : val}
+          onClick={e => {
+            if (phoneNum) {
+              e.stopPropagation()
+              void navigator.clipboard.writeText(phoneNum)
+              alert(`Customer Name: ${val}\nPhone Number: ${phoneNum}\n\n(Phone number has been copied to clipboard)`)
+            } else {
+              e.stopPropagation()
+              alert(`Customer Name: ${val}\nNo phone number available`)
+            }
+          }}
+        >
+          {val}
+        </span>,
         ticket, label, rowGhost, rowIndex,
       )
     }
@@ -9132,7 +9148,21 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                           }}
                         >
                           <div className="flex justify-between items-start">
-                            <h4 className="font-bold text-sm truncate mr-2" style={{ color: isDuplicateName ? (isLight ? '#9f1239' : '#f43f5e') : textPrimary }}>
+                            <h4
+                              onClick={e => {
+                                const phoneNum = getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
+                                if (phoneNum) {
+                                  e.stopPropagation()
+                                  void navigator.clipboard.writeText(phoneNum)
+                                  alert(`Customer Name: ${getCustomerDisplayName(ticket)}\nPhone Number: ${phoneNum}\n\n(Phone number has been copied to clipboard)`)
+                                } else {
+                                  e.stopPropagation()
+                                  alert(`Customer Name: ${getCustomerDisplayName(ticket)}\nNo phone number available`)
+                                }
+                              }}
+                              className="font-bold text-sm truncate mr-2 hover:underline cursor-pointer"
+                              style={{ color: isDuplicateName ? (isLight ? '#9f1239' : '#f43f5e') : textPrimary }}
+                            >
                               {getCustomerDisplayName(ticket)}
                             </h4>
                             {(() => {

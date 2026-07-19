@@ -198,14 +198,26 @@ export function applyRelayScheduleSyncToPatch(
   body: Record<string, unknown>,
   ticket?: RelayScheduleTicket,
 ): Record<string, unknown> {
-  const next = { ...body }
+  const next: Record<string, any> = { ...body }
+  const syncPatchAlias = (camel: string, snake: string) => {
+    if (camel in next || snake in next) {
+      const val = next[camel] !== undefined ? next[camel] : next[snake]
+      next[camel] = val
+      next[snake] = val
+    }
+  }
 
-  if (typeof next.customerName === 'string' && next.customerName.trim()) {
-    next.customer_name = next.customerName
-  }
-  if (typeof next.customer_name === 'string' && next.customer_name.trim()) {
-    next.customerName = next.customer_name
-  }
+  syncPatchAlias('customerName', 'customer_name')
+  syncPatchAlias('preferredDate', 'preferred_date')
+  syncPatchAlias('negotiatorId', 'negotiator_id')
+  syncPatchAlias('acDetails', 'ac_details')
+  syncPatchAlias('ticketNumber', 'ticket_number')
+  syncPatchAlias('remarksUpdate', 'remarks_update')
+  syncPatchAlias('sourceVendor', 'source_vendor')
+  syncPatchAlias('installationCharges', 'installation_charges')
+  syncPatchAlias('modeOfPayment', 'mode_of_payment')
+  syncPatchAlias('driverName', 'driver_name')
+  syncPatchAlias('serviceVehicle', 'service_vehicle')
 
   // A caller that explicitly clears finalDate/preferredDate (e.g. returning a ticket to My
   // Tickets) sends them as empty strings, not `undefined` — that intent must not be undone by
@@ -250,17 +262,6 @@ export function applyRelayScheduleSyncToPatch(
     if (!next.status && ['PENDING', 'ASSIGNED'].includes(stat)) {
       next.status = 'SCHEDULED'
     }
-  }
-
-  if ('driverName' in next || 'driver_name' in next) {
-    const val = next.driverName !== undefined ? next.driverName : next.driver_name
-    next.driverName = val
-    next.driver_name = val
-  }
-  if ('serviceVehicle' in next || 'service_vehicle' in next) {
-    const val = next.serviceVehicle !== undefined ? next.serviceVehicle : next.service_vehicle
-    next.serviceVehicle = val
-    next.service_vehicle = val
   }
 
   return next
