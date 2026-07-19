@@ -3731,7 +3731,10 @@ export default function Relays() {
                           setAddForm(prev => ({
                             ...prev,
                             assignedTo: val,
-                            installerName: foundEmp ? foundEmp.name : '',
+                            // Installer is field crew, assigned later on Schedules — never the
+                            // negotiator/office-staff account picked here. Leave it untouched
+                            // (empty until someone explicitly sets it) so it doesn't overlap with
+                            // the negotiator's own name.
                             branchId: (foundEmp && foundEmp.branchId) ? foundEmp.branchId : prev.branchId,
                             // Only promote PENDING to ASSIGNED — don't clobber a status/service-type already
                             // chosen via the status buttons above (SURVEY, INSTALL, CONTINUATION, etc).

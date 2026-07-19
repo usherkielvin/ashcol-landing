@@ -5871,7 +5871,7 @@ export default function Tickets() {
     const scheduleCols = [
       { label: 'TICKET NO', display: 'TICKET NO', weight: 9, expMul: 1.2, sticky: true, freeze: false, align: 'center' as const },
       { label: "CUSTOMER'S NAME", display: "CUSTOMER", weight: 15, expMul: 1.5, sticky: true, freeze: false, align: 'left' as const },
-      { label: 'DESTINATION', display: 'DISTRICT', weight: 12, expMul: 1.5, sticky: true, freeze: true, align: 'center' as const },
+      { label: 'DESTINATION', display: 'DISTRICT', weight: 8, expMul: 1.5, sticky: true, freeze: true, align: 'center' as const },
       { label: 'BRAND', display: "BRAND", weight: 11, expMul: 1.5, sticky: false, freeze: false, align: 'center' as const },
       { label: 'DLR', display: isTaguigServices ? "ENDORSED BY" : "DEALER", weight: 10, expMul: 1.4, sticky: false, freeze: false, align: 'center' as const },
       { label: 'COMMIT', display: "COMMIT", weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
@@ -5879,20 +5879,20 @@ export default function Tickets() {
       { label: 'INSTALLER', display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'SERVICE', display: "DRIVER", weight: 9, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
       { label: 'VEHICLE', display: "VEHICLE", weight: 9, expMul: 1.2, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'STATUS', display: "STATUS", weight: 9, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'STATUS', display: "STATUS", weight: 13, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
       { label: 'UPDATE', display: "REMARKS", weight: 14, expMul: 1.55, sticky: false, freeze: false, align: 'right' as const },
       { label: 'PAYMENT', display: "PAYMENT", weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'right' as const },
     ]
     const myTicketsCols = [
       { label: 'TICKET NO', display: 'TICKET NO', weight: 9, expMul: 1.2, sticky: true, freeze: false, align: 'center' as const },
       { label: "CUSTOMER'S NAME", display: 'CUSTOMER', weight: 14, expMul: 1.5, sticky: true, freeze: false, align: 'left' as const },
-      { label: 'DESTINATION', display: 'DISTRICT', weight: 11, expMul: 1.5, sticky: true, freeze: true, align: 'center' as const },
+      { label: 'DESTINATION', display: 'DISTRICT', weight: 8, expMul: 1.5, sticky: true, freeze: true, align: 'center' as const },
       { label: 'BRAND', display: 'BRAND', weight: 10, expMul: 1.45, sticky: false, freeze: false, align: 'center' as const },
       { label: 'DLR', display: isTaguigServices ? 'ENDORSED BY' : 'DEALER', weight: 9, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'COMMIT', display: 'COMMIT', weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'NEGOTIATOR', display: 'NEGOTIATOR', weight: 8, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const, sortable: true },
       { label: 'SERVICE', display: 'TYPE', weight: 8, editHint: true, expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'STATUS', display: 'STATUS', weight: 8, expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'STATUS', display: 'STATUS', weight: 12, expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
       { label: 'UPDATE', display: 'REMARKS', weight: 13, expMul: 1.5, sticky: false, freeze: false, align: 'right' as const },
       { label: 'FINAL DATE', display: 'FINAL DATE', weight: 10, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
     ]
@@ -8444,35 +8444,42 @@ export default function Tickets() {
                 })}
 
                 {isCustomSelected && (
-                  <button
-                    type="button"
-                    onClick={() => dateFilterInputRef.current?.showPicker?.()}
-                    className="h-8 md:h-10 px-3 md:px-5 rounded-full text-[11px] md:text-[13px] font-semibold border whitespace-nowrap shrink-0 active:scale-95"
-                    style={{ backgroundColor: green, borderColor: green, color: '#ffffff', boxShadow: '0 2px 8px rgba(16,185,129,0.35)' }}
-                  >
-                    {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
-                  </button>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      className="h-8 md:h-10 px-3 md:px-5 rounded-full text-[11px] md:text-[13px] font-semibold border whitespace-nowrap shrink-0 active:scale-95"
+                      style={{ backgroundColor: green, borderColor: green, color: '#ffffff', boxShadow: '0 2px 8px rgba(16,185,129,0.35)' }}
+                    >
+                      {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+                    </button>
+                    <input
+                      type="date"
+                      value={dateFilter}
+                      onChange={e => handleDateFilterChange(e.target.value)}
+                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                      aria-label="Ticket date filter"
+                    />
+                  </div>
                 )}
 
-                <button
-                  type="button"
-                  onClick={() => dateFilterInputRef.current?.showPicker?.()}
-                  className="w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full border shrink-0 transition-all hover:opacity-80 active:scale-90"
-                  style={{ borderColor: inputBorder, backgroundColor: inputBg }}
-                  title="Pick date"
-                >
-                  <CalendarDays className="w-4 h-4 md:w-4.5 md:h-4.5" style={{ color: green }} />
-                </button>
-
-                <input
-                  ref={dateFilterInputRef}
-                  type="date"
-                  value={dateFilter}
-                  onChange={e => handleDateFilterChange(e.target.value)}
-                  tabIndex={-1}
-                  className="absolute opacity-0 pointer-events-none w-0 h-0"
-                  aria-label="Ticket date filter"
-                />
+                <div className="relative">
+                  <button
+                    type="button"
+                    className="w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full border shrink-0 transition-all hover:opacity-80 active:scale-90"
+                    style={{ borderColor: inputBorder, backgroundColor: inputBg }}
+                    title="Pick date"
+                  >
+                    <CalendarDays className="w-4 h-4 md:w-4.5 md:h-4.5" style={{ color: green }} />
+                  </button>
+                  <input
+                    ref={dateFilterInputRef}
+                    type="date"
+                    value={dateFilter}
+                    onChange={e => handleDateFilterChange(e.target.value)}
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                    aria-label="Ticket date filter"
+                  />
+                </div>
               </div>
             )}
 
