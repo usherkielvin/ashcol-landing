@@ -8,7 +8,7 @@ import {
 
   Plus, Trash2, Edit3, X, Printer, ClipboardList, Upload, Download, Building2,
 
-  ClipboardPaste, Loader2, Truck, User, Clock, MapPin, MessageSquare,
+  Loader2, Truck, User, Clock, MapPin, MessageSquare,
 
   ChevronDown, Camera, Copy, Save, Check, Maximize2, ArrowLeft,
 
@@ -20,7 +20,23 @@ import { useTheme } from '../contexts/ThemeContext'
 
 import { useAuth } from '../contexts/AuthContext'
 
-import { API_BASE_URL, isSameBaseBranch, isPortalAdmin, resolvePortalWriteBranchId } from '../utils/api'
+import { API_BASE_URL, isSameBaseBranch, isPortalAdmin, resolvePortalWriteBranchId, resolveScopedBranchId, fetchTicketsPage, type InstallerBranchIndexEntry } from '../utils/api'
+
+import { normalizeRelayScheduleTicketList } from '../utils/relayScheduleSync'
+
+import { fetchCachedLineupInstallerIndex, fetchCachedDriverOnlyNames } from '../utils/portalDirectoryCache'
+
+import {
+  ticketBelongsOnScheduleDate,
+  ticketBelongsOnScheduleBranch,
+  getTicketVehicleDisplay,
+  getTicketDriverDisplay,
+  getTicketNegotiatorName,
+  resolveTicketDistrict,
+  getInstallerDisplay,
+  parseNameSiteToken,
+  type Ticket as ScheduleTicket,
+} from './Tickets'
 
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
@@ -539,8 +555,6 @@ export default function LineUp() {
 
   const printAreaRef   = useRef<HTMLDivElement>(null)
 
-  const importMenuRef  = useRef<HTMLDivElement>(null)
-
   const exportMenuRef  = useRef<HTMLDivElement>(null)
 
   // Save-race prevention: map local-* IDs → real DB IDs, and track in-flight POSTs
@@ -556,8 +570,6 @@ export default function LineUp() {
   const [copyingImage, setCopyingImage]     = useState(false)
 
   const [showcaseOpen, setShowcaseOpen]     = useState(false)
-
-  const [importMenuOpen, setImportMenuOpen] = useState(false)
 
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
 
@@ -1032,6 +1044,107 @@ export default function LineUp() {
     return []
   }
 
+  /** Map a ticket's workflow status to the short remarks token used on the printed line-up (matches the STATUS badge shown on Schedules). */
+  const scheduleStatusShortLabel = (status?: string): string => {
+    const s = (status || '').toUpperCase().replace(/\s+/g, '_')
+    if (!s) return ''
+    if (s === 'INSTALLATION' || s === 'INSTALLED' || s === 'INSTALL') return 'INSTALL'
+    if (s === 'DISMANTLE' || s === 'DONE_DISMANTLE') return 'DISMANTLE'
+    if (s === 'CHECKUP' || s === 'DONE_CHECKUP') return 'CHECKUP'
+    if (s === 'BACKJOB' || s === 'DONE_BACKJOB') return 'BACKJOB'
+    if (s === 'SURVEY') return 'SURVEY'
+    if (s === 'CLEANING' || s === 'SERVICES' || s === 'SERVICE') return 'SERVICE'
+    return s
+  }
+
+  /**
+   * Derive Line-Up rows straight from that date's Schedules tickets for this branch — one row
+   * per distinct vehicle code, aggregating the tickets riding on it — instead of manually
+   * pre-encoding driver/installer/negotiator/route. Reuses the exact same branch/date scoping
+   * helpers Schedules itself uses (Tickets.tsx) so Taguig Sales/Services and legacy-UUID branches
+   * stay correctly separated here too.
+   */
+  const deriveRowsFromSchedule = async (dateStr: string, bId: string): Promise<LineUpRow[]> => {
+    if (!bId) return []
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      if (!token) return []
+      const scopedBranch = resolveScopedBranchId(bId)
+      const [rawTickets, lineupIndex, driverOnlyNames] = await Promise.all([
+        fetchTicketsPage('/tickets/branch', token, { size: 200, paginate: false, branchId: scopedBranch, date: dateStr }),
+        fetchCachedLineupInstallerIndex(token).catch(() => [] as InstallerBranchIndexEntry[]),
+        fetchCachedDriverOnlyNames(token).catch(() => [] as string[]),
+      ])
+      const tickets = normalizeRelayScheduleTicketList(rawTickets as ScheduleTicket[]) as ScheduleTicket[]
+      const scoped = tickets.filter(t =>
+        ticketBelongsOnScheduleDate(t, dateStr)
+        && ticketBelongsOnScheduleBranch(t, bId, user?.email, user?.jobTitle, lineupIndex as any, driverOnlyNames as any)
+        && !['CANCELLED', 'COMPLETED'].includes(String(t.status || '').toUpperCase())
+      )
+
+      const groups = new Map<string, ScheduleTicket[]>()
+      for (const t of scoped) {
+        const base = parseNameSiteToken(getTicketVehicleDisplay(t)).name
+        if (!base) continue
+        const arr = groups.get(base) || []
+        arr.push(t)
+        groups.set(base, arr)
+      }
+
+      const byTicketNumber = (list: ScheduleTicket[]) => [...list].sort((a, b) => {
+        const an = a.ticketNumber || a.ticket_number || a.id || ''
+        const bn = b.ticketNumber || b.ticket_number || b.id || ''
+        return an.localeCompare(bn, undefined, { numeric: true })
+      })
+
+      const uniqueJoin = (values: string[], sep: string) => {
+        const seen: string[] = []
+        for (const raw of values) {
+          const v = raw.trim()
+          if (v && !seen.includes(v)) seen.push(v)
+        }
+        return seen.join(sep)
+      }
+
+      const mostCommon = (values: string[]): string => {
+        const counts = new Map<string, number>()
+        for (const raw of values) {
+          const v = raw.trim()
+          if (!v) continue
+          counts.set(v, (counts.get(v) || 0) + 1)
+        }
+        let best = ''
+        let bestCount = 0
+        for (const [v, c] of counts) {
+          if (c > bestCount) { best = v; bestCount = c }
+        }
+        return best
+      }
+
+      const sortedBases = Array.from(groups.keys()).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+      return sortedBases.map((base, i) => {
+        const groupTickets = byTicketNumber(groups.get(base) || [])
+        return {
+          id: `local-schedule-${Date.now()}-${i}`,
+          lineupDate: dateStr,
+          branchId: bId,
+          service: base,
+          driverName: mostCommon(groupTickets.map(t => getTicketDriverDisplay(t))),
+          driverTime: '8:00AM',
+          installerName: uniqueJoin(groupTickets.map(t => getInstallerDisplay(t)), '/'),
+          installerTime: '7:00AM',
+          negotiator: uniqueJoin(groupTickets.map(t => getTicketNegotiatorName(t)), '/'),
+          route: uniqueJoin(groupTickets.map(t => resolveTicketDistrict(t)), ' - '),
+          remarks: groupTickets.map(t => scheduleStatusShortLabel(t.status)).filter(Boolean).join('-'),
+          sortOrder: i,
+        }
+      })
+    } catch (e) {
+      console.error('Error deriving lineup from schedule:', e)
+      return []
+    }
+  }
+
   const fetchLineup = useCallback(async () => {
     // Fallback/placeholder using local storage first
     const all = lsLoad()
@@ -1072,9 +1185,20 @@ export default function LineUp() {
           if (serverRows.length > 0) {
             setRows(serverRows.sort((a, b) => a.sortOrder - b.sortOrder))
           } else {
-            // Fallback to yesterday's rows instead of fixed template
-            const yesterdayRows = await fetchYesterdayRows(date, branchId)
-            setRows(yesterdayRows)
+            // Fallback: derive from today's Schedules tickets first (real driver/installer/
+            // negotiator/route data), then yesterday's lineup, instead of a fixed template.
+            const scheduleRows = await deriveRowsFromSchedule(date, branchId)
+            if (scheduleRows.length > 0) {
+              setRows(scheduleRows)
+              setDirtyRowIds(prev => {
+                const next = new Set(prev)
+                scheduleRows.forEach(r => next.add(r.id))
+                return next
+              })
+            } else {
+              const yesterdayRows = await fetchYesterdayRows(date, branchId)
+              setRows(yesterdayRows)
+            }
           }
         }
       }
@@ -1996,92 +2120,53 @@ export default function LineUp() {
     showToast("Line-up schedule saved successfully!", "success")
   }
 
-  const performLoadDefaultTemplate = async () => {
 
+
+  const performSyncFromSchedule = async () => {
     if (!branchId) return
-
-    const defaults = await fetchYesterdayRows(date, branchId)
-
-    if (defaults.length === 0) {
-
-      showToast("No yesterday lineup rows found to load.", "info")
-
+    const scheduleRows = await deriveRowsFromSchedule(date, branchId)
+    if (scheduleRows.length === 0) {
+      showToast("No Schedules tickets found for this date to sync.", "info")
+      return
     }
-
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-
     // 1. Delete existing DB rows for this date+branch (non-local rows)
-
     try {
-
       await fetch(`${API_BASE_URL}/v1/lineup/all?branchId=${encodeURIComponent(lineupApiBranchId)}&date=${date}&includeNotes=false`, {
-
         method: 'DELETE',
-
         headers: { Authorization: `Bearer ${token}` }
-
       })
-
     } catch (err) {
-
       console.error('Failed to clear old lineup rows:', err)
-
     }
-
-    // 2. Load draft rows locally
-
-    setRows(defaults)
-
-    showToast("Yesterday's lineup loaded as template (unsaved draft)", "info")
-
+    // 2. Load derived rows locally
+    setRows(scheduleRows)
+    showToast(`Synced ${scheduleRows.length} row(s) from today's Schedules (unsaved draft)`, "info")
     // Mark all loaded rows as dirty so they can be saved when Save Schedule is clicked
-
     setDirtyRowIds(prev => {
-
       const next = new Set(prev)
-
-      defaults.forEach(d => next.add(d.id))
-
+      scheduleRows.forEach(r => next.add(r.id))
       return next
-
     })
-
     // 3. Cache locally in localStorage
-
     const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId && r.service !== '__WEEKLY_DRIVERS__' && r.service !== '__WEEKLY_INSTALLERS__'))
-
-    lsSave([...all, ...defaults])
-
+    lsSave([...all, ...scheduleRows])
   }
 
-  const handleLoadDefaultTemplate = () => {
-
+  const handleSyncFromSchedule = () => {
     if (!branchId) return
-
     if (rows.length > 0) {
-
       setConfirmModal({
-
-        title: "Load Yesterday's Lineup",
-
-        message: "This will replace your current lineup entries with yesterday's layout and names. Continue?",
-
-        confirmText: "Load Template",
-
+        title: "Sync from Schedule",
+        message: "This will replace your current lineup entries with rows derived from today's Schedules tickets, grouped by vehicle. Continue?",
+        confirmText: "Sync",
         cancelText: "Keep Current",
-
         type: 'warning',
-
-        onConfirm: () => { void performLoadDefaultTemplate() },
-
+        onConfirm: () => { void performSyncFromSchedule() },
       })
-
     } else {
-
-      void performLoadDefaultTemplate()
-
+      void performSyncFromSchedule()
     }
-
   }
 
   // ── Drag and Drop Row Reordering ──────────────────────────────────────────
@@ -2668,37 +2753,7 @@ export default function LineUp() {
 
   }, [scanning])
 
-  const handlePasteScan = async () => {
 
-    if (scanning) return
-
-    setScanError('')
-
-    if (!navigator.clipboard || !navigator.clipboard.read) {
-
-      setScanError('Clipboard button is disabled on HTTP. Press Ctrl+V anywhere on the page to paste.')
-
-      return
-
-    }
-
-    try {
-
-      const items = await navigator.clipboard.read()
-
-      for (const item of items) {
-
-        const imgType = item.types.find(t => t.startsWith('image/'))
-
-        if (imgType) { await processLineupImage(new File([await item.getType(imgType)], 'pasted.png', { type: imgType })); return }
-
-      }
-
-      setScanError('No image found in clipboard. Copy a screenshot first.')
-
-    } catch { setScanError('Clipboard access denied. Use the file button instead.') }
-
-  }
 
   // ── Image Export ─────────────────────────────────────────────────────────
 
@@ -5127,135 +5182,13 @@ export default function LineUp() {
 
               <>
 
-                {/* Import Dropdown */}
-
-                {canEdit && (
-
-                  <div className="relative" ref={importMenuRef}>
-
-                    <button type="button"
-
-                      onClick={() => { setImportMenuOpen(o => !o); setExportMenuOpen(false) }}
-
-                      className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg font-bold text-xs border transition-all hover:scale-105"
-
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-
-                      <Upload className="w-3.5 h-3.5" style={{ color: currentTheme.accent }} />
-
-                      Import
-
-                      <ChevronDown className={`w-3 h-3 transition-transform duration-150 ${importMenuOpen ? 'rotate-180' : ''}`} />
-
-                    </button>
-
-                    {importMenuOpen && (
-
-                      <>
-
-                        <div className="fixed inset-0 z-40" onClick={() => setImportMenuOpen(false)} />
-
-                        <div className="absolute right-0 top-11 z-50 w-48 rounded-xl overflow-hidden shadow-xl"
-
-                          style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-
-                          <div className="py-1">
-
-                            <button type="button"
-
-                              onClick={() => { fileInputRef.current?.click(); setImportMenuOpen(false) }}
-
-                              className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors"
-
-                              style={{ color: textPrimary }}
-
-                              onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
-
-                              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
-
-                              <Upload className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-
-                              <div>
-
-                                <div>Import Excel</div>
-
-                                <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>.xlsx / .xls file</div>
-
-                              </div>
-
-                            </button>
-
-                            <button type="button"
-
-                              onClick={() => { handlePasteScan(); setImportMenuOpen(false) }}
-
-                              disabled={scanning}
-
-                              className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors disabled:opacity-40"
-
-                              style={{ color: textPrimary }}
-
-                              onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
-
-                              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
-
-                              <ClipboardPaste className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-
-                              <div>
-
-                                <div>Paste Image</div>
-
-                                <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>Ctrl+V screenshot</div>
-
-                              </div>
-
-                            </button>
-
-                            <button type="button"
-
-                              onClick={() => { scanFileRef.current?.click(); setImportMenuOpen(false) }}
-
-                              disabled={scanning}
-
-                              className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors disabled:opacity-40"
-
-                              style={{ color: textPrimary }}
-
-                              onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
-
-                              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
-
-                              <Camera className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-
-                              <div>
-
-                                <div>Upload Photo</div>
-
-                                <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>Scan lineup image</div>
-
-                              </div>
-
-                            </button>
-
-                          </div>
-
-                        </div>
-
-                      </>
-
-                    )}
-
-                  </div>
-
-                )}
-
                 {/* Export Dropdown */}
 
                 <div className="relative" ref={exportMenuRef}>
 
                   <button type="button"
 
-                    onClick={() => { setExportMenuOpen(o => !o); setImportMenuOpen(false) }}
+                    onClick={() => { setExportMenuOpen(o => !o) }}
 
                     className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg font-bold text-xs border transition-all hover:scale-105"
 
@@ -5393,11 +5326,11 @@ export default function LineUp() {
 
                 </div>
 
-                {/* Load Template */}
+                {/* Sync from Schedule */}
 
                 {canEdit && (
 
-                  <button type="button" onClick={handleLoadDefaultTemplate}
+                  <button type="button" onClick={handleSyncFromSchedule}
 
                     className="flex items-center gap-1.5 px-3 py-2 rounded-lg font-bold text-xs transition-all hover:scale-105"
 
@@ -5411,7 +5344,7 @@ export default function LineUp() {
 
                     }}>
 
-                    <ClipboardList className="w-4 h-4" /> Load Yesterday's Lineup
+                    <ClipboardList className="w-4 h-4" /> Sync from Schedule
 
                   </button>
 
@@ -6003,7 +5936,7 @@ export default function LineUp() {
 
                           <p style={{ color: textMuted, fontSize: '12px', margin: '0 0 8px 0', lineHeight: '1.5' }}>
 
-                            Start building today's lineup. You can add rows manually, upload an Excel file, paste a screenshot, or scan a lineup photo using AI.
+                            Start building today's lineup. You can add rows manually.
 
                           </p>
 
@@ -6066,172 +5999,6 @@ export default function LineUp() {
                                 <Plus className="w-4 h-4" />
 
                                 Add Row
-
-                              </button>
-
-                              <button
-
-                                type="button"
-
-                                onClick={() => scanFileRef.current?.click()}
-
-                                style={{
-
-                                  display: 'flex',
-
-                                  alignItems: 'center',
-
-                                  gap: '6px',
-
-                                  padding: '8px 16px',
-
-                                  borderRadius: '8px',
-
-                                  fontSize: '12px',
-
-                                  fontWeight: 700,
-
-                                  backgroundColor: inputBg,
-
-                                  color: textPrimary,
-
-                                  border: `1px solid ${border}`,
-
-                                  cursor: 'pointer',
-
-                                  transition: 'all 0.2s',
-
-                                }}
-
-                                onMouseEnter={e => {
-
-                                  e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A';
-
-                                }}
-
-                                onMouseLeave={e => {
-
-                                  e.currentTarget.style.backgroundColor = inputBg;
-
-                                }}
-
-                              >
-
-                                <Camera className="w-4 h-4" style={{ color: currentTheme.accent }} />
-
-                                Upload Photo
-
-                              </button>
-
-                              <button
-
-                                type="button"
-
-                                onClick={() => fileInputRef.current?.click()}
-
-                                style={{
-
-                                  display: 'flex',
-
-                                  alignItems: 'center',
-
-                                  gap: '6px',
-
-                                  padding: '8px 16px',
-
-                                  borderRadius: '8px',
-
-                                  fontSize: '12px',
-
-                                  fontWeight: 700,
-
-                                  backgroundColor: inputBg,
-
-                                  color: textPrimary,
-
-                                  border: `1px solid ${border}`,
-
-                                  cursor: 'pointer',
-
-                                  transition: 'all 0.2s',
-
-                                }}
-
-                                onMouseEnter={e => {
-
-                                  e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A';
-
-                                }}
-
-                                onMouseLeave={e => {
-
-                                  e.currentTarget.style.backgroundColor = inputBg;
-
-                                }}
-
-                              >
-
-                                <Upload className="w-4 h-4" style={{ color: currentTheme.accent }} />
-
-                                Import Excel
-
-                              </button>
-
-                              <button
-
-                                type="button"
-
-                                onClick={handlePasteScan}
-
-                                disabled={scanning}
-
-                                style={{
-
-                                  display: 'flex',
-
-                                  alignItems: 'center',
-
-                                  gap: '6px',
-
-                                  padding: '8px 16px',
-
-                                  borderRadius: '8px',
-
-                                  fontSize: '12px',
-
-                                  fontWeight: 700,
-
-                                  backgroundColor: inputBg,
-
-                                  color: textPrimary,
-
-                                  border: `1px solid ${border}`,
-
-                                  cursor: 'pointer',
-
-                                  transition: 'all 0.2s',
-
-                                  opacity: scanning ? 0.5 : 1,
-
-                                }}
-
-                                onMouseEnter={e => {
-
-                                  if (!scanning) e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A';
-
-                                }}
-
-                                onMouseLeave={e => {
-
-                                  e.currentTarget.style.backgroundColor = inputBg;
-
-                                }}
-
-                              >
-
-                                <ClipboardPaste className="w-4 h-4" style={{ color: currentTheme.accent }} />
-
-                                Paste Image
 
                               </button>
 

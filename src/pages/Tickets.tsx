@@ -52,7 +52,7 @@ import { SchedulesShowcase, type ScheduleShowcaseRow } from '../components/sched
 import { formatBrandCapacityLabel, parseBrandFromAcDetails } from '../utils/warrantyTicketDisplay'
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ Types Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-interface Ticket {
+export interface Ticket {
   id: string
   title: string
   description?: string
@@ -1267,7 +1267,7 @@ function ticketMatchesNegotiatorFilter(
   return ids.includes(wanted)
 }
 
-function resolveTicketDistrict(ticket: Ticket): string {
+export function resolveTicketDistrict(ticket: Ticket): string {
   const explicit = (ticket.district || '').trim()
   if (explicit) return explicit
   const parsed = parseDistrict(ticket.location, ticket.district)
@@ -1520,7 +1520,7 @@ function getScheduleGhostKind(ticket: Ticket, dateKey: string): 'completed' | 'r
   return null
 }
 
-function ticketBelongsOnScheduleDate(ticket: Ticket, dateKey: string): boolean {
+export function ticketBelongsOnScheduleDate(ticket: Ticket, dateKey: string): boolean {
   if (!dateKey) return true
   // A row is on this day if ANY of its schedule dates match: finalDate, scheduledDate,
   // preferredDate, archived/installed. The server date query (ac_details LIKE) can return
@@ -1534,7 +1534,7 @@ function ticketBelongsOnScheduleDate(ticket: Ticket, dateKey: string): boolean {
   return false
 }
 
-function ticketBelongsOnScheduleBranch(
+export function ticketBelongsOnScheduleBranch(
   ticket: Ticket,
   effectiveBranch: string | null | undefined,
   email?: string | null,
@@ -2051,7 +2051,7 @@ function resolveInstallerFieldRaw(ticket: Ticket): string {
 }
 
 /** Explicit installer/technician field only Ã¢â‚¬â€ never negotiator or assigned sales staff. */
-function getInstallerDisplay(
+export function getInstallerDisplay(
   ticket: Ticket,
   _employees?: BranchStaffOption[],
   _branchId?: string | null,
@@ -2351,18 +2351,18 @@ function formatServiceDriver(ticket: Ticket): string {
 }
 
 /** Driver name — driverName column only, never guessed from serviceVehicle. Blank means "+ Add". */
-function getTicketDriverDisplay(ticket: Ticket): string {
+export function getTicketDriverDisplay(ticket: Ticket): string {
   const direct = sanitizeDisplayText(getF(ticket, 'driverName', 'driver_name'))
   return direct && !isDriverPlaceholderToken(direct) ? direct : ''
 }
 
 /** Vehicle code — serviceVehicle column only, never guessed/split from driverName. Blank means "+ Add". */
-function getTicketVehicleDisplay(ticket: Ticket): string {
+export function getTicketVehicleDisplay(ticket: Ticket): string {
   return sanitizeDisplayText(getF(ticket, 'serviceVehicle', 'service_vehicle'))
 }
 
 /** Parse "ALLAN - 3" / "MANNY / ROMAR - 2" / "MANNY / ROMAR" into crew name + site for grouping. */
-function parseNameSiteToken(raw: string): { name: string; site: number; label: string } {
+export function parseNameSiteToken(raw: string): { name: string; site: number; label: string } {
   const v = (raw || '').trim()
   if (!v || v === EMPTY_CELL) return { name: '', site: Number.MAX_SAFE_INTEGER, label: '' }
   const m = v.match(/^(.+?)\s*-\s*(\d+)\s*$/i)
@@ -2611,7 +2611,7 @@ function compareTicketsByColumn(
   return av.localeCompare(bv, undefined, { sensitivity: 'base', numeric: true })
 }
 
-function getTicketNegotiatorName(ticket: Ticket, employees?: { id: string; name: string }[]): string {
+export function getTicketNegotiatorName(ticket: Ticket, employees?: { id: string; name: string }[]): string {
   const fullname = resolveNegotiatorDisplayName(ticket, employees)
   if (!fullname) return ''
   let cleanName = fullname.trim()
