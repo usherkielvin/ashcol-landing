@@ -1233,7 +1233,11 @@ function shouldShowOnMyTickets(ticket: Ticket): boolean {
   if (isInstalledWorkflowStatus(stat) || stat === 'CANCELLED') return false
   // Once a finalDate exists the ticket belongs on Schedules, not the negotiator queue.
   if (hasFinalScheduleDate(ticket)) return false
-  if (['SCHEDULED', 'IN_PROGRESS', 'ON_THE_WAY', 'CONTINUATION', 'SURVEY'].includes(stat)) return false
+  // SCHEDULED/SURVEY without a finalDate yet just means a pending sub-status was picked
+  // (e.g. INSTALL, SURVEY) — it still belongs in the negotiator's queue until a real date is set.
+  // IN_PROGRESS/ON_THE_WAY are active field-crew statuses (always date-backed by then); CONTINUATION
+  // tracks its own continuationDates array instead of finalDate, so it needs its own exclusion here.
+  if (['IN_PROGRESS', 'ON_THE_WAY', 'CONTINUATION'].includes(stat)) return false
 
   return Boolean(
     ticket.assignedTo
@@ -6009,8 +6013,13 @@ export default function Tickets() {
         size,
         paginate: false,
         ...(scheduleBranchId ? { branchId: scheduleBranchId } : {}),
-        // Admin My Tickets = assigned negotiator queue (no finalDate) for Active Branch — not Schedules statuses.
-        ...(isMyTickets && isAdmin ? { categoryGroup: 'FIELD' as const, status: 'ASSIGNED' } : {}),
+        // Admin My Tickets = negotiator queue (PENDING or ASSIGNED, no finalDate) for Active Branch —
+        // not Schedules statuses. Filtering the server query to status=ASSIGNED only used to drop
+        // any ticket still sitting in PENDING (assigned to a negotiator but never formally flipped
+        // to ASSIGNED) before it even reached the client, showing an empty queue for that negotiator.
+        // shouldShowOnMyTickets below already excludes Scheduled/Cancelled/Installed/etc., so it's
+        // safe to let the server return the full FIELD category range and filter client-side.
+        ...(isMyTickets && isAdmin ? { categoryGroup: 'FIELD' as const } : {}),
         ...(!isMyTickets && requestDate ? { date: requestDate } : {}),
       })
       list = normalizeRelayScheduleTicketList(list as Ticket[])
