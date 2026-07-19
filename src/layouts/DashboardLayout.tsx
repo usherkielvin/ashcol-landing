@@ -866,7 +866,11 @@ export default function DashboardLayout() {
                     <span className="text-[10px] font-extrabold uppercase tracking-widest leading-none mb-1 opacity-70" style={{ color: textMuted }}>
                       {currentPage}
                     </span>
-                    {branchLabel ? (
+                    {currentPage === 'Employees' ? (
+                      <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase" style={{ color: textPrimary }}>
+                        GLOBAL
+                      </h1>
+                    ) : branchLabel ? (
                       <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase" style={{ color: textPrimary }} title={branchLabel}>
                         {branchLabel}
                       </h1>

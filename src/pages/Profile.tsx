@@ -54,6 +54,7 @@ export default function Profile() {
   const [name, setName]               = useState(user?.name || '')
   const [personalEmail, setPersonalEmail] = useState(user?.personalEmail || '')
   const [phone, setPhone]             = useState(user?.phone || '')
+  const [birthDate, setBirthDate]     = useState(user?.birthDate || '')
   const [address, setAddress]         = useState<AddressValue>({
     region: user?.region || '',
     city: user?.city || '',
@@ -111,9 +112,11 @@ export default function Profile() {
         if (!data || !user) return
         const u = data?.data || data
         const formattedName = formatPersonName(u.name || user.name || '')
+        const bDate = u.birthDate || ''
         setName(formattedName)
         setPersonalEmail(u.personalEmail || '')
         setPhone(u.phone || '')
+        setBirthDate(bDate)
         setAddress({
           region: u.region || '',
           city: u.city || '',
@@ -134,6 +137,7 @@ export default function Profile() {
           barangay: u.barangay ?? user.barangay,
           street: u.street || u.address || user.street,
           landmark: u.landmark ?? user.landmark,
+          birthDate: bDate,
           initials: getInitials(formattedName),
         })
       })
@@ -160,9 +164,10 @@ export default function Profile() {
     setName(formattedName)
     setNameLoading(true); setNameErr(''); setNameMsg('')
     try {
-      const payload: Record<string, string> = { name: formattedName }
+      const payload: Record<string, string | null> = { name: formattedName }
       if (isStaffUser) {
         payload.phone = phone.trim()
+        payload.birthDate = birthDate || null
       }
       if (user?.role !== 'admin') {
         payload.region = address.region
@@ -191,6 +196,7 @@ export default function Profile() {
         barangay: u.barangay || address.barangay,
         street: u.street || address.street,
         landmark: u.landmark || address.landmark,
+        birthDate: u.birthDate || birthDate || null,
         initials: getInitials(u.name || formattedName)
       }
       setUser(updatedUser)
@@ -438,24 +444,38 @@ export default function Profile() {
                     )}
 
                     {isStaffUser && (
-                      <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-0">
-                        <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0 sm:pt-3" style={{ color: textMuted }}>Contact Number</label>
-                        <div className="flex-1">
-                          <input
-                            type="tel"
-                            value={phone}
-                            onChange={e => setPhone(e.target.value.replace(/[^0-9+\s-]/g, ''))}
-                            style={inputStyle}
-                            className={`${ic} w-full`}
-                            placeholder="09XX XXX XXXX"
-                            maxLength={20}
-                            autoComplete="tel"
-                          />
-                          <p className="text-[11px] mt-1.5 leading-relaxed" style={{ color: textMuted }}>
-                            Shown on tickets assigned to you when staff view ticket details.
-                          </p>
+                      <>
+                        <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-0">
+                          <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0 sm:pt-3" style={{ color: textMuted }}>Contact Number</label>
+                          <div className="flex-1">
+                            <input
+                              type="tel"
+                              value={phone}
+                              onChange={e => setPhone(e.target.value.replace(/[^0-9+\s-]/g, ''))}
+                              style={inputStyle}
+                              className={`${ic} w-full`}
+                              placeholder="09XX XXX XXXX"
+                              maxLength={20}
+                              autoComplete="tel"
+                            />
+                            <p className="text-[11px] mt-1.5 leading-relaxed" style={{ color: textMuted }}>
+                              Shown on tickets assigned to you when staff view ticket details.
+                            </p>
+                          </div>
                         </div>
-                      </div>
+                        <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-0 mt-4">
+                          <label className="w-36 shrink-0 text-sm font-medium text-right pr-5 pb-1 sm:pb-0 sm:pt-3" style={{ color: textMuted }}>Birthdate</label>
+                          <div className="flex-1">
+                            <input
+                              type="date"
+                              value={birthDate}
+                              onChange={e => setBirthDate(e.target.value)}
+                              style={inputStyle}
+                              className={`${ic} w-full`}
+                            />
+                          </div>
+                        </div>
+                      </>
                     )}
 
                     {/* Role row (read-only) */}

@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   Search, Wrench, Mail, Phone, RefreshCw, Building2,
-  CheckCircle, XCircle, Pencil, Trash2, X, Plus, Copy,
+  CheckCircle, XCircle, Trash2, X, Plus, Copy,
   Check, Eye, EyeOff, ShieldCheck,
   Camera, Calendar, User,
-  Loader2
+  Loader2, ChevronDown
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -17,6 +17,15 @@ function formatDisplayDate(dateStr?: string | null): string {
   const d = new Date(dateStr)
   if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+function formatPhoneNumber(phone?: string | null): string {
+  if (!phone) return '—'
+  const cleaned = phone.replace(/\D/g, '')
+  if (cleaned.length === 11) {
+    return `${cleaned.slice(0, 4)} ${cleaned.slice(4, 7)} ${cleaned.slice(7)}`
+  }
+  return phone
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -39,6 +48,7 @@ interface Employee {
   landmark?: string
   skills?: string
   dateHired?: string
+  birthDate?: string
   createdAt?: string
   updatedAt?: string
 }
@@ -137,10 +147,10 @@ const adaptEditFormForRole = (
 
 const resolveLabel = (role: string, jobTitle: string) => {
   const r = role.toUpperCase()
-  if (jobTitle?.trim()) return formatJobTitleLabel(jobTitle)
   if (r === 'ADMIN') return 'Admin'
   if (r === 'MANAGEMENT') return 'Management'
   if (r === 'MANAGER') return 'Office In Charge'
+  if (jobTitle?.trim()) return formatJobTitleLabel(jobTitle)
   return formatRoleLabel(role)
 }
 
@@ -256,8 +266,21 @@ export default function Employees() {
 
   // UI Filters
   const [search,    setSearch]    = useState('')
-  const [tabFilter, setTabFilter] = useState<'all' | 'active' | 'inactive'>('all')
-  const [roleFilter, setRoleFilter] = useState<RoleFilter>('all')
+  const [tabFilter] = useState<'all' | 'active' | 'inactive'>('all')
+  const [roleFilter] = useState<RoleFilter>('all')
+  const [selectedBranchId, setSelectedBranchId] = useState<string>('')
+  const [branchDropdownOpen, setBranchDropdownOpen] = useState(false)
+  const branchDropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (branchDropdownRef.current && !branchDropdownRef.current.contains(e.target as Node)) {
+        setBranchDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   // Feedback
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -281,9 +304,9 @@ export default function Employees() {
     name: '', email: '', phone: '',
     role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
     branchId: '', isActive: true, newPassword: '',
-    personalEmail: '', region: '', city: '',
-    barangay: '', street: '', landmark: '',
+    personalEmail: '',
     dateHired: '',
+    birthDate: '',
     profileImage: '',
   })
   const [showPass, setShowPass] = useState(false)
@@ -294,9 +317,9 @@ export default function Employees() {
   const [createForm, setCreateForm] = useState({
     name: '', email: '', branchId: '',
     role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
-    phone: '', personalEmail: '', region: '',
-    city: '', barangay: '', street: '',
-    landmark: '', dateHired: '',
+    phone: '', personalEmail: '',
+    dateHired: '',
+    birthDate: '',
     profileImage: '',
   })
   const [createSaving, setCreateSaving] = useState(false)
@@ -310,8 +333,7 @@ export default function Employees() {
     setFormErr('')
     setCreateForm({
       name: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
-      phone: '', personalEmail: '', region: '', city: '', barangay: '', street: '',
-      landmark: '', dateHired: '', profileImage: '',
+      phone: '', personalEmail: '', dateHired: '', birthDate: '', profileImage: '',
     })
   }
 
@@ -320,8 +342,7 @@ export default function Employees() {
     setFormErr('')
     setCreateForm({
       name: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
-      phone: '', personalEmail: '', region: '', city: '', barangay: '', street: '',
-      landmark: '', dateHired: '', profileImage: '',
+      phone: '', personalEmail: '', dateHired: '', birthDate: '', profileImage: '',
     })
     setShowCreate(true)
   }
@@ -668,12 +689,8 @@ export default function Employees() {
       role: emp.role, jobTitle: validJt,
       branchId: emp.branchId, isActive: emp.isActive, newPassword: '',
       personalEmail: emp.personalEmail || '',
-      region: emp.region || '',
-      city: emp.city || '',
-      barangay: emp.barangay || '',
-      street: emp.street || '',
-      landmark: emp.landmark || '',
       dateHired: emp.dateHired || '',
+      birthDate: emp.birthDate || '',
       profileImage: emp.profileImage || '',
     })
     setFormErr('')
@@ -700,12 +717,8 @@ export default function Employees() {
         role: editForm.role,
         jobTitle: (editForm.role === 'EMPLOYEE' || editForm.role === 'MANAGEMENT') ? editForm.jobTitle : '',
         personalEmail: editForm.personalEmail.trim(),
-        region: editForm.region.trim(),
-        city: editForm.city.trim(),
-        barangay: editForm.barangay.trim(),
-        street: editForm.street.trim(),
-        landmark: editForm.landmark.trim(),
         dateHired: editForm.dateHired || null,
+        birthDate: editForm.birthDate || null,
         profileImage: editForm.profileImage,
       }
       if (editForm.newPassword.trim()) payload.password = editForm.newPassword.trim()
@@ -909,12 +922,8 @@ export default function Employees() {
           body: JSON.stringify({
             phone: createForm.phone.trim(),
             personalEmail: createForm.personalEmail.trim(),
-            region: createForm.region.trim(),
-            city: createForm.city.trim(),
-            barangay: createForm.barangay.trim(),
-            street: createForm.street.trim(),
-            landmark: createForm.landmark.trim(),
             dateHired: createForm.dateHired || null,
+            birthDate: createForm.birthDate || null,
             profileImage: createForm.profileImage,
           }),
         })
@@ -938,6 +947,7 @@ export default function Employees() {
     if (tabFilter === 'active'   && !e.isActive) return false
     if (tabFilter === 'inactive' && e.isActive)  return false
     if (roleFilter !== 'all' && e.role.toUpperCase() !== roleFilter) return false
+    if (selectedBranchId && e.branchId !== selectedBranchId) return false
     if (!search.trim()) return true
     const q = search.toLowerCase()
     return (
@@ -949,12 +959,6 @@ export default function Employees() {
       e.phone.toLowerCase().includes(q)
     )
   })
-
-  const stats = {
-    total:    employees.length,
-    active:   employees.filter(e => e.isActive).length,
-    inactive: employees.filter(e => !e.isActive).length,
-  }
 
   const inputCls = "w-full rounded-xl px-3 py-2.5 text-sm font-normal outline-none transition-all focus:ring-2 focus:ring-emerald-500/20"
   const inputStyle = { backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }
@@ -992,118 +996,113 @@ export default function Employees() {
         onChange={handleImageUpload}
       />
 
-      {/* ── Slim Toolbar Header ── */}
-      <div className="flex flex-wrap items-center gap-2 py-1">
-        {/* Title + stats chips */}
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <span className="text-sm font-bold" style={{ color: textPrimary }}>
-            {isManager ? 'Branch Team' : 'Employee Directory'}
-          </span>
-          {isAdmin && (
-            <>
-              <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: 'rgba(59,130,246,0.1)', color: '#3B82F6' }}>
-                {stats.total} total
-              </span>
-              <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: 'rgba(16,185,129,0.1)', color: '#10B981' }}>
-                {stats.active} active
-              </span>
-              {stats.inactive > 0 && (
-                <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: 'rgba(245,158,11,0.1)', color: '#F59E0B' }}>
-                  {stats.inactive} inactive
-                </span>
-              )}
-            </>
-          )}
-        </div>
+      {/* ── Main Table Card (Redesigned & Moved Up) ── */}
+      <div className="rounded-2xl flex flex-col shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
 
-        {/* Actions */}
-        <div className="flex items-center gap-1.5">
+        {/* Search, Filter, & Action Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-4 border-b" style={{ borderColor: border }}>
+          <div className="flex flex-wrap items-center gap-3 flex-1">
+            {/* Search Input */}
+            <div className="flex items-center gap-2.5 min-w-[260px] max-w-sm rounded-xl px-3.5 py-2 border transition-all focus-within:border-emerald-500" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+              <Search className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
+              <input
+                type="text"
+                placeholder="Search name, email, branch…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="bg-transparent text-sm outline-none w-full"
+                style={{ color: textPrimary }}
+              />
+              {search && <button onClick={() => setSearch('')} style={{ color: textMuted }}><X className="w-4 h-4" /></button>}
+            </div>
+
+            {/* Custom Branch Filter Dropdown (Wide Popup) */}
+            <div className="relative" ref={branchDropdownRef}>
+              <button
+                onClick={() => setBranchDropdownOpen(prev => !prev)}
+                className="flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-wider border transition-all hover:bg-slate-500/5 focus:outline-none"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+              >
+                <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
+                <span>
+                  {selectedBranchId
+                    ? branches.find(b => b.id === selectedBranchId)?.name.toUpperCase() || 'ALL BRANCHES'
+                    : 'ALL BRANCHES'}
+                </span>
+                <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${branchDropdownOpen ? 'rotate-180' : ''}`} style={{ color: textMuted }} />
+              </button>
+
+              {branchDropdownOpen && (
+                <div
+                  className="absolute left-0 mt-2 w-[480px] max-w-lg rounded-2xl shadow-2xl overflow-hidden z-40 border p-4 animate-[fadeIn_0.15s_ease-out]"
+                  style={{ backgroundColor: cardBg, borderColor: border }}
+                >
+                  <div className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-3 pb-2 border-b" style={{ borderColor: border }}>
+                    Select Branch
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto">
+                    <button
+                      onClick={() => { setSelectedBranchId(''); setBranchDropdownOpen(false) }}
+                      className="flex items-center justify-between px-4 py-3 rounded-xl text-xs font-semibold transition-all text-left uppercase border hover:bg-slate-500/5"
+                      style={{
+                        backgroundColor: selectedBranchId === '' ? 'rgba(16,185,129,0.06)' : 'transparent',
+                        borderColor: selectedBranchId === '' ? '#10B981' : border,
+                        color: selectedBranchId === '' ? '#10B981' : textPrimary
+                      }}
+                    >
+                      <span>ALL BRANCHES</span>
+                      {selectedBranchId === '' && <Check className="w-3.5 h-3.5 shrink-0 text-emerald-500" />}
+                    </button>
+
+                    {branches.map(b => {
+                      const isSelected = selectedBranchId === b.id
+                      return (
+                        <button
+                          key={b.id}
+                          onClick={() => { setSelectedBranchId(b.id); setBranchDropdownOpen(false) }}
+                          className="flex items-center justify-between px-4 py-3 rounded-xl text-xs font-semibold transition-all text-left uppercase border hover:bg-slate-500/5"
+                          style={{
+                            backgroundColor: isSelected ? 'rgba(16,185,129,0.06)' : 'transparent',
+                            borderColor: isSelected ? '#10B981' : border,
+                            color: isSelected ? '#10B981' : textPrimary
+                          }}
+                        >
+                          <span className="truncate pr-2">{b.name.toUpperCase()}</span>
+                          {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-emerald-500" />}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Add Employee Button (Moved inside table bar) */}
           {(isAdmin || isManager) && (
             <button
               onClick={openCreateFlow}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-all hover:opacity-90"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-sm"
               style={{ backgroundColor: '#10B981' }}
             >
-              <Plus className="w-3.5 h-3.5" /> Add Employee
+              <Plus className="w-4 h-4" /> ADD EMPLOYEE
             </button>
           )}
-          <button
-            onClick={fetchEmployees}
-            className="p-1.5 rounded-lg border transition-all hover:border-emerald-500 hover:text-emerald-500"
-            style={{ backgroundColor: cardBg, borderColor: border, color: textMuted }}
-            title="Refresh"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
-      </div>
-
-      {/* ── Main Table Card ── */}
-      <div className="rounded-xl overflow-hidden flex flex-col" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-
-        {/* Compact Search + Filter Toolbar */}
-        <div className="flex items-center gap-2 px-3 py-2.5 border-b" style={{ borderColor: border }}>
-          <div className="flex items-center gap-2 flex-1 rounded-lg px-2.5 py-1.5 border" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-            <input
-              type="text"
-              placeholder="Search name, email, branch…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="bg-transparent text-xs outline-none w-full"
-              style={{ color: textPrimary }}
-            />
-            {search && <button onClick={() => setSearch('')} style={{ color: textMuted }}><X className="w-3 h-3" /></button>}
-          </div>
-
-          <div className="flex rounded-lg border overflow-hidden shrink-0" style={{ borderColor: border }}>
-            {(['all', 'active', 'inactive'] as const).map(t => (
-              <button
-                key={t}
-                onClick={() => setTabFilter(t)}
-                className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all"
-                style={{
-                  backgroundColor: tabFilter === t
-                    ? t === 'active' ? '#10B981' : t === 'inactive' ? '#F59E0B' : (isLight ? '#334155' : '#1E2D48')
-                    : 'transparent',
-                  color: tabFilter === t ? '#fff' : textMuted,
-                }}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-
-          {isAdmin && (
-            <div className="flex rounded-lg border overflow-hidden shrink-0" style={{ borderColor: border }}>
-              {ROLE_FILTER_OPTS.map(r => (
-                <button
-                  key={r}
-                  onClick={() => setRoleFilter(r)}
-                  className="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all whitespace-nowrap"
-                  style={{
-                    backgroundColor: roleFilter === r ? 'rgba(59,130,246,0.15)' : 'transparent',
-                    color: roleFilter === r ? '#3B82F6' : textMuted,
-                  }}
-                >
-                  {r === 'all' ? 'All roles' : formatRoleLabel(r)}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <span className="text-[10px] font-semibold px-2 py-1 rounded" style={{ backgroundColor: 'rgba(16,185,129,0.08)', color: '#10B981' }}>
-            {filtered.length}
-          </span>
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-b-2xl">
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#080f1c', borderBottom: `1px solid ${border}` }}>
-                {['Employee', 'Role / Title', 'Branch', 'Contact', 'Date Hired', 'Status', ''].map(h => (
-                  <th key={h} className="px-4 py-2.5 text-left text-xs font-medium whitespace-nowrap" style={{ color: textMuted }}>{h}</th>
+                {['Employee', 'Role / Title', 'Branch', 'Contact', 'Status'].map((h, idx, arr) => (
+                  <th
+                    key={h}
+                    className="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider whitespace-nowrap border-r"
+                    style={{ color: textMuted, borderColor: border, borderRight: idx === arr.length - 1 ? 'none' : `1px solid ${border}` }}
+                  >
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -1111,16 +1110,20 @@ export default function Employees() {
               {loading ? (
                 Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i} style={{ borderBottom: `1px solid ${border}` }}>
-                    {[1,2,3,4,5,6,7].map(j => (
-                      <td key={j} className="px-4 py-2.5">
-                        <div className="h-3 rounded animate-pulse" style={{ backgroundColor: inputBg, width: j === 1 ? '70%' : '55%' }} />
+                    {[1, 2, 3, 4, 5].map((j, idx) => (
+                      <td
+                        key={j}
+                        className="px-6 py-4.5 border-r"
+                        style={{ borderColor: border, borderRight: idx === 4 ? 'none' : `1px solid ${border}` }}
+                      >
+                        <div className="h-4 rounded animate-pulse" style={{ backgroundColor: inputBg, width: j === 1 ? '70%' : '55%' }} />
                       </td>
                     ))}
                   </tr>
                 ))
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center">
+                  <td colSpan={5} className="px-6 py-16 text-center">
                     <p className="text-sm font-medium" style={{ color: textMuted }}>No accounts found</p>
                     <p className="text-xs mt-1" style={{ color: textMuted }}>Try a different search or filter.</p>
                   </td>
@@ -1137,106 +1140,55 @@ export default function Employees() {
                     onMouseLeave={el => (el.currentTarget.style.backgroundColor = 'transparent')}
                   >
                     {/* Employee */}
-                    <td className="px-4 py-2.5">
-                      <div className="flex items-center gap-2.5">
-                        <UserAvatar name={e.name} imageUrl={e.profileImage} size="xs" />
+                    <td className="px-6 py-5 border-r" style={{ borderColor: border }}>
+                      <div className="flex items-center gap-3">
+                        <UserAvatar name={e.name} imageUrl={e.profileImage} size="sm" />
                         <div className="min-w-0">
-                          <div className="text-sm font-medium truncate max-w-[150px]" style={{ color: textPrimary }}>{e.name}</div>
-                          <div className="text-xs truncate max-w-[150px]" style={{ color: textMuted }}>{e.email}</div>
+                          <div className="text-base font-bold truncate max-w-[220px]" style={{ color: textPrimary }}>{e.name.toUpperCase()}</div>
+                          <div className="text-xs truncate max-w-[220px]" style={{ color: textMuted }}>{e.email.toLowerCase()}</div>
                         </div>
                       </div>
                     </td>
 
                     {/* Role */}
-                    <td className="px-4 py-2.5">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium whitespace-nowrap"
-                        style={{ backgroundColor: rc.bg, color: rc.text, border: `1px solid ${rc.border}` }}>
-                        {resolveLabel(e.role, e.jobTitle)}
+                    <td className="px-6 py-5 border-r" style={{ borderColor: border }}>
+                      <span className="text-sm font-semibold tracking-wider whitespace-nowrap" style={{ color: rc.text }}>
+                        {resolveLabel(e.role, e.jobTitle).toUpperCase()}
                       </span>
                     </td>
 
                     {/* Branch */}
-                    <td className="px-4 py-2.5">
+                    <td className="px-6 py-5 border-r" style={{ borderColor: border }}>
                       {e.branchName ? (
-                        <div className="flex items-center gap-1 text-xs whitespace-nowrap" style={{ color: textMuted }}>
-                          <Building2 className="w-3 h-3 shrink-0" style={{ color: '#10B981' }} />
-                          <span className="font-medium" style={{ color: textPrimary }}>{e.branchName}</span>
+                        <div className="flex items-center gap-1.5 text-sm whitespace-nowrap" style={{ color: textMuted }}>
+                          <span className="font-semibold" style={{ color: textPrimary }}>{e.branchName.toUpperCase()}</span>
                         </div>
                       ) : (
-                        <span className="text-[10px] italic" style={{ color: textMuted }}>—</span>
+                        <span className="text-xs italic" style={{ color: textMuted }}>—</span>
                       )}
                     </td>
 
                     {/* Contact */}
-                    <td className="px-4 py-2.5">
+                    <td className="px-6 py-5 border-r" style={{ borderColor: border }}>
                       {e.phone ? (
-                        <div className="flex items-center gap-1 text-xs" style={{ color: textMuted }}>
-                          <Phone className="w-3 h-3 shrink-0" />
-                          {e.phone}
-                        </div>
-                      ) : (
-                        <span className="text-[10px] italic" style={{ color: textMuted }}>—</span>
-                      )}
-                    </td>
-
-                    {/* Date Hired */}
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {formatDisplayDate(e.dateHired) !== '—' ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                          {formatDisplayDate(e.dateHired)}
+                        <span className="text-sm font-semibold" style={{ color: textPrimary }}>
+                          {formatPhoneNumber(e.phone)}
                         </span>
                       ) : (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-xs italic" style={{ color: textMuted }}>—</span>
                       )}
                     </td>
 
                     {/* Status */}
-                    <td className="px-4 py-2.5">
+                    <td className="px-6 py-5">
                       <button
                         onClick={evt => { evt.stopPropagation(); requestToggleActive(e) }}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border transition-all"
-                        style={e.isActive
-                          ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.08)', borderColor: 'rgba(16,185,129,0.2)' }
-                          : { color: '#94a3b8', backgroundColor: 'rgba(148,163,184,0.06)', borderColor: 'rgba(148,163,184,0.15)' }}
+                        className="inline-flex items-center gap-1 text-xs font-bold tracking-wider transition-all hover:opacity-85"
+                        style={{ color: e.isActive ? '#10B981' : '#94a3b8' }}
                         title="Toggle status"
                       >
-                        {e.isActive ? <CheckCircle className="w-2.5 h-2.5" /> : <XCircle className="w-2.5 h-2.5" />}
-                        {e.isActive ? 'Active' : 'Inactive'}
+                        {e.isActive ? 'ACTIVE' : 'INACTIVE'}
                       </button>
-                    </td>
-
-                    {/* Actions */}
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-0.5">
-                        <button
-                          onClick={evt => { evt.stopPropagation(); handleRowClick(e) }}
-                          title="View Details"
-                          className="p-1.5 rounded transition-all hover:bg-slate-500/10"
-                          style={{ color: textMuted }}
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
-                        {(isAdmin || isManager) && !isProtectedFromEdit(e.role) && (
-                          <button
-                            onClick={evt => { evt.stopPropagation(); openEdit(e) }}
-                            title="Edit"
-                            className="p-1.5 rounded transition-all hover:bg-emerald-500/10 hover:text-emerald-500"
-                            style={{ color: textMuted }}
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        {isAdmin && !isProtectedFromDelete(e.role) && (
-                          <button
-                            onClick={evt => { evt.stopPropagation(); requestDelete(e) }}
-                            title="Delete"
-                            className="p-1.5 rounded transition-all hover:bg-red-500/10 hover:text-red-500"
-                            style={{ color: textMuted }}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
                     </td>
                   </tr>
                 )
@@ -1304,14 +1256,6 @@ export default function Employees() {
                     Edit Profile
                   </button>
                 )}
-                {isAdmin && !isProtectedFromDelete(selectedEmployee.role) && (
-                  <button
-                    onClick={() => requestDelete(selectedEmployee)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-black text-white bg-red-500 hover:bg-red-600 transition-all"
-                  >
-                    Delete
-                  </button>
-                )}
                 <button
                   onClick={() => setIsDrawerOpen(false)}
                   className="p-2 rounded-lg transition-all hover:bg-slate-500/10 ml-1"
@@ -1359,10 +1303,11 @@ export default function Employees() {
                   {/* Role & Position */}
                   <div className="border-t pt-5" style={{ borderColor: border }}>
                     <div className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: textMuted }}>Role & Position</div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                       <DetailField label="System role" value={formatRoleLabel(selectedEmployee.role)} icon={<ShieldCheck className="w-4 h-4" />} />
                       <DetailField label="Job title" value={selectedEmployee.jobTitle ? formatJobTitleLabel(selectedEmployee.jobTitle) : ''} icon={<Wrench className="w-4 h-4" />} emptyLabel="—" />
                       <DetailField label="Date Hired" value={formatDisplayDate(selectedEmployee.dateHired)} icon={<Calendar className="w-4 h-4" />} />
+                      <DetailField label="Birthdate" value={formatDisplayDate(selectedEmployee.birthDate)} icon={<Calendar className="w-4 h-4" />} />
                     </div>
                   </div>
 
@@ -1394,6 +1339,19 @@ export default function Employees() {
                       {selectedEmployee.isActive ? 'Active Member — click to deactivate' : 'Deactivated — click to reactivate'}
                     </button>
                   </div>
+
+                  {/* Delete Account */}
+                  {isAdmin && !isProtectedFromDelete(selectedEmployee.role) && (
+                    <div className="border-t pt-5" style={{ borderColor: border }}>
+                      <div className="text-[10px] font-black uppercase tracking-widest mb-3 text-red-500">Danger Zone</div>
+                      <button
+                        onClick={() => requestDelete(selectedEmployee)}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-bold text-white bg-red-500 hover:bg-red-600 transition-all shadow-sm"
+                      >
+                        Delete Account
+                      </button>
+                    </div>
+                  )}
 
                 </div>
               )}
@@ -1682,46 +1640,31 @@ export default function Employees() {
                   </div>
                 </div>
 
-                {/* ── Section: Address & Location ── */}
+                {/* ── Section: Birthdate ── */}
                 <div className="border-t pt-4" style={{ borderColor: border }}>
-                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Address & Location</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Field label="Region" labelColor={textMuted}>
-                      <input className={inputCls} style={inputStyle} value={editForm.region} onChange={e => setEditForm(p => ({ ...p, region: e.target.value }))} placeholder="e.g. NCR" />
-                    </Field>
-                    <Field label="City" labelColor={textMuted}>
-                      <input className={inputCls} style={inputStyle} value={editForm.city} onChange={e => setEditForm(p => ({ ...p, city: e.target.value }))} placeholder="e.g. Pasig" />
-                    </Field>
-                    <Field label="Barangay" labelColor={textMuted}>
-                      <input className={inputCls} style={inputStyle} value={editForm.barangay} onChange={e => setEditForm(p => ({ ...p, barangay: e.target.value }))} placeholder="e.g. San Jose" />
-                    </Field>
-                    <Field label="Street / House No." labelColor={textMuted}>
-                      <input className={inputCls} style={inputStyle} value={editForm.street} onChange={e => setEditForm(p => ({ ...p, street: e.target.value }))} placeholder="e.g. 123 Ruby St." />
-                    </Field>
-                    <div className="col-span-1 sm:col-span-2">
-                      <Field label="Landmark Description" labelColor={textMuted}>
-                        <input className={inputCls} style={inputStyle} value={editForm.landmark} onChange={e => setEditForm(p => ({ ...p, landmark: e.target.value }))} placeholder="e.g. Near Brgy Hall" />
-                      </Field>
-                    </div>
-                  </div>
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Birthdate</h4>
+                  <Field label="Employee Birthdate" labelColor={textMuted}>
+                    <input
+                      type="date"
+                      className={inputCls}
+                      style={inputStyle}
+                      value={editForm.birthDate}
+                      onChange={e => setEditForm(p => ({ ...p, birthDate: e.target.value }))}
+                    />
+                  </Field>
                 </div>
 
                 {/* ── Section: Date Hired ── */}
                 <div className="border-t pt-4" style={{ borderColor: border }}>
                   <h4 className="text-[10px] font-black uppercase tracking-wider text-blue-500 mb-3">Date Hired</h4>
                   <Field label="Employee Date Hired" labelColor={textMuted}>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                        <Calendar className="w-4 h-4" />
-                      </div>
-                      <input
-                        type="date"
-                        className={inputCls}
-                        style={inputStyle}
-                        value={editForm.dateHired}
-                        onChange={e => setEditForm(p => ({ ...p, dateHired: e.target.value }))}
-                      />
-                    </div>
+                    <input
+                      type="date"
+                      className={inputCls}
+                      style={inputStyle}
+                      value={editForm.dateHired}
+                      onChange={e => setEditForm(p => ({ ...p, dateHired: e.target.value }))}
+                    />
                   </Field>
                 </div>
 
@@ -1895,38 +1838,23 @@ export default function Employees() {
 
               {createStep === 3 && (
                 <div className="flex flex-col gap-5">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <Field label="Region" labelColor={textMuted}>
-                      <input className={inputCls} style={inputStyle} value={createForm.region} onChange={e => setCreateForm(p => ({ ...p, region: e.target.value }))} placeholder="e.g. NCR" />
-                    </Field>
-                    <Field label="City" labelColor={textMuted}>
-                      <input className={inputCls} style={inputStyle} value={createForm.city} onChange={e => setCreateForm(p => ({ ...p, city: e.target.value }))} placeholder="e.g. Pasig" />
-                    </Field>
-                    <Field label="Barangay" labelColor={textMuted}>
-                      <input className={inputCls} style={inputStyle} value={createForm.barangay} onChange={e => setCreateForm(p => ({ ...p, barangay: e.target.value }))} placeholder="e.g. San Jose" />
-                    </Field>
-                    <Field label="Street" labelColor={textMuted}>
-                      <input className={inputCls} style={inputStyle} value={createForm.street} onChange={e => setCreateForm(p => ({ ...p, street: e.target.value }))} placeholder="e.g. 123 Ruby St." />
-                    </Field>
-                    <div className="sm:col-span-2">
-                      <Field label="Landmark" labelColor={textMuted}>
-                        <input className={inputCls} style={inputStyle} value={createForm.landmark} onChange={e => setCreateForm(p => ({ ...p, landmark: e.target.value }))} placeholder="e.g. Near Brgy Hall" />
-                      </Field>
-                    </div>
-                  </div>
+                  <Field label="Birthdate" labelColor={textMuted}>
+                    <input
+                      type="date"
+                      className={inputCls}
+                      style={inputStyle}
+                      value={createForm.birthDate}
+                      onChange={e => setCreateForm(p => ({ ...p, birthDate: e.target.value }))}
+                    />
+                  </Field>
                   <Field label="Date Hired (optional)" labelColor={textMuted}>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                        <Calendar className="w-4 h-4" />
-                      </div>
-                      <input
-                        type="date"
-                        className={inputCls}
-                        style={inputStyle}
-                        value={createForm.dateHired}
-                        onChange={e => setCreateForm(p => ({ ...p, dateHired: e.target.value }))}
-                      />
-                    </div>
+                    <input
+                      type="date"
+                      className={inputCls}
+                      style={inputStyle}
+                      value={createForm.dateHired}
+                      onChange={e => setCreateForm(p => ({ ...p, dateHired: e.target.value }))}
+                    />
                   </Field>
                   <p className="text-sm rounded-xl px-4 py-3 border" style={{ color: textMuted, borderColor: border, backgroundColor: inputBg }}>
                     A temporary password will be emailed automatically. You can copy it on the next screen right after creation.

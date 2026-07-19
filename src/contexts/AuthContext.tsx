@@ -22,6 +22,7 @@ export interface AuthUser {
   branchId?: string | null
   /** User's official job title (e.g. "Sales Coordinator") */
   jobTitle?: string | null
+  birthDate?: string | null
 }
 
 interface AuthContextType {

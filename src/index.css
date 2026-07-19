@@ -29,15 +29,15 @@
   }
   :root {
     /* Dark mode defaults (applied before JS runs) */
-    --bg:           #060B18;
-    --sidebar-bg:   rgba(10,17,32,0.98);
-    --header-bg:    rgba(10,17,32,0.90);
-    --border:       #1E2D48;
-    --text-primary: #E2E8F0;
-    --text-muted:   #7A95B8;
-    --input-bg:     #0F1A2E;
-    --input-border: #243452;
-    --hover-bg:     #0F1A2E;
+    --bg:           #0a0f1d;
+    --sidebar-bg:   rgba(15,23,42,0.98);
+    --header-bg:    rgba(15,23,42,0.90);
+    --border:       #1e293b;
+    --text-primary: #f8fafc;
+    --text-muted:   #94a3b8;
+    --input-bg:     #0f172a;
+    --input-border: #334155;
+    --hover-bg:     #1e293b;
   }
   :root.light {
     --bg:           #f1f5f9;
@@ -51,13 +51,9 @@
     --hover-bg:     #f1f5f9;
   }
   body {
-    background-color: #060B18;
-    color: #E2E8F0;
+    background-color: var(--bg);
+    color: var(--text-primary);
     min-height: 100vh;
-  }
-  html.light body {
-    background-color: #f8fafc;
-    color: #0f172a;
   }
   #root {
     width: 100%;
@@ -74,7 +70,7 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #1E2D48;
+    background: var(--border);
     border-radius: 9999px;
   }
   html.light ::-webkit-scrollbar-thumb {
