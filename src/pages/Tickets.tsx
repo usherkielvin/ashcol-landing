@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect, type DragEvent } from 'react'
-import { useLocation, useOutletContext } from 'react-router-dom'
+import { useOutletContext } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, X, Edit3, AlertTriangle, CalendarDays,
@@ -915,121 +915,127 @@ function getScheduleRowColors(
 ): { baseBg: string; accent?: string } {
   const outcome = getScheduleOutcome(ticket)
 
+  // Dark mode: every status wash below is intentionally low-alpha (0.05–0.10) so the row reads
+  // as a subtle tint over the base surface, not a saturated block — the accent color still carries
+  // the full-strength hue as a thin 3px left border (see boxShadow at the call site), which is
+  // enough signal without turning the whole table into a wall of neon on black.
   if (!ghostKind && (ticket.status || '').toUpperCase() === 'CANCELLED') {
     return {
-      baseBg: isLight ? '#fee2e2' : 'rgba(239,68,68,0.18)',
+      baseBg: isLight ? '#fee2e2' : 'rgba(239,68,68,0.10)',
       accent: '#EF4444',
     }
   }
 
   if (ghostKind === 'completed') {
+    // Ghost/duplicate rows are secondary (already muted + italic text elsewhere) — keep their
+    // wash a touch dimmer than an active row's so they read as clearly lower-priority.
     if (outcome === 'DONE_CLEANING') {
       return {
-        baseBg: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.2)',
+        baseBg: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.07)',
         accent: '#0EA5E9',
       }
     }
     if (outcome === 'DONE_SURVEY') {
       return {
-        baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.14)',
+        baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.06)',
         accent: '#fbbf24',
       }
     }
     if (outcome === 'DONE_CHECKUP') {
       return {
-        baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.14)',
+        baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.06)',
         accent: '#fbbf24',
       }
     }
   if (outcome === 'DONE_BACKJOB') {
     return {
-      baseBg: isLight ? '#dbeafe' : 'rgba(59,130,246,0.22)',
+      baseBg: isLight ? '#dbeafe' : 'rgba(59,130,246,0.08)',
       accent: '#3B82F6',
     }
   }
   if (outcome === 'DONE_SYSTEM_REPROCESS') {
     return {
-      baseBg: isLight ? '#e0e7ff' : 'rgba(99,102,241,0.2)',
+      baseBg: isLight ? '#e0e7ff' : 'rgba(99,102,241,0.07)',
       accent: '#6366F1',
     }
   }
   if (outcome === 'DONE_DISMANTLE') {
     return {
-      baseBg: isLight ? '#ffe4e6' : 'rgba(244,63,94,0.2)',
+      baseBg: isLight ? '#ffe4e6' : 'rgba(244,63,94,0.07)',
       accent: '#F43F5E',
     }
   }
   if (outcome === 'DONE_QUOTATION') {
     return {
-      baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.2)',
+      baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.07)',
       accent: '#16A34A',
     }
   }
     return {
-      baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.2)',
+      baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.07)',
       accent: '#16A34A',
     }
   }
 
   if (ghostKind === 'resched') {
     return {
-      baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.14)',
+      baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.06)',
       accent: '#fbbf24',
     }
   }
 
   if (outcome === 'DONE_INSTALLED') {
     return {
-      baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.2)',
+      baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.09)',
       accent: '#16A34A',
     }
   }
 
   if (outcome === 'DONE_SURVEY') {
     return {
-      baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.1)',
+      baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.07)',
       accent: '#fbbf24',
     }
   }
 
   if (outcome === 'DONE_CLEANING') {
     return {
-      baseBg: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.16)',
+      baseBg: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.08)',
       accent: '#0EA5E9',
     }
   }
 
   if (outcome === 'DONE_CHECKUP') {
     return {
-      baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.1)',
+      baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.07)',
       accent: '#fbbf24',
     }
   }
 
   if (outcome === 'DONE_BACKJOB') {
     return {
-      baseBg: isLight ? '#eff6ff' : 'rgba(59,130,246,0.14)',
+      baseBg: isLight ? '#eff6ff' : 'rgba(59,130,246,0.07)',
       accent: '#3B82F6',
     }
   }
 
   if (outcome === 'DONE_SYSTEM_REPROCESS') {
     return {
-      baseBg: isLight ? '#eef2ff' : 'rgba(99,102,241,0.14)',
+      baseBg: isLight ? '#eef2ff' : 'rgba(99,102,241,0.07)',
       accent: '#6366F1',
     }
   }
 
   if (outcome === 'DONE_DISMANTLE') {
     return {
-      baseBg: isLight ? '#fff1f2' : 'rgba(244,63,94,0.14)',
+      baseBg: isLight ? '#fff1f2' : 'rgba(244,63,94,0.07)',
       accent: '#F43F5E',
     }
   }
 
   if (outcome === 'DONE_QUOTATION') {
     return {
-      baseBg: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.08)',
+      baseBg: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.06)',
       accent: '#10B981',
     }
   }
@@ -1037,49 +1043,49 @@ function getScheduleRowColors(
   const statusVal = getScheduleStatusValue(ticket)
   if (statusVal === 'RESCHED') {
     return {
-      baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.1)',
+      baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.07)',
       accent: '#fbbf24',
     }
   }
   if (statusVal === 'SURVEY') {
     return {
-      baseBg: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.1)',
+      baseBg: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.07)',
       accent: '#8B5CF6',
     }
   }
   if (statusVal === 'CLEANING' || statusVal === 'CHECKUP' || statusVal === 'BACKJOB') {
     return {
-      baseBg: isLight ? '#f0f9ff' : 'rgba(14,165,233,0.1)',
+      baseBg: isLight ? '#f0f9ff' : 'rgba(14,165,233,0.07)',
       accent: '#0EA5E9',
     }
   }
   if (statusVal === 'SYSTEM_REPROCESS') {
     return {
-      baseBg: isLight ? '#eef2ff' : 'rgba(99,102,241,0.1)',
+      baseBg: isLight ? '#eef2ff' : 'rgba(99,102,241,0.07)',
       accent: '#6366F1',
     }
   }
   if (statusVal === 'DISMANTLE') {
     return {
-      baseBg: isLight ? '#fff1f2' : 'rgba(244,63,94,0.1)',
+      baseBg: isLight ? '#fff1f2' : 'rgba(244,63,94,0.07)',
       accent: '#F43F5E',
     }
   }
   if (statusVal === 'INSTALLATION' || statusVal === 'SERVICES') {
     return {
-      baseBg: isLight ? '#eff6ff' : 'rgba(59,130,246,0.08)',
+      baseBg: isLight ? '#eff6ff' : 'rgba(59,130,246,0.06)',
       accent: '#3B82F6',
     }
   }
   if (statusVal === 'FOR_APPROVAL') {
     return {
-      baseBg: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.08)',
+      baseBg: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.06)',
       accent: '#10B981',
     }
   }
 
   if (isDuplicateName) {
-    return { baseBg: isLight ? '#fef9c3' : '#3d3418' }
+    return { baseBg: isLight ? '#fef9c3' : '#221d0f' }
   }
 
   return { baseBg: idx % 2 === 0 ? rowEven : rowOdd }
@@ -3196,16 +3202,29 @@ function buildCellPatchBody(
   return applyRelayScheduleSyncToPatch(body, ticket)
 }
 
-export default function Tickets() {
+export type TicketsSurface = 'my-tickets' | 'schedules' | 'search'
+
+/**
+ * Each surface maps to exactly the pathname string the old route-sniffing logic used to read
+ * from useLocation() — kept as literal strings (not the actual URL) so the surface-specific
+ * cache-key/date-resolution helpers below (which take a raw pathname) behave identically.
+ */
+function pathnameForSurface(surface: TicketsSurface): string {
+  if (surface === 'my-tickets') return '/my-tickets'
+  if (surface === 'schedules') return '/schedules'
+  return '/search'
+}
+
+export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const { theme, toggleTheme } = useTheme()
   const { user } = useAuth()
-  const location = useLocation()
+  const pathname = pathnameForSurface(surface)
   const { setSidebarOpen } = useOutletContext<{ setSidebarOpen: (v: boolean) => void }>() || {}
-  const isMyTickets = location.pathname === '/my-tickets'
+  const isMyTickets = surface === 'my-tickets'
   const isLight = theme === 'light'
 
   const [activeTab, setActiveTab] = useState<'schedules' | 'overview'>(
-    () => (location.pathname === '/tickets' || location.pathname === '/search') ? 'overview' : 'schedules'
+    () => surface === 'search' ? 'overview' : 'schedules'
   )
 
   useEffect(() => {
@@ -3228,16 +3247,16 @@ export default function Tickets() {
   }, [])
 
   useEffect(() => {
-    if (location.pathname === '/tickets' || location.pathname === '/search') {
+    if (surface === 'search') {
       setActiveTab('overview')
-    } else if (location.pathname === '/schedules') {
+    } else if (surface === 'schedules') {
       setActiveTab('schedules')
       setDateFilter(resolveInitialScheduleDate('/schedules'))
-    } else if (location.pathname === '/my-tickets') {
+    } else if (surface === 'my-tickets') {
       setActiveTab('schedules')
       setDateFilter('')
     }
-  }, [location.pathname])
+  }, [surface])
 
   const [overviewSearchInput, setOverviewSearchInput] = useState('')
   const [overviewSearchFocused, setOverviewSearchFocused] = useState(false)
@@ -3361,29 +3380,29 @@ export default function Tickets() {
   const isTaguigServices = isTaguigServicesScope(activeBranchId, user?.email, user?.jobTitle)
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Color tokens Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-  const cardBg = isLight ? '#ffffff' : '#111827'
-  const border = isLight ? '#cbd5e1' : '#1f2f47'
-  const tableBorder = isLight ? '#e2e8f0' : '#1a2d42'
-  const textPrimary = isLight ? '#0f172a' : '#F1F5F9'
-  const textMuted = isLight ? '#64748b' : '#94A3B8'
-  const inputBg = isLight ? '#f8fafc' : '#1a2537'
-  const inputBorder = isLight ? '#cbd5e1' : '#2a3f5f'
-  const theadBg = isLight ? '#e8edf3' : '#0d1b2e'
-  const myTicketsTheadBg = isLight ? '#DEF2E6' : '#0B2C30'
-  const myTicketsTheadText = isLight ? '#14532D' : '#6EE7B7'
-  const myTicketsTheadBorder = isLight ? 'rgba(22,163,74,0.42)' : 'rgba(74,222,128,0.35)'
-  const schedTheadBg = isLight ? '#E3F4E9' : '#0B272D'
-  const schedTheadText = isLight ? '#166534' : '#86EFAC'
-  const schedTheadBorder = isLight ? 'rgba(22,163,74,0.38)' : 'rgba(74,222,128,0.28)'
-  const rowEven = isLight ? '#ffffff' : '#111827'
-  const rowOdd = isLight ? '#f7fbf8' : '#131f30'
-  const rowHover = isLight ? '#edf7f1' : '#172438'
+  const cardBg = isLight ? '#ffffff' : '#0f172a'
+  const border = isLight ? '#cbd5e1' : '#1e293b'
+  const tableBorder = isLight ? '#e2e8f0' : '#1e293b'
+  const textPrimary = isLight ? '#0f172a' : '#f8fafc'
+  const textMuted = isLight ? '#64748b' : '#94a3b8'
+  const inputBg = isLight ? '#f8fafc' : '#0f172a'
+  const inputBorder = isLight ? '#cbd5e1' : '#334155'
+  const theadBg = isLight ? '#e8edf3' : '#0f172a'
+  const myTicketsTheadBg = isLight ? '#DEF2E6' : '#0a1f24'
+  const myTicketsTheadText = isLight ? '#14532D' : '#34d399'
+  const myTicketsTheadBorder = isLight ? 'rgba(22,163,74,0.42)' : '#0f3c33'
+  const schedTheadBg = isLight ? '#E3F4E9' : '#0a1f24'
+  const schedTheadText = isLight ? '#166534' : '#4ade80'
+  const schedTheadBorder = isLight ? 'rgba(22,163,74,0.38)' : '#0f3c33'
+  const rowEven = isLight ? '#ffffff' : '#0f172a'
+  const rowOdd = isLight ? '#f7fbf8' : '#1b2330'
+  const rowHover = isLight ? '#edf7f1' : '#222f44'
   const green = '#16A34A'
+  const textGreen = isLight ? '#16A34A' : '#4ade80'
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Data state Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const initialSchedulesRef = useRef<ReturnType<typeof getInitialSchedulesFromCache> | null>(null)
   if (!initialSchedulesRef.current) {
-    const pathname = window.location.pathname
     const dateKey = resolveInitialScheduleDate(pathname)
     initialSchedulesRef.current = getInitialSchedulesFromCache(pathname, dateKey || undefined)
   }
@@ -3441,13 +3460,13 @@ export default function Tickets() {
   /** Admin My Tickets: filter pending/assigned rows to one negotiator (e.g. GLESEL). */
   const [myTicketsNegotiatorFilter, setMyTicketsNegotiatorFilter] = useState('')
   const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' }>(
-    () => defaultSortForSchedulesView(location.pathname === '/my-tickets'),
+    () => defaultSortForSchedulesView(isMyTickets),
   )
 
   useEffect(() => {
     setSortConfig(defaultSortForSchedulesView(isMyTickets))
   }, [isMyTickets])
-  const [dateFilter, setDateFilter] = useState(() => resolveInitialScheduleDate(location.pathname))
+  const [dateFilter, setDateFilter] = useState(() => resolveInitialScheduleDate(pathname))
   // Live mirror of dateFilter — read this inside setState updaters / async callbacks so a stale
   // closure (e.g. a background save's applyTicketLocally that resolves after the date tab auto-jumped)
   // never writes the current on-screen rows into a *different* date's cache key.
@@ -7900,14 +7919,20 @@ export default function Tickets() {
       const statusTitle = showsDetails
         ? `${display} ${EMPTY_CELL} click to view remarks & payment`
         : (canEdit ? `${display} ${EMPTY_CELL} click to change` : display)
+      const { display: _disp, ...restTrunc } = truncStyle
       return (
         <span
-          className="inline-flex items-center gap-0.5 font-bold uppercase tracking-normal cursor-pointer select-none"
-          style={{ ...truncStyle, color: badgeStyle.color, maxWidth: '100%' }}
+          className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide cursor-pointer select-none border"
+          style={{
+            ...restTrunc,
+            color: badgeStyle.color,
+            backgroundColor: badgeStyle.backgroundColor,
+            borderColor: badgeStyle.borderColor,
+            maxWidth: '100%',
+          }}
           title={statusTitle}
         >
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayLabel}</span>
-
+          <span className="truncate">{displayLabel}</span>
         </span>
       )
     }
@@ -8132,7 +8157,7 @@ export default function Tickets() {
                 color: remarksText
                   ? (rowGhost
                     ? (isCompletedGhost ? (isLight ? '#15803d' : '#86efac') : (isLight ? '#a16207' : '#fbbf24'))
-                    : green)
+                    : textGreen)
                   : textMuted,
                 fontWeight: remarksText ? 600 : 400,
                 fontStyle: rowGhost ? 'italic' : undefined,
@@ -8161,7 +8186,7 @@ export default function Tickets() {
         )
       }
       return withEditPencil(
-        <span style={{ ...truncStyle, color: val ? green : textMuted, fontWeight: val ? 600 : 400 }}
+        <span style={{ ...truncStyle, color: val ? textGreen : textMuted, fontWeight: val ? 600 : 400 }}
           title={val}>
           {val || EMPTY_CELL}
         </span>,
@@ -8668,7 +8693,7 @@ export default function Tickets() {
                   style={{
                     backgroundColor: isLight ? 'rgba(236,253,245,0.96)' : 'rgba(11,39,45,0.96)',
                     borderColor: isMyTickets ? myTicketsTheadBorder : schedTheadBorder,
-                    color: green,
+                    color: textGreen,
                   }}
                 >
                   <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
@@ -10057,7 +10082,7 @@ export default function Tickets() {
                   <p
                     className="text-[12px] font-semibold whitespace-pre-wrap break-words leading-relaxed"
                     style={{
-                      color: remarksText ? green : textMuted,
+                      color: remarksText ? textGreen : textMuted,
                       fontStyle: isGhost ? 'italic' : undefined,
                     }}
                   >
