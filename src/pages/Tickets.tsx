@@ -169,7 +169,7 @@ function isInstalledWorkflowStatus(status?: string | null): boolean {
   return s === 'INSTALLED' || s === 'COMPLETED'
 }
 
-type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY' | 'DONE_CHECKUP' | 'DONE_BACKJOB' | 'DONE_SYSTEM_REPROCESS' | 'DONE_DISMANTLE'
+type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY' | 'DONE_CHECKUP' | 'DONE_BACKJOB' | 'DONE_SYSTEM_REPROCESS' | 'DONE_DISMANTLE' | 'DONE_QUOTATION'
 type ScheduleStatusGroup = 'pending' | 'closing'
 
 const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatusGroup }[] = [
@@ -183,7 +183,7 @@ const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatu
   { value: 'SERVICE', label: 'SERVICE', group: 'pending' },
   { value: 'RESCHED', label: 'RESCHED', group: 'pending' },
   { value: 'CONTINUATION', label: 'CONTINUATION', group: 'pending' },
-  { value: 'FOR_APPROVAL', label: 'FOR APPROVAL', group: 'pending' },
+  { value: 'FOR_APPROVAL', label: 'FOR QUOTATION', group: 'pending' },
   { value: 'SYSTEM_REPROCESS', label: 'SYSTEM REPROCESS', group: 'pending' },
   { value: 'DISMANTLE', label: 'DISMANTLE', group: 'pending' },
   // Closing
@@ -194,6 +194,7 @@ const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatu
   { value: 'DONE_BACKJOB', label: 'DONE BACKJOB', group: 'closing' },
   { value: 'DONE_SYSTEM_REPROCESS', label: 'DONE SYSTEM REPROCESS', group: 'closing' },
   { value: 'DONE_DISMANTLE', label: 'DONE DISMANTLE', group: 'closing' },
+  { value: 'DONE_QUOTATION', label: 'DONE QUOTATION', group: 'closing' },
   { value: 'CANCELLED', label: 'CANCELLED', group: 'closing' },
 ]
 
@@ -201,7 +202,7 @@ const SCHEDULE_PENDING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group === 'pend
 const SCHEDULE_CLOSING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group === 'closing')
 const CLOSING_SCHEDULE_STATUSES = new Set([
   'DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB',
-  'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE',
+  'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE', 'DONE_QUOTATION',
 ])
 const SCHEDULE_PENDING_STATUS_VALUES = new Set(SCHEDULE_PENDING_OPTS.map(o => o.value))
 const SCHEDULE_CLOSING_STATUS_VALUES = new Set(SCHEDULE_CLOSING_OPTS.map(o => o.value))
@@ -256,7 +257,8 @@ function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: 
     normalized === 'INSTALLED' ||
     normalized === 'COMPLETED' ||
     normalized === 'DONE_CLEANING' ||
-    normalized === 'DONE_BACKJOB'
+    normalized === 'DONE_BACKJOB' ||
+    normalized === 'DONE_QUOTATION'
   ) {
     return { color: isLight ? '#15803d' : '#86efac', backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.18)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)' }
   }
@@ -280,6 +282,7 @@ function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | null {
     || explicit === 'DONE_BACKJOB'
     || explicit === 'DONE_SYSTEM_REPROCESS'
     || explicit === 'DONE_DISMANTLE'
+    || explicit === 'DONE_QUOTATION'
   ) {
     return explicit
   }
@@ -555,6 +558,8 @@ function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record
     body.scheduleOutcome = 'DONE_DISMANTLE'
     acUpdates.scheduleOutcome = 'DONE_DISMANTLE'
     acUpdates.schedulePhase = ''
+  } else if (val === 'DONE_QUOTATION') {
+    setClosing('DONE_QUOTATION')
   } else if (val === 'SYSTEM_REPROCESS') {
     body.status = 'SYSTEM_REPROCESS'
     body.ticketCategory = 'SERVICES'
@@ -765,7 +770,16 @@ function mergeServerListWithLocalEdits(
   serverList: Ticket[],
   localList: Ticket[],
   editedIds: Set<string>,
-  options?: { dateFilter?: string; extraLocal?: Ticket[] },
+  options?: {
+    dateFilter?: string
+    extraLocal?: Ticket[]
+    /** Active branch — required so date-retained cancelled edits can't reappear after a branch switch. */
+    branchId?: string | null
+    email?: string | null
+    jobTitle?: string | null
+    lineupIndex?: InstallerBranchIndexEntry[]
+    driverOnlyNames?: string[]
+  },
 ): Ticket[] {
   // The server response is the source of truth for what's ON this date/branch. Only rows this
   // browser genuinely has unconfirmed state for — recently edited within the 5-minute window,
@@ -794,10 +808,19 @@ function mergeServerListWithLocalEdits(
   })
 
   const dateKey = options?.dateFilter
+  const branchKey = options?.branchId
+  const lineup = options?.lineupIndex
+  const drivers = options?.driverOnlyNames || []
   for (const local of localById.values()) {
     if (serverIds.has(local.id)) continue
     if (!editedIds.has(local.id)) continue
     if (dateKey && !ticketMatchesDateKey(local, dateKey) && !isScheduleGhostOnDate(local, dateKey)) continue
+    // Date match alone is not enough — a just-cancelled ticket stays "protected" for ~5 min and
+    // would otherwise reappear when the admin switches Active Branch on the same schedule date.
+    if (branchKey && branchKey !== 'ALL_BRANCHES'
+      && !ticketBelongsOnScheduleBranch(local, branchKey, options?.email, options?.jobTitle, lineup, drivers)) {
+      continue
+    }
     merged.unshift(normalizeRelayScheduleTicket(local) as Ticket)
   }
 
@@ -936,6 +959,12 @@ function getScheduleRowColors(
       accent: '#F43F5E',
     }
   }
+  if (outcome === 'DONE_QUOTATION') {
+    return {
+      baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.2)',
+      accent: '#16A34A',
+    }
+  }
     return {
       baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.2)',
       accent: '#16A34A',
@@ -995,6 +1024,13 @@ function getScheduleRowColors(
     return {
       baseBg: isLight ? '#fff1f2' : 'rgba(244,63,94,0.14)',
       accent: '#F43F5E',
+    }
+  }
+
+  if (outcome === 'DONE_QUOTATION') {
+    return {
+      baseBg: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.08)',
+      accent: '#10B981',
     }
   }
 
@@ -1237,12 +1273,6 @@ function isScheduleTabIntakeTicket(ticket: Ticket): boolean {
 function shouldShowOnMyTickets(ticket: Ticket): boolean {
   const stat = (ticket.status || '').toUpperCase()
   if (isInstalledWorkflowStatus(stat) || stat === 'CANCELLED') return false
-  if (isScheduleTabIntakeTicket(ticket)) return false
-  if (hasFinalScheduleDate(ticket)) return false
-
-  const label = getRelayQueueLabel(ticket)
-  if (label === 'Installed' || label === 'Scheduled' || label === 'Cancelled') return false
-  if (label !== 'Assigned') return false
 
   return Boolean(
     ticket.assignedTo
@@ -1524,12 +1554,22 @@ function ticketBelongsOnScheduleBranch(
   effectiveBranch: string | null | undefined,
   email?: string | null,
   jobTitle?: string | null,
+  lineupIndex?: InstallerBranchIndexEntry[],
+  driverOnlyNames: string[] = [],
 ): boolean {
   if (!effectiveBranch || effectiveBranch === 'ALL_BRANCHES') return true
   const wanted = resolveScopedBranchId(effectiveBranch)
-  const stored = resolveScopedBranchId(ticket.branchId || ticket.branch_id)
-  // No branch on the row — trust the server's branch-scoped query rather than dropping it.
-  if (!stored) return true
+  // Prefer lineup-resolved branch (same as My Tickets / Archives) so cancelled rows that
+  // still retain their schedule date cannot leak onto another Active Branch view.
+  const stored = resolveScopedBranchId(
+    resolveTicketScheduleBranchId(ticket, lineupIndex, driverOnlyNames)
+    || ticket.branchId
+    || ticket.branch_id,
+  )
+  // Missing branch on a specific-branch Schedules view → exclude. (Previously returned true
+  // to "trust the server", which let cancelled/date-retained rows with empty branchId, and
+  // local merge re-adds, appear under every Active Branch.)
+  if (!stored) return false
   if (wanted && stored === wanted) return true
   if (branchScopesMatch(stored, effectiveBranch, email)) return true
   if (branchScopesMatch(stored, wanted, email)) return true
@@ -2601,7 +2641,7 @@ const INLINE_EDIT_COLUMNS = new Set([
   'INSTALLER', 'NEGOTIATOR', 'COMMIT', 'BRAND', 'DLR', "CUSTOMER'S NAME",
   'FINAL DATE', 'SERVICE', 'UPDATE', 'DESTINATION', 'NOTE',
 ])
-const DEFAULT_MY_TICKETS_SORT = { column: 'NEGOTIATOR', direction: 'asc' as const }
+const DEFAULT_MY_TICKETS_SORT = { column: 'FINAL DATE', direction: 'asc' as const }
 const DEFAULT_SCHEDULE_SORT = { column: 'VEHICLE', direction: 'asc' as const }
 
 function defaultSortForSchedulesView(isMyTickets: boolean) {
@@ -5973,7 +6013,7 @@ export default function Tickets() {
         size,
         paginate: false,
         ...(scheduleBranchId ? { branchId: scheduleBranchId } : {}),
-        ...(isMyTickets && isAdmin ? { categoryGroup: 'FIELD' as const, status: 'ASSIGNED' } : {}),
+        ...(isMyTickets && isAdmin ? { categoryGroup: 'FIELD' as const, statusGroup: 'SCHEDULE' } : {}),
         ...(!isMyTickets && requestDate ? { date: requestDate } : {}),
       })
       list = normalizeRelayScheduleTicketList(list as Ticket[])
@@ -5988,7 +6028,9 @@ export default function Tickets() {
       if (!isMyTickets && requestDate) {
         const dateScoped = (list as Ticket[]).filter(t => ticketBelongsOnScheduleDate(t, requestDate))
         list = (activeBranchId && activeBranchId !== 'ALL_BRANCHES')
-          ? dateScoped.filter(t => ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email, user?.jobTitle))
+          ? dateScoped.filter(t => ticketBelongsOnScheduleBranch(
+            t, activeBranchId, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+          ))
           : dateScoped
       }
       // If still empty, retry date-only then apply the same strict branch+date filter.
@@ -6000,7 +6042,9 @@ export default function Tickets() {
         })
         list = normalizeRelayScheduleTicketList(unscoped as Ticket[]).filter(t =>
           ticketBelongsOnScheduleDate(t, requestDate)
-          && ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email, user?.jobTitle),
+          && ticketBelongsOnScheduleBranch(
+            t, activeBranchId, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+          ),
         )
       }
       cacheTicketsByNumber(list)
@@ -6015,7 +6059,8 @@ export default function Tickets() {
       // Date-scoped server list is authoritative for what's ON this date, but a ticket just
       // edited elsewhere (e.g. Overview) may not be in the server response yet if its save
       // (or the backend's previousScheduleDates indexing) hasn't landed — mergeServerListWithLocalEdits
-      // already re-filters extraLocal by dateFilter/ghost match, so this can't leak other-date rows in.
+      // re-filters extraLocal by date AND active branch, so a cancelled ticket retained on its
+      // schedule date cannot reappear after an Active Branch switch.
       // locallyEditedTicketIdsRef only covers edits made in THIS mount; Overview/Schedules/My Tickets
       // are separate routes (separate <Tickets> mounts), so an edit made on one route has no in-memory
       // record on another — seed from the persisted cross-route marker so it still gets protected here.
@@ -6029,23 +6074,28 @@ export default function Tickets() {
       for (const id of pendingSavesRef.current.keys()) protectedIds.add(id)
       for (const id of activeSavesRef.current) protectedIds.add(id)
       for (const t of ticketsRef.current) if (isTempTicketId(t.id)) protectedIds.add(t.id)
-      const withLocalEdits = (!isMyTickets && requestDate)
-        ? mergeServerListWithLocalEdits(
-          list as Ticket[],
-          (readSchedulesTabCache(requestCacheKey)?.tickets as Ticket[]) || [],
-          protectedIds,
-          { dateFilter: requestDate, extraLocal: ticketsRef.current },
-        )
-        : mergeServerListWithLocalEdits(
-          list as Ticket[],
-          (readSchedulesTabCache(requestCacheKey)?.tickets as Ticket[]) || [],
-          protectedIds,
-          {
-            dateFilter: isMyTickets ? undefined : requestDate,
-            extraLocal: ticketsRef.current,
-          },
-        )
-      const merged = applyOptimisticOverlay(withLocalEdits)
+      const mergeOpts = {
+        dateFilter: isMyTickets ? undefined : requestDate,
+        extraLocal: ticketsRef.current,
+        branchId: isMyTickets ? undefined : activeBranchId,
+        email: user?.email,
+        jobTitle: user?.jobTitle,
+        lineupIndex: installerLineupIndex,
+        driverOnlyNames,
+      }
+      const withLocalEdits = mergeServerListWithLocalEdits(
+        list as Ticket[],
+        (readSchedulesTabCache(requestCacheKey)?.tickets as Ticket[]) || [],
+        protectedIds,
+        mergeOpts,
+      )
+      // Final safety net: never paint / cache another branch's date-retained rows (esp. CANCELLED).
+      const branchSafe = (!isMyTickets && activeBranchId && activeBranchId !== 'ALL_BRANCHES')
+        ? withLocalEdits.filter(t => ticketBelongsOnScheduleBranch(
+          t, activeBranchId, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+        ))
+        : withLocalEdits
+      const merged = applyOptimisticOverlay(branchSafe)
       setTickets(merged)
       writeSchedulesTabCache(requestCacheKey, merged, 'server')
       hasLoadedOnceRef.current = true
@@ -6065,7 +6115,7 @@ export default function Tickets() {
         setBackgroundSyncing(false)
       }
     }
-  }, [user, isCustomer, isAdmin, isMyTickets, globalBranchId, dateFilter, activeBranchId, token, schedulesCacheKeyForTab])
+  }, [user, isCustomer, isAdmin, isMyTickets, globalBranchId, dateFilter, activeBranchId, token, schedulesCacheKeyForTab, installerLineupIndex, driverOnlyNames])
 
   const schedulesDateFetchMountedRef = useRef(false)
 
@@ -6200,7 +6250,9 @@ export default function Tickets() {
         if (!isFieldCategory(inferCategoryFromTicket(t))) return false
         if (!ticketBelongsOnScheduleDate(t, dateFilter)) return false
         if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES'
-          && !ticketBelongsOnScheduleBranch(t, effectiveBranch, user?.email, user?.jobTitle)) return false
+          && !ticketBelongsOnScheduleBranch(
+            t, effectiveBranch, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+          )) return false
         return true
       })
       list = [...list].sort((a, b) => {
@@ -6276,7 +6328,9 @@ export default function Tickets() {
     })
     if (!isMyTickets) {
       if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
-        list = list.filter(t => ticketBelongsOnScheduleBranch(t, effectiveBranch, user?.email, user?.jobTitle))
+        list = list.filter(t => ticketBelongsOnScheduleBranch(
+          t, effectiveBranch, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+        ))
       }
     }
     if (dateFilter) {
@@ -6941,7 +6995,9 @@ export default function Tickets() {
       if (
         activeBranchId
         && activeBranchId !== 'ALL_BRANCHES'
-        && !ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email, user?.jobTitle)
+        && !ticketBelongsOnScheduleBranch(
+          t, activeBranchId, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+        )
       ) {
         return false
       }
@@ -7802,7 +7858,7 @@ export default function Tickets() {
       const statusVal = getScheduleStatusValue(ticket)
       const badgeStyle = getScheduleStatusBadgeStyle(statusVal, isLight)
       const display = getScheduleStatusDisplay(ticket) || EMPTY_CELL
-      let displayLabel = display === 'INSTALLATION' ? 'INSTALL' : (display === 'FOR APPROVAL' ? 'APPROVAL' : display)
+      let displayLabel = display === 'INSTALLATION' ? 'INSTALL' : ((display === 'FOR APPROVAL' || display === 'FOR QUOTATION') ? 'QUOTATION' : display)
       if (display === 'CONTINUATION') {
         const nextDate = getNextContinuationDate(ticket, dateFilter || todayDateKey())
         if (nextDate) {

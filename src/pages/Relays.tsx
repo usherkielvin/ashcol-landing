@@ -593,7 +593,7 @@ const getRelayStatusLabel = (ticket: Ticket) => {
   // Check specific backend lifecycle statuses before the generic "has a negotiator" fallback below,
   // otherwise every assigned ticket collapses to "Assigned" regardless of its real stage.
   if (status === 'SURVEY') return 'Survey'
-  if (status === 'FOR_APPROVAL') return 'For Approval'
+  if (status === 'FOR_APPROVAL') return 'For Quotation'
   if (status === 'CONTINUATION') return 'Continuation'
   if (status === 'SYSTEM_REPROCESS') return 'System Reprocess'
   if (status === 'DONE_SYSTEM_REPROCESS') return 'Done System Reprocess'
@@ -3504,7 +3504,7 @@ export default function Relays() {
                                 { value: 'SERVICE', label: 'SERVICE' },
                                 { value: 'RESCHED', label: 'RESCHED' },
                                 { value: 'CONTINUATION', label: 'CONTINUATION' },
-                                { value: 'FOR APPROVAL', label: 'FOR APPROVAL' },
+                                { value: 'FOR APPROVAL', label: 'FOR QUOTATION' },
                                 { value: 'SYSTEM_REPROCESS', label: 'SYSTEM REPROCESS' },
                                 { value: 'DISMANTLE', label: 'DISMANTLE' },
                               ].map(renderStatusButton)}
@@ -3521,6 +3521,7 @@ export default function Relays() {
                                 { value: 'DONE_BACKJOB', label: 'DONE BACKJOB' },
                                 { value: 'DONE_SYSTEM_REPROCESS', label: 'DONE SYSTEM REPROCESS' },
                                 { value: 'DONE_DISMANTLE', label: 'DONE DISMANTLE' },
+                                { value: 'DONE_QUOTATION', label: 'DONE QUOTATION' },
                                 { value: 'CANCELLED', label: 'CANCELLED' },
                               ].map(renderStatusButton)}
                             </div>
