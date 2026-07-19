@@ -56,7 +56,7 @@ interface Employee {
 interface BranchOption { id: string; name: string }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const DEFAULT_JOB_TITLES = ['TECHNICIAN', 'HELPER', 'DRIVER', 'COORDINATOR', 'SALES EXECUTIVE', 'WARRANTY REGISTRAR', 'WARRANTY REGISTRATOR']
+const DEFAULT_JOB_TITLES = ['TECHNICIAN', 'HELPER', 'DRIVER', 'COORDINATOR', 'SALES EXECUTIVE', 'WARRANTY REGISTRAR', 'WARRANTY REGISTRATOR', 'PAYROLL']
 
 type AssignableRole = 'EMPLOYEE' | 'MANAGER' | 'MANAGEMENT'
 

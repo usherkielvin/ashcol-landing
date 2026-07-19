@@ -1331,7 +1331,7 @@ function isReschedulePending(ticket: Ticket): boolean {
   return meta.reschedulePending === true || String(meta.reschedulePending).toLowerCase() === 'true'
 }
 
-function getScheduleStatusDisplay(ticket: Ticket): string {
+export function getScheduleStatusDisplay(ticket: Ticket): string {
   const val = getScheduleStatusValue(ticket)
   if (val === 'RESCHED') {
     return 'RESCHED'

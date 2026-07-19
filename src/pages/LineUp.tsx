@@ -35,6 +35,7 @@ import {
   resolveTicketDistrict,
   getInstallerDisplay,
   parseNameSiteToken,
+  getScheduleStatusDisplay,
   type Ticket as ScheduleTicket,
 } from './Tickets'
 
@@ -1044,17 +1045,19 @@ export default function LineUp() {
     return []
   }
 
-  /** Map a ticket's workflow status to the short remarks token used on the printed line-up (matches the STATUS badge shown on Schedules). */
-  const scheduleStatusShortLabel = (status?: string): string => {
-    const s = (status || '').toUpperCase().replace(/\s+/g, '_')
-    if (!s) return ''
-    if (s === 'INSTALLATION' || s === 'INSTALLED' || s === 'INSTALL') return 'INSTALL'
-    if (s === 'DISMANTLE' || s === 'DONE_DISMANTLE') return 'DISMANTLE'
-    if (s === 'CHECKUP' || s === 'DONE_CHECKUP') return 'CHECKUP'
-    if (s === 'BACKJOB' || s === 'DONE_BACKJOB') return 'BACKJOB'
-    if (s === 'SURVEY') return 'SURVEY'
-    if (s === 'CLEANING' || s === 'SERVICES' || s === 'SERVICE') return 'SERVICE'
-    return s
+  /**
+   * Short remarks token for a ticket, matching the STATUS badge shown on Schedules — a ticket's
+   * raw `status` is usually just "SCHEDULED" (the real job type/sub-phase lives in
+   * acDetails.schedulePhase / scheduleOutcome), so this reads the same resolved value the
+   * Schedules table itself displays (getScheduleStatusDisplay) instead of the raw status field,
+   * which would otherwise print "SCHEDULED-SCHEDULED-SCHEDULED" instead of "SURVEY-INSTALL-INSTALL".
+   */
+  const scheduleStatusShortLabel = (ticket: ScheduleTicket): string => {
+    const display = (getScheduleStatusDisplay(ticket) || '').toUpperCase().replace(/\s+/g, '_')
+    if (!display) return ''
+    if (display === 'INSTALLATION') return 'INSTALL'
+    if (display === 'FOR_APPROVAL' || display === 'FOR_QUOTATION') return 'QUOTATION'
+    return display
   }
 
   /**
@@ -1135,7 +1138,7 @@ export default function LineUp() {
           installerTime: '7:00AM',
           negotiator: uniqueJoin(groupTickets.map(t => getTicketNegotiatorName(t)), '/'),
           route: uniqueJoin(groupTickets.map(t => resolveTicketDistrict(t)), ' - '),
-          remarks: groupTickets.map(t => scheduleStatusShortLabel(t.status)).filter(Boolean).join('-'),
+          remarks: groupTickets.map(t => scheduleStatusShortLabel(t)).filter(Boolean).join('-'),
           sortOrder: i,
         }
       })
