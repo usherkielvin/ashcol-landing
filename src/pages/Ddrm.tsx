@@ -22,6 +22,67 @@ function emptySite() {
   return { cxName: '', arrival: '', departure: '', idleTime: '' }
 }
 
+/** Parse "10:38AM", "10:38 AM", "10:38", "2:14" → minutes from midnight, or null. */
+function parseClockToMinutes(raw: string): number | null {
+  const s = (raw || '').trim().toUpperCase().replace(/\s+/g, '')
+  if (!s) return null
+  const m = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?(AM|PM)?$/)
+  if (!m) return null
+  let h = Number(m[1])
+  const min = Number(m[2])
+  const ap = m[3]
+  if (min > 59 || h > 23) return null
+  if (ap === 'AM' || ap === 'PM') {
+    if (h > 12) return null
+    if (ap === 'AM') {
+      if (h === 12) h = 0
+    } else {
+      if (h !== 12) h += 12
+    }
+  } else if (h > 23) {
+    return null
+  }
+  return h * 60 + min
+}
+
+/** Idle = DEP − ARR. Formats like "30M", "1H", "3H 32M". */
+function computeIdleFromArrivalDeparture(arrival: string, departure: string): string {
+  let a = parseClockToMinutes(arrival)
+  let d = parseClockToMinutes(departure)
+  if (a == null || d == null) return ''
+
+  const arrHasAp = /[AP]M/i.test(arrival)
+  const depHasAp = /[AP]M/i.test(departure)
+  // Bare times like 10:42 → 2:14: assume departure is later the same day (add 12h if needed)
+  if (!arrHasAp && !depHasAp && d < a) {
+    d += 12 * 60
+  }
+  // Cross midnight only if still negative after that
+  if (d < a) d += 24 * 60
+
+  const diff = d - a
+  if (diff <= 0) return ''
+  const hours = Math.floor(diff / 60)
+  const mins = diff % 60
+  if (hours > 0 && mins > 0) return `${hours}h ${mins}m`
+  if (hours > 0) return `${hours}h`
+  return `${mins}m`
+}
+
+function recomputeAllIdleTimes(sheet: any) {
+  if (!sheet?.rows) return sheet
+  return {
+    ...sheet,
+    rows: sheet.rows.map((row: any) => ({
+      ...row,
+      sites: (row.sites || []).map((site: any) => {
+        const idle = computeIdleFromArrivalDeparture(site.arrival || '', site.departure || '')
+        return idle ? { ...site, idleTime: idle } : site
+      }),
+    })),
+  }
+}
+
 function emptyRow() {
   return {
     logDate: '',
@@ -156,17 +217,17 @@ export default function Ddrm() {
       .ddrm-sheet-table.excel-table {
         width: max-content !important;
         table-layout: auto;
-        border-collapse: separate;
+        border-collapse: collapse;
         border-spacing: 0;
         font-size: 12px;
+        border: 1px solid ${isLight ? '#0f172a' : '#e2e8f0'};
       }
       .ddrm-sheet-table thead th {
         position: sticky; z-index: 5;
         font-size: 10px; font-weight: 800; letter-spacing: 0.05em;
         text-transform: uppercase; white-space: nowrap;
         padding: 8px 10px !important; text-align: center;
-        border: none !important;
-        border-bottom: 2px solid var(--excel-border) !important;
+        border: 1px solid ${isLight ? '#0f172a' : '#e2e8f0'} !important;
         background: var(--excel-header-bg);
       }
       .ddrm-sheet-table thead tr:first-child th { top: 0; z-index: 6; }
@@ -175,8 +236,7 @@ export default function Ddrm() {
         padding: 4px 8px !important; vertical-align: middle;
         overflow: visible;
         height: 48px;
-        border: none !important;
-        border-bottom: 1px solid var(--excel-border) !important;
+        border: 1px solid ${isLight ? '#0f172a' : '#e2e8f0'} !important;
         white-space: nowrap;
       }
       .ddrm-sheet-table th.ddrm-site-edge-l,
@@ -191,7 +251,8 @@ export default function Ddrm() {
       }
       .ddrm-sheet-table thead th.ddrm-site-edge-l,
       .ddrm-sheet-table thead th.ddrm-site-edge-r {
-        border-bottom: 2px solid var(--excel-border) !important;
+        border-top: 1px solid ${isLight ? '#0f172a' : '#e2e8f0'} !important;
+        border-bottom: 1px solid ${isLight ? '#0f172a' : '#e2e8f0'} !important;
       }
       .ddrm-sheet-table input {
         display: block; box-sizing: border-box;
@@ -260,6 +321,29 @@ export default function Ddrm() {
       .ddrm-scroll-x::-webkit-scrollbar-thumb:active {
         background: #059669;
       }
+      .ddrm-ledger-table.excel-table {
+        width: 100%;
+        border-collapse: collapse;
+        border: 1px solid ${isLight ? '#0f172a' : '#e2e8f0'};
+      }
+      .ddrm-ledger-table thead th {
+        font-size: 11px; font-weight: 800; letter-spacing: 0.06em;
+        text-transform: uppercase; padding: 14px 16px !important;
+        border: 1px solid ${isLight ? '#0f172a' : '#e2e8f0'} !important;
+        background: ${isLight ? '#f8fafc' : '#0F1A2E'} !important;
+        color: ${isLight ? '#64748b' : '#7A95B8'} !important;
+        position: sticky; top: 0; z-index: 2;
+      }
+      .ddrm-ledger-table tbody td {
+        font-size: 14px; font-weight: 600;
+        padding: 18px 16px !important;
+        height: 64px;
+        border: 1px solid ${isLight ? '#0f172a' : '#e2e8f0'} !important;
+        vertical-align: middle;
+      }
+      .ddrm-ledger-table tbody tr:last-child td {
+        border-bottom: 1px solid ${isLight ? '#0f172a' : '#e2e8f0'} !important;
+      }
       .ddrm-meta-grid {
         display: grid;
         grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -306,7 +390,7 @@ export default function Ddrm() {
       ...rows.map((r: any) => (Array.isArray(r.sites) ? r.sites.length : 0)),
     )
     setSiteCount(Math.min(6, maxSites))
-    setEditingSheet(sheet)
+    setEditingSheet(recomputeAllIdleTimes(sheet))
     setView('sheet')
   }
 
@@ -341,7 +425,7 @@ export default function Ddrm() {
             filedBy: data.filedBy || '',
             driverName: (data.driverName || '').toUpperCase(),
             position: data.position || 'Driver',
-            branch: data.branch || '',
+            branch: (data.branch || '').toUpperCase(),
             cutOffPeriod: data.cutOffPeriod || '',
             validatedBy: data.validatedBy || '',
             totalApprovedOt: data.totalApprovedOt || '',
@@ -383,6 +467,7 @@ export default function Ddrm() {
     const payload = {
       ...editingSheet,
       driverName: (editingSheet.driverName || '').toUpperCase(),
+      branch: (editingSheet.branch || '').toUpperCase(),
     }
 
     try {
@@ -476,7 +561,11 @@ export default function Ddrm() {
     const newRows = [...editingSheet.rows]
     const sites = [...(newRows[rIdx].sites || [])]
     while (sites.length <= sIdx) sites.push(emptySite())
-    sites[sIdx] = { ...sites[sIdx], [key]: value }
+    const next = { ...sites[sIdx], [key]: value }
+    if (key === 'arrival' || key === 'departure') {
+      next.idleTime = computeIdleFromArrivalDeparture(next.arrival, next.departure)
+    }
+    sites[sIdx] = next
     newRows[rIdx] = { ...newRows[rIdx], sites }
     setEditingSheet({ ...editingSheet, rows: newRows })
   }
@@ -647,8 +736,8 @@ export default function Ddrm() {
             </div>
           </div>
 
-          <div className="overflow-x-auto flex-1">
-            <table className="excel-table">
+          <div className="overflow-x-auto flex-1 ddrm-scroll-x">
+            <table className="excel-table ddrm-ledger-table">
               <thead>
                 <tr>
                   <th>Driver Name</th>
@@ -663,18 +752,18 @@ export default function Ddrm() {
               <tbody>
                 {loadingSheet && (
                   <tr>
-                    <td colSpan={7} className="text-center py-8">
+                    <td colSpan={7} className="text-center py-10">
                       <Loader2 className="w-5 h-5 animate-spin inline mr-2" style={{ color: excelGreen }} />
-                      <span className="text-xs font-semibold" style={{ color: textMuted }}>Opening sheet…</span>
+                      <span className="text-sm font-semibold" style={{ color: textMuted }}>Opening sheet…</span>
                     </td>
                   </tr>
                 )}
                 {!loadingSheet && filteredSheets.map((s, idx) => {
                   const isMenuOpen = driverContextMenu?.sheet?.id === s.id
                   const rowBg = isMenuOpen
-                    ? (isLight ? '#f1f5f9' : '#111827')
-                    : (idx % 2 === 0 ? (isLight ? '#ffffff' : '#0A1120') : (isLight ? '#fafafa' : '#0d1626'))
-                  const rowHoverBg = isLight ? '#f1f5f9' : '#0f1e36'
+                    ? (isLight ? '#ecfdf5' : '#111827')
+                    : (idx % 2 === 0 ? (isLight ? '#ffffff' : '#0A1120') : (isLight ? '#f8fafc' : '#0d1626'))
+                  const rowHoverBg = isLight ? '#f0fdf4' : '#0f1e36'
                   return (
                     <tr
                       key={s.id}
@@ -697,23 +786,31 @@ export default function Ddrm() {
                       className="transition-colors"
                       title="Double-click to open · Right-click for actions"
                     >
-                      <td className="font-bold uppercase tracking-wide">{(s.driverName || '—').toUpperCase()}</td>
-                      <td>{s.branch || '—'}</td>
-                      <td>{s.position || '—'}</td>
-                      <td className="font-medium">{s.cutOffPeriod || '—'}</td>
-                      <td>{s.dateFiled ? new Date(s.dateFiled).toLocaleDateString() : '—'}</td>
-                      <td>{s.validatedBy || '—'}</td>
-                      <td className="font-bold">{s.totalApprovedOt || '—'}</td>
+                      <td className="font-extrabold uppercase tracking-wide" style={{ color: textPrimary }}>
+                        {(s.driverName || '—').toUpperCase()}
+                      </td>
+                      <td className="font-extrabold uppercase tracking-wide" style={{ color: excelGreen }}>
+                        {(s.branch || '—').toUpperCase()}
+                      </td>
+                      <td style={{ color: textMuted }}>{(s.position || '—')}</td>
+                      <td className="font-bold" style={{ color: textPrimary }}>{s.cutOffPeriod || '—'}</td>
+                      <td style={{ color: textMuted }}>
+                        {s.dateFiled ? new Date(s.dateFiled).toLocaleDateString() : '—'}
+                      </td>
+                      <td style={{ color: textMuted }}>{s.validatedBy || '—'}</td>
+                      <td className="font-extrabold" style={{ color: textPrimary }}>
+                        {s.totalApprovedOt || '—'}
+                      </td>
                     </tr>
                   )
                 })}
                 {!loadingSheet && driverSheets.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="text-center py-10" style={{ color: textMuted }}>
+                    <td colSpan={7} className="text-center py-14" style={{ color: textMuted }}>
                       <div className="flex flex-col items-center gap-2">
                         <MapPin className="w-8 h-8 opacity-40" />
-                        <span className="text-sm font-semibold">No driver sheets yet</span>
-                        <span className="text-xs">Import a scan or add a blank sheet to get started.</span>
+                        <span className="text-base font-bold">No driver sheets yet</span>
+                        <span className="text-sm">Import a scan or add a blank sheet to get started.</span>
                       </div>
                     </td>
                   </tr>
@@ -767,7 +864,7 @@ export default function Ddrm() {
                   </h3>
                 </div>
                 <p className="text-sm font-semibold mt-0.5 truncate" style={{ color: textMuted }}>
-                  {[editingSheet.branch, editingSheet.cutOffPeriod, editingSheet.position]
+                  {[editingSheet.branch ? String(editingSheet.branch).toUpperCase() : null, editingSheet.cutOffPeriod, editingSheet.position]
                     .filter(Boolean)
                     .join('  ·  ') || 'Route sheet details'}
                 </p>
@@ -833,7 +930,7 @@ export default function Ddrm() {
             <div className="ddrm-meta-grid">
               {[
                 { key: 'driverName', label: 'Driver Name', upper: true, required: true },
-                { key: 'branch', label: 'Branch' },
+                { key: 'branch', label: 'Branch', upper: true },
                 { key: 'position', label: 'Position' },
                 { key: 'filedBy', label: 'Filed By' },
                 { key: 'dateFiled', label: 'Date Filed', type: 'date' },
@@ -1033,8 +1130,10 @@ export default function Ddrm() {
                               <input
                                 className="ddrm-idle"
                                 value={site.idleTime || ''}
-                                onChange={e => updateSiteField(rIdx, sIdx, 'idleTime', e.target.value)}
-                                style={{ color: textPrimary }}
+                                readOnly
+                                title="Auto: DEP − ARR"
+                                placeholder="—"
+                                style={{ color: textMuted, cursor: 'default' }}
                                 size={Math.max(7, (site.idleTime || '').length + 2)}
                               />
                             </td>

@@ -892,6 +892,13 @@ function getScheduleRowColors(
 ): { baseBg: string; accent?: string } {
   const outcome = getScheduleOutcome(ticket)
 
+  if (!ghostKind && (ticket.status || '').toUpperCase() === 'CANCELLED') {
+    return {
+      baseBg: isLight ? '#fee2e2' : 'rgba(239,68,68,0.18)',
+      accent: '#EF4444',
+    }
+  }
+
   if (ghostKind === 'completed') {
     if (outcome === 'DONE_CLEANING') {
       return {
@@ -1450,10 +1457,12 @@ function ticketMatchesDateKey(ticket: Ticket, dateKey: string): boolean {
   const scheduledDate = String(meta.scheduledDate || '').split('T')[0].split(' ')[0].trim()
   const archived = String(meta.archivedScheduleDate || '').split('T')[0].split(' ')[0].trim()
   const installed = String(meta.installedDate || '').split('T')[0].split(' ')[0].trim()
-  const rescheduledTo = String(meta.rescheduledTo || '').split('T')[0].split(' ')[0].trim()
   const finalDate = !isResched ? getFinalDateKey(ticket) : ''
   const preferred = getPreferredDateKey(ticket)
-  const dateCandidates = [finalDate, scheduledDate, preferred, rescheduledTo, archived, installed].filter(Boolean)
+  // rescheduledTo is legacy-only and no longer written by any reschedule flow — matching on it
+  // made a ticket stick forever to whatever old date a stale value happened to carry (the exact
+  // "grayed-out, uneditable row still on the old date" bug after a plain finalDate move).
+  const dateCandidates = [finalDate, scheduledDate, preferred, archived, installed].filter(Boolean)
 
   for (const candidate of dateCandidates) {
     if (candidate === dateKey) return true
@@ -3517,8 +3526,7 @@ export default function Tickets() {
     list = normalizeRelayScheduleTicketList(list)
     if (!isMyTickets && dateFilter) {
       list = list.filter(t =>
-        (t.status || '').toUpperCase() !== 'CANCELLED'
-        && ticketBelongsOnScheduleDate(t, dateFilter)
+        ticketBelongsOnScheduleDate(t, dateFilter)
         && ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email, user?.jobTitle),
       )
     }
@@ -5978,8 +5986,7 @@ export default function Tickets() {
       // Taguig Services or other branches' tickets). If branch-scoped comes back empty, the retry
       // below tries harder instead.
       if (!isMyTickets && requestDate) {
-        const raw = (list as Ticket[]).filter(t => (t.status || '').toUpperCase() !== 'CANCELLED')
-        const dateScoped = raw.filter(t => ticketBelongsOnScheduleDate(t, requestDate))
+        const dateScoped = (list as Ticket[]).filter(t => ticketBelongsOnScheduleDate(t, requestDate))
         list = (activeBranchId && activeBranchId !== 'ALL_BRANCHES')
           ? dateScoped.filter(t => ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email, user?.jobTitle))
           : dateScoped
@@ -5992,8 +5999,7 @@ export default function Tickets() {
           date: requestDate,
         })
         list = normalizeRelayScheduleTicketList(unscoped as Ticket[]).filter(t =>
-          (t.status || '').toUpperCase() !== 'CANCELLED'
-          && ticketBelongsOnScheduleDate(t, requestDate)
+          ticketBelongsOnScheduleDate(t, requestDate)
           && ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email, user?.jobTitle),
         )
       }
@@ -6191,8 +6197,6 @@ export default function Tickets() {
     // Schedules date tab: active branch + schedule date (server already scopes branch for admin).
     if (!isMyTickets && dateFilter) {
       let list = tickets.filter(t => {
-        const stat = (t.status || '').toUpperCase()
-        if (stat === 'CANCELLED') return false
         if (!isFieldCategory(inferCategoryFromTicket(t))) return false
         if (!ticketBelongsOnScheduleDate(t, dateFilter)) return false
         if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES'
