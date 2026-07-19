@@ -1228,51 +1228,12 @@ function hasFinalScheduleDate(ticket: Ticket): boolean {
   return Boolean(getFinalDateKey(ticket))
 }
 
-/** Relay-board stage Ã¢â‚¬â€ mirrors ClientMasterlist getRelayStatusLabel. */
-function getRelayQueueLabel(ticket: Ticket): string {
-  const status = (ticket.status || '').toUpperCase()
-  if (status === 'CANCELLED') return 'CANCELLED'
-  const outcome = getScheduleOutcome(ticket)
-  if (outcome === 'DONE_CHECKUP') return 'DONE CHECKUP'
-  if (outcome === 'DONE_BACKJOB') return 'DONE BACKJOB'
-  if (outcome === 'DONE_CLEANING') return 'DONE CLEANING'
-  if (outcome === 'DONE_SURVEY') return 'DONE SURVEY'
-  if (outcome === 'DONE_SYSTEM_REPROCESS') return 'DONE SYSTEM REPROCESS'
-  if (outcome === 'DONE_DISMANTLE') return 'DONE DISMANTLE'
-  if (outcome === 'DONE_INSTALLED') return 'DONE INSTALL'
-  if (status === 'SYSTEM_REPROCESS') return 'SYSTEM REPROCESS'
-  if (status === 'DISMANTLE') return 'DISMANTLE'
-  if (status === 'DONE_SYSTEM_REPROCESS') return 'DONE SYSTEM REPROCESS'
-  if (status === 'DONE_DISMANTLE') return 'DONE DISMANTLE'
-  if (isInstalledWorkflowStatus(status)) return 'INSTALLED'
-
-  if (hasFinalScheduleDate(ticket)) return 'Scheduled'
-  if (['SCHEDULED', 'RESCHED', 'IN_PROGRESS', 'ON_THE_WAY', 'FOR_APPROVAL', 'SURVEY', 'CONTINUATION', 'SYSTEM_REPROCESS', 'DISMANTLE'].includes(status)) {
-    return 'Scheduled'
-  }
-
-  if (status === 'ASSIGNED' || ticket.branchId || ticket.branch_id || ticket.assignedTo) return 'Assigned'
-  return 'Pending'
-}
-
-/** Tickets entered on Schedules (manual / import) must not appear on My Tickets. */
-function isScheduleTabIntakeTicket(ticket: Ticket): boolean {
-  const stat = (ticket.status || '').toUpperCase()
-  if (hasFinalScheduleDate(ticket)) return true
-  if (stat === 'RESCHED') return true
-  const meta = parseAcMeta(ticket)
-  if (!Array.isArray(meta) && meta && typeof meta === 'object') {
-    const scheduledDate = String((meta as { scheduledDate?: string }).scheduledDate || '').trim()
-    if (scheduledDate) return true
-    const intake = (meta as { scheduleIntake?: boolean | string }).scheduleIntake
-    if (intake === true || intake === 'true') return true
-  }
-  return false
-}
-
 function shouldShowOnMyTickets(ticket: Ticket): boolean {
   const stat = (ticket.status || '').toUpperCase()
   if (isInstalledWorkflowStatus(stat) || stat === 'CANCELLED') return false
+  // Once a finalDate exists the ticket belongs on Schedules, not the negotiator queue.
+  if (hasFinalScheduleDate(ticket)) return false
+  if (['SCHEDULED', 'IN_PROGRESS', 'ON_THE_WAY', 'CONTINUATION', 'SURVEY'].includes(stat)) return false
 
   return Boolean(
     ticket.assignedTo
@@ -1280,6 +1241,20 @@ function shouldShowOnMyTickets(ticket: Ticket): boolean {
     || ticket.negotiator_id
     || stat === 'ASSIGNED',
   )
+}
+
+function ticketMatchesNegotiatorFilter(
+  ticket: Ticket,
+  negotiatorId?: string | null,
+): boolean {
+  const wanted = (negotiatorId || '').trim()
+  if (!wanted) return true
+  const ids = [
+    ticket.negotiatorId,
+    ticket.negotiator_id,
+    ticket.assignedTo,
+  ].map(v => String(v || '').trim()).filter(Boolean)
+  return ids.includes(wanted)
 }
 
 function resolveTicketDistrict(ticket: Ticket): string {
@@ -3459,6 +3434,8 @@ export default function Tickets() {
   }, [loading])
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  /** Admin My Tickets: filter pending/assigned rows to one negotiator (e.g. GLESEL). */
+  const [myTicketsNegotiatorFilter, setMyTicketsNegotiatorFilter] = useState('')
   const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' }>(
     () => defaultSortForSchedulesView(location.pathname === '/my-tickets'),
   )
@@ -3564,7 +3541,15 @@ export default function Tickets() {
     // NB: filter the in-memory list only — never writeSchedulesTabCache here,
     // that dispatches TAB_CACHE_UPDATED which re-triggers hydrate (infinite loop).
     list = normalizeRelayScheduleTicketList(list)
-    if (!isMyTickets && dateFilter) {
+    if (isMyTickets) {
+      list = list.filter(t => {
+        if (!shouldShowOnMyTickets(t)) return false
+        if (activeBranchId && activeBranchId !== 'ALL_BRANCHES') {
+          return ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email, user?.jobTitle)
+        }
+        return true
+      })
+    } else if (dateFilter) {
       list = list.filter(t =>
         ticketBelongsOnScheduleDate(t, dateFilter)
         && ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email, user?.jobTitle),
@@ -3576,11 +3561,10 @@ export default function Tickets() {
     setHasHydratedOnce(true)
     hasLoadedOnceRef.current = true
     return true
-  }, [schedulesCacheKeyForTab, isMyTickets, dateFilter, activeBranchId, user?.email])
+  }, [schedulesCacheKeyForTab, isMyTickets, dateFilter, activeBranchId, user?.email, user?.jobTitle])
 
   // Paint cached rows before first paint when switching branch/date — no loading screen flash.
   useLayoutEffect(() => {
-    if (isMyTickets) return
     const hydrated = hydrateFromTabCache()
     if (hydrated) {
       setSyncing(false)
@@ -3948,6 +3932,18 @@ export default function Tickets() {
     () => negotiatorsForBranch(activeBranchId),
     [negotiatorsForBranch, activeBranchId],
   )
+
+  const myTicketsNegotiatorOptions = useMemo(
+    () => negotiatorsForBranch(activeBranchId),
+    [negotiatorsForBranch, activeBranchId],
+  )
+
+  // Drop My Tickets negotiator filter when Active Branch changes and they are no longer listed.
+  useEffect(() => {
+    if (!isMyTickets || !myTicketsNegotiatorFilter) return
+    if (myTicketsNegotiatorOptions.some(n => n.id === myTicketsNegotiatorFilter)) return
+    setMyTicketsNegotiatorFilter('')
+  }, [isMyTickets, myTicketsNegotiatorFilter, myTicketsNegotiatorOptions, activeBranchId])
 
   const editModalNegotiators = useMemo(() => {
     const base = negotiatorsForBranch(editForm.branchId || activeBranchId)
@@ -5999,7 +5995,7 @@ export default function Tickets() {
     beginActiveScheduleFetch()
     try {
       const auth = token()
-      const scheduleBranchId = !isMyTickets && activeBranchId && activeBranchId !== 'ALL_BRANCHES'
+      const scheduleBranchId = activeBranchId && activeBranchId !== 'ALL_BRANCHES'
         ? resolveScopedBranchId(activeBranchId)
         : undefined
       let list: unknown[] = []
@@ -6008,15 +6004,30 @@ export default function Tickets() {
       const ep = isMyTickets
         ? (isAdmin ? '/tickets/branch' : '/tickets/assigned')
         : isCustomer ? '/tickets/my' : '/tickets/branch'
-      const size = isMyTickets ? 100 : 200
+      const size = isMyTickets ? 200 : 200
       list = await fetchTicketsPage(ep, auth, {
         size,
         paginate: false,
         ...(scheduleBranchId ? { branchId: scheduleBranchId } : {}),
-        ...(isMyTickets && isAdmin ? { categoryGroup: 'FIELD' as const, statusGroup: 'SCHEDULE' } : {}),
+        // Admin My Tickets = assigned negotiator queue (no finalDate) for Active Branch — not Schedules statuses.
+        ...(isMyTickets && isAdmin ? { categoryGroup: 'FIELD' as const, status: 'ASSIGNED' } : {}),
         ...(!isMyTickets && requestDate ? { date: requestDate } : {}),
       })
       list = normalizeRelayScheduleTicketList(list as Ticket[])
+      if (isMyTickets) {
+        list = (list as Ticket[]).filter(t => {
+          if (!shouldShowOnMyTickets(t)) return false
+          if (activeBranchId && activeBranchId !== 'ALL_BRANCHES'
+            && !ticketBelongsOnScheduleBranch(
+              t, activeBranchId, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+            )) return false
+          // Non-admin: only own assigned queue (API should already scope; keep as safety net).
+          if (!isAdmin && user?.id) {
+            return ticketMatchesNegotiatorFilter(t, user.id)
+          }
+          return true
+        })
+      }
       // The server's branchId param on /tickets/branch does not always scope tightly enough
       // (e.g. Taguig Sales/Services split, installer-lineup overrides) — always re-apply the
       // client branch filter as a safety net instead of trusting it outright when scheduleBranchId is set.
@@ -6077,7 +6088,7 @@ export default function Tickets() {
       const mergeOpts = {
         dateFilter: isMyTickets ? undefined : requestDate,
         extraLocal: ticketsRef.current,
-        branchId: isMyTickets ? undefined : activeBranchId,
+        branchId: activeBranchId,
         email: user?.email,
         jobTitle: user?.jobTitle,
         lineupIndex: installerLineupIndex,
@@ -6089,12 +6100,15 @@ export default function Tickets() {
         protectedIds,
         mergeOpts,
       )
-      // Final safety net: never paint / cache another branch's date-retained rows (esp. CANCELLED).
-      const branchSafe = (!isMyTickets && activeBranchId && activeBranchId !== 'ALL_BRANCHES')
+      // Final safety net: never paint / cache another branch's rows (Schedules or My Tickets).
+      let branchSafe = (activeBranchId && activeBranchId !== 'ALL_BRANCHES')
         ? withLocalEdits.filter(t => ticketBelongsOnScheduleBranch(
           t, activeBranchId, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
         ))
         : withLocalEdits
+      if (isMyTickets) {
+        branchSafe = branchSafe.filter(t => shouldShowOnMyTickets(t))
+      }
       const merged = applyOptimisticOverlay(branchSafe)
       setTickets(merged)
       writeSchedulesTabCache(requestCacheKey, merged, 'server')
@@ -6292,6 +6306,11 @@ export default function Tickets() {
           }
         }
         if (!shouldShowOnMyTickets(t)) return false
+        if (isAdmin) {
+          if (myTicketsNegotiatorFilter && !ticketMatchesNegotiatorFilter(t, myTicketsNegotiatorFilter)) return false
+        } else if (user?.id && !ticketMatchesNegotiatorFilter(t, user.id)) {
+          return false
+        }
         return true
       }
 
@@ -6353,7 +6372,7 @@ export default function Tickets() {
       )
     }
     return list
-  }, [tickets, isMyTickets, activeBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, installerLineupIndex, driverOnlyNames])
+  }, [tickets, isMyTickets, activeBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, user?.jobTitle, installerLineupIndex, driverOnlyNames, isAdmin, myTicketsNegotiatorFilter, branchEmployees, isBranchMatch])
 
   // Auto-numbered vehicle trip labels ("STRADA - 1", "STRADA - 2") for the current filtered set —
   // the vehicle is now the dispatch unit, so staff never type a manual "- N" suffix into the
@@ -8340,6 +8359,52 @@ export default function Tickets() {
         className="hidden"
         onChange={handleScanFilePicked}
       />
+
+      {/* ── Portal: My Tickets toolbar (Active Branch + negotiator filter) ── */}
+      {isMyTickets && ReactDOM.createPortal(
+        <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-col md:flex-row md:items-center gap-3">
+          <div className="flex items-center gap-2.5 w-full md:w-[240px] lg:w-[320px] h-9 md:h-11 px-3 md:px-4 rounded-xl md:rounded-2xl border transition-all shrink-0"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            <Search className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: textMuted }} />
+            <input
+              type="text"
+              placeholder="Search names, phone…"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="bg-transparent outline-none text-[12px] md:text-sm flex-1 min-w-0"
+              style={{ color: textPrimary }}
+              onClick={e => e.stopPropagation()}
+            />
+            {searchQuery && (
+              <button type="button" onClick={e => { e.stopPropagation(); setSearchQuery('') }}
+                className="shrink-0 p-1 md:p-1.5 rounded-full hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }}>
+                <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
+              </button>
+            )}
+          </div>
+
+          {isAdmin && (
+            <div className="flex items-center gap-2 min-w-0 flex-1 md:flex-none">
+              <label className="text-[10px] md:text-[11px] font-black uppercase tracking-wider shrink-0" style={{ color: textMuted }}>
+                Negotiator
+              </label>
+              <select
+                value={myTicketsNegotiatorFilter}
+                onChange={e => setMyTicketsNegotiatorFilter(e.target.value)}
+                className="h-9 md:h-11 px-3 rounded-xl md:rounded-2xl border text-[12px] md:text-sm font-semibold min-w-0 flex-1 md:w-[260px] outline-none"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                title={activeBranchLabel ? `Negotiators for ${activeBranchLabel}` : 'Filter by negotiator'}
+              >
+                <option value="">All negotiators{activeBranchLabel ? ` · ${activeBranchLabel}` : ''}</option>
+                {myTicketsNegotiatorOptions.map(emp => (
+                  <option key={emp.id} value={emp.id}>{formatNegotiatorLabel(emp)}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>,
+        document.getElementById('header-toolbar-slot') ?? document.body,
+      )}
 
       {/* Ã¢â€â‚¬Ã¢â€â‚¬ Portal: Toolbar into header slot Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
       {!isMyTickets && activeTab !== 'overview' && ReactDOM.createPortal(
