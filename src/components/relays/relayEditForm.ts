@@ -196,7 +196,7 @@ export function buildRelayEditDraft(
     ),
     remarksUpdate: '',
     installationCharges: ticket.installationCharges || 0,
-    modeOfPayment: ticket.modeOfPayment || '',
+    modeOfPayment: ticket.modeOfPayment || ticket.mode_of_payment || 'NO_PAYMENT',
     images: ticket.images || '',
     priorityTag: ticket.priorityTag || '',
     ticketNumber: ticket.ticketNumber || ticket.ticket_number || '',

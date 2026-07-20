@@ -2138,8 +2138,10 @@ export default function Relays() {
     if (newRemark) {
       payload.remarksUpdate = newRemark
     }
-    payload.installationCharges = Number(draft.installationCharges)
-    payload.modeOfPayment = draft.modeOfPayment || null
+    const isNoPayment = !draft.modeOfPayment
+      || String(draft.modeOfPayment).toUpperCase().replace(/\s+/g, '_') === 'NO_PAYMENT'
+    payload.installationCharges = isNoPayment ? null : Number(draft.installationCharges)
+    payload.modeOfPayment = isNoPayment ? 'NO_PAYMENT' : (draft.modeOfPayment || null)
     payload.controlNumber = draft.controlNumber || null
     const acDetailsObj = {
       // Start from the ticket's existing acDetails so keys this modal doesn't expose

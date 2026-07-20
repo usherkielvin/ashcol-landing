@@ -4728,7 +4728,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       ticketCategory: inferCategoryFromTicket(ticket),
       status,
       installationCharges: ticket.installationCharges ?? ticket.installation_charges ?? payment.amount,
-      modeOfPayment: ticket.modeOfPayment ?? ticket.mode_of_payment ?? payment.mode,
+      modeOfPayment: (ticket.modeOfPayment ?? ticket.mode_of_payment ?? payment.mode) || 'NO_PAYMENT',
       remarks: (() => {
         const AUTO_STATUS_REMARKS = new Set([
           'done installed', 'done install', 'done_installed',
@@ -11205,7 +11205,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             commitTerms: editForm.commitTerms || editTicket.commitTerms || editTicket.commitType || '',
             assignTechId: editForm.negotiatorId || editTicket.negotiatorId || editTicket.negotiator_id || editTicket.assignedTo || '',
             assignBranchId: editForm.branchId || editTicket.branchId || editTicket.branch_id || activeBranchId || '',
-            modeOfPayment: editForm.modeOfPayment || resolveTicketPayment(editTicket).mode || '',
+            modeOfPayment: editForm.modeOfPayment || resolveTicketPayment(editTicket).mode || 'NO_PAYMENT',
             installationCharges: editForm.installationCharges ?? resolveTicketPayment(editTicket).amount ?? 0,
           }}
         />
@@ -11257,7 +11257,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             commitTerms: editForm.commitTerms || editTicket.commitTerms || editTicket.commitType || '',
             assignTechId: editForm.negotiatorId || editTicket.negotiatorId || editTicket.negotiator_id || editTicket.assignedTo || '',
             assignBranchId: editForm.branchId || editTicket.branchId || editTicket.branch_id || activeBranchId || '',
-            modeOfPayment: editForm.modeOfPayment || resolveTicketPayment(editTicket).mode || '',
+            modeOfPayment: editForm.modeOfPayment || resolveTicketPayment(editTicket).mode || 'NO_PAYMENT',
             installationCharges: editForm.installationCharges ?? resolveTicketPayment(editTicket).amount ?? 0,
           }}
         />

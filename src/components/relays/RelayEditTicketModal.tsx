@@ -575,8 +575,19 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                   <input type="text" value={draft.controlNumber} onChange={(e) => patch({ controlNumber: e.target.value })} className={relayInput} style={inputStyle} placeholder="Aircon papers / SI" />
                 </EField>
                 <EField label="Mode of Payment">
-                  <select value={draft.modeOfPayment} onChange={(e) => patch({ modeOfPayment: e.target.value })} className={relayInput} style={inputStyle}>
-                    <option value="">-- Select --</option>
+                  <select
+                    value={draft.modeOfPayment || 'NO_PAYMENT'}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      patch({
+                        modeOfPayment: v,
+                        installationCharges: (v === 'NO_PAYMENT' || v === 'FREE' || v === 'FREE INSTALL') ? 0 : draft.installationCharges,
+                      })
+                    }}
+                    className={relayInput}
+                    style={inputStyle}
+                  >
+                    <option value="NO_PAYMENT">NO PAYMENT</option>
                     <option value="CASH">CASH</option>
                     <option value="BANK TRANSFER">BANK TRANSFER</option>
                     <option value="GCASH">GCASH</option>
@@ -589,8 +600,8 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                     type="number"
                     step="0.01"
                     min="0"
-                    value={draft.installationCharges ?? ''}
-                    disabled={draft.modeOfPayment === 'FREE' || draft.modeOfPayment === 'FREE INSTALL'}
+                    value={draft.modeOfPayment === 'NO_PAYMENT' || !draft.modeOfPayment ? '' : (draft.installationCharges ?? '')}
+                    disabled={!draft.modeOfPayment || draft.modeOfPayment === 'NO_PAYMENT' || draft.modeOfPayment === 'FREE' || draft.modeOfPayment === 'FREE INSTALL'}
                     onChange={(e) => patch({ installationCharges: e.target.value ? Number(e.target.value) : 0 })}
                     className={relayInput}
                     style={inputStyle}
