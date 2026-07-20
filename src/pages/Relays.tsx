@@ -2080,7 +2080,7 @@ export default function Relays() {
       // Keep branch so cancelled tickets still appear as Schedules ghosts on their date/branch.
       // Only drop the active assignee — Relays/My Tickets already exclude CANCELLED.
       const selectedNegForCancel = employees.find((e: { id: string; branchId?: string; email?: string; jobTitle?: string }) => e.id === draft.assignTechId)
-      const cancelBranchRaw = draft.assignBranchId || selectedTicket.branchId || selectedTicket.branch_id || ''
+      const cancelBranchRaw = draft.assignBranchId || selectedTicket.branchId || ''
       branchId = cancelBranchRaw
         ? (resolvePortalWriteBranchId(cancelBranchRaw, selectedNegForCancel?.email, selectedNegForCancel?.jobTitle) || cancelBranchRaw)
         : ''
