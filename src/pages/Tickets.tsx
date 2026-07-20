@@ -1316,7 +1316,9 @@ function getRescheduleHistoryDates(ticket: Ticket): string[] {
   const meta = parseAcMeta(ticket)
   const raw = meta.rescheduleHistoryDates
   if (!Array.isArray(raw)) return []
-  return raw.filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
+  return raw
+    .filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
+    .map(d => d.split('T')[0].split(' ')[0].trim())
 }
 
 function shouldBlankReschedGhostPayment(
