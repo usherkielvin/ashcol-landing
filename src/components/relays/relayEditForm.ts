@@ -78,7 +78,9 @@ type TicketLike = {
   preferredDate?: string
   remarksUpdate?: string
   installationCharges?: number
+  installation_charges?: number
   modeOfPayment?: string
+  mode_of_payment?: string
   images?: string
   priorityTag?: string
   acDetails?: string
