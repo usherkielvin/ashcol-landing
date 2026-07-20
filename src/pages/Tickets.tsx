@@ -1431,8 +1431,24 @@ function buildReschedulePatchBody(
     acUpdates.scheduledDate = newDateKey
     body.preferredDate = newDateKey
     body.finalDate = newDateKey
+    // The ticket moves to its new date as a normal pending row, so status resolves to SCHEDULED
+    // (not RESCHED) — the new date must NOT show a RESCHED badge. Because this sends SCHEDULED
+    // straight to the backend, the backend can't infer "this was a reschedule" from status alone,
+    // so this dialog (the one path with unambiguous reschedule intent + both dates in hand) is the
+    // authoritative place to record the ghost. See isRescheduledGhostOnDate for the read side.
     body.status = 'SCHEDULED'
     if (oldDateKey && oldDateKey !== newDateKey) {
+      // Append the old date to the dedicated ghost-history array (dedupe, keep full history for
+      // repeat reschedules). Dedicated key — never previousScheduleDates, which completed/cancelled
+      // ghosts also read; sharing it is what made rows ambiguously belong to two ghost kinds and
+      // vanish/duplicate in the original incident. This is a bounded, single-date append driven by
+      // an explicit user action, not the unbounded client-side bookkeeping that caused that bug.
+      const priorHistory = getRescheduleHistoryDates(ticket)
+      acUpdates.rescheduleHistoryDates = priorHistory.includes(oldDateKey)
+        ? priorHistory
+        : [...priorHistory, oldDateKey]
+      // Cosmetic — drives the ghost row's "Moved to <date>" label; never used for date-matching.
+      acUpdates.rescheduledTo = newDateKey
       const formattedNewDate = formatDateKeyLabel(newDateKey)
       const reschedMsg = `Moved to ${formattedNewDate}`
       body.remarks = reschedMsg
