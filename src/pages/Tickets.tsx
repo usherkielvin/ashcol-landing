@@ -623,6 +623,21 @@ function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record
   } else if (val === 'CANCELLED') {
     body.status = 'CANCELLED'
     acUpdates.scheduleOutcome = ''
+    // Preserve branch so the muted Schedules ghost survives reload (branch-scoped fetch + filter).
+    const cancelBranch = resolveScopedBranchId(ticket.branchId || ticket.branch_id)
+    if (cancelBranch) {
+      body.branchId = cancelBranch
+      acUpdates.cancelledBranchId = cancelBranch
+    }
+    // Keep date anchors so the row stays on this Schedules day after reload (preferred_date + ac_details).
+    const cancelDate = getFinalDateKey(ticket)
+      || getPreferredDateKey(ticket)
+      || String(parseAcMeta(ticket).scheduledDate || '').split('T')[0].split(' ')[0].trim()
+    if (cancelDate) {
+      body.preferredDate = cancelDate
+      acUpdates.finalDate = getFinalDateKey(ticket) || cancelDate
+      acUpdates.scheduledDate = cancelDate
+    }
   } else if (SCHEDULE_STATUS_OPTS.some(opt => opt.value === val)) {
     // Safety net for any pending/closing option added to SCHEDULE_STATUS_OPTS without an
     // explicit branch above — resolve through the shared mapper instead of sending the raw
@@ -1514,13 +1529,25 @@ function isRescheduledGhostOnDate(): boolean {
   return false
 }
 
+function isCancelledTicket(ticket: Partial<Ticket> | null | undefined): boolean {
+  return (ticket?.status || '').toUpperCase() === 'CANCELLED'
+}
+
+/** Cancelled rows stay on Schedules as a red ghost for their date — never hide them. */
+function isCancelledScheduleGhost(ticket: Ticket, dateKey: string): boolean {
+  if (!dateKey || !isCancelledTicket(ticket)) return false
+  return ticketMatchesDateKey(ticket, dateKey)
+    || getEffectiveScheduleDateKey(ticket) === dateKey
+    || getPreviousScheduleDates(ticket).includes(dateKey)
+}
+
 function getScheduleGhostKind(ticket: Ticket, dateKey: string): 'completed' | 'resched' | 'cancelled' | null {
   if (!dateKey) return null
   if (isCompletedGhostOnDate(ticket, dateKey)) return 'completed'
   // Cancelled tickets keep their one schedule-date row (no duplicate-date bookkeeping like
   // completed/resched ghosts) — just render read-only + muted so staff can still see the
   // cancellation instead of the ticket silently vanishing off Schedules.
-  if ((ticket.status || '').toUpperCase() === 'CANCELLED') return 'cancelled'
+  if (isCancelledScheduleGhost(ticket, dateKey)) return 'cancelled'
   return null
 }
 
@@ -1531,6 +1558,7 @@ export function ticketBelongsOnScheduleDate(ticket: Ticket, dateKey: string): bo
   // rows where the day only lives in one of these, so mirror that here — never require finalDate only.
   if (ticketMatchesDateKey(ticket, dateKey)) return true
   if (getEffectiveScheduleDateKey(ticket) === dateKey) return true
+  if (isCancelledScheduleGhost(ticket, dateKey)) return true
   if (isScheduleGhostOnDate(ticket, dateKey)) return true
   if ((ticket.status || '').toUpperCase() === 'CONTINUATION' && getContinuationDates(ticket).includes(dateKey)) {
     return true
@@ -1550,14 +1578,19 @@ export function ticketBelongsOnScheduleBranch(
   const wanted = resolveScopedBranchId(effectiveBranch)
   // Prefer lineup-resolved branch (same as My Tickets / Archives) so cancelled rows that
   // still retain their schedule date cannot leak onto another Active Branch view.
+  const meta = parseAcMeta(ticket)
   const stored = resolveScopedBranchId(
     resolveTicketScheduleBranchId(ticket, lineupIndex, driverOnlyNames)
     || ticket.branchId
-    || ticket.branch_id,
+    || ticket.branch_id
+    // Legacy cancels used to null branchId on the server — recover from acDetails when present.
+    || (typeof meta.cancelledBranchId === 'string' ? meta.cancelledBranchId : '')
+    || (typeof meta.branchId === 'string' ? meta.branchId : ''),
   )
   // Missing branch on a specific-branch Schedules view → exclude. (Previously returned true
   // to "trust the server", which let cancelled/date-retained rows with empty branchId, and
   // local merge re-adds, appear under every Active Branch.)
+  // Schedules UI filters use isCancelledScheduleGhost separately so red ghosts still show.
   if (!stored) return false
   if (wanted && stored === wanted) return true
   if (branchScopesMatch(stored, effectiveBranch, email)) return true
@@ -1616,7 +1649,9 @@ function getInstalledDateKey(ticket: Ticket): string {
 }
 
 function isScheduleGhostOnDate(ticket: Ticket, dateKey: string): boolean {
-  return isRescheduledGhostOnDate() || isCompletedGhostOnDate(ticket, dateKey)
+  return isRescheduledGhostOnDate()
+    || isCompletedGhostOnDate(ticket, dateKey)
+    || getScheduleGhostKind(ticket, dateKey) === 'cancelled'
 }
 
 function formatGhostRemarks(
@@ -1696,6 +1731,10 @@ function resolveTicketPaymentModeRaw(ticket: Ticket): string {
 function resolveTicketPayment(ticket: Ticket): { mode: string; amount?: number } {
   let mode = resolveTicketPaymentModeRaw(ticket)
   let amount = resolveTicketPaymentAmount(ticket)
+
+  if (isNoPaymentMode(mode)) {
+    return { mode: '', amount: undefined }
+  }
 
   if ((!amount || amount <= 0) && mode) {
     const parsed = parsePaymentFromModeString(mode)
@@ -1793,8 +1832,14 @@ function formatPaymentBreakdownText(breakdown: PaymentBreakdownEntry[]): string 
   return `(${breakdown.map(e => `${e.mode} ${Math.round(e.amount).toLocaleString('en-PH')}`).join(' + ')})`
 }
 
+function isNoPaymentMode(mode?: string | null): boolean {
+  const v = String(mode || '').trim().toUpperCase().replace(/\s+/g, '_')
+  return v === 'NO_PAYMENT' || v === 'NONE' || v === 'NO'
+}
+
 function ticketHasPaymentInfo(ticket: Partial<Ticket>): boolean {
   const mode = (ticket.modeOfPayment ?? ticket.mode_of_payment ?? '').trim()
+  if (isNoPaymentMode(mode)) return false
   const charges = ticket.installationCharges ?? ticket.installation_charges
   return Boolean(mode || (charges != null && !Number.isNaN(Number(charges)) && Number(charges) > 0))
 }
@@ -3577,10 +3622,12 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         return true
       })
     } else if (dateFilter) {
-      list = list.filter(t =>
-        ticketBelongsOnScheduleDate(t, dateFilter)
-        && ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email, user?.jobTitle),
-      )
+      list = list.filter(t => {
+        if (!ticketBelongsOnScheduleDate(t, dateFilter)) return false
+        // Cancelled red ghosts must remain on their schedule date even when legacy branchId is empty.
+        if (isCancelledScheduleGhost(t, dateFilter)) return true
+        return ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email, user?.jobTitle)
+      })
     }
 
     setTickets(list)
@@ -5029,16 +5076,33 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
       const paymentCharges = activeForm.installationCharges ?? originalTicket?.installationCharges ?? originalTicket?.installation_charges
       const paymentMode = activeForm.modeOfPayment ?? originalTicket?.modeOfPayment ?? originalTicket?.mode_of_payment
-      if (paymentCharges != null && !Number.isNaN(Number(paymentCharges))) {
-        body.installationCharges = Number(paymentCharges)
+      if (isNoPaymentMode(activeForm.modeOfPayment)) {
+        // Explicit No Payment toggle — clear so PAYMENT column stays blank after save/reload.
+        body.modeOfPayment = 'NO_PAYMENT'
+        body.installationCharges = null
+        acMetaExtras.modeOfPayment = ''
+        acMetaExtras.paymentMode = ''
+        acMetaExtras.paymentStatus = ''
+        acMetaExtras.installationCharges = ''
+      } else {
+        if (paymentCharges != null && !Number.isNaN(Number(paymentCharges))) {
+          body.installationCharges = Number(paymentCharges)
+        }
+        if (paymentMode) body.modeOfPayment = paymentMode
       }
-      if (paymentMode) body.modeOfPayment = paymentMode
 
       if (finalDateKey) {
         body.finalDate = finalDateKey
         body.preferredDate = activeForm.preferredDate || finalDateKey
         const origStat = (originalTicket?.status || '').toUpperCase()
-        if (!isReschedStatus && ['PENDING', 'ASSIGNED'].includes(origStat) && !isDateMove && String(body.status || '').toUpperCase() !== 'COMPLETED') {
+        const bodyStat = String(body.status || '').toUpperCase()
+        if (
+          !isReschedStatus
+          && ['PENDING', 'ASSIGNED'].includes(origStat)
+          && !isDateMove
+          && bodyStat !== 'COMPLETED'
+          && bodyStat !== 'CANCELLED'
+        ) {
           body.status = 'SCHEDULED'
         }
       } else if (!isReschedStatus && !hadScheduleDate && String(body.status || '').toUpperCase() === 'SCHEDULED') {
@@ -5057,8 +5121,21 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         && hadScheduleDate
         && !CLOSING_SCHEDULE_STATUSES.has(scheduleVal)
         && scheduleVal !== 'COMPLETED'
+        && scheduleVal !== 'CANCELLED'
       if (isReturningToMyTickets && originalTicket) {
         applyReturnToNegotiatorMyTicketsPatch(originalTicket, body, acMetaExtras)
+      }
+
+      // Persist branch anchor for cancelled Schedules ghosts (survives legacy branchId clears).
+      if (String(body.status || scheduleVal || '').toUpperCase() === 'CANCELLED') {
+        const cancelBranch = resolveScopedBranchId(
+          body.branchId || body.branch_id || activeForm.branchId || originalTicket?.branchId || originalTicket?.branch_id,
+        )
+        if (cancelBranch) {
+          body.branchId = cancelBranch
+          body.branch_id = cancelBranch
+          acMetaExtras.cancelledBranchId = cancelBranch
+        }
       }
 
       // A normal date move just updates finalDate/scheduledDate in place (set below) — no ghost
@@ -6071,10 +6148,29 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       if (!isMyTickets && requestDate) {
         const dateScoped = (list as Ticket[]).filter(t => ticketBelongsOnScheduleDate(t, requestDate))
         list = (activeBranchId && activeBranchId !== 'ALL_BRANCHES')
-          ? dateScoped.filter(t => ticketBelongsOnScheduleBranch(
-            t, activeBranchId, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
-          ))
+          ? dateScoped.filter(t =>
+            ticketBelongsOnScheduleBranch(
+              t, activeBranchId, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+            )
+            // Legacy CANCELLED rows had branchId cleared server-side; the branch-scoped date
+            // query already decided they belong here (negotiator visibility), so keep the ghost.
+            || (t.status || '').toUpperCase() === 'CANCELLED',
+          )
           : dateScoped
+        // Stamp Active Branch onto legacy cancelled ghosts with null branchId so later client
+        // filters (and cache) treat them as belonging here instead of dropping them again.
+        if (scheduleBranchId) {
+          list = (list as Ticket[]).map(t => {
+            if ((t.status || '').toUpperCase() !== 'CANCELLED') return t
+            if (resolveScopedBranchId(t.branchId || t.branch_id)) return t
+            return normalizeRelayScheduleTicket({
+              ...t,
+              branchId: scheduleBranchId,
+              branch_id: scheduleBranchId,
+              acDetails: mergeAcMeta(t, { cancelledBranchId: scheduleBranchId }),
+            }) as Ticket
+          })
+        }
       }
       // If still empty, retry date-only then apply the same strict branch+date filter.
       if (!isMyTickets && requestDate && scheduleBranchId && list.length === 0) {
@@ -6133,10 +6229,15 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         mergeOpts,
       )
       // Final safety net: never paint / cache another branch's rows (Schedules or My Tickets).
+      // Cancelled red ghosts that match this schedule date stay visible even when legacy
+      // branchId is empty (they were already admitted/stamped from the date fetch above).
       let branchSafe = (activeBranchId && activeBranchId !== 'ALL_BRANCHES')
-        ? withLocalEdits.filter(t => ticketBelongsOnScheduleBranch(
-          t, activeBranchId, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
-        ))
+        ? withLocalEdits.filter(t =>
+          ticketBelongsOnScheduleBranch(
+            t, activeBranchId, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+          )
+          || (!isMyTickets && !!requestDate && isCancelledScheduleGhost(t, requestDate)),
+        )
         : withLocalEdits
       if (isMyTickets) {
         branchSafe = branchSafe.filter(t => shouldShowOnMyTickets(t))
@@ -6293,6 +6394,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     // Schedules date tab: active branch + schedule date (server already scopes branch for admin).
     if (!isMyTickets && dateFilter) {
       let list = tickets.filter(t => {
+        // Cancelled = red ghost on this date — always keep (field-category / branch gaps must not hide it).
+        if (isCancelledScheduleGhost(t, dateFilter)) return true
         if (!isFieldCategory(inferCategoryFromTicket(t))) return false
         if (!ticketBelongsOnScheduleDate(t, dateFilter)) return false
         if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES'
@@ -6302,8 +6405,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         return true
       })
       list = [...list].sort((a, b) => {
-        const aGhost = isScheduleGhostOnDate(a, dateFilter) || (a.status || '').toUpperCase() === 'CANCELLED'
-        const bGhost = isScheduleGhostOnDate(b, dateFilter) || (b.status || '').toUpperCase() === 'CANCELLED'
+        const aGhost = isScheduleGhostOnDate(a, dateFilter) || isCancelledTicket(a)
+        const bGhost = isScheduleGhostOnDate(b, dateFilter) || isCancelledTicket(b)
         if (aGhost === bGhost) return 0
         return aGhost ? 1 : -1
       })
@@ -6326,6 +6429,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       // below also excludes them), but they should still surface on Schedules as a muted ghost
       // row on their scheduled date instead of vanishing outright.
       if (stat === 'CANCELLED' && isMyTickets) return false
+      if (stat === 'CANCELLED' && dateFilter && isCancelledScheduleGhost(t, dateFilter)) return true
 
       if (isMyTickets) {
         if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
@@ -6382,16 +6486,19 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     })
     if (!isMyTickets) {
       if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
-        list = list.filter(t => ticketBelongsOnScheduleBranch(
-          t, effectiveBranch, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
-        ))
+        list = list.filter(t =>
+          (dateFilter && isCancelledScheduleGhost(t, dateFilter))
+          || ticketBelongsOnScheduleBranch(
+            t, effectiveBranch, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+          ),
+        )
       }
     }
     if (dateFilter) {
-      list = list.filter(t => ticketBelongsOnScheduleDate(t, dateFilter))
+      list = list.filter(t => ticketBelongsOnScheduleDate(t, dateFilter) || isCancelledScheduleGhost(t, dateFilter))
       list = [...list].sort((a, b) => {
-        const aGhost = isScheduleGhostOnDate(a, dateFilter) || (a.status || '').toUpperCase() === 'CANCELLED'
-        const bGhost = isScheduleGhostOnDate(b, dateFilter) || (b.status || '').toUpperCase() === 'CANCELLED'
+        const aGhost = isScheduleGhostOnDate(a, dateFilter) || isCancelledTicket(a)
+        const bGhost = isScheduleGhostOnDate(b, dateFilter) || isCancelledTicket(b)
         if (aGhost === bGhost) return 0
         return aGhost ? 1 : -1
       })
