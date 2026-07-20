@@ -385,8 +385,14 @@ export function syncTicketAcrossTabCaches(ticket: any): void {
         const stillReferencesCacheDate = Boolean(cacheDate) && ticketReferencesScheduleDate(normalized, cacheDate as string)
         if (hadRow && cacheDate && !stillReferencesCacheDate) {
           tickets = tickets.filter((t: unknown) => !matchesRow(t))
-        } else if (!hadRow && cacheDate && stillReferencesCacheDate && !shouldExcludeRelayFromTab(normalized)) {
-          tickets = [normalized, ...tickets]
+        } else if (!hadRow && cacheDate && stillReferencesCacheDate) {
+          // Schedules must keep CANCELLED ghosts on their date. shouldExcludeRelayFromTab is for
+          // Relays only (it returns true for CANCELLED/COMPLETED) and must not block schedule adds.
+          const mayAdd = logicalKey.startsWith('schedules:')
+            || !shouldExcludeRelayFromTab(normalized)
+          if (mayAdd) {
+            tickets = [normalized, ...tickets]
+          }
         }
       }
 

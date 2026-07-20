@@ -304,7 +304,7 @@ export function ticketReferencesScheduleDate(ticket: RelayScheduleTicket, dateKe
     const ac = typeof acRaw === 'string' ? JSON.parse(acRaw) : acRaw
     const meta = Array.isArray(ac) ? ac[0] : ac
     if (meta && typeof meta === 'object') {
-      for (const k of ['finalDate', 'scheduledDate', 'archivedScheduleDate', 'installedDate']) {
+      for (const k of ['finalDate', 'scheduledDate', 'archivedScheduleDate', 'installedDate', 'cancelledScheduleDate']) {
         if (norm((meta as Record<string, unknown>)[k]) === target) return true
       }
       const prev = (meta as Record<string, unknown>).previousScheduleDates

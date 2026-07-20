@@ -634,9 +634,11 @@ function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record
       || getPreferredDateKey(ticket)
       || String(parseAcMeta(ticket).scheduledDate || '').split('T')[0].split(' ')[0].trim()
     if (cancelDate) {
+      body.finalDate = cancelDate
       body.preferredDate = cancelDate
-      acUpdates.finalDate = getFinalDateKey(ticket) || cancelDate
+      acUpdates.finalDate = cancelDate
       acUpdates.scheduledDate = cancelDate
+      acUpdates.cancelledScheduleDate = cancelDate
     }
   } else if (SCHEDULE_STATUS_OPTS.some(opt => opt.value === val)) {
     // Safety net for any pending/closing option added to SCHEDULE_STATUS_OPTS without an
@@ -761,7 +763,8 @@ function preserveLocalScheduleFields(local: Ticket, server: Ticket): Ticket {
         // Schedule date fields — a just-saved date move must never be clobbered by a stale
         // server re-fetch (e.g. read-after-write lag on the prod DB pooler); local is fresher.
         'finalDate', 'scheduledDate', 'previousScheduleDates', 'rescheduledTo', 'reschedulePending',
-        'archivedScheduleDate', 'installedDate',
+        'archivedScheduleDate', 'installedDate', 'cancelledScheduleDate', 'cancelledBranchId',
+        'rescheduleHistoryDates',
         // Remaining Edit-Ticket-modal fields — same read-after-write race applies to these as
         // to driver/vehicle/date above, so they need the same "local wins" protection.
         'destination', 'address', 'district', 'brand', 'unitType', 'dealer', 'dlr',
@@ -1308,13 +1311,20 @@ function getRescheduleTargetDateKey(ticket: Ticket): string {
   return getPreferredDateKey(ticket) || getEffectiveScheduleDateKey(ticket)
 }
 
+/** Every old date this ticket was rescheduled away from (dedicated key — see isRescheduledGhostOnDate). */
+function getRescheduleHistoryDates(ticket: Ticket): string[] {
+  const meta = parseAcMeta(ticket)
+  const raw = meta.rescheduleHistoryDates
+  if (!Array.isArray(raw)) return []
+  return raw.filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
+}
+
 function shouldBlankReschedGhostPayment(
   dateKey?: string,
   ghostKind?: 'completed' | 'resched' | 'cancelled' | null,
 ): boolean {
   if (!dateKey) return false
-  if (ghostKind === 'resched') return true
-  return isRescheduledGhostOnDate()
+  return ghostKind === 'resched'
 }
 
 function getContinuationDates(ticket: Ticket): string[] {
@@ -1487,12 +1497,13 @@ function ticketMatchesDateKey(ticket: Ticket, dateKey: string): boolean {
   const scheduledDate = String(meta.scheduledDate || '').split('T')[0].split(' ')[0].trim()
   const archived = String(meta.archivedScheduleDate || '').split('T')[0].split(' ')[0].trim()
   const installed = String(meta.installedDate || '').split('T')[0].split(' ')[0].trim()
+  const cancelledScheduleDate = String(meta.cancelledScheduleDate || '').split('T')[0].split(' ')[0].trim()
   const finalDate = !isResched ? getFinalDateKey(ticket) : ''
   const preferred = getPreferredDateKey(ticket)
   // rescheduledTo is legacy-only and no longer written by any reschedule flow — matching on it
   // made a ticket stick forever to whatever old date a stale value happened to carry (the exact
   // "grayed-out, uneditable row still on the old date" bug after a plain finalDate move).
-  const dateCandidates = [finalDate, scheduledDate, preferred, archived, installed].filter(Boolean)
+  const dateCandidates = [finalDate, scheduledDate, preferred, archived, installed, cancelledScheduleDate].filter(Boolean)
 
   for (const candidate of dateCandidates) {
     if (candidate === dateKey) return true
@@ -1517,16 +1528,25 @@ function isCompletedGhostOnDate(ticket: Ticket, dateKey: string): boolean {
   return false
 }
 
-// Resched ghost rows are retired — rescheduling now moves a ticket in place (new date only)
-// instead of leaving a muted duplicate behind on its old date. That duplicate-row mechanism
-// (driven by rescheduledTo/previousScheduleDates) was the root cause of schedule dates losing
-// rows: any staleness in that bookkeeping made rows vanish or duplicate across dates. Stubbed
-// to `false` (rather than deleted) so legacy tickets that still carry old rescheduledTo/
-// previousScheduleDates values from before this change don't render stale ghosts either, and so
-// the handful of downstream call sites (shouldBlankReschedGhostPayment, formatGhostRemarks)
-// don't need touching.
-function isRescheduledGhostOnDate(): boolean {
-  return false
+// Resched ghost rows: the old duplicate-row mechanism (driven by rescheduledTo/
+// previousScheduleDates, shared with other ghost kinds) was the root cause of schedule dates
+// losing rows — any staleness in that shared bookkeeping made rows vanish or duplicate across
+// dates. This version fixes the root cause instead of just disabling the feature:
+//   - rescheduleHistoryDates is a DEDICATED key, never read/written by the completed or
+//     cancelled ghost paths, so a date can never ambiguously mean two different ghost kinds.
+//   - It's only ever written by the backend (TicketService, single choke point for every save
+//     path — inline cell, modal, mobile) at the exact moment a ticket leaves RESCHED for a new
+//     date, using the pre-mutation DB values for that request. No client ever assembles or
+//     merges this array, so there's no client-side staleness/race to reintroduce.
+//   - Legacy tickets with old rescheduledTo/previousScheduleDates values never carry
+//     rescheduleHistoryDates, so they render exactly as before (no stale ghosts resurrected).
+function isRescheduledGhostOnDate(ticket: Ticket, dateKey: string): boolean {
+  if (!dateKey) return false
+  // The ticket's own current/live date is never a ghost — same guard as completed-ghost,
+  // otherwise the ticket's real post-reschedule row would render permanently read-only.
+  const currentKey = getEffectiveScheduleDateKey(ticket)
+  if (currentKey && currentKey === dateKey) return false
+  return getRescheduleHistoryDates(ticket).includes(dateKey)
 }
 
 function isCancelledTicket(ticket: Partial<Ticket> | null | undefined): boolean {
@@ -1536,9 +1556,12 @@ function isCancelledTicket(ticket: Partial<Ticket> | null | undefined): boolean 
 /** Cancelled rows stay on Schedules as a red ghost for their date — never hide them. */
 function isCancelledScheduleGhost(ticket: Ticket, dateKey: string): boolean {
   if (!dateKey || !isCancelledTicket(ticket)) return false
-  return ticketMatchesDateKey(ticket, dateKey)
-    || getEffectiveScheduleDateKey(ticket) === dateKey
-    || getPreviousScheduleDates(ticket).includes(dateKey)
+  if (ticketMatchesDateKey(ticket, dateKey)) return true
+  if (getEffectiveScheduleDateKey(ticket) === dateKey) return true
+  if (getPreviousScheduleDates(ticket).includes(dateKey)) return true
+  const cancelledScheduleDate = String(parseAcMeta(ticket).cancelledScheduleDate || '')
+    .split('T')[0].split(' ')[0].trim()
+  return cancelledScheduleDate === dateKey
 }
 
 function getScheduleGhostKind(ticket: Ticket, dateKey: string): 'completed' | 'resched' | 'cancelled' | null {
@@ -1548,6 +1571,7 @@ function getScheduleGhostKind(ticket: Ticket, dateKey: string): 'completed' | 'r
   // completed/resched ghosts) — just render read-only + muted so staff can still see the
   // cancellation instead of the ticket silently vanishing off Schedules.
   if (isCancelledScheduleGhost(ticket, dateKey)) return 'cancelled'
+  if (isRescheduledGhostOnDate(ticket, dateKey)) return 'resched'
   return null
 }
 
@@ -1649,7 +1673,7 @@ function getInstalledDateKey(ticket: Ticket): string {
 }
 
 function isScheduleGhostOnDate(ticket: Ticket, dateKey: string): boolean {
-  return isRescheduledGhostOnDate()
+  return isRescheduledGhostOnDate(ticket, dateKey)
     || isCompletedGhostOnDate(ticket, dateKey)
     || getScheduleGhostKind(ticket, dateKey) === 'cancelled'
 }
@@ -5126,7 +5150,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         applyReturnToNegotiatorMyTicketsPatch(originalTicket, body, acMetaExtras)
       }
 
-      // Persist branch anchor for cancelled Schedules ghosts (survives legacy branchId clears).
+      // Persist branch + date anchors for cancelled Schedules ghosts (survives reload).
       if (String(body.status || scheduleVal || '').toUpperCase() === 'CANCELLED') {
         const cancelBranch = resolveScopedBranchId(
           body.branchId || body.branch_id || activeForm.branchId || originalTicket?.branchId || originalTicket?.branch_id,
@@ -5135,6 +5159,18 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           body.branchId = cancelBranch
           body.branch_id = cancelBranch
           acMetaExtras.cancelledBranchId = cancelBranch
+        }
+        const cancelDate = finalDateKey
+          || oldDateKey
+          || resolveTicketScheduleDateKey(originalTicket)
+          || dateFilter
+          || ''
+        if (cancelDate) {
+          body.finalDate = cancelDate
+          body.preferredDate = cancelDate
+          acMetaExtras.finalDate = cancelDate
+          acMetaExtras.scheduledDate = cancelDate
+          acMetaExtras.cancelledScheduleDate = cancelDate
         }
       }
 
@@ -6887,9 +6923,26 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       // exact race that clobbered the old date's cache after a reschedule auto-jumped the tab).
       const liveDateFilter = dateFilterRef.current
       const exists = prev.some(t => t.id === ticketId)
+      const prevOnDate = Boolean(
+        liveDateFilter
+        && prevTicket
+        && (
+          ticketMatchesDateKey(prevTicket, liveDateFilter)
+          || resolveTicketScheduleDateKey(prevTicket) === liveDateFilter
+          || isScheduleGhostOnDate(prevTicket, liveDateFilter)
+        ),
+      )
+      // Cancelled must remain a red ghost on the date it was cancelled from — never drop the row
+      // just because date fields briefly lag the status flip.
+      const cancelledStayOnDate = Boolean(
+        liveDateFilter
+        && isCancelledTicket(normalized)
+        && (isCancelledScheduleGhost(normalized, liveDateFilter) || prevOnDate),
+      )
       const showOnCurrentFilter = !liveDateFilter
         || ticketMatchesDateKey(normalized, liveDateFilter)
         || isScheduleGhostOnDate(normalized, liveDateFilter)
+        || cancelledStayOnDate
 
       let next: Ticket[]
       if (showOnCurrentFilter) {
@@ -6913,12 +6966,24 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         // backend also returning the ghost, and if that lags (or its previousScheduleDates OR-clause
         // misses it), the row vanishes from the old date instead of showing muted.
         const stillGhostOnPrevDate = isScheduleGhostOnDate(normalized, prevDate)
+          || (isCancelledTicket(normalized) && (
+            isCancelledScheduleGhost(normalized, prevDate) || prevDate === resolveTicketScheduleDateKey(prevTicket || normalized)
+          ))
         patchCacheForDate(prevDate, list => {
           const without = list.filter(t => t.id !== ticketId)
           return stillGhostOnPrevDate ? [normalized, ...without] : without
         })
       }
-      if (nextDate) {
+      // Cancelled tickets always stay on their schedule date cache (the date they were on when cancelled).
+      const cancelAnchorDate = isCancelledTicket(normalized)
+        ? (nextDate || prevDate || dateFilterRef.current || '')
+        : ''
+      if (cancelAnchorDate && isCancelledTicket(normalized)) {
+        patchCacheForDate(cancelAnchorDate, list => {
+          const without = list.filter(t => t.id !== ticketId)
+          return [normalized, ...without]
+        })
+      } else if (nextDate) {
         patchCacheForDate(nextDate, list => {
           const without = list.filter(t => t.id !== ticketId)
           return [normalized, ...without]
@@ -7127,8 +7192,34 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     const ticketId = ticket.id
     const existing = pendingSavesRef.current.get(ticketId)
     const baseTicket = optimisticTicketsRef.current.get(ticketId) || ticket
+    let patchBody = body
+    // Cancelling from Schedules must permanently anchor the row to this date so it stays as a
+    // red ghost after save/reload — never rely on a fleeting finalDate that sync might drop.
+    if (String(body.status || '').toUpperCase() === 'CANCELLED') {
+      const liveDate = (dateFilterRef.current || '').split('T')[0].split(' ')[0].trim()
+      const cancelDate = liveDate
+        || getFinalDateKey(baseTicket)
+        || getPreferredDateKey(baseTicket)
+        || resolveTicketScheduleDateKey(baseTicket)
+      if (cancelDate) {
+        const cancelBranch = resolveScopedBranchId(baseTicket.branchId || baseTicket.branch_id)
+        patchBody = {
+          ...body,
+          finalDate: cancelDate,
+          preferredDate: cancelDate,
+          ...(cancelBranch ? { branchId: cancelBranch } : {}),
+          acDetails: mergeAcMeta(baseTicket, {
+            ...(typeof body.acDetails === 'string' ? parseAcMeta({ acDetails: body.acDetails } as Ticket) : {}),
+            finalDate: cancelDate,
+            scheduledDate: cancelDate,
+            cancelledScheduleDate: cancelDate,
+            ...(cancelBranch ? { cancelledBranchId: cancelBranch } : {}),
+          }),
+        }
+      }
+    }
     const mergedBody = sanitizeTicketPatchBody(
-      existing ? mergePatchBodies(existing.body, body) : body,
+      existing ? mergePatchBodies(existing.body, patchBody) : patchBody,
     )
     const nextTicket = mergeTicketPatch(baseTicket, mergedBody)
     pendingSavesRef.current.set(ticketId, {
@@ -7683,7 +7774,12 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   }
 
   function renderInlineCellEditor(ticket: Ticket, colLabel: string, rowIndex: number | undefined, rowGhost?: boolean) {
-    if (!editingCell || editingCell.ticketId !== ticket.id || editingCell.colLabel !== colLabel || rowGhost) return null
+    // Resched ghosts are the one ghost kind where remarks stay editable — a single shared
+    // remarksUpdate field, not per-date state, so editing it from the ghost row is safe.
+    const isReschedRemarksGhost = Boolean(rowGhost) && colLabel === 'UPDATE'
+      && getScheduleGhostKind(ticket, dateFilter) === 'resched'
+    if (!editingCell || editingCell.ticketId !== ticket.id || editingCell.colLabel !== colLabel
+      || (rowGhost && !isReschedRemarksGhost)) return null
     if (rowIndex != null && editingCell.rowIndex !== rowIndex) return null
 
     const isSaving = savingTicketIds.has(ticket.id)
@@ -7855,8 +7951,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     colLabel: string,
     rowGhost?: boolean,
     rowIndex?: number,
+    allowGhostEdit?: boolean,
   ) {
-    if (!canEdit || rowGhost) return content
+    if (!canEdit || (rowGhost && !allowGhostEdit)) return content
     const isEditing = editingCell?.ticketId === ticket.id
       && editingCell?.colLabel === colLabel
       && (rowIndex === undefined || editingCell.rowIndex === rowIndex)
@@ -8298,7 +8395,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         const ghostRemarkColor = isCompletedGhost
           ? (isLight ? '#15803d' : '#86efac')
           : ghostKind === 'cancelled' ? (isLight ? '#dc2626' : '#f87171') : (isLight ? '#a16207' : '#fbbf24')
-        return (
+        const ghostSpan = (
           <span
             style={{
               ...truncStyle,
@@ -8311,6 +8408,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             {ghostRemarks || EMPTY_CELL}
           </span>
         )
+        // Resched ghosts alone stay editable — the old date row is still a legitimate place to
+        // leave a remark (e.g. why it moved), and remarksUpdate is one shared field, not
+        // per-date, so there's no per-ghost state to keep in sync.
+        if (ghostKind === 'resched') {
+          return withEditPencil(ghostSpan, ticket, label, rowGhost, rowIndex, true)
+        }
+        return ghostSpan
       }
       return withEditPencil(
         <span style={{ ...truncStyle, color: val ? textGreen : textMuted, fontWeight: val ? 600 : 400 }}
@@ -9081,6 +9185,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                 ? (isLight ? 'rgba(251,146,60,0.13)' : 'rgba(251,146,60,0.18)')
                                 : undefined
                               const isSelectedVehicleCell = col.label === 'VEHICLE' && selectedVehicleTicketId === ticket.id
+                              // Resched ghosts alone keep remarks editable (one shared field, not
+                              // per-date state) — every other edit affordance stays locked on ghosts.
+                              const allowGhostCellEdit = isGhost && ghostKind === 'resched' && col.label === 'UPDATE'
                               return (
                                 <td key={col.label}
                                   data-cell-key={`${ticket.id}:${col.label}`}
@@ -9118,7 +9225,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                   onDoubleClick={e => {
                                     e.preventDefault()
                                     e.stopPropagation()
-                                    if (!canEdit || isGhost || isEditingCell) return
+                                    if (!canEdit || isEditingCell || (isGhost && !allowGhostCellEdit)) return
                                     if (col.label === 'VEHICLE') {
                                       setSelectedVehicleTicketId(prev => (prev === ticket.id ? null : ticket.id))
                                       return
@@ -9142,11 +9249,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                     overflow: 'visible',
                                     textOverflow: 'ellipsis',
                                     transition: isDropTargetRow ? 'background-color 1s ease' : 'background-color 0.1s ease',
-                                    cursor: canEdit && !isGhost && INLINE_EDIT_COLUMNS.has(col.label) ? 'text' : 'default',
+                                    cursor: canEdit && (!isGhost || allowGhostCellEdit) && INLINE_EDIT_COLUMNS.has(col.label) ? 'text' : 'default',
                                     verticalAlign: 'middle',
                                     textAlign: col.align || 'left',
-                                    userSelect: isEditingCell ? 'text' : (canEdit && !isGhost ? 'none' : undefined),
-                                    WebkitUserSelect: isEditingCell ? 'text' : (canEdit && !isGhost ? 'none' : undefined),
+                                    userSelect: isEditingCell ? 'text' : (canEdit && (!isGhost || allowGhostCellEdit) ? 'none' : undefined),
+                                    WebkitUserSelect: isEditingCell ? 'text' : (canEdit && (!isGhost || allowGhostCellEdit) ? 'none' : undefined),
                                     ...(col.sticky
                                       ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: (isEditingCell || isExpandedCell) ? 95 : 5 }
                                       : { position: 'relative' as const, zIndex: (isEditingCell || isExpandedCell) ? (isEditingCell ? 90 : 85) : undefined }),
