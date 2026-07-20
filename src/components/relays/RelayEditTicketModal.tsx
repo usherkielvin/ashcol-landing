@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'reac
 import ReactDOM from 'react-dom'
 import { AlertTriangle, FileText, X, Store, UserRound, Wind, Users, CalendarDays, MessageSquare, Info, Truck } from 'lucide-react'
 import { API_BASE_URL, formatBranchName } from '../../utils/api'
-import { FIELD_TICKET_CATEGORIES, resolveScheduleStatusFields } from '../../constants/ticketCategories'
+import { resolveScheduleStatusFields } from '../../constants/ticketCategories'
 import { buildRelayEditDraft, type RelayEditDraft } from './relayEditForm'
 import type { TicketEditSurface } from '../../utils/ticketEditBridge'
 import { DealerSelect, type DealerOption } from '../DealerSelect'
@@ -570,17 +570,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
           {isFieldSurface && (
             <div>
               <ESHead icon={<Info className="w-3.5 h-3.5" />} title="Ticket Info" border={border} />
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5 sm:gap-4">
-                <EField label="Ticket Type">
-                  <select value={draft.ticketCategory} onChange={(e) => patch({ ticketCategory: e.target.value })} className={relayInput} style={inputStyle}>
-                    {FIELD_TICKET_CATEGORIES.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                </EField>
-                <EField label="Ticket No.">
-                  <input type="text" value={draft.ticketNumber} onChange={(e) => patch({ ticketNumber: e.target.value })} className={relayInput} style={inputStyle} placeholder="e.g. AS-001" />
-                </EField>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 sm:gap-4">
                 <EField label="Control No. / SI (Aircon)">
                   <input type="text" value={draft.controlNumber} onChange={(e) => patch({ controlNumber: e.target.value })} className={relayInput} style={inputStyle} placeholder="Aircon papers / SI" />
                 </EField>

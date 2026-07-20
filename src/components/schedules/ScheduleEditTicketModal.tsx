@@ -1,6 +1,5 @@
 import ReactDOM from 'react-dom'
 import { CalendarDays, ChevronDown, Loader2, X, AlertTriangle } from 'lucide-react'
-import { FIELD_TICKET_CATEGORIES } from '../../constants/ticketCategories'
 import type { TicketCategoryValue } from '../../constants/ticketCategories'
 
 export type ScheduleEditForm = {
@@ -247,13 +246,11 @@ export function ScheduleEditTicketModal({
           {/* Service */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <Row>
-              <Field label="Ticket Type" required>
-                <select value={form.ticketCategory || 'INSTALLATION'} onChange={e => onChange({ ticketCategory: e.target.value as TicketCategoryValue })} style={selectInp}>
-                  {FIELD_TICKET_CATEGORIES.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                </select>
-              </Field>
               <Field label="Brand / Unit Type">
                 <input type="text" value={form.unitType || ''} onChange={e => onChange({ unitType: e.target.value })} style={inp} placeholder="e.g. CARRIER 1.0HP" />
+              </Field>
+              <Field label="Control No. / SI">
+                <input type="text" value={form.controlNumber || ''} onChange={e => onChange({ controlNumber: e.target.value })} style={inp} placeholder="Aircon papers / SI" />
               </Field>
             </Row>
             <Row>
@@ -274,9 +271,6 @@ export function ScheduleEditTicketModal({
                   placeholder="Store or supplier"
                 />
                 <datalist id="sched-edit-dealer-list">{dealerOptions.map(d => <option key={d} value={d} />)}</datalist>
-              </Field>
-              <Field label="Control No. / SI">
-                <input type="text" value={form.controlNumber || ''} onChange={e => onChange({ controlNumber: e.target.value })} style={inp} placeholder="Aircon papers / SI" />
               </Field>
             </Row>
             <Row cols={3}>

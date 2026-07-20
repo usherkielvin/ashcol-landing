@@ -7453,8 +7453,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     setFinalDatePicker(null)
     setFinalDateCalMonth(null)
 
-    // After marking DONE INSTALL, put the caret in REMARKS so the user types there.
-    const focusRemarksAfterStatus = colLabel === 'STATUS' && normalizedStatus === 'DONE_INSTALLED'
+    // After marking DONE INSTALL / DONE CLEANING, put the caret in REMARKS so the user types there.
+    const focusRemarksAfterStatus = colLabel === 'STATUS'
+      && (normalizedStatus === 'DONE_INSTALLED' || normalizedStatus === 'DONE_CLEANING')
 
     const shouldArchive = shouldArchiveCompletedSchedule(liveTicket, finalBody)
       || (
@@ -10171,7 +10172,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             openContinuationDialog(pickerTicket)
             return
           }
-          if (value === 'DONE_INSTALLED') {
+          if (value === 'DONE_INSTALLED' || value === 'DONE_CLEANING') {
             if (!ticketHasPaymentInfo(pickerTicket)) {
               setPaymentPrompt({ ticket: pickerTicket, nextStatus: value })
               setPromptAmount('')
@@ -11635,12 +11636,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       })()}
 
       {paymentPrompt && (() => {
-        const { ticket } = paymentPrompt
+        const { ticket, nextStatus } = paymentPrompt
         const isFreeOrPending = promptMode === 'FREE' || promptMode === 'FREE INSTALL' || promptMode === 'PENDING'
         const isHybrid = promptMode === 'HYBRID'
         const hybridCashNum = parseFloat(promptHybridCash) || 0
         const hybridGcashNum = parseFloat(promptHybridGcash) || 0
         const hybridTotal = hybridCashNum + hybridGcashNum
+        const isDoneCleaning = nextStatus === 'DONE_CLEANING'
         const handleSubmit = (e: React.FormEvent) => {
           e.preventDefault()
           if (isHybrid) {
@@ -11648,12 +11650,12 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             const breakdown: PaymentBreakdownEntry[] = []
             if (hybridCashNum > 0) breakdown.push({ mode: 'CASH', amount: hybridCashNum })
             if (hybridGcashNum > 0) breakdown.push({ mode: 'GCASH', amount: hybridGcashNum })
-            void saveCellEdit(ticket, 'STATUS', paymentPrompt.nextStatus, { amount: hybridTotal, modeOfPayment: 'HYBRID', breakdown })
+            void saveCellEdit(ticket, 'STATUS', nextStatus, { amount: hybridTotal, modeOfPayment: 'HYBRID', breakdown })
             setPaymentPrompt(null)
             return
           }
           const amt = isFreeOrPending ? undefined : parseFloat(promptAmount) || 0
-          void saveCellEdit(ticket, 'STATUS', paymentPrompt.nextStatus, { amount: amt, modeOfPayment: promptMode })
+          void saveCellEdit(ticket, 'STATUS', nextStatus, { amount: amt, modeOfPayment: promptMode })
           setPaymentPrompt(null)
         }
         return ReactDOM.createPortal(
@@ -11669,7 +11671,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       Payment Details
                     </h3>
                     <p className="text-[11px] font-semibold mt-0.5" style={{ color: textMuted }}>
-                      Set payment to complete and archive this ticket
+                      {isDoneCleaning
+                        ? 'Set payment to mark this cleaning ticket done'
+                        : 'Set payment to complete and archive this ticket'}
                     </p>
                   </div>
                   <button type="button" onClick={() => setPaymentPrompt(null)} className="p-1 rounded-md hover:bg-slate-500/10" style={{ color: textMuted }}>
@@ -11774,7 +11778,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     className="px-5 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
                   >
-                    Complete & Archive
+                    Complete {isDoneCleaning ? 'Cleaning' : '& Archive'}
                   </button>
                 </div>
               </form>
