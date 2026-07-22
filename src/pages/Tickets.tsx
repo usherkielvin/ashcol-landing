@@ -2978,6 +2978,16 @@ function toApiDateTime(d = new Date()): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
+/** Terminal status for a schedule closing outcome — never collapse dismantle/reprocess to COMPLETED. */
+function resolveClosingStatusForOutcome(outcome: string, incomingStatus?: string): string {
+  const o = (outcome || '').toUpperCase()
+  const incoming = (incomingStatus || '').toUpperCase()
+  if (o === 'DONE_DISMANTLE' || incoming === 'DONE_DISMANTLE') return 'DONE_DISMANTLE'
+  if (o === 'DONE_SYSTEM_REPROCESS' || incoming === 'DONE_SYSTEM_REPROCESS') return 'DONE_SYSTEM_REPROCESS'
+  if (o === 'DONE_INSTALLED' || incoming === 'INSTALLED') return 'INSTALLED'
+  return 'COMPLETED'
+}
+
 function enrichCompletePatchBody(
   body: Record<string, unknown>,
   ticket: Ticket,
@@ -2990,10 +3000,14 @@ function enrichCompletePatchBody(
   const remarksUpdate = typeof body.remarksUpdate === 'string'
     ? stripArchivedRemarkSuffix(body.remarksUpdate)
     : undefined
+  const closeStatus = resolveClosingStatusForOutcome(
+    outcome,
+    String(body.status || ticket.status || ''),
+  )
   return {
     ...body,
     ...(remarksUpdate !== undefined ? { remarksUpdate, remarks: remarksUpdate } : {}),
-    status: 'COMPLETED',
+    status: closeStatus,
     scheduleOutcome: outcome,
     actualCompletion: toApiDateTime(),
     acDetails: mergeAcMeta(
@@ -5282,8 +5296,12 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           : {}),
       })
 
-      if (String(body.status || '').toUpperCase() === 'COMPLETED') {
-        const outcome = (statusOutcome || String(statusAcMeta.scheduleOutcome || '') || 'DONE_INSTALLED') as ScheduleOutcome
+      if (['COMPLETED', 'DONE_DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'INSTALLED'].includes(String(body.status || '').toUpperCase())) {
+        const outcome = (statusOutcome || String(statusAcMeta.scheduleOutcome || '') || (
+          String(body.status || '').toUpperCase() === 'DONE_DISMANTLE' ? 'DONE_DISMANTLE'
+            : String(body.status || '').toUpperCase() === 'DONE_SYSTEM_REPROCESS' ? 'DONE_SYSTEM_REPROCESS'
+              : 'DONE_INSTALLED'
+        )) as ScheduleOutcome
         body.scheduleOutcome = outcome
         body.acDetails = mergeAcMeta({ ...activeForm, acDetails: body.acDetails } as Ticket, {
           scheduleOutcome: outcome,
@@ -5291,11 +5309,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         })
       }
 
+      const alreadyClosed = ['COMPLETED', 'INSTALLED', 'DONE_DISMANTLE', 'DONE_SYSTEM_REPROCESS']
+        .includes((originalTicket?.status || '').toUpperCase())
       const shouldComplete = Boolean(
         originalTicket
         && !isReschedStatus
         && !isDateMove
-        && (originalTicket.status || '').toUpperCase() !== 'COMPLETED'
+        && !alreadyClosed
         && (
           CLOSING_SCHEDULE_STATUSES.has(scheduleVal)
           || scheduleVal === 'COMPLETED'
@@ -7462,6 +7482,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     } else if (
       (body.status as string | undefined)?.toUpperCase() === 'COMPLETED'
       || (body.status as string | undefined)?.toUpperCase() === 'INSTALLED'
+      || (body.status as string | undefined)?.toUpperCase() === 'DONE_DISMANTLE'
+      || (body.status as string | undefined)?.toUpperCase() === 'DONE_SYSTEM_REPROCESS'
     ) {
       finalBody = enrichCompletePatchBody(body, liveTicket, schedKey)
     }
@@ -7471,9 +7493,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     setFinalDatePicker(null)
     setFinalDateCalMonth(null)
 
-    // After marking DONE INSTALL / DONE CLEANING, put the caret in REMARKS so the user types there.
+    // After marking DONE INSTALL / DONE CLEANING / DONE DISMANTLE, put the caret in REMARKS.
     const focusRemarksAfterStatus = colLabel === 'STATUS'
-      && (normalizedStatus === 'DONE_INSTALLED' || normalizedStatus === 'DONE_CLEANING')
+      && (normalizedStatus === 'DONE_INSTALLED' || normalizedStatus === 'DONE_CLEANING' || normalizedStatus === 'DONE_DISMANTLE')
 
     const shouldArchive = shouldArchiveCompletedSchedule(liveTicket, finalBody)
       || (
@@ -10190,7 +10212,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             openContinuationDialog(pickerTicket)
             return
           }
-          if (value === 'DONE_INSTALLED' || value === 'DONE_CLEANING') {
+          if (value === 'DONE_INSTALLED' || value === 'DONE_CLEANING' || value === 'DONE_DISMANTLE') {
             if (!ticketHasPaymentInfo(pickerTicket)) {
               setPaymentPrompt({ ticket: pickerTicket, nextStatus: value })
               setPromptAmount('')
@@ -11661,6 +11683,17 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         const hybridGcashNum = parseFloat(promptHybridGcash) || 0
         const hybridTotal = hybridCashNum + hybridGcashNum
         const isDoneCleaning = nextStatus === 'DONE_CLEANING'
+        const isDoneDismantle = nextStatus === 'DONE_DISMANTLE'
+        const paymentPromptHint = isDoneCleaning
+          ? 'Set payment to mark this cleaning ticket done'
+          : isDoneDismantle
+            ? 'Set payment to mark this dismantle ticket done'
+            : 'Set payment to complete and archive this ticket'
+        const paymentSubmitLabel = isDoneCleaning
+          ? 'Complete Cleaning'
+          : isDoneDismantle
+            ? 'Complete Dismantle'
+            : 'Complete & Archive'
         const handleSubmit = (e: React.FormEvent) => {
           e.preventDefault()
           if (isHybrid) {
@@ -11689,9 +11722,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       Payment Details
                     </h3>
                     <p className="text-[11px] font-semibold mt-0.5" style={{ color: textMuted }}>
-                      {isDoneCleaning
-                        ? 'Set payment to mark this cleaning ticket done'
-                        : 'Set payment to complete and archive this ticket'}
+                      {paymentPromptHint}
                     </p>
                   </div>
                   <button type="button" onClick={() => setPaymentPrompt(null)} className="p-1 rounded-md hover:bg-slate-500/10" style={{ color: textMuted }}>
@@ -11796,7 +11827,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     className="px-5 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
                   >
-                    Complete {isDoneCleaning ? 'Cleaning' : '& Archive'}
+                    {paymentSubmitLabel}
                   </button>
                 </div>
               </form>
