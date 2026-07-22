@@ -59,6 +59,20 @@
     width: 100%;
     min-height: 100vh;
   }
+
+  /* Login only — do not use on portal pages */
+  html.login-shell,
+  html.login-shell body {
+    overflow: hidden;
+    overscroll-behavior: none;
+    height: 100%;
+    height: 100svh;
+  }
+  html.login-shell #root {
+    height: 100%;
+    height: 100svh;
+    overflow: hidden;
+  }
   ::-webkit-scrollbar {
     width: 6px;
     height: 5px;

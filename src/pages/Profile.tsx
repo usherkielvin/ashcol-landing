@@ -283,7 +283,8 @@ export default function Profile() {
       const res = await fetch(`${apiUrl}/user/account`, { method: 'DELETE', headers: authHeaders() })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || 'Failed to delete account.')
       logout()
-      navigate('/login', { replace: true })
+      // logout() already hard-redirects to /login
+      return
     } catch (err: any) {
       setDeleteErr(err.message || 'Could not delete account.')
       setDeleteLoading(false)

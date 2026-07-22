@@ -1,16 +1,29 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useGoogleLogin } from '@react-oauth/google'
 import { useAuth, getInitials } from '../contexts/AuthContext'
-import { useTheme } from '../contexts/ThemeContext'
-import { Sun, Moon, Eye, EyeOff, CheckCircle2 } from 'lucide-react'
+import { Eye, EyeOff, Lock, Mail } from 'lucide-react'
 import logoImg from '../assets/ash-logo.jpg'
 import { getPortalHomePath, resolveImageUrl, formatPersonName, API_BASE_URL } from '../utils/api'
-import splitBgImg from '../assets/split_screen_bg.png'
+import { PUBLIC_BRANCHES } from '../data/branches'
+
+const WEBSITE = 'www.ashcol.com.ph'
+const SUPPORT_EMAIL = 'centralsupport@ashcol.com.ph'
+
+/** Ashcol brand — dark theme, no yellow/lime */
+const GREEN = '#10B981'
+const LOGO_GREEN = '#006B3F'
+const PAGE_BG = '#060E1A'
+
+function branchDisplayName(branch: (typeof PUBLIC_BRANCHES)[number]): string {
+  if (branch.isHQ) return 'ASHCOL Taguig'
+  return branch.name.startsWith('ASHCOL') ? branch.name : `ASHCOL ${branch.tag}`
+}
+
+const SORTED_PUBLIC_BRANCHES = [...PUBLIC_BRANCHES].sort((a, b) =>
+  branchDisplayName(a).localeCompare(branchDisplayName(b))
+)
 
 export default function Login() {
-  const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
-  const googleDisabled = !GOOGLE_CLIENT_ID
   const prefillEmail = (import.meta.env.VITE_LOGIN_PREFILL_EMAIL || '').trim()
   const prefillPassword = import.meta.env.VITE_LOGIN_PREFILL_PASSWORD || ''
   const [email, setEmail] = useState(prefillEmail)
@@ -21,9 +34,7 @@ export default function Login() {
   const [error, setError] = useState('')
   const { user, setUser } = useAuth()
   const navigate = useNavigate()
-  const { theme, toggleTheme } = useTheme()
-  const isLight = theme === 'light'
-  // Pre-fill remembered email on mount
+
   useEffect(() => {
     const saved = localStorage.getItem('ashcol-remembered-email')
     if (saved && !prefillEmail) {
@@ -34,7 +45,6 @@ export default function Login() {
     }
   }, [prefillEmail, prefillPassword])
 
-  // Check if session has expired
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('expired') === 'true') {
@@ -48,17 +58,19 @@ export default function Login() {
     }
   }, [user, navigate])
 
-  // ── Color tokens ──────────────────────────────────────────────
-  const rightBg     = isLight ? '#f1f5f9'               : '#060B18'
-  const cardBg      = isLight ? 'rgba(255,255,255,0.9)'  : 'rgba(10,17,32,0.4)'
-  const cardBorder  = isLight ? '#e2e8f0'                : 'rgba(255,255,255,0.05)'
-  const textPrimary = isLight ? '#0f172a'                : '#E2E8F0'
-  const textMuted   = isLight ? '#64748b'                : '#7A95B8'
-  const inputBg     = isLight ? '#f8fafc'                : 'rgba(15,26,46,0.8)'
-  const inputBorder = isLight ? '#cbd5e1'                : '#243452'
-  const inputText   = isLight ? '#0f172a'                : '#ffffff'
-  const divBorder   = isLight ? '#e2e8f0'                : '#1E2D48'
-  const googleBg    = isLight ? '#f8fafc'                : 'rgba(10,17,32,0.5)'
+  // Lock scroll on login only (class removed on unmount so portal pages stay normal)
+  useEffect(() => {
+    const html = document.documentElement
+    html.classList.add('login-shell')
+    return () => {
+      html.classList.remove('login-shell')
+      // Clear any leftover inline locks from earlier experiments
+      html.style.removeProperty('overflow')
+      document.body.style.removeProperty('overflow')
+      document.body.style.removeProperty('touch-action')
+      html.style.removeProperty('--app-height')
+    }
+  }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -81,21 +93,22 @@ export default function Login() {
 
       const appToken = data.data.token
       const appUser = data.data.user
+      const displayName = formatPersonName(appUser.name || appUser.email) || appUser.email
 
       if (rememberMe) {
         localStorage.setItem('ashcol-token', appToken)
         localStorage.setItem('ashcol-user', JSON.stringify({
           id: appUser.id,
-          name: formatPersonName(appUser.name || email),
-          email: appUser.email || email,
+          name: displayName,
+          email: appUser.email,
           personalEmail: appUser.personalEmail ?? null,
-          picture: resolveImageUrl(appUser.profileImage),
+          picture: resolveImageUrl(appUser.profileImage) || '',
           role: (appUser.role || 'customer').toLowerCase(),
-          initials: getInitials(appUser.name || email),
+          initials: getInitials(displayName),
           branchId: appUser.branchId ?? null,
           jobTitle: appUser.jobTitle ?? null,
         }))
-        localStorage.setItem('ashcol-remembered-email', email.trim())
+        localStorage.setItem('ashcol-remembered-email', appUser.email)
       } else {
         sessionStorage.setItem('ashcol-token', appToken)
         localStorage.removeItem('ashcol-token')
@@ -105,362 +118,344 @@ export default function Login() {
 
       setUser({
         id: appUser.id,
-        name: appUser.name || email,
-        email: appUser.email || email,
+        name: displayName,
+        email: appUser.email,
         personalEmail: appUser.personalEmail ?? null,
-        picture: resolveImageUrl(appUser.profileImage),
+        picture: resolveImageUrl(appUser.profileImage) || '',
         role: (appUser.role || 'customer').toLowerCase(),
-        initials: getInitials(appUser.name || email),
+        initials: getInitials(displayName),
         branchId: appUser.branchId ?? null,
         jobTitle: appUser.jobTitle ?? null,
       })
-
       navigate(getPortalHomePath(appUser))
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Login Error:', err)
-      setError(err.message || 'Failed to login. Please check your credentials.')
+      setError(err instanceof Error ? err.message : 'Failed to login. Please check your credentials.')
     } finally {
       setLoading(false)
     }
   }
 
-  const loginWithGoogle = useGoogleLogin({
-    onSuccess: async (tokenResponse) => {
-      setLoading(true)
-      setError('')
-      try {
-        const googleRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-          headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-        })
-        if (!googleRes.ok) throw new Error('Failed to fetch profile')
-        const profile = await googleRes.json()
-
-        const backendRes = await fetch(`${API_BASE_URL}/auth/google`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ access_token: tokenResponse.access_token, id_token: '', fcm_token: '' })
-        })
-
-        if (!backendRes.ok) {
-          const errData = await backendRes.json().catch(() => ({}))
-          throw new Error(errData.message || 'Server authentication failed')
-        }
-
-        const data = await backendRes.json()
-        if (!data.success) throw new Error(data.message || 'Authentication failed')
-
-        const appToken = data.data.token
-        const appUser = data.data.user
-
-        if (rememberMe) {
-          localStorage.setItem('ashcol-token', appToken)
-          localStorage.setItem('ashcol-user', JSON.stringify({
-            id: appUser.id,
-            name: appUser.name || profile.name || profile.email,
-            email: appUser.email || profile.email,
-            personalEmail: appUser.personalEmail ?? null,
-            picture: resolveImageUrl(appUser.profileImage) || profile.picture || '',
-            role: (appUser.role || 'customer').toLowerCase(),
-            initials: getInitials(appUser.name || profile.name || profile.email),
-            branchId: appUser.branchId ?? null,
-            jobTitle: appUser.jobTitle ?? null,
-          }))
-          localStorage.setItem('ashcol-remembered-email', appUser.email || profile.email)
-        } else {
-          sessionStorage.setItem('ashcol-token', appToken)
-          localStorage.removeItem('ashcol-token')
-          localStorage.removeItem('ashcol-user')
-          localStorage.removeItem('ashcol-remembered-email')
-        }
-
-        setUser({
-          id: appUser.id,
-          name: appUser.name || profile.name || profile.email,
-          email: appUser.email || profile.email,
-          personalEmail: appUser.personalEmail ?? null,
-          picture: resolveImageUrl(appUser.profileImage) || profile.picture || '',
-          role: (appUser.role || 'customer').toLowerCase(),
-          initials: getInitials(appUser.name || profile.name || profile.email),
-          branchId: appUser.branchId ?? null,
-          jobTitle: appUser.jobTitle ?? null,
-        })
-        navigate(getPortalHomePath(appUser))
-      } catch (err: any) {
-        console.error('Google Auth Error:', err)
-        setError(err.message || 'Google login failed. Please try again.')
-      } finally {
-        setLoading(false)
-      }
-    },
-    onError: () => setError('Google login was cancelled.'),
-  })
-
   return (
     <div
-      className="flex flex-col lg:flex-row h-screen w-full font-['Inter',sans-serif] relative overflow-hidden"
-      style={{ backgroundColor: rightBg, color: textPrimary, transition: 'background-color 0.2s, color 0.2s' }}
+      className="fixed inset-0 z-[100] overflow-hidden overscroll-none touch-none font-['Segoe_UI',ui-sans-serif,system-ui,sans-serif] text-white"
+      style={{ height: '100svh', width: '100%' }}
     >
-      {/* ── Left Branding Panel ───────────────────────────────── */}
-      <div className="hidden lg:flex lg:w-[45%] xl:w-1/2 relative flex-col justify-between p-12 overflow-hidden shadow-2xl z-20 border-r border-[#1E2D48]/50">
-        {/* Background image + overlays */}
-        <div className="absolute inset-0 z-0">
-          <img src={splitBgImg} alt="Abstract Cooling" className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-b from-[#060B18]/60 via-[#060B18]/10 to-[#060B18] mix-blend-multiply" />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#060B18] via-[#060B18]/40 to-transparent" />
-        </div>
-
-        {/* Logo */}
-        <div className="relative z-10 flex items-center gap-3">
-          <img src={logoImg} alt="ASHCOL Logo" className="w-16 h-16 object-contain drop-shadow-xl" />
-          <span className="font-black tracking-widest text-[#E2E8F0] text-xl drop-shadow-md">ASHCOL</span>
-        </div>
-
-        {/* Middle / lower left glass panel */}
-        <div className="relative z-10 max-w-md my-auto p-8 rounded-3xl bg-[#060B18]/65 border border-[#1E2D48]/50 backdrop-blur-md shadow-2xl flex flex-col gap-6">
-          <div>
-            <h2 className="text-3xl xl:text-4xl font-black leading-tight mb-2 drop-shadow-lg text-white">
-              Welcome to <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#10B981] to-[#3B82F6]">ASHCOL Portal</span>
-            </h2>
-            <p className="text-[#7A95B8] text-xs leading-relaxed">
-              Manage schedules, service reports, and branch updates in one place.
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-4 border-t border-[#1E2D48]/45 pt-4">
-            {[
-              {
-                title: 'Schedule Monitoring',
-                desc: 'Track scheduled, installed, cancelled, and pending clients.'
-              },
-              {
-                title: 'Service Reports',
-                desc: 'View technician updates and service progress faster.'
-              },
-              {
-                title: 'Branch Line-Up',
-                desc: 'Monitor branch assignments and daily activity.'
-              }
-            ].map(feat => (
-              <div key={feat.title} className="flex gap-3">
-                <div className="w-5 h-5 rounded-full bg-[#10B981]/25 border border-[#10B981]/40 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <CheckCircle2 className="w-3 h-3 text-[#10B981]" />
-                </div>
-                <div className="flex flex-col gap-0.5">
-                  <h4 className="text-xs font-bold text-white tracking-wide">{feat.title}</h4>
-                  <p className="text-[#A2B7D0] text-[11px] leading-relaxed">{feat.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-          
-          <div className="text-[10px] font-semibold text-[#64748b] tracking-wider uppercase pt-2 border-t border-[#1E2D48]/30">
-            Built for faster aircon service coordination.
-          </div>
-        </div>
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div
+          className="absolute inset-0"
+          style={{
+            background: `radial-gradient(ellipse 90% 70% at 50% 40%, #0C1F18 0%, ${PAGE_BG} 55%, #03070C 100%)`,
+          }}
+        />
+        <div
+          className="absolute -top-32 -left-24 w-[520px] h-[520px] rounded-full"
+          style={{ background: 'radial-gradient(circle, rgba(16,185,129,0.14) 0%, transparent 68%)' }}
+        />
+        <div
+          className="absolute top-[12%] right-[-10%] w-[460px] h-[460px] rounded-full"
+          style={{ background: 'radial-gradient(circle, rgba(0,107,63,0.22) 0%, transparent 70%)' }}
+        />
+        <div
+          className="absolute bottom-[-16%] left-[20%] w-[600px] h-[600px] rounded-full"
+          style={{ background: 'radial-gradient(circle, rgba(6,14,26,0.9) 0%, transparent 68%)' }}
+        />
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'radial-gradient(ellipse 75% 65% at 50% 45%, transparent 40%, rgba(3,7,12,0.65) 100%)',
+          }}
+        />
       </div>
 
-      {/* ── Right Form Panel ──────────────────────────────────── */}
-      <div
-        className="flex-1 flex flex-col items-center p-6 sm:p-12 relative overflow-y-auto overflow-x-hidden no-scrollbar z-10"
-        style={{ backgroundColor: rightBg, transition: 'background-color 0.2s' }}
-      >
-        {/* Theme Toggle */}
-        <button
-          onClick={toggleTheme}
-          className="absolute top-5 right-5 p-2.5 rounded-xl transition-all hover:scale-105 z-30"
-          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textMuted }}
-          aria-label="Toggle theme"
-        >
-          {isLight ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" style={{ color: '#F59E0B' }} />}
-        </button>
-
-        {/* Background orbs */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-          <div
-            className="absolute top-0 right-0 w-[500px] h-[500px] translate-x-1/3 -translate-y-1/3"
-            style={{ background: isLight ? 'radial-gradient(circle, rgba(59,130,246,0.06) 0%, transparent 70%)' : 'radial-gradient(circle, rgba(59,130,246,0.1) 0%, transparent 70%)', filter: 'blur(80px)' }}
+      {/* Desktop — absolute locked X/Y positions */}
+      <div className="hidden lg:block absolute inset-0 pointer-events-none">
+        <div className="absolute left-[6%] xl:left-[8%] top-1/2 -translate-y-1/2 flex flex-col items-center text-center select-none pointer-events-auto">
+          <img
+            src={logoImg}
+            alt="ASHCOL"
+            className="w-36 h-36 xl:w-44 xl:h-44 object-contain mb-4 drop-shadow-[0_14px_32px_rgba(0,0,0,0.35)] rounded-2xl"
           />
-          <div
-            className="absolute bottom-0 left-0 w-[500px] h-[500px] -translate-x-1/3 translate-y-1/3"
-            style={{ background: isLight ? 'radial-gradient(circle, rgba(16,185,129,0.05) 0%, transparent 70%)' : 'radial-gradient(circle, rgba(16,185,129,0.1) 0%, transparent 70%)', filter: 'blur(60px)' }}
-          />
-        </div>
-
-        <div className="w-full max-w-[440px] relative z-20 my-auto py-8">
-
-          {/* Mobile-only logo/header */}
-          <div className="flex flex-col items-center mb-8 lg:hidden">
-            <a href="https://ashcol.com.ph" className="hover:scale-105 transition-transform mb-6">
-              <img src={logoImg} alt="ASHCOL Logo" className="w-16 h-16 object-contain rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.3)]" />
-            </a>
-            <h1 className="text-2xl font-black tracking-tight mb-2 text-center" style={{ color: textPrimary }}>
-              Sign in to your workspace
-            </h1>
-            <p className="text-xs text-center max-w-[280px]" style={{ color: textMuted }}>
-              Access your ASHCOL monitoring dashboard.
-            </p>
-          </div>
-
-          {/* Desktop heading */}
-          <div className="hidden lg:block mb-8">
-            <h1 className="text-3xl font-black tracking-tight mb-2" style={{ color: textPrimary }}>
-              Sign in to your workspace
-            </h1>
-            <p className="text-[15px]" style={{ color: textMuted }}>
-              Access your ASHCOL monitoring dashboard.
-            </p>
-          </div>
-
-          {/* Form Card */}
-          <div
-            className="backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-2xl"
-            style={{ backgroundColor: cardBg, border: `1px solid ${cardBorder}` }}
+          <h1 className="text-[2.25rem] xl:text-[2.75rem] font-black tracking-tight leading-none text-white">
+            ASHCOL
+          </h1>
+          <p
+            className="text-lg xl:text-xl font-semibold tracking-[0.42em] mt-2.5 pr-[0.42em]"
+            style={{ color: GREEN }}
           >
-            <form onSubmit={handleLogin} className="flex flex-col gap-5">
-              {/* Email */}
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: textMuted }}>
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  name="email"
-                  autoComplete="username"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputText }}
-                  className="w-full border rounded-xl px-4 py-3.5 placeholder-slate-400 focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all"
-                  placeholder="juan@example.com"
-                />
-              </div>
-
-              {/* Password */}
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="block text-[11px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
-                    Password
-                  </label>
-                  <Link to={`/forgot-password?email=${encodeURIComponent(email.trim())}`} className="text-xs text-[#10B981] hover:underline font-semibold">
-                    Forgot?
-                  </Link>
-                </div>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    name="password"
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: inputText }}
-                    className="w-full border rounded-xl px-4 py-3.5 pr-12 placeholder-slate-400 focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all"
-                    placeholder="••••••••"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-[14px] text-[#7A95B8] hover:text-[#10B981] transition-colors"
-                  >
-                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Remember Me */}
-              <div className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  id="remember-me"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="sr-only"
-                />
-                <button
-                  type="button"
-                  onClick={() => setRememberMe(r => !r)}
-                  className="relative flex-shrink-0 w-5 h-5 rounded-md border-2 transition-all duration-150 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-[#10B981]/50"
-                  style={{
-                    backgroundColor: rememberMe ? '#10B981' : 'transparent',
-                    borderColor: rememberMe ? '#10B981' : inputBorder,
-                  }}
-                  aria-label="Keep me signed in"
-                >
-                  {rememberMe && (
-                    <svg viewBox="0 0 12 10" className="w-3 h-3" fill="none">
-                      <path d="M1 5l3.5 3.5L11 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
-                </button>
-                <label
-                  htmlFor="remember-me"
-                  className="text-xs font-semibold cursor-pointer select-none"
-                  style={{ color: textMuted }}
-                >
-                  Keep me signed in
-                </label>
-              </div>
-
-              {error && (
-                <p className="text-sm text-red-400 text-center bg-red-400/10 border border-red-400/20 rounded-lg px-4 py-2 animate-in slide-in-from-top-2">
-                  {error}
-                </p>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading}
-                className={`mt-1 w-full flex items-center justify-center gap-2 py-4 rounded-xl font-bold text-white text-[14px] transition-all ${
-                  loading
-                    ? 'cursor-not-allowed'
-                    : 'bg-[#10B981] hover:bg-emerald-500 hover:shadow-[0_0_30px_rgba(16,185,129,0.3)] shadow-[0_0_15px_rgba(16,185,129,0.15)] ring-1 ring-[#10B981]/50'
-                }`}
-                style={loading ? { backgroundColor: inputBg, color: textMuted, border: `1px solid ${inputBorder}` } : {}}
-              >
-                {loading ? 'Logging in...' : 'Login'}
-              </button>
-            </form>
-
-            {/* Divider */}
-            <div className="flex items-center gap-4 my-6">
-              <div className="flex-1 border-t" style={{ borderColor: divBorder }} />
-              <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>Or</span>
-              <div className="flex-1 border-t" style={{ borderColor: divBorder }} />
-            </div>
-
-            {/* Google Login */}
-            <button
-              onClick={() => {
-                if (googleDisabled) {
-                  setError('Google login is not configured for this environment.')
-                  return
-                }
-                loginWithGoogle()
-              }}
-              disabled={loading || googleDisabled}
-              className="w-full flex items-center justify-center gap-3 py-3.5 rounded-xl font-semibold text-[13px] transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
-              style={{ backgroundColor: googleBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = '#10B981'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = inputBorder}
-            >
-              <svg viewBox="0 0 24 24" className="w-4 h-4 group-hover:scale-110 transition-transform" xmlns="http://www.w3.org/2000/svg">
-                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-              </svg>
-              Continue with Google
-            </button>
-            {googleDisabled && (
-              <p className="mt-2 text-xs text-center text-[#A2B7D0]">Google sign-in is not configured for this environment.</p>
-            )}
-          </div>
-
-          <p className="mt-8 text-center text-[12px] font-medium" style={{ color: textMuted }}>
-            For account access, contact your administrator.
+            PORTAL
+          </p>
+          <div
+            className="w-[180px] h-px my-5"
+            style={{ background: `linear-gradient(90deg, transparent, ${GREEN}, transparent)` }}
+          />
+          <p className="text-lg xl:text-xl italic tracking-wide font-medium text-white/75">
+            keeping you cool.
           </p>
         </div>
+
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[420px] pointer-events-auto">
+          <LoginCard
+            email={email}
+            setEmail={setEmail}
+            password={password}
+            setPassword={setPassword}
+            showPassword={showPassword}
+            setShowPassword={setShowPassword}
+            rememberMe={rememberMe}
+            setRememberMe={setRememberMe}
+            loading={loading}
+            error={error}
+            handleLogin={handleLogin}
+          />
+        </div>
+
+        <div className="absolute right-[5%] xl:right-[7%] top-1/2 -translate-y-1/2 w-[280px] xl:w-[320px] pointer-events-auto">
+          <p className="text-[10px] font-bold uppercase tracking-[0.3em] mb-4" style={{ color: GREEN }}>
+            Our branches
+          </p>
+          <ul className="flex flex-col gap-2.5 mb-6">
+            {SORTED_PUBLIC_BRANCHES.map((b) => (
+              <li
+                key={b.name}
+                className="text-xl xl:text-2xl font-bold tracking-tight leading-none text-white"
+              >
+                {branchDisplayName(b)}
+              </li>
+            ))}
+          </ul>
+          <div
+            className="w-full h-px mb-5"
+            style={{ background: `linear-gradient(90deg, ${GREEN}88, transparent)` }}
+          />
+          <div className="space-y-2.5 text-sm text-white/70">
+            <a
+              href={`https://${WEBSITE}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block font-semibold text-white/90 hover:text-white transition-colors"
+            >
+              {WEBSITE}
+            </a>
+            <a
+              href={`mailto:${SUPPORT_EMAIL}`}
+              className="flex items-center gap-2 hover:text-white transition-colors break-all"
+            >
+              <Mail className="w-4 h-4 shrink-0" style={{ color: GREEN }} />
+              {SUPPORT_EMAIL}
+            </a>
+          </div>
+        </div>
       </div>
+
+      {/* Mobile — branding top, login box dead-center, footer bottom */}
+      <div className="lg:hidden absolute inset-0 pointer-events-none">
+        <div className="absolute top-[max(1rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 flex flex-col items-center text-center select-none pointer-events-auto">
+          <img src={logoImg} alt="ASHCOL" className="w-24 h-24 object-contain mb-2 rounded-2xl drop-shadow-lg" />
+          <h1 className="text-lg font-black tracking-tight leading-none text-white">ASHCOL</h1>
+          <p className="text-[11px] font-semibold tracking-[0.38em] mt-1 pr-[0.38em]" style={{ color: GREEN }}>
+            PORTAL
+          </p>
+          <p className="text-xs italic font-medium text-white/70 mt-1.5">keeping you cool.</p>
+        </div>
+
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(100vw-2rem,360px)] pointer-events-auto">
+          <LoginCard
+            email={email}
+            setEmail={setEmail}
+            password={password}
+            setPassword={setPassword}
+            showPassword={showPassword}
+            setShowPassword={setShowPassword}
+            rememberMe={rememberMe}
+            setRememberMe={setRememberMe}
+            loading={loading}
+            error={error}
+            handleLogin={handleLogin}
+            compact
+          />
+        </div>
+
+        <div className="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 text-center space-y-1 pointer-events-auto">
+          <a
+            href={`https://${WEBSITE}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block text-xs font-semibold text-white/90"
+          >
+            {WEBSITE}
+          </a>
+          <a href={`mailto:${SUPPORT_EMAIL}`} className="block text-[11px] text-white/75 break-all">
+            {SUPPORT_EMAIL}
+          </a>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+type LoginCardProps = {
+  email: string
+  setEmail: (v: string) => void
+  password: string
+  setPassword: (v: string) => void
+  showPassword: boolean
+  setShowPassword: (v: boolean | ((p: boolean) => boolean)) => void
+  rememberMe: boolean
+  setRememberMe: (v: boolean | ((p: boolean) => boolean)) => void
+  loading: boolean
+  error: string
+  handleLogin: (e: React.FormEvent) => void
+  compact?: boolean
+}
+
+function LoginCard({
+  email,
+  setEmail,
+  password,
+  setPassword,
+  showPassword,
+  setShowPassword,
+  rememberMe,
+  setRememberMe,
+  loading,
+  error,
+  handleLogin,
+  compact = false,
+}: LoginCardProps) {
+  return (
+    <div
+      className={`w-full mx-auto rounded-[28px] ${
+        compact ? 'max-w-[360px] px-5 py-6' : 'max-w-[420px] px-8 py-8 sm:px-9 sm:py-9'
+      }`}
+      style={{
+        background: 'linear-gradient(165deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.78) 100%)',
+        backdropFilter: 'blur(32px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(32px) saturate(180%)',
+        border: '1px solid rgba(255,255,255,0.85)',
+        boxShadow:
+          '0 30px 80px -20px rgba(0,0,0,0.45), 0 0 0 1px rgba(16,185,129,0.12), inset 0 1px 0 rgba(255,255,255,0.95)',
+      }}
+    >
+      <div className={compact ? 'mb-5' : 'mb-7'}>
+        <h2
+          className={`font-bold tracking-tight text-slate-900 ${compact ? 'text-2xl' : 'text-3xl'}`}
+        >
+          Welcome back
+        </h2>
+        <p className="text-sm text-slate-800 mt-1.5">
+          Sign in to continue
+        </p>
+      </div>
+
+      <form onSubmit={handleLogin} className={`flex flex-col ${compact ? 'gap-3.5' : 'gap-[18px]'}`}>
+        <div>
+          <label className="block text-sm font-semibold text-slate-900 mb-1.5">Email</label>
+          <div className="relative">
+            <Mail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-[17px] h-[17px] text-slate-400" />
+            <input
+              type="email"
+              name="email"
+              autoComplete="username"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className={`w-full rounded-xl pl-10 pr-3 text-sm text-slate-900 placeholder:text-slate-400 bg-white border border-slate-200 focus:outline-none focus:ring-4 focus:ring-emerald-500/15 focus:border-emerald-500 transition-all ${
+                compact ? 'min-h-[46px]' : 'min-h-[50px]'
+              }`}
+              placeholder="name@ashcol.com.ph"
+            />
+          </div>
+        </div>
+
+        <div>
+          <div className="flex justify-between items-center mb-1.5">
+            <label className="block text-sm font-semibold text-slate-900">Password</label>
+            <Link
+              to={`/forgot-password?email=${encodeURIComponent(email.trim())}`}
+              className="text-xs font-semibold hover:opacity-90 transition-opacity"
+              style={{ color: GREEN }}
+            >
+              Forgot password?
+            </Link>
+          </div>
+          <div className="relative">
+            <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-[17px] h-[17px] text-slate-400" />
+            <input
+              type={showPassword ? 'text' : 'password'}
+              name="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className={`w-full rounded-xl pl-10 pr-11 text-sm text-slate-900 placeholder:text-slate-400 bg-white border border-slate-200 focus:outline-none focus:ring-4 focus:ring-emerald-500/15 focus:border-emerald-500 transition-all ${
+                compact ? 'min-h-[46px]' : 'min-h-[50px]'
+              }`}
+              placeholder="Enter your password"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-emerald-600 transition-colors"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setRememberMe((r) => !r)}
+            className="relative flex-shrink-0 w-[18px] h-[18px] rounded-md border-2 transition-all flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-emerald-500/35"
+            style={{
+              backgroundColor: rememberMe ? GREEN : 'transparent',
+              borderColor: rememberMe ? GREEN : '#cbd5e1',
+            }}
+            aria-label="Remember me"
+          >
+            {rememberMe && (
+              <svg viewBox="0 0 12 10" className="w-2.5 h-2.5" fill="none">
+                <path d="M1 5l3.5 3.5L11 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </button>
+          <span
+            className="text-sm font-medium text-slate-900 select-none cursor-pointer"
+            onClick={() => setRememberMe((r) => !r)}
+          >
+            Remember me
+          </span>
+        </div>
+
+        <p className="text-xs text-slate-500 text-center -mt-1 leading-relaxed">
+          For account access, please contact your administrator.
+        </p>
+
+        <div className="min-h-[40px]">
+          {error ? (
+            <p className="text-sm text-red-700 text-center bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+              {error}
+            </p>
+          ) : null}
+        </div>
+
+        <button
+          type="submit"
+          disabled={loading}
+          className={`w-full rounded-xl font-semibold text-sm text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
+            compact ? 'min-h-[46px]' : 'min-h-[50px]'
+          }`}
+          style={{
+            background: `linear-gradient(180deg, ${GREEN} 0%, ${LOGO_GREEN} 100%)`,
+            boxShadow: '0 12px 24px -10px rgba(16, 185, 129, 0.45)',
+          }}
+        >
+          {loading ? 'Signing in…' : 'Continue'}
+        </button>
+      </form>
     </div>
   )
 }

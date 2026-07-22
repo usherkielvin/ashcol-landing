@@ -8813,12 +8813,12 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         document.getElementById('header-toolbar-slot') ?? document.body,
       )}
 
-      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Portal: Toolbar into header slot Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */}
+      {/* Portal: Toolbar into header slot */}
       {!isMyTickets && activeTab !== 'overview' && ReactDOM.createPortal(
-        <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div className="w-full min-w-0 max-w-full px-3 md:px-4 pt-2 pb-2.5 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-2 md:gap-3 items-center">
 
-          {/* ── Left Side: Date & Search ── */}
-          <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-3 flex-1 min-w-0">
+          {/* Left: date chips (scroll) + search — can shrink */}
+          <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-2.5 min-w-0 overflow-hidden">
             {activeTab === 'schedules' && (
               <>
                 {/* Mobile: compact date + search in one row */}
@@ -8839,16 +8839,14 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       aria-label="Pick schedule date"
                     >
                       <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: green }} strokeWidth={2.2} />
-                      <span className="text-[11px] font-bold whitespace-nowrap tabular-nums">
-                        {dateFilter
-                          ? new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', {
-                            month: 'short',
-                            day: 'numeric',
-                          })
-                          : 'Date'}
+                      <span className="text-[12px] font-semibold whitespace-nowrap">
+                        {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                        })}
                       </span>
                     </button>
-                    {/* Keep input in-DOM for showPicker / change events — offscreen, not opacity overlay */}
                     <input
                       ref={mobileDateInputRef}
                       type="date"
@@ -8889,8 +8887,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   </div>
                 </div>
 
-                {/* Desktop: week chips + custom date */}
-                <div className="hidden md:flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+                {/* Desktop: week chips + custom date (scrolls when tight) */}
+                <div className="hidden md:flex items-center gap-1.5 overflow-x-auto no-scrollbar min-w-0 flex-1">
                   {weeklyTabs.map(tab => {
                     const isActive = dateFilter === tab.key
                     return (
@@ -8898,7 +8896,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                         type="button"
                         key={tab.key}
                         onClick={() => handleDateFilterChange(tab.key)}
-                        className="h-10 px-5 rounded-full text-[13px] font-semibold border whitespace-nowrap shrink-0 transition-all active:scale-95"
+                        className="h-10 px-4 lg:px-5 rounded-full text-[12px] lg:text-[13px] font-semibold border whitespace-nowrap shrink-0 transition-all active:scale-95"
                         style={{
                           backgroundColor: isActive ? green : inputBg,
                           borderColor: isActive ? green : inputBorder,
@@ -8911,43 +8909,60 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     )
                   })}
 
-                  <label
-                    className="relative flex items-center gap-2 h-10 min-w-[11.5rem] px-4 rounded-full border shrink-0 cursor-pointer transition-all hover:opacity-90 active:scale-[0.98]"
-                    style={{
-                      backgroundColor: isCustomSelected ? green : inputBg,
-                      borderColor: isCustomSelected ? green : inputBorder,
-                      color: isCustomSelected ? '#ffffff' : textPrimary,
-                      boxShadow: isCustomSelected ? '0 2px 8px rgba(16,185,129,0.35)' : 'none',
-                    }}
-                    title="Pick a custom schedule date"
-                  >
-                    <CalendarDays
-                      className="w-[18px] h-[18px] shrink-0"
-                      style={{ color: isCustomSelected ? '#ffffff' : green }}
-                      strokeWidth={2.2}
-                    />
-                    <span className="text-[13px] font-semibold whitespace-nowrap truncate flex-1 min-w-0">
-                      {isCustomSelected
-                        ? new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', {
-                          weekday: 'short',
-                          month: 'short',
-                          day: 'numeric',
-                        })
-                        : 'Custom date'}
-                    </span>
-                    <ChevronDown
-                      className="w-4 h-4 shrink-0 opacity-70"
-                      style={{ color: isCustomSelected ? '#ffffff' : textMuted }}
-                    />
+                  <div className="relative shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const el = dateFilterInputRef.current
+                        if (!el) return
+                        try {
+                          if (typeof el.showPicker === 'function') {
+                            el.showPicker()
+                            return
+                          }
+                        } catch { /* fall through */ }
+                        el.focus()
+                        el.click()
+                      }}
+                      className="relative flex items-center gap-2 h-10 min-w-[10.5rem] px-3 lg:px-4 rounded-full border shrink-0 cursor-pointer transition-all hover:opacity-90 active:scale-[0.98]"
+                      style={{
+                        backgroundColor: isCustomSelected ? green : inputBg,
+                        borderColor: isCustomSelected ? green : inputBorder,
+                        color: isCustomSelected ? '#ffffff' : textPrimary,
+                        boxShadow: isCustomSelected ? '0 2px 8px rgba(16,185,129,0.35)' : 'none',
+                      }}
+                      title="Pick a custom schedule date"
+                    >
+                      <CalendarDays
+                        className="w-[18px] h-[18px] shrink-0"
+                        style={{ color: isCustomSelected ? '#ffffff' : green }}
+                        strokeWidth={2.2}
+                      />
+                      <span className="text-[12px] lg:text-[13px] font-semibold whitespace-nowrap truncate flex-1 min-w-0 text-left">
+                        {isCustomSelected
+                          ? new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric',
+                          })
+                          : 'Custom date'}
+                      </span>
+                      <ChevronDown
+                        className="w-4 h-4 shrink-0 opacity-70"
+                        style={{ color: isCustomSelected ? '#ffffff' : textMuted }}
+                      />
+                    </button>
                     <input
                       ref={dateFilterInputRef}
                       type="date"
                       value={dateFilter}
                       onChange={e => handleDateFilterChange(e.target.value)}
-                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
-                      aria-label="Pick custom schedule date"
+                      className="absolute left-0 top-0 w-px h-px opacity-0 overflow-hidden"
+                      tabIndex={-1}
+                      aria-hidden
                     />
-                  </label>
+                  </div>
                 </div>
               </>
             )}
@@ -8955,7 +8970,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             {/* Search — desktop */}
             {activeTab === 'schedules' && (
               <div
-                className="hidden md:flex items-center gap-2 w-[240px] lg:w-[320px] h-11 px-4 rounded-2xl border transition-all shrink-0"
+                className="hidden md:flex items-center gap-2 w-[140px] lg:w-[180px] xl:w-[240px] h-10 px-3 rounded-2xl border transition-all shrink-0"
                 style={{ backgroundColor: inputBg, borderColor: inputBorder }}
               >
                 <Search className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
@@ -8984,28 +8999,27 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             )}
           </div>
 
-          {/* Assign Drivers — desktop only */}
-          {activeTab === 'schedules' && canEdit && !isMyTickets && (
-            <button
-              type="button"
-              id="bulk-assign-driver-btn"
-              onClick={(e) => { e.stopPropagation(); setBulkAssignOpen(true) }}
-              className="hidden md:flex items-center gap-2 h-10 px-4 rounded-full text-[13px] font-semibold shrink-0 transition-all hover:opacity-90 active:scale-95"
-              style={{
-                backgroundColor: inputBg,
-                border: `1px solid ${inputBorder}`,
-                color: textPrimary,
-              }}
-              title="Assign driver and vehicle to an installer's tickets"
-            >
-              <UsersRound className="w-4 h-4 shrink-0" style={{ color: green }} strokeWidth={2.1} />
-              Assign Drivers
-            </button>
-          )}
+          {/* Right actions — always pinned in view */}
+          <div className="hidden md:flex items-center gap-1.5 shrink-0 justify-self-end">
+            {activeTab === 'schedules' && canEdit && !isMyTickets && (
+              <button
+                type="button"
+                id="bulk-assign-driver-btn"
+                onClick={(e) => { e.stopPropagation(); setBulkAssignOpen(true) }}
+                className="flex items-center gap-1.5 h-10 px-2.5 xl:px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-all hover:opacity-90 active:scale-95"
+                style={{
+                  backgroundColor: inputBg,
+                  border: `1px solid ${inputBorder}`,
+                  color: textPrimary,
+                }}
+                title="Assign driver and vehicle to an installer's tickets"
+              >
+                <UsersRound className="w-4 h-4 shrink-0" style={{ color: green }} strokeWidth={2.1} />
+                <span className="hidden xl:inline">Assign Drivers</span>
+              </button>
+            )}
 
-          {/* ── Right: Showcase button ─────────────── */}
-          {activeTab === 'schedules' && !isMyTickets && (
-            <div className="flex items-center gap-1.5 shrink-0 relative justify-end hidden md:flex">
+            {activeTab === 'schedules' && !isMyTickets && (
               <button
                 type="button"
                 onClick={(e) => {
@@ -9013,7 +9027,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   persistSchedulesSnapshot()
                   setShowcaseOpen(true)
                 }}
-                className="flex items-center gap-1.5 md:gap-2 h-8 md:h-10 px-4 md:px-6 rounded-full text-[12px] md:text-[14px] font-bold transition-all shrink-0 active:scale-95"
+                className="flex items-center gap-1.5 h-10 px-2.5 xl:px-4 rounded-full text-[12px] xl:text-[13px] font-bold transition-all shrink-0 active:scale-95"
                 style={{
                   backgroundColor: showcaseOpen ? 'transparent' : green,
                   border: `1.5px solid ${green}`,
@@ -9022,11 +9036,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 }}
                 title="Open fullscreen schedule showcase for print / PDF"
               >
-                <Maximize2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                <span className="hidden sm:inline">{showcaseOpen ? 'Active' : 'Showcase'}</span>
+                <Maximize2 className="w-4 h-4 shrink-0" />
+                <span className="hidden xl:inline">{showcaseOpen ? 'Active' : 'Showcase'}</span>
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body
       )}
@@ -9610,21 +9624,36 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                         >
                           {/* Header: customer + status */}
                           <div className="flex justify-between items-start gap-2">
-                            <h4
-                              onClick={e => {
-                                e.stopPropagation()
-                                if (phone) {
-                                  void copyTextToClipboard(phone)
-                                  showToast(`Copied ${getCustomerDisplayName(ticket)}'s number: ${fmtPhone(phone) || phone}`)
-                                } else {
-                                  showToast(`No contact number for ${getCustomerDisplayName(ticket)}`)
-                                }
-                              }}
-                              className="font-bold text-[13px] leading-snug uppercase tracking-wide mr-1 hover:underline cursor-pointer min-w-0"
-                              style={{ color: isDuplicateName ? (isLight ? '#9f1239' : '#f43f5e') : textPrimary }}
-                            >
-                              {getCustomerDisplayName(ticket)}
-                            </h4>
+                            <div className="min-w-0 flex-1">
+                              <h4
+                                className="font-bold text-[13px] leading-snug uppercase tracking-wide"
+                                style={{ color: isDuplicateName ? (isLight ? '#9f1239' : '#f43f5e') : textPrimary }}
+                              >
+                                {getCustomerDisplayName(ticket)}
+                              </h4>
+                              {phone ? (
+                                <a
+                                  href={`tel:${phone.replace(/[^\d+]/g, '')}`}
+                                  onClick={e => {
+                                    e.stopPropagation()
+                                  }}
+                                  onContextMenu={e => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    void copyTextToClipboard(phone)
+                                    showToast(`Copied ${fmtPhone(phone) || phone}`)
+                                  }}
+                                  className="mt-0.5 inline-block text-[11px] font-semibold tabular-nums hover:underline"
+                                  style={{ color: isLight ? '#0369a1' : '#7dd3fc' }}
+                                >
+                                  {fmtPhone(phone) || phone}
+                                </a>
+                              ) : (
+                                <span className="mt-0.5 block text-[11px] font-medium" style={{ color: textMuted }}>
+                                  No contact no.
+                                </span>
+                              )}
+                            </div>
                             {statusDisplay ? (
                               <span
                                 className="text-[9px] font-black uppercase shrink-0 tracking-wider px-2 py-0.5 rounded-full"
@@ -9749,18 +9778,28 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
               </div>
             </div>
 
-            <div className={`flex-1 flex flex-col min-h-0 px-3 md:px-8 bg-transparent ${overviewSearchInput || overviewResults.length > 0 ? 'overflow-y-auto justify-start' : 'overflow-hidden justify-center py-4 md:py-6'}`}>
-              <div className={`max-w-4xl w-full mx-auto flex flex-col animate-in fade-in transition-all duration-500 ease-out ${overviewSearchInput || overviewResults.length > 0 ? '' : 'pb-[15vh] gap-6 md:gap-8'}`}>
+            <div
+              className={`flex-1 min-h-0 px-3 md:px-8 bg-transparent flex flex-col ${
+                overviewSearchInput || overviewResults.length > 0 ? 'overflow-y-auto' : 'overflow-hidden'
+              }`}
+            >
+              <div
+                className={`max-w-4xl w-full mx-auto flex flex-col animate-in fade-in transition-all duration-500 ease-out ${
+                  overviewSearchInput || overviewResults.length > 0
+                    ? ''
+                    : 'flex-1 items-center justify-center gap-6 md:gap-8'
+                }`}
+              >
 
                 {/* Sticky Header: Logo + Search Input (opaque bg so results don't show through while scrolling) */}
                 <div
                   className={overviewSearchInput || overviewResults.length > 0
                     ? 'sticky top-0 z-10 -mx-3 px-3 md:mx-0 md:px-0 pt-4 pb-3 md:pt-6 md:pb-4 flex flex-col gap-3 md:gap-4'
-                    : 'flex flex-col gap-6 md:gap-8'}
+                    : 'w-full flex flex-col items-center gap-6 md:gap-8'}
                   style={overviewSearchInput || overviewResults.length > 0 ? { backgroundColor: isLight ? '#f1f5f9' : '#060B18' } : undefined}
                 >
                   {/* Big Logo / Name (Google Style) */}
-                  <div className="flex flex-col items-center justify-center text-center">
+                  <div className="flex flex-col items-center justify-center text-center w-full">
                     <h1
                       className={`font-black tracking-tighter transition-all duration-500 ease-out ${overviewSearchInput || overviewResults.length > 0 ? 'text-2xl md:text-3xl mb-0 opacity-80' : 'text-5xl md:text-7xl mb-2 opacity-100'}`}
                     >
@@ -9771,7 +9810,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
                   {/* Search Input Box */}
                   <div
-                    className="flex items-center gap-3 px-8 py-5 md:px-10 md:py-6 rounded-full shadow-md border-2 transition-all duration-200"
+                    className="w-full flex items-center gap-3 px-8 py-5 md:px-10 md:py-6 rounded-full shadow-md border-2 transition-all duration-200"
                     style={{
                       backgroundColor: cardBg,
                       borderColor: overviewSearchFocused ? green : border,
@@ -10080,34 +10119,37 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         )
 
         return (
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-[3px]"
-            style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
+          <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-3"
+            style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
             onClick={() => { setDetailTicket(null); setShowHistoryPanel(false) }}>
-            <div className="w-full rounded-2xl shadow-2xl flex flex-col overflow-hidden transition-all duration-300 animate-in zoom-in-95"
+            <div className="w-full rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
               style={{
                 backgroundColor: cardBg,
                 border: `1px solid ${border}`,
-                height: 'calc(100vh - 6px)',
-                maxHeight: 'calc(100vh - 6px)',
+                maxHeight: 'min(100dvh, 100vh)',
+                height: 'min(100dvh, 100vh)',
                 maxWidth: showHistoryPanel
-                  ? 'min(1480px, calc(100vw - 6px))'
-                  : 'min(1180px, calc(100vw - 6px))',
+                  ? 'min(1480px, calc(100vw - 0px))'
+                  : 'min(720px, 100vw)',
               }}
               onClick={e => e.stopPropagation()}>
 
-              {/* Header */}
-              <div className="flex flex-col px-6 py-4 shrink-0 gap-3"
-                style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#111827' }}>
-
-                {/* Header Row 1 */}
-                <div className="flex items-center justify-between w-full">
-                  <div className="min-w-0 flex-1 mr-4">
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <h2 className="text-base font-black leading-tight uppercase tracking-wide" style={{ color: textPrimary }}>
+              {/* Sticky header — X always visible, never scrolls away */}
+              <div
+                className="sticky top-0 z-20 flex flex-col px-4 sm:px-6 py-3 sm:py-4 shrink-0 gap-2.5"
+                style={{
+                  borderBottom: `1px solid ${border}`,
+                  backgroundColor: isLight ? '#f8fafc' : '#111827',
+                }}
+              >
+                <div className="flex items-start justify-between w-full gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h2 className="text-sm sm:text-base font-black leading-tight uppercase tracking-wide" style={{ color: textPrimary }}>
                         {custName || 'Direct Client'}
                       </h2>
                       <span
-                        className="text-[11px] font-bold shrink-0 uppercase tracking-wide"
+                        className="text-[10px] sm:text-[11px] font-bold shrink-0 uppercase tracking-wide"
                         style={{ color: scheduleBadgeStyle.color }}
                       >
                         {scheduleStatusDisplay}
@@ -10121,46 +10163,47 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                           {branchName}
                         </span>
                       )}
-                      <span className="text-sm sm:text-base font-black font-mono tracking-wider uppercase" style={{ color: textPrimary }}>
-                        TICKET NO: {t.ticketNumber || t.ticket_number || EMPTY_CELL}
-                      </span>
-                      {isDuplicateName && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-yellow-500/10" style={{ color: isLight ? '#a16207' : '#fbbf24' }}>
-                          Duplicate Name
-                        </span>
-                      )}
                     </div>
+                    <p className="mt-1 text-[11px] sm:text-sm font-black font-mono tracking-wider uppercase" style={{ color: textPrimary }}>
+                      {t.ticketNumber || t.ticket_number || EMPTY_CELL}
+                    </p>
+                    {isDuplicateName && (
+                      <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded bg-yellow-500/10" style={{ color: isLight ? '#a16207' : '#fbbf24' }}>
+                        Duplicate Name
+                      </span>
+                    )}
                   </div>
-                  <button type="button" onClick={() => { setDetailTicket(null); setShowHistoryPanel(false) }}
-                    className="p-1.5 shrink-0 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                    <X className="w-4.5 h-4.5" style={{ color: textMuted }} />
+                  <button
+                    type="button"
+                    onClick={() => { setDetailTicket(null); setShowHistoryPanel(false) }}
+                    className="p-2 shrink-0 rounded-xl border transition-colors"
+                    style={{ borderColor: border, backgroundColor: inputBg, color: textMuted }}
+                    aria-label="Close details"
+                  >
+                    <X className="w-4 h-4" />
                   </button>
                 </div>
 
-                {/* Header Row 2 */}
-                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t text-xs w-full" style={{ borderColor: border }}>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-2 border-t text-xs w-full" style={{ borderColor: border }}>
                   <div>
                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Category</span>
                     <span className="font-semibold text-xs text-emerald-500 uppercase">{t.ticketCategory || t.ticket_category || EMPTY_CELL}</span>
                   </div>
-                  <div style={{ borderLeft: `1px solid ${border}`, height: '1.25rem' }} className="hidden sm:block" />
                   <div>
                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Relayed By</span>
                     <span className="font-semibold text-xs font-mono" style={{ color: textPrimary }}>
                       {t.createdBy || (t.customerEmail || 'System')}
                     </span>
                   </div>
-                  <div style={{ borderLeft: `1px solid ${border}`, height: '1.25rem' }} className="hidden sm:block" />
                   <div>
                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Negotiator</span>
                     <span className="font-semibold text-xs" style={{ color: textPrimary }}>
                       {negotiatorName ? <EmployeeNameLink nameOrId={negotiatorName} /> : EMPTY_CELL}
                     </span>
                   </div>
-                  <div style={{ borderLeft: `1px solid ${border}`, height: '1.25rem' }} className="hidden sm:block" />
                   <div>
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Negotiator Number</span>
-                    <span className="font-semibold text-xs animate-in fade-in duration-200" style={{ color: negotiatorPhone ? '#10B981' : textMuted }}>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Negotiator No.</span>
+                    <span className="font-semibold text-xs" style={{ color: negotiatorPhone ? '#10B981' : textMuted }}>
                       {negotiatorPhone ? (
                         <a href={`tel:${negotiatorPhone.replace(/\D/g, '').replace(/^0/, '+63')}`} className="hover:underline">
                           {fmtPhone(negotiatorPhone) || negotiatorPhone}
@@ -10171,12 +10214,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 </div>
               </div>
 
-              {/* Two Column Body */}
-              <div className="flex-1 overflow-y-auto min-h-0 flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x">
-
-                {/* Left Column: Details */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                  {/* Grid 1: Client & Location Info */}
+              {/* Single scroll body — details + history + actions all scroll together */}
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+                <div className="p-4 sm:p-6 space-y-6">
                   <div>
                     <SHead title="Client & Location Details" />
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -10189,7 +10229,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     </div>
                   </div>
 
-                  {/* Grid 2: Service & Equipment Details */}
                   <div>
                     <SHead title="Service & Equipment Details" />
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -10207,7 +10246,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     </div>
                   </div>
 
-                  {/* Grid 3: Scheduling Details */}
                   <div>
                     <SHead title="Scheduling Details" />
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -10223,7 +10261,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     </div>
                   </div>
 
-                  {/* Grid 4: Payment Details */}
                   {(hasPayment || t.modeOfPayment || t.mode_of_payment || t.amountCharged || t.installationCharges || t.installation_charges) && (
                     <div>
                       <SHead title="Payment Details" />
@@ -10234,7 +10271,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     </div>
                   )}
 
-                  {/* Commit terms / note / remarks */}
                   {(commit || note || update) && (
                     <div className="space-y-4">
                       {commit && (
@@ -10266,114 +10302,111 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       )}
                     </div>
                   )}
-                </div>
 
-                {/* Right Column: Update History */}
-                {showHistoryPanel && (
-                  <div className="flex-1 overflow-y-auto p-6 flex flex-col min-h-0"
-                    style={{ backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
-                    <h4 className="text-[10px] font-black uppercase tracking-wider mb-4" style={{ color: textMuted }}>
-                      Update History
-                    </h4>
-
-                    {loadingHistory ? (
-                      <div className="flex-1 flex flex-col items-center justify-center py-12 gap-3">
-                        <div className="relative w-10 h-10">
-                          <svg viewBox="0 0 40 40" fill="none" style={{ width: 40, height: 40, transform: "rotate(-90deg)" }}>
-                            <circle cx="20" cy="20" r="16" stroke={isLight ? "#e2e8f0" : "#1e293b"} strokeWidth="3" />
-                            <circle cx="20" cy="20" r="16" stroke={green} strokeWidth="3" strokeDasharray="100.53" strokeDashoffset="25.13" strokeLinecap="round" className="animate-spin" style={{ transformOrigin: "20px 20px" }} />
-                          </svg>
+                  {/* Update history — scrolls with details (not a side pane that overlaps) */}
+                  {showHistoryPanel && (
+                    <div
+                      className="rounded-xl p-4 space-y-4"
+                      style={{ backgroundColor: isLight ? '#f8fafc' : '#0d1b2e', border: `1px solid ${border}` }}
+                    >
+                      <h4 className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
+                        Update History
+                      </h4>
+                      {loadingHistory ? (
+                        <div className="flex flex-col items-center justify-center py-8 gap-3">
+                          <Loader2 className="w-6 h-6 animate-spin" style={{ color: green }} />
+                          <span className="text-xs font-semibold" style={{ color: textMuted }}>Loading logs…</span>
                         </div>
-                        <span className="text-xs font-semibold" style={{ color: textMuted }}>Loading logs&#x2026;</span>
-                      </div>
-                    ) : (
-                      <div className="relative border-l ml-3 pl-5 space-y-6" style={{ borderColor: border }}>
-                        {(() => {
-                          const listToRender = [...history]
-                          // Removed virtual initial submission
-
-                          listToRender.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-
-                          if (listToRender.length === 0) {
-                            return (
-                              <div className="text-xs font-semibold py-8" style={{ color: textMuted }}>
-                                No update history recorded.
-                              </div>
+                      ) : (
+                        <div className="relative border-l ml-2 pl-4 space-y-5" style={{ borderColor: border }}>
+                          {(() => {
+                            const listToRender = [...history].sort(
+                              (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
                             )
-                          }
-
-                          return listToRender.map((h, idx) => {
-                            const dt = new Date(h.createdAt).toLocaleString('en-PH', {
-                              month: 'short', day: 'numeric', year: 'numeric',
-                              hour: 'numeric', minute: '2-digit', hour12: true
-                            })
-
-                            return (
-                              <div key={h.id || idx} className="relative">
-                                <span className="absolute -left-[27px] top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2"
-                                  style={{
-                                    borderColor: idx === 0 ? green : border,
-                                    backgroundColor: idx === 0 ? green : cardBg
-                                  }} />
-
-                                <div className="text-xs">
-                                  <div className="flex items-start justify-between gap-2">
-                                    <span className="font-extrabold leading-tight" style={{ color: textPrimary }}>
-                                      {h.changeNote || 'Ticket details updated'}
-                                    </span>
-                                    <span className="text-[9px] font-semibold opacity-60 shrink-0 mt-0.5" style={{ color: textMuted }}>
-                                      {dt}
-                                    </span>
-                                  </div>
-
-                                  <div className="mt-1 space-y-0.5" style={{ color: textMuted }}>
-                                    <p className="text-[10px] font-semibold">
-                                      By: <span className="font-bold" style={{ color: textPrimary }}><EmployeeNameLink nameOrId={h.changedByUserName} /></span>
-                                    </p>
-                                    {h.newStatus && h.newStatus !== h.previousStatus && (
-                                      <p className="text-[10px]">
-                                        Status: <span className="font-bold opacity-80">{h.previousStatus || 'NONE'}</span> ➔ <span className="font-bold text-indigo-500">{h.newStatus}</span>
+                            if (listToRender.length === 0) {
+                              return (
+                                <div className="text-xs font-semibold py-4" style={{ color: textMuted }}>
+                                  No update history recorded.
+                                </div>
+                              )
+                            }
+                            return listToRender.map((h, idx) => {
+                              const dt = new Date(h.createdAt).toLocaleString('en-PH', {
+                                month: 'short', day: 'numeric', year: 'numeric',
+                                hour: 'numeric', minute: '2-digit', hour12: true,
+                              })
+                              return (
+                                <div key={h.id || idx} className="relative">
+                                  <span
+                                    className="absolute -left-[23px] top-1.5 flex h-3 w-3 items-center justify-center rounded-full border-2"
+                                    style={{
+                                      borderColor: idx === 0 ? green : border,
+                                      backgroundColor: idx === 0 ? green : cardBg,
+                                    }}
+                                  />
+                                  <div className="text-xs">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <span className="font-extrabold leading-tight" style={{ color: textPrimary }}>
+                                        {h.changeNote || 'Ticket details updated'}
+                                      </span>
+                                      <span className="text-[9px] font-semibold opacity-60 shrink-0 mt-0.5" style={{ color: textMuted }}>
+                                        {dt}
+                                      </span>
+                                    </div>
+                                    <div className="mt-1 space-y-0.5" style={{ color: textMuted }}>
+                                      <p className="text-[10px] font-semibold">
+                                        By: <span className="font-bold" style={{ color: textPrimary }}><EmployeeNameLink nameOrId={h.changedByUserName} /></span>
                                       </p>
-                                    )}
-                                    {h.newPreferredDate && h.newPreferredDate !== h.previousPreferredDate && (
-                                      <p className="text-[10px]">
-                                        Scheduled: <span className="font-bold opacity-80">{formatDisplayDate(h.previousPreferredDate, 'none')}</span> ➔ <span className="font-bold text-amber-500">{formatDisplayDate(h.newPreferredDate)}</span>
-                                      </p>
-                                    )}
-                                    {h.newAssignedTo !== h.previousAssignedTo && (
-                                      <p className="text-[10px]">
-                                        Assigned: <span className="font-bold opacity-80"><EmployeeNameLink nameOrId={h.previousAssignedToName || 'none'} /></span> ➔ <span className="font-bold text-teal-500"><EmployeeNameLink nameOrId={h.newAssignedToName || 'none'} /></span>
-                                      </p>
-                                    )}
+                                      {h.newStatus && h.newStatus !== h.previousStatus && (
+                                        <p className="text-[10px]">
+                                          Status: <span className="font-bold opacity-80">{h.previousStatus || 'NONE'}</span> ➔ <span className="font-bold text-indigo-500">{h.newStatus}</span>
+                                        </p>
+                                      )}
+                                      {h.newPreferredDate && h.newPreferredDate !== h.previousPreferredDate && (
+                                        <p className="text-[10px]">
+                                          Scheduled: <span className="font-bold opacity-80">{formatDisplayDate(h.previousPreferredDate, 'none')}</span> ➔ <span className="font-bold text-amber-500">{formatDisplayDate(h.newPreferredDate)}</span>
+                                        </p>
+                                      )}
+                                      {h.newAssignedTo !== h.previousAssignedTo && (
+                                        <p className="text-[10px]">
+                                          Assigned: <span className="font-bold opacity-80"><EmployeeNameLink nameOrId={h.previousAssignedToName || 'none'} /></span> ➔ <span className="font-bold text-teal-500"><EmployeeNameLink nameOrId={h.newAssignedToName || 'none'} /></span>
+                                        </p>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            )
-                          })
-                        })()}
-                      </div>
+                              )
+                            })
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Actions at bottom of scroll — not a fixed footer overlapping content */}
+                  <div className="flex flex-col sm:flex-row gap-2.5 pt-2 pb-6 sm:pb-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowHistoryPanel(prev => !prev)}
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5"
+                      style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}
+                    >
+                      <Clock className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
+                      {showHistoryPanel ? 'Hide Update History' : 'View Update History'}
+                    </button>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => { openEditModal(t); setDetailTicket(null); setShowHistoryPanel(false) }}
+                        className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold border transition-all"
+                        style={{ borderColor: inputBorder, color: textPrimary, backgroundColor: inputBg }}
+                      >
+                        <Edit3 className="w-3.5 h-3.5" style={{ color: '#6366F1' }} />
+                        Edit Details
+                      </button>
                     )}
                   </div>
-                )}
-              </div>
-
-              {/* Footer Actions */}
-              <div className="shrink-0 px-6 py-4 flex flex-col sm:flex-row justify-end gap-3"
-                style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
-                <button type="button" onClick={() => setShowHistoryPanel(prev => !prev)}
-                  className="px-5 py-2 rounded-lg text-xs font-bold border transition-all hover:bg-slate-50 dark:hover:bg-slate-800 mr-auto flex items-center gap-1.5"
-                  style={{ borderColor: inputBorder, color: textMuted, backgroundColor: cardBg }}>
-                  <Clock className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
-                  {showHistoryPanel ? 'Hide Update History' : 'View Update History'}
-                </button>
-                {canEdit && (
-                  <button onClick={() => { openEditModal(t); setDetailTicket(null); setShowHistoryPanel(false) }}
-                    className="flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/5"
-                    style={{ borderColor: inputBorder, color: textPrimary }}>
-                    <Edit3 className="w-3.5 h-3.5" style={{ color: '#6366F1' }} />
-                    Edit Details
-                  </button>
-                )}
+                </div>
               </div>
             </div>
           </div>

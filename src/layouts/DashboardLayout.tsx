@@ -194,6 +194,17 @@ export default function DashboardLayout() {
   const [globalBranchId, setGlobalBranchId] = useState<string | null>(() => localStorage.getItem('ashcol-global-branch-id'))
   const [adminBranches, setAdminBranches] = useState<BranchOption[]>([])
 
+  // Keep portal chrome in the viewport without locking html/body (that broke other pages)
+  useEffect(() => {
+    const html = document.documentElement
+    // Clear login/portal leftovers if navigating in after a hard refresh mid-login
+    html.classList.remove('login-shell')
+    html.style.removeProperty('overflow')
+    document.body.style.removeProperty('overflow')
+    document.body.style.removeProperty('touch-action')
+    html.style.removeProperty('--app-height')
+  }, [])
+
   useEffect(() => {
     if (!isPortalAdminUser) return
     const loadAdminBranches = async () => {
@@ -447,7 +458,7 @@ export default function DashboardLayout() {
 
   return (
     <div
-      className={`flex h-screen overflow-hidden font-['Inter',sans-serif] ${sidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}`}
+      className={`flex w-full max-w-full h-screen max-h-screen overflow-hidden font-['Inter',sans-serif] ${sidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}`}
       style={{ backgroundColor: bg, color: textPrimary }}
     >
       {/* ── Mobile Backdrop ─────────────────────────────── */}
@@ -461,18 +472,18 @@ export default function DashboardLayout() {
 
       {/* ── Sidebar ─────────────────────────────────────── */}
       <div
-        className="relative flex shrink-0"
+        className="relative flex shrink-0 h-full max-h-full min-h-0"
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
         <aside
         className={`
-          fixed md:static inset-y-0 left-0 z-50 flex flex-col overflow-hidden
+          fixed md:static inset-y-0 left-0 z-50 flex flex-col h-full max-h-full min-h-0 overflow-hidden
           transition-all duration-300 ease-in-out
           bg-gradient-to-b from-[#0a180f] via-[#205e30] to-[#3ca94d]
           text-white
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-          ${sidebarCollapsed ? 'md:w-[64px]' : 'w-[260px] md:w-[240px] lg:w-[260px]'}
+          ${sidebarCollapsed ? 'md:w-[64px]' : 'w-[260px] md:w-[220px] lg:w-[240px]'}
         `}
       >
         {/* Brand */}
@@ -511,7 +522,7 @@ export default function DashboardLayout() {
         </div>
 
         {/* ── Nav Links ──────────────────────────────────── */}
-        <nav className={`flex-1 overflow-y-auto py-3 px-2 flex flex-col ${sidebarCollapsed ? 'gap-1 items-center' : 'gap-0.5'}`}>
+        <nav className={`flex-1 min-h-0 overflow-y-auto py-3 px-2 flex flex-col ${sidebarCollapsed ? 'gap-1 items-center' : 'gap-0.5'}`}>
           {!sidebarCollapsed && (
             <div className="text-[10px] font-bold uppercase tracking-[2px] px-3 mb-2 text-white/40 w-full">
               Navigation
@@ -686,7 +697,10 @@ export default function DashboardLayout() {
         {(() => {
           const showBranch = isPortalAdminUser && adminBranches.length > 0
           return (
-            <div className={`px-3 pb-5 pt-2 space-y-2 ${!showBranch ? 'mt-auto' : ''} ${sidebarCollapsed ? 'flex flex-col items-center' : ''}`}>
+            <div
+              className={`px-2.5 pt-2 space-y-2 shrink-0 mt-auto ${sidebarCollapsed ? 'flex flex-col items-center' : ''}`}
+              style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}
+            >
 
               {/* Branch Button (admin only) */}
               {showBranch && (
@@ -742,7 +756,7 @@ export default function DashboardLayout() {
                       <select
                         value={globalBranchId || ''}
                         onChange={(e) => handleGlobalBranchChange(e.target.value)}
-                        className="w-full pl-9 pr-8 py-3 rounded-xl text-sm font-bold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20 transition-all bg-[#1e732c] text-white shadow-lg shadow-[0_4px_12px_rgba(0,0,0,0.25)] border-0"
+                        className="w-full pl-9 pr-8 py-2.5 rounded-xl text-sm font-bold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20 transition-all bg-[#1e732c] text-white shadow-lg shadow-[0_4px_12px_rgba(0,0,0,0.25)] border-0"
                       >
                         {adminBranches.map((b) => (
                           <option key={b.id} value={b.id} style={{ backgroundColor: '#0a180f', color: '#fff' }}>
@@ -779,7 +793,7 @@ export default function DashboardLayout() {
                       </Link>
                       <div className="mx-3 my-1 border-t border-white/10" />
                       <button
-                        onClick={() => { setProfileOpen(false); logout(); navigate('/login', { replace: true }) }}
+                        onClick={() => { setProfileOpen(false); logout() }}
                         className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-white/60 transition-colors text-left hover:bg-white/10 hover:text-red-400"
                       >
                         <LogOut className="w-4 h-4" />
@@ -792,8 +806,8 @@ export default function DashboardLayout() {
                 {/* Profile button */}
                 <button
                   onClick={() => setProfileOpen(p => !p)}
-                  className={`flex items-center gap-3 text-left transition-all ${
-                    sidebarCollapsed ? 'justify-center w-11 h-11' : 'w-full px-4 py-3 rounded-xl border border-white/10 bg-white/10 hover:bg-white/15'
+                  className={`flex items-center gap-2.5 text-left transition-all ${
+                    sidebarCollapsed ? 'justify-center w-11 h-11' : 'w-full px-3 py-2 rounded-xl border border-white/10 bg-white/10 hover:bg-white/15'
                   }`}
                 >
                   <UserAvatar
@@ -834,20 +848,20 @@ export default function DashboardLayout() {
     </div>
 
       {/* ── Main Content Area ───────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
 
         {/* ── Global Header (Mobile/Tablet/Desktop) ──────────────── */}
         {currentPage !== 'Search' && currentPage !== 'DDRM' && (
           <header 
-            className="flex-none z-20 backdrop-blur-md"
+            className="flex-none z-20 backdrop-blur-md w-full min-w-0 max-w-full overflow-hidden"
             style={{ 
               backgroundColor: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(10,17,32,0.8)',
               borderBottom: `1px solid ${border}` 
             }}
           >
           {/* Top row: title + icons */}
-          <div className="h-14 flex items-center justify-between px-5 md:px-8 relative">
-            <div className="flex items-center gap-3 shrink-0">
+          <div className="h-14 flex items-center justify-between px-4 md:px-6 lg:px-8 relative min-w-0">
+            <div className="flex items-center gap-3 shrink-0 min-w-0">
               <button
                 className="md:hidden p-2 rounded-xl transition-all"
                 style={{ color: textMuted, backgroundColor: hoverBg }}
@@ -856,9 +870,9 @@ export default function DashboardLayout() {
                 <Menu className="w-4 h-4" />
               </button>
 
-              <div className="flex flex-col justify-center">
+              <div className="flex flex-col justify-center min-w-0">
                 {currentPage === 'Relays' ? (
-                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase" style={{ color: textPrimary }}>
+                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
                     Relays
                   </h1>
                 ) : (
@@ -871,7 +885,7 @@ export default function DashboardLayout() {
                         GLOBAL
                       </h1>
                     ) : branchLabel ? (
-                      <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase" style={{ color: textPrimary }} title={branchLabel}>
+                      <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }} title={branchLabel}>
                         {branchLabel}
                       </h1>
                     ) : null}
@@ -908,7 +922,7 @@ export default function DashboardLayout() {
             </div>
           </div>
 
-          <div id="header-toolbar-slot" />
+          <div id="header-toolbar-slot" className="w-full min-w-0 max-w-full" />
         </header>
         )}
 
