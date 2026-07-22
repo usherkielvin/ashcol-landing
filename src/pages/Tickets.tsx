@@ -3,8 +3,9 @@ import { useOutletContext } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, X, Edit3, AlertTriangle, CalendarDays,
-  Eye, Loader2, Pencil, Clock, Moon, Sun, Car, Trash2,
+  Eye, Loader2, Pencil, Clock, Moon, Sun, Trash2, Car,
   ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Maximize2,
+  UsersRound, ChevronDown, Wrench,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -934,9 +935,8 @@ function getScheduleRowColors(
   const outcome = getScheduleOutcome(ticket)
 
   // Dark mode: every status wash below is intentionally low-alpha (0.05–0.10) so the row reads
-  // as a subtle tint over the base surface, not a saturated block — the accent color still carries
-  // the full-strength hue as a thin 3px left border (see boxShadow at the call site), which is
-  // enough signal without turning the whole table into a wall of neon on black.
+  // as a subtle tint over the base surface, not a saturated block. Accent values are kept for
+  // status/badge consumers; Schedules no longer paints a left edge stripe from them.
   if (ghostKind === 'cancelled' || (ticket.status || '').toUpperCase() === 'CANCELLED') {
     return {
       baseBg: isLight ? '#fee2e2' : 'rgba(239,68,68,0.10)',
@@ -2677,7 +2677,7 @@ function ticketColumnText(
     case 'BRAND': return parseBrand(ticket)
     case 'DLR': return getF(ticket, 'dealer', 'sourceVendor', 'source_vendor') || ''
     case 'STATUS': return ticket.status || ''
-    case 'COMMIT': return getF(ticket, 'commitType', 'commitTerms', 'description')
+    case 'COMMIT': return getTicketCommitDisplay(ticket)
     case 'FINAL DATE': return getFinalDateKey(ticket)
     case 'INSTALLER': return getInstallerSortKey(ticket, employees, branchId)
     case 'NEGOTIATOR': return getTicketNegotiatorName(ticket, employees)
@@ -2738,6 +2738,24 @@ function getF(ticket: Ticket, ...keys: (keyof Ticket)[]): string {
     if (v != null && typeof v === 'string' && v.trim()) return v.trim()
   }
   return ''
+}
+
+/** COMMIT column only — never fall back to description (API default "Service ticket"). */
+function getTicketCommitDisplay(ticket: Partial<Ticket> | null | undefined): string {
+  if (!ticket) return ''
+  const raw = getF(ticket as Ticket, 'commitType', 'commitTerms')
+  if (!raw) return ''
+  const lower = raw.toLowerCase()
+  // Legacy tickets sometimes stored the description default into commitType.
+  if (
+    lower === 'service ticket'
+    || lower === 'excel imported ticket'
+    || lower === 'no additional details provided.'
+    || lower === 'no additional details provided'
+  ) {
+    return ''
+  }
+  return raw
 }
 
 function statusCode(s: string) {
@@ -3189,7 +3207,7 @@ function getCellRawValue(
     case 'BRAND': return parseBrand(ticket)
     case 'DLR': return getF(ticket, 'dealer', 'sourceVendor', 'source_vendor') || ''
     case 'STATUS': return getScheduleStatusValue(ticket)
-    case 'COMMIT': return getF(ticket, 'commitType', 'commitTerms', 'description')
+    case 'COMMIT': return getTicketCommitDisplay(ticket)
     case 'FINAL DATE': return getFinalDateKey(ticket)
     case 'INSTALLER': return getInstallerDisplay(ticket, employees, branchId)
     case 'NEGOTIATOR': return getTicketNegotiatorName(ticket, employees)
@@ -3238,7 +3256,8 @@ function buildCellPatchBody(
       break
     }
     case 'COMMIT':
-      body.commitType = v || undefined
+      // Always send the field so empty clears commitType (don't omit / fall back to description).
+      body.commitType = v
       break
     case 'INSTALLER':
       body.installerName = v
@@ -3578,6 +3597,21 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const dateFilterRef = useRef(dateFilter)
   dateFilterRef.current = dateFilter
   const dateFilterInputRef = useRef<HTMLInputElement>(null)
+  const mobileDateInputRef = useRef<HTMLInputElement>(null)
+
+  const openMobileDatePicker = () => {
+    const el = mobileDateInputRef.current
+    if (!el) return
+    try {
+      // Modern mobile browsers: open native picker from a real button tap.
+      if (typeof el.showPicker === 'function') {
+        el.showPicker()
+        return
+      }
+    } catch { /* fall through */ }
+    el.focus()
+    el.click()
+  }
   const [hoveredRow, setHoveredRow] = useState<string | null>(null)
   const [hoveredCell, setHoveredCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
   const [draggedVehicleTicketId, setDraggedVehicleTicketId] = useState<string | null>(null)
@@ -4747,7 +4781,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       contactPhone: ticket.contactPhone || ticket.contact_phone || ticket.customer_phone || ticket.phone || '',
       location: formatAddress(ticket.location),
       district: ticket.district || parseDistrict(ticket.location) || '',
-      commitTerms: ticket.commitTerms || ticket.commitType || ticket.description || '',
+      commitTerms: getTicketCommitDisplay(ticket),
       unitType: parseBrand(ticket) || ticket.unitType || ticket.unit_type || '',
       dealer: getF(ticket, 'dealer', 'sourceVendor', 'source_vendor') || 'Direct',
       serviceDriver: isMyTickets ? formatRelayTicketTypeShort(ticket) : getTicketVehicleDisplay(ticket),
@@ -6720,7 +6754,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         brand: parseBrand(live),
         dealer: getF(live, 'dealer', 'sourceVendor', 'source_vendor') || '',
         status: getScheduleStatusLabel(getScheduleStatusValue(live)),
-        commit: getF(live, 'commitType', 'commitTerms', 'description'),
+        commit: getTicketCommitDisplay(live),
         installer: parseNameSiteToken(installerRaw).label || installerRaw,
         update: getScheduleUpdateDisplay(live),
         payment: getSchedulePaymentDisplay(live, dateFilter, dateFilter ? getScheduleGhostKind(live, dateFilter) : null),
@@ -6764,7 +6798,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         case 'FINAL DATE': return formatDateKeyLabel(getFinalDateKey(ticket))
         case 'PAYMENT': return getSchedulePaymentDisplay(ticket, dateFilter, getScheduleGhostKind(ticket, dateFilter))
         case 'MOP': return getPaymentMode(ticket)
-        case 'COMMIT': return getF(ticket, 'commitType', 'commitTerms', 'description')
+        case 'COMMIT': return getTicketCommitDisplay(ticket)
         case 'INSTALLER': return getInstallerDisplay(ticket, branchEmployees, activeBranchId)
         case 'NEGOTIATOR': return getTicketNegotiatorName(ticket, branchEmployees)
         case 'NOTE': return ticket.note || ''
@@ -7859,7 +7893,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       if (e.key === 'Escape') {
         e.preventDefault()
         discardCellEdit()
-      } else if (e.key === 'Enter' && !e.shiftKey && colLabel !== 'DESTINATION' && colLabel !== 'COMMIT') {
+      } else if (e.key === 'Enter' && !e.shiftKey) {
+        // Enter always saves inline edits (including COMMIT / DESTINATION / REMARKS textareas).
+        // Shift+Enter still inserts a newline in multiline fields.
         e.preventDefault()
         commit()
       }
@@ -8289,11 +8325,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
               const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
               startCellEdit(ticket, label, cell, rowIndex)
             }}
-            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide transition-all hover:opacity-80"
+            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-all hover:opacity-80"
             style={{
-              color: isLight ? '#16a34a' : '#4ade80',
-              backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.15)',
-              border: `1px dashed ${isLight ? '#86efac' : 'rgba(74,222,128,0.35)'}`,
+              color: isLight ? '#16a34a' : '#86efac',
+              backgroundColor: isLight ? 'rgba(22,163,74,0.08)' : 'rgba(148,163,184,0.08)',
+              border: `1px dashed ${isLight ? 'rgba(22,163,74,0.35)' : 'rgba(148,163,184,0.28)'}`,
             }}
           >
             + Add
@@ -8325,11 +8361,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
               const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
               startCellEdit(ticket, label, cell, rowIndex)
             }}
-            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide transition-all hover:opacity-80"
+            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-all hover:opacity-80"
             style={{
-              color: isLight ? '#2563eb' : '#60a5fa',
-              backgroundColor: isLight ? '#dbeafe' : 'rgba(37,99,235,0.15)',
-              border: `1px dashed ${isLight ? '#93c5fd' : 'rgba(96,165,250,0.35)'}`,
+              color: isLight ? '#2563eb' : '#93c5fd',
+              backgroundColor: isLight ? 'rgba(37,99,235,0.08)' : 'rgba(148,163,184,0.08)',
+              border: `1px dashed ${isLight ? 'rgba(37,99,235,0.35)' : 'rgba(148,163,184,0.28)'}`,
             }}
           >
             + Add
@@ -8583,6 +8619,37 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       )
     }
 
+    if (label === 'COMMIT') {
+      const commitVal = (val || '').trim()
+      if (!commitVal && canEdit && !isMyTickets && !rowGhost) {
+        return (
+          <button
+            type="button"
+            onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
+            onClick={e => {
+              e.stopPropagation()
+              const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
+              startCellEdit(ticket, label, cell, rowIndex)
+            }}
+            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-all hover:opacity-80"
+            style={{
+              color: isLight ? '#16a34a' : '#86efac',
+              backgroundColor: isLight ? 'rgba(22,163,74,0.08)' : 'rgba(148,163,184,0.08)',
+              border: `1px dashed ${isLight ? 'rgba(22,163,74,0.35)' : 'rgba(148,163,184,0.28)'}`,
+            }}
+          >
+            + Add
+          </button>
+        )
+      }
+      return withEditPencil(
+        <span style={{ ...truncStyle, fontWeight: 600 }} title={commitVal || undefined}>
+          {commitVal || EMPTY_CELL}
+        </span>,
+        ticket, label, rowGhost, rowIndex,
+      )
+    }
+
     if (label === 'INSTALLER') {
       const rawInstaller = getInstallerDisplay(ticket, branchEmployees, activeBranchId)
       const isEmpty = !rawInstaller
@@ -8605,11 +8672,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
                 startCellEdit(ticket, label, cell, rowIndex)
               }}
-              className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all hover:opacity-80"
+              className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-all hover:opacity-80"
               style={{
-                color: isLight ? '#16a34a' : '#4ade80',
-                backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.15)',
-                border: `1px dashed ${isLight ? '#86efac' : 'rgba(74,222,128,0.35)'}`,
+                color: isLight ? '#16a34a' : '#86efac',
+                backgroundColor: isLight ? 'rgba(22,163,74,0.08)' : 'rgba(148,163,184,0.08)',
+                border: `1px dashed ${isLight ? 'rgba(22,163,74,0.35)' : 'rgba(148,163,184,0.28)'}`,
               }}
             >
               + Add
@@ -8750,110 +8817,188 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       {!isMyTickets && activeTab !== 'overview' && ReactDOM.createPortal(
         <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
 
-          {/* ── Left Side: Date Chips & Search ── */}
-          <div className="flex flex-col md:flex-row md:items-center gap-3 flex-1 min-w-0">
+          {/* ── Left Side: Date & Search ── */}
+          <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-3 flex-1 min-w-0">
             {activeTab === 'schedules' && (
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
-                {weeklyTabs.map(tab => {
-                  const isActive = dateFilter === tab.key
-                  return (
+              <>
+                {/* Mobile: compact date + search in one row */}
+                <div className="md:hidden flex items-center gap-2 w-full min-w-0">
+                  <div className="relative shrink-0">
                     <button
                       type="button"
-                      key={tab.key}
-                      onClick={() => handleDateFilterChange(tab.key)}
-                      className="h-8 md:h-10 px-3 md:px-5 rounded-full text-[11px] md:text-[13px] font-semibold border whitespace-nowrap shrink-0 transition-all active:scale-95"
-                      style={{
-                        backgroundColor: isActive ? green : inputBg,
-                        borderColor: isActive ? green : inputBorder,
-                        color: isActive ? '#ffffff' : textMuted,
-                        boxShadow: isActive ? `0 2px 8px rgba(16,185,129,0.35)` : 'none',
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openMobileDatePicker()
                       }}
+                      className="flex items-center gap-1.5 h-9 px-2.5 rounded-full border active:scale-95 transition-transform"
+                      style={{
+                        backgroundColor: inputBg,
+                        borderColor: green,
+                        color: textPrimary,
+                      }}
+                      aria-label="Pick schedule date"
                     >
-                      {tab.dayName} {tab.dateLabel}
+                      <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: green }} strokeWidth={2.2} />
+                      <span className="text-[11px] font-bold whitespace-nowrap tabular-nums">
+                        {dateFilter
+                          ? new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', {
+                            month: 'short',
+                            day: 'numeric',
+                          })
+                          : 'Date'}
+                      </span>
                     </button>
-                  )
-                })}
-
-                {isCustomSelected && (
-                  <div className="relative">
-                    <button
-                      type="button"
-                      className="h-8 md:h-10 px-3 md:px-5 rounded-full text-[11px] md:text-[13px] font-semibold border whitespace-nowrap shrink-0 active:scale-95"
-                      style={{ backgroundColor: green, borderColor: green, color: '#ffffff', boxShadow: '0 2px 8px rgba(16,185,129,0.35)' }}
-                    >
-                      {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
-                    </button>
+                    {/* Keep input in-DOM for showPicker / change events — offscreen, not opacity overlay */}
                     <input
+                      ref={mobileDateInputRef}
+                      type="date"
+                      value={dateFilter}
+                      onChange={e => handleDateFilterChange(e.target.value)}
+                      className="absolute left-0 top-0 w-px h-px opacity-0 overflow-hidden"
+                      tabIndex={-1}
+                      aria-hidden
+                    />
+                  </div>
+
+                  <div
+                    className="flex items-center gap-1.5 flex-1 min-w-0 h-9 px-2.5 rounded-full border"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                  >
+                    <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+                    <input
+                      type="search"
+                      inputMode="search"
+                      placeholder="Name, installer, ticket no…"
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      className="bg-transparent outline-none text-[12px] flex-1 min-w-0"
+                      style={{ color: textPrimary }}
+                      onClick={e => e.stopPropagation()}
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); setSearchQuery('') }}
+                        className="shrink-0 p-0.5 rounded-full"
+                        style={{ color: textMuted }}
+                        aria-label="Clear search"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Desktop: week chips + custom date */}
+                <div className="hidden md:flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+                  {weeklyTabs.map(tab => {
+                    const isActive = dateFilter === tab.key
+                    return (
+                      <button
+                        type="button"
+                        key={tab.key}
+                        onClick={() => handleDateFilterChange(tab.key)}
+                        className="h-10 px-5 rounded-full text-[13px] font-semibold border whitespace-nowrap shrink-0 transition-all active:scale-95"
+                        style={{
+                          backgroundColor: isActive ? green : inputBg,
+                          borderColor: isActive ? green : inputBorder,
+                          color: isActive ? '#ffffff' : textMuted,
+                          boxShadow: isActive ? `0 2px 8px rgba(16,185,129,0.35)` : 'none',
+                        }}
+                      >
+                        {tab.dayName} {tab.dateLabel}
+                      </button>
+                    )
+                  })}
+
+                  <label
+                    className="relative flex items-center gap-2 h-10 min-w-[11.5rem] px-4 rounded-full border shrink-0 cursor-pointer transition-all hover:opacity-90 active:scale-[0.98]"
+                    style={{
+                      backgroundColor: isCustomSelected ? green : inputBg,
+                      borderColor: isCustomSelected ? green : inputBorder,
+                      color: isCustomSelected ? '#ffffff' : textPrimary,
+                      boxShadow: isCustomSelected ? '0 2px 8px rgba(16,185,129,0.35)' : 'none',
+                    }}
+                    title="Pick a custom schedule date"
+                  >
+                    <CalendarDays
+                      className="w-[18px] h-[18px] shrink-0"
+                      style={{ color: isCustomSelected ? '#ffffff' : green }}
+                      strokeWidth={2.2}
+                    />
+                    <span className="text-[13px] font-semibold whitespace-nowrap truncate flex-1 min-w-0">
+                      {isCustomSelected
+                        ? new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                        })
+                        : 'Custom date'}
+                    </span>
+                    <ChevronDown
+                      className="w-4 h-4 shrink-0 opacity-70"
+                      style={{ color: isCustomSelected ? '#ffffff' : textMuted }}
+                    />
+                    <input
+                      ref={dateFilterInputRef}
                       type="date"
                       value={dateFilter}
                       onChange={e => handleDateFilterChange(e.target.value)}
                       className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
-                      aria-label="Ticket date filter"
+                      aria-label="Pick custom schedule date"
                     />
-                  </div>
-                )}
-
-                <div className="relative">
-                  <button
-                    type="button"
-                    className="w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full border shrink-0 transition-all hover:opacity-80 active:scale-90"
-                    style={{ borderColor: inputBorder, backgroundColor: inputBg }}
-                    title="Pick date"
-                  >
-                    <CalendarDays className="w-4 h-4 md:w-4.5 md:h-4.5" style={{ color: green }} />
-                  </button>
-                  <input
-                    ref={dateFilterInputRef}
-                    type="date"
-                    value={dateFilter}
-                    onChange={e => handleDateFilterChange(e.target.value)}
-                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
-                    aria-label="Ticket date filter"
-                  />
+                  </label>
                 </div>
-              </div>
+              </>
             )}
 
-            {/* ── Search bar (Next to Date Chips on Desktop) ── */}
+            {/* Search — desktop */}
             {activeTab === 'schedules' && (
-              <div className="flex items-center gap-2.5 w-full md:w-[240px] lg:w-[320px] h-9 md:h-11 px-3 md:px-4 rounded-xl md:rounded-2xl border transition-all shrink-0"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-                <Search className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: textMuted }} />
+              <div
+                className="hidden md:flex items-center gap-2 w-[240px] lg:w-[320px] h-11 px-4 rounded-2xl border transition-all shrink-0"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+              >
+                <Search className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
                 <input
-                  type="text"
-                  placeholder="Search names, phone…"
+                  type="search"
+                  inputMode="search"
+                  placeholder="Customer, installer, ticket no, phone…"
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  className="bg-transparent outline-none text-[12px] md:text-sm flex-1 min-w-0"
+                  className="bg-transparent outline-none text-sm flex-1 min-w-0 placeholder:font-medium"
                   style={{ color: textPrimary }}
                   onClick={e => e.stopPropagation()}
                 />
                 {searchQuery && (
-                  <button type="button" onClick={e => { e.stopPropagation(); setSearchQuery('') }}
-                    className="shrink-0 p-1 md:p-1.5 rounded-full hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }}>
-                    <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); setSearchQuery('') }}
+                    className="shrink-0 p-1 rounded-full hover:bg-slate-500/10 transition-colors"
+                    style={{ color: textMuted }}
+                    aria-label="Clear search"
+                  >
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>
             )}
           </div>
 
-          {/* Assign Drivers button */}
+          {/* Assign Drivers — desktop only */}
           {activeTab === 'schedules' && canEdit && !isMyTickets && (
             <button
               type="button"
               id="bulk-assign-driver-btn"
               onClick={(e) => { e.stopPropagation(); setBulkAssignOpen(true) }}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs md:text-sm font-black tracking-wide shrink-0 transition-all hover:opacity-90 active:scale-95"
+              className="hidden md:flex items-center gap-2 h-10 px-4 rounded-full text-[13px] font-semibold shrink-0 transition-all hover:opacity-90 active:scale-95"
               style={{
-                background: 'linear-gradient(135deg, #2563EB, #1d4ed8)',
-                color: '#ffffff',
-                boxShadow: '0 2px 12px rgba(37,99,235,0.45)',
-                border: '1.5px solid rgba(255,255,255,0.12)',
+                backgroundColor: inputBg,
+                border: `1px solid ${inputBorder}`,
+                color: textPrimary,
               }}
               title="Assign driver and vehicle to an installer's tickets"
             >
-              <Car className="w-4 h-4" />
+              <UsersRound className="w-4 h-4 shrink-0" style={{ color: green }} strokeWidth={2.1} />
               Assign Drivers
             </button>
           )}
@@ -9162,7 +9307,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                         const isDropTargetRow = vehicleDropTargetId === ticket.id && draggedVehicleTicketId !== null && !isDragSourceRow
                         const dropTargetBg = isLight ? 'rgba(16,185,129,0.22)' : 'rgba(16,185,129,0.28)'
                         const bg = isDropTargetRow ? dropTargetBg : (isHovered && !isGhost ? rowHover : baseBg)
-                        const ghostAccent = rowColors.accent
                         const rowIsActive = columns.some(col =>
                           (editingCell?.ticketId === ticket.id && editingCell?.rowIndex === idx && editingCell?.colLabel === col.label)
                           || (expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label),
@@ -9191,7 +9335,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                           <tr key={`${ticket.id}${isGhost ? `-ghost-${ghostKind}` : ''}`}
                             style={{
                               borderBottom: `1px solid ${tableBorder}`,
-                              boxShadow: ghostAccent ? `inset 3px 0 0 ${ghostAccent}` : undefined,
                               position: (rowIsActive || vehicleDragOffsetPx) ? 'relative' : undefined,
                               zIndex: rowIsActive ? 80 : (isDragSourceRow ? 20 : (vehicleDragOffsetPx ? 10 : undefined)),
                               height: rowIsActive ? undefined : TABLE_ROW_HEIGHT,
@@ -9219,11 +9362,15 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                 && editingCell?.colLabel === col.label
                               const isExpandedCell = expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label
                               const isStatusCol = col.label === 'STATUS'
-                              const SKIP_EMPTY_HIGHLIGHT = new Set(['STATUS', 'INSTALLER', 'NOTE', 'UPDATE', 'PAYMENT', 'TICKET NO', 'FINAL DATE'])
+                              const SKIP_EMPTY_HIGHLIGHT = new Set(['STATUS', 'INSTALLER', 'SERVICE', 'VEHICLE', 'COMMIT', 'NOTE', 'UPDATE', 'PAYMENT', 'TICKET NO', 'FINAL DATE'])
                               const cellVal = getCellDisplay(ticket, col.label)
                               const isCellEmpty = !SKIP_EMPTY_HIGHLIGHT.has(col.label) && !isGhost && !isEditingCell && !cellVal.trim()
+                              // Quiet empty hint — no orange wash; subtle slate so dark mode stays clean.
                               const emptyCellBg = isCellEmpty
-                                ? (isLight ? 'rgba(251,146,60,0.13)' : 'rgba(251,146,60,0.18)')
+                                ? (isLight ? 'rgba(148,163,184,0.10)' : 'rgba(148,163,184,0.07)')
+                                : undefined
+                              const emptyCellInset = isCellEmpty
+                                ? `inset 0 0 0 1px ${isLight ? 'rgba(148,163,184,0.28)' : 'rgba(148,163,184,0.18)'}`
                                 : undefined
                               const isSelectedVehicleCell = col.label === 'VEHICLE' && selectedVehicleTicketId === ticket.id
                               // Resched ghosts alone keep remarks editable (one shared field, not
@@ -9300,7 +9447,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                       : { position: 'relative' as const, zIndex: (isEditingCell || isExpandedCell) ? (isEditingCell ? 90 : 85) : undefined }),
                                     boxShadow: isSelectedVehicleCell
                                       ? `inset 0 0 0 2px ${green}`
-                                      : (col.sticky ? `2px 0 0 ${tableBorder}` : undefined),
+                                      : emptyCellInset
+                                        ? emptyCellInset
+                                        : (col.sticky ? `2px 0 0 ${tableBorder}` : undefined),
                                   }}>
                                   {isEditingCell ? (
                                     renderCell(ticket, col, idx, isGhost, ghostKind, false)
@@ -9415,8 +9564,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     );
                   })()}
                 </table>
-                {/* Mobile Card View */}
-                <div className="flex flex-col md:hidden p-3 gap-3">
+                {/* Mobile Card View — important fields only (no branch; header already shows it) */}
+                <div className="flex flex-col md:hidden p-3 gap-2.5">
                   {visible.length === 0 ? (
                     <div className="flex flex-col items-center justify-center gap-3 py-12">
                       <p className="text-sm font-semibold" style={{ color: textMuted }}>
@@ -9429,69 +9578,129 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       const isGhost = Boolean(ghostKind)
                       const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(getCustomerDisplayName(ticket)))
                       const rowColors = getScheduleRowColors(ticket, ghostKind, isLight, idx, rowEven, rowOdd, isDuplicateName)
+                      const statusVal = getScheduleStatusValue(ticket)
+                      const statusStyle = getScheduleStatusBadgeStyle(statusVal, isLight)
+                      const statusDisplay = getScheduleStatusDisplay(ticket) || ticket.status || ''
+                      const ticketNo = ticket.ticketNumber || ticket.controlNumber || '—'
+                      const district = resolveTicketDistrict(ticket) || ticket.district || ''
+                      const brand = parseBrand(ticket)
+                      const dealer = getF(ticket, 'dealer', 'sourceVendor', 'source_vendor')
+                      const installer = getInstallerDisplay(ticket, branchEmployees, activeBranchId)
+                      const driver = getTicketDriverDisplay(ticket)
+                      const vehicle = vehicleTripLabels.get(ticket.id || '') || getTicketVehicleDisplay(ticket)
+                      const payment = getSchedulePaymentDisplay(ticket, dateFilter, ghostKind)
+                      const commit = getTicketCommitDisplay(ticket)
+                      const phone = getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
+                      const remarks = sanitizeDisplayText(
+                        stripArchivedRemarkSuffix((ticket.remarksUpdate || ticket.remarks || '').trim()),
+                      )
+                      const rowLabel = { color: textMuted, fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' as const }
+                      const rowValue = { color: textPrimary, fontSize: 12, fontWeight: 600 }
 
                       return (
                         <div
                           key={`${ticket.id}${isGhost ? `-ghost-${ghostKind}` : ''}`}
                           onClick={() => setDetailTicket(ticket)}
-                          className="w-full rounded-xl p-3 flex flex-col gap-2 shadow-sm border transition-transform active:scale-[0.98] cursor-pointer"
+                          className="w-full rounded-2xl p-3.5 flex flex-col gap-2.5 border transition-transform active:scale-[0.985] cursor-pointer"
                           style={{
                             backgroundColor: rowColors.baseBg,
                             borderColor: tableBorder,
-                            borderLeft: rowColors.accent ? `4px solid ${rowColors.accent}` : undefined,
+                            opacity: isGhost ? 0.72 : 1,
                           }}
                         >
-                          <div className="flex justify-between items-start">
+                          {/* Header: customer + status */}
+                          <div className="flex justify-between items-start gap-2">
                             <h4
                               onClick={e => {
                                 e.stopPropagation()
-                                const phoneNum = getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
-                                if (phoneNum) {
-                                  void copyTextToClipboard(phoneNum)
-                                  showToast(`Copied ${getCustomerDisplayName(ticket)}'s number: ${fmtPhone(phoneNum) || phoneNum}`)
+                                if (phone) {
+                                  void copyTextToClipboard(phone)
+                                  showToast(`Copied ${getCustomerDisplayName(ticket)}'s number: ${fmtPhone(phone) || phone}`)
                                 } else {
                                   showToast(`No contact number for ${getCustomerDisplayName(ticket)}`)
                                 }
                               }}
-                              className="font-bold text-sm truncate mr-2 hover:underline cursor-pointer"
+                              className="font-bold text-[13px] leading-snug uppercase tracking-wide mr-1 hover:underline cursor-pointer min-w-0"
                               style={{ color: isDuplicateName ? (isLight ? '#9f1239' : '#f43f5e') : textPrimary }}
                             >
                               {getCustomerDisplayName(ticket)}
                             </h4>
-                            {(() => {
-                              const statusVal = getScheduleStatusValue(ticket)
-                              const statusColor = getScheduleStatusBadgeStyle(statusVal, isLight).color
-                              const display = getScheduleStatusDisplay(ticket) || ticket.status || ''
-                              if (!display) return null
-                              return (
-                                <span
-                                  className="text-[10px] font-bold uppercase shrink-0 tracking-wide"
-                                  style={{ color: statusColor }}
-                                >
-                                  {display === 'INSTALLATION' ? 'INSTALL' : display}
-                                </span>
-                              )
-                            })()}
+                            {statusDisplay ? (
+                              <span
+                                className="text-[9px] font-black uppercase shrink-0 tracking-wider px-2 py-0.5 rounded-full"
+                                style={{
+                                  color: statusStyle.color,
+                                  backgroundColor: statusStyle.backgroundColor,
+                                  border: `1px solid ${statusStyle.borderColor}`,
+                                }}
+                              >
+                                {statusDisplay === 'INSTALLATION' ? 'INSTALL' : statusDisplay}
+                              </span>
+                            ) : null}
                           </div>
-                          
-                          <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-xs" style={{ color: textMuted }}>
-                            <div className="flex items-center gap-1.5">
-                               <Copy className="w-3 h-3 shrink-0" />
-                               <span className="font-semibold truncate" style={{color: textPrimary}}>{ticket.ticketNumber || ticket.controlNumber || '—'}</span>
+
+                          {/* Ticket + district only (branch lives in page header) */}
+                          <div className="flex items-center justify-between gap-2 text-[11px]">
+                            <span className="font-bold tabular-nums" style={{ color: textPrimary }}>{ticketNo}</span>
+                            {district ? (
+                              <span className="inline-flex items-center gap-1 truncate font-semibold uppercase" style={{ color: textMuted }}>
+                                <MapPin className="w-3 h-3 shrink-0" />
+                                {district}
+                              </span>
+                            ) : null}
+                          </div>
+
+                          {(brand || dealer) ? (
+                            <div className="text-[11px] font-semibold truncate" style={{ color: textMuted }}>
+                              {[brand, dealer].filter(Boolean).join(' · ')}
                             </div>
-                            <div className="flex items-center gap-1.5 text-right justify-end">
-                               <span className="truncate">{ticket.branchId ? (resolveBranch(ticket.branchId)?.name || ticket.branchId) : (ticket.district || '—')}</span>
+                          ) : null}
+
+                          {/* Crew: installer / driver / vehicle */}
+                          <div
+                            className="grid grid-cols-1 gap-1.5 rounded-xl px-2.5 py-2"
+                            style={{ backgroundColor: isLight ? 'rgba(15,23,42,0.03)' : 'rgba(148,163,184,0.06)' }}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Wrench className="w-3.5 h-3.5 shrink-0" style={{ color: green }} strokeWidth={2.1} />
+                              <span style={rowLabel}>Installer</span>
+                              <span className="truncate ml-auto text-right" style={{ ...rowValue, color: installer ? (isLight ? '#0369a1' : '#7dd3fc') : textMuted }}>
+                                {installer || '—'}
+                              </span>
                             </div>
-                            <div className="flex items-center gap-1.5 col-span-2">
-                               <MapPin className="w-3 h-3 shrink-0" />
-                               <span className="truncate">{ticket.district || '—'} • {ticket.acDetails || '—'}</span>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <UsersRound className="w-3.5 h-3.5 shrink-0" style={{ color: green }} strokeWidth={2.1} />
+                              <span style={rowLabel}>Driver</span>
+                              <span className="truncate ml-auto text-right" style={{ ...rowValue, color: driver ? textPrimary : textMuted }}>
+                                {driver || '—'}
+                              </span>
                             </div>
-                            <div className="flex items-center gap-1.5 col-span-2">
-                               <span className="font-medium" style={{color: getInstallerDisplay(ticket, branchEmployees, activeBranchId) ? (isLight ? '#0369a1' : '#7dd3fc') : undefined}}>
-                                 {getInstallerDisplay(ticket, branchEmployees, activeBranchId) || 'Unassigned'}
-                               </span>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Car className="w-3.5 h-3.5 shrink-0" style={{ color: green }} strokeWidth={2.1} />
+                              <span style={rowLabel}>Vehicle</span>
+                              <span className="truncate ml-auto text-right uppercase tabular-nums" style={{ ...rowValue, color: vehicle ? textPrimary : textMuted }}>
+                                {vehicle || '—'}
+                              </span>
                             </div>
                           </div>
+
+                          {(commit || payment || remarks) ? (
+                            <div className="flex flex-col gap-1 pt-0.5 text-[11px]" style={{ borderTop: `1px solid ${tableBorder}` }}>
+                              {(commit || payment) ? (
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="truncate font-medium" style={{ color: textMuted }}>{commit || '—'}</span>
+                                  {payment ? (
+                                    <span className="shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{payment}</span>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                              {remarks ? (
+                                <p className="truncate font-medium leading-snug" style={{ color: textMuted }} title={remarks}>
+                                  {remarks}
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </div>
                       )
                     })
@@ -9818,7 +10027,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         const serviceDriver = formatServiceDriver(t)
         const update = t.remarks || ''
         const note = t.note || ''
-        const commit = getF(t, 'commitType', 'commitTerms', 'description')
+        const commit = getTicketCommitDisplay(t)
         const custName = getCustomerDisplayName(t) || t.title
         const negotiatorId = t.negotiatorId || t.negotiator_id || ''
         const negotiatorName = getTicketNegotiatorName(t, branchEmployees)
@@ -11846,26 +12055,27 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         >
           <div
             className="rounded-2xl shadow-2xl w-full max-w-sm border overflow-hidden"
-            style={{ backgroundColor: cardBg, borderColor: 'rgba(37,99,235,0.35)' }}
+            style={{ backgroundColor: cardBg, borderColor: border }}
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
             <div
               className="flex items-center justify-between px-5 py-4 border-b"
               style={{
-                borderColor: 'rgba(37,99,235,0.2)',
-                background: isLight
-                  ? 'linear-gradient(135deg, #eff6ff, #dbeafe)'
-                  : 'linear-gradient(135deg, rgba(37,99,235,0.18), rgba(29,78,216,0.12))',
+                borderColor: border,
+                backgroundColor: isLight ? '#f8fafc' : '#0d1b2e',
               }}
             >
               <div className="flex items-center gap-2.5">
-                <div className="flex items-center justify-center w-8 h-8 rounded-xl" style={{ background: 'linear-gradient(135deg, #2563EB, #1d4ed8)', boxShadow: '0 2px 8px rgba(37,99,235,0.4)' }}>
-                  <Car className="w-4 h-4 text-white" />
+                <div
+                  className="flex items-center justify-center w-8 h-8 rounded-full"
+                  style={{ backgroundColor: isLight ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.18)' }}
+                >
+                  <UsersRound className="w-4 h-4" style={{ color: green }} strokeWidth={2.1} />
                 </div>
                 <div>
-                  <div className="text-sm font-black tracking-wide" style={{ color: textPrimary }}>Assign Drivers</div>
-                  <div className="text-[10px] font-semibold" style={{ color: textMuted }}>Bulk update driver &amp; vehicle for an installer</div>
+                  <div className="text-sm font-bold tracking-wide" style={{ color: textPrimary }}>Assign Drivers</div>
+                  <div className="text-[10px] font-medium" style={{ color: textMuted }}>Bulk update driver &amp; vehicle for an installer</div>
                 </div>
               </div>
               <button type="button" onClick={() => setBulkAssignOpen(false)} style={{ color: textMuted }}>
@@ -12115,13 +12325,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   type="submit"
                   form="bulk-assign-form"
                   disabled={bulkAssignSaving || bulkClearSaving}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black text-white transition-all hover:opacity-90 active:scale-95 shadow-lg disabled:opacity-60"
-                  style={{ background: 'linear-gradient(135deg, #2563EB, #1d4ed8)', boxShadow: '0 3px 14px rgba(37,99,235,0.5)' }}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 active:scale-95 disabled:opacity-60"
+                  style={{ backgroundColor: green }}
                 >
                   {bulkAssignSaving ? (
                     <>⏳ Saving&hellip;</>
                   ) : (
-                    <><Car className="w-4 h-4" /> Assign Drivers</>
+                    <><UsersRound className="w-4 h-4" strokeWidth={2.1} /> Assign Drivers</>
                   )}
                 </button>
               </div>
