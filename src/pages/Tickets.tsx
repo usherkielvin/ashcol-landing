@@ -3779,22 +3779,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   // never writes the current on-screen rows into a *different* date's cache key.
   const dateFilterRef = useRef(dateFilter)
   dateFilterRef.current = dateFilter
-  const dateFilterInputRef = useRef<HTMLInputElement>(null)
   const mobileDateInputRef = useRef<HTMLInputElement>(null)
-
-  const openMobileDatePicker = () => {
-    const el = mobileDateInputRef.current
-    if (!el) return
-    try {
-      // Modern mobile browsers: open native picker from a real button tap.
-      if (typeof el.showPicker === 'function') {
-        el.showPicker()
-        return
-      }
-    } catch { /* fall through */ }
-    el.focus()
-    el.click()
-  }
   const [hoveredRow, setHoveredRow] = useState<string | null>(null)
   const [hoveredCell, setHoveredCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
   const [draggedVehicleTicketId, setDraggedVehicleTicketId] = useState<string | null>(null)
