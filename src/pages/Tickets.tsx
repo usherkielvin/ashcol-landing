@@ -52,7 +52,7 @@ import {
 import { SchedulesShowcase, type ScheduleShowcaseRow } from '../components/schedules/SchedulesShowcase'
 import { formatBrandCapacityLabel, parseBrandFromAcDetails } from '../utils/warrantyTicketDisplay'
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Types Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─────────────────────────────────────────────────────────────
 export interface Ticket {
   id: string
   title: string
@@ -659,7 +659,7 @@ function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record
     if (resolved.schedulePhase !== undefined) acUpdates.schedulePhase = resolved.schedulePhase
   }
 
-  // Leaving RESCHED Ã¢â€ â€™ active status: drop ghost on old date and "Moved toÃ¢â‚¬Â¦" remarks
+  // ─────────────────────────────────────────────────────────────
   if (val !== 'RESCHED') {
     clearRescheduleMetaInto(ticket, body, acUpdates)
   }
@@ -1133,7 +1133,7 @@ function shouldArchiveCompletedSchedule(ticket: Ticket, body: Record<string, unk
   return qualifiesForInstallComplete(ticket, body as Partial<Ticket>)
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─────────────────────────────────────────────────────────────
 function formatAddress(loc: any): string {
   if (!loc) return ''
   if (typeof loc === 'string') {
@@ -3659,7 +3659,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const isEmployee = ['employee', 'oic', 'staff'].includes(role)
   const canEdit = isAdmin || isManager || isEmployee
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Global branch Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ─────────────────────────────────────────────────────────────
   const [globalBranchId, setGlobalBranchId] = useState<string | null>(
     () => localStorage.getItem('ashcol-global-branch-id')
   )
@@ -3686,7 +3686,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const isTaguig = isTaguigBranchRef(activeBranchId)
   const isTaguigServices = isTaguigServicesScope(activeBranchId, user?.email, user?.jobTitle)
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Color tokens Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ─────────────────────────────────────────────────────────────
   const cardBg = isLight ? '#ffffff' : '#0f172a'
   const border = isLight ? '#cbd5e1' : '#1e293b'
   const tableBorder = isLight ? '#e2e8f0' : '#1e293b'
@@ -3707,7 +3707,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const green = '#16A34A'
   const textGreen = isLight ? '#16A34A' : '#4ade80'
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Data state Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ─────────────────────────────────────────────────────────────
   const initialSchedulesRef = useRef<ReturnType<typeof getInitialSchedulesFromCache> | null>(null)
   if (!initialSchedulesRef.current) {
     const dateKey = resolveInitialScheduleDate(pathname)
@@ -3910,7 +3910,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     setLoading(false)
   }, [isMyTickets, hydrateFromTabCache, dateFilter, globalBranchId, user])
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Weekly Tabs Calculation Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ─────────────────────────────────────────────────────────────
   const weeklyTabs = useMemo(() => {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -3972,7 +3972,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     }
   }, [isMyTickets, isTaguig])
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Context menu Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ─────────────────────────────────────────────────────────────
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; ticket: Ticket } | null>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
   const [detailTicket, setDetailTicket] = useState<Ticket | null>(null)
@@ -4005,11 +4005,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     }
   }, [contextMenu])
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ History state Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ─────────────────────────────────────────────────────────────
   const [history, setHistory] = useState<any[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Manual Add Modal State Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ─────────────────────────────────────────────────────────────
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [addFormSnapshot, setAddFormSnapshot] = useState('')
   const [addForm, setAddForm] = useState<Partial<Ticket> & { serviceDriver?: string; ticketCategory?: TicketCategoryValue }>({
@@ -4104,7 +4104,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     }
     return name || getBranchDisplayName(branchId || null)
   }, [resolveBranch])
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Manual Edit Modal State Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ─────────────────────────────────────────────────────────────
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editTicket, setEditTicket] = useState<Ticket | null>(null)
   const [relayCustomStores, setRelayCustomStores] = useState<string[]>([])
@@ -4338,7 +4338,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
   useEffect(() => {
     if (!editModalOpen || !editForm.negotiatorId) return
-    // Wait for negotiator list Ã¢â‚¬â€ clearing while still loading falsely marks the form dirty.
+    // ─────────────────────────────────────────────────────────────
     if (editModalNegotiators.length === 0) return
     if (!editModalNegotiators.some(n => n.id === editForm.negotiatorId)) {
       setEditForm(prev => ({ ...prev, negotiatorId: '' }))
@@ -4358,7 +4358,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const [continuationSelectedDates, setContinuationSelectedDates] = useState<string[]>([])
   const [continuationCalMonth, setContinuationCalMonth] = useState<{ year: number; month: number } | null>(null)
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Excel Import State Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ─────────────────────────────────────────────────────────────
   const fileInputRef = useRef<HTMLInputElement>(null)
   const scanFileInputRef = useRef<HTMLInputElement>(null)
   const [showcaseOpen, setShowcaseOpen] = useState(false)
@@ -4907,7 +4907,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             return
           }
 
-          // Swap temp Ã¢â€ â€™ real id (carry any cell edits made while create was in flight)
+          // ─────────────────────────────────────────────────────────────
           setTickets(prev => {
             const next = [promoted.ticket, ...prev.filter(t => t.id !== tempId && t.id !== createdTicket.id)]
             const cacheKey = schedulesCacheKeyForTab()
@@ -5149,7 +5149,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       }
     }
 
-    // Modal still has the row data Ã¢â‚¬â€ save by id even if the list no longer holds it.
+    // ─────────────────────────────────────────────────────────────
     if (!isTempTicketId(formId)) {
       return {
         id: formId,
@@ -5433,7 +5433,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         acMetaExtras.reschedulePending = false
       }
 
-      // Leaving RESCHED for Installation/etc. Ã¢â‚¬â€ never re-apply ghost-date metadata
+      // ─────────────────────────────────────────────────────────────
       if (leavingResched) {
         acMetaExtras.reschedulePending = false
         if (isMovedToRescheduleRemark(remarksVal || '') || /^PENDING$/i.test((remarksVal || '').trim())) {
@@ -6148,7 +6148,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       .finally(() => setLoadingHistory(false))
   }, [detailTicket])
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Cell edit / expand Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ─────────────────────────────────────────────────────────────
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
   const [editingCell, setEditingCell] = useState<{ ticketId: string; rowIndex: number; colLabel: string; value: string } | null>(null)
   const [statusPicker, setStatusPicker] = useState<{
@@ -6261,7 +6261,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500) }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Column config Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ─────────────────────────────────────────────────────────────
   const columns = useMemo(() => {
     const scheduleCols = [
       { label: 'TICKET NO', display: 'TICKET NO', weight: 9, expMul: 1.2, sticky: true, freeze: false, align: 'center' as const },
@@ -6310,7 +6310,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     })
   }, [expandedCols, isTaguigServices, isMyTickets, monthViewActive])
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Fetch Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ─────────────────────────────────────────────────────────────
   const token = useCallback(() =>
     localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || '', [])
 
@@ -6761,7 +6761,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       .catch(() => setDriverOnlyNames([]))
   }, [token])
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Filter Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ─────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     const effectiveBranch = activeBranchId
 
@@ -7084,7 +7084,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     return map
   }, [visible, tickets, dateFilter])
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Get display value for a column Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ─────────────────────────────────────────────────────────────
   function getCellDisplay(ticket: Ticket, colLabel: string): string {
     const raw = (() => {
       switch (colLabel) {
@@ -7436,7 +7436,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   }, [user, globalBranchId, isCustomer, isAdmin, isMyTickets, schedulesCacheKeyForTab])
 
   const flushTicketSave = useCallback(async (ticketId: string) => {
-    // Never PATCH optimistic temp ids Ã¢â‚¬â€ edits stay queued until promoteTempTicketState.
+    // ─────────────────────────────────────────────────────────────
     if (isTempTicketId(ticketId)) return
     if (activeSavesRef.current.has(ticketId)) return
     activeSavesRef.current.add(ticketId)
@@ -7603,7 +7603,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       afterSave: afterSave ?? existing?.afterSave,
     })
     applyTicketLocally(ticketId, nextTicket)
-    // Temp rows are not on the server yet Ã¢â‚¬â€ flush after create promotes to a real id.
+    // ─────────────────────────────────────────────────────────────
     if (!isTempTicketId(ticketId)) {
       return flushTicketSave(ticketId)
     }
@@ -7808,7 +7808,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       })
     }
 
-    // Remarks always save in-cell Ã¢â‚¬â€ never open a payment popup.
+    // ─────────────────────────────────────────────────────────────
     let finalBody: Record<string, unknown> = body
     const schedKey = resolveScheduleCompletionDateKey(liveTicket, dateFilter)
     const remarkText = colLabel === 'UPDATE'
@@ -8059,7 +8059,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     queueTicketPatch(ticket, body)
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Delete Ã¢â‚¬â€ remove row instantly, DELETE in background Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ─────────────────────────────────────────────────────────────
   const handleDelete = (ticketId: string) => {
     const ticket = tickets.find(t => t.id === ticketId)
       || optimisticTicketsRef.current.get(ticketId)
@@ -8100,7 +8100,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     setEditModalOpen(false)
     setConfirmModal(null)
 
-    // Temp rows are not on the server yet Ã¢â‚¬â€ local remove is enough.
+    // ─────────────────────────────────────────────────────────────
     // If an in-flight Excel import later creates the real ticket, it will DELETE that id.
     if (isTempTicketId(ticketId)) {
       console.log('[Schedules] Removed unsaved ticket locally', { ticketId })
@@ -8394,7 +8394,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     const inlineEditor = renderInlineCellEditor(ticket, label, rowIndex >= 0 ? rowIndex : undefined, rowGhost)
     if (inlineEditor) return inlineEditor
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ DISPLAY STATE Ã¢â€â‚¬Ã¢â€â‚¬
+    // ─────────────────────────────────────────────────────────────
     const val = getCellDisplay(ticket, label)
     const ghostMuted = rowGhost
       ? (ghostKind === 'completed' ? (isLight ? '#166534' : '#86efac')
@@ -9038,7 +9038,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     )
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Render Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ─────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col flex-1 w-full min-h-0 h-full" onClick={() => {
       setContextMenu(null)
@@ -9167,31 +9167,33 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
               <>
                 {/* Mobile: Custom Date picker + Filters button only */}
                 <div className="md:hidden flex items-center gap-1.5 w-full min-w-0 py-0.5">
-                  {/* Date picker button */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      const now = dateFilter ? new Date(dateFilter + 'T00:00:00') : new Date()
-                      setCustomDateCalMonth({ year: now.getFullYear(), month: now.getMonth() })
-                      setCustomDatePickerOpen(o => !o)
-                    }}
-                    className="flex items-center gap-1.5 h-8 px-2.5 rounded-full border transition-transform active:scale-95 cursor-pointer shrink-0"
-                    style={{
-                      backgroundColor: isCustomSelected ? green : inputBg,
-                      borderColor: green,
-                      color: textPrimary,
-                    }}
-                  >
-                    <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: green }} strokeWidth={2.2} />
-                    <span className="text-[11px] font-semibold whitespace-nowrap">
-                      {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', {
-                        weekday: 'short',
-                        month: 'short',
-                        day: 'numeric',
-                      })}
-                    </span>
-                  </button>
+                  {/* Mobile Date picker button — uses native dynamic OS date picker for iOS & Android */}
+                  <div className="relative shrink-0 flex items-center">
+                    <div
+                      className="flex items-center gap-1.5 h-8 px-2.5 rounded-full border transition-transform pointer-events-none"
+                      style={{
+                        backgroundColor: inputBg,
+                        borderColor: green,
+                        color: textPrimary,
+                      }}
+                    >
+                      <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: green }} strokeWidth={2.2} />
+                      <span className="text-[11px] font-semibold whitespace-nowrap">
+                        {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </span>
+                    </div>
+                    <input
+                      type="date"
+                      value={dateFilter}
+                      onChange={e => handleDateFilterChange(e.target.value)}
+                      className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer"
+                      aria-label="Pick schedule date"
+                    />
+                  </div>
 
                   {/* Filters button — aligned directly next to date picker */}
                   {!isMyTickets && (
