@@ -3,9 +3,9 @@ import { useOutletContext } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, X, Edit3, AlertTriangle, CalendarDays,
-  Eye, Loader2, Pencil, Clock, Moon, Sun, Trash2, Car,
+  Eye, Loader2, Pencil, Clock, Moon, Sun, Trash2,
   ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Maximize2,
-  UsersRound, ChevronDown, Wrench, SlidersHorizontal, CalendarRange,
+  UsersRound, ChevronDown, SlidersHorizontal, CalendarRange,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -971,30 +971,30 @@ function getScheduleRowColors(
         accent: '#fbbf24',
       }
     }
-  if (outcome === 'DONE_BACKJOB') {
-    return {
-      baseBg: isLight ? '#dbeafe' : 'rgba(59,130,246,0.08)',
-      accent: '#3B82F6',
+    if (outcome === 'DONE_BACKJOB') {
+      return {
+        baseBg: isLight ? '#dbeafe' : 'rgba(59,130,246,0.08)',
+        accent: '#3B82F6',
+      }
     }
-  }
-  if (outcome === 'DONE_SYSTEM_REPROCESS') {
-    return {
-      baseBg: isLight ? '#e0e7ff' : 'rgba(99,102,241,0.07)',
-      accent: '#6366F1',
+    if (outcome === 'DONE_SYSTEM_REPROCESS') {
+      return {
+        baseBg: isLight ? '#e0e7ff' : 'rgba(99,102,241,0.07)',
+        accent: '#6366F1',
+      }
     }
-  }
-  if (outcome === 'DONE_DISMANTLE') {
-    return {
-      baseBg: isLight ? '#ffe4e6' : 'rgba(244,63,94,0.07)',
-      accent: '#F43F5E',
+    if (outcome === 'DONE_DISMANTLE') {
+      return {
+        baseBg: isLight ? '#ffe4e6' : 'rgba(244,63,94,0.07)',
+        accent: '#F43F5E',
+      }
     }
-  }
-  if (outcome === 'DONE_QUOTATION' || outcome === 'DONE_SERVICE') {
-    return {
-      baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.07)',
-      accent: '#16A34A',
+    if (outcome === 'DONE_QUOTATION' || outcome === 'DONE_SERVICE') {
+      return {
+        baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.07)',
+        accent: '#16A34A',
+      }
     }
-  }
     return {
       baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.07)',
       accent: '#16A34A',
@@ -8399,8 +8399,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     const ghostMuted = rowGhost
       ? (ghostKind === 'completed' ? (isLight ? '#166534' : '#86efac')
         : ghostKind === 'resched' ? (isLight ? '#a16207' : '#fbbf24')
-        : ghostKind === 'cancelled' ? (isLight ? '#dc2626' : '#f87171')
-        : textMuted)
+          : ghostKind === 'cancelled' ? (isLight ? '#dc2626' : '#f87171')
+            : textMuted)
       : textPrimary
     const showExpanded = cellExpanded
     const truncStyle: React.CSSProperties = showExpanded
@@ -9374,7 +9374,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       {!isMyTickets && showcaseOpen && ReactDOM.createPortal(
         <div className="flex items-center justify-between gap-3 px-5 md:px-8 py-2 bg-red-500/10 border-b border-red-500/20">
           <span className="text-xs font-semibold text-red-600 dark:text-red-400">
-             Full-screen view &mdash; click <em>Export PDF to Print</em>, then Exit Showcase.
+            Full-screen view &mdash; click <em>Export PDF to Print</em>, then Exit Showcase.
           </span>
           <button
             type="button"
@@ -9576,8 +9576,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                               ...(col.sticky ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: 15, boxShadow: `2px 0 0 ${isMyTickets ? myTicketsTheadBorder : schedTheadBorder}` } : {}),
                             }}>
                             <div className={`flex items-center gap-1 w-full ${col.align === 'center' ? 'justify-center text-center' :
-                                col.align === 'right' ? 'justify-end text-right' :
-                                  'justify-start text-left'
+                              col.align === 'right' ? 'justify-end text-right' :
+                                'justify-start text-left'
                               }`}>
                               <span>{col.display as any}</span>
                               {canSort && (
@@ -9950,6 +9950,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       const statusDisplay = getScheduleStatusDisplay(ticket) || ticket.status || ''
                       const ticketNo = ticket.ticketNumber || ticket.controlNumber || '—'
                       const district = resolveTicketDistrict(ticket) || ticket.district || ''
+                      const fullAddress = ((ticket as any).address || (ticket as any).fullAddress || (ticket as any).full_address || (ticket as any).location || (ticket as any).siteAddress || (ticket as any).site_address || (ticket as any).streetAddress || (ticket as any).street_address || (ticket as any).city || (ticket as any).area || district || '').trim()
                       const brand = parseBrand(ticket)
                       const dealer = getF(ticket, 'dealer', 'sourceVendor', 'source_vendor')
                       const installer = getInstallerDisplay(ticket, branchEmployees, activeBranchId)
@@ -9961,123 +9962,165 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       const remarks = sanitizeDisplayText(
                         stripArchivedRemarkSuffix((ticket.remarksUpdate || ticket.remarks || '').trim()),
                       )
-                      const rowLabel = { color: textMuted, fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' as const }
-                      const rowValue = { color: textPrimary, fontSize: 12, fontWeight: 600 }
+                      const negotiatorName = getTicketNegotiatorName(ticket, branchEmployees) || ''
+                      const cardNegId = ticket.negotiatorId || ticket.negotiator_id || ''
+                      const cardNegEmp = branchEmployees.find(e => {
+                        if (cardNegId && e.id === cardNegId) return true
+                        if (negotiatorName && e.name && namesMatchLoosely(e.name, negotiatorName)) return true
+                        const resolvedFull = resolveNegotiatorDisplayName(ticket, branchEmployees)
+                        if (resolvedFull && e.name && namesMatchLoosely(e.name, resolvedFull)) return true
+                        return false
+                      })
+                      const negotiatorPhone = (ticket as any).negotiatorPhone
+                        || (ticket as any).negotiator_phone
+                        || (ticket as any).negotiatorContact
+                        || (ticket as any).negotiator_contact
+                        || cardNegEmp?.phone
+                        || (cardNegId && user?.id === cardNegId ? (user?.phone || '') : '')
+                        || ''
+                      
 
                       return (
                         <div
                           key={`${ticket.id}${isGhost ? `-ghost-${ghostKind}` : ''}`}
                           onClick={() => setDetailTicket(ticket)}
-                          className="w-full rounded-2xl p-3.5 flex flex-col gap-2.5 border transition-transform active:scale-[0.985] cursor-pointer"
+                          className="w-full rounded-xl overflow-hidden border transition-transform active:scale-[0.985] cursor-pointer"
                           style={{
                             backgroundColor: rowColors.baseBg,
                             borderColor: tableBorder,
                             opacity: isGhost ? 0.72 : 1,
                           }}
                         >
-                          {/* Header: customer + status */}
-                          <div className="flex justify-between items-start gap-2">
-                            <div className="min-w-0 flex-1">
-                              <h4
-                                className="font-bold text-[13px] leading-snug uppercase tracking-wide"
-                                style={{ color: isDuplicateName ? (isLight ? '#9f1239' : '#f43f5e') : textPrimary }}
-                              >
-                                {getCustomerDisplayName(ticket)}
-                              </h4>
-                              {phone ? (
-                                <a
-                                  href={`tel:${phone.replace(/[^\d+]/g, '')}`}
-                                  onClick={e => {
-                                    e.stopPropagation()
+                          {/* ── Top section: name / ticket / phone / status ── */}
+                          <div className="px-3 pt-2.5 pb-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-baseline gap-1.5 flex-wrap">
+                                  <span
+                                    className="font-extrabold text-[13px] uppercase tracking-wide leading-tight"
+                                    style={{ color: isDuplicateName ? (isLight ? '#9f1239' : '#f43f5e') : textPrimary }}
+                                  >
+                                    {getCustomerDisplayName(ticket)}
+                                  </span>
+                                  <span className="text-[11px] font-bold tabular-nums" style={{ color: textMuted }}>
+                                    {ticketNo}
+                                  </span>
+                                </div>
+                                {phone ? (
+                                  <a
+                                    href={`tel:${phone.replace(/[^\d+]/g, '')}`}
+                                    onClick={e => e.stopPropagation()}
+                                    onContextMenu={e => {
+                                      e.preventDefault(); e.stopPropagation()
+                                      void copyTextToClipboard(phone)
+                                      showToast(`Copied ${fmtPhone(phone) || phone}`)
+                                    }}
+                                    className="text-[11px] font-semibold tabular-nums hover:underline"
+                                    style={{ color: isLight ? '#0369a1' : '#7dd3fc' }}
+                                  >
+                                    {fmtPhone(phone) || phone}
+                                  </a>
+                                ) : null}
+                                {/* Brand / Dealer */}
+                                {(brand || dealer) ? (
+                                  <div className="text-[10.5px] font-semibold truncate mt-0.5" style={{ color: textMuted }}>
+                                    {[brand, dealer].filter(Boolean).join(' · ')}
+                                  </div>
+                                ) : null}
+                                {/* Address */}
+                                {fullAddress ? (
+                                  <div className="flex items-center gap-1 mt-0.5" style={{ color: textMuted }}>
+                                    <MapPin className="w-2.5 h-2.5 shrink-0" style={{ color: green }} />
+                                    <span className="text-[10.5px] font-medium truncate" title={fullAddress}>{fullAddress}</span>
+                                  </div>
+                                ) : null}
+                              </div>
+                              {statusDisplay ? (
+                                <span
+                                  className="text-[10.5px] font-black uppercase shrink-0 tracking-wider px-2.5 py-1 rounded-full border shadow-sm"
+                                  style={{
+                                    color: statusStyle.color,
+                                    backgroundColor: statusStyle.backgroundColor,
+                                    borderColor: statusStyle.borderColor,
                                   }}
-                                  onContextMenu={e => {
-                                    e.preventDefault()
-                                    e.stopPropagation()
-                                    void copyTextToClipboard(phone)
-                                    showToast(`Copied ${fmtPhone(phone) || phone}`)
-                                  }}
-                                  className="mt-0.5 inline-block text-[11px] font-semibold tabular-nums hover:underline"
-                                  style={{ color: isLight ? '#0369a1' : '#7dd3fc' }}
                                 >
-                                  {fmtPhone(phone) || phone}
-                                </a>
-                              ) : (
-                                <span className="mt-0.5 block text-[11px] font-medium" style={{ color: textMuted }}>
-                                  No contact no.
+                                  {statusDisplay === 'INSTALLATION' ? 'INSTALL' : statusDisplay}
                                 </span>
-                              )}
+                              ) : null}
                             </div>
-                            {statusDisplay ? (
-                              <span
-                                className="text-[9px] font-black uppercase shrink-0 tracking-wider px-2 py-0.5 rounded-full"
-                                style={{
-                                  color: statusStyle.color,
-                                  backgroundColor: statusStyle.backgroundColor,
-                                  border: `1px solid ${statusStyle.borderColor}`,
-                                }}
-                              >
-                                {statusDisplay === 'INSTALLATION' ? 'INSTALL' : statusDisplay}
-                              </span>
-                            ) : null}
                           </div>
 
-                          {/* Ticket + district only (branch lives in page header) */}
-                          <div className="flex items-center justify-between gap-2 text-[11px]">
-                            <span className="font-bold tabular-nums" style={{ color: textPrimary }}>{ticketNo}</span>
-                            {district ? (
-                              <span className="inline-flex items-center gap-1 truncate font-semibold uppercase" style={{ color: textMuted }}>
-                                <MapPin className="w-3 h-3 shrink-0" />
-                                {district}
-                              </span>
-                            ) : null}
-                          </div>
-
-                          {(brand || dealer) ? (
-                            <div className="text-[11px] font-semibold truncate" style={{ color: textMuted }}>
-                              {[brand, dealer].filter(Boolean).join(' · ')}
-                            </div>
-                          ) : null}
-
-                          {/* Crew: installer / driver / vehicle */}
+                          {/* ── Crew section: tight table ── */}
                           <div
-                            className="grid grid-cols-1 gap-1.5 rounded-xl px-2.5 py-2"
-                            style={{ backgroundColor: isLight ? 'rgba(15,23,42,0.03)' : 'rgba(148,163,184,0.06)' }}
+                            className="px-3 py-1.5 border-t"
+                            style={{
+                              borderColor: tableBorder,
+                              backgroundColor: isLight ? 'rgba(15,23,42,0.04)' : 'rgba(148,163,184,0.08)',
+                            }}
                           >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <Wrench className="w-3.5 h-3.5 shrink-0" style={{ color: green }} strokeWidth={2.1} />
-                              <span style={rowLabel}>Installer</span>
-                              <span className="truncate ml-auto text-right" style={{ ...rowValue, color: installer ? (isLight ? '#0369a1' : '#7dd3fc') : textMuted }}>
-                                {installer || '—'}
-                              </span>
+                            {/* Negotiator row */}
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[9.5px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Negotiator</span>
+                              <div className="flex items-center gap-1 min-w-0 justify-end">
+                                <span className="text-[11.5px] font-semibold truncate" style={{ color: (negotiatorName && negotiatorName !== EMPTY_CELL) ? textPrimary : textMuted }}>
+                                  {negotiatorName && negotiatorName !== EMPTY_CELL ? negotiatorName : '—'}
+                                </span>
+                                {negotiatorPhone ? (
+                                  <a
+                                    href={`tel:${negotiatorPhone.replace(/[^\d+]/g, '')}`}
+                                    onClick={e => e.stopPropagation()}
+                                    onContextMenu={e => {
+                                      e.preventDefault(); e.stopPropagation()
+                                      void copyTextToClipboard(negotiatorPhone)
+                                      showToast(`Copied ${fmtPhone(negotiatorPhone) || negotiatorPhone}`)
+                                    }}
+                                    className="text-[10.5px] tabular-nums font-semibold hover:underline shrink-0"
+                                    style={{ color: isLight ? '#0369a1' : '#7dd3fc' }}
+                                  >
+                                    ({fmtPhone(negotiatorPhone) || negotiatorPhone})
+                                  </a>
+                                ) : null}
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2 min-w-0">
-                              <UsersRound className="w-3.5 h-3.5 shrink-0" style={{ color: green }} strokeWidth={2.1} />
-                              <span style={rowLabel}>Driver</span>
-                              <span className="truncate ml-auto text-right" style={{ ...rowValue, color: driver ? textPrimary : textMuted }}>
-                                {driver || '—'}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2 min-w-0">
-                              <Car className="w-3.5 h-3.5 shrink-0" style={{ color: green }} strokeWidth={2.1} />
-                              <span style={rowLabel}>Vehicle</span>
-                              <span className="truncate ml-auto text-right uppercase tabular-nums" style={{ ...rowValue, color: vehicle ? textPrimary : textMuted }}>
-                                {vehicle || '—'}
-                              </span>
+                            {/* Installer · Vehicle · Driver in one line */}
+                            <div className="grid grid-cols-3 gap-x-1 mt-0.5">
+                              <div className="col-span-1 flex flex-col min-w-0">
+                                <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Installer</span>
+                                <span className="text-[11px] font-semibold truncate" style={{ color: installer ? (isLight ? '#0369a1' : '#7dd3fc') : textMuted }}>
+                                  {installer || '—'}
+                                </span>
+                              </div>
+                              <div className="col-span-1 flex flex-col min-w-0">
+                                <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Vehicle</span>
+                                <span className="text-[11px] font-semibold truncate uppercase tabular-nums" style={{ color: vehicle ? textPrimary : textMuted }}>
+                                  {vehicle || '—'}
+                                </span>
+                              </div>
+                              <div className="col-span-1 flex flex-col items-end text-right min-w-0">
+                                <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Driver</span>
+                                <span className="text-[11px] font-semibold truncate" style={{ color: driver ? textPrimary : textMuted }}>
+                                  {driver || '—'}
+                                </span>
+                              </div>
                             </div>
                           </div>
 
+                          {/* ── Footer: commit / payment / remarks ── */}
                           {(commit || payment || remarks) ? (
-                            <div className="flex flex-col gap-1 pt-0.5 text-[11px]" style={{ borderTop: `1px solid ${tableBorder}` }}>
+                            <div
+                              className="px-3 py-1.5 border-t"
+                              style={{ borderColor: tableBorder }}
+                            >
                               {(commit || payment) ? (
                                 <div className="flex items-center justify-between gap-2">
-                                  <span className="truncate font-medium" style={{ color: textMuted }}>{commit || '—'}</span>
+                                  <span className="text-[10.5px] font-medium truncate" style={{ color: textMuted }}>{commit || '—'}</span>
                                   {payment ? (
-                                    <span className="shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{payment}</span>
+                                    <span className="text-[11px] shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{payment}</span>
                                   ) : null}
                                 </div>
                               ) : null}
                               {remarks ? (
-                                <p className="truncate font-medium leading-snug" style={{ color: textMuted }} title={remarks}>
+                                <p className="text-[10.5px] truncate font-medium" style={{ color: textMuted }} title={remarks}>
                                   {remarks}
                                 </p>
                               ) : null}
@@ -10111,12 +10154,12 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
               >
                 <div className="flex items-center justify-center gap-4 px-4 mx-auto w-max">
                   {[
-                    "BATANGAS", "BULACAN", "CANDELARIA", "DASMA, CAVITE", 
-                    "GENTRI, CAVITE", "LAGUNA", "PAMPANGA", "RIZAL", 
+                    "BATANGAS", "BULACAN", "CANDELARIA", "DASMA, CAVITE",
+                    "GENTRI, CAVITE", "LAGUNA", "PAMPANGA", "RIZAL",
                     "SILANG, CAVITE", "TAGUIG", "VALENZUELA"
                   ].map((branch, idx, arr) => (
                     <div key={branch} className="flex items-center gap-4 shrink-0">
-                      <span 
+                      <span
                         className="text-[13px] md:text-[16px] font-black uppercase tracking-[0.15em]"
                         style={{ color: idx % 2 === 0 ? green : textPrimary }}
                       >
@@ -10132,15 +10175,14 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             </div>
 
             <div
-              className={`flex-1 min-h-0 px-3 md:px-8 bg-transparent relative ${
-                overviewSearchInput || overviewResults.length > 0 ? 'overflow-y-auto flex flex-col' : 'overflow-hidden'
-              }`}
+              className={`flex-1 min-h-0 px-3 md:px-8 bg-transparent relative ${overviewSearchInput || overviewResults.length > 0 ? 'overflow-y-auto flex flex-col' : 'overflow-hidden'
+                }`}
             >
               <div
                 className={
                   overviewSearchInput || overviewResults.length > 0
                     ? 'max-w-4xl w-full mx-auto flex flex-col'
-                    : 'absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-4xl px-3 md:px-0 flex flex-col items-center gap-6 md:gap-8'
+                    : 'w-full max-w-4xl mx-auto px-3 md:px-0 pt-10 md:pt-16 flex flex-col items-center gap-6 md:gap-8'
                 }
               >
 
@@ -10371,21 +10413,23 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
               </div>
             </div>
 
-            {/* Dark Mode Toggle - Bottom Right Floating */}
-            <div className="absolute bottom-6 right-6 z-50">
-              <button
-                onClick={toggleTheme}
-                title={isLight ? 'Switch to Dark' : 'Switch to Light'}
-                className="flex items-center justify-center w-12 h-12 rounded-full shadow-lg transition-transform hover:scale-110 active:scale-95"
-                style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
-              >
-                {isLight ? (
-                  <Moon className="w-5 h-5" style={{ color: textMuted }} />
-                ) : (
-                  <Sun className="w-5 h-5" style={{ color: '#F59E0B' }} />
-                )}
-              </button>
-            </div>
+            {/* Dark Mode Toggle - Bottom Right Floating (Hidden when search result rows exist) */}
+            {overviewResults.length === 0 && (
+              <div className="fixed sm:absolute bottom-6 right-6 z-50">
+                <button
+                  onClick={toggleTheme}
+                  title={isLight ? 'Switch to Dark' : 'Switch to Light'}
+                  className="flex items-center justify-center w-12 h-12 rounded-full shadow-lg transition-transform hover:scale-110 active:scale-95"
+                  style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+                >
+                  {isLight ? (
+                    <Moon className="w-5 h-5" style={{ color: textMuted }} />
+                  ) : (
+                    <Sun className="w-5 h-5" style={{ color: '#F59E0B' }} />
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
