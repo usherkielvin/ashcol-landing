@@ -10027,13 +10027,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                     {[brand, dealer].filter(Boolean).join(' · ')}
                                   </div>
                                 ) : null}
-                                {/* Address */}
-                                {fullAddress ? (
-                                  <div className="flex items-center gap-1 mt-0.5" style={{ color: textMuted }}>
-                                    <MapPin className="w-2.5 h-2.5 shrink-0" style={{ color: green }} />
-                                    <span className="text-[10.5px] font-medium truncate" title={fullAddress}>{fullAddress}</span>
-                                  </div>
-                                ) : null}
                               </div>
                               {statusDisplay ? (
                                 <span
@@ -10048,6 +10041,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                 </span>
                               ) : null}
                             </div>
+                            {/* Full Width Address */}
+                            {fullAddress ? (
+                              <div className="flex items-center gap-1 mt-1 w-full" style={{ color: textMuted }}>
+                                <MapPin className="w-2.5 h-2.5 shrink-0" style={{ color: green }} />
+                                <span className="text-[10.5px] font-medium truncate w-full" title={fullAddress}>{fullAddress}</span>
+                              </div>
+                            ) : null}
                           </div>
 
                           {/* ── Crew section: tight table ── */}
