@@ -3779,7 +3779,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   // never writes the current on-screen rows into a *different* date's cache key.
   const dateFilterRef = useRef(dateFilter)
   dateFilterRef.current = dateFilter
-  const mobileDateInputRef = useRef<HTMLInputElement>(null)
   const [hoveredRow, setHoveredRow] = useState<string | null>(null)
   const [hoveredCell, setHoveredCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
   const [draggedVehicleTicketId, setDraggedVehicleTicketId] = useState<string | null>(null)
@@ -9168,34 +9167,31 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
               <>
                 {/* Mobile: Custom Date picker + Filters button only */}
                 <div className="md:hidden flex items-center gap-1.5 w-full min-w-0 py-0.5">
-                  {/* Date picker */}
-                  <div className="relative shrink-0 flex items-center">
-                    <div
-                      className="flex items-center gap-1.5 h-8 px-2.5 rounded-full border transition-transform pointer-events-none"
-                      style={{
-                        backgroundColor: inputBg,
-                        borderColor: green,
-                        color: textPrimary,
-                      }}
-                    >
-                      <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: green }} strokeWidth={2.2} />
-                      <span className="text-[11px] font-semibold whitespace-nowrap">
-                        {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', {
-                          weekday: 'short',
-                          month: 'short',
-                          day: 'numeric',
-                        })}
-                      </span>
-                    </div>
-                    <input
-                      ref={mobileDateInputRef}
-                      type="date"
-                      value={dateFilter}
-                      onChange={e => handleDateFilterChange(e.target.value)}
-                      className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer"
-                      aria-label="Pick schedule date"
-                    />
-                  </div>
+                  {/* Date picker button */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      const now = dateFilter ? new Date(dateFilter + 'T00:00:00') : new Date()
+                      setCustomDateCalMonth({ year: now.getFullYear(), month: now.getMonth() })
+                      setCustomDatePickerOpen(o => !o)
+                    }}
+                    className="flex items-center gap-1.5 h-8 px-2.5 rounded-full border transition-transform active:scale-95 cursor-pointer shrink-0"
+                    style={{
+                      backgroundColor: isCustomSelected ? green : inputBg,
+                      borderColor: green,
+                      color: textPrimary,
+                    }}
+                  >
+                    <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: green }} strokeWidth={2.2} />
+                    <span className="text-[11px] font-semibold whitespace-nowrap">
+                      {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </span>
+                  </button>
 
                   {/* Filters button — aligned directly next to date picker */}
                   {!isMyTickets && (
@@ -9238,7 +9234,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     )
                   })}
 
-                  {/* Custom Date Picker — fully styled, no native browser UI */}
+                  {/* Custom Date Picker Trigger */}
                   <div className="relative shrink-0">
                     <button
                       type="button"
@@ -9276,136 +9272,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                         style={{ color: isCustomSelected ? '#ffffff' : textMuted }}
                       />
                     </button>
-
-                    {/* Custom Calendar Dropdown */}
-                    {customDatePickerOpen && (() => {
-                      const cdYear = customDateCalMonth?.year ?? new Date().getFullYear()
-                      const cdMonth = customDateCalMonth?.month ?? new Date().getMonth()
-                      const daysInMonth = new Date(cdYear, cdMonth + 1, 0).getDate()
-                      const firstDow = new Date(cdYear, cdMonth, 1).getDay()
-                      const monthLabel = new Date(cdYear, cdMonth, 1).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
-                      const todayKey = todayDateKey()
-                      const goMonth = (delta: number) => {
-                        const cur = new Date(cdYear, cdMonth, 1)
-                        cur.setMonth(cur.getMonth() + delta)
-                        setCustomDateCalMonth({ year: cur.getFullYear(), month: cur.getMonth() })
-                      }
-                      return (
-                        <>
-                          {/* Backdrop */}
-                          <div
-                            className="fixed inset-0 z-[70]"
-                            onClick={() => setCustomDatePickerOpen(false)}
-                          />
-                          {/* Calendar Popover */}
-                          <div
-                            className="absolute left-0 top-12 z-[80] rounded-2xl shadow-2xl overflow-hidden"
-                            style={{
-                              backgroundColor: cardBg,
-                              border: `1px solid ${border}`,
-                              minWidth: '300px',
-                              width: '320px',
-                            }}
-                            onClick={e => e.stopPropagation()}
-                          >
-                            {/* Header */}
-                            <div className="px-4 pt-4 pb-3 border-b" style={{ borderColor: border }}>
-                              <div className="flex items-center justify-between gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => goMonth(-1)}
-                                  className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
-                                  style={{ color: textMuted }}
-                                >
-                                  {'<'}
-                                </button>
-                                <span className="text-sm font-bold" style={{ color: textPrimary }}>{monthLabel}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => goMonth(1)}
-                                  className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
-                                  style={{ color: textMuted }}
-                                >
-                                  {'>'}
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* Day-of-week labels */}
-                            <div className="grid grid-cols-7 px-3 pt-3 pb-1">
-                              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
-                                <div key={d} className="text-center text-[10px] font-extrabold uppercase tracking-wider py-1" style={{ color: textMuted }}>
-                                  {d}
-                                </div>
-                              ))}
-                            </div>
-
-                            {/* Days Grid */}
-                            <div className="grid grid-cols-7 gap-y-0.5 px-3 pb-4">
-                              {Array.from({ length: firstDow }).map((_, i) => <div key={`e-${i}`} />)}
-                              {Array.from({ length: daysInMonth }).map((_, i) => {
-                                const day = i + 1
-                                const dKey = `${cdYear}-${String(cdMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-                                const isToday = dKey === todayKey
-                                const isSel = dKey === dateFilter
-                                return (
-                                  <button
-                                    key={dKey}
-                                    type="button"
-                                    onClick={() => {
-                                      handleDateFilterChange(dKey)
-                                      setCustomDatePickerOpen(false)
-                                    }}
-                                    className="relative w-full aspect-square flex items-center justify-center text-xs font-semibold rounded-full transition-all hover:bg-emerald-500/10"
-                                    style={{
-                                      color: isSel ? '#fff' : isToday ? green : textPrimary,
-                                      backgroundColor: isSel ? green : 'transparent',
-                                      fontWeight: isToday && !isSel ? 800 : 600,
-                                      boxShadow: isSel ? '0 2px 6px rgba(16,185,129,0.4)' : undefined,
-                                    }}
-                                  >
-                                    {day}
-                                    {isToday && !isSel && (
-                                      <span
-                                        className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
-                                        style={{ backgroundColor: green }}
-                                      />
-                                    )}
-                                  </button>
-                                )
-                              })}
-                            </div>
-
-                            {/* Footer — quick actions */}
-                            <div className="flex items-center gap-2 px-4 pb-4">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  handleDateFilterChange(todayKey)
-                                  setCustomDatePickerOpen(false)
-                                }}
-                                className="flex-1 py-2 rounded-xl text-xs font-bold transition-all hover:opacity-90"
-                                style={{ backgroundColor: `${green}22`, color: green }}
-                              >
-                                Today
-                              </button>
-                              {isCustomSelected && (
-                                <button
-                                  type="button"
-                                  onClick={() => setCustomDatePickerOpen(false)}
-                                  className="flex-1 py-2 rounded-xl text-xs font-bold border transition-all hover:opacity-90"
-                                  style={{ borderColor: inputBorder, color: textMuted, backgroundColor: 'transparent' }}
-                                >
-                                  Close
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </>
-                      )
-                    })()}
                   </div>
-
                   {/* Filters button — next to Custom date */}
                   {!isMyTickets && (
                     <button
@@ -9413,13 +9280,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       onClick={(e) => { e.stopPropagation(); setMonthFilterModalOpen(true) }}
                       className="flex items-center gap-1.5 h-10 px-2.5 xl:px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-all hover:opacity-90 active:scale-95"
                       style={{
-                        backgroundColor: monthViewActive ? green : inputBg,
-                        border: `1px solid ${monthViewActive ? green : inputBorder}`,
-                        color: monthViewActive ? '#ffffff' : textPrimary,
+                        backgroundColor: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? green : inputBg,
+                        border: `1px solid ${(monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? green : inputBorder}`,
+                        color: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? '#ffffff' : textPrimary,
                       }}
                       title="Whole-month view for this branch, filterable by negotiator"
                     >
-                      <SlidersHorizontal className="w-4 h-4 shrink-0" style={{ color: monthViewActive ? '#ffffff' : green }} strokeWidth={2.1} />
+                      <SlidersHorizontal className="w-4 h-4 shrink-0" style={{ color: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? '#ffffff' : green }} strokeWidth={2.1} />
                       <span className="hidden xl:inline">{monthViewActive ? `Month: ${formatMonthFilterLabel(monthFilterMonth)}` : 'Filters'}</span>
                     </button>
                   )}
@@ -13195,6 +13062,138 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── Custom Calendar Modal Portal (Never clipped by header overflow) ── */}
+      {customDatePickerOpen && ReactDOM.createPortal(
+        <div
+          className="fixed inset-0 z-[9995] flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
+          onClick={() => setCustomDatePickerOpen(false)}
+        >
+          <div
+            className="rounded-2xl shadow-2xl overflow-hidden w-[320px] max-w-full border flex flex-col"
+            style={{
+              backgroundColor: cardBg,
+              borderColor: border,
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-4 pt-4 pb-3 border-b flex items-center justify-between" style={{ borderColor: border }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const curMonth = customDateCalMonth?.month ?? new Date().getMonth()
+                  const curYear = customDateCalMonth?.year ?? new Date().getFullYear()
+                  const cur = new Date(curYear, curMonth, 1)
+                  cur.setMonth(cur.getMonth() - 1)
+                  setCustomDateCalMonth({ year: cur.getFullYear(), month: cur.getMonth() })
+                }}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
+                style={{ color: textMuted }}
+              >
+                {'<'}
+              </button>
+              <span className="text-sm font-bold" style={{ color: textPrimary }}>
+                {new Date((customDateCalMonth?.year ?? new Date().getFullYear()), (customDateCalMonth?.month ?? new Date().getMonth()), 1).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const curMonth = customDateCalMonth?.month ?? new Date().getMonth()
+                  const curYear = customDateCalMonth?.year ?? new Date().getFullYear()
+                  const cur = new Date(curYear, curMonth, 1)
+                  cur.setMonth(cur.getMonth() + 1)
+                  setCustomDateCalMonth({ year: cur.getFullYear(), month: cur.getMonth() })
+                }}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
+                style={{ color: textMuted }}
+              >
+                {'>'}
+              </button>
+            </div>
+
+            {/* Day-of-week labels */}
+            <div className="grid grid-cols-7 px-3 pt-3 pb-1">
+              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+                <div key={d} className="text-center text-[10px] font-extrabold uppercase tracking-wider py-1" style={{ color: textMuted }}>
+                  {d}
+                </div>
+              ))}
+            </div>
+
+            {/* Days Grid */}
+            {(() => {
+              const cdYear = customDateCalMonth?.year ?? new Date().getFullYear()
+              const cdMonth = customDateCalMonth?.month ?? new Date().getMonth()
+              const daysInMonth = new Date(cdYear, cdMonth + 1, 0).getDate()
+              const firstDow = new Date(cdYear, cdMonth, 1).getDay()
+              const todayKey = todayDateKey()
+
+              return (
+                <div className="grid grid-cols-7 gap-y-0.5 px-3 pb-4">
+                  {Array.from({ length: firstDow }).map((_, i) => <div key={`e-${i}`} />)}
+                  {Array.from({ length: daysInMonth }).map((_, i) => {
+                    const day = i + 1
+                    const dKey = `${cdYear}-${String(cdMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+                    const isToday = dKey === todayKey
+                    const isSel = dKey === dateFilter
+                    return (
+                      <button
+                        key={dKey}
+                        type="button"
+                        onClick={() => {
+                          handleDateFilterChange(dKey)
+                          setCustomDatePickerOpen(false)
+                        }}
+                        className="relative w-full aspect-square flex items-center justify-center text-xs font-semibold rounded-full transition-all hover:bg-emerald-500/10"
+                        style={{
+                          color: isSel ? '#fff' : isToday ? green : textPrimary,
+                          backgroundColor: isSel ? green : 'transparent',
+                          fontWeight: isToday && !isSel ? 800 : 600,
+                          boxShadow: isSel ? '0 2px 6px rgba(16,185,129,0.4)' : undefined,
+                        }}
+                      >
+                        {day}
+                        {isToday && !isSel && (
+                          <span
+                            className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
+                            style={{ backgroundColor: green }}
+                          />
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+
+            {/* Footer — quick actions */}
+            <div className="flex items-center gap-2 px-4 pb-4 border-t pt-3" style={{ borderColor: border }}>
+              <button
+                type="button"
+                onClick={() => {
+                  handleDateFilterChange(todayDateKey())
+                  setCustomDatePickerOpen(false)
+                }}
+                className="flex-1 py-2 rounded-xl text-xs font-bold transition-all hover:opacity-90"
+                style={{ backgroundColor: `${green}22`, color: green }}
+              >
+                Today
+              </button>
+              <button
+                type="button"
+                onClick={() => setCustomDatePickerOpen(false)}
+                className="flex-1 py-2 rounded-xl text-xs font-bold border transition-all hover:opacity-90"
+                style={{ borderColor: inputBorder, color: textMuted, backgroundColor: 'transparent' }}
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>,
