@@ -9124,6 +9124,40 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         document.getElementById('header-toolbar-slot') ?? document.body,
       )}
 
+      {/* Portal: Mobile top search into header title row */}
+      {!isMyTickets && activeTab === 'schedules' && ReactDOM.createPortal(
+        <div className="md:hidden flex items-center w-full min-w-0">
+          <div
+            className="flex items-center gap-1.5 w-full min-w-0 h-8 px-2.5 rounded-full border transition-all shadow-sm"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+          >
+            <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+            <input
+              type="search"
+              inputMode="search"
+              placeholder="Name, installer, ticket…"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="bg-transparent outline-none text-[11px] flex-1 min-w-0 font-medium"
+              style={{ color: textPrimary }}
+              onClick={e => e.stopPropagation()}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={e => { e.stopPropagation(); setSearchQuery('') }}
+                className="shrink-0 p-0.5 rounded-full"
+                style={{ color: textMuted }}
+                aria-label="Clear search"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        </div>,
+        document.getElementById('header-top-search-slot') ?? document.body
+      )}
+
       {/* Portal: Toolbar into header slot */}
       {!isMyTickets && activeTab !== 'overview' && ReactDOM.createPortal(
         <div className="w-full min-w-0 max-w-full px-3 md:px-4 pt-2 pb-2.5 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-2 md:gap-3 items-center">
@@ -9132,11 +9166,12 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-2.5 min-w-0 overflow-hidden">
             {activeTab === 'schedules' && (
               <>
-                {/* Mobile: compact date + search in one row */}
-                <div className="md:hidden flex items-center gap-2 w-full min-w-0">
+                {/* Mobile: Custom Date picker + Filters button only */}
+                <div className="md:hidden flex items-center gap-1.5 w-full min-w-0 py-0.5">
+                  {/* Date picker */}
                   <div className="relative shrink-0 flex items-center">
                     <div
-                      className="flex items-center gap-1.5 h-9 px-2.5 rounded-full border transition-transform pointer-events-none"
+                      className="flex items-center gap-1.5 h-8 px-2.5 rounded-full border transition-transform pointer-events-none"
                       style={{
                         backgroundColor: inputBg,
                         borderColor: green,
@@ -9144,7 +9179,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       }}
                     >
                       <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: green }} strokeWidth={2.2} />
-                      <span className="text-[12px] font-semibold whitespace-nowrap">
+                      <span className="text-[11px] font-semibold whitespace-nowrap">
                         {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', {
                           weekday: 'short',
                           month: 'short',
@@ -9162,33 +9197,23 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     />
                   </div>
 
-                  <div
-                    className="flex items-center gap-1.5 flex-1 min-w-0 h-9 px-2.5 rounded-full border"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder }}
-                  >
-                    <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-                    <input
-                      type="search"
-                      inputMode="search"
-                      placeholder="Name, installer, ticket no…"
-                      value={searchQuery}
-                      onChange={e => setSearchQuery(e.target.value)}
-                      className="bg-transparent outline-none text-[12px] flex-1 min-w-0"
-                      style={{ color: textPrimary }}
-                      onClick={e => e.stopPropagation()}
-                    />
-                    {searchQuery && (
-                      <button
-                        type="button"
-                        onClick={e => { e.stopPropagation(); setSearchQuery('') }}
-                        className="shrink-0 p-0.5 rounded-full"
-                        style={{ color: textMuted }}
-                        aria-label="Clear search"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
+                  {/* Filters button — aligned directly next to date picker */}
+                  {!isMyTickets && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setMonthFilterModalOpen(true) }}
+                      className="flex items-center gap-1.5 h-8 px-2.5 rounded-full text-[11px] font-bold shrink-0 transition-all active:scale-95 border shadow-sm"
+                      style={{
+                        backgroundColor: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? green : inputBg,
+                        borderColor: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? green : inputBorder,
+                        color: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? '#ffffff' : textPrimary,
+                      }}
+                      title="Filter by month, negotiator, or status"
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" style={{ color: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? '#ffffff' : green }} strokeWidth={2.2} />
+                      <span>Filters</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Desktop: week chips + custom date (scrolls when tight) */}
@@ -12718,14 +12743,12 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       {/* ── Schedules "more filters" popup: whole-month + branch-negotiator, populates the main table ──── */}
       {monthFilterModalOpen && ReactDOM.createPortal(
         <div
-          className="fixed inset-0 z-[9990] flex items-center justify-center p-4"
-          style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}
-          onClick={() => setMonthFilterModalOpen(false)}
+          className="fixed inset-0 z-[9990] flex items-center justify-center p-4 sm:p-6"
+          style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}
         >
           <div
-            className="rounded-2xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col border overflow-hidden"
+            className="rounded-2xl shadow-2xl w-full max-w-2xl h-[90vh] sm:h-auto max-h-[90vh] flex flex-col border overflow-hidden shrink-0"
             style={{ backgroundColor: cardBg, borderColor: border }}
-            onClick={e => e.stopPropagation()}
           >
             {/* Header */}
             <div

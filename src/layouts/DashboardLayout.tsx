@@ -861,16 +861,16 @@ export default function DashboardLayout() {
           >
           {/* Top row: title + icons */}
           <div className="h-14 flex items-center justify-between px-4 md:px-6 lg:px-8 relative min-w-0">
-            <div className="flex items-center gap-3 shrink-0 min-w-0">
+            <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0 mr-2">
               <button
-                className="md:hidden p-2 rounded-xl transition-all"
+                className="md:hidden p-2 rounded-xl transition-all shrink-0"
                 style={{ color: textMuted, backgroundColor: hoverBg }}
                 onClick={() => setSidebarOpen(true)}
               >
                 <Menu className="w-4 h-4" />
               </button>
 
-              <div className="flex flex-col justify-center min-w-0">
+              <div className="flex flex-col justify-center min-w-0 shrink-0">
                 {currentPage === 'Relays' ? (
                   <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
                     Relays
@@ -892,6 +892,9 @@ export default function DashboardLayout() {
                   </>
                 )}
               </div>
+
+              {/* Slot for inline top-header search bar on mobile/desktop */}
+              <div id="header-top-search-slot" className="flex items-center min-w-0 flex-1 max-w-[210px] xs:max-w-[240px] sm:max-w-xs ml-1" />
             </div>
 
             {/* Right: Actions */}
