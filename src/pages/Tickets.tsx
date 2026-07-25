@@ -10059,13 +10059,16 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                             }}
                           >
                             {/* Negotiator row */}
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-[9.5px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Negotiator</span>
-                              <div className="flex items-center gap-1 min-w-0 justify-end">
+                            <div className="flex items-center justify-between gap-2 min-w-0">
+                              <div className="flex items-center gap-1 min-w-0">
+                                <span className="text-[9.5px] font-bold tracking-widest uppercase shrink-0" style={{ color: textMuted }}>NEGOTIATOR:</span>
                                 <span className="text-[11.5px] font-semibold truncate" style={{ color: (negotiatorName && negotiatorName !== EMPTY_CELL) ? textPrimary : textMuted }}>
                                   {negotiatorName && negotiatorName !== EMPTY_CELL ? negotiatorName : '—'}
                                 </span>
-                                {negotiatorPhone ? (
+                              </div>
+                              {negotiatorPhone ? (
+                                <div className="flex items-center gap-1 shrink-0 ml-auto text-right">
+                                  <span className="text-[9.5px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>CONTACT NO:</span>
                                   <a
                                     href={`tel:${negotiatorPhone.replace(/[^\d+]/g, '')}`}
                                     onClick={e => e.stopPropagation()}
@@ -10074,13 +10077,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                       void copyTextToClipboard(negotiatorPhone)
                                       showToast(`Copied ${fmtPhone(negotiatorPhone) || negotiatorPhone}`)
                                     }}
-                                    className="text-[10.5px] tabular-nums font-semibold hover:underline shrink-0"
+                                    className="text-[11px] tabular-nums font-bold hover:underline"
                                     style={{ color: isLight ? '#0369a1' : '#7dd3fc' }}
                                   >
-                                    ({fmtPhone(negotiatorPhone) || negotiatorPhone})
+                                    {fmtPhone(negotiatorPhone) || negotiatorPhone}
                                   </a>
-                                ) : null}
-                              </div>
+                                </div>
+                              ) : null}
                             </div>
                             {/* Installer · Vehicle · Driver in one line */}
                             <div className="grid grid-cols-3 gap-x-1 mt-0.5">
