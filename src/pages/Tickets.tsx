@@ -162,7 +162,7 @@ const STATUS_OPTS = [
   'INSTALLED', 'COMPLETED', 'CONTINUATION',
   'SYSTEM_REPROCESS', 'DONE_SYSTEM_REPROCESS', 'DISMANTLE', 'DONE_DISMANTLE',
 ]
-const TABLE_ROW_HEIGHT = 48
+const TABLE_ROW_HEIGHT = 50
 
 /** Schedule install closed — DB uses INSTALLED; legacy rows may still be COMPLETED. */
 function isInstalledWorkflowStatus(status?: string | null): boolean {
@@ -6282,8 +6282,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       { label: 'BRAND', display: "BRAND", weight: 11, expMul: 1.5, sticky: false, freeze: false, align: 'center' as const },
       { label: 'DLR', display: isTaguigServices ? "ENDORSED BY" : "DEALER", weight: 10, expMul: 1.4, sticky: false, freeze: false, align: 'center' as const },
       { label: 'COMMIT', display: "COMMIT", weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'NEGOTIATOR', display: 'NEGOTIATOR', weight: 8, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'INSTALLER', display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'NEGOTIATOR', display: 'NEGOTIATOR', weight: 8, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'SERVICE', display: "DRIVER", weight: 9, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
       { label: 'VEHICLE', display: "VEHICLE", weight: 9, expMul: 1.2, sticky: false, freeze: false, align: 'center' as const },
       { label: 'STATUS', display: "STATUS", weight: 13, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
@@ -7058,6 +7058,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         status: getScheduleStatusLabel(getScheduleStatusValue(live)),
         commit: getTicketCommitDisplay(live),
         installer: parseNameSiteToken(installerRaw).label || installerRaw,
+        negotiator: getTicketNegotiatorName(live, branchEmployees) || '',
         update: getScheduleUpdateDisplay(live),
         payment: getSchedulePaymentDisplay(live, dateFilter, dateFilter ? getScheduleGhostKind(live, dateFilter) : null),
         driver: parseNameSiteToken(driverRaw).label || driverRaw,
@@ -7982,7 +7983,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     setReschedDialog({ ticket })
     setReschedToDate(initDate)
     setReschedPending(isReschedulePending(ticket))
-    setReschedStep('date')
     setReschedRemarks('')
     const startKey = initDate || todayDateKey()
     const startDate = new Date(`${startKey}T00:00:00`)
@@ -7997,7 +7997,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     setReschedToDate('')
     setReschedPending(false)
     setReschedCalMonth(null)
-    setReschedStep('date')
     setReschedRemarks('')
   }
 
@@ -8006,7 +8005,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     const { ticket } = reschedDialog
     if (!reschedPending && !reschedToDate.trim()) {
       alert('Pick a new date or mark as Pending if no slot is available yet.')
-      setReschedStep('date')
       return
     }
     const cleanRemarks = reschedRemarks.trim()

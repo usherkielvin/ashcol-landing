@@ -14,6 +14,7 @@ export type ScheduleShowcaseRow = {
   status: string
   commit: string
   installer: string
+  negotiator: string
   update: string
   payment: string
   /** Driver name for driver list sheet (no trip number) */
@@ -163,6 +164,7 @@ function buildInstallerHeaders(isTaguigServices: boolean) {
     'STATUS',
     'COMMIT',
     installerLabel,
+    'NEGOTIATOR',
     'UPDATE',
     'PAYMENT',
   ]
@@ -193,6 +195,7 @@ function installerRowToCells(row: ScheduleShowcaseRow, paymentByRowId?: Record<s
     showcaseCellText(row.status),
     showcaseCellText(row.commit),
     showcaseCellText(row.installer),
+    showcaseCellText(row.negotiator),
     showcaseCellText(row.update),
     showcaseCellText(payment),
   ]
@@ -210,6 +213,7 @@ function installerRowToPdfCells(row: ScheduleShowcaseRow, paymentByRowId?: Recor
     pdfCellText(row.status),
     pdfCellText(row.commit),
     pdfCellText(row.installer),
+    pdfCellText(row.negotiator),
     pdfCellText(row.update),
     pdfPaymentText(payment),
   ]
@@ -245,9 +249,9 @@ const PDF_BW_TABLE = {
   theme: 'grid' as const,
   styles: {
     font: 'helvetica',
-    fontSize: 6.5,
-    cellPadding: 1.1,
-    minCellHeight: 6.2,
+    fontSize: 7.5,
+    cellPadding: 1.6,
+    minCellHeight: 8.2,
     lineColor: [0, 0, 0] as [number, number, number],
     lineWidth: 0.2,
     textColor: [0, 0, 0] as [number, number, number],
@@ -260,30 +264,31 @@ const PDF_BW_TABLE = {
     textColor: [0, 0, 0] as [number, number, number],
     fontStyle: 'bold' as const,
     halign: 'center' as const,
-    fontSize: 6,
-    cellPadding: 1,
-    minCellHeight: 5.5,
+    fontSize: 7,
+    cellPadding: 1.2,
+    minCellHeight: 6.5,
     lineColor: [0, 0, 0] as [number, number, number],
   },
 }
 
 /** A4 landscape usable width ≈ 297 − 16mm margins */
 const INSTALLER_COLUMN_STYLES = {
-  0: { halign: 'center' as const, cellWidth: 8 },
-  1: { halign: 'center' as const, cellWidth: 18 },
-  2: { cellWidth: 32 },
-  3: { cellWidth: 20 },
-  4: { cellWidth: 22 },
-  5: { cellWidth: 20 },
-  6: { halign: 'center' as const, cellWidth: 22 },
-  7: { cellWidth: 24 },
+  0: { halign: 'center' as const, cellWidth: 7 },
+  1: { halign: 'center' as const, cellWidth: 16 },
+  2: { cellWidth: 30 },
+  3: { cellWidth: 18 },
+  4: { cellWidth: 20 },
+  5: { cellWidth: 18 },
+  6: { halign: 'center' as const, cellWidth: 20 },
+  7: { cellWidth: 22 },
   8: { halign: 'center' as const, cellWidth: 20 },
-  9: { cellWidth: 48 },
-  10: {
+  9: { halign: 'center' as const, cellWidth: 18 },
+  10: { cellWidth: 42 },
+  11: {
     halign: 'right' as const,
-    cellWidth: 27,
+    cellWidth: 25,
     fontStyle: 'bold' as const,
-    fontSize: 6.5,
+    fontSize: 7.5,
     overflow: 'linebreak' as const,
   },
 }
@@ -536,14 +541,15 @@ export function SchedulesShowcase({
       >
         <colgroup>
           <col style={{ width: '3%' }} />
+          <col style={{ width: '6%' }} />
+          <col style={{ width: '11%' }} />
           <col style={{ width: '7%' }} />
-          <col style={{ width: '12%' }} />
           <col style={{ width: '8%' }} />
-          <col style={{ width: '9%' }} />
+          <col style={{ width: '7%' }} />
+          <col style={{ width: '7%' }} />
           <col style={{ width: '8%' }} />
           <col style={{ width: '8%' }} />
-          <col style={{ width: '9%' }} />
-          <col style={{ width: '8%' }} />
+          <col style={{ width: '7%' }} />
           <col style={{ width: '16%' }} />
           <col style={{ width: '12%' }} />
         </colgroup>
@@ -570,9 +576,9 @@ export function SchedulesShowcase({
                     key={cellIdx}
                     style={{
                       ...tdStyle,
-                      textAlign: cellIdx === 10 ? 'right' : [0, 1, 6, 8].includes(cellIdx) ? 'center' : 'left',
-                      fontWeight: cellIdx === 10 ? 700 : cellIdx === 6 ? 600 : 500,
-                      fontSize: cellIdx === 9 || cellIdx === 10 ? '8px' : '8.5px',
+                      textAlign: cellIdx === 11 ? 'right' : [0, 1, 6, 8, 9].includes(cellIdx) ? 'center' : 'left',
+                      fontWeight: cellIdx === 11 ? 700 : cellIdx === 6 ? 600 : 500,
+                      fontSize: cellIdx === 10 || cellIdx === 11 ? '9px' : '9.5px',
                     }}
                   >
                     {value}
@@ -855,8 +861,8 @@ const thStyle: React.CSSProperties = {
   backgroundColor: PAPER,
   color: INK,
   border: `1px solid ${TABLE_BORDER}`,
-  padding: '4px 3px',
-  fontSize: '8px',
+  padding: '5px 3px',
+  fontSize: '9px',
   fontWeight: 800,
   textTransform: 'uppercase',
   letterSpacing: '0.02em',
@@ -867,13 +873,13 @@ const thStyle: React.CSSProperties = {
 
 const tdStyle: React.CSSProperties = {
   border: `1px solid ${TABLE_BORDER}`,
-  padding: '4px 4px',
+  padding: '6px 4px',
   color: INK,
   backgroundColor: PAPER,
   verticalAlign: 'top',
   whiteSpace: 'pre-wrap',
   wordBreak: 'break-word',
-  lineHeight: 1.3,
+  lineHeight: 1.35,
 }
 
 const emptyCellStyle: React.CSSProperties = {
