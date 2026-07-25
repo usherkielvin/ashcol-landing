@@ -3528,6 +3528,7 @@ export default function Relays() {
                                 { value: 'DONE_SURVEY', label: 'DONE SURVEY' },
                                 { value: 'DONE_CHECKUP', label: 'DONE CHECKUP' },
                                 { value: 'DONE_BACKJOB', label: 'DONE BACKJOB' },
+                                { value: 'DONE_SERVICE', label: 'DONE SERVICE' },
                                 { value: 'DONE_SYSTEM_REPROCESS', label: 'DONE SYSTEM REPROCESS' },
                                 { value: 'DONE_DISMANTLE', label: 'DONE DISMANTLE' },
                                 { value: 'DONE_QUOTATION', label: 'DONE QUOTATION' },

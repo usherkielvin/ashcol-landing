@@ -323,6 +323,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                           { value: 'DONE_SURVEY', label: 'DONE SURVEY' },
                           { value: 'DONE_CHECKUP', label: 'DONE CHECKUP' },
                           { value: 'DONE_BACKJOB', label: 'DONE BACKJOB' },
+                          { value: 'DONE_SERVICE', label: 'DONE SERVICE' },
                           { value: 'DONE_SYSTEM_REPROCESS', label: 'DONE SYSTEM REPROCESS' },
                           { value: 'DONE_DISMANTLE', label: 'DONE DISMANTLE' },
                           { value: 'DONE_QUOTATION', label: 'DONE QUOTATION' },
@@ -548,21 +549,21 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
               <EField label="Remarks / Update" className="mb-3">
                 <textarea
                   value={draft.remarks}
-                  onChange={(e) => patch({ remarks: e.target.value })}
+                  onChange={(e) => patch({ remarks: e.target.value.toUpperCase() })}
                   rows={2}
-                  className={`${relayInput} resize-none`}
-                  style={inputStyle}
+                  className={`${relayInput} resize-none uppercase`}
+                  style={{ ...inputStyle, textTransform: 'uppercase' }}
                 />
               </EField>
             )}
             <EField label={isFieldSurface ? 'Add New Remark (appends to history)' : 'Add New Remark / Update'}>
               <textarea
                 value={draft.remarksUpdate}
-                onChange={(e) => patch({ remarksUpdate: e.target.value })}
+                onChange={(e) => patch({ remarksUpdate: e.target.value.toUpperCase() })}
                 rows={4}
                 placeholder="Type a new update (e.g. FOR CLEANING — send names for work permit). Saved remarks appear in Update History and this field clears."
-                className={`${relayInput} resize-none`}
-                style={inputStyle}
+                className={`${relayInput} resize-none uppercase`}
+                style={{ ...inputStyle, textTransform: 'uppercase' }}
               />
             </EField>
           </div>

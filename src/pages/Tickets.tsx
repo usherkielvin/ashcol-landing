@@ -170,7 +170,7 @@ function isInstalledWorkflowStatus(status?: string | null): boolean {
   return s === 'INSTALLED' || s === 'COMPLETED'
 }
 
-type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY' | 'DONE_CHECKUP' | 'DONE_BACKJOB' | 'DONE_SYSTEM_REPROCESS' | 'DONE_DISMANTLE' | 'DONE_QUOTATION'
+type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY' | 'DONE_CHECKUP' | 'DONE_BACKJOB' | 'DONE_SERVICE' | 'DONE_SYSTEM_REPROCESS' | 'DONE_DISMANTLE' | 'DONE_QUOTATION'
 type ScheduleStatusGroup = 'pending' | 'closing'
 
 const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatusGroup }[] = [
@@ -193,6 +193,7 @@ const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatu
   { value: 'DONE_SURVEY', label: 'DONE SURVEY', group: 'closing' },
   { value: 'DONE_CHECKUP', label: 'DONE CHECKUP', group: 'closing' },
   { value: 'DONE_BACKJOB', label: 'DONE BACKJOB', group: 'closing' },
+  { value: 'DONE_SERVICE', label: 'DONE SERVICE', group: 'closing' },
   { value: 'DONE_SYSTEM_REPROCESS', label: 'DONE SYSTEM REPROCESS', group: 'closing' },
   { value: 'DONE_DISMANTLE', label: 'DONE DISMANTLE', group: 'closing' },
   { value: 'DONE_QUOTATION', label: 'DONE QUOTATION', group: 'closing' },
@@ -202,7 +203,7 @@ const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatu
 const SCHEDULE_PENDING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group === 'pending')
 const SCHEDULE_CLOSING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group === 'closing')
 const CLOSING_SCHEDULE_STATUSES = new Set([
-  'DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB',
+  'DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB', 'DONE_SERVICE',
   'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE', 'DONE_QUOTATION',
 ])
 const SCHEDULE_PENDING_STATUS_VALUES = new Set(SCHEDULE_PENDING_OPTS.map(o => o.value))
@@ -258,7 +259,8 @@ function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: 
     normalized === 'INSTALLED' ||
     normalized === 'COMPLETED' ||
     normalized === 'DONE_CLEANING' ||
-    normalized === 'DONE_QUOTATION'
+    normalized === 'DONE_QUOTATION' ||
+    normalized === 'DONE_SERVICE'
   ) {
     return { color: isLight ? '#15803d' : '#86efac', backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.18)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)' }
   }
@@ -280,6 +282,7 @@ function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | null {
     || explicit === 'DONE_SURVEY'
     || explicit === 'DONE_CHECKUP'
     || explicit === 'DONE_BACKJOB'
+    || explicit === 'DONE_SERVICE'
     || explicit === 'DONE_SYSTEM_REPROCESS'
     || explicit === 'DONE_DISMANTLE'
     || explicit === 'DONE_QUOTATION'
@@ -543,6 +546,8 @@ function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string): Record
     setClosing('DONE_CHECKUP')
   } else if (val === 'DONE_BACKJOB') {
     setClosing('DONE_BACKJOB')
+  } else if (val === 'DONE_SERVICE') {
+    setClosing('DONE_SERVICE')
   } else if (val === 'DONE_INSTALLED') {
     body.status = 'INSTALLED'
     body.scheduleOutcome = 'DONE_INSTALLED'
@@ -984,7 +989,7 @@ function getScheduleRowColors(
       accent: '#F43F5E',
     }
   }
-  if (outcome === 'DONE_QUOTATION') {
+  if (outcome === 'DONE_QUOTATION' || outcome === 'DONE_SERVICE') {
     return {
       baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.07)',
       accent: '#16A34A',
@@ -1052,7 +1057,7 @@ function getScheduleRowColors(
     }
   }
 
-  if (outcome === 'DONE_QUOTATION') {
+  if (outcome === 'DONE_QUOTATION' || outcome === 'DONE_SERVICE') {
     return {
       baseBg: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.06)',
       accent: '#10B981',
@@ -4362,6 +4367,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const [reschedPending, setReschedPending] = useState(false)
   const [reschedCalMonth, setReschedCalMonth] = useState<{ year: number; month: number } | null>(null)
   const [reschedRemarks, setReschedRemarks] = useState('')
+  const [customDatePickerOpen, setCustomDatePickerOpen] = useState(false)
+  const [customDateCalMonth, setCustomDateCalMonth] = useState<{ year: number; month: number } | null>(null)
 
   const [continuationDialog, setContinuationDialog] = useState<{ ticket: Ticket } | null>(null)
   const [continuationSelectedDates, setContinuationSelectedDates] = useState<string[]>([])
@@ -4376,6 +4383,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const [monthFilterModalOpen, setMonthFilterModalOpen] = useState(false)
   const [monthFilterMonth, setMonthFilterMonth] = useState(() => todayDateKey().slice(0, 7))
   const [monthFilterNegotiatorId, setMonthFilterNegotiatorId] = useState('')
+  /** Specific SCHEDULE_STATUS_OPTS value (e.g. 'INSTALL', 'DONE_CLEANING'), or '' for all statuses. */
+  const [monthFilterStatus, setMonthFilterStatus] = useState('')
   const [monthFilterLoading, setMonthFilterLoading] = useState(false)
   const [monthFilterError, setMonthFilterError] = useState('')
   /** True once "Apply" has populated the main table with a whole month's tickets instead of one day. */
@@ -6779,6 +6788,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       if (monthFilterNegotiatorId) {
         list = list.filter(t => ticketMatchesNegotiatorFilter(t, monthFilterNegotiatorId))
       }
+      if (monthFilterStatus === 'PENDING_GROUP') {
+        list = list.filter(t => SCHEDULE_PENDING_STATUS_VALUES.has(getScheduleStatusValue(t)))
+      } else if (monthFilterStatus === 'CLOSING_GROUP') {
+        list = list.filter(t => CLOSING_SCHEDULE_STATUSES.has(getScheduleStatusValue(t)))
+      } else if (monthFilterStatus) {
+        list = list.filter(t => getScheduleStatusValue(t) === monthFilterStatus)
+      }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
         list = list.filter(t =>
@@ -6915,7 +6931,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       )
     }
     return list
-  }, [tickets, isMyTickets, activeBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, user?.jobTitle, installerLineupIndex, driverOnlyNames, isAdmin, myTicketsNegotiatorFilter, branchEmployees, isBranchMatch, monthViewActive, monthFilterNegotiatorId])
+  }, [tickets, isMyTickets, activeBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, user?.jobTitle, installerLineupIndex, driverOnlyNames, isAdmin, myTicketsNegotiatorFilter, branchEmployees, isBranchMatch, monthViewActive, monthFilterNegotiatorId, monthFilterStatus])
 
   // Auto-numbered vehicle trip labels ("STRADA - 1", "STRADA - 2") for the current filtered set —
   // the vehicle is now the dispatch unit, so staff never type a manual "- N" suffix into the
@@ -8293,7 +8309,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           disabled={isSaving}
           rows={3}
           value={editingCell.value}
-          onChange={e => syncDraftValue(e.target.value)}
+          onChange={e => syncDraftValue(colLabel === 'UPDATE' ? e.target.value.toUpperCase() : e.target.value)}
           onBlur={onBlur}
           onClick={e => e.stopPropagation()}
           onMouseDown={e => e.stopPropagation()}
@@ -8307,8 +8323,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
               try { el.setSelectionRange(len, len) } catch { /* ignore */ }
             }, 50)
           }}
-          className="w-full resize-y rounded-md outline-none"
-          style={{ ...inputStyle, minHeight: 52, maxHeight: 110 }}
+          className={`w-full resize-y rounded-md outline-none ${colLabel === 'UPDATE' ? 'uppercase' : ''}`}
+          style={{ ...inputStyle, minHeight: 52, maxHeight: 110, textTransform: colLabel === 'UPDATE' ? 'uppercase' : undefined }}
           placeholder={colLabel === 'UPDATE' ? 'Type remarks\u2026' : undefined}
         />,
         colLabel,
@@ -8548,7 +8564,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     if (label === 'TICKET NO') {
       const rawVal = val || EMPTY_CELL
       const isRowSaving = savingTicketIds.has(ticket.id)
-      return withEditPencil(
+      return (
         <div style={{ display: 'flex', alignItems: 'center', width: '100%', minWidth: 0 }} title={rawVal}>
           {idx !== undefined && (
             <span style={{ color: isLight ? '#94a3b8' : '#64748b', marginRight: 6, flexShrink: 0, fontWeight: 600, fontSize: '0.7rem' }}>
@@ -8565,8 +8581,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
               aria-label="Saving"
             />
           )}
-        </div>,
-        ticket, label, rowGhost, rowIndex,
+        </div>
       )
     }
 
@@ -9134,20 +9149,14 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
               <>
                 {/* Mobile: compact date + search in one row */}
                 <div className="md:hidden flex items-center gap-2 w-full min-w-0">
-                  <div className="relative shrink-0">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        openMobileDatePicker()
-                      }}
-                      className="flex items-center gap-1.5 h-9 px-2.5 rounded-full border active:scale-95 transition-transform"
+                  <div className="relative shrink-0 flex items-center">
+                    <div
+                      className="flex items-center gap-1.5 h-9 px-2.5 rounded-full border transition-transform pointer-events-none"
                       style={{
                         backgroundColor: inputBg,
                         borderColor: green,
                         color: textPrimary,
                       }}
-                      aria-label="Pick schedule date"
                     >
                       <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: green }} strokeWidth={2.2} />
                       <span className="text-[12px] font-semibold whitespace-nowrap">
@@ -9157,15 +9166,14 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                           day: 'numeric',
                         })}
                       </span>
-                    </button>
+                    </div>
                     <input
                       ref={mobileDateInputRef}
                       type="date"
                       value={dateFilter}
                       onChange={e => handleDateFilterChange(e.target.value)}
-                      className="absolute left-0 top-0 w-px h-px opacity-0 overflow-hidden"
-                      tabIndex={-1}
-                      aria-hidden
+                      className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer"
+                      aria-label="Pick schedule date"
                     />
                   </div>
 
@@ -9220,21 +9228,15 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     )
                   })}
 
+                  {/* Custom Date Picker — fully styled, no native browser UI */}
                   <div className="relative shrink-0">
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation()
-                        const el = dateFilterInputRef.current
-                        if (!el) return
-                        try {
-                          if (typeof el.showPicker === 'function') {
-                            el.showPicker()
-                            return
-                          }
-                        } catch { /* fall through */ }
-                        el.focus()
-                        el.click()
+                        const now = dateFilter ? new Date(dateFilter + 'T00:00:00') : new Date()
+                        setCustomDateCalMonth({ year: now.getFullYear(), month: now.getMonth() })
+                        setCustomDatePickerOpen(o => !o)
                       }}
                       className="relative flex items-center gap-2 h-10 min-w-[10.5rem] px-3 lg:px-4 rounded-full border shrink-0 cursor-pointer transition-all hover:opacity-90 active:scale-[0.98]"
                       style={{
@@ -9264,16 +9266,153 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                         style={{ color: isCustomSelected ? '#ffffff' : textMuted }}
                       />
                     </button>
-                    <input
-                      ref={dateFilterInputRef}
-                      type="date"
-                      value={dateFilter}
-                      onChange={e => handleDateFilterChange(e.target.value)}
-                      className="absolute left-0 top-0 w-px h-px opacity-0 overflow-hidden"
-                      tabIndex={-1}
-                      aria-hidden
-                    />
+
+                    {/* Custom Calendar Dropdown */}
+                    {customDatePickerOpen && (() => {
+                      const cdYear = customDateCalMonth?.year ?? new Date().getFullYear()
+                      const cdMonth = customDateCalMonth?.month ?? new Date().getMonth()
+                      const daysInMonth = new Date(cdYear, cdMonth + 1, 0).getDate()
+                      const firstDow = new Date(cdYear, cdMonth, 1).getDay()
+                      const monthLabel = new Date(cdYear, cdMonth, 1).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
+                      const todayKey = todayDateKey()
+                      const goMonth = (delta: number) => {
+                        const cur = new Date(cdYear, cdMonth, 1)
+                        cur.setMonth(cur.getMonth() + delta)
+                        setCustomDateCalMonth({ year: cur.getFullYear(), month: cur.getMonth() })
+                      }
+                      return (
+                        <>
+                          {/* Backdrop */}
+                          <div
+                            className="fixed inset-0 z-[70]"
+                            onClick={() => setCustomDatePickerOpen(false)}
+                          />
+                          {/* Calendar Popover */}
+                          <div
+                            className="absolute left-0 top-12 z-[80] rounded-2xl shadow-2xl overflow-hidden"
+                            style={{
+                              backgroundColor: cardBg,
+                              border: `1px solid ${border}`,
+                              minWidth: '300px',
+                              width: '320px',
+                            }}
+                            onClick={e => e.stopPropagation()}
+                          >
+                            {/* Header */}
+                            <div className="px-4 pt-4 pb-3 border-b" style={{ borderColor: border }}>
+                              <div className="flex items-center justify-between gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => goMonth(-1)}
+                                  className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
+                                  style={{ color: textMuted }}
+                                >
+                                  {'<'}
+                                </button>
+                                <span className="text-sm font-bold" style={{ color: textPrimary }}>{monthLabel}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => goMonth(1)}
+                                  className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
+                                  style={{ color: textMuted }}
+                                >
+                                  {'>'}
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Day-of-week labels */}
+                            <div className="grid grid-cols-7 px-3 pt-3 pb-1">
+                              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+                                <div key={d} className="text-center text-[10px] font-extrabold uppercase tracking-wider py-1" style={{ color: textMuted }}>
+                                  {d}
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Days Grid */}
+                            <div className="grid grid-cols-7 gap-y-0.5 px-3 pb-4">
+                              {Array.from({ length: firstDow }).map((_, i) => <div key={`e-${i}`} />)}
+                              {Array.from({ length: daysInMonth }).map((_, i) => {
+                                const day = i + 1
+                                const dKey = `${cdYear}-${String(cdMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+                                const isToday = dKey === todayKey
+                                const isSel = dKey === dateFilter
+                                return (
+                                  <button
+                                    key={dKey}
+                                    type="button"
+                                    onClick={() => {
+                                      handleDateFilterChange(dKey)
+                                      setCustomDatePickerOpen(false)
+                                    }}
+                                    className="relative w-full aspect-square flex items-center justify-center text-xs font-semibold rounded-full transition-all hover:bg-emerald-500/10"
+                                    style={{
+                                      color: isSel ? '#fff' : isToday ? green : textPrimary,
+                                      backgroundColor: isSel ? green : 'transparent',
+                                      fontWeight: isToday && !isSel ? 800 : 600,
+                                      boxShadow: isSel ? '0 2px 6px rgba(16,185,129,0.4)' : undefined,
+                                    }}
+                                  >
+                                    {day}
+                                    {isToday && !isSel && (
+                                      <span
+                                        className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
+                                        style={{ backgroundColor: green }}
+                                      />
+                                    )}
+                                  </button>
+                                )
+                              })}
+                            </div>
+
+                            {/* Footer — quick actions */}
+                            <div className="flex items-center gap-2 px-4 pb-4">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleDateFilterChange(todayKey)
+                                  setCustomDatePickerOpen(false)
+                                }}
+                                className="flex-1 py-2 rounded-xl text-xs font-bold transition-all hover:opacity-90"
+                                style={{ backgroundColor: `${green}22`, color: green }}
+                              >
+                                Today
+                              </button>
+                              {isCustomSelected && (
+                                <button
+                                  type="button"
+                                  onClick={() => setCustomDatePickerOpen(false)}
+                                  className="flex-1 py-2 rounded-xl text-xs font-bold border transition-all hover:opacity-90"
+                                  style={{ borderColor: inputBorder, color: textMuted, backgroundColor: 'transparent' }}
+                                >
+                                  Close
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      )
+                    })()}
                   </div>
+
+                  {/* Filters button — next to Custom date */}
+                  {!isMyTickets && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setMonthFilterModalOpen(true) }}
+                      className="flex items-center gap-1.5 h-10 px-2.5 xl:px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-all hover:opacity-90 active:scale-95"
+                      style={{
+                        backgroundColor: monthViewActive ? green : inputBg,
+                        border: `1px solid ${monthViewActive ? green : inputBorder}`,
+                        color: monthViewActive ? '#ffffff' : textPrimary,
+                      }}
+                      title="Whole-month view for this branch, filterable by negotiator"
+                    >
+                      <SlidersHorizontal className="w-4 h-4 shrink-0" style={{ color: monthViewActive ? '#ffffff' : green }} strokeWidth={2.1} />
+                      <span className="hidden xl:inline">{monthViewActive ? `Month: ${formatMonthFilterLabel(monthFilterMonth)}` : 'Filters'}</span>
+                    </button>
+                  )}
                 </div>
               </>
             )}
@@ -9312,22 +9451,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
           {/* Right actions — always pinned in view */}
           <div className="hidden md:flex items-center gap-1.5 shrink-0 justify-self-end">
-            {activeTab === 'schedules' && !isMyTickets && (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setMonthFilterModalOpen(true) }}
-                className="flex items-center gap-1.5 h-10 px-2.5 xl:px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-all hover:opacity-90 active:scale-95"
-                style={{
-                  backgroundColor: monthViewActive ? green : inputBg,
-                  border: `1px solid ${monthViewActive ? green : inputBorder}`,
-                  color: monthViewActive ? '#ffffff' : textPrimary,
-                }}
-                title="Whole-month view for this branch, filterable by negotiator"
-              >
-                <SlidersHorizontal className="w-4 h-4 shrink-0" style={{ color: monthViewActive ? '#ffffff' : green }} strokeWidth={2.1} />
-                <span className="hidden xl:inline">{monthViewActive ? `Month: ${formatMonthFilterLabel(monthFilterMonth)}` : 'Filters'}</span>
-              </button>
-            )}
+
 
             {activeTab === 'schedules' && canEdit && !isMyTickets && (
               <button
@@ -9403,6 +9527,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             Month view — {formatMonthFilterLabel(monthFilterMonth)} · {activeBranchLabel || 'All branches'}
             {monthFilterNegotiatorId
               ? ` · ${formatNegotiatorLabel(monthFilterNegotiatorOptions.find(n => n.id === monthFilterNegotiatorId) || {})}`
+              : ''}
+            {monthFilterStatus
+              ? ` · ${monthFilterStatus === 'PENDING_GROUP' ? 'All Pending' : monthFilterStatus === 'CLOSING_GROUP' ? 'All Closing' : getScheduleStatusLabel(monthFilterStatus)}`
               : ''}
             {' '}({visible.length} ticket{visible.length === 1 ? '' : 's'})
           </span>
@@ -9767,7 +9894,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                     }
                                     // VEHICLE is drag-to-reorder now — a tap-to-view-details popup
                                     // on the same cell just gets in the way of grabbing it.
-                                    if (col.label === 'VEHICLE') return
+                                    if (col.label === 'VEHICLE' || col.label === 'TICKET NO') return
                                     setExpandedCell(prev =>
                                       prev?.ticketId === ticket.id && prev?.colLabel === col.label
                                         ? null
@@ -9778,8 +9905,10 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                     e.preventDefault()
                                     e.stopPropagation()
                                     if (!canEdit || isEditingCell || (isGhost && !allowGhostCellEdit)) return
-                                    if (col.label === 'VEHICLE') {
-                                      setSelectedVehicleTicketId(prev => (prev === ticket.id ? null : ticket.id))
+                                    if (col.label === 'VEHICLE' || col.label === 'TICKET NO') {
+                                      if (col.label === 'VEHICLE') {
+                                        setSelectedVehicleTicketId(prev => (prev === ticket.id ? null : ticket.id))
+                                      }
                                       return
                                     }
                                     if (INLINE_EDIT_COLUMNS.has(col.label)) {
@@ -10160,7 +10289,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
                   {/* Search Input Box */}
                   <div
-                    className="w-full max-w-2xl mx-auto flex items-center gap-3 px-8 py-5 md:px-10 md:py-6 rounded-full shadow-md border-2 transition-[border-color,box-shadow] duration-150"
+                    className="w-full max-w-2xl mx-auto flex items-center gap-3 px-5 py-4 md:px-8 md:py-5 rounded-2xl shadow-md border-2 transition-[border-color,box-shadow] duration-150"
                     style={{
                       backgroundColor: cardBg,
                       borderColor: overviewSearchFocused ? green : border,
@@ -10272,10 +10401,20 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                 </div>
                               </div>
 
-                              {/* Customer Name */}
-                              <h3 className="font-extrabold text-base leading-snug tracking-tight" style={{ color: textPrimary }}>
-                                {highlightMatch(customer, overviewSearchInput)}
-                              </h3>
+                              {/* Customer Name & Contact Phone */}
+                              <div className="flex items-baseline gap-2 flex-wrap">
+                                <h3 className="font-extrabold text-base leading-snug tracking-tight" style={{ color: textPrimary }}>
+                                  {highlightMatch(customer, overviewSearchInput)}
+                                </h3>
+                                {formattedCustPhone && (
+                                  <a
+                                    href={`tel:${custPhone.replace(/\D/g, '').replace(/^0/, '+63')}`}
+                                    className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline tracking-tight"
+                                  >
+                                    ({formattedCustPhone})
+                                  </a>
+                                )}
+                              </div>
 
                               {/* Location */}
                               {formatAddress(ticket.location) && (
@@ -10290,18 +10429,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                 className="rounded-xl p-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs"
                                 style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}
                               >
-                                {formattedCustPhone && (
-                                  <div className="flex flex-col gap-0.5">
-                                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Contact No.</span>
-                                    <a
-                                      href={`tel:${custPhone.replace(/\D/g, '').replace(/^0/, '+63')}`}
-                                      className="font-bold text-emerald-600 dark:text-emerald-400 hover:underline tracking-tight"
-                                    >
-                                      {formattedCustPhone}
-                                    </a>
-                                  </div>
-                                )}
-
                                 {(negotiatorLabel !== EMPTY_CELL || negotiatorPhone) && (
                                   <div className="flex flex-col gap-0.5">
                                     <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Negotiator</span>
@@ -10338,22 +10465,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                 <span>{scheduleDateLabel}</span>
                               </div>
                               <div className="flex items-center gap-2 shrink-0">
-                                {isAdmin && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); handleDelete(ticket.id); }}
-                                    className="flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:bg-red-500 hover:text-white"
-                                    style={{ backgroundColor: 'rgba(239,68,68,0.1)', color: '#EF4444' }}
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                    Delete
-                                  </button>
-                                )}
                                 <button
                                   type="button"
                                   onClick={() => {
                                     setDetailTicket(ticket);
-                                    setShowHistoryPanel(true);
+                                    setShowHistoryPanel(false);
                                   }}
                                   className="flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold text-white shadow-sm transition-all hover:opacity-90 active:scale-95"
                                   style={{ backgroundColor: green }}
@@ -10724,6 +10840,17 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                           Edit Details
                         </button>
                       )}
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => { handleDelete(t.id); setDetailTicket(null); setShowHistoryPanel(false) }}
+                          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold border transition-all"
+                          style={{ borderColor: 'rgba(239,68,68,0.3)', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.07)' }}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Delete Ticket
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -10742,10 +10869,20 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       <div className="flex items-center gap-1.5">
                         <Clock className="w-3 h-3 text-emerald-500" />
                         <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500">Update History</span>
+                        <span className="text-[9px] font-bold ml-1" style={{ color: textMuted }}>
+                          · {history.length} {history.length === 1 ? 'entry' : 'entries'}
+                        </span>
                       </div>
-                      <span className="text-[9px] font-bold" style={{ color: textMuted }}>
-                        {history.length} {history.length === 1 ? 'entry' : 'entries'}
-                      </span>
+                      {/* Hide button — visible on mobile to go back to ticket details */}
+                      <button
+                        type="button"
+                        onClick={() => setShowHistoryPanel(false)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all hover:opacity-80 active:scale-95 md:hidden"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textMuted }}
+                      >
+                        <ChevronDown className="w-3 h-3 rotate-90" />
+                        Back to Details
+                      </button>
                     </div>
 
                     {/* Compact feed list */}
@@ -10871,27 +11008,27 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                         )}
                                         {spec.driver && (
                                           <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 9.5, fontWeight: 600, padding: '1.5px 6px', borderRadius: 4, backgroundColor: isLight ? 'rgba(100,116,139,0.08)' : 'rgba(100,116,139,0.14)', color: textPrimary, border: `1px solid ${border}` }}>
-                                            🚗 {spec.driver}
+                                            <span style={{ color: textMuted, marginRight: 3 }}>DRIVER:</span>{spec.driver}
                                           </span>
                                         )}
                                         {spec.installer && (
                                           <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 9.5, fontWeight: 600, padding: '1.5px 6px', borderRadius: 4, backgroundColor: isLight ? 'rgba(100,116,139,0.08)' : 'rgba(100,116,139,0.14)', color: textPrimary, border: `1px solid ${border}` }}>
-                                            🔧 {spec.installer}
+                                            <span style={{ color: textMuted, marginRight: 3 }}>INSTALLER:</span>{spec.installer}
                                           </span>
                                         )}
                                         {spec.dealer && (
                                           <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 9.5, fontWeight: 600, padding: '1.5px 6px', borderRadius: 4, backgroundColor: isLight ? 'rgba(100,116,139,0.08)' : 'rgba(100,116,139,0.14)', color: textPrimary, border: `1px solid ${border}` }}>
-                                            🏪 {spec.dealer}
+                                            <span style={{ color: textMuted, marginRight: 3 }}>DEALER:</span>{spec.dealer}
                                           </span>
                                         )}
                                         {spec.payment && (
                                           <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 9.5, fontWeight: 700, padding: '1.5px 6px', borderRadius: 4, backgroundColor: isLight ? 'rgba(16,185,129,0.1)' : 'rgba(16,185,129,0.15)', color: isLight ? '#047857' : '#6ee7b7', border: `1px solid ${isLight ? 'rgba(16,185,129,0.2)' : 'rgba(16,185,129,0.3)'}` }}>
-                                            ₱ {spec.payment}
+                                            <span style={{ opacity: 0.7, marginRight: 3 }}>PAYMENT:</span>{spec.payment}
                                           </span>
                                         )}
                                         {spec.controlNo && (
                                           <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 9.5, fontWeight: 600, padding: '1.5px 6px', borderRadius: 4, backgroundColor: isLight ? 'rgba(100,116,139,0.08)' : 'rgba(100,116,139,0.14)', color: textMuted, border: `1px solid ${border}` }}>
-                                            #{spec.controlNo}
+                                            <span style={{ marginRight: 2 }}>REF:</span>#{spec.controlNo}
                                           </span>
                                         )}
                                       </div>
@@ -12223,6 +12360,21 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 </label>
               </div>
 
+              {/* Remarks / Reason Input */}
+              <div className="px-5 pb-4">
+                <label className="block text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>
+                  Remarks / Reason <span className="text-amber-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={reschedRemarks}
+                  onChange={e => setReschedRemarks(e.target.value.toUpperCase())}
+                  placeholder="e.g. HINDI MATAWAGAN / CLIENT REQUEST"
+                  className="w-full px-3 py-2 text-xs font-semibold rounded-xl border outline-none uppercase"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
+                />
+              </div>
+
               {/* Footer */}
               <div className="px-5 py-3 flex items-center justify-end gap-2 border-t" style={{ borderColor: border }}>
                 <button
@@ -12586,13 +12738,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           onClick={() => setMonthFilterModalOpen(false)}
         >
           <div
-            className="rounded-2xl shadow-2xl w-full max-w-md border overflow-hidden"
+            className="rounded-2xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col border overflow-hidden"
             style={{ backgroundColor: cardBg, borderColor: border }}
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
             <div
-              className="flex items-center justify-between px-5 py-4 border-b"
+              className="flex items-center justify-between px-5 py-4 border-b shrink-0"
               style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}
             >
               <div className="flex items-center gap-2.5">
@@ -12615,36 +12767,109 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             </div>
 
             {/* Filter controls */}
-            <div className="px-5 py-4 flex flex-col gap-3">
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
-                  Month
-                </label>
-                <input
-                  type="month"
-                  value={monthFilterMonth}
-                  onChange={e => setMonthFilterMonth(e.target.value)}
-                  className="h-10 px-3 rounded-xl border text-sm font-semibold outline-none"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                />
+            <div className="px-5 py-4 flex flex-col gap-4 overflow-y-auto">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex flex-col gap-1 sm:w-56 shrink-0">
+                  <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
+                    Month
+                  </label>
+                  <input
+                    type="month"
+                    value={monthFilterMonth}
+                    onChange={e => setMonthFilterMonth(e.target.value)}
+                    className="h-10 px-3 rounded-xl border text-sm font-semibold outline-none"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  />
+                </div>
+                <div className="flex flex-col gap-1 flex-1 min-w-0">
+                  <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
+                    Negotiator
+                  </label>
+                  <select
+                    value={monthFilterNegotiatorId}
+                    onChange={e => setMonthFilterNegotiatorId(e.target.value)}
+                    className="h-10 px-3 rounded-xl border text-sm font-semibold outline-none"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                    title={activeBranchLabel ? `Negotiators for ${activeBranchLabel}` : 'Filter by negotiator'}
+                  >
+                    <option value="">All negotiators</option>
+                    {monthFilterNegotiatorOptions.map(emp => (
+                      <option key={emp.id} value={emp.id}>{formatNegotiatorLabel(emp)}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div className="flex flex-col gap-1">
+
+              {/* Status — wide pill grid with colored dots, same visual language as the row STATUS picker */}
+              <div className="flex flex-col gap-2">
                 <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
-                  Negotiator
+                  Status
                 </label>
-                <select
-                  value={monthFilterNegotiatorId}
-                  onChange={e => setMonthFilterNegotiatorId(e.target.value)}
-                  className="h-10 px-3 rounded-xl border text-sm font-semibold outline-none"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  title={activeBranchLabel ? `Negotiators for ${activeBranchLabel}` : 'Filter by negotiator'}
-                >
-                  <option value="">All negotiators</option>
-                  {monthFilterNegotiatorOptions.map(emp => (
-                    <option key={emp.id} value={emp.id}>{formatNegotiatorLabel(emp)}</option>
-                  ))}
-                </select>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { value: '', label: 'All statuses' },
+                    { value: 'PENDING_GROUP', label: 'All Pending' },
+                    { value: 'CLOSING_GROUP', label: 'All Closing' },
+                  ].map(opt => {
+                    const active = monthFilterStatus === opt.value
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setMonthFilterStatus(opt.value)}
+                        className="px-3 h-8 rounded-full text-[11px] font-black uppercase tracking-wide transition-colors border"
+                        style={active
+                          ? { backgroundColor: green, borderColor: green, color: '#ffffff' }
+                          : { backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}
+                      >
+                        {opt.label}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {([
+                  { title: 'PENDING', opts: SCHEDULE_PENDING_OPTS },
+                  { title: 'CLOSING', opts: SCHEDULE_CLOSING_OPTS },
+                ] as const).map(section => (
+                  <div key={section.title} className="flex flex-col gap-1.5">
+                    <p className="text-[9px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>
+                      {section.title}
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                      {section.opts.map(opt => {
+                        const active = monthFilterStatus === opt.value
+                        const style = getScheduleStatusBadgeStyle(opt.value, isLight)
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setMonthFilterStatus(active ? '' : opt.value)}
+                            className="flex items-center gap-2 px-2.5 h-9 rounded-lg text-left transition-colors border min-w-0"
+                            style={active
+                              ? { backgroundColor: green, borderColor: green }
+                              : { backgroundColor: 'transparent', borderColor: inputBorder }}
+                          >
+                            <span
+                              className="w-2 h-2 rounded-full shrink-0 border"
+                              style={active
+                                ? { backgroundColor: '#ffffff', borderColor: '#ffffff' }
+                                : { backgroundColor: style.color, borderColor: style.borderColor }}
+                            />
+                            <span
+                              className="text-[10.5px] font-bold uppercase tracking-wide truncate"
+                              style={{ color: active ? '#ffffff' : textPrimary }}
+                            >
+                              {opt.label}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
+
               {monthFilterError && (
                 <div className="text-xs font-semibold text-red-500">{monthFilterError}</div>
               )}
@@ -12652,7 +12877,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 type="button"
                 onClick={runMonthFilterQuery}
                 disabled={monthFilterLoading || !monthFilterMonth}
-                className="h-10 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                className="h-10 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60 flex items-center justify-center gap-2 shrink-0"
                 style={{ backgroundColor: green }}
               >
                 {monthFilterLoading ? (
@@ -12663,8 +12888,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 ) : 'Apply'}
               </button>
               <p className="text-[11px] leading-relaxed" style={{ color: textMuted }}>
-                Loads every ticket scheduled that month for this branch straight into the table below.
-                Click a day chip above (or pick a custom date) to go back to the normal single-day view.
+                Loads every ticket scheduled that month for this branch straight into the table below —
+                narrow by negotiator and/or status. Click a day chip above (or pick a custom date) to go
+                back to the normal single-day view.
               </p>
             </div>
           </div>

@@ -105,6 +105,8 @@ export function resolveScheduleStatusFields(rawValue: string): ResolvedScheduleS
       return { status: 'COMPLETED', ticketCategory: 'SERVICES', scheduleOutcome: 'DONE_CHECKUP', schedulePhase: '' }
     case 'DONE_BACKJOB':
       return { status: 'COMPLETED', ticketCategory: 'SERVICES', scheduleOutcome: 'DONE_BACKJOB', schedulePhase: '' }
+    case 'DONE_SERVICE':
+      return { status: 'COMPLETED', ticketCategory: 'SERVICES', scheduleOutcome: 'DONE_SERVICE', schedulePhase: '' }
     case 'DONE_SURVEY':
       return { status: 'COMPLETED', ticketCategory: 'SURVEY', scheduleOutcome: 'DONE_SURVEY', schedulePhase: '' }
     case 'DONE_INSTALLED':

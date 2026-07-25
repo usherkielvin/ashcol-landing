@@ -602,10 +602,10 @@ export default function Bills() {
                 <textarea
                   rows={2}
                   value={payRemarks}
-                  onChange={e => setPayRemarks(e.target.value)}
+                  onChange={e => setPayRemarks(e.target.value.toUpperCase())}
                   placeholder="Payment transaction details or reference #…"
-                  className="w-full px-3 py-2 rounded-xl text-xs font-semibold focus:outline-none"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                  className="w-full px-3 py-2 rounded-xl text-xs font-semibold focus:outline-none uppercase"
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, textTransform: 'uppercase' }}
                 />
               </div>
               <div className="flex justify-end gap-2 pt-2">

@@ -116,7 +116,7 @@ export function ScheduleEditTicketModal({
   onSave,
 }: ScheduleEditTicketModalProps) {
   const CLOSING_STATUSES = new Set([
-    'DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB',
+    'DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB', 'DONE_SERVICE',
     'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE',
     'CANCELLED', 'COMPLETED', 'INSTALLED',
   ])
@@ -359,7 +359,7 @@ export function ScheduleEditTicketModal({
 
           {/* Remarks */}
           <Field label="Remarks / Update" span>
-            <textarea value={form.remarks || ''} onChange={e => onChange({ remarks: e.target.value })} rows={2} style={{ ...inp, resize: 'none' }} placeholder="Any notes or update…" />
+            <textarea value={form.remarks || ''} onChange={e => onChange({ remarks: e.target.value.toUpperCase() })} rows={2} style={{ ...inp, resize: 'none', textTransform: 'uppercase' }} className="uppercase" placeholder="Any notes or update…" />
           </Field>
 
           {/* Payment */}

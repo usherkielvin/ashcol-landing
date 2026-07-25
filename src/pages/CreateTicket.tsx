@@ -625,10 +625,10 @@ export default function CreateTicket() {
             </div>
             <div>
               <FL label="Additional Notes (optional)" />
-              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
+              <textarea value={description} onChange={e => setDescription(e.target.value.toUpperCase())} rows={3}
                 placeholder="Describe specific issues or requirements..."
-                className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] resize-none"
-                style={inputSty}
+                className="w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] resize-none uppercase"
+                style={{ ...inputSty, textTransform: 'uppercase' }}
               />
             </div>
           </div>
