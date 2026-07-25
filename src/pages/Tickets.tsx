@@ -10505,8 +10505,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         const phone = getF(t, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
         const installer = getInstallerDisplay(t, branchEmployees, activeBranchId)
         const serviceDriver = formatServiceDriver(t)
-        const update = t.remarks || ''
-        const note = t.note || ''
+        const update = ((t as any).remarksUpdate || (t as any).remarks_update || t.remarks || '').trim()
+        const note = (t.note || '').trim()
         const commit = getTicketCommitDisplay(t)
         const custName = getCustomerDisplayName(t) || t.title
         const negotiatorId = t.negotiatorId || t.negotiator_id || ''
@@ -10707,37 +10707,33 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       </div>
                     </div>
 
-                    {(commit || note || update) && (
-                      <div className="space-y-4">
-                        {commit && (
-                          <div>
-                            <SHead title={isTaguigServices ? "Commit (Amount)" : "Commit / Description"} />
-                            <p className="text-xs leading-relaxed rounded-xl p-4"
-                              style={{ backgroundColor: inputBg, color: textPrimary, border: `1px solid ${border}` }}>
-                              {commit}
-                            </p>
-                          </div>
-                        )}
-                        {note && (
-                          <div>
-                            <SHead title={isTaguigServices ? "Confirmation" : "Note"} />
-                            <p className="text-xs leading-relaxed rounded-xl p-4 font-semibold"
-                              style={{ backgroundColor: inputBg, color: '#EF4444', border: `1px solid ${border}` }}>
-                              {note}
-                            </p>
-                          </div>
-                        )}
-                        {update && (
-                          <div>
-                            <SHead title={isTaguigServices ? "Service Status" : "Remarks / Update"} />
-                            <p className="text-xs leading-relaxed rounded-xl p-4 font-semibold"
-                              style={{ backgroundColor: inputBg, color: updateColor, border: `1px solid ${border}` }}>
-                              {update}
-                            </p>
-                          </div>
-                        )}
+                    <div className="space-y-4">
+                      {commit && (
+                        <div>
+                          <SHead title={isTaguigServices ? "Commit (Amount)" : "Commit / Description"} />
+                          <p className="text-xs leading-relaxed rounded-xl p-4"
+                            style={{ backgroundColor: inputBg, color: textPrimary, border: `1px solid ${border}` }}>
+                            {commit}
+                          </p>
+                        </div>
+                      )}
+                      {note && (
+                        <div>
+                          <SHead title={isTaguigServices ? "Confirmation" : "Note"} />
+                          <p className="text-xs leading-relaxed rounded-xl p-4 font-semibold"
+                            style={{ backgroundColor: inputBg, color: '#EF4444', border: `1px solid ${border}` }}>
+                            {note}
+                          </p>
+                        </div>
+                      )}
+                      <div>
+                        <SHead title={isTaguigServices ? "Service Status" : "Remarks / Update"} />
+                        <p className="text-xs leading-relaxed rounded-xl p-4 font-semibold break-words whitespace-pre-wrap"
+                          style={{ backgroundColor: inputBg, color: update ? updateColor : textMuted, border: `1px solid ${border}` }}>
+                          {update || EMPTY_CELL}
+                        </p>
                       </div>
-                    )}
+                    </div>
 
                     {/* Actions at bottom of details column */}
                     <div className="flex flex-col sm:flex-row gap-2.5 pt-2 pb-6 sm:pb-2 border-t" style={{ borderColor: border }}>
@@ -10759,17 +10755,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                         >
                           <Edit3 className="w-3.5 h-3.5" style={{ color: '#6366F1' }} />
                           Edit Details
-                        </button>
-                      )}
-                      {isAdmin && (
-                        <button
-                          type="button"
-                          onClick={() => { handleDelete(t.id); setDetailTicket(null); setShowHistoryPanel(false) }}
-                          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold border transition-all"
-                          style={{ borderColor: 'rgba(239,68,68,0.3)', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.07)' }}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          Delete Ticket
                         </button>
                       )}
                     </div>
