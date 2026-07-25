@@ -9845,26 +9845,26 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     let totalOther = 0;
 
                     visible.forEach(ticket => {
-                      const rawMode = getPaymentMode(ticket).trim().toUpperCase();
-                      const amountStr = formatPaymentAmount(ticket);
-                      let amount = parseFloat(amountStr.replace(/,/g, ''));
-                      if (isNaN(amount)) amount = 0;
+                      const ghostKind = dateFilter ? getScheduleGhostKind(ticket, dateFilter) : null;
+                      if (shouldBlankReschedGhostPayment(dateFilter, ghostKind)) return;
+
+                      const { mode: rawMode, amount } = resolveTicketPayment(ticket);
 
                       if (rawMode === 'HYBRID') {
                         const breakdown = getPaymentBreakdown(ticket);
                         breakdown.forEach(entry => {
-                          const subRawMode = entry.mode.toUpperCase();
-                          const subAmount = entry.amount;
+                          const subRawMode = (entry.mode || '').trim().toUpperCase();
+                          const subAmount = entry.amount || 0;
                           if (subRawMode === 'CASH') totalCash += subAmount;
                           else if (subRawMode === 'GCASH') totalGcash += subAmount;
-                          else if (subRawMode === 'BANK TRANSFER') totalBankTransfer += subAmount;
-                          else totalOther += subAmount;
+                          else if (subRawMode === 'BANK TRANSFER' || subRawMode === 'BANK_TRANSFER' || subRawMode === 'BANK' || subRawMode === 'ONLINE') totalBankTransfer += subAmount;
+                          else if (subAmount > 0) totalOther += subAmount;
                         });
                       } else {
                         if (rawMode === 'CASH') totalCash += amount;
                         else if (rawMode === 'GCASH') totalGcash += amount;
-                        else if (rawMode === 'BANK TRANSFER') totalBankTransfer += amount;
-                        else totalOther += amount;
+                        else if (rawMode === 'BANK TRANSFER' || rawMode === 'BANK_TRANSFER' || rawMode === 'BANK' || rawMode === 'ONLINE') totalBankTransfer += amount;
+                        else if (amount > 0) totalOther += amount;
                       }
                     });
 
@@ -10133,6 +10133,74 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       )
                     })
                   )}
+                  {(() => {
+                    let totalCash = 0;
+                    let totalGcash = 0;
+                    let totalBankTransfer = 0;
+                    let totalOther = 0;
+
+                    visible.forEach(ticket => {
+                      const ghostKind = dateFilter ? getScheduleGhostKind(ticket, dateFilter) : null;
+                      if (shouldBlankReschedGhostPayment(dateFilter, ghostKind)) return;
+
+                      const { mode: rawMode, amount } = resolveTicketPayment(ticket);
+
+                      if (rawMode === 'HYBRID') {
+                        const breakdown = getPaymentBreakdown(ticket);
+                        breakdown.forEach(entry => {
+                          const subRawMode = (entry.mode || '').trim().toUpperCase();
+                          const subAmount = entry.amount || 0;
+                          if (subRawMode === 'CASH') totalCash += subAmount;
+                          else if (subRawMode === 'GCASH') totalGcash += subAmount;
+                          else if (subRawMode === 'BANK TRANSFER' || subRawMode === 'BANK_TRANSFER' || subRawMode === 'BANK' || subRawMode === 'ONLINE') totalBankTransfer += subAmount;
+                          else if (subAmount > 0) totalOther += subAmount;
+                        });
+                      } else {
+                        if (rawMode === 'CASH') totalCash += amount;
+                        else if (rawMode === 'GCASH') totalGcash += amount;
+                        else if (rawMode === 'BANK TRANSFER' || rawMode === 'BANK_TRANSFER' || rawMode === 'BANK' || rawMode === 'ONLINE') totalBankTransfer += amount;
+                        else if (amount > 0) totalOther += amount;
+                      }
+                    });
+
+                    const totalEstimated = totalCash + totalGcash + totalBankTransfer + totalOther;
+                    if (totalEstimated <= 0) return null;
+
+                    return (
+                      <div className="mt-3 p-3 rounded-xl border flex flex-col gap-2 shadow-sm" style={{ backgroundColor: cardBg, borderColor: tableBorder }}>
+                        <div className="flex items-center justify-between px-3 py-2 rounded-lg font-black" style={{ backgroundColor: '#16a34a', color: '#fff' }}>
+                          <span className="text-[11px] uppercase tracking-wider">TOTAL COLLECTION</span>
+                          <span className="text-xs font-black tracking-wide">
+                            ₱{totalEstimated.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                        {totalGcash > 0 && (
+                          <div className="flex items-center justify-between px-3 py-1.5 rounded-lg text-[11px] font-bold" style={{ backgroundColor: '#dbeafe', color: '#000' }}>
+                            <span>GCASH</span>
+                            <span>₱{totalGcash.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
+                        {totalCash > 0 && (
+                          <div className="flex items-center justify-between px-3 py-1.5 rounded-lg text-[11px] font-bold" style={{ backgroundColor: '#dcfce7', color: '#000' }}>
+                            <span>CASH</span>
+                            <span>₱{totalCash.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
+                        {totalBankTransfer > 0 && (
+                          <div className="flex items-center justify-between px-3 py-1.5 rounded-lg text-[11px] font-bold" style={{ backgroundColor: '#f3e8ff', color: '#000' }}>
+                            <span>BANK TRANSFER</span>
+                            <span>₱{totalBankTransfer.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
+                        {totalOther > 0 && (
+                          <div className="flex items-center justify-between px-3 py-1.5 rounded-lg text-[11px] font-bold" style={{ backgroundColor: '#f3e8ff', color: '#000' }}>
+                            <span>OTHER</span>
+                            <span>₱{totalOther.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
