@@ -5,7 +5,7 @@ import {
   Plus, Search, X, Edit3, AlertTriangle, CalendarDays,
   Eye, Loader2, Pencil, Clock, Moon, Sun, Trash2, Car,
   ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Maximize2,
-  UsersRound, ChevronDown, Wrench,
+  UsersRound, ChevronDown, Wrench, SlidersHorizontal, CalendarRange,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -241,8 +241,8 @@ function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: 
   if (normalized === 'SURVEY') {
     return { color: isLight ? '#6d28d9' : '#c4b5fd', backgroundColor: isLight ? '#ede9fe' : 'rgba(139,92,246,0.18)', borderColor: isLight ? '#c4b5fd' : 'rgba(139,92,246,0.35)' }
   }
-  if (normalized === 'DONE_SURVEY' || normalized === 'DONE_CHECKUP') {
-    return { color: isLight ? '#a16207' : '#fbbf24', backgroundColor: isLight ? '#fef9c3' : 'rgba(251,191,36,0.14)', borderColor: isLight ? '#fcd34d' : 'rgba(251,191,36,0.35)' }
+  if (normalized === 'DONE_SURVEY' || normalized === 'DONE_CHECKUP' || normalized === 'DONE_BACKJOB' || normalized === 'BACKJOB') {
+    return { color: isLight ? '#a16207' : '#fbbf24', backgroundColor: isLight ? '#fef9c3' : 'rgba(251,191,36,0.18)', borderColor: isLight ? '#fcd34d' : 'rgba(251,191,36,0.35)' }
   }
   if (normalized === 'RESCHED') {
     return { color: isLight ? '#a16207' : '#fbbf24', backgroundColor: isLight ? '#fef9c3' : 'rgba(251,191,36,0.14)', borderColor: isLight ? '#fcd34d' : 'rgba(251,191,36,0.35)' }
@@ -258,7 +258,6 @@ function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: 
     normalized === 'INSTALLED' ||
     normalized === 'COMPLETED' ||
     normalized === 'DONE_CLEANING' ||
-    normalized === 'DONE_BACKJOB' ||
     normalized === 'DONE_QUOTATION'
   ) {
     return { color: isLight ? '#15803d' : '#86efac', backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.18)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)' }
@@ -452,6 +451,8 @@ function ticketMatchesOverviewQuery(ticket: Ticket, rawQuery: string): boolean {
     const phone = (ticket.contactPhone || ticket.contact_phone || ticket.customer_phone || ticket.phone || '')
       .replace(/\D/g, '')
     if (phone && phone.includes(qDigits)) return true
+    const negPhone = ((ticket as any).negotiatorPhone || (ticket as any).negotiator_phone || '').replace(/\D/g, '')
+    if (negPhone && negPhone.includes(qDigits)) return true
   }
 
   return getOverviewSearchRelevanceScore(ticket, q) >= 25
@@ -1032,8 +1033,8 @@ function getScheduleRowColors(
 
   if (outcome === 'DONE_BACKJOB') {
     return {
-      baseBg: isLight ? '#eff6ff' : 'rgba(59,130,246,0.07)',
-      accent: '#3B82F6',
+      baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.08)',
+      accent: '#f59e0b',
     }
   }
 
@@ -1408,21 +1409,22 @@ function isMovedToRescheduleRemark(text: string): boolean {
  */
 function buildReschedulePatchBody(
   ticket: Ticket,
-  options: { newDateKey?: string | null; pending: boolean },
+  options: { newDateKey?: string | null; pending: boolean; remarks?: string },
 ): Record<string, unknown> {
   const oldDateKey = getEffectiveScheduleDateKey(ticket) || getPreferredDateKey(ticket)
   const body: Record<string, unknown> = { status: 'RESCHED' }
   const acUpdates: Record<string, unknown> = { scheduleOutcome: '' }
+  const userRemarks = (options.remarks || '').trim()
 
   if (options.pending) {
     acUpdates.reschedulePending = true
-    const base = (ticket.remarksUpdate || ticket.remarks || '').trim()
-    if (!base) {
-      body.remarks = 'PENDING'
-      body.remarksUpdate = 'PENDING'
-      acUpdates.remarksUpdate = 'PENDING'
-      acUpdates.update = 'PENDING'
-    }
+    const formattedRemarks = userRemarks
+      ? `RESCHED PENDING: ${userRemarks}`
+      : 'PENDING'
+    body.remarks = formattedRemarks
+    body.remarksUpdate = formattedRemarks
+    acUpdates.remarksUpdate = formattedRemarks
+    acUpdates.update = formattedRemarks
   } else {
     const newDateKey = (options.newDateKey || '').split('T')[0].trim()
     if (!newDateKey) return {}
@@ -1449,13 +1451,15 @@ function buildReschedulePatchBody(
         : [...priorHistory, oldDateKey]
       // Cosmetic — drives the ghost row's "Moved to <date>" label; never used for date-matching.
       acUpdates.rescheduledTo = newDateKey
-      const formattedNewDate = formatDateKeyLabel(newDateKey)
-      const reschedMsg = `Moved to ${formattedNewDate}`
-      body.remarks = reschedMsg
-      body.remarksUpdate = reschedMsg
-      acUpdates.remarksUpdate = reschedMsg
-      acUpdates.update = reschedMsg
     }
+    const formattedNewDate = formatDateKeyLabel(newDateKey)
+    const formattedRemarks = userRemarks
+      ? `Moved to ${formattedNewDate} - ${userRemarks}`
+      : `Moved to ${formattedNewDate}`
+    body.remarks = formattedRemarks
+    body.remarksUpdate = formattedRemarks
+    acUpdates.remarksUpdate = formattedRemarks
+    acUpdates.update = formattedRemarks
   }
 
   body.acDetails = mergeAcMeta(ticket, acUpdates)
@@ -1770,12 +1774,22 @@ function resolveTicketPaymentModeRaw(ticket: Ticket): string {
   return sanitizeDisplayText(raw)
 }
 
-function resolveTicketPayment(ticket: Ticket): { mode: string; amount?: number } {
+function resolveTicketPayment(ticket: Ticket): { mode: string; amount: number } {
   let mode = resolveTicketPaymentModeRaw(ticket)
   let amount = resolveTicketPaymentAmount(ticket)
 
+  if (mode === 'FREE' || mode === 'FREE INSTALL' || mode === 'FREE_INSTALL') {
+    return { mode: 'FREE INSTALL', amount: 0 }
+  }
+
   if (isNoPaymentMode(mode)) {
-    return { mode: '', amount: undefined }
+    return { mode: 'NO PAYMENT', amount: 0 }
+  }
+
+  const st = getScheduleStatusValue(ticket)
+  const isCheckupStatus = st === 'DONE_CHECKUP' || st === 'DONE_BACKJOB' || st === 'DONE_SYSTEM_REPROCESS' || st === 'DONE_DISMANTLE'
+  if (isCheckupStatus && (!amount || amount <= 0)) {
+    return { mode: mode || 'NO PAYMENT', amount: 0 }
   }
 
   if ((!amount || amount <= 0) && mode) {
@@ -1786,20 +1800,17 @@ function resolveTicketPayment(ticket: Ticket): { mode: string; amount?: number }
     mode = normalizeImportPaymentMode(mode) || mode.toUpperCase()
   }
 
-  if (mode === 'FREE' || mode === 'FREE INSTALL') {
-    return { mode: 'FREE', amount: undefined }
-  }
-
   return {
-    mode: (mode || '').trim().toUpperCase(),
-    amount: amount && amount > 0 ? amount : undefined,
+    mode: (mode || '').trim().toUpperCase() || 'NO PAYMENT',
+    amount: amount && amount > 0 ? amount : 0,
   }
 }
 
 function formatPaymentAmount(ticket: Ticket): string {
-  const amount = resolveTicketPayment(ticket).amount
-  if (amount == null) return ''
-  return amount.toLocaleString('en-PH')
+  const { mode, amount } = resolveTicketPayment(ticket)
+  if (mode === 'FREE' || mode === 'FREE INSTALL') return 'FREE ₱0'
+  if (amount == null || amount <= 0) return '₱0'
+  return `₱${amount.toLocaleString('en-PH')}`
 }
 
 function getSchedulePaymentDisplay(
@@ -1809,46 +1820,30 @@ function getSchedulePaymentDisplay(
 ): string {
   if (shouldBlankReschedGhostPayment(dateKey, ghostKind)) return ''
   const resolved = resolveTicketPayment(ticket)
-  if (resolved.mode === 'FREE' || resolved.mode === 'FREE INSTALL') return 'FREE'
+  if (resolved.mode === 'FREE' || resolved.mode === 'FREE INSTALL') return 'FREE ₱0'
 
-  const mode = resolved.mode || (() => {
-    const ext = ticket as Ticket & { paymentStatus?: string; paymentMode?: string }
-    const modeRaw = (
-      ticket.modeOfPayment
-      ?? ticket.mode_of_payment
-      ?? ext.paymentStatus
-      ?? ext.paymentMode
-      ?? ''
-    ).trim()
-    return normalizeImportPaymentMode(modeRaw) || modeRaw.toUpperCase()
-  })()
-
-  const amount = resolved.amount ?? parseImportMoney(
-    ticket.installationCharges ?? ticket.installation_charges ?? ticket.amountCharged,
-  )
-  const amountStr = amount != null && amount > 0
-    ? Math.round(amount).toLocaleString('en-PH')
-    : ''
+  const amount = resolved.amount
+  const amountStr = amount > 0 ? Math.round(amount).toLocaleString('en-PH') : '0'
+  const mode = resolved.mode
   const breakdownStr = mode === 'HYBRID' ? formatPaymentBreakdownText(getPaymentBreakdown(ticket)) : ''
 
-  if (mode && amountStr) return breakdownStr ? `${amountStr} ${mode} ${breakdownStr}` : `${amountStr} ${mode}`
-  if (mode) return mode
-  if (amountStr) return amountStr
-  return ''
+  if (amount === 0 && (!mode || mode === 'NO PAYMENT')) return '₱0'
+  if (mode && amountStr !== '0') return breakdownStr ? `${amountStr} ${mode} ${breakdownStr}` : `${amountStr} ${mode}`
+  if (mode) return `${mode} ₱${amountStr}`
+  return `₱${amountStr}`
 }
 
 function formatCombinedPayment(ticket: Ticket): string {
   const { mode, amount } = resolveTicketPayment(ticket)
-  if (mode === 'FREE' || mode === 'FREE INSTALL') return 'FREE'
-  const amountStr = amount != null ? amount.toLocaleString('en-PH') : ''
-  if (mode && amountStr) return `${mode} ${amountStr}`
-  if (mode) return mode
-  if (amountStr) return amountStr
-  return ''
+  if (mode === 'FREE' || mode === 'FREE INSTALL') return 'FREE ₱0'
+  const amountStr = amount > 0 ? `₱${amount.toLocaleString('en-PH')}` : '₱0'
+  if (mode && mode !== 'NO PAYMENT') return `${mode} ${amountStr}`
+  return amountStr
 }
 
 function getPaymentMode(ticket: Ticket): string {
-  return resolveTicketPayment(ticket).mode
+  const { mode } = resolveTicketPayment(ticket)
+  return mode || 'NO PAYMENT'
 }
 
 type PaymentBreakdownEntry = { mode: string; amount: number }
@@ -1965,6 +1960,15 @@ function formatDisplayDate(key?: string | null, fallback = EMPTY_CELL): string {
   if (!normalized) return fallback
   const label = formatDateKeyLabel(normalized)
   return label || fallback
+}
+
+/** "2026-07" → "Jul 2026", for the Filters button's active-month label. */
+function formatMonthFilterLabel(monthKey: string): string {
+  const [y, m] = monthKey.split('-')
+  const year = Number(y)
+  const monthIdx = Number(m) - 1
+  if (!year || monthIdx < 0 || monthIdx > 11) return monthKey
+  return new Date(year, monthIdx, 1).toLocaleDateString('en-PH', { month: 'short', year: 'numeric' })
 }
 
 function getCustomerDisplayName(ticket: Ticket): string {
@@ -2792,6 +2796,180 @@ function fmtPhone(raw: string): string {
   }
   return nums.slice(0, 2).map(n => n.replace(/^(\d{4})(\d{3})(\d{4})$/, '$1 $2 $3')).join(' / ')
 }
+
+function getFirstNameUpper(raw?: string | null): string {
+  if (!raw || !raw.trim()) return EMPTY_CELL
+  let cleaned = raw.trim()
+  if (cleaned.includes('@')) {
+    cleaned = cleaned.split('@')[0].replace(/[\._]/g, ' ')
+  }
+  cleaned = cleaned.replace(/^(sir|ma'am|maam|mr|ms|mrs|engr)\.?\s+/i, '')
+  const firstWord = cleaned.split(/\s+/)[0]
+  return firstWord ? firstWord.toUpperCase() : EMPTY_CELL
+}
+
+function formatDateKeyWithDay(dateKey: string): string {
+  if (!dateKey || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return dateKey
+  const d = new Date(`${dateKey}T00:00:00`)
+  if (isNaN(d.getTime())) return dateKey
+  const monthName = d.toLocaleDateString('en-US', { month: 'long' })
+  const dayNum = d.getDate()
+  const year = d.getFullYear()
+  const dayOfWeek = d.toLocaleDateString('en-US', { weekday: 'long' })
+  return `${monthName} ${dayNum}, ${year} ${dayOfWeek}`
+}
+
+type HistorySpecifics = {
+  title: string
+  remarks?: string
+  driver?: string
+  installer?: string
+  dealer?: string
+  serviceType?: string
+  payment?: string
+  controlNo?: string
+}
+
+function parseHistorySpecifics(rawNote?: string | null): HistorySpecifics {
+  if (!rawNote || !rawNote.trim()) return { title: 'Ticket updated' }
+
+  const fullRaw = rawNote.trim()
+  const specifics: HistorySpecifics = { title: 'Ticket updated' }
+
+  // 1. Extract bracketed [key=value] pairs first
+  const bracketMatches = Array.from(fullRaw.matchAll(/\[([\w_]+)=([^\]]*)\]/g))
+  let modeOfPay = ''
+  let chargesAmt = ''
+
+  for (const match of bracketMatches) {
+    const key = match[1].toLowerCase()
+    const val = match[2].trim()
+    if (!val) continue
+
+    if (['remarks', 'note', 'update', 'reason', 'change_note', 'changenote'].includes(key)) {
+      specifics.remarks = val
+    } else if (['driver', 'vehicle', 'service_driver'].includes(key)) {
+      specifics.driver = val
+    } else if (['installer', 'technician', 'tech'].includes(key)) {
+      specifics.installer = val
+    } else if (['dealer', 'store', 'dlr'].includes(key)) {
+      if (val !== 'Direct') specifics.dealer = val
+    } else if (['control_number', 'control_no', 'controlno', 'si', 'si_number'].includes(key)) {
+      specifics.controlNo = val
+    } else if (['mode_of_payment', 'payment_mode', 'payment'].includes(key)) {
+      modeOfPay = val
+    } else if (['amount_charged', 'charges', 'installation_charges', 'amount'].includes(key)) {
+      chargesAmt = `₱${Number(val.replace(/\D/g, '') || val).toLocaleString()}`
+    } else if (key === 'status' || key === 'new_status') {
+      specifics.title = `Status set to ${val}`
+    } else if (['preferred_date', 'new_preferred_date', 'rescheduled_to'].includes(key)) {
+      specifics.title = `Moved to ${formatDateKeyWithDay(val)}`
+    }
+  }
+
+  if (modeOfPay || chargesAmt) {
+    specifics.payment = [modeOfPay, chargesAmt].filter(Boolean).join(' · ')
+  }
+
+  // 2. Clean bracket tags for free text analysis
+  let text = fullRaw.replace(/\[\w+=[^\]]*\]/g, '').trim()
+  text = text.replace(/^(Ticket details updated|Ticket updated|Update ticket|acDetails updated)[\s\:\.]*/i, '').trim()
+
+  // 3. Free text reschedule & status patterns
+  if (specifics.title === 'Ticket updated') {
+    const reschedMatch = fullRaw.match(/(?:Rescheduled from \d{4}-\d{2}-\d{2} to|Moved to|Final date set to)\s*(\d{4}-\d{2}-\d{2})/i)
+    if (reschedMatch && reschedMatch[1]) {
+      specifics.title = `Moved to ${formatDateKeyWithDay(reschedMatch[1])}`
+    } else if (/Status (changed|set) to/i.test(fullRaw)) {
+      const stMatch = fullRaw.match(/Status (?:changed|set) to ([^\.\;]+)/i)
+      specifics.title = stMatch ? `Status set to ${stMatch[1].trim()}` : 'Status updated'
+    } else if (/Submitted|Created/i.test(fullRaw)) {
+      specifics.title = 'Ticket created'
+    } else if (/Assignee (changed|updated)/i.test(fullRaw)) {
+      specifics.title = 'Assignee updated'
+    }
+  }
+
+  // 4. Free text remarks / driver / installer / dealer / payment / control number
+  if (!specifics.remarks) {
+    const remarksMatch = text.match(/(?:Remarks|Update|Note|added remarks)[^\:\-\=]*[\:\=]\s*([^\.\;\n]+)/i)
+      || text.match(/(?:Moved to|Rescheduled to)[^\-\:]*[\-\:]\s*(.+)/i)
+    if (remarksMatch && remarksMatch[1]) {
+      const rem = remarksMatch[1].trim()
+      if (rem && !/^(SCHEDULED|PENDING)$/i.test(rem)) {
+        specifics.remarks = rem
+      }
+    } else if (text && !/^(Ticket|acDetails|Details)/i.test(text) && text.length > 2) {
+      specifics.remarks = text
+    }
+  }
+
+  if (!specifics.driver) {
+    const driverMatch = fullRaw.match(/Driver\s*(?:set to|changed to|\:)\s*([^\.\;\n\]]+)/i)
+    const vehicleMatch = fullRaw.match(/Vehicle\s*(?:set to|changed to|\:)\s*([^\.\;\n\]]+)/i)
+    if (driverMatch && driverMatch[1]) {
+      const drv = driverMatch[1].trim()
+      const veh = vehicleMatch && vehicleMatch[1] ? vehicleMatch[1].trim() : ''
+      specifics.driver = veh ? `${drv} (${veh})` : drv
+    } else if (vehicleMatch && vehicleMatch[1]) {
+      specifics.driver = vehicleMatch[1].trim()
+    }
+  }
+
+  if (!specifics.installer) {
+    const installerMatch = fullRaw.match(/(?:Installer|Technician)\s*(?:name)?\s*(?:set to|changed to|\:)\s*([^\.\;\n\]]+)/i)
+    if (installerMatch && installerMatch[1]) specifics.installer = installerMatch[1].trim()
+  }
+
+  if (!specifics.dealer) {
+    const dealerMatch = fullRaw.match(/Dealer (?:set to|\:)\s*([^\.\;\n\]]+)/i)
+    if (dealerMatch && dealerMatch[1]) {
+      const dVal = dealerMatch[1].trim()
+      if (dVal && dVal !== 'Direct') specifics.dealer = dVal
+    }
+  }
+
+  if (!specifics.payment) {
+    const chargesMatch = fullRaw.match(/Installation charges set to (\d+)/i)
+    const modeMatch = fullRaw.match(/Mode of payment set to ([^\.\;\n\]]+)/i)
+    if (chargesMatch || modeMatch) {
+      const mode = modeMatch ? modeMatch[1].trim() : ''
+      const charges = chargesMatch ? `₱${Number(chargesMatch[1]).toLocaleString()}` : ''
+      specifics.payment = [mode, charges].filter(Boolean).join(' · ')
+    }
+  }
+
+  if (!specifics.controlNo) {
+    const controlMatch = fullRaw.match(/Control number set to ([^\.\;\n\]]+)/i)
+    if (controlMatch && controlMatch[1]) specifics.controlNo = controlMatch[1].trim()
+  }
+
+  // Sanitize remarks: hide if it's just auto-generated system log sentences
+  if (specifics.remarks) {
+    const isSystemLog = /(?:Status changed|Assignee changed|Driver set to|Vehicle set to|Title set to|AC details updated|Actual completion|Dealer set to|Installer name set to|Installation charges|Mode of payment|Control number set to|Store referral fee)/i.test(specifics.remarks)
+    if (isSystemLog) {
+      specifics.remarks = undefined
+    }
+  }
+
+  // 5. Intelligent title fallback
+  if (specifics.title === 'Ticket updated') {
+    if (specifics.remarks) {
+      specifics.title = 'Remarks / Note updated'
+    } else if (specifics.driver || specifics.installer) {
+      specifics.title = 'Personnel assigned'
+    } else if (specifics.payment) {
+      specifics.title = 'Payment details updated'
+    } else if (specifics.controlNo) {
+      specifics.title = 'Control No. updated'
+    } else if (specifics.dealer) {
+      specifics.title = 'Dealer updated'
+    }
+  }
+
+  return specifics
+}
+
 
 function getBranchDisplayName(id: string | null): string {
   if (!id || id === 'ALL_BRANCHES') return 'All branches'
@@ -3683,6 +3861,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   }, [persistSchedulesSnapshot])
 
   const hydrateFromTabCache = useCallback((): boolean => {
+    // Month view populates `tickets` directly from its own fetch — the per-day/branch cache
+    // underneath belongs to a different (single-day) query shape and must not overwrite it.
+    if (monthViewActiveRef.current) return false
     const cached = readSchedulesTabCache(schedulesCacheKeyForTab())
     if (!Array.isArray(cached?.tickets)) return false
 
@@ -3768,6 +3949,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
   const handleDateFilterChange = useCallback((next: string) => {
     if (next) { try { sessionStorage.setItem(SCHEDULES_ACTIVE_DATE_KEY, next) } catch { /* ignore */ } }
+    // Picking a specific day is an explicit "go back to normal Schedules" action.
+    setMonthViewActive(false)
     setDateFilter(next)
     resetTicketTableScroll()
   }, [])
@@ -4178,6 +4361,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const [reschedToDate, setReschedToDate] = useState('')
   const [reschedPending, setReschedPending] = useState(false)
   const [reschedCalMonth, setReschedCalMonth] = useState<{ year: number; month: number } | null>(null)
+  const [reschedRemarks, setReschedRemarks] = useState('')
 
   const [continuationDialog, setContinuationDialog] = useState<{ ticket: Ticket } | null>(null)
   const [continuationSelectedDates, setContinuationSelectedDates] = useState<string[]>([])
@@ -4187,6 +4371,16 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const scanFileInputRef = useRef<HTMLInputElement>(null)
   const [showcaseOpen, setShowcaseOpen] = useState(false)
+
+  // ── Schedules "more filters" popup: whole-month + branch-negotiator view ──
+  const [monthFilterModalOpen, setMonthFilterModalOpen] = useState(false)
+  const [monthFilterMonth, setMonthFilterMonth] = useState(() => todayDateKey().slice(0, 7))
+  const [monthFilterNegotiatorId, setMonthFilterNegotiatorId] = useState('')
+  const [monthFilterLoading, setMonthFilterLoading] = useState(false)
+  const [monthFilterError, setMonthFilterError] = useState('')
+  /** True once "Apply" has populated the main table with a whole month's tickets instead of one day. */
+  const [monthViewActive, setMonthViewActive] = useState(false)
+  const monthViewActiveRef = useRef(false)
   const [scanning, setScanning] = useState(false)
   const [_importing, setImporting] = useState(false)
   const [importResults, setImportResults] = useState<{
@@ -6078,6 +6272,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const columns = useMemo(() => {
     const scheduleCols = [
       { label: 'TICKET NO', display: 'TICKET NO', weight: 9, expMul: 1.2, sticky: true, freeze: false, align: 'center' as const },
+      // Month view spans many days, so surface the date up front — reuses the same
+      // already-editable 'FINAL DATE' column My Tickets has, just conditionally shown here too.
+      ...(monthViewActive
+        ? [{ label: 'FINAL DATE', display: 'DATE', weight: 9, expMul: 1.2, sticky: false, freeze: false, align: 'center' as const }]
+        : []),
       { label: "CUSTOMER'S NAME", display: "CUSTOMER", weight: 15, expMul: 1.5, sticky: true, freeze: false, align: 'left' as const },
       { label: 'DESTINATION', display: 'DISTRICT', weight: 8, expMul: 1.5, sticky: true, freeze: true, align: 'center' as const, sortable: true },
       { label: 'BRAND', display: "BRAND", weight: 11, expMul: 1.5, sticky: false, freeze: false, align: 'center' as const },
@@ -6116,14 +6315,75 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       if (c.sticky) left += (c.weight / totalWeight) * 100
       return { ...c, isExpanded, w: pct, left: l }
     })
-  }, [expandedCols, isTaguigServices, isMyTickets])
+  }, [expandedCols, isTaguigServices, isMyTickets, monthViewActive])
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Fetch Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const token = useCallback(() =>
     localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || '', [])
 
+  /** Negotiators assigned to the Active Branch — populates the month-filter popup's dropdown. */
+  const monthFilterNegotiatorOptions = useMemo(
+    () => negotiatorsForBranch(activeBranchId),
+    [negotiatorsForBranch, activeBranchId],
+  )
+
+  // Drop the selected negotiator if Active Branch changes and they're no longer listed.
+  useEffect(() => {
+    if (!monthFilterNegotiatorId) return
+    if (monthFilterNegotiatorOptions.some(n => n.id === monthFilterNegotiatorId)) return
+    setMonthFilterNegotiatorId('')
+  }, [monthFilterNegotiatorId, monthFilterNegotiatorOptions])
+
+  /** Whole-month ticket lookup for the Active Branch — populates the *same* `tickets` state and
+   * table the single-day view uses (see `monthViewActive` branches in `filtered`/`visible`
+   * below), rather than a separate report view, so editing/columns/sorting all keep working.
+   * Negotiator narrows further via the existing `filtered` memo, same as My Tickets does. */
+  const runMonthFilterQuery = useCallback(async () => {
+    if (!monthFilterMonth) return
+    setMonthFilterLoading(true)
+    setMonthFilterError('')
+    try {
+      const auth = token()
+      const scheduleBranchId = activeBranchId && activeBranchId !== 'ALL_BRANCHES'
+        ? resolveScopedBranchId(activeBranchId)
+        : undefined
+      const raw = await fetchTicketsPage('/tickets/branch', auth, {
+        size: 200,
+        paginate: true,
+        maxPages: 10,
+        month: monthFilterMonth,
+        ...(scheduleBranchId ? { branchId: scheduleBranchId } : {}),
+      })
+      let list = normalizeRelayScheduleTicketList(raw as Ticket[])
+      if (activeBranchId && activeBranchId !== 'ALL_BRANCHES') {
+        list = list.filter(t => ticketBelongsOnScheduleBranch(
+          t, activeBranchId, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+        ))
+      }
+      monthViewActiveRef.current = true
+      setTickets(list)
+      setMonthViewActive(true)
+      setMonthFilterModalOpen(false)
+    } catch (e) {
+      setMonthFilterError(formatFetchError(e))
+    } finally {
+      setMonthFilterLoading(false)
+    }
+  }, [monthFilterMonth, activeBranchId, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames, token])
+
+  // Switching Active Branch while month view is showing another branch's data would be
+  // misleading — exit back to the normal single-day view instead of silently keeping stale rows.
+  const prevActiveBranchForMonthViewRef = useRef(activeBranchId)
+  useEffect(() => {
+    const changed = prevActiveBranchForMonthViewRef.current !== activeBranchId
+    prevActiveBranchForMonthViewRef.current = activeBranchId
+    if (changed && monthViewActive) setMonthViewActive(false)
+  }, [activeBranchId, monthViewActive])
+
   const fetchTickets = useCallback(async (options?: { soft?: boolean; force?: boolean; quiet?: boolean }) => {
     if (!user) return
+    // Month view owns `tickets` while active — the normal per-day/branch fetch must not stomp it.
+    if (monthViewActiveRef.current) return
     const seq = ++fetchSeqRef.current
     const cacheKey = schedulesCacheKeyForTab()
     const cached = readSchedulesTabCache(cacheKey)
@@ -6372,6 +6632,19 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     }
   }, [user, isCustomer, isAdmin, isMyTickets, globalBranchId, dateFilter, activeBranchId, token, schedulesCacheKeyForTab, installerLineupIndex, driverOnlyNames])
 
+  // Keep the ref in sync for the guarded fetch/hydrate callbacks above (they read the ref, not
+  // the state, so they see the change immediately — no stale-closure risk). On the true→false
+  // transition (user exits month view), kick a real refetch to restore the current day's data,
+  // since the guarded effects were silently no-op-ing the whole time month view was active.
+  const monthViewWasActiveRef = useRef(false)
+  useEffect(() => {
+    monthViewActiveRef.current = monthViewActive
+    if (monthViewWasActiveRef.current && !monthViewActive) {
+      void fetchTickets({ soft: false, force: true })
+    }
+    monthViewWasActiveRef.current = monthViewActive
+  }, [monthViewActive, fetchTickets])
+
   const schedulesDateFetchMountedRef = useRef(false)
 
   useEffect(() => {
@@ -6499,6 +6772,26 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const filtered = useMemo(() => {
     const effectiveBranch = activeBranchId
 
+    // Month view: `tickets` already IS the whole month for this branch (see runMonthFilterQuery)
+    // — skip the single-day date scoping entirely and just apply negotiator + search on top.
+    if (!isMyTickets && monthViewActive) {
+      let list = tickets.filter(t => isFieldCategory(inferCategoryFromTicket(t)))
+      if (monthFilterNegotiatorId) {
+        list = list.filter(t => ticketMatchesNegotiatorFilter(t, monthFilterNegotiatorId))
+      }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase()
+        list = list.filter(t =>
+          [t.customerName, t.customer_name, t.contactPhone, t.assignedEmployeeName,
+          t.assigned_employee_name, t.serviceType, t.service_type, t.description,
+          t.remarks, t.note, t.id, t.ticketNumber, t.ticket_number,
+          resolveNegotiatorDisplayName(t, branchEmployees)].some(v => v?.toLowerCase().includes(q))
+          || formatAddress(t.location).toLowerCase().includes(q)
+        )
+      }
+      return list
+    }
+
     // Schedules date tab: active branch + schedule date (server already scopes branch for admin).
     if (!isMyTickets && dateFilter) {
       let list = tickets.filter(t => {
@@ -6622,7 +6915,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       )
     }
     return list
-  }, [tickets, isMyTickets, activeBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, user?.jobTitle, installerLineupIndex, driverOnlyNames, isAdmin, myTicketsNegotiatorFilter, branchEmployees, isBranchMatch])
+  }, [tickets, isMyTickets, activeBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, user?.jobTitle, installerLineupIndex, driverOnlyNames, isAdmin, myTicketsNegotiatorFilter, branchEmployees, isBranchMatch, monthViewActive, monthFilterNegotiatorId])
 
   // Auto-numbered vehicle trip labels ("STRADA - 1", "STRADA - 2") for the current filtered set —
   // the vehicle is now the dispatch unit, so staff never type a manual "- N" suffix into the
@@ -6632,6 +6925,15 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const visible = useMemo(() => {
     let list = filtered
     const cmpOpts = { myTickets: isMyTickets, employees: branchEmployees, branchId: activeBranchId, vehicleTripLabels }
+    // Month view spans many days — vehicle/driver grouping (built for one day's dispatch lineup)
+    // doesn't apply across dates, so sort chronologically by schedule date instead.
+    if (!isMyTickets && monthViewActive) {
+      return [...list].sort((a, b) => {
+        const cmp = getFinalDateKey(a).localeCompare(getFinalDateKey(b))
+        if (cmp !== 0) return cmp
+        return compareTicketsByColumn(a, b, 'TICKET NO', cmpOpts)
+      })
+    }
     list = [...list].sort((a, b) => {
       // Schedules: always group rows by vehicle first — the vehicle (e.g. "STRADA - 1",
       // "STRADA - 2") is the actual dispatch unit and trip order, auto-numbered from assignment
@@ -6659,7 +6961,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       return compareTicketsByColumn(a, b, 'TICKET NO', cmpOpts)
     })
     return list
-  }, [filtered, sortConfig, isMyTickets, branchEmployees, activeBranchId, vehicleTripLabels])
+  }, [filtered, sortConfig, isMyTickets, branchEmployees, activeBranchId, vehicleTripLabels, monthViewActive])
 
   // Each ticket's position within its contiguous vehicle-group run in `visible` — visible is
   // already sorted with same-vehicle rows contiguous, so this is a single linear scan. Used to
@@ -7680,6 +7982,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     setReschedDialog({ ticket })
     setReschedToDate(initDate)
     setReschedPending(isReschedulePending(ticket))
+    setReschedStep('date')
+    setReschedRemarks('')
     const startKey = initDate || todayDateKey()
     const startDate = new Date(`${startKey}T00:00:00`)
     const todayDate = new Date(`${todayDateKey()}T00:00:00`)
@@ -7693,6 +7997,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     setReschedToDate('')
     setReschedPending(false)
     setReschedCalMonth(null)
+    setReschedStep('date')
+    setReschedRemarks('')
   }
 
   const commitInlineReschedule = async () => {
@@ -7700,12 +8006,19 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     const { ticket } = reschedDialog
     if (!reschedPending && !reschedToDate.trim()) {
       alert('Pick a new date or mark as Pending if no slot is available yet.')
+      setReschedStep('date')
+      return
+    }
+    const cleanRemarks = reschedRemarks.trim()
+    if (!cleanRemarks) {
+      alert('Please enter a reason/remarks why this ticket is being rescheduled.')
       return
     }
 
     const body = buildReschedulePatchBody(ticket, {
       newDateKey: reschedPending ? null : reschedToDate,
       pending: reschedPending,
+      remarks: cleanRemarks,
     })
     if (Object.keys(body).length === 0) {
       alert('Could not build reschedule update.')
@@ -8548,8 +8861,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           </>
         )
       }
-      if (!combined) {
-        return <span style={{ ...truncStyle, color: textMuted }}>{EMPTY_CELL}</span>
+      if (!combined || combined === '0') {
+        return <span style={{ ...truncStyle, fontWeight: 700, color: textMuted }} title="0">0</span>
       }
       if (mode === 'FREE' || mode === 'FREE INSTALL') {
         return (
@@ -9001,6 +9314,23 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
           {/* Right actions — always pinned in view */}
           <div className="hidden md:flex items-center gap-1.5 shrink-0 justify-self-end">
+            {activeTab === 'schedules' && !isMyTickets && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setMonthFilterModalOpen(true) }}
+                className="flex items-center gap-1.5 h-10 px-2.5 xl:px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-all hover:opacity-90 active:scale-95"
+                style={{
+                  backgroundColor: monthViewActive ? green : inputBg,
+                  border: `1px solid ${monthViewActive ? green : inputBorder}`,
+                  color: monthViewActive ? '#ffffff' : textPrimary,
+                }}
+                title="Whole-month view for this branch, filterable by negotiator"
+              >
+                <SlidersHorizontal className="w-4 h-4 shrink-0" style={{ color: monthViewActive ? '#ffffff' : green }} strokeWidth={2.1} />
+                <span className="hidden xl:inline">{monthViewActive ? `Month: ${formatMonthFilterLabel(monthFilterMonth)}` : 'Filters'}</span>
+              </button>
+            )}
+
             {activeTab === 'schedules' && canEdit && !isMyTickets && (
               <button
                 type="button"
@@ -9065,6 +9395,28 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           </button>
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body
+      )}
+
+      {/* Month view banner — lets the user see & explicitly exit the whole-month table view */}
+      {!isMyTickets && monthViewActive && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2 border-b shrink-0"
+          style={{ backgroundColor: 'rgba(16,185,129,0.08)', borderColor: border }}>
+          <span className="text-xs font-semibold" style={{ color: green }}>
+            Month view — {formatMonthFilterLabel(monthFilterMonth)} · {activeBranchLabel || 'All branches'}
+            {monthFilterNegotiatorId
+              ? ` · ${formatNegotiatorLabel(monthFilterNegotiatorOptions.find(n => n.id === monthFilterNegotiatorId) || {})}`
+              : ''}
+            {' '}({visible.length} ticket{visible.length === 1 ? '' : 's'})
+          </span>
+          <button
+            type="button"
+            onClick={() => setMonthViewActive(false)}
+            className="text-[11px] font-bold uppercase tracking-wide hover:underline shrink-0"
+            style={{ color: green }}
+          >
+            Exit month view
+          </button>
+        </div>
       )}
 
       {/* Sort reset strip — replaces the old stats bar */}
@@ -9739,7 +10091,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             </div>
           )) : (
           /* Render Overview Search Panel */
-          <div className="flex-1 flex flex-col min-h-0 w-full overflow-hidden relative" style={{ backgroundColor: isLight ? '#f1f5f9' : '#060B18' }}>
+          <div className="flex-1 flex flex-col min-h-0 w-full h-full overflow-hidden relative" style={{ backgroundColor: isLight ? '#f1f5f9' : '#060B18' }}>
             {/* Top Header Row */}
             <div className="flex items-center justify-center p-4 md:p-6 pb-2 w-full shrink-0 z-50 relative">
               {/* Mobile Menu Button (absolute to keep branches perfectly centered) */}
@@ -9779,16 +10131,16 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             </div>
 
             <div
-              className={`flex-1 min-h-0 px-3 md:px-8 bg-transparent flex flex-col ${
-                overviewSearchInput || overviewResults.length > 0 ? 'overflow-y-auto' : 'overflow-hidden'
+              className={`flex-1 min-h-0 px-3 md:px-8 bg-transparent relative ${
+                overviewSearchInput || overviewResults.length > 0 ? 'overflow-y-auto flex flex-col' : 'overflow-hidden'
               }`}
             >
               <div
-                className={`max-w-4xl w-full mx-auto flex flex-col animate-in fade-in transition-all duration-500 ease-out ${
+                className={
                   overviewSearchInput || overviewResults.length > 0
-                    ? ''
-                    : 'flex-1 items-center justify-center gap-6 md:gap-8'
-                }`}
+                    ? 'max-w-4xl w-full mx-auto flex flex-col'
+                    : 'absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-4xl px-3 md:px-0 flex flex-col items-center gap-6 md:gap-8'
+                }
               >
 
                 {/* Sticky Header: Logo + Search Input (opaque bg so results don't show through while scrolling) */}
@@ -9801,7 +10153,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   {/* Big Logo / Name (Google Style) */}
                   <div className="flex flex-col items-center justify-center text-center w-full">
                     <h1
-                      className={`font-black tracking-tighter transition-all duration-500 ease-out ${overviewSearchInput || overviewResults.length > 0 ? 'text-2xl md:text-3xl mb-0 opacity-80' : 'text-5xl md:text-7xl mb-2 opacity-100'}`}
+                      className={`font-black tracking-tighter ${overviewSearchInput || overviewResults.length > 0 ? 'text-2xl md:text-3xl mb-0 opacity-80' : 'text-5xl md:text-7xl mb-2 opacity-100'}`}
                     >
                       <span style={{ color: green }}>ASHCOL</span>
                       <span style={{ color: textPrimary }} className="ml-2 md:ml-3">PORTAL</span>
@@ -9810,7 +10162,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
                   {/* Search Input Box */}
                   <div
-                    className="w-full flex items-center gap-3 px-8 py-5 md:px-10 md:py-6 rounded-full shadow-md border-2 transition-all duration-200"
+                    className="w-full max-w-2xl mx-auto flex items-center gap-3 px-8 py-5 md:px-10 md:py-6 rounded-full shadow-md border-2 transition-[border-color,box-shadow] duration-150"
                     style={{
                       backgroundColor: cardBg,
                       borderColor: overviewSearchFocused ? green : border,
@@ -9869,6 +10221,18 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                           resolveScopedBranchId(rawBranch) || rawBranch,
                         );
                         const negotiatorLabel = getTicketNegotiatorName(ticket, branchEmployees) || EMPTY_CELL;
+                        const cardNegId = ticket.negotiatorId || ticket.negotiator_id || '';
+                        const cardNegEmp = branchEmployees.find(e => {
+                          if (cardNegId && e.id === cardNegId) return true;
+                          const resolvedFull = resolveNegotiatorDisplayName(ticket, branchEmployees);
+                          if (resolvedFull && e.name && namesMatchLoosely(e.name, resolvedFull)) return true;
+                          return false;
+                        });
+                        const negotiatorPhone = (ticket as any).negotiatorPhone
+                          || (ticket as any).negotiator_phone
+                          || cardNegEmp?.phone
+                          || (cardNegId && user?.id === cardNegId ? (user?.phone || '') : '')
+                          || '';
                         const finalDateKey = getFinalDateKey(ticket);
                         const scheduleDateLabel = finalDateKey
                           ? `Scheduled: ${formatDisplayDate(finalDateKey, '')}`
@@ -9876,73 +10240,114 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                             ? `Preferred: ${formatDisplayDate(getPreferredDateKey(ticket), '')}`
                             : 'No Date';
 
+                        const cleanBranch = branchLabel && branchLabel !== EMPTY_CELL ? branchLabel.replace(/^ASHCOL\s+/i, '') : '';
+                        const custPhone = ticket.contactPhone || ticket.contact_phone || ticket.customer_phone || ticket.phone || '';
+                        const formattedCustPhone = custPhone ? (fmtPhone(custPhone) || custPhone) : '';
+
                         return (
                           <div
                             key={ticket.id}
-                            className="rounded-xl md:rounded-2xl p-3.5 md:p-4 border shadow-sm transition-all duration-300 md:hover:shadow-md md:hover:-translate-y-0.5 flex flex-col justify-between active:scale-[0.99]"
+                            className="rounded-2xl p-4 border shadow-sm transition-all duration-200 hover:shadow-md flex flex-col justify-between"
                             style={{ backgroundColor: cardBg, borderColor: border }}
                           >
-                            <div>
+                            <div className="space-y-2.5">
                               {/* Card Header */}
-                              <div className="flex justify-between items-start gap-2 mb-2">
-                                <span className="text-[10px] font-extrabold tracking-wide uppercase" style={{ color: textMuted }}>
+                              <div className="flex justify-between items-center gap-2">
+                                <span className="text-[11px] font-black font-mono tracking-wider text-slate-400 dark:text-slate-500 uppercase">
                                   {ticketNum}
                                 </span>
                                 <div className="flex gap-1.5 items-center flex-wrap justify-end">
-                                  {branchLabel && branchLabel !== EMPTY_CELL && (
-                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textMuted }}>
-                                      {branchLabel}
+                                  {cleanBranch && (
+                                    <span
+                                      className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider"
+                                      style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textMuted }}
+                                    >
+                                      {cleanBranch}
                                     </span>
                                   )}
-                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ backgroundColor: statusStyle.backgroundColor, color: statusStyle.color }}>
+                                  <span
+                                    className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wide shadow-sm"
+                                    style={{ backgroundColor: statusStyle.backgroundColor, color: statusStyle.color }}
+                                  >
                                     {statusLabel}
                                   </span>
                                 </div>
                               </div>
 
-                              {/* Customer & Location */}
-                              <h3 className="font-bold text-sm leading-tight mb-2" style={{ color: textPrimary }}>
+                              {/* Customer Name */}
+                              <h3 className="font-extrabold text-base leading-snug tracking-tight" style={{ color: textPrimary }}>
                                 {highlightMatch(customer, overviewSearchInput)}
                               </h3>
 
-                              <div className="flex flex-col gap-1 text-[11px] mb-3" style={{ color: textMuted }}>
-                                <div className="flex items-center gap-1.5">
-                                  <MapPin className="w-3 h-3 shrink-0" style={{ color: green }} />
-                                  <span className="truncate">{formatAddress(ticket.location)}</span>
+                              {/* Location */}
+                              {formatAddress(ticket.location) && (
+                                <div className="flex items-start gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                                  <MapPin className="w-3.5 h-3.5 shrink-0 text-emerald-500 mt-0.5" />
+                                  <span className="line-clamp-2 leading-relaxed">{formatAddress(ticket.location)}</span>
                                 </div>
-                                {ticket.contactPhone && (
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-bold">Contact:</span>
-                                    <span>{ticket.contactPhone}</span>
+                              )}
+
+                              {/* Details Grid Box */}
+                              <div
+                                className="rounded-xl p-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs"
+                                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}
+                              >
+                                {formattedCustPhone && (
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Contact No.</span>
+                                    <a
+                                      href={`tel:${custPhone.replace(/\D/g, '').replace(/^0/, '+63')}`}
+                                      className="font-bold text-emerald-600 dark:text-emerald-400 hover:underline tracking-tight"
+                                    >
+                                      {formattedCustPhone}
+                                    </a>
                                   </div>
                                 )}
-                                {negotiatorLabel !== EMPTY_CELL && (
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-bold">Negotiator:</span>
-                                    <span>{negotiatorLabel}</span>
+
+                                {(negotiatorLabel !== EMPTY_CELL || negotiatorPhone) && (
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Negotiator</span>
+                                    <div className="flex items-center gap-1 flex-wrap">
+                                      {negotiatorLabel !== EMPTY_CELL && (
+                                        <span className="font-bold uppercase" style={{ color: textPrimary }}>{negotiatorLabel}</span>
+                                      )}
+                                      {negotiatorPhone && (
+                                        <span className="text-[11px] font-medium" style={{ color: textMuted }}>
+                                          ({negotiatorPhone ? (
+                                            <a href={`tel:${negotiatorPhone.replace(/\D/g, '').replace(/^0/, '+63')}`} className="text-emerald-600 dark:text-emerald-400 hover:underline font-semibold">
+                                              {fmtPhone(negotiatorPhone) || negotiatorPhone}
+                                            </a>
+                                          ) : null})
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
                                 )}
+
                                 {ticket.assignedEmployeeName && (
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-bold">Technician:</span>
-                                    <span>{ticket.assignedEmployeeName}</span>
+                                  <div className="flex flex-col gap-0.5 sm:col-span-2">
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Technician</span>
+                                    <span className="font-semibold" style={{ color: textPrimary }}>{ticket.assignedEmployeeName}</span>
                                   </div>
                                 )}
                               </div>
                             </div>
 
                             {/* Card Footer */}
-                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 pt-2.5 border-t border-dashed" style={{ borderColor: border }}>
-                              <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: textMuted }}>
-                                {scheduleDateLabel}
-                              </span>
-                              <div className="flex gap-2 w-full sm:w-auto">
+                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 pt-3 mt-3 border-t border-dashed" style={{ borderColor: border }}>
+                              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>
+                                <CalendarDays className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
+                                <span>{scheduleDateLabel}</span>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
                                 {isAdmin && (
                                   <button
                                     type="button"
                                     onClick={(e) => { e.stopPropagation(); handleDelete(ticket.id); }}
-                                    className="flex-1 sm:flex-none px-3 py-2 sm:py-1 rounded-lg text-[11px] sm:text-[10px] font-bold text-white bg-red-600 transition-opacity hover:opacity-90 active:opacity-80"
+                                    className="flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:bg-red-500 hover:text-white"
+                                    style={{ backgroundColor: 'rgba(239,68,68,0.1)', color: '#EF4444' }}
                                   >
+                                    <Trash2 className="w-3.5 h-3.5" />
                                     Delete
                                   </button>
                                 )}
@@ -9952,9 +10357,10 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                     setDetailTicket(ticket);
                                     setShowHistoryPanel(true);
                                   }}
-                                  className="flex-1 sm:w-auto px-3 py-2 sm:py-1 rounded-lg text-[11px] sm:text-[10px] font-bold text-white transition-opacity hover:opacity-90 active:opacity-80"
+                                  className="flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold text-white shadow-sm transition-all hover:opacity-90 active:scale-95"
                                   style={{ backgroundColor: green }}
                                 >
+                                  <Eye className="w-3.5 h-3.5" />
                                   View Details
                                 </button>
                               </div>
@@ -10085,7 +10491,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         const finalScheduleDate = getFinalDateKey(t)
         const dealer = getF(t, 'dealer')
         const isCompleted = isInstalledWorkflowStatus(t.status)
-        const hasPayment = ticketHasPaymentInfo(t)
         const paymentAmt = formatPaymentAmount(t)
         const paymentMode = getPaymentMode(t)
         const archivedSched = formatDateKeyLabel(getArchivedScheduleDate(t))
@@ -10164,7 +10569,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                         </span>
                       )}
                     </div>
-                    <p className="mt-1 text-[11px] sm:text-sm font-black font-mono tracking-wider uppercase" style={{ color: textPrimary }}>
+                    <p className="mt-1 text-sm sm:text-base font-black tracking-wide uppercase" style={{ color: textPrimary }}>
                       {t.ticketNumber || t.ticket_number || EMPTY_CELL}
                     </p>
                     {isDuplicateName && (
@@ -10176,34 +10581,34 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   <button
                     type="button"
                     onClick={() => { setDetailTicket(null); setShowHistoryPanel(false) }}
-                    className="p-2 shrink-0 rounded-xl border transition-colors"
+                    className="p-2 shrink-0 rounded-xl border transition-colors hover:bg-slate-500/10"
                     style={{ borderColor: border, backgroundColor: inputBg, color: textMuted }}
                     aria-label="Close details"
                   >
-                    <X className="w-4 h-4" />
+                    <X className="w-4.5 h-4.5" />
                   </button>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-2 border-t text-xs w-full" style={{ borderColor: border }}>
-                  <div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t text-xs w-full text-center items-center justify-center" style={{ borderColor: border }}>
+                  <div className="flex flex-col items-center justify-center">
                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Category</span>
-                    <span className="font-semibold text-xs text-emerald-500 uppercase">{t.ticketCategory || t.ticket_category || EMPTY_CELL}</span>
+                    <span className="font-extrabold text-xs text-emerald-500 uppercase">{t.ticketCategory || t.ticket_category || EMPTY_CELL}</span>
                   </div>
-                  <div>
+                  <div className="flex flex-col items-center justify-center">
                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Relayed By</span>
-                    <span className="font-semibold text-xs font-mono" style={{ color: textPrimary }}>
-                      {t.createdBy || (t.customerEmail || 'System')}
+                    <span className="font-black text-xs uppercase" style={{ color: textPrimary }}>
+                      {getFirstNameUpper(t.createdBy || t.customerEmail || 'System')}
                     </span>
                   </div>
-                  <div>
+                  <div className="flex flex-col items-center justify-center">
                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Negotiator</span>
-                    <span className="font-semibold text-xs" style={{ color: textPrimary }}>
-                      {negotiatorName ? <EmployeeNameLink nameOrId={negotiatorName} /> : EMPTY_CELL}
+                    <span className="font-black text-xs uppercase" style={{ color: textPrimary }}>
+                      {getFirstNameUpper(negotiatorName)}
                     </span>
                   </div>
-                  <div>
+                  <div className="flex flex-col items-center justify-center">
                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Negotiator No.</span>
-                    <span className="font-semibold text-xs" style={{ color: negotiatorPhone ? '#10B981' : textMuted }}>
+                    <span className="font-bold text-xs" style={{ color: negotiatorPhone ? '#10B981' : textMuted }}>
                       {negotiatorPhone ? (
                         <a href={`tel:${negotiatorPhone.replace(/\D/g, '').replace(/^0/, '+63')}`} className="hover:underline">
                           {fmtPhone(negotiatorPhone) || negotiatorPhone}
@@ -10214,199 +10619,295 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 </div>
               </div>
 
-              {/* Single scroll body — details + history + actions all scroll together */}
-              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
-                <div className="p-4 sm:p-6 space-y-6">
-                  <div>
-                    <SHead title="Client & Location Details" />
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <DField label="Customer" value={custName} />
-                      <DField label="Contact" value={phone ? (fmtPhone(phone) || phone) : EMPTY_CELL} />
-                      {!isMyTickets && (
-                        <DField label="Address" value={addr} className="sm:col-span-2" />
-                      )}
-                      <DField label="District" value={district || resolveTicketDistrict(t) || EMPTY_CELL} className={isMyTickets ? "sm:col-span-2" : ""} />
+              {/* Side-by-side book layout when showHistoryPanel is open */}
+              <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden divide-y md:divide-y-0 md:divide-x" style={{ borderColor: border }}>
+                {/* Left Side: Ticket Details */}
+                <div className={`flex-1 min-h-0 overflow-y-auto ${showHistoryPanel ? 'w-full md:w-1/2' : 'w-full'}`}>
+                  <div className="p-4 sm:p-6 space-y-6">
+                    <div>
+                      <SHead title="Client & Location Details" />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <DField label="Customer" value={custName} />
+                        <DField label="Contact" value={phone ? (fmtPhone(phone) || phone) : EMPTY_CELL} />
+                        {!isMyTickets && (
+                          <DField label="Address" value={addr} className="sm:col-span-2" />
+                        )}
+                        <DField label="District" value={district || resolveTicketDistrict(t) || EMPTY_CELL} className={isMyTickets ? "sm:col-span-2" : ""} />
+                      </div>
                     </div>
-                  </div>
 
-                  <div>
-                    <SHead title="Service & Equipment Details" />
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <DField label="Ticket Category" value={t.ticketCategory || t.ticket_category || EMPTY_CELL} />
-                      <DField label="Brand / Unit" value={brand || EMPTY_CELL} />
-                      <DField label="Service / Driver" value={serviceDriver || EMPTY_CELL} />
-                      <DField label={isTaguigServices ? "Technician" : "Installer / Technician"} value={installer || EMPTY_CELL} />
-                      <DField label="Negotiator" value={negotiatorName ? <EmployeeNameLink nameOrId={negotiatorName} /> : EMPTY_CELL} />
-                      <DField label={isTaguigServices ? "Endorsed By" : "Dealer (DLR)"} value={dealer || EMPTY_CELL} />
-                      <DField label="Ticket No." value={t.ticketNumber || t.ticket_number || EMPTY_CELL} />
-                      <DField label="Control No. / SI" value={t.controlNumber || t.control_number || EMPTY_CELL} />
-                      {ROBINSON_APPLIANCES_RE.test(dealer || '') && (
-                        <DField label="Transaction ID" value={String(parseAcMeta(t).robinsonsTransactionId || '') || EMPTY_CELL} />
-                      )}
+                    <div>
+                      <SHead title="Service & Equipment" />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <DField label="Brand / Unit" value={brand || EMPTY_CELL} className="sm:col-span-2" />
+                        <DField label="Service / Driver" value={serviceDriver || EMPTY_CELL} />
+                        <DField label={isTaguigServices ? "Technician" : "Installer / Technician"} value={installer || EMPTY_CELL} />
+                        <DField label={isTaguigServices ? "Endorsed By" : "Dealer (DLR)"} value={dealer || EMPTY_CELL} />
+                        <DField label="Control No. / SI" value={t.controlNumber || t.control_number || EMPTY_CELL} />
+                        {ROBINSON_APPLIANCES_RE.test(dealer || '') && (
+                          <DField label="Transaction ID" value={String(parseAcMeta(t).robinsonsTransactionId || '') || EMPTY_CELL} />
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  <div>
-                    <SHead title="Scheduling Details" />
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <DField label="Assigned Branch" value={branchName} />
-                      <DField label="Preferred Date" value={formatDisplayDate(preferredDate)} />
-                      <DField label="Final Schedule" value={formatDisplayDate(finalScheduleDate)} green />
-                      {isCompleted && archivedSched && (
-                        <DField label="Scheduled Date" value={archivedSched} />
-                      )}
-                      {isCompleted && installedDate && (
-                        <DField label="Installed Date" value={installedDate} />
-                      )}
+                    <div>
+                      <SHead title="Schedule" />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <DField label="Preferred Date" value={formatDisplayDate(preferredDate)} />
+                        <DField label="Final Schedule" value={formatDisplayDate(finalScheduleDate)} green />
+                        {isCompleted && archivedSched && (
+                          <DField label="Scheduled Date" value={archivedSched} />
+                        )}
+                        {isCompleted && installedDate && (
+                          <DField label="Installed Date" value={installedDate} />
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  {(hasPayment || t.modeOfPayment || t.mode_of_payment || t.amountCharged || t.installationCharges || t.installation_charges) && (
                     <div>
                       <SHead title="Payment Details" />
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <DField label="Mode of Payment" value={paymentMode || EMPTY_CELL} />
-                        <DField label="Payment Amount" value={paymentAmt || EMPTY_CELL} green />
+                        <DField label="Mode of Payment" value={paymentMode || 'NO PAYMENT'} />
+                        <DField label="Payment Amount" value={paymentAmt || '₱0'} green={paymentAmt !== '₱0' && paymentAmt !== 'FREE ₱0'} />
                       </div>
                     </div>
-                  )}
 
-                  {(commit || note || update) && (
-                    <div className="space-y-4">
-                      {commit && (
-                        <div>
-                          <SHead title={isTaguigServices ? "Commit (Amount)" : "Commit / Description"} />
-                          <p className="text-xs leading-relaxed rounded-xl p-4"
-                            style={{ backgroundColor: inputBg, color: textPrimary, border: `1px solid ${border}` }}>
-                            {commit}
-                          </p>
-                        </div>
-                      )}
-                      {note && (
-                        <div>
-                          <SHead title={isTaguigServices ? "Confirmation" : "Note"} />
-                          <p className="text-xs leading-relaxed rounded-xl p-4 font-semibold"
-                            style={{ backgroundColor: inputBg, color: '#EF4444', border: `1px solid ${border}` }}>
-                            {note}
-                          </p>
-                        </div>
-                      )}
-                      {update && (
-                        <div>
-                          <SHead title={isTaguigServices ? "Service Status" : "Remarks / Update"} />
-                          <p className="text-xs leading-relaxed rounded-xl p-4 font-semibold"
-                            style={{ backgroundColor: inputBg, color: updateColor, border: `1px solid ${border}` }}>
-                            {update}
-                          </p>
-                        </div>
+                    {(commit || note || update) && (
+                      <div className="space-y-4">
+                        {commit && (
+                          <div>
+                            <SHead title={isTaguigServices ? "Commit (Amount)" : "Commit / Description"} />
+                            <p className="text-xs leading-relaxed rounded-xl p-4"
+                              style={{ backgroundColor: inputBg, color: textPrimary, border: `1px solid ${border}` }}>
+                              {commit}
+                            </p>
+                          </div>
+                        )}
+                        {note && (
+                          <div>
+                            <SHead title={isTaguigServices ? "Confirmation" : "Note"} />
+                            <p className="text-xs leading-relaxed rounded-xl p-4 font-semibold"
+                              style={{ backgroundColor: inputBg, color: '#EF4444', border: `1px solid ${border}` }}>
+                              {note}
+                            </p>
+                          </div>
+                        )}
+                        {update && (
+                          <div>
+                            <SHead title={isTaguigServices ? "Service Status" : "Remarks / Update"} />
+                            <p className="text-xs leading-relaxed rounded-xl p-4 font-semibold"
+                              style={{ backgroundColor: inputBg, color: updateColor, border: `1px solid ${border}` }}>
+                              {update}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Actions at bottom of details column */}
+                    <div className="flex flex-col sm:flex-row gap-2.5 pt-2 pb-6 sm:pb-2 border-t" style={{ borderColor: border }}>
+                      <button
+                        type="button"
+                        onClick={() => setShowHistoryPanel(prev => !prev)}
+                        className="px-4 py-2.5 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5"
+                        style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}
+                      >
+                        <Clock className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
+                        {showHistoryPanel ? 'Hide Update History' : 'View Update History'}
+                      </button>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => { openEditModal(t); setDetailTicket(null); setShowHistoryPanel(false) }}
+                          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold border transition-all"
+                          style={{ borderColor: inputBorder, color: textPrimary, backgroundColor: inputBg }}
+                        >
+                          <Edit3 className="w-3.5 h-3.5" style={{ color: '#6366F1' }} />
+                          Edit Details
+                        </button>
                       )}
                     </div>
-                  )}
+                  </div>
+                </div>
 
-                  {/* Update history — scrolls with details (not a side pane that overlaps) */}
-                  {showHistoryPanel && (
+                {/* Right Side: Update History Panel — compact feed log */}
+                {showHistoryPanel && (
+                  <div
+                    className="w-full md:w-1/2 flex flex-col min-h-0"
+                    style={{ backgroundColor: isLight ? '#f8fafc' : '#0b1828' }}
+                  >
+                    {/* Header */}
                     <div
-                      className="rounded-xl p-4 space-y-4"
-                      style={{ backgroundColor: isLight ? '#f8fafc' : '#0d1b2e', border: `1px solid ${border}` }}
+                      className="flex items-center justify-between px-4 py-2 shrink-0"
+                      style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f1f5f9' : '#0d1b2e' }}
                     >
-                      <h4 className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
-                        Update History
-                      </h4>
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="w-3 h-3 text-emerald-500" />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500">Update History</span>
+                      </div>
+                      <span className="text-[9px] font-bold" style={{ color: textMuted }}>
+                        {history.length} {history.length === 1 ? 'entry' : 'entries'}
+                      </span>
+                    </div>
+
+                    {/* Compact feed list */}
+                    <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
                       {loadingHistory ? (
-                        <div className="flex flex-col items-center justify-center py-8 gap-3">
-                          <Loader2 className="w-6 h-6 animate-spin" style={{ color: green }} />
-                          <span className="text-xs font-semibold" style={{ color: textMuted }}>Loading logs…</span>
+                        <div className="flex items-center justify-center py-10 gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin" style={{ color: green }} />
+                          <span className="text-xs" style={{ color: textMuted }}>Loading…</span>
                         </div>
-                      ) : (
-                        <div className="relative border-l ml-2 pl-4 space-y-5" style={{ borderColor: border }}>
-                          {(() => {
-                            const listToRender = [...history].sort(
-                              (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-                            )
-                            if (listToRender.length === 0) {
+                      ) : (() => {
+                        const listToRender = [...history].sort(
+                          (a, b) => new Date(b.createdAt || b.created_at || Date.now()).getTime() - new Date(a.createdAt || a.created_at || Date.now()).getTime(),
+                        )
+                        if (listToRender.length === 0) {
+                          return (
+                            <div className="flex items-center justify-center py-10">
+                              <p className="text-xs" style={{ color: textMuted }}>No history recorded yet.</p>
+                            </div>
+                          )
+                        }
+                        return (
+                          <div style={{ position: 'relative' }}>
+                            {/* Vertical timeline line */}
+                            <div style={{
+                              position: 'absolute',
+                              left: 7,
+                              top: 8,
+                              bottom: 8,
+                              width: 1,
+                              backgroundColor: isLight ? '#e2e8f0' : '#1e3a5f',
+                              zIndex: 0,
+                            }} />
+                            {listToRender.map((h, idx) => {
+                              const rawDate = h.createdAt || h.created_at
+                              const dateObj = rawDate ? new Date(rawDate) : new Date()
+                              const dateStr = dateObj.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+                              const timeStr = dateObj.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', hour12: true })
+                              const rawNoteString = h.changeNote || h.note || h.description || h.remarks || h.reason || h.action || ''
+                              const spec = parseHistorySpecifics(rawNoteString)
+                              const actor = (h.changedByUserName || h.actorName || h.changed_by || h.createdBy || 'System').split(' ')[0].toUpperCase()
+                              const isMovedNote = /^Moved to/i.test(spec.title)
+                              const hasStatusChange = h.newStatus && h.newStatus !== h.previousStatus
+                              const hasDateChange = h.newPreferredDate && h.newPreferredDate !== h.previousPreferredDate && !isMovedNote
+                              const hasAssigneeChange = !!(h.previousAssignedTo && h.newAssignedTo && h.previousAssignedTo !== h.newAssignedTo && h.newAssignedToName)
+                              const isFirst = idx === 0
+                              const dotColor = isFirst ? '#10B981' : (isLight ? '#cbd5e1' : '#1e3a5f')
+                              const hasBadges = hasStatusChange || hasDateChange || hasAssigneeChange || spec.driver || spec.installer || spec.dealer || spec.payment || spec.controlNo
                               return (
-                                <div className="text-xs font-semibold py-4" style={{ color: textMuted }}>
-                                  No update history recorded.
-                                </div>
-                              )
-                            }
-                            return listToRender.map((h, idx) => {
-                              const dt = new Date(h.createdAt).toLocaleString('en-PH', {
-                                month: 'short', day: 'numeric', year: 'numeric',
-                                hour: 'numeric', minute: '2-digit', hour12: true,
-                              })
-                              return (
-                                <div key={h.id || idx} className="relative">
-                                  <span
-                                    className="absolute -left-[23px] top-1.5 flex h-3 w-3 items-center justify-center rounded-full border-2"
-                                    style={{
-                                      borderColor: idx === 0 ? green : border,
-                                      backgroundColor: idx === 0 ? green : cardBg,
-                                    }}
-                                  />
-                                  <div className="text-xs">
-                                    <div className="flex items-start justify-between gap-2">
-                                      <span className="font-extrabold leading-tight" style={{ color: textPrimary }}>
-                                        {h.changeNote || 'Ticket details updated'}
+                                <div
+                                  key={h.id || idx}
+                                  style={{ position: 'relative', display: 'flex', gap: 10, paddingBottom: 14, zIndex: 1 }}
+                                >
+                                  {/* Timeline dot */}
+                                  <div style={{
+                                    width: 15,
+                                    height: 15,
+                                    borderRadius: '50%',
+                                    backgroundColor: isFirst ? '#10B981' : (isLight ? '#e2e8f0' : '#1e3a5f'),
+                                    border: `2px solid ${dotColor}`,
+                                    flexShrink: 0,
+                                    marginTop: 2,
+                                    zIndex: 2,
+                                  }} />
+
+                                  {/* Content */}
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    {/* Title row */}
+                                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 4, marginBottom: 1 }}>
+                                      <span style={{
+                                        fontSize: 11,
+                                        fontWeight: 700,
+                                        color: isFirst ? (isLight ? '#059669' : '#34d399') : textPrimary,
+                                        lineHeight: '1.3',
+                                        flex: 1,
+                                        minWidth: 0,
+                                      }}>
+                                        {spec.title}
                                       </span>
-                                      <span className="text-[9px] font-semibold opacity-60 shrink-0 mt-0.5" style={{ color: textMuted }}>
-                                        {dt}
+                                      <span style={{ fontSize: 9, fontWeight: 600, color: textMuted, flexShrink: 0, opacity: 0.7, letterSpacing: '0.02em' }}>
+                                        {dateStr}, {timeStr}
                                       </span>
                                     </div>
-                                    <div className="mt-1 space-y-0.5" style={{ color: textMuted }}>
-                                      <p className="text-[10px] font-semibold">
-                                        By: <span className="font-bold" style={{ color: textPrimary }}><EmployeeNameLink nameOrId={h.changedByUserName} /></span>
-                                      </p>
-                                      {h.newStatus && h.newStatus !== h.previousStatus && (
-                                        <p className="text-[10px]">
-                                          Status: <span className="font-bold opacity-80">{h.previousStatus || 'NONE'}</span> ➔ <span className="font-bold text-indigo-500">{h.newStatus}</span>
-                                        </p>
-                                      )}
-                                      {h.newPreferredDate && h.newPreferredDate !== h.previousPreferredDate && (
-                                        <p className="text-[10px]">
-                                          Scheduled: <span className="font-bold opacity-80">{formatDisplayDate(h.previousPreferredDate, 'none')}</span> ➔ <span className="font-bold text-amber-500">{formatDisplayDate(h.newPreferredDate)}</span>
-                                        </p>
-                                      )}
-                                      {h.newAssignedTo !== h.previousAssignedTo && (
-                                        <p className="text-[10px]">
-                                          Assigned: <span className="font-bold opacity-80"><EmployeeNameLink nameOrId={h.previousAssignedToName || 'none'} /></span> ➔ <span className="font-bold text-teal-500"><EmployeeNameLink nameOrId={h.newAssignedToName || 'none'} /></span>
-                                        </p>
-                                      )}
+
+                                    {/* Author line */}
+                                    <div style={{ fontSize: 9.5, color: textMuted, marginBottom: hasBadges || spec.remarks ? 5 : 0 }}>
+                                      by <span style={{ fontWeight: 700, color: textPrimary }}>{actor}</span>
                                     </div>
+
+                                    {/* Remarks — slim inline callout */}
+                                    {spec.remarks && (
+                                      <div style={{
+                                        fontSize: 10,
+                                        fontWeight: 600,
+                                        color: isLight ? '#92400e' : '#fcd34d',
+                                        backgroundColor: isLight ? 'rgba(251,191,36,0.08)' : 'rgba(251,191,36,0.08)',
+                                        borderLeft: '2px solid #f59e0b',
+                                        padding: '3px 7px',
+                                        borderRadius: '0 4px 4px 0',
+                                        marginBottom: hasBadges ? 5 : 0,
+                                        wordBreak: 'break-word',
+                                      }}>
+                                        {spec.remarks}
+                                      </div>
+                                    )}
+
+                                    {/* Mini compact badges row */}
+                                    {hasBadges && (
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                        {hasStatusChange && (
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 9.5, fontWeight: 700, padding: '1.5px 6px', borderRadius: 4, backgroundColor: isLight ? 'rgba(99,102,241,0.1)' : 'rgba(99,102,241,0.18)', color: isLight ? '#4338ca' : '#a5b4fc', border: `1px solid ${isLight ? 'rgba(99,102,241,0.2)' : 'rgba(99,102,241,0.3)'}` }}>
+                                            {h.previousStatus || 'NONE'} → {h.newStatus}
+                                          </span>
+                                        )}
+                                        {hasDateChange && (
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 9.5, fontWeight: 700, padding: '1.5px 6px', borderRadius: 4, backgroundColor: isLight ? 'rgba(245,158,11,0.1)' : 'rgba(245,158,11,0.15)', color: isLight ? '#b45309' : '#fcd34d', border: `1px solid ${isLight ? 'rgba(245,158,11,0.2)' : 'rgba(245,158,11,0.3)'}` }}>
+                                            {formatDisplayDate(h.previousPreferredDate, 'none')} → {formatDisplayDate(h.newPreferredDate)}
+                                          </span>
+                                        )}
+                                        {hasAssigneeChange && (
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 9.5, fontWeight: 700, padding: '1.5px 6px', borderRadius: 4, backgroundColor: isLight ? 'rgba(20,184,166,0.1)' : 'rgba(20,184,166,0.15)', color: isLight ? '#0f766e' : '#5eead4', border: `1px solid ${isLight ? 'rgba(20,184,166,0.2)' : 'rgba(20,184,166,0.3)'}` }}>
+                                            → {h.newAssignedToName}
+                                          </span>
+                                        )}
+                                        {spec.driver && (
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 9.5, fontWeight: 600, padding: '1.5px 6px', borderRadius: 4, backgroundColor: isLight ? 'rgba(100,116,139,0.08)' : 'rgba(100,116,139,0.14)', color: textPrimary, border: `1px solid ${border}` }}>
+                                            🚗 {spec.driver}
+                                          </span>
+                                        )}
+                                        {spec.installer && (
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 9.5, fontWeight: 600, padding: '1.5px 6px', borderRadius: 4, backgroundColor: isLight ? 'rgba(100,116,139,0.08)' : 'rgba(100,116,139,0.14)', color: textPrimary, border: `1px solid ${border}` }}>
+                                            🔧 {spec.installer}
+                                          </span>
+                                        )}
+                                        {spec.dealer && (
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 9.5, fontWeight: 600, padding: '1.5px 6px', borderRadius: 4, backgroundColor: isLight ? 'rgba(100,116,139,0.08)' : 'rgba(100,116,139,0.14)', color: textPrimary, border: `1px solid ${border}` }}>
+                                            🏪 {spec.dealer}
+                                          </span>
+                                        )}
+                                        {spec.payment && (
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 9.5, fontWeight: 700, padding: '1.5px 6px', borderRadius: 4, backgroundColor: isLight ? 'rgba(16,185,129,0.1)' : 'rgba(16,185,129,0.15)', color: isLight ? '#047857' : '#6ee7b7', border: `1px solid ${isLight ? 'rgba(16,185,129,0.2)' : 'rgba(16,185,129,0.3)'}` }}>
+                                            ₱ {spec.payment}
+                                          </span>
+                                        )}
+                                        {spec.controlNo && (
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 9.5, fontWeight: 600, padding: '1.5px 6px', borderRadius: 4, backgroundColor: isLight ? 'rgba(100,116,139,0.08)' : 'rgba(100,116,139,0.14)', color: textMuted, border: `1px solid ${border}` }}>
+                                            #{spec.controlNo}
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               )
-                            })
-                          })()}
-                        </div>
-                      )}
+                            })}
+                          </div>
+                        )
+                      })()}
                     </div>
-                  )}
-
-                  {/* Actions at bottom of scroll — not a fixed footer overlapping content */}
-                  <div className="flex flex-col sm:flex-row gap-2.5 pt-2 pb-6 sm:pb-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowHistoryPanel(prev => !prev)}
-                      className="px-4 py-2.5 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5"
-                      style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}
-                    >
-                      <Clock className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
-                      {showHistoryPanel ? 'Hide Update History' : 'View Update History'}
-                    </button>
-                    {canEdit && (
-                      <button
-                        type="button"
-                        onClick={() => { openEditModal(t); setDetailTicket(null); setShowHistoryPanel(false) }}
-                        className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold border transition-all"
-                        style={{ borderColor: inputBorder, color: textPrimary, backgroundColor: inputBg }}
-                      >
-                        <Edit3 className="w-3.5 h-3.5" style={{ color: '#6366F1' }} />
-                        Edit Details
-                      </button>
-                    )}
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
@@ -11400,7 +11901,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       <option value="PENDING">PENDING</option>
                     </select>
                   </Field>
-                  <Field label="Payment Amount (\u20B1)">
+                  <Field label="Payment Amount (₱)">
                     <input type="number" step="0.01" min="0"
                       placeholder="0.00"
                       value={addForm.installationCharges ?? ''}
@@ -12078,6 +12579,100 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           document.body
         )
       })()}
+
+      {/* ── Schedules "more filters" popup: whole-month + branch-negotiator, populates the main table ──── */}
+      {monthFilterModalOpen && ReactDOM.createPortal(
+        <div
+          className="fixed inset-0 z-[9990] flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}
+          onClick={() => setMonthFilterModalOpen(false)}
+        >
+          <div
+            className="rounded-2xl shadow-2xl w-full max-w-md border overflow-hidden"
+            style={{ backgroundColor: cardBg, borderColor: border }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div
+              className="flex items-center justify-between px-5 py-4 border-b"
+              style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}
+            >
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="flex items-center justify-center w-8 h-8 rounded-full"
+                  style={{ backgroundColor: isLight ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.18)' }}
+                >
+                  <CalendarRange className="w-4 h-4" style={{ color: green }} strokeWidth={2.1} />
+                </div>
+                <div>
+                  <div className="text-sm font-bold tracking-wide" style={{ color: textPrimary }}>Schedule Filters</div>
+                  <div className="text-[10px] font-medium" style={{ color: textMuted }}>
+                    {activeBranchLabel || 'All branches'}
+                  </div>
+                </div>
+              </div>
+              <button type="button" onClick={() => setMonthFilterModalOpen(false)} style={{ color: textMuted }}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Filter controls */}
+            <div className="px-5 py-4 flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
+                  Month
+                </label>
+                <input
+                  type="month"
+                  value={monthFilterMonth}
+                  onChange={e => setMonthFilterMonth(e.target.value)}
+                  className="h-10 px-3 rounded-xl border text-sm font-semibold outline-none"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
+                  Negotiator
+                </label>
+                <select
+                  value={monthFilterNegotiatorId}
+                  onChange={e => setMonthFilterNegotiatorId(e.target.value)}
+                  className="h-10 px-3 rounded-xl border text-sm font-semibold outline-none"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  title={activeBranchLabel ? `Negotiators for ${activeBranchLabel}` : 'Filter by negotiator'}
+                >
+                  <option value="">All negotiators</option>
+                  {monthFilterNegotiatorOptions.map(emp => (
+                    <option key={emp.id} value={emp.id}>{formatNegotiatorLabel(emp)}</option>
+                  ))}
+                </select>
+              </div>
+              {monthFilterError && (
+                <div className="text-xs font-semibold text-red-500">{monthFilterError}</div>
+              )}
+              <button
+                type="button"
+                onClick={runMonthFilterQuery}
+                disabled={monthFilterLoading || !monthFilterMonth}
+                className="h-10 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                style={{ backgroundColor: green }}
+              >
+                {monthFilterLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Loading…
+                  </>
+                ) : 'Apply'}
+              </button>
+              <p className="text-[11px] leading-relaxed" style={{ color: textMuted }}>
+                Loads every ticket scheduled that month for this branch straight into the table below.
+                Click a day chip above (or pick a custom date) to go back to the normal single-day view.
+              </p>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
 
       {/* ── Assign Drivers Modal ──────────────────────────────────────── */}
       {bulkAssignOpen && ReactDOM.createPortal(

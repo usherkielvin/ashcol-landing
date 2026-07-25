@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
+import { Clock } from 'lucide-react'
 import { API_BASE_URL, formatPersonName, resolveImageUrl } from '../utils/api'
 import { clearSchedulesSessionMarkers, SCHEDULES_PERSIST_LOCAL } from '../utils/ticketTabCache'
 
@@ -45,6 +46,13 @@ const AUTH_PUBLIC_PATHS = new Set([
   '/forgot-password',
   '/create-account',
 ])
+
+/** Auto-logout after this long with no mouse/keyboard/touch/scroll activity, to prevent AFK sessions sitting open. */
+const IDLE_TIMEOUT_MS = 15 * 60 * 1000
+const IDLE_CHECK_INTERVAL_MS = 5000
+/** How long the "session expired" popup stays up before the hard redirect to /login. */
+const IDLE_NOTICE_REDIRECT_DELAY_MS = 4000
+const IDLE_ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart', 'scroll'] as const
 
 const normalizeAuthUser = (u: AuthUser | null): AuthUser | null => {
   if (!u) return null
@@ -124,6 +132,30 @@ function loadUserFromStorage(): AuthUser | null {
   }
 }
 
+function IdleSessionExpiredNotice() {
+  return (
+    <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div
+        className="relative w-full max-w-sm rounded-2xl shadow-2xl px-8 py-8 text-center"
+        style={{ backgroundColor: 'var(--sidebar-bg)', border: '1px solid var(--border)' }}
+      >
+        <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mb-6 mx-auto">
+          <Clock className="w-8 h-8 text-amber-500" />
+        </div>
+        <h2 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+          Session Expired
+        </h2>
+        <p className="text-sm mb-1" style={{ color: 'var(--text-muted)' }}>
+          You've been logged out after 15 minutes of inactivity.
+        </p>
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+          Redirecting you to login&hellip;
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export function getInitials(name: string): string {
   const parts = (name || '').trim().split(/\s+/).filter(Boolean)
   if (parts.length === 0) return '?'
@@ -135,6 +167,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUserState] = useState<AuthUser | null>(() => loadUserFromStorage())
   const userRef = useRef(user)
   userRef.current = user
+
+  const [idleLoggedOut, setIdleLoggedOut] = useState(false)
+  const lastActivityRef = useRef(0)
+  const idleLoggedOutRef = useRef(false)
 
   const setUser = (u: AuthUser | null) => {
     const normalized = normalizeAuthUser(u)
@@ -252,6 +288,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Periodic token check + bfcache / tab-focus revalidation
   useEffect(() => {
     const check = (opts?: { expired?: boolean }) => {
+      // Idle-timeout already wiped credentials; let its own delayed redirect
+      // (which carries reason=inactivity) fire instead of racing it here.
+      if (idleLoggedOutRef.current) return
       const token = readStoredToken()
       if (!token) {
         enforceSession({ hardRedirect: true })
@@ -305,9 +344,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  const isLoggedIn = Boolean(user)
+
+  // Track the last time the user touched the mouse/keyboard/touchscreen while logged in.
+  useEffect(() => {
+    if (!isLoggedIn) return
+    lastActivityRef.current = Date.now()
+    const markActive = () => { lastActivityRef.current = Date.now() }
+    IDLE_ACTIVITY_EVENTS.forEach(evt => window.addEventListener(evt, markActive, { passive: true }))
+    return () => {
+      IDLE_ACTIVITY_EVENTS.forEach(evt => window.removeEventListener(evt, markActive))
+    }
+  }, [isLoggedIn])
+
+  // AFK guard: after 15 minutes with no activity, wipe the session and show the notice.
+  useEffect(() => {
+    if (!isLoggedIn) return
+    const timer = setInterval(() => {
+      if (idleLoggedOutRef.current) return
+      if (Date.now() - lastActivityRef.current >= IDLE_TIMEOUT_MS) {
+        idleLoggedOutRef.current = true
+        wipeAuthCredentials({ keepRememberedEmail: true })
+        setUserState(null)
+        setIdleLoggedOut(true)
+      }
+    }, IDLE_CHECK_INTERVAL_MS)
+    return () => clearInterval(timer)
+  }, [isLoggedIn])
+
+  // Give the popup a moment on screen, then hard-redirect (full navigation, same as logout()).
+  useEffect(() => {
+    if (!idleLoggedOut) return
+    const t = setTimeout(() => {
+      window.location.replace('/login?expired=true&reason=inactivity')
+    }, IDLE_NOTICE_REDIRECT_DELAY_MS)
+    return () => clearTimeout(t)
+  }, [idleLoggedOut])
+
   return (
     <AuthContext.Provider value={{ user, setUser, logout, refreshProfile }}>
       {children}
+      {idleLoggedOut && <IdleSessionExpiredNotice />}
     </AuthContext.Provider>
   )
 }
