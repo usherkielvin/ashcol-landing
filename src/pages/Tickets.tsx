@@ -7207,6 +7207,10 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           canEdit={canEdit}
           onClose={() => setScheduleDetailsPopup(null)}
           onOpenStatusPicker={openStatusPicker}
+          onUpdateTicket={(updated) => {
+            setTickets(prev => prev.map(t => (t.id === updated.id ? { ...t, ...updated } : t)))
+            setScheduleDetailsPopup(prev => prev ? { ...prev, ticket: updated } : null)
+          }}
         />
       )}
 
