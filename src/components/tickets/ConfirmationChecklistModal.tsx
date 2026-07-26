@@ -4,7 +4,6 @@ import { X, Save, CheckCircle2, Loader2, AlertCircle } from 'lucide-react'
 import type { Ticket } from '../../utils/ticketHelpers'
 import { getCustomerDisplayName, getF } from '../../utils/ticketHelpers'
 import { API_BASE_URL } from '../../utils/api'
-import { useAuth } from '../../contexts/AuthContext'
 
 export const CHECKLIST_QUESTIONS: { id: string; num: number; question: string }[] = [
   { id: 'q1', num: 1, question: 'Na-deliver na po ba ang unit?' },
@@ -91,7 +90,6 @@ export function ConfirmationChecklistModal({
   onClose,
   onSaved,
 }: ConfirmationChecklistModalProps) {
-  const { user } = useAuth()
   const rawChecklist = ticket.confirmationChecklist || (ticket as any).confirmation_checklist
   const initialData = parseChecklistData(rawChecklist)
   const [data, setData] = useState<ChecklistData>(initialData)
