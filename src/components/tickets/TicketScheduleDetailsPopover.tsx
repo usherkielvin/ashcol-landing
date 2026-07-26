@@ -43,6 +43,7 @@ export function TicketScheduleDetailsPopover({
   canEdit,
   onClose,
   onOpenStatusPicker,
+  onOpenChecklist,
   onUpdateTicket,
 }: {
   popup: { ticket: Ticket; x: number; y: number; ghostKind?: 'completed' | 'resched' | 'cancelled' | null }
@@ -51,6 +52,7 @@ export function TicketScheduleDetailsPopover({
   canEdit: boolean
   onClose: () => void
   onOpenStatusPicker: (ticket: Ticket, mode?: 'inline' | 'edit-form', anchorEl?: HTMLElement | null) => void
+  onOpenChecklist?: (ticket: Ticket) => void
   onUpdateTicket?: (updatedTicket: Ticket) => void
 }) {
   const [currentTicket, setCurrentTicket] = useState<Ticket>(popup.ticket)
@@ -82,6 +84,15 @@ export function TicketScheduleDetailsPopover({
   const isFilled = isChecklistFilled(rawChecklist)
   const checklistData = parseChecklistData(rawChecklist)
   const lastUpdatedText = formatChecklistLastUpdated(checklistData.completedAt)
+
+  const handleOpenChecklist = () => {
+    onClose()
+    if (onOpenChecklist) {
+      onOpenChecklist(detailTicket)
+    } else {
+      setShowChecklist(true)
+    }
+  }
 
   return ReactDOM.createPortal(
     <div className="fixed inset-0 z-[12000]" onClick={onClose}>
@@ -200,7 +211,7 @@ export function TicketScheduleDetailsPopover({
 
             <button
               type="button"
-              onClick={() => setShowChecklist(true)}
+              onClick={handleOpenChecklist}
               className={`w-full py-2 px-3 rounded-lg text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-sm ${
                 isFilled
                   ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20'
@@ -221,7 +232,7 @@ export function TicketScheduleDetailsPopover({
           >
             <button
               type="button"
-              onClick={() => setShowChecklist(true)}
+              onClick={handleOpenChecklist}
               className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all ${
                 isFilled
                   ? 'bg-emerald-600 text-white hover:bg-emerald-500'

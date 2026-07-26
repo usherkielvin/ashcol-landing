@@ -56,6 +56,7 @@ import { TicketFinalDatePickerPopover } from '../components/tickets/TicketFinalD
 import { AssignDriversModal } from '../components/tickets/AssignDriversModal'
 import { ExcelImportResultsModal } from '../components/tickets/ExcelImportResultsModal'
 import { CustomDatePickerModal } from '../components/tickets/CustomDatePickerModal'
+import { ConfirmationChecklistModal } from '../components/tickets/ConfirmationChecklistModal'
 import {
   CLOSING_SCHEDULE_STATUSES, INLINE_EDIT_COLUMNS, SCHEDULES_ACTIVE_DATE_KEY, SCHEDULE_CLOSING_OPTS,
   SCHEDULE_PENDING_OPTS, SCHEDULE_PENDING_STATUS_VALUES, TABLE_ROW_HEIGHT,
@@ -2749,6 +2750,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     y: number
     ghostKind?: 'completed' | 'resched' | 'cancelled' | null
   } | null>(null)
+  const [checklistTicket, setChecklistTicket] = useState<Ticket | null>(null)
   const [finalDatePicker, setFinalDatePicker] = useState<{
     ticket: Ticket
     x: number
@@ -7207,9 +7209,25 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           canEdit={canEdit}
           onClose={() => setScheduleDetailsPopup(null)}
           onOpenStatusPicker={openStatusPicker}
+          onOpenChecklist={(ticket) => {
+            setScheduleDetailsPopup(null)
+            setChecklistTicket(ticket)
+          }}
           onUpdateTicket={(updated) => {
             setTickets(prev => prev.map(t => (t.id === updated.id ? { ...t, ...updated } : t)))
             setScheduleDetailsPopup(prev => prev ? { ...prev, ticket: updated } : null)
+          }}
+        />
+      )}
+
+      {checklistTicket && (
+        <ConfirmationChecklistModal
+          ticket={checklistTicket}
+          isLight={isLight}
+          onClose={() => setChecklistTicket(null)}
+          onSaved={(updated) => {
+            setTickets(prev => prev.map(t => (t.id === updated.id ? { ...t, ...updated } : t)))
+            setChecklistTicket(null)
           }}
         />
       )}

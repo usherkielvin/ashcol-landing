@@ -204,7 +204,7 @@ export function ConfirmationChecklistModal({
 
   return ReactDOM.createPortal(
     <div
-      className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-fadeIn"
+      className="fixed inset-0 z-[20000] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-fadeIn"
     >
       <div
         className="w-[96vw] max-w-[1400px] h-[92vh] max-h-[920px] rounded-2xl shadow-2xl flex flex-col overflow-hidden border"
