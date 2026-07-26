@@ -86,12 +86,31 @@ export function TicketScheduleDetailsPopover({
   const lastUpdatedText = formatChecklistLastUpdated(checklistData.completedAt)
 
   const handleOpenChecklist = () => {
-    onClose()
     if (onOpenChecklist) {
+      onClose()
       onOpenChecklist(detailTicket)
     } else {
       setShowChecklist(true)
     }
+  }
+
+  if (showChecklist) {
+    return (
+      <ConfirmationChecklistModal
+        ticket={currentTicket}
+        isLight={isLight}
+        onClose={() => {
+          setShowChecklist(false)
+          onClose()
+        }}
+        onSaved={(updated) => {
+          setCurrentTicket(updated)
+          onUpdateTicket?.(updated)
+          setShowChecklist(false)
+          onClose()
+        }}
+      />
+    )
   }
 
   return ReactDOM.createPortal(
@@ -256,18 +275,6 @@ export function TicketScheduleDetailsPopover({
             </button>
           </div>
         ) : null}
-
-        {showChecklist && (
-          <ConfirmationChecklistModal
-            ticket={currentTicket}
-            isLight={isLight}
-            onClose={() => setShowChecklist(false)}
-            onSaved={(updated) => {
-              setCurrentTicket(updated)
-              onUpdateTicket?.(updated)
-            }}
-          />
-        )}
       </div>
     </div>,
     document.body,
