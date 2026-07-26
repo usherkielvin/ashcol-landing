@@ -175,6 +175,5 @@ export function inferCategoryFromTicket(ticket: {
   if (raw.includes('payroll')) return 'PAYROLL_TASKS'
   if (raw.includes('quotation') || raw.includes('quote')) return 'QUOTATION'
   if (raw.includes('fund') || raw.includes('rf')) return 'REQUEST_FOR_FUND'
-  if (raw.includes('wty') || raw.includes('warranty')) return 'WTY_REGISTRATION'
   return 'INSTALLATION'
 }

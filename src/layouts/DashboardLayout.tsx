@@ -8,7 +8,7 @@ import {
   ChevronRight, ChevronLeft, UserCircle, ChevronDown,
   PanelLeftOpen, ClipboardList, Search,
   User, Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
-  Building2, Calendar, Landmark, Wifi, CircleDollarSign, ListOrdered, ShieldCheck,
+  Building2, Calendar, Landmark, Wifi, CircleDollarSign, ListOrdered,
   LayoutDashboard, Route
 } from 'lucide-react'
 import {
@@ -87,7 +87,6 @@ function buildNavGroups(navLinks: NavLinkDef[]) {
         { name: 'My Tickets', icon: <MdOutlineAssignmentInd size={16} />, path: findPath('My Tickets') },
         { name: 'Schedules', icon: <MdOutlineCalendarMonth size={16} />, path: findPath('Schedules') },
         { name: 'Archives', icon: <MdOutlineArchive size={16} />, path: findPath('Archives') },
-        { name: 'Registration', icon: <ShieldCheck size={16} />, path: findPath('Registration') },
       ].filter(s => s.path !== '#' || hasLink(s.name)),
     },
     {
@@ -333,7 +332,6 @@ export default function DashboardLayout() {
     { name: 'Relays',          path: '/relays',           icon: Radio,           roles: ['admin', 'management'] },
     { name: 'Search',          path: '/search',          icon: Search },
     { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
-    { name: 'Registration',    path: '/warranty-registration', icon: ShieldCheck, roles: ['admin', 'management'] },
     { name: 'Office tasks',    path: '/office-tasks',     icon: Building2,       roles: ['admin', 'management'] },
     { name: 'Lineup',          path: '/lineup',           icon: ListOrdered,     roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
@@ -933,7 +931,7 @@ export default function DashboardLayout() {
         <main className={
           currentPage === 'DDRM'
             ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-[2px]"
-            : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration' || currentPage === 'Search')
+            : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search')
               ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
               : "flex-1 overflow-y-auto p-5 md:p-8 relative"
         }>
@@ -946,7 +944,7 @@ export default function DashboardLayout() {
                    zIndex: 0,
                  }} />
           )}
-          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration' || currentPage === 'Search' || currentPage === 'DDRM') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
+          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'DDRM') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
             {/* Do not key Outlet by pathname — that remounts Schedules on every nav and forces a reload spinner. */}
             <Outlet context={{ setSidebarOpen }} />
           </div>

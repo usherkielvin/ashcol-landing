@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import ReactDOM from 'react-dom'
-import { AlertTriangle, FileText, X, Store, UserRound, Wind, Users, CalendarDays, MessageSquare, Info, Truck } from 'lucide-react'
+import { AlertTriangle, FileText, X, Store, UserRound, Wind, Users, CalendarDays, MessageSquare, Info, Truck, CheckCircle2, RefreshCw, ArrowRight } from 'lucide-react'
 import { API_BASE_URL, formatBranchName } from '../../utils/api'
 import { resolveScheduleStatusFields } from '../../constants/ticketCategories'
 import { buildRelayEditDraft, type RelayEditDraft } from './relayEditForm'
@@ -69,7 +69,6 @@ const EField = ({ label, children, className = '' }: { label: string; children: 
 
 const ESHead = ({
   title,
-  subtitle,
   step,
   icon: Icon,
   border,
@@ -86,7 +85,6 @@ const ESHead = ({
     </div>
     <div className="min-w-0">
       <p className="text-[11.5px] font-black uppercase tracking-wider text-[#10B981] leading-tight">{title}</p>
-      {subtitle && <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 leading-tight mt-0.5">{subtitle}</p>}
     </div>
   </div>
 )
@@ -137,6 +135,11 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
     buildRelayEditDraft(ticket, parseStoreVendor, resolveBranch, draftExtensions),
   )
   const [showHistory, setShowHistory] = useState(false)
+  const [confirmModal, setConfirmModal] = useState<{
+    type: 'status' | 'discard'
+    targetStatus?: { value: string; label: string }
+    onConfirm: () => void
+  } | null>(null)
 
   useEffect(() => {
     const next = buildRelayEditDraft(ticket, parseStoreVendor, resolveBranch, draftExtensions)
@@ -146,7 +149,13 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
 
   const requestClose = () => {
     if (JSON.stringify(draft) !== initialDraftRef.current) {
-      if (!window.confirm('Discard unsaved changes on this ticket?')) return
+      setConfirmModal({
+        type: 'discard',
+        onConfirm: () => {
+          onClose()
+        },
+      })
+      return
     }
     onClose()
   }
@@ -178,7 +187,9 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
 
   const relayInput = `${compactInput} normal-case`
 
-  return ReactDOM.createPortal(
+  return (
+    <>
+      {ReactDOM.createPortal(
     <div
       className={`fixed inset-0 z-[9999] flex flex-col overflow-hidden ${isOverview ? 'bg-white dark:bg-[#0a1120] sm:bg-black/50' : ''} sm:items-center sm:justify-center sm:p-4`}
       style={isOverview ? undefined : { backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
@@ -191,12 +202,17 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 shrink-0 safe-area-top" style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
           <div className="min-w-0 flex-1 mr-4">
             <div className="flex items-center gap-3 flex-wrap">
-              <h2 className="text-xl sm:text-2xl font-black leading-none uppercase tracking-wide" style={{ color: textPrimary }}>
-                EDIT CUSTOMER TICKET
+              <h2 className="text-xl sm:text-2xl font-black leading-none uppercase tracking-wide flex items-center gap-2.5 flex-wrap" style={{ color: textPrimary }}>
+                <span>EDIT TICKET</span>
+                <span className="text-lg sm:text-xl px-3 py-0.5 rounded font-extrabold tracking-tight" style={{ backgroundColor: '#10B981', color: 'white', border: `1px solid ${border}` }}>
+                  {ticketNumberLabel}
+                </span>
+                {draft.customerName && (
+                  <span className="text-lg sm:text-xl font-black truncate max-w-xs sm:max-w-md" style={{ color: textMuted }}>
+                    — {draft.customerName.toUpperCase()}
+                  </span>
+                )}
               </h2>
-              <span className="text-lg sm:text-xl px-3 py-0.5 rounded font-extrabold tracking-tight" style={{ backgroundColor: '#10B981', color: 'white', border: `1px solid ${border}` }}>
-                {ticketNumberLabel}
-              </span>
               {editOriginalDate && isFieldSurface && (
                 <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>
                   Scheduled {editOriginalDate}
@@ -249,31 +265,40 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
             <div className="flex flex-col gap-5">
               {(() => {
                 const renderStatusButton = (st: { value: string, label: string }) => {
-                   let currentStat = (isFieldSurface ? draft.scheduleStatus : draft.updateStatus) || '';
-                   if (['PENDING', 'ASSIGNED', 'SCHEDULED', 'COMPLETED', ''].includes(currentStat.toUpperCase())) {
-                     currentStat = draft.serviceType || 'S/I';
-                   }
-                   currentStat = currentStat.toUpperCase();
-                   const isSelected = currentStat === st.value || currentStat === st.label || 
-                                      (currentStat === 'INSTALLATION' && st.value === 'INSTALL') ||
-                                      (currentStat === 'SURVEY_INSTALL' && st.value === 'S/I');
+                    let rawStat = (draft.scheduleStatus || draft.updateStatus || draft.serviceType || '').trim().toUpperCase()
+                    if (['PENDING', 'ASSIGNED', 'SCHEDULED', 'COMPLETED', ''].includes(rawStat)) {
+                      rawStat = (draft.serviceType || 'S/I').trim().toUpperCase()
+                    }
+
+                    const targetVal = st.value.toUpperCase()
+                    const targetLabel = st.label.toUpperCase()
+
+                    const isSelected =
+                      rawStat === targetVal ||
+                      rawStat === targetLabel ||
+                      ((rawStat === 'SERVICES' || rawStat === 'SERVICE') && (targetVal === 'SERVICE' || targetLabel === 'SERVICE')) ||
+                      ((rawStat === 'INSTALLATION' || rawStat === 'INSTALL') && (targetVal === 'INSTALL' || targetLabel === 'INSTALL')) ||
+                      ((rawStat === 'SURVEY_INSTALL' || rawStat === 'S/I') && (targetVal === 'S/I' || targetLabel === 'SURVEY_INSTALL'));
                    return (
                      <button
                        key={st.value}
                        type="button"
                        onClick={() => {
                           if (!isSelected) {
-                            if (window.confirm(`Are you sure you want to change the status to ${st.label}?`)) {
-                               const updates: any = {}
-                               if (isFieldSurface) updates.scheduleStatus = st.value
-                               else updates.updateStatus = st.value
-                               
-                               // Sync serviceType & ticketCategory
-                               updates.serviceType = st.value
-                               updates.ticketCategory = resolveScheduleStatusFields(st.value).ticketCategory || 'INSTALLATION'
-                               
-                               patch(updates)
-                            }
+                             setConfirmModal({
+                               type: 'status',
+                               targetStatus: st,
+                               onConfirm: () => {
+                                 const updates: any = {
+                                   scheduleStatus: st.value,
+                                   updateStatus: st.value,
+                                   serviceType: st.value,
+                                   ticketCategory: resolveScheduleStatusFields(st.value).ticketCategory || 'INSTALLATION',
+                                 }
+                                 
+                                 patch(updates)
+                               },
+                             })
                           }
                        }}
                        className="flex items-center justify-center py-3 px-2 rounded-xl border font-black text-[11px] uppercase tracking-wide transition-all duration-150 select-none cursor-pointer"
@@ -423,8 +448,8 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
 
           {/* 4. Ashcol branch & assignment */}
           <div>
-            <ESHead step={4} icon={<Users className="w-3.5 h-3.5" />} title="Branch & Assignment" subtitle="Which Ashcol branch & negotiator owns this" border={border} />
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
+            <ESHead step={4} icon={<Users className="w-3.5 h-3.5" />} title="Branch and Negotiator" border={border} />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4">
               <EField label="Branch Zone">
                 <select
                   value={draft.assignBranchId}
@@ -434,6 +459,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                     patch({
                       assignBranchId: nextBranchId,
                       assignTechId: '',
+                      negotiatorPhone: '',
                       updateStatus: hadNegotiator && (draft.updateStatus === 'ASSIGNED' || draft.updateStatus === 'SCHEDULED')
                         ? 'PENDING'
                         : draft.updateStatus,
@@ -447,7 +473,24 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                 </select>
               </EField>
               <EField label="Negotiator">
-                <select value={draft.assignTechId} onChange={(e) => { const val = e.target.value; const foundEmp = negotiatorsForBranch(draft.assignBranchId || undefined).find((emp) => emp.id === val); const negoBranchId = foundEmp?.branchId ? (resolveBranch(foundEmp.branchId)?.id || foundEmp.branchId) : draft.assignBranchId; patch({ assignTechId: val, assignBranchId: negoBranchId, updateStatus: val && draft.updateStatus === 'PENDING' ? 'ASSIGNED' : draft.updateStatus }) }} className={relayInput} style={inputStyle}>
+                <select
+                  value={draft.assignTechId}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    const foundEmp = negotiatorsForBranch(undefined).find((emp) => emp.id === val)
+                      || negotiatorsForBranch(draft.assignBranchId || undefined).find((emp) => emp.id === val)
+                    const negoBranchId = foundEmp?.branchId ? (resolveBranch(foundEmp.branchId)?.id || foundEmp.branchId) : draft.assignBranchId
+                    const profilePhone = foundEmp?.phone || ''
+                    patch({
+                      assignTechId: val,
+                      assignBranchId: negoBranchId,
+                      negotiatorPhone: profilePhone,
+                      updateStatus: val && draft.updateStatus === 'PENDING' ? 'ASSIGNED' : draft.updateStatus,
+                    })
+                  }}
+                  className={relayInput}
+                  style={inputStyle}
+                >
                   <option value="">Select Negotiator...</option>
                   {negotiatorsForBranch(draft.assignBranchId || undefined).map((emp) => {
                     const branchRaw = emp.branchId ? (resolveBranch(emp.branchId)?.name || '') : ''
@@ -457,6 +500,17 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                     return <option key={emp.id} value={emp.id}>{nameWithBranch.toUpperCase()}</option>
                   })}
                 </select>
+              </EField>
+              <EField label="Negotiator Phone No.">
+                <input
+                  type="text"
+                  readOnly
+                  value={
+                    (negotiatorsForBranch(undefined).find((emp) => emp.id === draft.assignTechId)?.phone || draft.negotiatorPhone || '').trim() || 'N/A'
+                  }
+                  className={`${relayInput} cursor-text select-all`}
+                  style={inputStyle}
+                />
               </EField>
             </div>
           </div>
@@ -475,30 +529,42 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                 <EField label="Relayed Date">
                   <button
                     type="button"
+                    disabled={Boolean(draft.relayedDate)}
                     onClick={(e) => {
+                      if (draft.relayedDate) return
                       const input = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
                       if (input && input.showPicker) input.showPicker();
                     }}
-                    className={`${relayInput} font-bold text-center relative flex flex-col items-center justify-center`}
+                    className={`${relayInput} font-bold text-center relative flex flex-col items-center justify-center ${
+                      draft.relayedDate ? 'cursor-default opacity-90' : ''
+                    }`}
                     style={inputStyle}
                   >
                     {draft.relayedDate ? new Date(draft.relayedDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase() : 'ADD DATE'}
-                    <input type="date" value={draft.relayedDate} onChange={(e) => patch({ relayedDate: e.target.value })} className="absolute opacity-0 pointer-events-none w-0 h-0" style={{ pointerEvents: 'none' }} />
+                    {!draft.relayedDate && (
+                      <input type="date" value={draft.relayedDate} onChange={(e) => patch({ relayedDate: e.target.value })} className="absolute opacity-0 pointer-events-none w-0 h-0" style={{ pointerEvents: 'none' }} />
+                    )}
                   </button>
                 </EField>
               )}
               <EField label="Preferred Date">
                 <button
                   type="button"
+                  disabled={Boolean(draft.preferredDate)}
                   onClick={(e) => {
+                    if (draft.preferredDate) return
                     const input = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
                     if (input && input.showPicker) input.showPicker();
                   }}
-                  className={`${relayInput} font-bold text-center relative flex flex-col items-center justify-center`}
+                  className={`${relayInput} font-bold text-center relative flex flex-col items-center justify-center ${
+                    draft.preferredDate ? 'cursor-default opacity-90' : ''
+                  }`}
                   style={inputStyle}
                 >
                   {draft.preferredDate ? new Date(draft.preferredDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase() : 'ADD DATE'}
-                  <input type="date" value={draft.preferredDate} onChange={(e) => patch({ preferredDate: e.target.value })} className="absolute opacity-0 pointer-events-none w-0 h-0" style={{ pointerEvents: 'none' }} />
+                  {!draft.preferredDate && (
+                    <input type="date" value={draft.preferredDate} onChange={(e) => patch({ preferredDate: e.target.value })} className="absolute opacity-0 pointer-events-none w-0 h-0" style={{ pointerEvents: 'none' }} />
+                  )}
                 </button>
               </EField>
               <EField label="Schedule Date" className={!isOverview && !isReschedStatus ? 'md:col-span-2' : ''}>
@@ -692,6 +758,79 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
       </div>
     </div>,
     document.body,
+  )}
+
+  {confirmModal && ReactDOM.createPortal(
+    <div
+      className="fixed inset-0 z-[12000] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150"
+      style={{ backgroundColor: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(6px)' }}
+      onClick={() => setConfirmModal(null)}
+    >
+      <div
+        className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden border animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-150 p-5 sm:p-6 flex flex-col gap-4"
+        style={{ backgroundColor: cardBg, borderColor: border }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm sm:text-base font-black leading-tight" style={{ color: textPrimary }}>
+            {confirmModal.type === 'discard'
+              ? 'Discard Unsaved Changes?'
+              : 'Confirm Status Change'}
+          </h3>
+          <button
+            type="button"
+            onClick={() => setConfirmModal(null)}
+            className="p-1.5 rounded-lg hover:bg-slate-500/10 transition-colors shrink-0"
+            style={{ color: textMuted }}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {(() => {
+          const currentStatusLabel = (() => {
+            const raw = ((isFieldSurface ? draft.scheduleStatus : draft.updateStatus) || draft.serviceType || 'PENDING').toUpperCase()
+            if (raw === 'SERVICES' || raw === 'SERVICE') return 'SERVICE'
+            if (raw === 'INSTALLATION' || raw === 'INSTALL') return 'INSTALL'
+            if (raw === 'S/I' || raw === 'SURVEY_INSTALL') return 'SURVEY & INSTALL'
+            return raw.replace(/_/g, ' ')
+          })()
+
+          return (
+            <p className="text-xs sm:text-sm font-medium leading-relaxed" style={{ color: textPrimary }}>
+              {confirmModal.type === 'discard'
+                ? 'You have unsaved changes on this ticket. Discard changes and close?'
+                : `Are you sure you want to change the status from ${currentStatusLabel} to ${confirmModal.targetStatus?.label}?`}
+            </p>
+          )
+        })()}
+
+        <div className="flex items-center justify-end gap-2.5 pt-2">
+          <button
+            type="button"
+            onClick={() => setConfirmModal(null)}
+            className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-bold border transition-colors hover:bg-slate-500/10"
+            style={{ borderColor: inputBorder, color: textMuted, backgroundColor: 'transparent' }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              confirmModal.onConfirm()
+              setConfirmModal(null)
+            }}
+            className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 active:scale-95 shadow-sm"
+            style={{ background: confirmModal.type === 'discard' ? 'linear-gradient(135deg, #f59e0b, #d97706)' : 'linear-gradient(135deg, #10B981, #059669)' }}
+          >
+            {confirmModal.type === 'discard' ? 'Discard' : 'OK'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )}
+    </>
   )
 }
 

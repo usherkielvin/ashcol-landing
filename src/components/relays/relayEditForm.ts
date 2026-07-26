@@ -24,6 +24,7 @@ export type RelayEditDraft = {
   updateStatus: string
   assignBranchId: string
   assignTechId: string
+  negotiatorPhone: string
   relayedDate: string
   preferredDate: string
   storeReferralFee: string
@@ -173,6 +174,7 @@ export function buildRelayEditDraft(
     updateStatus: ticket.status || 'PENDING',
     assignBranchId: resolveBranch?.(ticket.branchId)?.id || ticket.branchId || '',
     assignTechId: ticket.assignedTo || ticket.negotiatorId || ticket.negotiator_id || '',
+    negotiatorPhone: String(parsedDetails.negotiatorPhone || (ticket as any).negotiatorPhone || (ticket as any).negotiator_phone || (ticket as any).negotiatorContact || (ticket as any).negotiator_contact || ''),
     relayedDate: parsedDetails.relayedDate || (ticket.createdAt ? ticket.createdAt.split('T')[0] : ''),
     preferredDate: ticket.preferredDate ? ticket.preferredDate.split('T')[0] : '',
     storeReferralFee: String(ticket.storeReferralFee ?? ticket.store_referral_fee ?? ''),

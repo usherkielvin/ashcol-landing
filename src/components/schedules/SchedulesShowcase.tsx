@@ -158,6 +158,7 @@ function buildInstallerHeaders(isTaguigServices: boolean) {
     'NO.',
     'TICKET NO',
     'NAME',
+    'CONTACT NO',
     'DISTRICT',
     'BRAND',
     dealerLabel,
@@ -175,6 +176,7 @@ function buildDriverHeaders() {
     'NO.',
     'TICKET NO',
     'NAME',
+    'CONTACT NO',
     'DESTINATION',
     'DISTRICT',
     'STATUS',
@@ -189,6 +191,7 @@ function installerRowToCells(row: ScheduleShowcaseRow, paymentByRowId?: Record<s
     String(row.index),
     showcaseCellText(row.ticketNumber),
     showcaseCellText(row.name),
+    showcaseCellText(row.contact),
     showcaseCellText(row.district).toUpperCase(),
     showcaseCellText(row.brand),
     showcaseCellText(row.dealer).toUpperCase(),
@@ -207,6 +210,7 @@ function installerRowToPdfCells(row: ScheduleShowcaseRow, paymentByRowId?: Recor
     String(row.index),
     pdfCellText(row.ticketNumber),
     pdfCellText(row.name),
+    pdfCellText(row.contact),
     pdfCellText(row.district),
     pdfCellText(row.brand),
     pdfCellText(row.dealer),
@@ -224,6 +228,7 @@ function driverRowToCells(row: ScheduleShowcaseRow) {
     String(row.index),
     showcaseCellText(row.ticketNumber),
     showcaseCellText(row.name),
+    showcaseCellText(row.contact),
     showcaseCellText(row.destination),
     showcaseCellText(row.district).toUpperCase(),
     showcaseCellText(row.status),
@@ -237,6 +242,7 @@ function driverRowToPdfCells(row: ScheduleShowcaseRow) {
     String(row.index),
     pdfCellText(row.ticketNumber),
     pdfCellText(row.name),
+    pdfCellText(row.contact),
     pdfCellText(row.destination),
     pdfCellText(row.district),
     pdfCellText(row.status),
@@ -273,20 +279,21 @@ const PDF_BW_TABLE = {
 
 /** A4 landscape usable width ≈ 297 − 16mm margins */
 const INSTALLER_COLUMN_STYLES = {
-  0: { halign: 'center' as const, cellWidth: 7 },
-  1: { halign: 'center' as const, cellWidth: 16 },
-  2: { cellWidth: 30 },
-  3: { cellWidth: 18 },
-  4: { cellWidth: 20 },
+  0: { halign: 'center' as const, cellWidth: 6 },
+  1: { halign: 'center' as const, cellWidth: 15 },
+  2: { cellWidth: 26 },
+  3: { halign: 'center' as const, cellWidth: 20 },
+  4: { cellWidth: 16 },
   5: { cellWidth: 18 },
-  6: { halign: 'center' as const, cellWidth: 20 },
-  7: { cellWidth: 22 },
-  8: { halign: 'center' as const, cellWidth: 20 },
+  6: { cellWidth: 16 },
+  7: { halign: 'center' as const, cellWidth: 18 },
+  8: { cellWidth: 18 },
   9: { halign: 'center' as const, cellWidth: 18 },
-  10: { cellWidth: 42 },
-  11: {
+  10: { halign: 'center' as const, cellWidth: 16 },
+  11: { cellWidth: 38 },
+  12: {
     halign: 'right' as const,
-    cellWidth: 25,
+    cellWidth: 22,
     fontStyle: 'bold' as const,
     fontSize: 7.5,
     overflow: 'linebreak' as const,
@@ -294,14 +301,15 @@ const INSTALLER_COLUMN_STYLES = {
 }
 
 const DRIVER_COLUMN_STYLES = {
-  0: { halign: 'center' as const, cellWidth: 10 },
-  1: { halign: 'center' as const, cellWidth: 24 },
-  2: { cellWidth: 45 },
-  3: { cellWidth: 62 },
-  4: { cellWidth: 30 },
-  5: { halign: 'center' as const, cellWidth: 34 },
-  6: { halign: 'center' as const, cellWidth: 36 },
-  7: { halign: 'center' as const, cellWidth: 28 },
+  0: { halign: 'center' as const, cellWidth: 9 },
+  1: { halign: 'center' as const, cellWidth: 22 },
+  2: { cellWidth: 38 },
+  3: { halign: 'center' as const, cellWidth: 28 },
+  4: { cellWidth: 52 },
+  5: { cellWidth: 26 },
+  6: { halign: 'center' as const, cellWidth: 30 },
+  7: { halign: 'center' as const, cellWidth: 32 },
+  8: { halign: 'center' as const, cellWidth: 24 },
 }
 
 function drawPdfDateTable(
@@ -390,7 +398,7 @@ async function exportShowcasePdfDocument(options: {
       columnStyles: INSTALLER_COLUMN_STYLES,
       didParseCell: (data) => {
         if (data.row.section === 'body') {
-          const statusText = (data.row.raw as unknown as unknown[])[6]
+          const statusText = (data.row.raw as unknown as unknown[])[7]
           if (typeof statusText === 'string') {
             const bg = getRowPdfBgColor(statusText)
             if (bg) data.cell.styles.fillColor = bg
@@ -421,7 +429,7 @@ async function exportShowcasePdfDocument(options: {
         columnStyles: DRIVER_COLUMN_STYLES,
         didParseCell: (data) => {
           if (data.row.section === 'body') {
-            const statusText = (data.row.raw as unknown as unknown[])[5]
+            const statusText = (data.row.raw as unknown as unknown[])[6]
             if (typeof statusText === 'string') {
               const bg = getRowPdfBgColor(statusText)
               if (bg) data.cell.styles.fillColor = bg
@@ -542,15 +550,16 @@ export function SchedulesShowcase({
         <colgroup>
           <col style={{ width: '3%' }} />
           <col style={{ width: '6%' }} />
-          <col style={{ width: '11%' }} />
-          <col style={{ width: '7%' }} />
+          <col style={{ width: '10%' }} />
           <col style={{ width: '8%' }} />
           <col style={{ width: '7%' }} />
           <col style={{ width: '7%' }} />
-          <col style={{ width: '8%' }} />
-          <col style={{ width: '8%' }} />
+          <col style={{ width: '6%' }} />
           <col style={{ width: '7%' }} />
-          <col style={{ width: '16%' }} />
+          <col style={{ width: '7%' }} />
+          <col style={{ width: '7%' }} />
+          <col style={{ width: '6%' }} />
+          <col style={{ width: '14%' }} />
           <col style={{ width: '12%' }} />
         </colgroup>
         <thead>
@@ -576,9 +585,9 @@ export function SchedulesShowcase({
                     key={cellIdx}
                     style={{
                       ...tdStyle,
-                      textAlign: cellIdx === 11 ? 'right' : [0, 1, 6, 8, 9].includes(cellIdx) ? 'center' : 'left',
-                      fontWeight: cellIdx === 11 ? 700 : cellIdx === 6 ? 600 : 500,
-                      fontSize: cellIdx === 10 || cellIdx === 11 ? '9px' : '9.5px',
+                      textAlign: cellIdx === 12 ? 'right' : [0, 1, 3, 7, 9, 10].includes(cellIdx) ? 'center' : 'left',
+                      fontWeight: cellIdx === 12 ? 700 : cellIdx === 7 ? 600 : 500,
+                      fontSize: cellIdx === 11 || cellIdx === 12 ? '9px' : '9.5px',
                     }}
                   >
                     {value}
@@ -600,12 +609,13 @@ export function SchedulesShowcase({
       >
         <colgroup>
           <col style={{ width: '4%' }} />
+          <col style={{ width: '9%' }} />
+          <col style={{ width: '15%' }} />
+          <col style={{ width: '12%' }} />
+          <col style={{ width: '20%' }} />
           <col style={{ width: '10%' }} />
-          <col style={{ width: '16%' }} />
-          <col style={{ width: '24%' }} />
-          <col style={{ width: '12%' }} />
-          <col style={{ width: '12%' }} />
-          <col style={{ width: '12%' }} />
+          <col style={{ width: '10%' }} />
+          <col style={{ width: '10%' }} />
           <col style={{ width: '10%' }} />
         </colgroup>
         <thead>
@@ -631,8 +641,8 @@ export function SchedulesShowcase({
                     key={cellIdx}
                     style={{
                       ...tdStyle,
-                      textAlign: [0, 1, 5, 6, 7].includes(cellIdx) ? 'center' : 'left',
-                      fontWeight: cellIdx === 5 ? 700 : 500,
+                      textAlign: [0, 1, 3, 6, 7, 8].includes(cellIdx) ? 'center' : 'left',
+                      fontWeight: cellIdx === 6 ? 700 : 500,
                       fontSize: '11px',
                       lineHeight: '1.4',
                       padding: '5px 4px',

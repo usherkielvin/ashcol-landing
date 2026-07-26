@@ -298,7 +298,6 @@ export function ticketReferencesScheduleDate(ticket: RelayScheduleTicket, dateKe
   if (!target) return false
   const norm = (v: unknown) => String(v || '').trim().split('T')[0].split(' ')[0]
   if (norm(ticket.finalDate) === target || norm(ticket.final_date) === target) return true
-  if (norm(ticket.preferredDate) === target || norm(ticket.preferred_date) === target) return true
   try {
     const acRaw = ticket.acDetails || ticket.ac_details
     const ac = typeof acRaw === 'string' ? JSON.parse(acRaw) : acRaw
@@ -318,7 +317,7 @@ export function ticketReferencesScheduleDate(ticket: RelayScheduleTicket, dateKe
   return false
 }
 
-/** Primary schedule date for cache placement (final → scheduled → preferred). */
+/** Primary schedule date for cache placement (final → scheduled). */
 export function resolveRelayScheduleDateKey(ticket: any): string {
   const normalized = normalizeRelayScheduleTicket(ticket)
   const final = String(normalized.finalDate || normalized.final_date || '').trim().split('T')[0].split(' ')[0]
@@ -332,8 +331,7 @@ export function resolveRelayScheduleDateKey(ticket: any): string {
   } catch {
     /* ignore malformed acDetails */
   }
-  const preferred = String(normalized.preferredDate || normalized.preferred_date || '').trim().split('T')[0].split(' ')[0]
-  return preferred
+  return ''
 }
 
 export function shouldExcludeRelayFromTab(ticket: RelayScheduleTicket): boolean {
