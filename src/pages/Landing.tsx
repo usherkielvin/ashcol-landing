@@ -20,15 +20,18 @@ function Reveal({
   delay = 0,
   y = 16,
   className,
+  style,
 }: {
   children: React.ReactNode
   delay?: number
   y?: number
   className?: string
+  style?: React.CSSProperties | any
 }) {
   return (
     <motion.div
       className={className}
+      style={style}
       initial={{ opacity: 0, y }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-60px' }}
@@ -1203,7 +1206,7 @@ export default function Landing() {
                   ))}
                 </div>
               </div>
- <Reveal delay={0.1} className="max-w-2xl mx-auto rounded-2xl overflow-hidden" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` } as any}></Reveal>
+
               <div
                 className="flex-1 p-6 sm:p-8 md:p-10 flex flex-col justify-between"
                 style={{ backgroundColor: t.bgCard }}
