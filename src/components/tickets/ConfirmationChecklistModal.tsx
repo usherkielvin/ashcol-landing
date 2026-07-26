@@ -151,13 +151,8 @@ export function ConfirmationChecklistModal({
       completedAt: new Date().toISOString(),
     }
 
-    // Build "JINKY encoded 15Q form" history note using the logged-in user's first name
-    const firstName = (user?.name || '').split(' ')[0].toUpperCase() || 'STAFF'
-    const historyNote = `${firstName} encoded 15Q form`
-
     const payload = {
       confirmationChecklist: JSON.stringify(updatedData),
-      remarksUpdate: historyNote,
     }
 
     try {

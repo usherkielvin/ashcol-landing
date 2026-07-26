@@ -198,8 +198,8 @@ export const CLOSING_SCHEDULE_STATUSES = new Set([
 export const SCHEDULE_PENDING_STATUS_VALUES = new Set(SCHEDULE_PENDING_OPTS.map(o => o.value))
 export const SCHEDULE_CLOSING_STATUS_VALUES = new Set(SCHEDULE_CLOSING_OPTS.map(o => o.value))
 
-export function statusShowsScheduleDetails(statusVal: string): boolean {
-  return SCHEDULE_PENDING_STATUS_VALUES.has(statusVal) || SCHEDULE_CLOSING_STATUS_VALUES.has(statusVal)
+export function statusShowsScheduleDetails(_statusVal?: string): boolean {
+  return true
 }
 
 export function getScheduleTicketKind(ticket: Ticket): string {
