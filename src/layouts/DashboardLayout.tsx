@@ -1,19 +1,18 @@
-// @ts-nocheck
-import { useState, useRef, useEffect, cloneElement, isValidElement } from 'react'
+// K — @ts-nocheck removed; proper types added throughout
+import { useState, useRef, useEffect, useMemo, cloneElement, isValidElement } from 'react'
 import { Outlet, Link, useLocation, Navigate, useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import {
   Ticket as TicketIcon,
   Menu, LogOut, X, Sun, Moon,
-  ChevronRight, ChevronLeft, UserCircle, ChevronDown,
-  PanelLeftOpen, ClipboardList, Search,
-  User, Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
+  ChevronRight, UserCircle, ChevronDown,
+  ClipboardList, Search,
+  Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
   Building2, Calendar, Landmark, Wifi, CircleDollarSign, ListOrdered,
-  LayoutDashboard, Route
+  Route
 } from 'lucide-react'
 import {
   MdOutlineConfirmationNumber,
-  MdOutlineDashboard,
   MdOutlineLocalActivity,
   MdOutlineAssignmentInd,
   MdOutlineCalendarMonth,
@@ -288,7 +287,6 @@ export default function DashboardLayout() {
   useEffect(() => {
     if (isPortalAdminUser || !user?.branchId) {
       if (!isPortalAdminUser) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setBranchLabel(null)
       }
       return
@@ -347,25 +345,25 @@ export default function DashboardLayout() {
   ]
 
   const role = (user?.role || '').toLowerCase()
-  const isAuthorizedRole = role === 'admin' || role === 'management' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
-
   const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms']
   const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms']
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 
-  const navLinks = isPortalAdmin(role)
-      ? allLinks.filter(link => {
-          if (!link.roles) return true
-          return link.roles.includes(role)
-        })
-      : isSalesUser
-        ? allLinks.filter(link => salesWorkspaceLinks.includes(link.name))
-        : isServiceUser
-          ? allLinks.filter(link => serviceWorkspaceLinks.includes(link.name))
-      : isAuthorizedRole
-        ? allLinks.filter(link => serviceWorkspaceLinks.includes(link.name))
-        : allLinks.filter(link => serviceWorkspaceLinks.includes(link.name))
+  // I — memoize navLinks so the redirect useEffect doesn't re-run on unrelated renders
+  const navLinks = useMemo(() => {
+    if (isPortalAdmin(role)) {
+      return allLinks.filter(link => {
+        if (!link.roles) return true
+        return link.roles.includes(role)
+      })
+    }
+    if (isSalesUser) return allLinks.filter(link => salesWorkspaceLinks.includes(link.name))
+    if (isServiceUser) return allLinks.filter(link => serviceWorkspaceLinks.includes(link.name))
+    // J — collapsed dead ternary: isAuthorizedRole and the default did the same thing
+    return allLinks.filter(link => serviceWorkspaceLinks.includes(link.name))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role, isSalesUser, isServiceUser])
 
   // Redirect if current path is not allowed for the user
   useEffect(() => {
@@ -385,8 +383,6 @@ export default function DashboardLayout() {
 
   // ── Color tokens (direct JS objects — no CSS vars) ──────────────
   const bg          = isLight ? '#f1f5f9'              : '#060B18'
-  const sidebarBg   = isLight ? '#ffffff'              : '#0A1120'
-  const headerBg    = isLight ? 'rgba(255,255,255,0.9)': 'rgba(6,11,24,0.9)'
   const border      = isLight ? '#e2e8f0'              : '#1a2844'
   const textPrimary = isLight ? '#0f172a'              : '#E2E8F0'
   const textMuted   = isLight ? '#64748b'              : '#6B90BE'
@@ -395,8 +391,9 @@ export default function DashboardLayout() {
 
   const currentPage = navLinks.find(l => location.pathname === l.path)?.name
     ?? (location.pathname === '/my-tickets' ? 'My Tickets' : 'Dashboard')
-  const navGroups = buildNavGroups(navLinks)
-  const collapsedNavItems = buildCollapsedNavItems(navLinks)
+  // I — memoize derived collections
+  const navGroups = useMemo(() => buildNavGroups(navLinks), [navLinks])
+  const collapsedNavItems = useMemo(() => buildCollapsedNavItems(navLinks), [navLinks])
 
   // Keep the group for the current page open; don't fight manual collapse until route changes.
   useEffect(() => {
@@ -568,9 +565,9 @@ export default function DashboardLayout() {
             const panelId = `nav-panel-${group.title.replace(/\s+/g, '-').toLowerCase()}`
             return (
               <div key={group.title} className="mb-0.5 w-full">
+                {/* G — tabIndex={-1} removed: accordion buttons are real interactive elements */}
                 <button
                   type="button"
-                  tabIndex={-1}
                   aria-expanded={isOpen}
                   aria-controls={panelId}
                   onClick={() => toggleAccordion(group.title)}
@@ -681,7 +678,7 @@ export default function DashboardLayout() {
               >
                 {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-[#10B981] rounded-r-full" />}
                 {isValidElement(item.icon)
-                  ? cloneElement(item.icon, { color: isActive ? '#10B981' : '#ffffff', className: 'shrink-0' })
+                  ? cloneElement(item.icon as React.ReactElement<{ color?: string, className?: string }>, { color: isActive ? '#10B981' : '#ffffff', className: 'shrink-0' })
                   : item.icon}
               </Link>
             )
@@ -956,3 +953,4 @@ export default function DashboardLayout() {
     </div>
   )
 }
+ 

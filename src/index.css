@@ -369,3 +369,77 @@
     padding: 0.5rem 0.75rem;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   ASHCOL — "Field Equipment" design system, motion additions
+   Append this to your existing global stylesheet (index.css / App.css)
+   ALONGSIDE the original nameplate/glow/orb rules — don't replace them,
+   this only adds new classes used by the updated Landing.tsx.
+───────────────────────────────────────────────────────────── */
+
+/* ── Floating ambient orbs ──────────────────────────────────
+   Applied on top of .orb-green / .orb-blue. Slow, subtle,
+   GPU-friendly (transform only). Respects reduced-motion. */
+@keyframes orb-drift-a {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(34px, -26px) scale(1.08); }
+}
+@keyframes orb-drift-b {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(-28px, 22px) scale(1.06); }
+}
+.orb-float-a { animation: orb-drift-a 16s ease-in-out infinite; }
+.orb-float-b { animation: orb-drift-b 20s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .orb-float-a, .orb-float-b { animation: none; }
+}
+
+/* ── Infinite marquee (clients / brand strips) ──────────────
+   Track is duplicated in JSX (children rendered twice) so the
+   -50% translate loops seamlessly regardless of content width. */
+.marquee-viewport {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, black 6%, black 94%, transparent);
+  mask-image: linear-gradient(90deg, transparent, black 6%, black 94%, transparent);
+}
+.marquee-track {
+  display: flex;
+  gap: 12px;
+  width: max-content;
+  animation-name: marquee-scroll;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+.marquee-viewport:hover .marquee-track {
+  animation-play-state: paused;
+}
+@keyframes marquee-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marquee-track { animation: none; }
+  .marquee-viewport { overflow-x: auto; }
+}
+
+/* ── Cursor-tracked emerald glow for nameplate cards ────────
+   Combine with the existing .nameplate class:
+   className="nameplate nameplate-glow ..."
+   The --mx/--my custom properties are set in Landing.tsx via
+   the GlowCard wrapper's onMouseMove handler. */
+.nameplate-glow {
+  position: relative;
+}
+.nameplate-glow::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(220px circle at var(--mx, 50%) var(--my, 50%), rgba(16, 185, 129, 0.10), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+.nameplate-glow:hover::after {
+  opacity: 1;
+}
