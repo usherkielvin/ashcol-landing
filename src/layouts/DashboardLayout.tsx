@@ -161,6 +161,9 @@ export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen]         = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [isHoverExpanded, setIsHoverExpanded] = useState(false)
+  // navVisible lags behind sidebarCollapsed so text never renders mid-transition
+  // collapse → hide text immediately; expand → show text only after width finishes
+  const [navVisible, setNavVisible] = useState(true)
   const [profileOpen, setProfileOpen]           = useState(false)
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false)
   const [openAccordion, setOpenAccordion]       = useState<string | null>(null)
@@ -168,6 +171,8 @@ export default function DashboardLayout() {
   const profileRef = useRef<HTMLDivElement>(null)
   const branchRef = useRef<HTMLDivElement>(null)
   const lastPathname = useRef<string | null>(null)
+  const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const navVisibleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
@@ -176,22 +181,43 @@ export default function DashboardLayout() {
   const [branchLabel, setBranchLabel] = useState<string | null>(null)
 
   const handleMouseEnter = () => {
+    if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
+    if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
     if (sidebarCollapsed) {
       setSidebarCollapsed(false)
       setIsHoverExpanded(true)
+      // slight delay so icons fade out before expanded text fades in
+      navVisibleTimeout.current = setTimeout(() => setNavVisible(true), 80)
     }
   }
 
   const handleMouseLeave = () => {
     if (isHoverExpanded) {
-      setSidebarCollapsed(true)
-      setIsHoverExpanded(false)
+      setNavVisible(false)
+      if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
+      hoverTimeout.current = setTimeout(() => {
+        setSidebarCollapsed(true)
+        setIsHoverExpanded(false)
+      }, 120)
     }
   }
 
   const isPortalAdminUser = isPortalAdmin(user?.role)
   const [globalBranchId, setGlobalBranchId] = useState<string | null>(() => localStorage.getItem('ashcol-global-branch-id'))
   const [adminBranches, setAdminBranches] = useState<BranchOption[]>([])
+
+  // Sync navVisible when sidebarCollapsed changes via the pin-toggle (logo click)
+  useEffect(() => {
+    if (!isHoverExpanded) {
+      if (sidebarCollapsed) {
+        if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
+        setNavVisible(false)
+      } else {
+        if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
+        navVisibleTimeout.current = setTimeout(() => setNavVisible(true), 80)
+      }
+    }
+  }, [sidebarCollapsed, isHoverExpanded])
 
   // Keep portal chrome in the viewport without locking html/body (that broke other pages)
   useEffect(() => {
@@ -477,12 +503,12 @@ export default function DashboardLayout() {
         <aside
         className={`
           fixed md:static inset-y-0 left-0 z-50 flex flex-col h-full max-h-full min-h-0 overflow-hidden
-          transition-all duration-300 ease-in-out
           bg-gradient-to-b from-[#0a180f] via-[#205e30] to-[#3ca94d]
           text-white
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
           ${sidebarCollapsed ? 'md:w-[64px]' : 'w-[260px] md:w-[220px] lg:w-[240px]'}
         `}
+        style={{ transition: 'width 320ms cubic-bezier(0.4,0,0.2,1), transform 300ms cubic-bezier(0.4,0,0.2,1)' }}
       >
         {/* Brand */}
         <div
@@ -520,236 +546,246 @@ export default function DashboardLayout() {
         </div>
 
         {/* ── Nav Links ──────────────────────────────────── */}
-        <nav className={`flex-1 min-h-0 overflow-y-auto py-3 px-2 flex flex-col ${sidebarCollapsed ? 'gap-1 items-center' : 'gap-0.5'}`}>
-          {!sidebarCollapsed && (
-            <div className="text-[10px] font-bold uppercase tracking-[2px] px-3 mb-2 text-white/40 w-full">
-              Navigation
+        <nav className="flex-1 min-h-0 overflow-y-auto py-3 px-2 flex flex-col gap-0.5 relative">
+
+          {/* ══ EXPANDED CONTENT — rendered only when navVisible is true ══ */}
+          {navVisible && (
+            <div
+              style={{
+                opacity: navVisible ? 1 : 0,
+                transition: 'opacity 160ms ease',
+              }}
+            >
+              <div className="text-[10px] font-bold uppercase tracking-[2px] px-3 mb-2 text-white/40 w-full">
+                Navigation
+              </div>
+
+              {/* Search */}
+              {navLinks.some(l => l.name === 'Search') && (() => {
+                const link = navLinks.find(l => l.name === 'Search')!
+                const isActive = location.pathname === link.path
+                const Icon = link.icon
+                return (
+                  <Link
+                    key={link.name}
+                    to={link.path}
+                    onClick={() => setSidebarOpen(false)}
+                    className="group flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150 relative overflow-hidden"
+                    style={isActive
+                      ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.15)' }
+                      : { color: '#ffffff' }}
+                    onMouseEnter={e => {
+                      if (!isActive) (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.1)'
+                    }}
+                    onMouseLeave={e => {
+                      if (!isActive) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
+                    }}
+                  >
+                    {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-[#10B981] rounded-r-full" />}
+                    {Icon && <Icon className="w-4 h-4 shrink-0" />}
+                    <span className="flex-1 truncate">{link.name}</span>
+                    {isActive && <ChevronRight className="w-3.5 h-3.5 opacity-60 shrink-0" />}
+                  </Link>
+                )
+              })()}
+
+              {/* Accordion Groups */}
+              {navGroups.map(group => {
+                const isOpen = openAccordion === group.title
+                const GroupIcon = group.Icon
+                const isRouteInGroup = group.subItems.some(sub =>
+                  location.pathname === sub.path
+                  || (sub.path.length > 1 && location.pathname.startsWith(sub.path + '/'))
+                )
+                const panelId = `nav-panel-${group.title.replace(/\s+/g, '-').toLowerCase()}`
+                return (
+                  <div key={group.title} className="mb-0.5 w-full">
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      aria-expanded={isOpen}
+                      aria-controls={panelId}
+                      onClick={() => toggleAccordion(group.title)}
+                      onKeyDown={(e) => {
+                        if (e.key === ' ') { e.preventDefault(); return }
+                        if (e.key === 'Enter') { e.preventDefault(); toggleAccordion(group.title) }
+                      }}
+                      className="w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+                      style={isOpen
+                        ? { color: '#ffffff', backgroundColor: 'rgba(255,255,255,0.12)' }
+                        : isRouteInGroup
+                          ? { color: '#ffffff', backgroundColor: 'rgba(255,255,255,0.06)' }
+                          : { color: sidebarIconColor }}
+                      onMouseEnter={e => {
+                        if (!isOpen) (e.currentTarget as HTMLElement).style.backgroundColor = sidebarHoverBg
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget as HTMLElement).style.backgroundColor = isOpen
+                          ? 'rgba(255,255,255,0.12)'
+                          : isRouteInGroup ? 'rgba(255,255,255,0.06)' : 'transparent'
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <GroupIcon size={17} className="shrink-0 text-white" />
+                        <span className="flex-1 truncate text-left">{group.title}</span>
+                      </div>
+                      {isOpen
+                        ? <FiMinus size={13} className="shrink-0 opacity-60 text-white" />
+                        : <FiPlus size={13} className="shrink-0 opacity-60 text-white" />}
+                    </button>
+
+                    <div
+                      id={panelId}
+                      role="region"
+                      aria-label={group.title}
+                      className="relative ml-5 pl-5 overflow-hidden"
+                      style={{
+                        maxHeight: isOpen ? '400px' : '0px',
+                        opacity: isOpen ? 1 : 0,
+                        marginTop: isOpen ? '4px' : '0px',
+                        marginBottom: isOpen ? '8px' : '0px',
+                        transition: 'max-height 300ms cubic-bezier(0.4,0,0.2,1), opacity 200ms ease, margin 300ms cubic-bezier(0.4,0,0.2,1)',
+                      }}
+                    >
+                      <div className="absolute left-[3px] top-0 bottom-0 w-[1px] bg-white/20" />
+                      <div className="flex flex-col space-y-3 py-1">
+                        {group.subItems.map((sub, idx) => {
+                          const isSubActive = activeSubItem === sub.name
+                            || location.pathname === sub.path
+                            || location.pathname.startsWith(sub.path + '/')
+                          return (
+                            <Link
+                              key={`${group.title}-${idx}`}
+                              to={sub.path}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setActiveSubItem(sub.name)
+                                setSidebarOpen(false)
+                              }}
+                              className={`relative flex items-center gap-2 text-[13.5px] font-semibold transition-colors py-1 ${
+                                isSubActive ? 'text-white' : 'text-white/50 hover:text-white'
+                              }`}
+                            >
+                              {isSubActive && (
+                                <div className="absolute -left-5 top-0 bottom-0 w-[3px] bg-white rounded-full" />
+                              )}
+                              <span className={`shrink-0 transition-opacity ${isSubActive ? 'opacity-100' : 'opacity-70'}`}>
+                                {sub.icon}
+                              </span>
+                              <span className="truncate">{sub.name}</span>
+                            </Link>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )}
 
-          {/* ── Search (expanded only) ─────── */}
-          {!sidebarCollapsed && navLinks.some(l => l.name === 'Search') && (() => {
-            const link = navLinks.find(l => l.name === 'Search')!
-            const isActive = location.pathname === link.path
-            const Icon = link.icon
-            return (
-              <Link
-                key={link.name}
-                to={link.path}
-                onClick={() => setSidebarOpen(false)}
-                title={sidebarCollapsed ? link.name : undefined}
-                className="group flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150 relative overflow-hidden"
-                style={isActive
-                  ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.15)' }
-                  : { color: '#ffffff' }}
-                onMouseEnter={e => {
-                  if (!isActive) (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.1)'
-                }}
-                onMouseLeave={e => {
-                  if (!isActive) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
-                }}
-              >
-                {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-[#10B981] rounded-r-full" />}
-                {Icon && <Icon className="w-4 h-4 shrink-0" />}
-                {!sidebarCollapsed && <span className="flex-1 truncate">{link.name}</span>}
-                {!sidebarCollapsed && isActive && <ChevronRight className="w-3.5 h-3.5 opacity-60 shrink-0" />}
-              </Link>
-            )
-          })()}
-
-          {/* ── Accordion Groups (expanded only) ─────────────────────────── */}
-          {!sidebarCollapsed && navGroups.map(group => {
-            const isOpen = openAccordion === group.title
-            const GroupIcon = group.Icon
-            const isRouteInGroup = group.subItems.some(sub =>
-              location.pathname === sub.path
-              || (sub.path.length > 1 && location.pathname.startsWith(sub.path + '/'))
-            )
-            const panelId = `nav-panel-${group.title.replace(/\s+/g, '-').toLowerCase()}`
-            return (
-              <div key={group.title} className="mb-0.5 w-full">
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  aria-expanded={isOpen}
-                  aria-controls={panelId}
-                  onClick={() => toggleAccordion(group.title)}
-                  onKeyDown={(e) => {
-                    if (e.key === ' ') {
-                      e.preventDefault()
-                      return
-                    }
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      toggleAccordion(group.title)
-                    }
-                  }}
-                  className="w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
-                  style={isOpen
-                    ? { color: '#ffffff', backgroundColor: 'rgba(255,255,255,0.12)' }
-                    : isRouteInGroup
-                      ? { color: '#ffffff', backgroundColor: 'rgba(255,255,255,0.06)' }
+          {/* ══ COLLAPSED ICON RAIL — rendered only when navVisible is false ══ */}
+          {!navVisible && (
+            <div
+              className="w-full py-1 flex flex-col gap-1 items-center"
+              style={{
+                opacity: !navVisible ? 1 : 0,
+                transition: 'opacity 160ms ease',
+              }}
+            >
+              {collapsedNavItems.map((item) => {
+                const isActive = item.groupPaths
+                  ? item.groupPaths.some(p => location.pathname === p || location.pathname.startsWith(p + '/'))
+                  : (location.pathname === item.path || location.pathname.startsWith(item.path + '/'))
+                return (
+                  <Link
+                    key={item.key}
+                    to={item.path}
+                    onClick={() => {
+                      setSidebarOpen(false)
+                      if (item.groupPaths) setOpenAccordion(item.name)
+                    }}
+                    title={item.name}
+                    className="flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-150 relative"
+                    style={isActive
+                      ? { color: '#10B981', backgroundColor: sidebarActiveBg }
                       : { color: sidebarIconColor }}
-                  onMouseEnter={e => {
-                    if (!isOpen) (e.currentTarget as HTMLElement).style.backgroundColor = sidebarHoverBg
-                  }}
-                  onMouseLeave={e => {
-                    (e.currentTarget as HTMLElement).style.backgroundColor = isOpen
-                      ? 'rgba(255,255,255,0.12)'
-                      : isRouteInGroup
-                        ? 'rgba(255,255,255,0.06)'
-                        : 'transparent'
-                  }}
-                >
-                  <div className="flex items-center gap-3">
-                    <GroupIcon size={17} className="shrink-0 text-white" />
-                    <span className="flex-1 truncate text-left">{group.title}</span>
-                  </div>
-                  {isOpen
-                    ? <FiMinus size={13} className="shrink-0 opacity-60 text-white" />
-                    : <FiPlus size={13} className="shrink-0 opacity-60 text-white" />}
-                </button>
-
-                {isOpen && (
-                  <div id={panelId} role="region" aria-label={group.title} className="relative ml-5 mt-1 mb-2 pl-5">
-                    <div className="absolute left-[3px] top-0 bottom-0 w-[1px] bg-white/20" />
-                    <div className="flex flex-col space-y-3 py-1">
-                      {group.subItems.map((sub, idx) => {
-                        const isSubActive = activeSubItem === sub.name
-                          || location.pathname === sub.path
-                          || location.pathname.startsWith(sub.path + '/')
-                        return (
-                          <Link
-                            key={`${group.title}-${idx}`}
-                            to={sub.path}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setActiveSubItem(sub.name)
-                              setSidebarOpen(false)
-                            }}
-                            className={`relative flex items-center gap-2 text-[13.5px] font-semibold transition-colors py-1 ${
-                              isSubActive ? 'text-white' : 'text-white/50 hover:text-white'
-                            }`}
-                          >
-                            {isSubActive && (
-                              <div className="absolute -left-5 top-0 bottom-0 w-[3px] bg-white rounded-full" />
-                            )}
-                            <span className={`shrink-0 transition-opacity ${isSubActive ? 'opacity-100' : 'opacity-70'}`}>
-                              {sub.icon}
-                            </span>
-                            <span className="truncate">{sub.name}</span>
-                          </Link>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-
-          {sidebarCollapsed && collapsedNavItems.map((item) => {
-            const isActive = item.groupPaths
-              ? item.groupPaths.some(p => location.pathname === p || location.pathname.startsWith(p + '/'))
-              : (location.pathname === item.path || location.pathname.startsWith(item.path + '/'))
-            
-            return (
-              <Link
-                key={item.key}
-                to={item.path}
-                onClick={() => {
-                  setSidebarOpen(false)
-                  if (item.groupPaths) setOpenAccordion(item.name) // Auto open accordion if clicking group icon
-                }}
-                title={item.name}
-                className="flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-150 relative"
-                style={isActive
-                  ? { color: '#10B981', backgroundColor: sidebarActiveBg }
-                  : { color: sidebarIconColor }}
-                onMouseEnter={e => {
-                  if (!isActive) {
-                    (e.currentTarget as HTMLElement).style.backgroundColor = sidebarHoverBg
-                    ;(e.currentTarget as HTMLElement).style.color = '#ffffff'
-                  }
-                }}
-                onMouseLeave={e => {
-                  if (!isActive) {
-                    (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
-                    ;(e.currentTarget as HTMLElement).style.color = sidebarIconColor
-                  }
-                }}
-              >
-                {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-[#10B981] rounded-r-full" />}
-                {isValidElement(item.icon)
-                  ? cloneElement(item.icon, { color: isActive ? '#10B981' : '#ffffff', className: 'shrink-0' })
-                  : item.icon}
-              </Link>
-            )
-          })}
-
+                    onMouseEnter={e => {
+                      if (!isActive) {
+                        (e.currentTarget as HTMLElement).style.backgroundColor = sidebarHoverBg
+                        ;(e.currentTarget as HTMLElement).style.color = '#ffffff'
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      if (!isActive) {
+                        (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
+                        ;(e.currentTarget as HTMLElement).style.color = sidebarIconColor
+                      }
+                    }}
+                  >
+                    {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-[#10B981] rounded-r-full" />}
+                    {isValidElement(item.icon)
+                      ? cloneElement(item.icon, { color: isActive ? '#10B981' : '#ffffff', className: 'shrink-0' })
+                      : item.icon}
+                  </Link>
+                )
+              })}
+            </div>
+          )}
 
         </nav>
 
-        {/* ── Admin Branch Switcher (only for admin) ── */}
         {/* ── Bottom Sticky Section ─────────────────────── */}
         {(() => {
           const showBranch = isPortalAdminUser && adminBranches.length > 0
           return (
             <div
-              className={`px-2.5 pt-2 space-y-2 shrink-0 mt-auto ${sidebarCollapsed ? 'flex flex-col items-center' : ''}`}
+              className="px-2.5 pt-2 pb-3 space-y-2 shrink-0 mt-auto flex flex-col justify-end"
               style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}
             >
-
-              {/* Branch Button (admin only) */}
+              {/* Branch Switcher (Admin only) */}
               {showBranch && (
-                sidebarCollapsed ? (
-                  <div ref={branchRef} className="relative">
-                    {/* Branch dropdown popup */}
-                    {branchDropdownOpen && (
-                      <div
-                        className="absolute z-50 w-52 rounded-xl shadow-2xl overflow-hidden bottom-[calc(100%+8px)] left-0"
-                        style={{ backgroundColor: '#0d2818', border: '1px solid rgba(255,255,255,0.12)' }}
-                      >
-                        <div className="px-4 py-3 text-xs font-black uppercase tracking-wider text-white/40" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                          Active Branch
-                        </div>
-                        <div className="py-1.5 max-h-60 overflow-y-auto custom-scrollbar">
-                          {adminBranches.map((b) => {
-                            const isSelected = b.id === globalBranchId
-                            return (
-                              <button
-                                key={b.id}
-                                onClick={() => {
-                                  handleGlobalBranchChange(b.id)
-                                  setBranchDropdownOpen(false)
-                                }}
-                                className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-semibold transition-colors text-left ${
-                                  isSelected ? 'bg-white/15 text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'
-                                }`}
-                              >
-                                <span>{formatBranchName(b.name)}</span>
-                                {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                              </button>
-                            )
-                          })}
-                        </div>
+                <div ref={branchRef} className="relative w-full flex flex-col items-center">
+                  {/* Branch Popup when collapsed */}
+                  {!navVisible && branchDropdownOpen && (
+                    <div
+                      className="absolute z-50 w-52 rounded-xl shadow-2xl overflow-hidden bottom-[calc(100%+8px)] left-0"
+                      style={{ backgroundColor: '#0d2818', border: '1px solid rgba(255,255,255,0.12)' }}
+                    >
+                      <div className="px-4 py-3 text-xs font-black uppercase tracking-wider text-white/40" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                        Active Branch
                       </div>
-                    )}
+                      <div className="py-1.5 max-h-60 overflow-y-auto custom-scrollbar">
+                        {adminBranches.map((b) => {
+                          const isSelected = b.id === globalBranchId
+                          return (
+                            <button
+                              key={b.id}
+                              onClick={() => { handleGlobalBranchChange(b.id); setBranchDropdownOpen(false) }}
+                              className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-semibold transition-colors text-left ${
+                                isSelected ? 'bg-white/15 text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'
+                              }`}
+                            >
+                              <span>{formatBranchName(b.name)}</span>
+                              {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
 
+                  {/* Branch Button / Select */}
+                  {!navVisible ? (
                     <button
                       onClick={() => setBranchDropdownOpen(prev => !prev)}
-                      className="flex items-center justify-center w-11 h-11 rounded-xl border border-white/10 bg-[#1e732c] hover:bg-[#238533] transition-all text-white font-black text-[13px] shadow-sm uppercase"
+                      className="flex items-center justify-center w-11 h-11 rounded-xl border border-white/10 bg-[#1e732c] hover:bg-[#238533] transition-all text-white font-black text-[13px] shadow-sm uppercase shrink-0"
                       title={`Active Branch: ${branchLabel || ''}`}
                     >
                       {branchLabel ? getBranchCode(branchLabel) : <Building2 className="w-5 h-5 text-white/70" />}
                     </button>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[10px] font-black uppercase tracking-wider text-white/40 px-1">
-                      Active Branch
-                    </label>
-                    <div className="relative">
+                  ) : (
+                    <div className="relative w-full">
                       <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white pointer-events-none z-10" />
                       <select
                         value={globalBranchId || ''}
@@ -764,13 +800,13 @@ export default function DashboardLayout() {
                       </select>
                       <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/70 pointer-events-none" />
                     </div>
-                  </div>
-                )
+                  )}
+                </div>
               )}
 
-              {/* User Profile Button */}
-              <div ref={profileRef} className="relative">
-                {/* Dropdown popup */}
+              {/* User Profile Item */}
+              <div ref={profileRef} className="relative w-full flex justify-center">
+                {/* Profile Dropdown Popup */}
                 {profileOpen && (
                   <div
                     className="absolute z-50 w-52 rounded-xl shadow-2xl overflow-hidden bottom-[calc(100%+8px)] left-0"
@@ -801,11 +837,14 @@ export default function DashboardLayout() {
                   </div>
                 )}
 
-                {/* Profile button */}
+                {/* Profile Trigger Button */}
                 <button
                   onClick={() => setProfileOpen(p => !p)}
-                  className={`flex items-center gap-2.5 text-left transition-all ${
-                    sidebarCollapsed ? 'justify-center w-11 h-11' : 'w-full px-3 py-2 rounded-xl border border-white/10 bg-white/10 hover:bg-white/15'
+                  title={user?.name}
+                  className={`flex items-center text-left transition-all duration-200 rounded-xl ${
+                    !navVisible
+                      ? 'w-11 h-11 justify-center border border-transparent hover:bg-white/10'
+                      : 'w-full px-3 py-2 border border-white/10 bg-white/10 hover:bg-white/15 gap-2.5'
                   }`}
                 >
                   <UserAvatar
@@ -814,11 +853,12 @@ export default function DashboardLayout() {
                     size="sm"
                     ring
                     variant="sidebar"
+                    className="shrink-0"
                   />
 
-                  {/* Name + Role */}
-                  {!sidebarCollapsed && (
-                    <div className="flex-1 min-w-0">
+                  {/* Name + Role - only rendered when navVisible is true */}
+                  {navVisible && (
+                    <div className="flex-1 min-w-0 transition-all duration-200 whitespace-nowrap">
                       <p className="text-sm font-semibold truncate leading-snug text-white">
                         {formatPersonName(user?.name ?? '') || 'User'}
                       </p>
@@ -829,14 +869,13 @@ export default function DashboardLayout() {
                   )}
 
                   {/* Chevron */}
-                  {!sidebarCollapsed && (
+                  {navVisible && (
                     <ChevronDown
                       className={`w-4 h-4 transition-transform duration-200 shrink-0 text-white/70 ${profileOpen ? 'rotate-180' : ''}`}
                     />
                   )}
                 </button>
               </div>
-
             </div>
           )
         })()}
@@ -853,8 +892,7 @@ export default function DashboardLayout() {
           <header 
             className="flex-none z-20 backdrop-blur-md w-full min-w-0 max-w-full overflow-hidden"
             style={{ 
-              backgroundColor: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(10,17,32,0.8)',
-              borderBottom: `1px solid ${border}` 
+              backgroundColor: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(10,17,32,0.8)'
             }}
           >
           {/* Top row: title + icons */}

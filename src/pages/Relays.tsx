@@ -2904,7 +2904,7 @@ export default function Relays() {
         document.getElementById('header-toolbar-slot') ?? document.body
       )}
 
-      <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}>
+      <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg }}>
           <div className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto" data-ticket-table-scroll>
           <table
             key={activeTab}

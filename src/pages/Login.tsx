@@ -48,11 +48,7 @@ export default function Login() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('expired') === 'true') {
-      setError(
-        params.get('reason') === 'inactivity'
-          ? 'You were logged out after 15 minutes of inactivity.'
-          : 'Your session has expired. Please log in again.'
-      )
+      setError('Your session has expired. Please log in again.')
     }
   }, [])
 

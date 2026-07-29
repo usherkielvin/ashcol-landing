@@ -6031,7 +6031,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       )}
 
       {/* Ã¢â€â‚¬Ã¢â€â‚¬ Table card Ã¢â€â‚¬Ã¢â€â‚¬ */}
-      <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}
+      <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg }}
         onClick={e => e.stopPropagation()}>
         {activeTab === 'schedules' ? (
           loading && !hasHydratedOnce && !initialSchedulesReady && tickets.length === 0 ? (

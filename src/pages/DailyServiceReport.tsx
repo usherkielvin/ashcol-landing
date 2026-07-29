@@ -1849,7 +1849,7 @@ export default function DailyServiceReport() {
 
 
       {/* Data table */}
-      <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}>
+      <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg }}>
         {loading && rows.length === 0 ? (
           <div className="flex flex-col gap-2 p-5 flex-1">
             {[1, 2, 3, 4].map(i => (

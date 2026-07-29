@@ -67,7 +67,6 @@ export function TicketScheduleDetailsPopover({
   const textPrimary = isLight ? '#0f172a' : '#f8fafc'
   const textMuted = isLight ? '#64748b' : '#94a3b8'
   const textGreen = isLight ? '#16A34A' : '#4ade80'
-  const green = '#16A34A'
 
   const detailTicket = currentTicket
   const ghostKind = popup.ghostKind
@@ -246,21 +245,9 @@ export function TicketScheduleDetailsPopover({
         {/* Footer actions */}
         {canEdit && !isGhost ? (
           <div
-            className="px-3 py-2.5 flex items-center justify-between gap-2 shrink-0"
+            className="px-3 py-2.5 shrink-0"
             style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}
           >
-            <button
-              type="button"
-              onClick={handleOpenChecklist}
-              className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all ${
-                isFilled
-                  ? 'bg-emerald-600 text-white hover:bg-emerald-500'
-                  : 'bg-amber-500 text-slate-950 hover:bg-amber-400'
-              }`}
-            >
-              15Q ({isFilled ? 'Completed' : 'Pending'})
-            </button>
-
             <button
               type="button"
               onClick={() => {
@@ -268,10 +255,19 @@ export function TicketScheduleDetailsPopover({
                 onClose()
                 onOpenStatusPicker(t, 'inline', document.querySelector(`[data-cell-key="${t.id}:STATUS"]`) as HTMLElement)
               }}
-              className="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-colors"
-              style={{ color: green, border: `1px solid ${isLight ? 'rgba(22,163,74,0.35)' : 'rgba(74,222,128,0.3)'}` }}
+              className="w-full py-2.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-[0.97]"
+              style={{
+                background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                color: '#ffffff',
+                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'linear-gradient(135deg, #047857 0%, #059669 100%)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'linear-gradient(135deg, #059669 0%, #10b981 100%)')}
             >
-              Change status
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 5v14M5 12l7 7 7-7" />
+              </svg>
+              Change Status
             </button>
           </div>
         ) : null}
