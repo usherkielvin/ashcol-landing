@@ -2717,7 +2717,7 @@ export default function DailyServiceReport() {
                       <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.quantity ?? '—'}</span>
                     )}
                   </Field>
-                  <Field label="Dealer (DLR)">
+                  <Field label="Dealer / Store">
                     {canEdit ? (
                       <>
                         <input type="text" value={detailForm.dealer || ''}

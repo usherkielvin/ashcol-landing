@@ -1247,15 +1247,17 @@ export function hasFinalScheduleDate(ticket: Ticket): boolean {
 export function shouldShowOnMyTickets(ticket: Ticket): boolean {
   const stat = (ticket.status || '').toUpperCase()
   if (isInstalledWorkflowStatus(stat) || stat === 'CANCELLED') return false
-  // Once a finalDate exists the ticket belongs on Schedules, not the negotiator queue.
-  if (hasFinalScheduleDate(ticket)) return false
-  // SCHEDULED/SURVEY without a finalDate yet just means a pending sub-status was picked
-  // (e.g. INSTALL, SURVEY, S/I) — it still belongs in the negotiator's queue until a real date is set.
-  // IN_PROGRESS/ON_THE_WAY are active field-crew statuses (always date-backed by then); CONTINUATION
-  // tracks its own continuationDates array instead of finalDate, so it needs its own exclusion here.
+  // IN_PROGRESS/ON_THE_WAY are active field-crew statuses; CONTINUATION tracks its own
+  // continuationDates array instead of finalDate — none of these belong in the negotiator's queue.
   if (['IN_PROGRESS', 'ON_THE_WAY', 'CONTINUATION'].includes(stat)) return false
-
-  return true
+  // A finalDate no longer means "done with the negotiator" — RESCHED/QUOTATION/SURVEY/CHECKUP/
+  // BACKJOB etc. can already carry a scheduled date and still need monitoring until they reach a
+  // closing (DONE_*) outcome, instead of dropping off this queue the moment they get a date —
+  // that was hiding tickets Schedules' "All Pending" still counts as pending. Deny-list on
+  // CLOSING_SCHEDULE_STATUSES rather than allow-list on SCHEDULE_PENDING_STATUS_VALUES: the
+  // pending set only covers named sub-statuses, not fallback values like plain 'INSTALLATION'/
+  // 'SERVICES' that getScheduleStatusValue returns for tickets with no sub-status picked yet.
+  return !CLOSING_SCHEDULE_STATUSES.has(getScheduleStatusValue(ticket))
 }
 
 export function ticketMatchesNegotiatorFilter(

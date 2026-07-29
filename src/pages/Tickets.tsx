@@ -7743,7 +7743,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
-                  <Field label="Dealer (DLR)">
+                  <Field label="Dealer / Store">
                     <input type="text" value={addForm.dealer || ''}
                       list="add-ticket-dealer-list"
                       onChange={e => setAddForm({ ...addForm, dealer: e.target.value })}

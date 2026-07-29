@@ -3549,9 +3549,9 @@ export default function Relays() {
 
                 {/* 1. Dealer & Transaction */}
                 <section>
-                  <RelayFormSectionHead step={1} icon={<Store className="w-3.5 h-3.5" />} title="Dealer" subtitle="Where the relay came from" />
+                  <RelayFormSectionHead step={1} icon={<Store className="w-3.5 h-3.5" />} title="Dealer / Store" subtitle="Where the relay came from" />
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
-                    <RelayFormField label="Dealer" compact className="md:col-span-4">
+                    <RelayFormField label="Dealer / Store" compact className="md:col-span-4">
                       <DealerSelect
                         value={addForm.dealer}
                         dealers={dealers}
@@ -3564,7 +3564,7 @@ export default function Relays() {
                         textMuted={textMuted}
                       />
                     </RelayFormField>
-                    <RelayFormField label="Dealer Branch" compact className="md:col-span-4">
+                    <RelayFormField label="Dealer / Store Branch" compact className="md:col-span-4">
                       <input
                         type="text"
                         value={addForm.dealerBranch}

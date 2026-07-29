@@ -153,7 +153,7 @@ function parseDateMeta(dateKey: string, dateLabel: string) {
 
 function buildInstallerHeaders(isTaguigServices: boolean) {
   const installerLabel = isTaguigServices ? 'TECHNICIAN' : 'INSTALLER'
-  const dealerLabel = isTaguigServices ? 'ENDORSED BY' : 'DLR'
+  const dealerLabel = isTaguigServices ? 'ENDORSED BY' : 'DEALER / STORE'
   return [
     'NO.',
     'TICKET NO',
