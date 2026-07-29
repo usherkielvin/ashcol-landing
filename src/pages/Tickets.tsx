@@ -34,6 +34,7 @@ import {
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
+import { SearchFilterDropdown } from '../components/SearchFilterDropdown'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 import { RelayEditTicketModal } from '../components/relays/RelayEditTicketModal'
 import { type RelayEditDraft } from '../components/relays/relayEditForm'
@@ -6862,38 +6863,22 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     </h1>
                   </div>
 
-                  {/* Search Input Box */}
-                  <div
-                    className="w-full max-w-2xl mx-auto flex items-center gap-3 px-5 py-4 md:px-8 md:py-5 rounded-2xl shadow-md border-2 transition-[border-color,box-shadow] duration-150"
-                    style={{
-                      backgroundColor: cardBg,
-                      borderColor: overviewSearchFocused ? green : border,
-                      boxShadow: overviewSearchFocused ? `0 0 0 4px ${green}15` : 'none'
-                    }}
-                  >
-                    <Search className="w-5 h-5 shrink-0" style={{ color: green }} />
-                    <input
-                      type="text"
-                      placeholder="Search tickets, customers, or contacts..."
-                      value={overviewSearchInput}
-                      onChange={e => setOverviewSearchInput(e.target.value)}
+                  {/* Search Input Box with Filter Dropdown */}
+                  <div className="w-full max-w-2xl mx-auto">
+                    <SearchFilterDropdown
+                      searchValue={overviewSearchInput}
+                      onSearchChange={val => { setOverviewSearchInput(val); if (!val) setOverviewResults([]) }}
                       onFocus={() => setOverviewSearchFocused(true)}
                       onBlur={() => setOverviewSearchFocused(false)}
-                      enterKeyHint="search"
-                      autoComplete="off"
-                      className="bg-transparent outline-none text-base flex-1 min-w-0 font-medium"
-                      style={{ color: textPrimary }}
+                      focused={overviewSearchFocused}
+                      colors={{
+                        cardBg,
+                        border,
+                        textPrimary,
+                        textMuted,
+                        green,
+                      }}
                     />
-                    {overviewSearchInput && (
-                      <button
-                        type="button"
-                        onClick={() => { setOverviewSearchInput(''); setOverviewResults([]); }}
-                        style={{ color: textMuted }}
-                        className="hover:scale-110 transition-transform p-1"
-                      >
-                        <X className="w-5 h-5" />
-                      </button>
-                    )}
                   </div>
                 </div>
 
