@@ -728,6 +728,11 @@ const normalizeRelayTicketNumber = (ticket: Pick<Ticket, 'ticketNumber'>): strin
     const seq = parseInt(ashcol[1], 10)
     return Number.isFinite(seq) ? `AS-${String(seq).padStart(3, '0')}` : raw.toUpperCase()
   }
+  const acFormat = raw.match(/^AC-0*(\d+)$/i)
+  if (acFormat) {
+    const seq = parseInt(acFormat[1], 10)
+    return Number.isFinite(seq) ? `AC-${String(seq).padStart(3, '0')}` : raw.toUpperCase()
+  }
   return raw.toUpperCase()
 }
 

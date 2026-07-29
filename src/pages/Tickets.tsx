@@ -288,9 +288,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const schedTheadBg = isLight ? '#E3F4E9' : '#0a1f24'
   const schedTheadText = isLight ? '#166534' : '#4ade80'
   const schedTheadBorder = isLight ? 'rgba(22,163,74,0.38)' : '#0f3c33'
-  const rowEven = isLight ? '#ffffff' : '#0f172a'
-  const rowOdd = isLight ? '#f7fbf8' : '#1b2330'
-  const rowHover = isLight ? '#edf7f1' : '#222f44'
+  const rowEven = isLight ? '#ffffff' : '#060B18'
+  const rowOdd = isLight ? '#f7fbf8' : '#060B18'
+  const rowHover = isLight ? '#edf7f1' : '#0f1a2e'
   const green = '#16A34A'
   const textGreen = isLight ? '#16A34A' : '#4ade80'
 
@@ -353,6 +353,31 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const [searchQuery, setSearchQuery] = useState('')
   /** Admin My Tickets: filter pending/assigned rows to one negotiator (e.g. GLESEL). */
   const [myTicketsNegotiatorFilter, setMyTicketsNegotiatorFilter] = useState('')
+  const [negoDropdownOpen, setNegoDropdownOpen] = useState(false)
+  const [negoDropdownPos, setNegoDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null)
+  const negoDropdownRef = useRef<HTMLButtonElement>(null)
+  const negoDropdownPopRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!negoDropdownOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (negoDropdownRef.current && negoDropdownRef.current.contains(target)) return
+      if (negoDropdownPopRef.current && negoDropdownPopRef.current.contains(target)) return
+      setNegoDropdownOpen(false)
+    }
+    const handleScroll = (e: Event) => {
+      const target = e.target as Node
+      if (negoDropdownPopRef.current && negoDropdownPopRef.current.contains(target)) return
+      setNegoDropdownOpen(false)
+    }
+    window.addEventListener('mousedown', handleClickOutside)
+    window.addEventListener('scroll', handleScroll, true)
+    return () => {
+      window.removeEventListener('mousedown', handleClickOutside)
+      window.removeEventListener('scroll', handleScroll, true)
+    }
+  }, [negoDropdownOpen])
   const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' }>(
     () => defaultSortForSchedulesView(isMyTickets),
   )
@@ -5668,43 +5693,144 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       {/* ── Portal: My Tickets toolbar (Active Branch + negotiator filter) ── */}
       {isMyTickets && ReactDOM.createPortal(
         <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-col md:flex-row md:items-center gap-3">
-          <div className="flex items-center gap-2.5 w-full md:w-[240px] lg:w-[320px] h-9 md:h-11 px-3 md:px-4 rounded-xl md:rounded-2xl border transition-all shrink-0"
+          <div className="flex items-center gap-2.5 w-full md:w-[240px] lg:w-[320px] h-10 md:h-11 px-3.5 md:px-4 rounded-full border transition-all shrink-0 shadow-sm focus-within:border-emerald-500/60"
             style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Search className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: textMuted }} />
+            <Search className="w-4 h-4 shrink-0 text-emerald-500" />
             <input
               type="text"
-              placeholder="Search names, phone…"
+              placeholder="Search names, phone, ticket..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="bg-transparent outline-none text-[12px] md:text-sm flex-1 min-w-0"
+              className="bg-transparent outline-none text-xs md:text-sm flex-1 min-w-0 font-medium placeholder:font-medium placeholder:opacity-60"
               style={{ color: textPrimary }}
               onClick={e => e.stopPropagation()}
             />
             {searchQuery && (
               <button type="button" onClick={e => { e.stopPropagation(); setSearchQuery('') }}
-                className="shrink-0 p-1 md:p-1.5 rounded-full hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }}>
+                className="shrink-0 p-1 rounded-full hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }}
+                aria-label="Clear search">
                 <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
               </button>
             )}
           </div>
 
           {isAdmin && (
-            <div className="flex items-center gap-2 min-w-0 flex-1 md:flex-none">
-              <label className="text-[10px] md:text-[11px] font-black uppercase tracking-wider shrink-0" style={{ color: textMuted }}>
-                Negotiator
-              </label>
-              <select
-                value={myTicketsNegotiatorFilter}
-                onChange={e => setMyTicketsNegotiatorFilter(e.target.value)}
-                className="h-9 md:h-11 px-3 rounded-xl md:rounded-2xl border text-[12px] md:text-sm font-semibold min-w-0 flex-1 md:w-[260px] outline-none"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                title={activeBranchLabel ? `Negotiators for ${activeBranchLabel}` : 'Filter by negotiator'}
+            <div className="relative min-w-0 flex-1 md:flex-none">
+              {/* Custom Dropdown Trigger Button */}
+              <button
+                ref={negoDropdownRef}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (negoDropdownOpen) {
+                    setNegoDropdownOpen(false)
+                    return
+                  }
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  setNegoDropdownPos({
+                    top: rect.bottom + 6,
+                    left: rect.left,
+                    width: Math.max(200, rect.width),
+                  })
+                  setNegoDropdownOpen(true)
+                }}
+                className="flex items-center justify-between gap-2 h-9 md:h-10 px-3.5 rounded-full border text-xs font-black min-w-[180px] md:w-[220px] outline-none shadow-sm cursor-pointer transition-all hover:border-emerald-500/70 active:scale-[0.98]"
+                style={{
+                  backgroundColor: inputBg,
+                  borderColor: negoDropdownOpen ? green : inputBorder,
+                  color: isLight ? '#15803d' : '#4ade80',
+                }}
               >
-                <option value="">All negotiators{activeBranchLabel ? ` · ${activeBranchLabel}` : ''}</option>
-                {myTicketsNegotiatorOptions.map(emp => (
-                  <option key={emp.id} value={emp.id}>{formatNegotiatorLabel(emp)}</option>
-                ))}
-              </select>
+                <span className="truncate uppercase font-extrabold tracking-wide">
+                  {(() => {
+                    if (!myTicketsNegotiatorFilter) return 'ALL NEGOTIATORS'
+                    const match = myTicketsNegotiatorOptions.find(emp => emp.id === myTicketsNegotiatorFilter)
+                    return match ? formatNegotiatorLabel(match, true) : 'ALL NEGOTIATORS'
+                  })()}
+                </span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${negoDropdownOpen ? 'rotate-180' : ''}`}
+                  style={{ color: isLight ? '#15803d' : '#4ade80' }}
+                  strokeWidth={2.5}
+                />
+              </button>
+
+              {/* Custom Dropdown Popover List — rendered directly to body so it ALWAYS floats above table & header */}
+              {negoDropdownOpen && negoDropdownPos && ReactDOM.createPortal(
+                <div
+                  ref={negoDropdownPopRef}
+                  className="fixed z-[99999] overflow-y-auto rounded-xl border shadow-2xl py-1 animate-in fade-in duration-100 select-none"
+                  style={{
+                    top: negoDropdownPos.top,
+                    left: negoDropdownPos.left,
+                    width: negoDropdownPos.width,
+                    maxHeight: 210,
+                    backgroundColor: isLight ? '#ffffff' : '#0a1120',
+                    borderColor: isLight ? '#cbd5e1' : '#334155',
+                    boxShadow: '0 12px 28px rgba(0, 0, 0, 0.5)',
+                  }}
+                  onMouseDown={e => e.stopPropagation()}
+                  onClick={e => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setMyTicketsNegotiatorFilter('')
+                      setNegoDropdownOpen(false)
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setMyTicketsNegotiatorFilter('')
+                      setNegoDropdownOpen(false)
+                    }}
+                    className="flex items-center justify-between w-full px-3 py-1.5 text-xs font-black uppercase tracking-wide text-left transition-colors hover:bg-emerald-500/10 cursor-pointer"
+                    style={{
+                      color: !myTicketsNegotiatorFilter ? (isLight ? '#15803d' : '#4ade80') : textPrimary,
+                      backgroundColor: !myTicketsNegotiatorFilter ? (isLight ? 'rgba(22,163,74,0.1)' : 'rgba(74,222,128,0.12)') : undefined,
+                    }}
+                  >
+                    <span>ALL NEGOTIATORS</span>
+                    {!myTicketsNegotiatorFilter && <span className="text-emerald-500 font-extrabold text-xs">✓</span>}
+                  </button>
+
+                  <div className="my-1 border-t opacity-30" style={{ borderColor: inputBorder }} />
+
+                  {myTicketsNegotiatorOptions.map(emp => {
+                    const label = formatNegotiatorLabel(emp, true)
+                    const isSelected = myTicketsNegotiatorFilter === emp.id
+                    return (
+                      <button
+                        type="button"
+                        key={emp.id}
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setMyTicketsNegotiatorFilter(emp.id)
+                          setNegoDropdownOpen(false)
+                        }}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setMyTicketsNegotiatorFilter(emp.id)
+                          setNegoDropdownOpen(false)
+                        }}
+                        className="flex items-center justify-between w-full px-3 py-1.5 text-xs font-black uppercase tracking-wide text-left transition-colors hover:bg-emerald-500/10 cursor-pointer"
+                        style={{
+                          color: isSelected ? (isLight ? '#15803d' : '#4ade80') : textPrimary,
+                          backgroundColor: isSelected ? (isLight ? 'rgba(22,163,74,0.1)' : 'rgba(74,222,128,0.12)') : undefined,
+                        }}
+                      >
+                        <span className="truncate">{label}</span>
+                        {isSelected && <span className="text-emerald-500 font-extrabold text-xs">✓</span>}
+                      </button>
+                    )
+                  })}
+                </div>,
+                document.body,
+              )}
             </div>
           )}
         </div>,
@@ -7428,7 +7554,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   </Field>
                   <Field label="Ticket No.">
                     <input type="text" value={addForm.ticketNumber || ''}
-                      placeholder="Auto-generated if left blank (e.g. AS-001)"
+                      placeholder="Auto-generated if left blank (e.g. AC-001)"
                       onChange={e => setAddForm({ ...addForm, ticketNumber: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />

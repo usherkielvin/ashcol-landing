@@ -1053,49 +1053,49 @@ export function getScheduleRowColors(
   const statusVal = getScheduleStatusValue(ticket)
   if (statusVal === 'RESCHED') {
     return {
-      baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.28)',
+      baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.18)',
       accent: '#fbbf24',
     }
   }
   if (statusVal === 'SURVEY') {
     return {
-      baseBg: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.28)',
+      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
       accent: '#8B5CF6',
     }
   }
   if (statusVal === 'CLEANING' || statusVal === 'CHECKUP' || statusVal === 'BACKJOB') {
     return {
-      baseBg: isLight ? '#f0f9ff' : 'rgba(14,165,233,0.28)',
+      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
       accent: '#0EA5E9',
     }
   }
   if (statusVal === 'SYSTEM_REPROCESS') {
     return {
-      baseBg: isLight ? '#eef2ff' : 'rgba(99,102,241,0.28)',
+      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
       accent: '#6366F1',
     }
   }
   if (statusVal === 'DISMANTLE') {
     return {
-      baseBg: isLight ? '#fff1f2' : 'rgba(244,63,94,0.28)',
+      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
       accent: '#F43F5E',
     }
   }
   if (statusVal === 'INSTALLATION' || statusVal === 'SERVICES') {
     return {
-      baseBg: isLight ? '#eff6ff' : 'rgba(59,130,246,0.28)',
-      accent: '#3B82F6',
+      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
+      accent: '#10B981',
     }
   }
   if (statusVal === 'FOR_APPROVAL') {
     return {
-      baseBg: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.06)',
+      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
       accent: '#10B981',
     }
   }
 
   if (isDuplicateName) {
-    return { baseBg: isLight ? '#fef9c3' : '#221d0f' }
+    return { baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.12)' }
   }
 
   return { baseBg: idx % 2 === 0 ? rowEven : rowOdd }
@@ -2835,12 +2835,15 @@ export function getBranchDisplayName(id: string | null): string {
   return name
 }
 
-/** Format negotiator for dropdown: FIRSTNAME (BRANCH_SHORT), e.g. BEVERLYN (RIZAL) */
-export function formatNegotiatorLabel(emp: { name?: string | null; branchId?: string | null }): string {
-  const fullName = (emp.name || '').trim()
-  const firstName = fullName.split(/\s+/)[0].toUpperCase()
+export function formatNegotiatorLabel(
+  emp: { name?: string | null; branchId?: string | null },
+  omitBranch = false,
+): string {
+  const fullName = (emp.name || '').trim().toUpperCase()
+  const firstName = fullName.split(/\s+/)[0]
+  if (omitBranch) return fullName || firstName
   const branch = getBranchDisplayName(emp.branchId || null)
-  return branch ? `${firstName} (${branch})` : firstName
+  return branch ? `${fullName || firstName} (${branch.toUpperCase()})` : (fullName || firstName)
 }
 
 export function todayDateKey() {
