@@ -5666,48 +5666,113 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         onChange={handleScanFilePicked}
       />
 
-      {/* ── Portal: My Tickets toolbar (Active Branch + negotiator filter) ── */}
+      {/* ── Portal: My Tickets toolbar (Active Branch + negotiator filter + pills) ── */}
       {isMyTickets && ReactDOM.createPortal(
-        <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-col md:flex-row md:items-center gap-3">
-          <div className="flex items-center gap-2.5 w-full md:w-[240px] lg:w-[320px] h-9 md:h-11 px-3 md:px-4 rounded-xl md:rounded-2xl border transition-all shrink-0"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Search className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: textMuted }} />
+        <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-wrap items-center gap-2.5">
+          {/* Search Input Box (Rounded Pill) */}
+          <div
+            className="flex items-center gap-2.5 h-10 px-4 rounded-full border transition-all shrink-0 w-full sm:w-[260px] lg:w-[300px]"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+          >
+            <Search className="w-4 h-4 shrink-0" style={{ color: green }} />
             <input
               type="text"
-              placeholder="Search names, phone…"
+              placeholder="Search names, phone, ticket..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="bg-transparent outline-none text-[12px] md:text-sm flex-1 min-w-0"
+              className="bg-transparent outline-none text-xs font-semibold flex-1 min-w-0 placeholder:font-medium"
               style={{ color: textPrimary }}
               onClick={e => e.stopPropagation()}
             />
             {searchQuery && (
-              <button type="button" onClick={e => { e.stopPropagation(); setSearchQuery('') }}
-                className="shrink-0 p-1 md:p-1.5 rounded-full hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }}>
-                <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
+              <button
+                type="button"
+                onClick={e => { e.stopPropagation(); setSearchQuery('') }}
+                className="shrink-0 p-1 rounded-full hover:bg-slate-500/10 transition-colors"
+                style={{ color: textMuted }}
+              >
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
 
+          {/* Negotiator Filter Pill (Admin & Sales) */}
           {isAdmin && (
-            <div className="flex items-center gap-2 min-w-0 flex-1 md:flex-none">
-              <label className="text-[10px] md:text-[11px] font-black uppercase tracking-wider shrink-0" style={{ color: textMuted }}>
-                Negotiator
-              </label>
+            <div className="relative shrink-0">
               <select
                 value={myTicketsNegotiatorFilter}
                 onChange={e => setMyTicketsNegotiatorFilter(e.target.value)}
-                className="h-9 md:h-11 px-3 rounded-xl md:rounded-2xl border text-[12px] md:text-sm font-semibold min-w-0 flex-1 md:w-[260px] outline-none"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                className="h-10 pl-4 pr-8 rounded-full border text-xs font-black uppercase tracking-wide outline-none cursor-pointer appearance-none"
+                style={{
+                  backgroundColor: inputBg,
+                  borderColor: isLight ? 'rgba(16,185,129,0.4)' : 'rgba(16,185,129,0.3)',
+                  color: green,
+                }}
                 title={activeBranchLabel ? `Negotiators for ${activeBranchLabel}` : 'Filter by negotiator'}
               >
-                <option value="">All negotiators{activeBranchLabel ? ` · ${activeBranchLabel}` : ''}</option>
+                <option value="">ALL NEGOTIATORS</option>
                 {myTicketsNegotiatorOptions.map(emp => (
-                  <option key={emp.id} value={emp.id}>{formatNegotiatorLabel(emp)}</option>
+                  <option key={emp.id} value={emp.id}>{formatNegotiatorLabel(emp, true)}</option>
                 ))}
               </select>
+              <ChevronDown className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: green }} />
             </div>
           )}
+
+          {/* Quick Filter Pills: PENDING & CLOSING */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setMonthFilterStatus(prev => prev === 'PENDING_GROUP' ? '' : 'PENDING_GROUP')}
+              className={`h-10 px-4 rounded-full text-xs font-black uppercase tracking-wider border transition-all active:scale-95 ${
+                monthFilterStatus === 'PENDING_GROUP'
+                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-emerald-600 dark:border-emerald-600 shadow-sm'
+                  : 'bg-slate-100/80 text-slate-700 border-slate-200 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-200 dark:border-slate-700'
+              }`}
+            >
+              PENDING
+            </button>
+            <button
+              type="button"
+              onClick={() => setMonthFilterStatus(prev => prev === 'CLOSING_GROUP' ? '' : 'CLOSING_GROUP')}
+              className={`h-10 px-4 rounded-full text-xs font-black uppercase tracking-wider border transition-all active:scale-95 ${
+                monthFilterStatus === 'CLOSING_GROUP'
+                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-emerald-600 dark:border-emerald-600 shadow-sm'
+                  : 'bg-slate-100/80 text-slate-700 border-slate-200 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-200 dark:border-slate-700'
+              }`}
+            >
+              CLOSING
+            </button>
+
+            {/* Month Filter Button */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                const now = dateFilter ? new Date(dateFilter + 'T00:00:00') : new Date()
+                setCustomDateCalMonth({ year: now.getFullYear(), month: now.getMonth() })
+                setCustomDatePickerOpen(o => !o)
+              }}
+              className="flex items-center gap-1.5 h-10 px-4 rounded-full text-xs font-bold border transition-all active:scale-95 bg-slate-100/80 text-slate-700 border-slate-200 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-200 dark:border-slate-700"
+            >
+              <CalendarDays className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>Month</span>
+            </button>
+
+            {/* Filters Button */}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setMonthFilterModalOpen(true) }}
+              className={`flex items-center gap-1.5 h-10 px-4 rounded-full text-xs font-bold border transition-all active:scale-95 ${
+                (monthViewActive || monthFilterStatus || monthFilterNegotiatorId)
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                  : 'bg-slate-100/80 text-slate-700 border-slate-200 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-200 dark:border-slate-700'
+              }`}
+            >
+              <SlidersHorizontal className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>Filters</span>
+            </button>
+          </div>
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body,
       )}

@@ -4,9 +4,12 @@ import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, isPortalAdmin } from '../utils/api'
 import { ResponsiveTable, type ColumnDef as ResponsiveColumnDef } from '../components/ResponsiveTable'
 import {
-  FileSpreadsheet, Calendar, CreditCard, Plus, Check, X,
-  Search, Filter, AlertCircle, Upload, Trash2, Eye, Loader2, ChevronRight
+  FileSpreadsheet, Calendar, CreditCard, Plus, X,
+  Search, Filter, AlertCircle, Upload, Eye, Loader2, ChevronRight
 } from 'lucide-react'
+import { HrisLeavesTab } from '../components/hris/HrisLeavesTab'
+import { HrisAdvancesTab } from '../components/hris/HrisAdvancesTab'
+import { HrisDriversTab } from '../components/hris/HrisDriversTab'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface User {
@@ -14,6 +17,7 @@ interface User {
   name: string
   email: string
   role: string
+  jobTitle?: string
   branchId?: string
 }
 
@@ -65,6 +69,7 @@ export default function Hris() {
   const { theme } = useTheme()
   const { user } = useAuth()
   const isLight = theme === 'light'
+  const isPortalAdminUser = isPortalAdmin(user?.role || '')
 
   // Theme Colors
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
@@ -787,295 +792,39 @@ export default function Hris() {
 
         {/* ── Leaves Grid Table View ─────────────────────────────── */}
         {activeTab === 'leaves' && (
-          <>
-            <div className="overflow-x-auto">
-              <table className="excel-table">
-                <thead>
-                  <tr>
-                    <th>Request ID</th>
-                    <th>Employee Name</th>
-                    <th>Leave Type</th>
-                    <th>Start Date</th>
-                    <th>End Date</th>
-                    <th>Status</th>
-                    <th>Approved By</th>
-                    <th>Approved At</th>
-                    <th style={{ width: 120 }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredLeaves.map(l => (
-                    <tr key={l.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                      <td className="font-mono text-xs select-all">{l.id.substring(0, 8).toUpperCase()}</td>
-                      <td className="font-semibold">{getUserName(l.employeeId)}</td>
-                      <td>
-                        <span className="px-2 py-0.5 rounded text-[11px] font-black uppercase"
-                          style={{
-                            backgroundColor: l.leaveType === 'SICK' ? 'rgba(239,68,68,0.1)' : 'rgba(59,130,246,0.1)',
-                            color: l.leaveType === 'SICK' ? '#EF4444' : '#3B82F6'
-                          }}
-                        >
-                          {l.leaveType}
-                        </span>
-                      </td>
-                      <td className="font-medium">{l.startDate}</td>
-                      <td className="font-medium">{l.endDate}</td>
-                      <td>
-                        <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase"
-                          style={{
-                            backgroundColor: l.status === 'PENDING' ? 'rgba(245,158,11,0.1)' : l.status === 'APPROVED' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-                            color: l.status === 'PENDING' ? '#F59E0B' : l.status === 'APPROVED' ? '#10B981' : '#EF4444'
-                          }}
-                        >
-                          {l.status}
-                        </span>
-                      </td>
-                      <td>{l.approvedBy ? getUserName(l.approvedBy) : '—'}</td>
-                      <td>{l.approvedAt ? new Date(l.approvedAt).toLocaleDateString() : '—'}</td>
-                      <td>
-                        {l.status === 'PENDING' ? (
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => handleLeaveApproval(l.id, 'APPROVED')}
-                              className="p-1 rounded bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
-                              title="Approve Leave"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleLeaveApproval(l.id, 'REJECTED')}
-                              className="p-1 rounded bg-red-500/10 text-red-500 hover:bg-red-500/20"
-                              title="Reject Leave"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-slate-400 font-semibold select-none">No Action</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                  {/* Excel Summary Row */}
-                  <tr className="excel-total-row">
-                    <td colSpan={2}>Total Leaves Count:</td>
-                    <td>{leavesSummary.total} Total</td>
-                    <td colSpan={2}>Approved: {leavesSummary.approved}</td>
-                    <td>Pending: {leavesSummary.pending}</td>
-                    <td colSpan={3}></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            
-            {/* Sheet Sub-Table B: LEAVE BALANCES */}
-            <div className="mt-6">
-              <div className="px-4 py-2 border-b font-bold text-xs bg-slate-50 dark:bg-slate-800/20 text-slate-500" style={{ borderColor: border }}>
-                B. EMPLOYEE LEAVE CREDITS BALANCES SHEET
-              </div>
-              <div className="overflow-x-auto border-t">
-                <table className="excel-table">
-                  <thead>
-                    <tr>
-                      <th>Employee Name</th>
-                      <th>Year</th>
-                      <th>Vacation (Allocated)</th>
-                      <th>Vacation (Used)</th>
-                      <th>Sick (Allocated)</th>
-                      <th>Sick (Used)</th>
-                      <th>Emergency (Allocated)</th>
-                      <th>Emergency (Used)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {balances.map(b => (
-                      <tr key={b.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                        <td className="font-semibold">{getUserName(b.employeeId)}</td>
-                        <td className="font-mono text-xs">{b.year}</td>
-                        <td>{b.vacationAllocated}</td>
-                        <td className="text-rose-500 font-medium">{b.vacationUsed}</td>
-                        <td>{b.sickAllocated}</td>
-                        <td className="text-rose-500 font-medium">{b.sickUsed}</td>
-                        <td>{b.emergencyAllocated}</td>
-                        <td className="text-rose-500 font-medium">{b.emergencyUsed}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </>
+          <HrisLeavesTab
+            filteredLeaves={filteredLeaves}
+            balances={balances}
+            getUserName={getUserName}
+            handleLeaveApproval={handleLeaveApproval}
+            leavesSummary={leavesSummary}
+            border={border}
+          />
         )}
 
         {/* ── Cash Advances Grid Table View ───────────────────────── */}
         {activeTab === 'advances' && (
-          <div className="overflow-x-auto">
-            <table className="excel-table">
-              <thead>
-                <tr>
-                  <th>Request ID</th>
-                  <th>Employee Name</th>
-                  <th>Branch</th>
-                  <th>Request Amount</th>
-                  <th>Purpose / Reason</th>
-                  <th>Status</th>
-                  <th>Submitted At</th>
-                  <th style={{ width: 240 }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredAdvances.map(a => (
-                  <tr key={a.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                    <td className="font-mono text-xs select-all">{a.id.substring(0, 8).toUpperCase()}</td>
-                    <td className="font-semibold">{getUserName(a.employeeId)}</td>
-                    <td className="text-xs font-semibold text-slate-500">{getBranchDisplayName(a.branchId || null)}</td>
-                    <td className="font-semibold">₱{a.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    <td className="text-xs text-slate-500 font-medium max-w-[250px] truncate" title={a.purpose}>{a.purpose || '—'}</td>
-                    <td>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase"
-                        style={{
-                          backgroundColor: a.status === 'PENDING' ? 'rgba(245,158,11,0.1)' : a.status === 'APPROVED' ? 'rgba(59,130,246,0.1)' : a.status === 'DISBURSED' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-                          color: a.status === 'PENDING' ? '#F59E0B' : a.status === 'APPROVED' ? '#3B82F6' : a.status === 'DISBURSED' ? '#10B981' : '#EF4444'
-                        }}
-                      >
-                        {a.status}
-                      </span>
-                    </td>
-                    <td className="text-xs text-slate-500 font-medium">
-                      {new Date(a.createdAt).toLocaleString('en-US', {
-                        year: 'numeric',
-                        month: '2-digit',
-                        day: '2-digit',
-                        hour: 'numeric',
-                        minute: '2-digit',
-                        hour12: true
-                      })}
-                    </td>
-                    <td>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => {
-                            setSelectedAdvance(a)
-                            setShowDetailsModal(true)
-                          }}
-                          className="px-2 py-1 rounded bg-slate-500/10 text-slate-500 hover:bg-slate-500/20 text-[10px] font-bold"
-                        >
-                          View Details
-                        </button>
-                        {a.status === 'PENDING' && (
-                          <>
-                            <button
-                              onClick={() => {
-                                setConfirmingAdvance(a)
-                                setConfirmingStatus('APPROVED')
-                                setApprovalNotes('')
-                              }}
-                              className="px-2 py-1 rounded bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 text-[10px] font-bold"
-                            >
-                              Approve
-                            </button>
-                            <button
-                              onClick={() => {
-                                setConfirmingAdvance(a)
-                                setConfirmingStatus('REJECTED')
-                                setApprovalNotes('')
-                              }}
-                              className="px-2 py-1 rounded bg-red-500/10 text-red-500 hover:bg-red-500/20 text-[10px] font-bold"
-                            >
-                              Reject
-                            </button>
-                          </>
-                        )}
-                        {a.status === 'APPROVED' && (
-                          <button
-                            onClick={() => {
-                              setConfirmingAdvance(a)
-                              setConfirmingStatus('DISBURSED')
-                              setApprovalNotes('')
-                            }}
-                            className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 text-[10px] font-bold"
-                          >
-                            Disburse
-                          </button>
-                        )}
-                        {a.status === 'DISBURSED' && (
-                          <span className="text-[10px] text-slate-400 font-bold select-none">Disbursed (Deducts to Salary)</span>
-                        )}
-                        {a.status === 'FULLY_PAID' && (
-                          <span className="text-[10px] text-slate-400 font-bold select-none">Fully Paid</span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {/* Excel Summary Row */}
-                <tr className="excel-total-row">
-                  <td colSpan={3}>Grand Total:</td>
-                  <td className="font-bold text-emerald-600 dark:text-emerald-400">₱{advancesSummary.originalSum.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  <td colSpan={4} className="text-xs text-slate-400 font-medium">Total cash advances requested</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <HrisAdvancesTab
+            filteredAdvances={filteredAdvances}
+            getUserName={getUserName}
+            getUserBranchName={getUserBranchName}
+            isPortalAdminUser={isPortalAdminUser}
+            setConfirmingAdvance={setConfirmingAdvance}
+            setConfirmingStatus={setConfirmingStatus}
+            setSelectedAdvance={setSelectedAdvance}
+            setShowDetailsModal={setShowDetailsModal}
+            advancesSummary={advancesSummary}
+          />
         )}
+
         {/* ── Drivers Sheets List View ───────────────────────────── */}
         {activeTab === 'drivers' && (
-          <div className="overflow-x-auto">
-            <table className="excel-table">
-              <thead>
-                <tr>
-                  <th>Driver Name</th>
-                  <th>Branch</th>
-                  <th>Position</th>
-                  <th>Cut-Off Period</th>
-                  <th>Date Filed</th>
-                  <th>Validated By</th>
-                  <th>Total OT</th>
-                  <th style={{ width: 150 }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {driverSheets.filter((s: any) => {
-                  const q = searchQuery.toLowerCase()
-                  return (s.driverName || '').toLowerCase().includes(q) ||
-                         (s.branch && s.branch.toLowerCase().includes(q))
-                }).map((s: any) => (
-                  <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                    <td className="font-semibold">{s.driverName}</td>
-                    <td>{s.branch || '—'}</td>
-                    <td>{s.position || '—'}</td>
-                    <td className="font-medium">{s.cutOffPeriod || '—'}</td>
-                    <td>{s.dateFiled ? new Date(s.dateFiled).toLocaleDateString() : '—'}</td>
-                    <td>{s.validatedBy || '—'}</td>
-                    <td className="font-bold">{s.totalApprovedOt || '—'}</td>
-                    <td>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => handleViewSheetDetails(s.id)}
-                          className="px-2 py-1 rounded bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 text-[10px] font-bold flex items-center gap-1"
-                        >
-                          <Eye className="w-3 h-3" /> View/Edit
-                        </button>
-                        <button
-                          onClick={() => handleDeleteDriverSheet(s.id)}
-                          className="px-2 py-1 rounded bg-red-500/10 text-red-500 hover:bg-red-500/20 text-[10px] font-bold flex items-center gap-1"
-                        >
-                          <Trash2 className="w-3 h-3" /> Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {driverSheets.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="text-center py-6 text-slate-400 font-semibold">
-                      No driver sheets found. Click "Import Scan" to scan a driver monitoring sheet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <HrisDriversTab
+            driverSheets={driverSheets}
+            searchQuery={searchQuery}
+            handleViewSheetDetails={handleViewSheetDetails}
+            handleDeleteDriverSheet={handleDeleteDriverSheet}
+          />
         )}
       </div>
       </div>
