@@ -1,13 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
-import {
-  X, Building2, Phone, CheckCircle, XCircle, Mail, ShieldCheck,
-  Wrench, Tag, User, Calendar, RefreshCw
-} from 'lucide-react'
+import { X, Phone, Mail } from 'lucide-react'
 import { useTheme } from './ThemeContext'
-import { formatPersonName, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT } from '../utils/api'
+import { formatPersonName, resolveImageUrl, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT } from '../utils/api'
 import { isTabCacheFresh, readTabCacheEntry } from '../utils/ticketTabCache'
 import { fetchCachedBranches, fetchCachedEmployees } from '../utils/portalDirectoryCache'
-import UserAvatar from '../components/UserAvatar'
+import { getInitials } from './AuthContext'
 
 export interface Employee {
   id: string
@@ -59,28 +56,9 @@ const roleColor = (role: string) => {
   }
 }
 
-const parseSkills = (skillsStr?: string): string[] => {
-  if (!skillsStr) return []
-  try {
-    const parsed = JSON.parse(skillsStr)
-    if (Array.isArray(parsed)) return parsed.map(s => String(s).trim().toUpperCase()).filter(Boolean)
-  } catch {
-    return skillsStr.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
-  }
-  return []
-}
-
-const getRoleLevel = (skillsStr?: string): string => {
-  const list = parseSkills(skillsStr)
-  return list[0] || '—'
-}
-
-const formatDisplayDate = (dateStr?: string | null): string => {
-  if (!dateStr) return '—'
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-}
+/** Same palette convention as UserAvatar's fallback tile, sized up for the big photo showcase. */
+const PHOTO_FALLBACK_COLORS = ['#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#F59E0B', '#14B8A6', '#6366F1']
+const photoFallbackColor = (name: string) => PHOTO_FALLBACK_COLORS[(name.charCodeAt(0) || 0) % PHOTO_FALLBACK_COLORS.length]
 
 export const EmployeeDetailsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { theme } = useTheme()
@@ -95,8 +73,12 @@ export const EmployeeDetailsProvider: React.FC<{ children: React.ReactNode }> = 
 
   const [isOpen, setIsOpen] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
-  const [activeTab, setActiveTab] = useState<'overview' | 'system'>('overview')
   const [employees, setEmployees] = useState<Employee[]>([])
+  const [photoBroken, setPhotoBroken] = useState(false)
+
+  useEffect(() => {
+    setPhotoBroken(false)
+  }, [selectedEmployee?.id, selectedEmployee?.profileImage])
 
   const mapEmployees = (list: Array<Record<string, unknown>>, branchMap: Record<string, string>): Employee[] =>
     list.map((s) => ({
@@ -206,7 +188,6 @@ export const EmployeeDetailsProvider: React.FC<{ children: React.ReactNode }> = 
 
     if (found) {
       setSelectedEmployee(found)
-      setActiveTab('overview')
       setIsOpen(true)
     } else {
       console.warn(`Employee not found for: ${idOrName}`)
@@ -222,9 +203,9 @@ export const EmployeeDetailsProvider: React.FC<{ children: React.ReactNode }> = 
     <EmployeeDetailsContext.Provider value={{ isOpen, selectedEmployee, employees, openEmployeeDetails, closeEmployeeDetails }}>
       {children}
       
-      {/* ── Modal Overlay ── */}
+      {/* ── Modal Overlay — dim scrim over the current tab, not an opaque takeover ── */}
       {isOpen && selectedEmployee && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: isLight ? 'rgba(241,245,249,0.96)' : 'rgba(6,11,24,0.96)', backdropFilter: 'blur(12px)' }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)' }}>
           {/* Backdrop click close */}
           <div className="absolute inset-0" onClick={closeEmployeeDetails} />
 
@@ -237,9 +218,16 @@ export const EmployeeDetailsProvider: React.FC<{ children: React.ReactNode }> = 
               animation: 'modalFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
             }}
           >
-            {/* Header */}
+            {/* Header — same label-over-branch pattern as the page header (e.g. Schedules) */}
             <div className="px-6 py-4 border-b flex items-center justify-between shrink-0" style={{ borderColor: border }}>
-              <h3 className="text-base font-black tracking-tight" style={{ color: textPrimary }}>Employee Profile Details</h3>
+              <div className="flex flex-col min-w-0">
+                <span className="text-[10px] font-extrabold uppercase tracking-widest leading-none mb-1 opacity-70" style={{ color: textMuted }}>
+                  EMPLOYEE DETAILS
+                </span>
+                <h3 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
+                  {selectedEmployee.branchName || '—'}
+                </h3>
+              </div>
               <button
                 onClick={closeEmployeeDetails}
                 className="p-2 rounded-xl transition-all hover:bg-slate-500/10"
@@ -251,109 +239,66 @@ export const EmployeeDetailsProvider: React.FC<{ children: React.ReactNode }> = 
 
             {/* Content Body - Dual Column */}
             <div className="flex-1 overflow-y-auto flex flex-col md:flex-row">
-              
-              {/* Left Column - Profile summary & status */}
-              <div className="w-full md:w-1/3 p-6 border-b md:border-b-0 md:border-r flex flex-col items-center gap-4 text-center shrink-0" style={{ borderColor: border }}>
-                <UserAvatar name={selectedEmployee.name} imageUrl={selectedEmployee.profileImage} size="lg" ring />
 
-                <div>
-                  <h4 className="text-xl font-semibold tracking-tight" style={{ color: textPrimary }}>{formatPersonName(selectedEmployee.name)}</h4>
-                  <p className="text-xs font-mono mt-0.5" style={{ color: textMuted }}>ID: {selectedEmployee.id}</p>
-                </div>
-
-                <div className="flex flex-col gap-1.5 w-full mt-2">
-                  <span className="inline-flex items-center justify-center gap-1 px-3 py-1 rounded-lg text-xs font-bold"
-                    style={{ backgroundColor: roleColor(selectedEmployee.role).bg, color: roleColor(selectedEmployee.role).text, border: `1px solid ${roleColor(selectedEmployee.role).border}` }}>
-                    {resolveLabel(selectedEmployee.role, selectedEmployee.jobTitle)}
-                  </span>
-                  {selectedEmployee.branchName && (
-                    <span className="inline-flex items-center justify-center gap-1 px-3 py-1 rounded-lg text-xs font-bold border"
-                      style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}>
-                      <Building2 className="w-3.5 h-3.5 mr-1" /> {selectedEmployee.branchName}
-                    </span>
-                  )}
-                </div>
-
-                <div className="w-full border-t pt-4 flex flex-col gap-2 mt-2" style={{ borderColor: border }}>
-                  <div className="text-[10px] font-black uppercase tracking-widest text-left" style={{ color: textMuted }}>Status</div>
-                  <div
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border"
-                    style={selectedEmployee.isActive
-                      ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.06)', borderColor: 'rgba(16,185,129,0.2)' }
-                      : { color: textMuted, backgroundColor: inputBg, borderColor: border }}
-                  >
-                    {selectedEmployee.isActive ? <CheckCircle className="w-4 h-4 text-emerald-500" /> : <XCircle className="w-4 h-4" />}
-                    {selectedEmployee.isActive ? 'Active Member' : 'Deactivated'}
-                  </div>
+              {/* Left Column - big photo showcase, no text */}
+              <div className="w-full md:w-2/5 p-6 border-b md:border-b-0 md:border-r shrink-0" style={{ borderColor: border }}>
+                <div className="w-full aspect-square rounded-2xl overflow-hidden border" style={{ borderColor: border }}>
+                  {(() => {
+                    const src = resolveImageUrl(selectedEmployee.profileImage)
+                    if (src && !photoBroken) {
+                      return (
+                        <img
+                          src={src}
+                          alt={selectedEmployee.name || 'Profile'}
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                          onError={() => setPhotoBroken(true)}
+                        />
+                      )
+                    }
+                    return (
+                      <div
+                        className="w-full h-full flex items-center justify-center text-white font-black text-6xl"
+                        style={{ background: `linear-gradient(135deg, ${photoFallbackColor(selectedEmployee.name)}, #059669)` }}
+                        aria-hidden={!selectedEmployee.name}
+                      >
+                        {getInitials(selectedEmployee.name) || '?'}
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
 
-              {/* Right Column - Categorized detail tables */}
+              {/* Right Column - name, title, branch, then the detail grid */}
               <div className="flex-1 flex flex-col min-w-0">
-                {/* Tabs */}
-                <div className="flex border-b text-xs uppercase tracking-widest font-black shrink-0" style={{ borderColor: border }}>
-                  {(['overview', 'system'] as const).map(tab => (
-                    <button
-                      key={tab}
-                      onClick={() => setActiveTab(tab)}
-                      className="flex-1 py-3 text-center border-b-2 transition-all"
-                      style={{
-                        borderColor: activeTab === tab ? '#10B981' : 'transparent',
-                        color: activeTab === tab ? textPrimary : textMuted,
-                      }}
+                <div className="flex-1 p-6 overflow-y-auto flex flex-col gap-5">
+                  <div>
+                    <h4 className="text-4xl font-black tracking-tight" style={{ color: textPrimary }}>
+                      {formatPersonName(selectedEmployee.name).toUpperCase()}
+                    </h4>
+                    <p
+                      className="text-sm font-bold uppercase tracking-wide mt-1.5"
+                      style={{ color: roleColor(selectedEmployee.role).text }}
                     >
-                      {tab.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
+                      {resolveLabel(selectedEmployee.role, selectedEmployee.jobTitle)}
+                    </p>
+                  </div>
 
-                {/* Tab body */}
-                <div className="flex-1 p-6 overflow-y-auto">
-                  
-                  {/* Overview tab */}
-                  {activeTab === 'overview' && (
-                    <div className="flex flex-col gap-5">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {[
-                          { label: 'Work Email', value: selectedEmployee.email || '—', icon: <Mail className="w-4 h-4" /> },
-                          { label: 'Personal Email', value: selectedEmployee.personalEmail || '—', icon: <Mail className="w-4 h-4" /> },
-                          { label: 'Phone Number', value: selectedEmployee.phone || '—', icon: <Phone className="w-4 h-4" /> },
-                          { label: 'Birthdate', value: formatDisplayDate(selectedEmployee.birthDate), icon: <Calendar className="w-4 h-4" /> },
-                          { label: 'System Role', value: selectedEmployee.role || '—', icon: <ShieldCheck className="w-4 h-4" /> },
-                          { label: 'Job Title', value: selectedEmployee.jobTitle || '—', icon: <Wrench className="w-4 h-4" /> },
-                          { label: 'Role Level', value: getRoleLevel(selectedEmployee.skills), icon: <Tag className="w-4 h-4" /> },
-                        ].map(item => (
-                          <div key={item.label} className="p-3 rounded-xl border flex items-center gap-3" style={{ borderColor: border, backgroundColor: inputBg }}>
-                            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: border, backgroundColor: cardBg, color: textMuted }}>{item.icon}</div>
-                            <div className="min-w-0">
-                              <div className="text-[9px] font-black uppercase tracking-widest" style={{ color: textMuted }}>{item.label}</div>
-                              <div className="text-sm font-semibold truncate" style={{ color: textPrimary }}>{item.value}</div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* System tab */}
-                  {activeTab === 'system' && (
-                    <div className="flex flex-col gap-4">
-                      {[
-                        { label: 'Employee ID', value: selectedEmployee.id, icon: <User className="w-4 h-4" /> },
-                        { label: 'Hire Date / Registration', value: selectedEmployee.createdAt ? new Date(selectedEmployee.createdAt).toLocaleDateString(undefined, { dateStyle: 'long' }) : 'Unknown', icon: <Calendar className="w-4 h-4" /> },
-                        { label: 'Last Profile Update', value: selectedEmployee.updatedAt ? new Date(selectedEmployee.updatedAt).toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' }) : 'Unknown', icon: <RefreshCw className="w-4 h-4" /> },
-                      ].map(item => (
-                        <div key={item.label} className="p-3 rounded-xl border flex items-center gap-3" style={{ borderColor: border, backgroundColor: inputBg }}>
-                          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: border, backgroundColor: cardBg, color: textMuted }}>{item.icon}</div>
-                          <div>
-                            <div className="text-[9px] font-black uppercase tracking-widest" style={{ color: textMuted }}>{item.label}</div>
-                            <div className="text-sm font-semibold" style={{ color: textPrimary }}>{item.value}</div>
-                          </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {[
+                      { label: 'Work Email', value: selectedEmployee.email || '—', icon: <Mail className="w-5 h-5" /> },
+                      { label: 'Personal Email', value: selectedEmployee.personalEmail || '—', icon: <Mail className="w-5 h-5" /> },
+                      { label: 'Phone Number', value: selectedEmployee.phone || '—', icon: <Phone className="w-5 h-5" /> },
+                    ].map(item => (
+                      <div key={item.label} className="p-4 rounded-xl border flex items-center gap-3.5" style={{ borderColor: border, backgroundColor: inputBg }}>
+                        <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: border, backgroundColor: cardBg, color: textMuted }}>{item.icon}</div>
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>{item.label}</div>
+                          <div className="text-base font-semibold truncate" style={{ color: textPrimary }}>{item.value}</div>
                         </div>
-                      ))}
-                    </div>
-                  )}
-
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
 

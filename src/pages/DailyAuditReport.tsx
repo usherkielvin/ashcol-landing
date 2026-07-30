@@ -681,11 +681,12 @@ export default function DailyAuditReport() {
 
                 <button type="button"
                   onClick={() => openDatePicker(mobileDateRef.current)}
-                  className="flex items-center justify-center px-1.5 py-1 rounded-md border shrink-0"
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0"
                   style={{ borderColor: inputBorder, color: textMuted }}
-                  title="Pick date"
+                  title="Pick a custom date"
                 >
                   <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
+                  Custom
                 </button>
 
                 <input ref={mobileDateRef} type="date" value={date} onChange={e => setDate(e.target.value)}
@@ -724,27 +725,27 @@ export default function DailyAuditReport() {
             <button
               type="button"
               onClick={() => setActiveTab('submit')}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-extrabold text-xs text-white transition-all hover:scale-105 hover:shadow-md focus:outline-none"
-              style={{ backgroundColor: '#10B981', boxShadow: '0 2px 8px rgba(16,185,129,0.2)' }}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm text-white transition-colors hover:opacity-90 focus:outline-none"
+              style={{ backgroundColor: '#10B981' }}
             >
-              <FileEdit className="w-3.5 h-3.5" /> Submit Daily Report
+              <FileEdit className="w-4 h-4" /> Submit Daily Report
             </button>
           )}
           {hiddenBranches.length > 0 && (
             <button type="button" onClick={() => setHiddenBranches([])}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs border transition-all hover:scale-105"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm border transition-colors hover:opacity-90"
               style={{ backgroundColor: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.2)', color: '#EF4444' }}>
-              <Eye className="w-3.5 h-3.5" />Show {hiddenBranches.length} Hidden
+              <Eye className="w-4 h-4" />Show {hiddenBranches.length} Hidden
             </button>
           )}
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
           {/* View mode toggle */}
-          <div id="audit-view-toggle" className="flex items-center rounded-lg text-xs font-bold overflow-hidden"
+          <div id="audit-view-toggle" className="flex items-center rounded-lg text-sm font-semibold overflow-hidden"
             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
             {(['single','range'] as const).map(m => (
-              <button key={m} type="button" onClick={() => setViewMode(m)} className="px-2.5 py-1.5 transition-colors"
+              <button key={m} type="button" onClick={() => setViewMode(m)} className="px-4 py-2 transition-colors"
                 style={{ backgroundColor: viewMode===m ? '#10B981' : 'transparent', color: viewMode===m ? '#fff' : textMuted }}>
                 {m === 'single' ? 'Daily' : 'Range'}
               </button>
@@ -755,13 +756,13 @@ export default function DailyAuditReport() {
           {viewMode === 'single' ? (
             <>
               {/* Weekly day tabs (desktop) */}
-              <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar">
+              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
                 {weeklyDayTabs.map(tab => {
                   const isActive = date === tab.key
                   return (
                     <button key={tab.key} type="button"
                       onClick={() => setDate(tab.key)}
-                      className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
+                      className="px-3 py-2 rounded-lg text-xs font-semibold border whitespace-nowrap shrink-0 transition-colors"
                       style={{
                         backgroundColor: isActive ? '#10B981' : 'transparent',
                         borderColor: isActive ? '#10B981' : inputBorder,
@@ -776,7 +777,7 @@ export default function DailyAuditReport() {
                 {isCustomAuditDate && (
                   <button type="button"
                     onClick={() => openDatePicker(desktopDateRef.current)}
-                    className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0"
+                    className="px-3 py-2 rounded-lg text-xs font-semibold border whitespace-nowrap shrink-0"
                     style={{ backgroundColor: '#10B981', borderColor: '#10B981', color: '#ffffff' }}
                   >
                     {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
@@ -785,11 +786,12 @@ export default function DailyAuditReport() {
 
                 <button type="button"
                   onClick={() => openDatePicker(desktopDateRef.current)}
-                  className="flex items-center justify-center px-1.5 py-1 rounded-md border shrink-0"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border whitespace-nowrap shrink-0 transition-colors"
                   style={{ borderColor: inputBorder, color: textMuted }}
-                  title="Pick date"
+                  title="Pick a custom date"
                 >
-                  <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
+                  <CalendarDays className="w-4 h-4" style={{ color: '#10B981' }} />
+                  Custom Date
                 </button>
 
                 <input id="audit-date-picker" ref={desktopDateRef} type="date" value={date}
@@ -799,14 +801,14 @@ export default function DailyAuditReport() {
               </div>
             </>
           ) : (
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
               {[{ val: rangeFrom, set: setRangeFrom }, { val: rangeTo, set: setRangeTo }].map((p, i) => (
                 <div
                   key={i}
-                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs cursor-pointer"
+                  className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm cursor-pointer transition-colors"
                   onClick={() => openDatePicker(i === 0 ? desktopRangeFromRef.current : desktopRangeToRef.current)}
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
-                  <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
+                  <CalendarDays className="w-4 h-4" style={{ color: '#10B981' }} />
                   <input
                     ref={i === 0 ? desktopRangeFromRef : desktopRangeToRef}
                     type="date"
@@ -815,7 +817,7 @@ export default function DailyAuditReport() {
                     tabIndex={-1}
                     className="date-input-no-indicator absolute opacity-0 pointer-events-none w-0 h-0"
                     aria-label={i === 0 ? 'Audit range from date' : 'Audit range to date'} />
-                  <span className="text-xs font-semibold select-none" style={{ color: textPrimary }}>
+                  <span className="text-sm font-semibold select-none" style={{ color: textPrimary }}>
                     {formatDateTriggerLabel(p.val)}
                   </span>
                 </div>
@@ -846,7 +848,7 @@ export default function DailyAuditReport() {
               <div key={i} className="flex items-center gap-2">
                 <Icon className="w-3.5 h-3.5" style={{ color: k.color }} />
                 <span style={{ color: textMuted }}>{k.label}:</span>
-                <strong className="font-extrabold" style={{ color: k.color }}>₱{k.value}</strong>
+                <strong className="font-semibold" style={{ color: k.color }}>₱{k.value}</strong>
                 {i < arr.length - 1 && <span className="ml-4 opacity-25" style={{ color: textMuted }}>|</span>}
               </div>
             )
@@ -865,13 +867,13 @@ export default function DailyAuditReport() {
         return (
           <div className="flex items-center gap-2.5 flex-wrap px-4 py-2.5 rounded-xl border no-print hidden md:flex"
             style={{ backgroundColor: cardBg, borderColor: border }}>
-            <span className="font-black uppercase tracking-wider text-[10px]" style={{ color: '#10B981' }}>Above Quota:</span>
+            <span className="font-semibold uppercase tracking-wider text-[10px]" style={{ color: '#10B981' }}>Above Quota:</span>
             <div className="flex flex-wrap gap-2">
               {aboveQuotaBranches.map((branch) => (
                 <div key={branch.branchName} className="flex items-center gap-2 px-3 py-1 rounded-full border text-xs"
                   style={{ backgroundColor: inputBg, borderColor: border }}>
-                  <span className="font-bold" style={{ color: textPrimary }}>{formatBranchName(branch.branchName)}</span>
-                  <span className="font-extrabold text-[11px]" style={{ color: '#10B981' }}>+₱{peso(branch.difference)}</span>
+                  <span className="font-semibold" style={{ color: textPrimary }}>{formatBranchName(branch.branchName)}</span>
+                  <span className="font-semibold text-[11px]" style={{ color: '#10B981' }}>+₱{peso(branch.difference)}</span>
                 </div>
               ))}
             </div>
