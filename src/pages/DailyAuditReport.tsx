@@ -40,6 +40,7 @@ interface AuditRow {
   payrollExpenses: number
   totalExpenses: number
   totalForPurchase: number
+  totalPayables: number
   totalUnitsScheduled?: number
   totalUnitsSurveyOnly?: number
   totalRescheduled?: number
@@ -507,14 +508,10 @@ export default function DailyAuditReport() {
     { key: 'grossSales',  label: 'Gross Sales',            short: 'Sales' },
     { key: 'target',      label: 'Target Quota',           short: 'Quota' },
     { key: 'difference',  label: 'Diff / Remarks',         short: 'Diff/Rem.' },
-    { key: 'coh',         label: 'COH Prev Day',           short: 'COH' },
-
-    { key: 'cashReturns', label: 'Cash Returns',           short: 'Ret.' },
     { key: 'totalCohCfd', label: 'Total COH/CFD',          short: 'CFD' },
     { key: 'cashColl',    label: 'Cash Collection',        short: 'Cash' },
     { key: 'onlineColl',  label: 'Online Collection',      short: 'Online' },
     { key: 'totalExp',    label: 'Total Expenses',         short: 'Exp.' },
-    { key: 'totalPurch',  label: 'Total Purchases',        short: 'Purch.' },
     { key: 'forColl',     label: 'For Collection',         short: 'Coll.' },
     { key: 'rebates',     label: 'Rebates',                short: 'Reb.' },
   ]
@@ -924,44 +921,45 @@ export default function DailyAuditReport() {
           </div>
         ) : (
           <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 'calc(100vh - 210px)' }}>
-            <table
-              style={compactView
-                ? { minWidth: '1180px', fontSize: '10px', tableLayout: 'auto', width: '100%', borderCollapse: 'separate', borderSpacing: 0 }
-                : { minWidth: '1700px', fontSize: '12px' }
-              }
-            >
-              {/* ── Table Head ── */}
-              <thead>
-                <tr style={{ backgroundColor: inputBg, borderBottom: `1px solid ${border}` }}>
-                  {columns.map(col => {
-                    const sorted = sortConfig?.key === col.key
-                    return (
-                      <th
-                        key={col.key}
-                        onClick={() => handleSort(col.key)}
-                        className="text-left font-bold uppercase tracking-wider cursor-pointer select-none transition-colors"
-                        style={{
-                          color: sorted ? textPrimary : textMuted,
-                          padding: compactView ? '7px 6px' : '10px 12px',
-                          whiteSpace: 'nowrap',
-                          fontSize: compactView ? 9 : 10,
-                          letterSpacing: 0,
-                          position: 'sticky',
-                          top: 0,
-                          left: col.key === 'branch' ? 0 : undefined,
-                          zIndex: col.key === 'branch' ? 25 : 20,
-                          backgroundColor: inputBg,
-                        }}
-                      >
-                        <div className="flex items-center gap-0.5">
-                          {compactView ? col.short : col.label}
-                          {sorted
-                            ? sortConfig!.direction === 'asc' ? <ArrowUp className="w-2.5 h-2.5 ml-0.5 shrink-0" /> : <ArrowDown className="w-2.5 h-2.5 ml-0.5 shrink-0" />
-                            : null}
-                        </div>
-                      </th>
-                    )
-                  })}
+              <table
+                style={compactView
+                  ? { minWidth: '1100px', fontSize: '12px', tableLayout: 'auto', width: '100%', borderCollapse: 'separate', borderSpacing: 0 }
+                  : { minWidth: '1500px', fontSize: '14px', width: '100%' }
+                }
+              >
+                {/* ── Table Head ── */}
+                <thead>
+                  <tr style={{ backgroundColor: inputBg, borderBottom: `1px solid ${border}` }}>
+                    {columns.map(col => {
+                      const sorted = sortConfig?.key === col.key
+                      return (
+                        <th
+                          key={col.key}
+                          onClick={() => handleSort(col.key)}
+                          className="text-left font-bold uppercase tracking-wider cursor-pointer select-none transition-colors"
+                          style={{
+                            color: sorted ? textPrimary : textMuted,
+                            padding: compactView ? '7px 10px' : '9px 16px',
+                            whiteSpace: 'nowrap',
+                            fontSize: compactView ? 10 : 11,
+                            letterSpacing: 0,
+                            position: 'sticky',
+                            top: 0,
+                            left: col.key === 'branch' ? 0 : undefined,
+                            zIndex: col.key === 'branch' ? 25 : 20,
+                            backgroundColor: inputBg,
+                            borderRight: `1px solid ${border}`,
+                          }}
+                        >
+                          <div className="flex items-center gap-0.5">
+                            {compactView ? col.short : col.label}
+                            {sorted
+                              ? sortConfig!.direction === 'asc' ? <ArrowUp className="w-3 h-3 ml-0.5 shrink-0" /> : <ArrowDown className="w-3 h-3 ml-0.5 shrink-0" />
+                              : null}
+                          </div>
+                        </th>
+                      )
+                    })}
                   
                 </tr>
               </thead>
@@ -974,7 +972,7 @@ export default function DailyAuditReport() {
                   const isPending  = row.remarks === 'PENDING'
                   const noRecord   = row.status === 'NO RECORD' || row.status === 'NO REPORT' || row.status === 'NO SCHED'
                   const noTransaction = isNoTransactionRemarks(row.remarks) || noRecord
-                  const p          = compactView ? '7px 6px' : '10px 12px'
+                  const p          = compactView ? '6px 10px' : '9px 16px'
                   const isSelected = selectedRow && `${selectedRow.branchId}:${selectedRow.auditLine || ''}` === `${row.branchId}:${row.auditLine || ''}`
 
                   return (
@@ -1023,14 +1021,15 @@ export default function DailyAuditReport() {
                             : cardBg,
                           padding: p,
                           whiteSpace: 'nowrap',
+                          borderRight: `1px solid ${border}`,
                           transition: 'background-color 0.15s ease-in-out'
                         }}>
                           <div className="flex flex-col">
                             <div className="flex items-center gap-1.5">
-                              <span style={{ color: textMuted, fontSize: compactView ? 8 : 9, minWidth: '14px' }}>{idx + 1}.</span>
-                              <span className="font-bold" style={{ fontSize: compactView ? 10 : 12 }}>{formatBranchName(row.branchName)}</span>
+                              <span style={{ color: textMuted, fontSize: compactView ? 9 : 11, minWidth: '16px' }}>{idx + 1}.</span>
+                              <span className="font-semibold" style={{ fontSize: compactView ? 12 : 13 }}>{formatBranchName(row.branchName)}</span>
                             </div>
-                            <div className="flex items-center gap-1.5 mt-0.5" style={{ fontSize: compactView ? '8px' : '10px' }}>
+                            <div className="flex items-center gap-1.5 mt-0.5" style={{ fontSize: compactView ? '9px' : '11px' }}>
                               <span style={{
                                 display: 'inline-block',
                                 width: '6px',
@@ -1055,22 +1054,22 @@ export default function DailyAuditReport() {
                       </td>
 
                       {/* ④ Gross Sales */}
-                      <td className="font-semibold" style={{ color: textPrimary, padding: p, whiteSpace: 'nowrap' }}>₱{peso(row.grossSales)}</td>
+                      <td className="font-semibold text-sm tabular-nums" style={{ color: textPrimary, padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }}>{peso(row.grossSales)}</td>
 
                       {/* ⑤ Target Quota */}
-                      <td style={{ color: '#8B5CF6', fontWeight: 600, padding: p, whiteSpace: 'nowrap' }} >
-                        <>₱{peso(row.targetDailyQuota)}</>
+                      <td className="font-semibold text-sm tabular-nums" style={{ color: '#8B5CF6', padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }} >
+                        <>{peso(row.targetDailyQuota)}</>
                       </td>
 
                       {/* ⑥ Difference & Remarks */}
-                      <td style={{ padding: p, whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }}>
                         <div className="flex flex-col gap-0.5">
                           <span style={{
                             display: 'inline-block',
                             alignSelf: 'start',
-                            padding: compactView ? '1px 3px' : '1.5px 5px',
+                            padding: compactView ? '2px 4px' : '2px 6px',
                             borderRadius: 4,
-                            fontSize: compactView ? 7 : 9,
+                            fontSize: compactView ? 9 : 10,
                             fontWeight: 700,
                             whiteSpace: 'nowrap',
                             ...remarksBadgeStyle(row.remarks, noRecord, isAbove),
@@ -1080,40 +1079,28 @@ export default function DailyAuditReport() {
                           {noRecord ? (
                             <span style={{ color: textMuted }}>—</span>
                           ) : (
-                            <span className="font-bold text-[11px]" style={{ color: isAbove ? '#10B981' : '#EF4444' }}>
-                              {isAbove ? '+' : ''}₱{peso(row.difference)}
+                            <span className="font-semibold text-xs tabular-nums" style={{ color: isAbove ? '#10B981' : '#EF4444' }}>
+                              {isAbove ? '+' : ''}{peso(row.difference)}
                             </span>
                           )}
                         </div>
                       </td>
 
-                      {/* ⑧ COH Prev Day */}
-                      <td style={{ color: textMuted, padding: p, whiteSpace: 'nowrap' }} >
-                        <>₱{peso(row.cohPreviousDay)}</>
-                      </td>
-
-
-
-                      {/* ⑩ Cash Returns */}
-                      <td style={{ color: textMuted, padding: p, whiteSpace: 'nowrap' }} >
-                        <>₱{peso(row.cashReturns)}</>
-                      </td>
-
                       {/* ⑪ Total COH/CFD */}
-                      <td className="font-semibold" style={{ color: textPrimary, padding: p, whiteSpace: 'nowrap' }}>₱{peso(row.totalCohCfd)}</td>
+                      <td className="font-semibold text-sm tabular-nums" style={{ color: textPrimary, padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }}>{peso(row.totalCohCfd)}</td>
 
                       {/* ⑫ Cash Collection */}
-                      <td className="font-semibold" style={{ color: '#10B981', padding: p, whiteSpace: 'nowrap' }} >
-                        <>₱{peso(row.totalCashCollection)}</>
+                      <td className="font-semibold text-sm tabular-nums" style={{ color: '#10B981', padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }} >
+                        <>{peso(row.totalCashCollection)}</>
                       </td>
 
                       {/* ⑬ Online Collection */}
-                      <td className="font-semibold" style={{ color: '#3B82F6', padding: p, whiteSpace: 'nowrap' }} >
-                        <>₱{peso(row.totalOnlineCollection)}</>
+                      <td className="font-semibold text-sm tabular-nums" style={{ color: '#3B82F6', padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }} >
+                        <>{peso(row.totalOnlineCollection)}</>
                       </td>
 
                       {/* ⑭ Total Expenses — clickable drilldown */}
-                      <td className="font-semibold" style={{ padding: p, whiteSpace: 'nowrap' }}>
+                      <td className="font-semibold text-sm tabular-nums" style={{ padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }}>
                         <button
                           id={`expense-drilldown-${idx}`}
                           onClick={e => {
@@ -1125,81 +1112,64 @@ export default function DailyAuditReport() {
                           className="flex items-center gap-1 hover:underline transition-opacity hover:opacity-75"
                           style={{ color: '#EF4444' }}
                         >
-                          ₱{peso(row.totalExpenses)}
-                        </button>
-                      </td>
-
-                      {/* Total Purchases — clickable drilldown */}
-                      <td className="font-semibold" style={{ padding: p, whiteSpace: 'nowrap' }}>
-                        <button
-                          id={`purchase-drilldown-${idx}`}
-                          onClick={e => {
-                            e.stopPropagation()
-                            setSelectedRow(row)
-                            setRowExpenses(null)
-                            fetchRowExpenses(row)
-                          }}
-                          className="flex items-center gap-1 hover:underline transition-opacity hover:opacity-75"
-                          style={{ color: '#F59E0B' }}
-                        >
-                          ₱{peso(row.totalForPurchase || 0)}
+                          {peso(row.totalExpenses)}
                         </button>
                       </td>
 
                       {/* ⑱ For Collection */}
-                      <td className="font-semibold" style={{ color: '#F59E0B', padding: p, whiteSpace: 'nowrap' }} >
-                        <>₱{peso(row.forCollection)}</>
+                      <td className="font-semibold text-sm tabular-nums" style={{ color: '#F59E0B', padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }} >
+                        <>{peso(row.forCollection)}</>
                       </td>
 
                       {/* ⑲ Rebates */}
-                      <td style={{ color: textMuted, padding: p, whiteSpace: 'nowrap' }}>
-                        <>₱{peso(row.rebatesForCollection)}</>
+                      <td className="font-medium text-sm tabular-nums" style={{ color: textMuted, padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }}>
+                        <>{peso(row.rebatesForCollection)}</>
                       </td>
 
-
-
                     </tr>
+
                   )
                 })}
               </tbody>
 
               {/* ── Totals Footer ── */}
               <tfoot>
-                <tr style={{ borderTop: `2px solid ${border}`, backgroundColor: inputBg }}>
-                  <td colSpan={1} style={{ padding: compactView ? '5px 5px' : '10px 12px' }} />
+                <tr style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
+                  <td
+                    className="sticky left-0 font-semibold uppercase tracking-wider whitespace-nowrap"
+                    style={{ color: textMuted, fontSize: compactView ? 10 : 11, padding: compactView ? '6px 10px' : '9px 16px', backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}
+                  >
+                    Total
+                  </td>
                   {/* Gross Sales */}
-                  <td className="font-black whitespace-nowrap" style={{ color: '#3B82F6', fontSize: compactView ? 9 : 11, padding: compactView ? '5px 5px' : '10px 12px' }}>
-                    ₱{peso(totals.grossSales)}
+                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px', borderRight: `1px solid ${border}` }}>
+                    {peso(totals.grossSales)}
                   </td>
                   {/* Target Quota */}
-                  <td className="font-black whitespace-nowrap" style={{ color: '#8B5CF6', fontSize: compactView ? 9 : 11, padding: compactView ? '5px 5px' : '10px 12px' }}>
-                    ₱{peso(totals.targetDailyQuota)}
+                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px', borderRight: `1px solid ${border}` }}>
+                    {peso(totals.targetDailyQuota)}
                   </td>
-                  {/* Difference + Remarks + COH + Returns + CFD */}
-                  <td colSpan={4} />
+                  {/* Difference + Remarks + CFD */}
+                  <td colSpan={2} />
                   {/* Cash Collection */}
-                  <td className="font-black whitespace-nowrap" style={{ color: '#10B981', fontSize: compactView ? 9 : 11, padding: compactView ? '5px 5px' : '10px 12px' }}>
-                    ₱{peso(totals.totalCashCollection)}
+                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px', borderRight: `1px solid ${border}` }}>
+                    {peso(totals.totalCashCollection)}
                   </td>
                   {/* Online Collection */}
-                  <td className="font-black whitespace-nowrap" style={{ color: '#3B82F6', fontSize: compactView ? 9 : 11, padding: compactView ? '5px 5px' : '10px 12px' }}>
-                    ₱{peso(totals.totalOnlineCollection)}
+                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px', borderRight: `1px solid ${border}` }}>
+                    {peso(totals.totalOnlineCollection)}
                   </td>
                   {/* Total Expenses */}
-                  <td className="font-black whitespace-nowrap" style={{ color: '#EF4444', fontSize: compactView ? 9 : 11, padding: compactView ? '5px 5px' : '10px 12px' }}>
-                    ₱{peso(totals.totalExpenses)}
-                  </td>
-                  {/* Total Purchases */}
-                  <td className="font-black whitespace-nowrap" style={{ color: '#F59E0B', fontSize: compactView ? 9 : 11, padding: compactView ? '5px 5px' : '10px 12px' }}>
-                    ₱{peso(totals.totalForPurchase)}
+                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px', borderRight: `1px solid ${border}` }}>
+                    {peso(totals.totalExpenses)}
                   </td>
                   {/* For Collection */}
-                  <td className="font-black whitespace-nowrap" style={{ color: '#F59E0B', fontSize: compactView ? 9 : 11, padding: compactView ? '5px 5px' : '10px 12px' }}>
-                    ₱{peso(totals.forCollection)}
+                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px', borderRight: `1px solid ${border}` }}>
+                    {peso(totals.forCollection)}
                   </td>
                   {/* Rebates */}
-                  <td className="font-black whitespace-nowrap" style={{ color: textMuted, fontSize: compactView ? 9 : 11, padding: compactView ? '5px 5px' : '10px 12px' }}>
-                    ₱{peso(totals.rebatesForCollection)}
+                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px', borderRight: `1px solid ${border}` }}>
+                    {peso(totals.rebatesForCollection)}
                   </td>
 
                 </tr>
@@ -1633,6 +1603,28 @@ export default function DailyAuditReport() {
                             </div>
                           ))}
                         </div>
+                      </div>
+                    </div>
+
+                    {/* Purchases & Payables stats grid */}
+                    <div className="px-6 py-5 flex flex-col gap-3" style={{ borderBottom: `1px solid ${border}` }}>
+                      <span className="text-[10px] font-black uppercase tracking-widest pb-2 border-b" style={{ color: textPrimary, borderColor: border }}>Purchases &amp; Payables</span>
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          { label: 'Total Purchases', value: `₱${peso(selectedRow.totalForPurchase || 0)}`, color: '#F59E0B' },
+                          { label: 'Total Payables', value: `₱${peso(selectedRow.totalPayables || 0)}`, color: '#D946EF' },
+                        ].map((item) => (
+                          <button
+                            key={item.label}
+                            type="button"
+                            onClick={() => { setSelectedRow(selectedRow); setRowExpenses(null); fetchRowExpenses(selectedRow) }}
+                            className="rounded-lg px-3 py-2 text-left hover:opacity-80 transition-opacity"
+                            style={{ border: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}
+                          >
+                            <div className="text-[9px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>{item.label}</div>
+                            <div className="mt-0.5 text-xs font-black tabular-nums" style={{ color: item.color }}>{item.value}</div>
+                          </button>
+                        ))}
                       </div>
                     </div>
 

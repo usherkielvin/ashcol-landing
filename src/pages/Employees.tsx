@@ -1098,7 +1098,7 @@ export default function Employees() {
                 {['Employee', 'Role', 'Branch', 'Contact', 'Status'].map((h, idx, arr) => (
                   <th
                     key={h}
-                    className="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider whitespace-nowrap border-r"
+                    className={`px-6 py-3.5 text-xs font-semibold uppercase tracking-wider whitespace-nowrap border-r ${idx === 0 ? 'text-left' : 'text-center'}`}
                     style={{ color: textMuted, borderColor: border, borderRight: idx === arr.length - 1 ? 'none' : `1px solid ${border}` }}
                   >
                     {h}
@@ -1122,10 +1122,10 @@ export default function Employees() {
                     {[2, 3, 4, 5].map((j, idx) => (
                       <td
                         key={j}
-                        className="px-6 py-4 border-r"
+                        className="px-6 py-4 border-r text-center"
                         style={{ borderColor: border, borderRight: idx === 3 ? 'none' : `1px solid ${border}` }}
                       >
-                        <div className="h-4 rounded animate-pulse" style={{ backgroundColor: inputBg, width: '60%' }} />
+                        <div className="h-4 rounded animate-pulse mx-auto" style={{ backgroundColor: inputBg, width: '60%' }} />
                       </td>
                     ))}
                   </tr>
@@ -1192,16 +1192,16 @@ export default function Employees() {
                     </td>
 
                     {/* Role */}
-                    <td className="px-6 py-5 border-r" style={{ borderColor: border }}>
+                    <td className="px-6 py-5 border-r text-center" style={{ borderColor: border }}>
                       <span className="text-sm font-semibold tracking-wider whitespace-nowrap" style={{ color: rc.text }}>
                         {resolveLabel(e.role, e.jobTitle).toUpperCase()}
                       </span>
                     </td>
 
                     {/* Branch */}
-                    <td className="px-6 py-5 border-r" style={{ borderColor: border }}>
+                    <td className="px-6 py-5 border-r text-center" style={{ borderColor: border }}>
                       {e.branchName ? (
-                        <div className="flex items-center gap-1.5 text-sm whitespace-nowrap" style={{ color: textMuted }}>
+                        <div className="flex items-center justify-center gap-1.5 text-sm whitespace-nowrap" style={{ color: textMuted }}>
                           <span className="font-semibold" style={{ color: textPrimary }}>{e.branchName.toUpperCase()}</span>
                         </div>
                       ) : (
@@ -1210,7 +1210,7 @@ export default function Employees() {
                     </td>
 
                     {/* Contact */}
-                    <td className="px-6 py-5 border-r" style={{ borderColor: border }}>
+                    <td className="px-6 py-5 border-r text-center" style={{ borderColor: border }}>
                       {e.phone ? (
                         <span className="text-sm font-semibold" style={{ color: textPrimary }}>
                           {formatPhoneNumber(e.phone)}
@@ -1221,7 +1221,7 @@ export default function Employees() {
                     </td>
 
                     {/* Status */}
-                    <td className="px-6 py-5">
+                    <td className="px-6 py-5 text-center">
                       <button
                         onClick={evt => { evt.stopPropagation(); requestToggleActive(e) }}
                         className="inline-flex items-center gap-1 text-xs font-bold tracking-wider transition-all hover:opacity-85"
@@ -1231,6 +1231,7 @@ export default function Employees() {
                         {e.isActive ? 'ACTIVE' : 'INACTIVE'}
                       </button>
                     </td>
+
                   </tr>
                 )
               })}
