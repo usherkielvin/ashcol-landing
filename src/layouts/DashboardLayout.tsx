@@ -1,19 +1,18 @@
-// @ts-nocheck
-import { useState, useRef, useEffect, cloneElement, isValidElement } from 'react'
+// K — @ts-nocheck removed; proper types added throughout
+import { useState, useRef, useEffect, useMemo, cloneElement, isValidElement } from 'react'
 import { Outlet, Link, useLocation, Navigate, useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import {
   Ticket as TicketIcon,
   Menu, LogOut, X, Sun, Moon,
-  ChevronRight, ChevronLeft, UserCircle, ChevronDown,
-  PanelLeftOpen, ClipboardList, Search,
-  User, Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
-  Building2, Calendar, Landmark, Wifi, CircleDollarSign, ListOrdered, ShieldCheck,
-  LayoutDashboard
+  ChevronRight, UserCircle, ChevronDown,
+  ClipboardList, Search,
+  Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
+  Building2, Calendar, Landmark, Wifi, CircleDollarSign, ListOrdered,
+  Route
 } from 'lucide-react'
 import {
   MdOutlineConfirmationNumber,
-  MdOutlineDashboard,
   MdOutlineLocalActivity,
   MdOutlineAssignmentInd,
   MdOutlineCalendarMonth,
@@ -21,6 +20,7 @@ import {
   MdOutlinePeopleAlt,
   MdOutlineDescription,
   MdOutlinePlaylistAdd,
+  MdOutlineAltRoute,
   MdOutlineChecklist,
   MdOutlineInsertChartOutlined,
   MdOutlineReceipt,
@@ -86,7 +86,6 @@ function buildNavGroups(navLinks: NavLinkDef[]) {
         { name: 'My Tickets', icon: <MdOutlineAssignmentInd size={16} />, path: findPath('My Tickets') },
         { name: 'Schedules', icon: <MdOutlineCalendarMonth size={16} />, path: findPath('Schedules') },
         { name: 'Archives', icon: <MdOutlineArchive size={16} />, path: findPath('Archives') },
-        { name: 'Registration', icon: <ShieldCheck size={16} />, path: findPath('Registration') },
       ].filter(s => s.path !== '#' || hasLink(s.name)),
     },
     {
@@ -94,6 +93,7 @@ function buildNavGroups(navLinks: NavLinkDef[]) {
       Icon: MdOutlinePeopleAlt,
       subItems: [
         { name: 'HRIS', icon: <MdOutlineDescription size={16} />, path: findPath('HRIS') },
+        { name: 'DDRM', icon: <MdOutlineAltRoute size={16} />, path: findPath('DDRM') },
         { name: 'Operations Forms', icon: <MdOutlineDescription size={16} />, path: findPath('Operations Forms') },
         { name: 'Line-up', icon: <MdOutlinePlaylistAdd size={16} />, path: findPath('Lineup') },
         { name: 'Office tasks', icon: <MdOutlineChecklist size={16} />, path: findPath('Office tasks') },
@@ -192,6 +192,17 @@ export default function DashboardLayout() {
   const [globalBranchId, setGlobalBranchId] = useState<string | null>(() => localStorage.getItem('ashcol-global-branch-id'))
   const [adminBranches, setAdminBranches] = useState<BranchOption[]>([])
 
+  // Keep portal chrome in the viewport without locking html/body (that broke other pages)
+  useEffect(() => {
+    const html = document.documentElement
+    // Clear login/portal leftovers if navigating in after a hard refresh mid-login
+    html.classList.remove('login-shell')
+    html.style.removeProperty('overflow')
+    document.body.style.removeProperty('overflow')
+    document.body.style.removeProperty('touch-action')
+    html.style.removeProperty('--app-height')
+  }, [])
+
   useEffect(() => {
     if (!isPortalAdminUser) return
     const loadAdminBranches = async () => {
@@ -281,7 +292,6 @@ export default function DashboardLayout() {
   useEffect(() => {
     if (isPortalAdminUser || !user?.branchId) {
       if (!isPortalAdminUser) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setBranchLabel(null)
       }
       return
@@ -325,7 +335,6 @@ export default function DashboardLayout() {
     { name: 'Relays',          path: '/relays',           icon: Radio,           roles: ['admin', 'management'] },
     { name: 'Search',          path: '/search',          icon: Search },
     { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
-    { name: 'Registration',    path: '/warranty-registration', icon: ShieldCheck, roles: ['admin', 'management'] },
     { name: 'Office tasks',    path: '/office-tasks',     icon: Building2,       roles: ['admin', 'management'] },
     { name: 'Lineup',          path: '/lineup',           icon: ListOrdered,     roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
@@ -334,31 +343,32 @@ export default function DashboardLayout() {
     { name: 'Daily Transaction', path: '/audit-report',   icon: TrendingUp,      roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin', 'management'] },
     { name: 'HRIS',              path: '/admin-hris',       icon: Calendar,        roles: ['admin', 'management', 'manager'] },
+    { name: 'DDRM',              path: '/ddrm',             icon: Route,           roles: ['admin', 'management', 'manager'] },
     { name: 'Operations Forms',  path: '/operations-forms', icon: ClipboardList, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Bills',             path: '/admin-bills',      icon: Landmark,        roles: ['admin', 'management', 'manager'] },
     { name: 'Telecoms',          path: '/admin-telecom',    icon: Wifi,            roles: ['admin', 'management', 'manager'] },
   ]
 
   const role = (user?.role || '').toLowerCase()
-  const isAuthorizedRole = role === 'admin' || role === 'management' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
-
   const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms']
   const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms']
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 
-  const navLinks = isPortalAdmin(role)
-      ? allLinks.filter(link => {
-          if (!link.roles) return true
-          return link.roles.includes(role)
-        })
-      : isSalesUser
-        ? allLinks.filter(link => salesWorkspaceLinks.includes(link.name))
-        : isServiceUser
-          ? allLinks.filter(link => serviceWorkspaceLinks.includes(link.name))
-      : isAuthorizedRole
-        ? allLinks.filter(link => serviceWorkspaceLinks.includes(link.name))
-        : allLinks.filter(link => serviceWorkspaceLinks.includes(link.name))
+  // I — memoize navLinks so the redirect useEffect doesn't re-run on unrelated renders
+  const navLinks = useMemo(() => {
+    if (isPortalAdmin(role)) {
+      return allLinks.filter(link => {
+        if (!link.roles) return true
+        return link.roles.includes(role)
+      })
+    }
+    if (isSalesUser) return allLinks.filter(link => salesWorkspaceLinks.includes(link.name))
+    if (isServiceUser) return allLinks.filter(link => serviceWorkspaceLinks.includes(link.name))
+    // J — collapsed dead ternary: isAuthorizedRole and the default did the same thing
+    return allLinks.filter(link => serviceWorkspaceLinks.includes(link.name))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role, isSalesUser, isServiceUser])
 
   // Redirect if current path is not allowed for the user
   useEffect(() => {
@@ -378,8 +388,6 @@ export default function DashboardLayout() {
 
   // ── Color tokens (direct JS objects — no CSS vars) ──────────────
   const bg          = isLight ? '#f1f5f9'              : '#060B18'
-  const sidebarBg   = isLight ? '#ffffff'              : '#0A1120'
-  const headerBg    = isLight ? 'rgba(255,255,255,0.9)': 'rgba(6,11,24,0.9)'
   const border      = isLight ? '#e2e8f0'              : '#1a2844'
   const textPrimary = isLight ? '#0f172a'              : '#E2E8F0'
   const textMuted   = isLight ? '#64748b'              : '#6B90BE'
@@ -388,8 +396,9 @@ export default function DashboardLayout() {
 
   const currentPage = navLinks.find(l => location.pathname === l.path)?.name
     ?? (location.pathname === '/my-tickets' ? 'My Tickets' : 'Dashboard')
-  const navGroups = buildNavGroups(navLinks)
-  const collapsedNavItems = buildCollapsedNavItems(navLinks)
+  // I — memoize derived collections
+  const navGroups = useMemo(() => buildNavGroups(navLinks), [navLinks])
+  const collapsedNavItems = useMemo(() => buildCollapsedNavItems(navLinks), [navLinks])
 
   // Keep the group for the current page open; don't fight manual collapse until route changes.
   useEffect(() => {
@@ -415,7 +424,7 @@ export default function DashboardLayout() {
 
   // Auto collapse on table-heavy tabs
   useEffect(() => {
-    const isTablePage = ['/relays', '/my-tickets', '/schedules', '/service-report', '/search', '/lineup'].some(p => 
+    const isTablePage = ['/relays', '/my-tickets', '/schedules', '/service-report', '/search', '/lineup', '/ddrm'].some(p => 
       location.pathname === p || location.pathname.startsWith(p + '/')
     )
     if (isTablePage && window.innerWidth >= 768) {
@@ -449,7 +458,7 @@ export default function DashboardLayout() {
 
   return (
     <div
-      className={`flex h-screen overflow-hidden font-['Inter',sans-serif] ${sidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}`}
+      className={`flex w-full max-w-full h-screen max-h-screen overflow-hidden font-['Inter',sans-serif] ${sidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}`}
       style={{ backgroundColor: bg, color: textPrimary }}
     >
       {/* ── Mobile Backdrop ─────────────────────────────── */}
@@ -463,18 +472,18 @@ export default function DashboardLayout() {
 
       {/* ── Sidebar ─────────────────────────────────────── */}
       <div
-        className="relative flex shrink-0"
+        className="relative flex shrink-0 h-full max-h-full min-h-0"
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
         <aside
         className={`
-          fixed md:static inset-y-0 left-0 z-50 flex flex-col overflow-hidden
+          fixed md:static inset-y-0 left-0 z-50 flex flex-col h-full max-h-full min-h-0 overflow-hidden
           transition-all duration-300 ease-in-out
           bg-gradient-to-b from-[#0a180f] via-[#205e30] to-[#3ca94d]
           text-white
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-          ${sidebarCollapsed ? 'md:w-[64px]' : 'w-[260px] md:w-[240px] lg:w-[260px]'}
+          ${sidebarCollapsed ? 'md:w-[64px]' : 'w-[260px] md:w-[220px] lg:w-[240px]'}
         `}
       >
         {/* Brand */}
@@ -513,7 +522,7 @@ export default function DashboardLayout() {
         </div>
 
         {/* ── Nav Links ──────────────────────────────────── */}
-        <nav className={`flex-1 overflow-y-auto py-3 px-2 flex flex-col ${sidebarCollapsed ? 'gap-1 items-center' : 'gap-0.5'}`}>
+        <nav className={`flex-1 min-h-0 overflow-y-auto py-3 px-2 flex flex-col ${sidebarCollapsed ? 'gap-1 items-center' : 'gap-0.5'}`}>
           {!sidebarCollapsed && (
             <div className="text-[10px] font-bold uppercase tracking-[2px] px-3 mb-2 text-white/40 w-full">
               Navigation
@@ -561,9 +570,9 @@ export default function DashboardLayout() {
             const panelId = `nav-panel-${group.title.replace(/\s+/g, '-').toLowerCase()}`
             return (
               <div key={group.title} className="mb-0.5 w-full">
+                {/* G — tabIndex={-1} removed: accordion buttons are real interactive elements */}
                 <button
                   type="button"
-                  tabIndex={-1}
                   aria-expanded={isOpen}
                   aria-controls={panelId}
                   onClick={() => toggleAccordion(group.title)}
@@ -674,7 +683,7 @@ export default function DashboardLayout() {
               >
                 {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-[#10B981] rounded-r-full" />}
                 {isValidElement(item.icon)
-                  ? cloneElement(item.icon, { color: isActive ? '#10B981' : '#ffffff', className: 'shrink-0' })
+                  ? cloneElement(item.icon as React.ReactElement<{ color?: string, className?: string }>, { color: isActive ? '#10B981' : '#ffffff', className: 'shrink-0' })
                   : item.icon}
               </Link>
             )
@@ -688,7 +697,10 @@ export default function DashboardLayout() {
         {(() => {
           const showBranch = isPortalAdminUser && adminBranches.length > 0
           return (
-            <div className={`mt-auto px-3 pb-5 pt-2 space-y-2 shrink-0 ${sidebarCollapsed ? 'flex flex-col items-center' : ''}`}>
+            <div
+              className={`px-2.5 pt-2 space-y-2 shrink-0 mt-auto ${sidebarCollapsed ? 'flex flex-col items-center' : ''}`}
+              style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}
+            >
 
               {/* Branch Button (admin only) */}
               {showBranch && (
@@ -744,7 +756,7 @@ export default function DashboardLayout() {
                       <select
                         value={globalBranchId || ''}
                         onChange={(e) => handleGlobalBranchChange(e.target.value)}
-                        className="w-full pl-9 pr-8 py-3 rounded-xl text-sm font-bold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20 transition-all bg-[#1e732c] text-white shadow-lg shadow-[0_4px_12px_rgba(0,0,0,0.25)] border-0"
+                        className="w-full pl-9 pr-8 py-2.5 rounded-xl text-sm font-bold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20 transition-all bg-[#1e732c] text-white shadow-lg shadow-[0_4px_12px_rgba(0,0,0,0.25)] border-0"
                       >
                         {adminBranches.map((b) => (
                           <option key={b.id} value={b.id} style={{ backgroundColor: '#0a180f', color: '#fff' }}>
@@ -781,7 +793,7 @@ export default function DashboardLayout() {
                       </Link>
                       <div className="mx-3 my-1 border-t border-white/10" />
                       <button
-                        onClick={() => { setProfileOpen(false); logout(); navigate('/login', { replace: true }) }}
+                        onClick={() => { setProfileOpen(false); logout() }}
                         className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-white/60 transition-colors text-left hover:bg-white/10 hover:text-red-400"
                       >
                         <LogOut className="w-4 h-4" />
@@ -794,8 +806,8 @@ export default function DashboardLayout() {
                 {/* Profile button */}
                 <button
                   onClick={() => setProfileOpen(p => !p)}
-                  className={`flex items-center gap-3 text-left transition-all ${
-                    sidebarCollapsed ? 'justify-center w-11 h-11' : 'w-full px-4 py-3 rounded-xl border border-white/10 bg-white/10 hover:bg-white/15'
+                  className={`flex items-center gap-2.5 text-left transition-all ${
+                    sidebarCollapsed ? 'justify-center w-11 h-11' : 'w-full px-3 py-2 rounded-xl border border-white/10 bg-white/10 hover:bg-white/15'
                   }`}
                 >
                   <UserAvatar
@@ -836,31 +848,31 @@ export default function DashboardLayout() {
     </div>
 
       {/* ── Main Content Area ───────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
 
         {/* ── Global Header (Mobile/Tablet/Desktop) ──────────────── */}
-        {currentPage !== 'Search' && (
+        {currentPage !== 'Search' && currentPage !== 'DDRM' && (
           <header 
-            className="flex-none z-50 backdrop-blur-md"
+            className="flex-none z-20 backdrop-blur-md w-full min-w-0 max-w-full overflow-hidden"
             style={{ 
               backgroundColor: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(10,17,32,0.8)',
               borderBottom: `1px solid ${border}` 
             }}
           >
           {/* Top row: title + icons */}
-          <div className="h-14 flex items-center justify-between px-5 md:px-8 relative">
-            <div className="flex items-center gap-3 shrink-0">
+          <div className="h-14 flex items-center justify-between px-4 md:px-6 lg:px-8 relative min-w-0">
+            <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0 mr-2">
               <button
-                className="md:hidden p-2 rounded-xl transition-all"
+                className="md:hidden p-2 rounded-xl transition-all shrink-0"
                 style={{ color: textMuted, backgroundColor: hoverBg }}
                 onClick={() => setSidebarOpen(true)}
               >
                 <Menu className="w-4 h-4" />
               </button>
 
-              <div className="flex flex-col justify-center">
+              <div className="flex flex-col justify-center min-w-0 shrink-0">
                 {currentPage === 'Relays' ? (
-                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase" style={{ color: textPrimary }}>
+                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
                     Relays
                   </h1>
                 ) : (
@@ -868,14 +880,21 @@ export default function DashboardLayout() {
                     <span className="text-[10px] font-extrabold uppercase tracking-widest leading-none mb-1 opacity-70" style={{ color: textMuted }}>
                       {currentPage}
                     </span>
-                    {branchLabel ? (
-                      <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase" style={{ color: textPrimary }} title={branchLabel}>
+                    {currentPage === 'Employees' ? (
+                      <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase" style={{ color: textPrimary }}>
+                        GLOBAL
+                      </h1>
+                    ) : branchLabel ? (
+                      <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }} title={branchLabel}>
                         {branchLabel}
                       </h1>
                     ) : null}
                   </>
                 )}
               </div>
+
+              {/* Slot for inline top-header search bar on mobile/desktop */}
+              <div id="header-top-search-slot" className="flex items-center min-w-0 flex-1 max-w-[210px] xs:max-w-[240px] sm:max-w-xs ml-1" />
             </div>
 
             {/* Right: Actions */}
@@ -906,16 +925,18 @@ export default function DashboardLayout() {
             </div>
           </div>
 
-          <div id="header-toolbar-slot" />
+          <div id="header-toolbar-slot" className="w-full min-w-0 max-w-full" />
         </header>
         )}
 
         {/* ── Page Content ───────────────────────────────── */}
         <main className={
-          (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration' || currentPage === 'Search')
-            ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
-            : currentPage === 'HRIS'
-              ? "flex-1 overflow-y-auto pt-5 pb-20 px-0 sm:px-5 md:p-8 relative"
+          currentPage === 'DDRM'
+            ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-[2px]"
+            : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration' || currentPage === 'Search')
+              ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
+              : currentPage === 'HRIS'
+                ? "flex-1 overflow-y-auto pt-5 pb-20 px-0 sm:px-5 md:p-8 relative"
               : "flex-1 overflow-y-auto p-5 md:p-8 relative"
         }>
           {/* Subtle ambient gradient */}
@@ -927,7 +948,7 @@ export default function DashboardLayout() {
                    zIndex: 0,
                  }} />
           )}
-          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration' || currentPage === 'Search') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
+          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'DDRM') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
             {/* Do not key Outlet by pathname — that remounts Schedules on every nav and forces a reload spinner. */}
             <Outlet context={{ setSidebarOpen }} />
           </div>
@@ -939,3 +960,4 @@ export default function DashboardLayout() {
     </div>
   )
 }
+ 

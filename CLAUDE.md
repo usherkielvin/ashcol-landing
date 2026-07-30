@@ -54,10 +54,12 @@ Any new branch-filtering logic (schedules, archives, employee directory, negotia
 
 A ticket moves through exactly one primary work queue at a time, driven by fields inside the `acDetails` JSON blob (not separate columns):
 
-1. **Relays** ([src/pages/ClientMasterlist.tsx](src/pages/ClientMasterlist.tsx)) — intake/dispatch. Leaves once `acDetails.finalDate` is set.
-2. **My Tickets** ([src/pages/Tickets.tsx](src/pages/Tickets.tsx) at `/my-tickets`) — negotiator's personal queue (assigned, no `finalDate` yet).
-3. **Schedules** (`Tickets.tsx` at `/schedules`) — day-of ops once `acDetails.finalDate` exists; branch + installer/driver lineup.
+1. **Relays** ([src/pages/Relays.tsx](src/pages/Relays.tsx)) — intake/dispatch. Leaves once `acDetails.finalDate` is set.
+2. **My Tickets** (`/my-tickets`) — negotiator's personal queue (assigned, no `finalDate` yet).
+3. **Schedules** (`/schedules`) — day-of ops once `acDetails.finalDate` exists; branch + installer/driver lineup.
 4. **Archives** ([src/pages/DailyServiceReport.tsx](src/pages/DailyServiceReport.tsx) at `/service-report`) — permanent record created on install-complete via `postTicketArchiveReport` in [src/utils/ticketArchive.ts](src/utils/ticketArchive.ts).
+
+**My Tickets and Schedules share one component.** [src/pages/Tickets.tsx](src/pages/Tickets.tsx) (~12k lines, the largest file in the repo) is the shared table view; [src/pages/MyTickets.tsx](src/pages/MyTickets.tsx) and [src/pages/Schedules.tsx](src/pages/Schedules.tsx) are thin wrappers that render `<Tickets surface="my-tickets" />` / `<Tickets surface="schedules" />`. Most of the queue-behavior branching keys off that `surface` prop, so a change in `Tickets.tsx` affects both surfaces unless it's gated on `surface`. Relays is its own separate page, not a `Tickets` surface.
 
 Full details, gaps, and the field-by-field contract are documented in [docs/relay-ticket-lifecycle-flow.md](docs/relay-ticket-lifecycle-flow.md) — read it before touching relay/schedule/archive filtering logic.
 
@@ -84,7 +86,7 @@ Driver name and vehicle code are separate, independently-saved fields: `driverNa
 - `src/pages/` — one component per route, generally self-contained with their own data fetching.
 - `src/components/` — shared UI; `operations/`, `relays/`, `schedules/` subfolders hold components specific to those feature areas (e.g. `RelayEditTicketModal`, `ScheduleEditTicketModal`).
 - `src/contexts/` — `AuthContext`, `ThemeContext`, `NotificationContext`, `EmployeeDetailsContext`.
-- `src/utils/` — the real logic layer. [src/utils/api.ts](src/utils/api.ts) is the largest and most load-bearing file (branch scoping, role checks, ticket fetch/cache helpers, formatting). Other notable ones: `ticketArchive.ts` (archive sync), `relayScheduleSync.ts`, `localDataCache.ts` / `portalDirectoryCache.ts` (localStorage caches), `smartDate.ts`.
+- `src/utils/` — the real logic layer. [src/utils/api.ts](src/utils/api.ts) is the most load-bearing util (branch scoping, role checks, ticket fetch/cache helpers, formatting). Other notable ones: `ticketArchive.ts` (archive sync), `relayScheduleSync.ts`, `ticketTabCache.ts` / `localDataCache.ts` / `portalDirectoryCache.ts` (localStorage caches), `smartDate.ts`.
 - `src/data/` — static reference data (PH addresses, branch list, Ashcol branch knowledge used by the AI chatbot).
 - `api/` — two Vercel serverless functions (`chat.ts`, `branchKnowledge.ts`) for the **public landing page's** AI chat only; unrelated to the Spring portal's own `/api/ai/chat`.
 

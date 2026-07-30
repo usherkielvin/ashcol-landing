@@ -198,14 +198,26 @@ export function applyRelayScheduleSyncToPatch(
   body: Record<string, unknown>,
   ticket?: RelayScheduleTicket,
 ): Record<string, unknown> {
-  const next = { ...body }
+  const next: Record<string, any> = { ...body }
+  const syncPatchAlias = (camel: string, snake: string) => {
+    if (camel in next || snake in next) {
+      const val = next[camel] !== undefined ? next[camel] : next[snake]
+      next[camel] = val
+      next[snake] = val
+    }
+  }
 
-  if (typeof next.customerName === 'string' && next.customerName.trim()) {
-    next.customer_name = next.customerName
-  }
-  if (typeof next.customer_name === 'string' && next.customer_name.trim()) {
-    next.customerName = next.customer_name
-  }
+  syncPatchAlias('customerName', 'customer_name')
+  syncPatchAlias('preferredDate', 'preferred_date')
+  syncPatchAlias('negotiatorId', 'negotiator_id')
+  syncPatchAlias('acDetails', 'ac_details')
+  syncPatchAlias('ticketNumber', 'ticket_number')
+  syncPatchAlias('remarksUpdate', 'remarks_update')
+  syncPatchAlias('sourceVendor', 'source_vendor')
+  syncPatchAlias('installationCharges', 'installation_charges')
+  syncPatchAlias('modeOfPayment', 'mode_of_payment')
+  syncPatchAlias('driverName', 'driver_name')
+  syncPatchAlias('serviceVehicle', 'service_vehicle')
 
   // A caller that explicitly clears finalDate/preferredDate (e.g. returning a ticket to My
   // Tickets) sends them as empty strings, not `undefined` — that intent must not be undone by
@@ -252,17 +264,6 @@ export function applyRelayScheduleSyncToPatch(
     }
   }
 
-  if ('driverName' in next || 'driver_name' in next) {
-    const val = next.driverName !== undefined ? next.driverName : next.driver_name
-    next.driverName = val
-    next.driver_name = val
-  }
-  if ('serviceVehicle' in next || 'service_vehicle' in next) {
-    const val = next.serviceVehicle !== undefined ? next.serviceVehicle : next.service_vehicle
-    next.serviceVehicle = val
-    next.service_vehicle = val
-  }
-
   return next
 }
 
@@ -297,13 +298,12 @@ export function ticketReferencesScheduleDate(ticket: RelayScheduleTicket, dateKe
   if (!target) return false
   const norm = (v: unknown) => String(v || '').trim().split('T')[0].split(' ')[0]
   if (norm(ticket.finalDate) === target || norm(ticket.final_date) === target) return true
-  if (norm(ticket.preferredDate) === target || norm(ticket.preferred_date) === target) return true
   try {
     const acRaw = ticket.acDetails || ticket.ac_details
     const ac = typeof acRaw === 'string' ? JSON.parse(acRaw) : acRaw
     const meta = Array.isArray(ac) ? ac[0] : ac
     if (meta && typeof meta === 'object') {
-      for (const k of ['finalDate', 'scheduledDate', 'archivedScheduleDate', 'installedDate']) {
+      for (const k of ['finalDate', 'scheduledDate', 'archivedScheduleDate', 'installedDate', 'cancelledScheduleDate']) {
         if (norm((meta as Record<string, unknown>)[k]) === target) return true
       }
       const prev = (meta as Record<string, unknown>).previousScheduleDates
@@ -317,7 +317,7 @@ export function ticketReferencesScheduleDate(ticket: RelayScheduleTicket, dateKe
   return false
 }
 
-/** Primary schedule date for cache placement (final → scheduled → preferred). */
+/** Primary schedule date for cache placement (final → scheduled). */
 export function resolveRelayScheduleDateKey(ticket: any): string {
   const normalized = normalizeRelayScheduleTicket(ticket)
   const final = String(normalized.finalDate || normalized.final_date || '').trim().split('T')[0].split(' ')[0]
@@ -331,8 +331,7 @@ export function resolveRelayScheduleDateKey(ticket: any): string {
   } catch {
     /* ignore malformed acDetails */
   }
-  const preferred = String(normalized.preferredDate || normalized.preferred_date || '').trim().split('T')[0].split(' ')[0]
-  return preferred
+  return ''
 }
 
 export function shouldExcludeRelayFromTab(ticket: RelayScheduleTicket): boolean {

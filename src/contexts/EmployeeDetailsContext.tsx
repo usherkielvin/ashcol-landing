@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import {
   X, Building2, Phone, CheckCircle, XCircle, Mail, ShieldCheck,
-  Wrench, Tag, Globe, Map, Home, Mailbox, MapPin, User, Calendar, RefreshCw
+  Wrench, Tag, User, Calendar, RefreshCw
 } from 'lucide-react'
 import { useTheme } from './ThemeContext'
 import { formatPersonName, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT } from '../utils/api'
@@ -27,6 +27,7 @@ export interface Employee {
   street?: string
   landmark?: string
   skills?: string
+  birthDate?: string
   createdAt?: string
   updatedAt?: string
 }
@@ -74,6 +75,13 @@ const getRoleLevel = (skillsStr?: string): string => {
   return list[0] || '—'
 }
 
+const formatDisplayDate = (dateStr?: string | null): string => {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
 export const EmployeeDetailsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { theme } = useTheme()
   const isLight = theme === 'light'
@@ -87,7 +95,7 @@ export const EmployeeDetailsProvider: React.FC<{ children: React.ReactNode }> = 
 
   const [isOpen, setIsOpen] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
-  const [activeTab, setActiveTab] = useState<'overview' | 'address' | 'system'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'system'>('overview')
   const [employees, setEmployees] = useState<Employee[]>([])
 
   const mapEmployees = (list: Array<Record<string, unknown>>, branchMap: Record<string, string>): Employee[] =>
@@ -109,6 +117,7 @@ export const EmployeeDetailsProvider: React.FC<{ children: React.ReactNode }> = 
       street: String(s.street || ''),
       landmark: String(s.landmark || ''),
       skills: String(s.skills || ''),
+      birthDate: s.birthDate ? String(s.birthDate) : '',
       createdAt: s.createdAt as string | undefined,
       updatedAt: s.updatedAt as string | undefined,
     }))
@@ -283,7 +292,7 @@ export const EmployeeDetailsProvider: React.FC<{ children: React.ReactNode }> = 
               <div className="flex-1 flex flex-col min-w-0">
                 {/* Tabs */}
                 <div className="flex border-b text-xs uppercase tracking-widest font-black shrink-0" style={{ borderColor: border }}>
-                  {(['overview', 'address', 'system'] as const).map(tab => (
+                  {(['overview', 'system'] as const).map(tab => (
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
@@ -309,6 +318,7 @@ export const EmployeeDetailsProvider: React.FC<{ children: React.ReactNode }> = 
                           { label: 'Work Email', value: selectedEmployee.email || '—', icon: <Mail className="w-4 h-4" /> },
                           { label: 'Personal Email', value: selectedEmployee.personalEmail || '—', icon: <Mail className="w-4 h-4" /> },
                           { label: 'Phone Number', value: selectedEmployee.phone || '—', icon: <Phone className="w-4 h-4" /> },
+                          { label: 'Birthdate', value: formatDisplayDate(selectedEmployee.birthDate), icon: <Calendar className="w-4 h-4" /> },
                           { label: 'System Role', value: selectedEmployee.role || '—', icon: <ShieldCheck className="w-4 h-4" /> },
                           { label: 'Job Title', value: selectedEmployee.jobTitle || '—', icon: <Wrench className="w-4 h-4" /> },
                           { label: 'Role Level', value: getRoleLevel(selectedEmployee.skills), icon: <Tag className="w-4 h-4" /> },
@@ -321,37 +331,6 @@ export const EmployeeDetailsProvider: React.FC<{ children: React.ReactNode }> = 
                             </div>
                           </div>
                         ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Address tab */}
-                  {activeTab === 'address' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {[
-                        { label: 'Region', value: selectedEmployee.region, icon: <Globe className="w-4 h-4" /> },
-                        { label: 'City', value: selectedEmployee.city, icon: <Map className="w-4 h-4" /> },
-                        { label: 'Barangay', value: selectedEmployee.barangay, icon: <Home className="w-4 h-4" /> },
-                        { label: 'Street', value: selectedEmployee.street, icon: <Mailbox className="w-4 h-4" /> },
-                      ].map(item => (
-                        <div key={item.label} className="p-3 rounded-xl border flex items-center gap-3" style={{ borderColor: border, backgroundColor: inputBg }}>
-                          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: border, backgroundColor: cardBg, color: textMuted }}>{item.icon}</div>
-                          <div className="min-w-0">
-                            <div className="text-[9px] font-black uppercase tracking-widest" style={{ color: textMuted }}>{item.label}</div>
-                            <div className="text-sm font-semibold truncate" style={{ color: item.value ? textPrimary : textMuted }}>
-                              {item.value || 'Not Configured'}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      <div className="col-span-1 sm:col-span-2 p-3 rounded-xl border flex items-start gap-3" style={{ borderColor: border, backgroundColor: inputBg }}>
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: border, backgroundColor: cardBg, color: textMuted }}><MapPin className="w-4 h-4" /></div>
-                        <div className="min-w-0">
-                          <div className="text-[9px] font-black uppercase tracking-widest" style={{ color: textMuted }}>Landmark Description</div>
-                          <div className="text-sm font-semibold mt-0.5" style={{ color: selectedEmployee.landmark ? textPrimary : textMuted }}>
-                            {selectedEmployee.landmark || 'No landmark description added'}
-                          </div>
-                        </div>
                       </div>
                     </div>
                   )}

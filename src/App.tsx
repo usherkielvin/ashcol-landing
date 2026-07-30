@@ -5,9 +5,9 @@ import Login from './pages/Login'
 import ForgotPassword from './pages/ForgotPassword'
 import CreateAccount from './pages/CreateAccount'
 import DashboardLayout from './layouts/DashboardLayout'
+import MyTickets from './pages/MyTickets'
 import Schedules from './pages/Schedules'
-import SearchTab from './pages/SearchTab'
-import MyTicketsTab from './pages/MyTicketsTab'
+import SearchTickets from './pages/SearchTickets'
 import CreateTicket from './pages/CreateTicket'
 import OfficeTasks from './pages/OfficeTasks'
 import Employees from './pages/Employees'
@@ -19,10 +19,10 @@ import DailyAuditReport from './pages/DailyAuditReport'
 import AuditFinanceExpenses from './pages/AuditFinanceExpenses'
 import ForCollections from './pages/ForCollections'
 import DailyServiceReport from './pages/DailyServiceReport'
-import WarrantyRegistration from './pages/WarrantyRegistration'
 import LineUp from './pages/LineUp'
 
 import Hris from './pages/Hris'
+import Ddrm from './pages/Ddrm'
 import Bills from './pages/Bills'
 import Telecom from './pages/Telecom'
 import OperationsForms from './pages/OperationsForms'
@@ -82,13 +82,13 @@ export default function App() {
         {/* Portal Routes */}
         <Route element={<DashboardLayout />}>
           <Route path="/dashboard" element={<DashboardRedirect />} />
-          <Route path="/search" element={<SearchTab />} />
+          <Route path="/search" element={<SearchTickets />} />
           <Route path="/tickets" element={<Navigate to="/search" replace />} />
           <Route path="/tickets/create" element={<CreateTicket />} />
           <Route path="/create-ticket" element={<CreateTicket />} />
           <Route path="/schedules" element={<Schedules />} />
           <Route path="/relays" element={<Relays />} />
-          <Route path="/my-tickets" element={<MyTicketsTab />} />
+          <Route path="/my-tickets" element={<MyTickets />} />
           <Route path="/office-tasks" element={<OfficeTasks />} />
           <Route path="/branches" element={<Branches />} />
           <Route path="/assigned-tickets" element={<Navigate to="/search" replace />} />
@@ -103,9 +103,9 @@ export default function App() {
           <Route path="/lineup" element={<LineUp />} />
           <Route path="/weekly-field-schedule" element={<Navigate to="/lineup?tab=weekly" replace />} />
           <Route path="/service-report" element={<DailyServiceReport />} />
-          <Route path="/warranty-registration" element={<WarrantyRegistration />} />
 
           <Route path="/admin-hris" element={<Hris />} />
+          <Route path="/ddrm" element={<Ddrm />} />
           <Route path="/operations-forms" element={<OperationsForms />} />
           <Route path="/admin-bills" element={<Bills />} />
           <Route path="/admin-telecom" element={<Telecom />} />

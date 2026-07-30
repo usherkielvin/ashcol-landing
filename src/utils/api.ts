@@ -914,6 +914,8 @@ function ticketsPageCacheKey(
     categoryGroup?: string
     status?: string
     date?: string
+    /** Schedules "whole month" filter (YYYY-MM) — ignored server-side whenever `date` is also set. */
+    month?: string
     statusGroup?: string
     branchId?: string
   },
@@ -925,6 +927,7 @@ function ticketsPageCacheKey(
     options.categoryGroup || '',
     options.status || '',
     options.date || '',
+    options.month || '',
     options.statusGroup || '',
     options.branchId || '',
   ].join('|')
@@ -939,6 +942,8 @@ async function fetchTicketsPageOnce(
     categoryGroup?: 'FIELD' | 'OFFICE'
     status?: string
     date?: string
+    /** Schedules "whole month" filter (YYYY-MM) — ignored server-side whenever `date` is also set. */
+    month?: string
     statusGroup?: string
     branchId?: string
     signal?: AbortSignal
@@ -954,6 +959,7 @@ async function fetchTicketsPageOnce(
   const base: Record<string, string> = { page: String(page), size: String(size) }
   if (options.status) base.status = options.status
   if (options.date) base.date = options.date
+  if (options.month) base.month = options.month
   if (options.statusGroup) base.statusGroup = options.statusGroup
   if (options.branchId) base.branchId = options.branchId
 
@@ -1006,9 +1012,11 @@ export async function fetchTicketsPage(
     categoryGroup?: 'FIELD' | 'OFFICE'
     status?: string
     date?: string
+    /** Schedules "whole month" filter (YYYY-MM) — ignored server-side whenever `date` is also set. */
+    month?: string
     statusGroup?: string
     branchId?: string
-    /** When true, fetches additional pages (max 5). Default: single page only. */
+    /** When true, fetches additional pages (max 5, or maxPages if set). Default: single page only. */
     paginate?: boolean
     maxPages?: number
   } = {},

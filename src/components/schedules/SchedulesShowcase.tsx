@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, FileDown, Loader2, Printer, X } from 'lucide-react'
 
 export type ScheduleShowcaseRow = {
@@ -14,9 +14,11 @@ export type ScheduleShowcaseRow = {
   status: string
   commit: string
   installer: string
+  negotiator: string
   update: string
   payment: string
   driver: string
+  service: string
   service: string
 }
 
@@ -128,49 +130,117 @@ function parseDateMeta(dateKey: string, dateLabel: string) {
 }
 
 function buildInstallerHeaders(isTaguigServices: boolean) {
-  return ['NO.', 'TICKET NO', 'NAME', 'DISTRICT', 'BRAND',
-    isTaguigServices ? 'ENDORSED BY' : 'DLR', 'STATUS', 'COMMIT',
-    isTaguigServices ? 'TECHNICIAN' : 'INSTALLER', 'UPDATE', 'PAYMENT']
+  const installerLabel = isTaguigServices ? 'TECHNICIAN' : 'INSTALLER'
+  const dealerLabel = isTaguigServices ? 'ENDORSED BY' : 'DLR'
+  return [
+    'NO.',
+    'TICKET NO',
+    'NAME',
+    'CONTACT NO',
+    'DISTRICT',
+    'BRAND',
+    dealerLabel,
+    'STATUS',
+    'COMMIT',
+    installerLabel,
+    'NEGOTIATOR',
+    'UPDATE',
+    'PAYMENT',
+  ]
 }
 
 function buildDriverHeaders() {
-  return ['NO.', 'TICKET NO', 'NAME', 'DESTINATION', 'DISTRICT', 'STATUS', 'DRIVER', 'SERVICE']
+  return [
+    'NO.',
+    'TICKET NO',
+    'NAME',
+    'CONTACT NO',
+    'DESTINATION',
+    'DISTRICT',
+    'STATUS',
+    'DRIVER',
+    'VEHICLE',
+  ]
 }
 
 function installerRowToCells(row: ScheduleShowcaseRow, paymentByRowId?: Record<string, string>) {
   const payment = resolveRowPayment(row, paymentByRowId)
-  return [String(row.index), showcaseCellText(row.ticketNumber), showcaseCellText(row.name),
-    showcaseCellText(row.district).toUpperCase(), showcaseCellText(row.brand),
-    showcaseCellText(row.dealer).toUpperCase(), showcaseCellText(row.status),
-    showcaseCellText(row.commit), showcaseCellText(row.installer),
-    showcaseCellText(row.update), showcaseCellText(payment)]
+  return [
+    String(row.index),
+    showcaseCellText(row.ticketNumber),
+    showcaseCellText(row.name),
+    showcaseCellText(row.contact),
+    showcaseCellText(row.district).toUpperCase(),
+    showcaseCellText(row.brand),
+    showcaseCellText(row.dealer).toUpperCase(),
+    showcaseCellText(row.status),
+    showcaseCellText(row.commit),
+    showcaseCellText(row.installer),
+    showcaseCellText(row.negotiator),
+    showcaseCellText(row.update),
+    showcaseCellText(payment),
+  ]
 }
 
 function installerRowToPdfCells(row: ScheduleShowcaseRow, paymentByRowId?: Record<string, string>) {
   const payment = resolveRowPayment(row, paymentByRowId)
-  return [String(row.index), pdfCellText(row.ticketNumber), pdfCellText(row.name),
-    pdfCellText(row.district), pdfCellText(row.brand), pdfCellText(row.dealer),
-    pdfCellText(row.status), pdfCellText(row.commit), pdfCellText(row.installer),
-    pdfCellText(row.update), pdfPaymentText(payment)]
+  return [
+    String(row.index),
+    pdfCellText(row.ticketNumber),
+    pdfCellText(row.name),
+    pdfCellText(row.contact),
+    pdfCellText(row.district),
+    pdfCellText(row.brand),
+    pdfCellText(row.dealer),
+    pdfCellText(row.status),
+    pdfCellText(row.commit),
+    pdfCellText(row.installer),
+    pdfCellText(row.negotiator),
+    pdfCellText(row.update),
+    pdfPaymentText(payment),
+  ]
 }
 
 function driverRowToCells(row: ScheduleShowcaseRow) {
-  return [String(row.index), showcaseCellText(row.ticketNumber), showcaseCellText(row.name),
-    showcaseCellText(row.destination), showcaseCellText(row.district).toUpperCase(),
-    showcaseCellText(row.status), showcaseCellText(row.driver), showcaseCellText(row.service)]
+  return [
+    String(row.index),
+    showcaseCellText(row.ticketNumber),
+    showcaseCellText(row.name),
+    showcaseCellText(row.contact),
+    showcaseCellText(row.destination),
+    showcaseCellText(row.district).toUpperCase(),
+    showcaseCellText(row.status),
+    showcaseCellText(row.driver),
+    showcaseCellText(row.service),
+  ]
 }
 
 function driverRowToPdfCells(row: ScheduleShowcaseRow) {
-  return [String(row.index), pdfCellText(row.ticketNumber), pdfCellText(row.name),
-    pdfCellText(row.destination), pdfCellText(row.district), pdfCellText(row.status),
-    pdfCellText(row.driver), pdfCellText(row.service)]
+  return [
+    String(row.index),
+    pdfCellText(row.ticketNumber),
+    pdfCellText(row.name),
+    pdfCellText(row.contact),
+    pdfCellText(row.destination),
+    pdfCellText(row.district),
+    pdfCellText(row.status),
+    pdfCellText(row.driver),
+    pdfCellText(row.service),
+  ]
+}
 }
 
 const PDF_BW_TABLE = {
   theme: 'grid' as const,
+const PDF_BW_TABLE = {
+  theme: 'grid' as const,
   styles: {
-    font: 'helvetica', fontSize: 6.5, cellPadding: 1.1, minCellHeight: 6.2,
-    lineColor: [0, 0, 0] as [number, number, number], lineWidth: 0.2,
+    font: 'helvetica',
+    fontSize: 7.5,
+    cellPadding: 1.6,
+    minCellHeight: 8.2,
+    lineColor: [0, 0, 0] as [number, number, number],
+    lineWidth: 0.2,
     textColor: [0, 0, 0] as [number, number, number],
     fillColor: [255, 255, 255] as [number, number, number],
     valign: 'top' as const, overflow: 'linebreak' as const,
@@ -178,25 +248,51 @@ const PDF_BW_TABLE = {
   headStyles: {
     fillColor: [255, 255, 255] as [number, number, number],
     textColor: [0, 0, 0] as [number, number, number],
-    fontStyle: 'bold' as const, halign: 'center' as const,
-    fontSize: 6, cellPadding: 1, minCellHeight: 5.5,
+    fontStyle: 'bold' as const,
+    halign: 'center' as const,
+    fontSize: 7,
+    cellPadding: 1.2,
+    minCellHeight: 6.5,
+    lineColor: [0, 0, 0] as [number, number, number],
+  },
+}
     lineColor: [0, 0, 0] as [number, number, number],
   },
 }
 
 const INSTALLER_COLUMN_STYLES = {
-  0: { halign: 'center' as const, cellWidth: 8 }, 1: { halign: 'center' as const, cellWidth: 18 },
-  2: { cellWidth: 32 }, 3: { cellWidth: 20 }, 4: { cellWidth: 22 }, 5: { cellWidth: 20 },
-  6: { halign: 'center' as const, cellWidth: 22 }, 7: { cellWidth: 24 },
-  8: { halign: 'center' as const, cellWidth: 20 }, 9: { cellWidth: 48 },
-  10: { halign: 'right' as const, cellWidth: 27, fontStyle: 'bold' as const, fontSize: 6.5, overflow: 'linebreak' as const },
+  0: { halign: 'center' as const, cellWidth: 6 },
+  1: { halign: 'center' as const, cellWidth: 15 },
+  2: { cellWidth: 26 },
+  3: { halign: 'center' as const, cellWidth: 20 },
+  4: { cellWidth: 16 },
+  5: { cellWidth: 18 },
+  6: { cellWidth: 16 },
+  7: { halign: 'center' as const, cellWidth: 18 },
+  8: { cellWidth: 18 },
+  9: { halign: 'center' as const, cellWidth: 18 },
+  10: { halign: 'center' as const, cellWidth: 16 },
+  11: { cellWidth: 38 },
+  12: {
+    halign: 'right' as const,
+    cellWidth: 22,
+    fontStyle: 'bold' as const,
+    fontSize: 7.5,
+    overflow: 'linebreak' as const,
+  },
 }
 
 const DRIVER_COLUMN_STYLES = {
-  0: { halign: 'center' as const, cellWidth: 10 }, 1: { halign: 'center' as const, cellWidth: 22 },
-  2: { cellWidth: 40 }, 3: { cellWidth: 55 }, 4: { cellWidth: 28 },
-  5: { halign: 'center' as const, cellWidth: 28 }, 6: { halign: 'center' as const, cellWidth: 32 },
-  7: { halign: 'center' as const, cellWidth: 26 },
+  0: { halign: 'center' as const, cellWidth: 9 },
+  1: { halign: 'center' as const, cellWidth: 22 },
+  2: { cellWidth: 38 },
+  3: { halign: 'center' as const, cellWidth: 28 },
+  4: { cellWidth: 52 },
+  5: { cellWidth: 26 },
+  6: { halign: 'center' as const, cellWidth: 30 },
+  7: { halign: 'center' as const, cellWidth: 32 },
+  8: { halign: 'center' as const, cellWidth: 24 },
+}
 }
 
 function drawPdfDateTable(
@@ -255,7 +351,7 @@ async function exportShowcasePdfDocument(options: {
       columnStyles: INSTALLER_COLUMN_STYLES,
       didParseCell: (data) => {
         if (data.row.section === 'body') {
-          const statusText = (data.row.raw as unknown as unknown[])[6]
+          const statusText = (data.row.raw as unknown as unknown[])[7]
           if (typeof statusText === 'string') {
             const bg = getRowPdfBgColor(statusText)
             if (bg) data.cell.styles.fillColor = bg
@@ -278,7 +374,7 @@ async function exportShowcasePdfDocument(options: {
         columnStyles: DRIVER_COLUMN_STYLES,
         didParseCell: (data) => {
           if (data.row.section === 'body') {
-            const statusText = (data.row.raw as unknown as unknown[])[5]
+            const statusText = (data.row.raw as unknown as unknown[])[6]
             if (typeof statusText === 'string') {
               const bg = getRowPdfBgColor(statusText)
               if (bg) data.cell.styles.fillColor = bg
@@ -363,31 +459,48 @@ export function SchedulesShowcase({
       <table className="schedules-showcase-table schedules-showcase-installer"
         style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: PAPER, tableLayout: 'fixed' }}>
         <colgroup>
-          <col style={{ width: '3%' }} /><col style={{ width: '7%' }} /><col style={{ width: '12%' }} />
-          <col style={{ width: '8%' }} /><col style={{ width: '9%' }} /><col style={{ width: '8%' }} />
-          <col style={{ width: '8%' }} /><col style={{ width: '9%' }} /><col style={{ width: '8%' }} />
-          <col style={{ width: '16%' }} /><col style={{ width: '12%' }} />
+          <col style={{ width: '3%' }} />
+          <col style={{ width: '6%' }} />
+          <col style={{ width: '10%' }} />
+          <col style={{ width: '8%' }} />
+          <col style={{ width: '7%' }} />
+          <col style={{ width: '7%' }} />
+          <col style={{ width: '6%' }} />
+          <col style={{ width: '7%' }} />
+          <col style={{ width: '7%' }} />
+          <col style={{ width: '7%' }} />
+          <col style={{ width: '6%' }} />
+          <col style={{ width: '14%' }} />
+          <col style={{ width: '12%' }} />
         </colgroup>
         <thead><tr>{installerHeaders.map(l => <th key={l} style={thStyle}>{l}</th>)}</tr></thead>
         <tbody>
-          {pageRows.length === 0
-            ? <tr><td colSpan={installerHeaders.length} style={emptyCellStyle}>No schedule tickets for this date.</td></tr>
-            : pageRows.map(row => {
-                const cells = installerRowToCells(row, paymentByRowId)
-                return (
-                  <tr key={`inst-${row.index}-${row.id}`} style={{ backgroundColor: getRowBgColor(row.status) }}>
-                    {cells.map((value, ci) => (
-                      <td key={ci} style={{
-                        ...tdStyle,
-                        textAlign: ci === 10 ? 'right' : [0, 1, 6, 8].includes(ci) ? 'center' : 'left',
-                        fontWeight: ci === 10 ? 700 : ci === 6 ? 600 : 500,
-                        fontSize: ci === 9 || ci === 10 ? '8px' : '8.5px',
-                      }}>{value}</td>
-                    ))}
-                  </tr>
-                )
-              })
-          }
+          {pageRows.length === 0 ? (
+            <tr>
+              <td colSpan={installerHeaders.length} style={emptyCellStyle}>
+                No schedule tickets for this date.
+              </td>
+            </tr>
+          ) : pageRows.map(row => {
+            const cells = installerRowToCells(row, paymentByRowId)
+            return (
+              <tr key={`inst-${row.index}-${row.id}`} style={{ backgroundColor: getRowBgColor(row.status) }}>
+                {cells.map((value, cellIdx) => (
+                  <td
+                    key={cellIdx}
+                    style={{
+                      ...tdStyle,
+                      textAlign: cellIdx === 12 ? 'right' : [0, 1, 3, 7, 9, 10].includes(cellIdx) ? 'center' : 'left',
+                      fontWeight: cellIdx === 12 ? 700 : cellIdx === 7 ? 600 : 500,
+                      fontSize: cellIdx === 11 || cellIdx === 12 ? '9px' : '9.5px',
+                    }}
+                  >
+                    {value}
+                  </td>
+                ))}
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>
@@ -398,29 +511,61 @@ export function SchedulesShowcase({
       <table className="schedules-showcase-table schedules-showcase-driver"
         style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: PAPER, tableLayout: 'fixed' }}>
         <colgroup>
-          <col style={{ width: '4%' }} /><col style={{ width: '10%' }} /><col style={{ width: '16%' }} />
-          <col style={{ width: '24%' }} /><col style={{ width: '12%' }} /><col style={{ width: '12%' }} />
-          <col style={{ width: '12%' }} /><col style={{ width: '10%' }} />
+          <col style={{ width: '4%' }} />
+          <col style={{ width: '9%' }} />
+          <col style={{ width: '15%' }} />
+          <col style={{ width: '12%' }} />
+          <col style={{ width: '20%' }} />
+          <col style={{ width: '10%' }} />
+          <col style={{ width: '10%' }} />
+          <col style={{ width: '10%' }} />
+          <col style={{ width: '10%' }} />
         </colgroup>
         <thead><tr>{driverHeaders.map(l => <th key={l} style={thStyle}>{l}</th>)}</tr></thead>
         <tbody>
-          {pageRows.length === 0
-            ? <tr><td colSpan={driverHeaders.length} style={emptyCellStyle}>No schedule tickets for this date.</td></tr>
-            : pageRows.map(row => {
-                const cells = driverRowToCells(row)
-                return (
-                  <tr key={`drv-${row.index}-${row.id}`} style={{ backgroundColor: getRowBgColor(row.status) }}>
-                    {cells.map((value, ci) => (
-                      <td key={ci} style={{
-                        ...tdStyle,
-                        textAlign: [0, 1, 5, 6, 7].includes(ci) ? 'center' : 'left',
-                        fontWeight: ci === 5 ? 600 : 500, fontSize: '9px',
-                      }}>{value}</td>
-                    ))}
-                  </tr>
-                )
-              })
-          }
+          {pageRows.length === 0 ? (
+            <tr>
+              <td colSpan={driverHeaders.length} style={emptyCellStyle}>
+                No schedule tickets for this date.
+              </td>
+            </tr>
+          ) : pageRows.map(row => {
+            const cells = driverRowToCells(row)
+            return (
+              <tr key={`drv-${row.index}-${row.id}`} style={{ backgroundColor: getRowBgColor(row.status) }}>
+                {cells.map((value, cellIdx) => (
+                  <td
+                    key={cellIdx}
+                    style={{
+                      ...tdStyle,
+                      textAlign: [0, 1, 3, 6, 7, 8].includes(cellIdx) ? 'center' : 'left',
+                      fontWeight: cellIdx === 6 ? 700 : 500,
+                      fontSize: '11px',
+                      lineHeight: '1.4',
+                      padding: '5px 4px',
+                    }}
+                  >
+                    {value}
+                  </td>
+                ))}
+              </tr>
+            )
+          })}
+        </tbody>
+                    key={cellIdx}
+                    style={{
+                      ...tdStyle,
+                      textAlign: [0, 1, 3, 6, 7, 8].includes(cellIdx) ? 'center' : 'left',
+                      fontWeight: cellIdx === 6 ? 700 : 500,
+                      fontSize: '11px',
+                      lineHeight: '1.4',
+                      padding: '5px 4px',
+                    }}
+                  >
+                    {value}
+                  </td>
+                ))}
+          })}
         </tbody>
       </table>
     </div>
@@ -540,13 +685,27 @@ const dateValueCell: React.CSSProperties = {
   fontSize: '10px', backgroundColor: PAPER, color: INK,
 }
 const thStyle: React.CSSProperties = {
-  backgroundColor: PAPER, color: INK, border: `1px solid ${TABLE_BORDER}`,
-  padding: '4px 3px', fontSize: '8px', fontWeight: 800, textTransform: 'uppercase',
-  letterSpacing: '0.02em', verticalAlign: 'middle', textAlign: 'center', whiteSpace: 'nowrap',
+  backgroundColor: PAPER,
+  color: INK,
+  border: `1px solid ${TABLE_BORDER}`,
+  padding: '5px 3px',
+  fontSize: '9px',
+  fontWeight: 800,
+  textTransform: 'uppercase',
+  letterSpacing: '0.02em',
+  verticalAlign: 'middle',
+  textAlign: 'center',
+  whiteSpace: 'nowrap',
 }
 const tdStyle: React.CSSProperties = {
-  border: `1px solid ${TABLE_BORDER}`, padding: '4px 4px', color: INK, backgroundColor: PAPER,
-  verticalAlign: 'top', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.3,
+  border: `1px solid ${TABLE_BORDER}`,
+  padding: '6px 4px',
+  color: INK,
+  backgroundColor: PAPER,
+  verticalAlign: 'top',
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+  lineHeight: 1.35,
 }
 const emptyCellStyle: React.CSSProperties = {
   padding: '24px 12px', textAlign: 'center', color: INK, fontWeight: 600,

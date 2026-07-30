@@ -105,10 +105,22 @@ export function resolveScheduleStatusFields(rawValue: string): ResolvedScheduleS
       return { status: 'COMPLETED', ticketCategory: 'SERVICES', scheduleOutcome: 'DONE_CHECKUP', schedulePhase: '' }
     case 'DONE_BACKJOB':
       return { status: 'COMPLETED', ticketCategory: 'SERVICES', scheduleOutcome: 'DONE_BACKJOB', schedulePhase: '' }
+    case 'DONE_SERVICE':
+      return { status: 'COMPLETED', ticketCategory: 'SERVICES', scheduleOutcome: 'DONE_SERVICE', schedulePhase: '' }
     case 'DONE_SURVEY':
       return { status: 'COMPLETED', ticketCategory: 'SURVEY', scheduleOutcome: 'DONE_SURVEY', schedulePhase: '' }
     case 'DONE_INSTALLED':
       return { status: 'INSTALLED', ticketCategory: 'INSTALLATION', scheduleOutcome: 'DONE_INSTALLED', schedulePhase: '' }
+    case 'DONE_SYSTEM_REPROCESS':
+      return { status: 'DONE_SYSTEM_REPROCESS', ticketCategory: 'SERVICES', scheduleOutcome: 'DONE_SYSTEM_REPROCESS', schedulePhase: '' }
+    case 'DONE_DISMANTLE':
+      return { status: 'DONE_DISMANTLE', ticketCategory: 'SERVICES', scheduleOutcome: 'DONE_DISMANTLE', schedulePhase: '' }
+    case 'DONE_QUOTATION':
+      return { status: 'COMPLETED', scheduleOutcome: 'DONE_QUOTATION', schedulePhase: '' }
+    case 'SYSTEM_REPROCESS':
+      return { status: 'SYSTEM_REPROCESS', ticketCategory: 'SERVICES', serviceType: 'SYSTEM REPROCESS', scheduleOutcome: '', schedulePhase: 'SYSTEM_REPROCESS' }
+    case 'DISMANTLE':
+      return { status: 'DISMANTLE', ticketCategory: 'SERVICES', serviceType: 'DISMANTLE', scheduleOutcome: '', schedulePhase: 'DISMANTLE' }
     case 'FOR_QUOTATION':
       return { status: 'FOR_APPROVAL', scheduleOutcome: '' }
     case 'CLEANING':
@@ -163,6 +175,5 @@ export function inferCategoryFromTicket(ticket: {
   if (raw.includes('payroll')) return 'PAYROLL_TASKS'
   if (raw.includes('quotation') || raw.includes('quote')) return 'QUOTATION'
   if (raw.includes('fund') || raw.includes('rf')) return 'REQUEST_FOR_FUND'
-  if (raw.includes('wty') || raw.includes('warranty')) return 'WTY_REGISTRATION'
   return 'INSTALLATION'
 }

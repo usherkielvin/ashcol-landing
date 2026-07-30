@@ -1,6 +1,5 @@
 import ReactDOM from 'react-dom'
 import { CalendarDays, ChevronDown, Loader2, X, AlertTriangle } from 'lucide-react'
-import { FIELD_TICKET_CATEGORIES } from '../../constants/ticketCategories'
 import type { TicketCategoryValue } from '../../constants/ticketCategories'
 
 export type ScheduleEditForm = {
@@ -117,19 +116,16 @@ export function ScheduleEditTicketModal({
   onSave,
 }: ScheduleEditTicketModalProps) {
   const CLOSING_STATUSES = new Set([
-    'DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP',
+    'DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB', 'DONE_SERVICE',
+    'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE',
     'CANCELLED', 'COMPLETED', 'INSTALLED',
   ])
 
   const isReschedStatus = (form.status || '').toUpperCase() === 'RESCHED'
   const isPendingStatus = !form.status || !CLOSING_STATUSES.has((form.status || '').toUpperCase())
 
-  const showPaymentSection = !isPendingStatus && (
-    ticketHasPaymentInfo(form)
-    || Boolean(form.modeOfPayment || form.installationCharges != null)
-    || (form.status || '').toUpperCase() === 'INSTALLED'
-    || (form.status || '').toUpperCase() === 'DONE_INSTALLED'
-  )
+  const isNoPayment = !form.modeOfPayment
+    || String(form.modeOfPayment || '').toUpperCase().replace(/\s+/g, '_') === 'NO_PAYMENT'
 
   const statusVal = String(form.status || 'INSTALLATION').toUpperCase().replace(/\s+/g, '_')
   const statusStyle = getStatusBadgeStyle(statusVal, isLight)
@@ -244,13 +240,11 @@ export function ScheduleEditTicketModal({
           {/* Service */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <Row>
-              <Field label="Ticket Type" required>
-                <select value={form.ticketCategory || 'INSTALLATION'} onChange={e => onChange({ ticketCategory: e.target.value as TicketCategoryValue })} style={selectInp}>
-                  {FIELD_TICKET_CATEGORIES.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                </select>
-              </Field>
               <Field label="Brand / Unit Type">
                 <input type="text" value={form.unitType || ''} onChange={e => onChange({ unitType: e.target.value })} style={inp} placeholder="e.g. CARRIER 1.0HP" />
+              </Field>
+              <Field label="Control No. / SI">
+                <input type="text" value={form.controlNumber || ''} onChange={e => onChange({ controlNumber: e.target.value })} style={inp} placeholder="Aircon papers / SI" />
               </Field>
             </Row>
             <Row>
@@ -271,9 +265,6 @@ export function ScheduleEditTicketModal({
                   placeholder="Store or supplier"
                 />
                 <datalist id="sched-edit-dealer-list">{dealerOptions.map(d => <option key={d} value={d} />)}</datalist>
-              </Field>
-              <Field label="Control No. / SI">
-                <input type="text" value={form.controlNumber || ''} onChange={e => onChange({ controlNumber: e.target.value })} style={inp} placeholder="Aircon papers / SI" />
               </Field>
             </Row>
             <Row cols={3}>
@@ -368,62 +359,65 @@ export function ScheduleEditTicketModal({
 
           {/* Remarks */}
           <Field label="Remarks / Update" span>
-            <textarea value={form.remarks || ''} onChange={e => onChange({ remarks: e.target.value })} rows={2} style={{ ...inp, resize: 'none' }} placeholder="Any notes or update…" />
+            <textarea value={form.remarks || ''} onChange={e => onChange({ remarks: e.target.value.toUpperCase() })} rows={2} style={{ ...inp, resize: 'none', textTransform: 'uppercase' }} className="uppercase" placeholder="Any notes or update…" />
           </Field>
 
           {/* Payment */}
           {!isPendingStatus && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {divider}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.5 }}>Payment</span>
-                {!showPaymentSection && (
-                  <button type="button" onClick={() => onChange({ modeOfPayment: form.modeOfPayment || 'CASH' })} style={{ fontSize: 10, fontWeight: 700, color: green, background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', fontFamily: 'inherit' }}>
-                    + Add
-                  </button>
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.5 }}>Payment</span>
+              <div style={{ borderRadius: 12, padding: 12, border: `1px solid ${ticketHasPaymentInfo(form) ? (isLight ? '#86efac' : 'rgba(34,197,94,0.3)') : inputBorder}`, backgroundColor: ticketHasPaymentInfo(form) ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.05)') : inputBg }}>
+                <Row>
+                  <Field label="Mode of Payment">
+                    <select
+                      value={form.modeOfPayment || 'NO_PAYMENT'}
+                      onChange={e => {
+                        const v = e.target.value
+                        onChange({
+                          modeOfPayment: v,
+                          installationCharges: (v === 'NO_PAYMENT' || v === 'FREE' || v === 'FREE INSTALL')
+                            ? 0
+                            : v === 'PENDING'
+                              ? undefined
+                              : form.installationCharges,
+                        })
+                      }}
+                      style={selectInp}
+                    >
+                      <option value="NO_PAYMENT">NO PAYMENT</option>
+                      <option value="CASH">CASH</option>
+                      <option value="BANK TRANSFER">BANK TRANSFER</option>
+                      <option value="GCASH">GCASH</option>
+                      <option value="CHEQUE">CHEQUE</option>
+                      <option value="FREE INSTALL">FREE INSTALL</option>
+                      <option value="PENDING">PENDING</option>
+                    </select>
+                  </Field>
+                  <Field label="Amount (₱)">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      value={isNoPayment ? '' : (form.installationCharges ?? '')}
+                      disabled={isNoPayment || form.modeOfPayment === 'FREE' || form.modeOfPayment === 'FREE INSTALL' || form.modeOfPayment === 'PENDING'}
+                      onChange={e => onChange({ installationCharges: e.target.value ? Number(e.target.value) : undefined })}
+                      style={{ ...inp, opacity: (isNoPayment || form.modeOfPayment === 'FREE' || form.modeOfPayment === 'FREE INSTALL' || form.modeOfPayment === 'PENDING') ? 0.5 : 1 }}
+                    />
+                  </Field>
+                </Row>
+                {isNoPayment && (
+                  <p style={{ fontSize: 10, fontWeight: 600, color: textMuted, marginTop: 8, marginBottom: 0 }}>
+                    No payment — PAYMENT column stays blank after save.
+                  </p>
+                )}
+                {qualifiesForInstallComplete(form) && (form.status || '').toUpperCase() !== 'COMPLETED' && !isNoPayment && (
+                  <p style={{ fontSize: 10, fontWeight: 700, color: green, marginTop: 8, marginBottom: 0 }}>
+                    ✓ Installed remarks + payment detected — saving will complete this ticket.
+                  </p>
                 )}
               </div>
-              {showPaymentSection && (
-                <div style={{ borderRadius: 12, padding: 12, border: `1px solid ${ticketHasPaymentInfo(form) ? (isLight ? '#86efac' : 'rgba(34,197,94,0.3)') : inputBorder}`, backgroundColor: ticketHasPaymentInfo(form) ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.05)') : inputBg }}>
-                  <Row>
-                    <Field label="Mode of Payment">
-                      <select
-                        value={form.modeOfPayment || ''}
-                        onChange={e => {
-                          const v = e.target.value
-                          onChange({ modeOfPayment: v, installationCharges: (v === 'FREE' || v === 'FREE INSTALL') ? 0 : v === 'PENDING' ? undefined : form.installationCharges })
-                        }}
-                        style={selectInp}
-                      >
-                        <option value="">-- Select --</option>
-                        <option value="CASH">CASH</option>
-                        <option value="BANK TRANSFER">BANK TRANSFER</option>
-                        <option value="GCASH">GCASH</option>
-                        <option value="CHEQUE">CHEQUE</option>
-                        <option value="FREE INSTALL">FREE INSTALL</option>
-                        <option value="PENDING">PENDING</option>
-                      </select>
-                    </Field>
-                    <Field label="Amount (₱)">
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="0.00"
-                        value={form.installationCharges ?? ''}
-                        disabled={form.modeOfPayment === 'FREE' || form.modeOfPayment === 'FREE INSTALL' || form.modeOfPayment === 'PENDING'}
-                        onChange={e => onChange({ installationCharges: e.target.value ? Number(e.target.value) : undefined })}
-                        style={{ ...inp, opacity: (form.modeOfPayment === 'FREE' || form.modeOfPayment === 'FREE INSTALL' || form.modeOfPayment === 'PENDING') ? 0.5 : 1 }}
-                      />
-                    </Field>
-                  </Row>
-                  {qualifiesForInstallComplete(form) && (form.status || '').toUpperCase() !== 'COMPLETED' && (
-                    <p style={{ fontSize: 10, fontWeight: 700, color: green, marginTop: 8, marginBottom: 0 }}>
-                      ✓ Installed remarks + payment detected — saving will complete this ticket.
-                    </p>
-                  )}
-                </div>
-              )}
             </div>
           )}
         </div>

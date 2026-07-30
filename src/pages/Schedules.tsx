@@ -1,22 +1,42 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
-import { useLocation, useOutletContext } from 'react-router-dom'
+import { useOutletContext } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import { ResponsiveTable, type ColumnDef as ResponsiveColumnDef } from '../components/ResponsiveTable'
 import {
   Plus, Search, Trash2, X, Edit3, AlertTriangle, CalendarDays,
   Eye, ChevronDown, Loader2, Pencil, Clock, Car,
-  ArrowUp, ArrowDown, ArrowUpDown, Copy, Maximize2, MapPin,
+  ArrowUp, ArrowDown, ArrowUpDown, Copy, Maximize2, MapPin, Moon, Sun, Menu,
+  UsersRound, SlidersHorizontal, CalendarRange,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, filterBranchNegotiators, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, parseGlobalBranchScope, isPortalAdmin, isCoordinatorOrOicUser, getActivePortalBranchId, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, DEALERS_UPDATED_EVENT, notifyDealersUpdated, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import { readTabCache, readTabCacheEntry, readSchedulesTabCache, isTabCacheFresh, SCHEDULES_CACHE_TTL_MS, schedulesCacheKey, writeSchedulesTabCache, getInitialSchedulesFromCache, markSchedulesSessionLoaded, isSchedulesSessionLoaded, type SchedulesTabCache, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
 import { applyRelayScheduleSyncToPatch, mergeRelayScheduleTicketPatch, normalizeRelayScheduleTicket, normalizeRelayScheduleTicketList } from '../utils/relayScheduleSync'
+import {
+  cacheTicketsByNumber,
+  cacheTicketByNumber,
+  extractTicketNumbers,
+  getRecentlyLocallyEditedTicketIds,
+  getTicketByNumber,
+  markTicketLocallyEdited,
+  normalizeTicketNumberKey,
+  writeScheduleDateTicketNumbers,
+} from '../utils/ticketNumberStore'
+import { EMPTY_CELL, sanitizeDisplayText, formatPesoPrefix } from '../utils/textSanitize'
+import { readSchedulesTabCache, schedulesCacheKey, writeSchedulesTabCache, getInitialSchedulesFromCache, isSchedulesSessionLoaded, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, SCHEDULES_PERSIST_LOCAL, syncTicketAcrossTabCaches, persistSchedulesMemoryToDisk } from '../utils/ticketTabCache'
+import { beginActiveScheduleFetch, endActiveScheduleFetch } from '../utils/schedulesPrefetch'
+import { normalizeRelayScheduleTicket, normalizeRelayScheduleTicketList } from '../utils/relayScheduleSync'
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
 import { fetchCachedDriverOnlyNames, fetchCachedEmployees, fetchCachedLineupInstallerIndex, fetchCachedBranches } from '../utils/portalDirectoryCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
+<<<<<<<< HEAD:src/pages/Schedules.tsx
 import { notifyArchiveUpdated } from '../utils/ticketArchive'
+========
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
+import { SearchFilterDropdown } from '../components/SearchFilterDropdown'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 import { SchedulesShowcase, type ScheduleShowcaseRow } from '../components/schedules/SchedulesShowcase'
 import {
@@ -26,6 +46,7 @@ import {
   isFieldCategory,
   type TicketCategoryValue,
 } from '../constants/ticketCategories'
+<<<<<<<< HEAD:src/pages/Schedules.tsx
 import { formatBrandCapacityLabel, parseBrandFromAcDetails } from '../utils/warrantyTicketDisplay'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -2060,6 +2081,83 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
   const isLight = theme === 'light'
 
   const [activeTab] = useState<'schedules'>('schedules')
+========
+import { SchedulesShowcase, type ScheduleShowcaseRow } from '../components/schedules/SchedulesShowcase'
+import { VehicleTripLabel } from '../components/tickets/VehicleTripLabel'
+import { Field } from '../components/tickets/Field'
+import { TicketDetailsModal } from '../components/tickets/TicketDetailsModal'
+import { TicketStatusPickerPopover } from '../components/tickets/TicketStatusPickerPopover'
+import { TicketScheduleDetailsPopover } from '../components/tickets/TicketScheduleDetailsPopover'
+import { TicketFinalDatePickerPopover } from '../components/tickets/TicketFinalDatePickerPopover'
+import { AssignDriversModal } from '../components/tickets/AssignDriversModal'
+import { ExcelImportResultsModal } from '../components/tickets/ExcelImportResultsModal'
+import { CustomDatePickerModal } from '../components/tickets/CustomDatePickerModal'
+import { ConfirmationChecklistModal } from '../components/tickets/ConfirmationChecklistModal'
+import {
+  CLOSING_SCHEDULE_STATUSES, INLINE_EDIT_COLUMNS, SCHEDULES_ACTIVE_DATE_KEY, SCHEDULE_CLOSING_OPTS,
+  SCHEDULE_PENDING_OPTS, SCHEDULE_PENDING_STATUS_VALUES, TABLE_ROW_HEIGHT,
+  applyImportFieldsFromRow, applyReturnToNegotiatorMyTicketsPatch, applyScheduleStatusPatch,
+  buildArchiveServiceReportPayload, buildCellPatchBody, buildImportCreateRow, buildPatchImportBody,
+  buildReschedulePatchBody, buildVehicleTripLabels, compareTicketsByColumn, computeSafePopoverPosition,
+  currentWeekMondayDateKey, defaultSortForSchedulesView, enrichCompletePatchBody, filterOverviewSearchResults,
+  fetchTicketById, findTicketInListByRef, fmtPhone, formatAddress, formatDateKeyLabel, formatDateToKey,
+  formatDisplayDate, formatGhostRemarks, formatMonthFilterLabel, formatNegotiatorLabel, formatPaymentAmount,
+  formatPaymentBreakdownText, formatRelayTicketTypeShort, formatServiceDriver, formatSimpleDateShort,
+  getArchivedScheduleDate, getBranchDisplayName, getCellRawValue, getContinuationDates, getCustomerDisplayName,
+  getEmptyRequiredColumnsForClose, getF, getFinalDateKey, getInstalledDateKey,
+  getInstallerDisplay, getNextContinuationDate, getOverviewStatusBadge, getPaymentBreakdown, getPaymentMode,
+  getPreferredDateKey, getScheduleGhostKind, getScheduleOutcome, getSchedulePaymentDisplay, getScheduleRowColors,
+  getScheduleStatusBadgeStyle, getScheduleStatusDisplay, getScheduleStatusLabel, getScheduleStatusValue,
+  getScheduleUpdateDisplay, getTicketCommitDisplay, getTicketDriverDisplay, getTicketDriverName,
+  getTicketNegotiatorName, getTicketNumberDisplay, getTicketVehicleDisplay, importRowMatchesTicket,
+  isCancelledScheduleGhost, isCancelledTicket, isCompletedGhostOnDate, isInstalledRemarks, isInstalledWorkflowStatus,
+  isMovedToRescheduleRemark, isNoPaymentMode, isReschedulePending, isScheduleGhostOnDate, isTempTicketId,
+  isTicketNotFoundError, isUnmatchedImportComplete, lookupTicketByNumberOnServer, mergeAcMeta, mergePatchBodies, mergeServerListWithLocalEdits,
+  mergeTicketPatch, namesMatchLoosely, normalizeCustomerKey, normalizeImportPaymentMode, parseAcMeta, parseBrand,
+  parseDistrict, parseImportMoney, parseNameSiteToken, parseServiceDriverValue,
+  pathnameForSurface, postArchiveServiceReport, preserveLocalScheduleFields, promoteTempTicketState, qualifiesForInstallComplete,
+  resolveFormScheduleDateKey, resolveInitialScheduleDate, resolveNegotiatorDisplayName, resolveNegotiatorName,
+  resolveScheduleCompletionDateKey, resolveTicketDistrict, resolveTicketPayment, resolveTicketScheduleDateKey,
+  sanitizeTicketPatchBody, shouldArchiveCompletedSchedule, shouldBlankReschedGhostPayment, shouldShowOnMyTickets,
+  sortOverviewSearchResults, statusCode, statusColor, statusShowsScheduleDetails, stripArchivedRemarkSuffix,
+  ticketBelongsOnScheduleBranch, ticketBelongsOnScheduleDate, ticketHadScheduleDate,
+  ticketHasRescheduleMeta, ticketMatchesDateKey, ticketMatchesNegotiatorFilter, ticketMatchesOverviewQuery,
+  todayDateKey, wantsTicketArchive,
+  type Ticket,
+  type TicketsSurface,
+  type ImportUpdate,
+  type ImportPaymentConfirmation,
+  type ImportUnmatchedRow,
+  type PaymentBreakdownEntry,
+  type PendingTicketSave,
+  type ScheduleOutcome,
+} from '../utils/ticketHelpers'
+
+export type { Ticket, TicketsSurface }
+export {
+  resolveTicketDistrict,
+  getScheduleStatusDisplay,
+  ticketBelongsOnScheduleDate,
+  ticketBelongsOnScheduleBranch,
+  getInstallerDisplay,
+  getTicketDriverDisplay,
+  getTicketVehicleDisplay,
+  parseNameSiteToken,
+  getTicketNegotiatorName,
+}
+
+export default function Tickets({ surface }: { surface: TicketsSurface }) {
+  const { theme, toggleTheme } = useTheme()
+  const { user } = useAuth()
+  const pathname = pathnameForSurface(surface)
+  const { setSidebarOpen } = useOutletContext<{ setSidebarOpen: (v: boolean) => void }>() || {}
+  const isMyTickets = surface === 'my-tickets'
+  const isLight = theme === 'light'
+
+  const [activeTab, setActiveTab] = useState<'schedules' | 'overview'>(
+    () => surface === 'search' ? 'overview' : 'schedules'
+  )
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
 
   useEffect(() => {
     const handleTabCacheUpdate = (e: Event) => {
@@ -2076,6 +2174,20 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     return () => window.removeEventListener(TAB_CACHE_UPDATED, handleTabCacheUpdate)
   }, [])
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
+========
+  useEffect(() => {
+    if (surface === 'search') {
+      setActiveTab('overview')
+    } else if (surface === 'schedules') {
+      setActiveTab('schedules')
+      setDateFilter(resolveInitialScheduleDate('/schedules'))
+    } else if (surface === 'my-tickets') {
+      setActiveTab('schedules')
+      setDateFilter('')
+    }
+  }, [surface])
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
 
 
   // ── Bulk Assign modal state ─────────────────────────────────────────────────
@@ -2098,7 +2210,11 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
   const isEmployee = ['employee', 'oic', 'staff'].includes(role)
   const canEdit = isAdmin || isManager || isEmployee
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   // ── Global branch ─────────────────────────────────────────────────────────
+========
+  // ─────────────────────────────────────────────────────────────
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
   const [globalBranchId, setGlobalBranchId] = useState<string | null>(
     () => localStorage.getItem('ashcol-global-branch-id')
   )
@@ -2112,6 +2228,7 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
   const isTaguig = isTaguigBranchRef(activeBranchId)
   const isTaguigServices = isTaguigServicesScope(activeBranchId, user?.email)
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   // ── Color tokens (aligned with origin/main Schedules table) ───────────────
   const cardBg = isLight ? '#ffffff' : '#111827'
   const border = isLight ? '#cbd5e1' : '#334155'
@@ -2130,13 +2247,40 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
   const rowEven = isLight ? '#ffffff' : '#111827'
   const rowOdd = isLight ? '#f7fbf8' : '#131f30'
   const rowHover = isLight ? '#edf7f1' : '#172438'
+========
+  // ─────────────────────────────────────────────────────────────
+  const cardBg = isLight ? '#ffffff' : '#0f172a'
+  const border = isLight ? '#cbd5e1' : '#1e293b'
+  const tableBorder = isLight ? '#e2e8f0' : '#1e293b'
+  const textPrimary = isLight ? '#0f172a' : '#f8fafc'
+  const textMuted = isLight ? '#64748b' : '#94a3b8'
+  const inputBg = isLight ? '#f8fafc' : '#0f172a'
+  const inputBorder = isLight ? '#cbd5e1' : '#334155'
+  const myTicketsTheadBg = isLight ? '#DEF2E6' : '#0a1f24'
+  const myTicketsTheadText = isLight ? '#14532D' : '#34d399'
+  const myTicketsTheadBorder = isLight ? 'rgba(22,163,74,0.42)' : '#0f3c33'
+  const schedTheadBg = isLight ? '#E3F4E9' : '#0a1f24'
+  const schedTheadText = isLight ? '#166534' : '#4ade80'
+  const schedTheadBorder = isLight ? 'rgba(22,163,74,0.38)' : '#0f3c33'
+  const rowEven = isLight ? '#ffffff' : '#0f172a'
+  const rowOdd = isLight ? '#f7fbf8' : '#1b2330'
+  const rowHover = isLight ? '#edf7f1' : '#222f44'
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
   const green = '#16A34A'
+  const textGreen = isLight ? '#16A34A' : '#4ade80'
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   // ── Data state ────────────────────────────────────────────────────────────
   const initialSchedulesRef = useRef<ReturnType<typeof getInitialSchedulesFromCache> | null>(null)
   if (!initialSchedulesRef.current) {
     const pathname = window.location.pathname
     const dateKey = pathname === '/my-tickets' ? '' : todayDateKey()
+========
+  // ─────────────────────────────────────────────────────────────
+  const initialSchedulesRef = useRef<ReturnType<typeof getInitialSchedulesFromCache> | null>(null)
+  if (!initialSchedulesRef.current) {
+    const dateKey = resolveInitialScheduleDate(pathname)
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
     initialSchedulesRef.current = getInitialSchedulesFromCache(pathname, dateKey || undefined)
   }
   const initialSchedules = initialSchedulesRef.current
@@ -2153,6 +2297,17 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
   const [loading, setLoading] = useState(() => !initialSchedulesReady)
   const [hasHydratedOnce, setHasHydratedOnce] = useState(() => initialSchedulesReady)
   const [progress, setProgress] = useState(0)
+
+  // ── Assign Drivers state ───────────────────────────────────────
+  const [bulkAssignOpen, setBulkAssignOpen] = useState(false)
+  const [bulkAssignInstaller, setBulkAssignInstaller] = useState('')
+  const [bulkAssignDriver, setBulkAssignDriver] = useState('')
+  const [bulkAssignVehicle, setBulkAssignVehicle] = useState('')
+  const [bulkAssignTrip, setBulkAssignTrip] = useState<string>('1')
+  void bulkAssignTrip
+  void setBulkAssignTrip
+  const [bulkAssignSaving, setBulkAssignSaving] = useState(false)
+  const [bulkClearSaving, setBulkClearSaving] = useState(false)
 
   useEffect(() => {
     if (loading) {
@@ -2173,17 +2328,55 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
   }, [loading])
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  /** Admin My Tickets: filter pending/assigned rows to one negotiator (e.g. GLESEL). */
+  const [myTicketsNegotiatorFilter, setMyTicketsNegotiatorFilter] = useState('')
   const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' }>(
-    () => defaultSortForSchedulesView(location.pathname === '/my-tickets'),
+    () => defaultSortForSchedulesView(isMyTickets),
   )
 
   useEffect(() => {
     setSortConfig(defaultSortForSchedulesView(isMyTickets))
   }, [isMyTickets])
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   const [dateFilter, setDateFilter] = useState(() => resolveInitialScheduleDate(location.pathname))
   const dateFilterInputRef = useRef<HTMLInputElement>(null)
+========
+  const [dateFilter, setDateFilter] = useState(() => resolveInitialScheduleDate(pathname))
+  // Live mirror of dateFilter — read this inside setState updaters / async callbacks so a stale
+  // closure (e.g. a background save's applyTicketLocally that resolves after the date tab auto-jumped)
+  // never writes the current on-screen rows into a *different* date's cache key.
+  const dateFilterRef = useRef(dateFilter)
+  dateFilterRef.current = dateFilter
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
   const [hoveredRow, setHoveredRow] = useState<string | null>(null)
   const [hoveredCell, setHoveredCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
+  const [draggedVehicleTicketId, setDraggedVehicleTicketId] = useState<string | null>(null)
+  const [vehicleDropTargetId, setVehicleDropTargetId] = useState<string | null>(null)
+  // Per-row dragover/drop relies on native hit-testing, which gets ambiguous once sibling rows
+  // are mid-slide (translateY + z-index during the "make room" animation) — the browser can end
+  // up firing drop on a row other than the one visually under the cursor, so the reorder silently
+  // no-ops and everything reverts once the drag state clears. Tracking the target row directly
+  // from cursor Y position against the table body sidesteps that hit-testing ambiguity entirely.
+  const vehicleDragTbodyRef = useRef<HTMLTableSectionElement>(null)
+  const getVehicleDragRowIndex = useCallback((clientY: number): number => {
+    const el = vehicleDragTbodyRef.current
+    if (!el) return -1
+    const rect = el.getBoundingClientRect()
+    return Math.floor((clientY - rect.top) / TABLE_ROW_HEIGHT)
+  }, [])
+  // Double-click a VEHICLE cell to select it (green highlight) instead of opening a text editor —
+  // arrow keys then move that ticket up/down within its vehicle group.
+  const [selectedVehicleTicketId, setSelectedVehicleTicketId] = useState<string | null>(null)
+  // A live table row rendered as a native drag-image looks garbled (browsers don't snapshot
+  // table layout cleanly) — preload a transparent 1x1 pixel once and use that as the drag image
+  // instead, so nothing follows the cursor. The row stays put in place (dimmed) and the "make
+  // room" slide animation on the other rows communicates the move instead of a ghost.
+  const dragGhostImgRef = useRef<HTMLImageElement | null>(null)
+  useEffect(() => {
+    const img = new Image()
+    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBTAA7'
+    dragGhostImgRef.current = img
+  }, [])
   const [expandedCell, setExpandedCell] = useState<{ ticketId: string; colLabel: string } | null>(null)
   const pendingSavesRef = useRef(new Map<string, {
     body: Record<string, unknown>
@@ -2211,6 +2404,9 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
   )
 
   const hydrateFromTabCache = useCallback((): boolean => {
+    // Month view populates `tickets` directly from its own fetch — the per-day/branch cache
+    // underneath belongs to a different (single-day) query shape and must not overwrite it.
+    if (monthViewActiveRef.current) return false
     const cached = readSchedulesTabCache(schedulesCacheKeyForTab())
     if (!Array.isArray(cached?.tickets)) return false
 
@@ -2227,7 +2423,32 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       }
     }
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
     setTickets(normalizeRelayScheduleTicketList(list))
+========
+    // Drop stale oversized cache rows that don't belong on this date/branch.
+    // NB: filter the in-memory list only — never writeSchedulesTabCache here,
+    // that dispatches TAB_CACHE_UPDATED which re-triggers hydrate (infinite loop).
+    list = normalizeRelayScheduleTicketList(list)
+    if (isMyTickets) {
+      list = list.filter(t => {
+        if (!shouldShowOnMyTickets(t)) return false
+        if (activeBranchId && activeBranchId !== 'ALL_BRANCHES') {
+          return ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email, user?.jobTitle)
+        }
+        return true
+      })
+    } else if (dateFilter) {
+      list = list.filter(t => {
+        if (!ticketBelongsOnScheduleDate(t, dateFilter)) return false
+        // Cancelled red ghosts must remain on their schedule date even when legacy branchId is empty.
+        if (isCancelledScheduleGhost(t, dateFilter)) return true
+        return ticketBelongsOnScheduleBranch(t, activeBranchId, user?.email, user?.jobTitle)
+      })
+    }
+
+    setTickets(list)
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
     setLoading(false)
     setHasHydratedOnce(true)
     hasLoadedOnceRef.current = true
@@ -2235,6 +2456,7 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     markSchedulesSessionLoaded(cacheKey)
     writeSchedulesTabCache(cacheKey, normalizeRelayScheduleTicketList(list), 'local')
     return true
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   }, [schedulesCacheKeyForTab])
 
   // Paint cached rows before first paint when switching branch/date — no loading screen flash.
@@ -2244,6 +2466,24 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
   }, [isMyTickets, hydrateFromTabCache, dateFilter, globalBranchId, user])
 
   // ── Weekly Tabs Calculation (Mon–Sun week, matches origin/main) ─────────
+========
+  }, [schedulesCacheKeyForTab, isMyTickets, dateFilter, activeBranchId, user?.email, user?.jobTitle])
+
+  // Paint cached rows before first paint when switching branch/date — no loading screen flash.
+  useLayoutEffect(() => {
+    const hydrated = hydrateFromTabCache()
+    if (hydrated) {
+      setSyncing(false)
+      return
+    }
+    // No cache for this date/branch — clear stale rows from the previous tab immediately.
+    setTickets([])
+    setHasHydratedOnce(true)
+    setLoading(false)
+  }, [isMyTickets, hydrateFromTabCache, dateFilter, globalBranchId, user])
+
+  // ─────────────────────────────────────────────────────────────
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
   const weeklyTabs = useMemo(() => {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -2270,6 +2510,8 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
 
   const handleDateFilterChange = useCallback((next: string) => {
     if (next) { try { sessionStorage.setItem(SCHEDULES_ACTIVE_DATE_KEY, next) } catch { /* ignore */ } }
+    // Picking a specific day is an explicit "go back to normal Schedules" action.
+    setMonthViewActive(false)
     setDateFilter(next)
     resetTicketTableScroll()
   }, [])
@@ -2300,7 +2542,11 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     }
   }, [isMyTickets, isTaguig])
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   // ── Context menu ──────────────────────────────────────────────────────────
+========
+  // ─────────────────────────────────────────────────────────────
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; ticket: Ticket } | null>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
   const [detailTicket, setDetailTicket] = useState<Ticket | null>(null)
@@ -2333,11 +2579,19 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     }
   }, [contextMenu])
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   // ── History state ─────────────────────────────────────────────────────────
   const [history, setHistory] = useState<any[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
 
   // ── Manual Add Modal State ───────────────────────────────────────────────
+========
+  // ─────────────────────────────────────────────────────────────
+  const [history, setHistory] = useState<any[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+
+  // ─────────────────────────────────────────────────────────────
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [addFormSnapshot, setAddFormSnapshot] = useState('')
   const [addForm, setAddForm] = useState<Partial<Ticket> & { serviceDriver?: string; ticketCategory?: TicketCategoryValue }>({
@@ -2395,7 +2649,47 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       .then((list) => setBranches(Array.isArray(list) ? list as { id: string; name: string }[] : []))
       .catch(() => setBranches([]))
   }, [])
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   // ── Manual Edit Modal State ──────────────────────────────────────────────
+========
+
+  const resolveBranch = useCallback((branchIdOrName?: string | null) => {
+    if (!branchIdOrName) return null
+    let found = branches.find(b => b.id === branchIdOrName)
+    if (found) return found
+    found = branches.find(b => b.name.toLowerCase() === branchIdOrName.toLowerCase())
+    if (found) return found
+    const idLower = branchIdOrName.toLowerCase()
+    let keyword = ''
+    if (idLower === '2880bf12-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-calauan') keyword = 'calauan'
+    else if (idLower === '2880c15e-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-silang') keyword = 'silang'
+    else if (idLower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') || idLower === 'br-taguig-sales' || idLower === 'br-taguig-services' || idLower === 'br-taguig') keyword = 'taguig'
+    else if (idLower === '2880c35a-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-rizal') keyword = 'rizal'
+    else if (idLower === '2880c3b7-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-pampanga') keyword = 'pampanga'
+    else if (idLower === '2880c407-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-bulacan') keyword = 'bulacan'
+    else if (idLower === '2880c4af-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-dasma') keyword = 'dasma'
+    else if (idLower === '2880c5fa-581c-11f1-bf8c-74d4dd6dfc0b' || idLower === 'br-candelaria') keyword = 'candelaria'
+    if (keyword) {
+      found = branches.find(b => b.name.toLowerCase().includes(keyword))
+      if (found) return found
+    }
+    found = branches.find(b => b.name.toLowerCase().includes(idLower) || idLower.includes(b.name.toLowerCase()))
+    return found || null
+  }, [branches])
+
+  const formatAssignedBranchLabel = useCallback((branchId?: string | null) => {
+    const resolved = resolveBranch(branchId)
+    if (!resolved && !branchId) return EMPTY_CELL
+    const id = (resolved?.id || branchId || '').toUpperCase()
+    const name = resolved?.name || ''
+    if (id === 'BR-TAGUIG-SALES' || id.endsWith('-SALES')) return 'TAGUIG - SALES'
+    if (id === 'BR-TAGUIG-SERVICES' || id === 'BR-TAGUIG-SERVICE' || id.endsWith('-SERVICES') || id.endsWith('-SERVICE')) {
+      return 'TAGUIG - SERVICES'
+    }
+    return name || getBranchDisplayName(branchId || null)
+  }, [resolveBranch])
+  // ─────────────────────────────────────────────────────────────
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editForm, setEditForm] = useState<Partial<Ticket> & { serviceDriver?: string; rescheduleToDate?: string; reschedulePending?: boolean; ticketCategory?: TicketCategoryValue; finalDate?: string; branchId?: string }>({})
   const [editFormSnapshot, setEditFormSnapshot] = useState('')
@@ -2459,6 +2753,18 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     [negotiatorsForBranch, activeBranchId],
   )
 
+  const myTicketsNegotiatorOptions = useMemo(
+    () => negotiatorsForBranch(activeBranchId),
+    [negotiatorsForBranch, activeBranchId],
+  )
+
+  // Drop My Tickets negotiator filter when Active Branch changes and they are no longer listed.
+  useEffect(() => {
+    if (!isMyTickets || !myTicketsNegotiatorFilter) return
+    if (myTicketsNegotiatorOptions.some(n => n.id === myTicketsNegotiatorFilter)) return
+    setMyTicketsNegotiatorFilter('')
+  }, [isMyTickets, myTicketsNegotiatorFilter, myTicketsNegotiatorOptions, activeBranchId])
+
   const editModalNegotiators = useMemo(() => {
     const base = negotiatorsForBranch(editForm.branchId || activeBranchId)
     let list = [...base]
@@ -2486,17 +2792,55 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     }
   }, [addModalOpen, addModalNegotiators, addForm.negotiatorId])
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
+========
+  useEffect(() => {
+    if (!editModalOpen || !editForm.negotiatorId) return
+    // ─────────────────────────────────────────────────────────────
+    if (editModalNegotiators.length === 0) return
+    if (!editModalNegotiators.some(n => n.id === editForm.negotiatorId)) {
+      setEditForm(prev => ({ ...prev, negotiatorId: '' }))
+    }
+  }, [editModalOpen, editModalNegotiators, editForm.negotiatorId])
+
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
   const [confirmModal, setConfirmModal] = useState<ConfirmDialogState | null>(null)
   const [reschedDialog, setReschedDialog] = useState<{ ticket: Ticket } | null>(null)
   const [reschedToDate, setReschedToDate] = useState('')
   const [reschedPending, setReschedPending] = useState(false)
   const [reschedCalMonth, setReschedCalMonth] = useState<{ year: number; month: number } | null>(null)
+  const [reschedRemarks, setReschedRemarks] = useState('')
+  const [customDatePickerOpen, setCustomDatePickerOpen] = useState(false)
+  const [customDateCalMonth, setCustomDateCalMonth] = useState<{ year: number; month: number } | null>(null)
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   // ── Excel Import State ───────────────────────────────────────────────────
   const fileInputRef = useRef<HTMLInputElement>(null)
   const scanFileInputRef = useRef<HTMLInputElement>(null)
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   void addMenuOpen
+========
+  const [continuationDialog, setContinuationDialog] = useState<{ ticket: Ticket } | null>(null)
+  const [continuationSelectedDates, setContinuationSelectedDates] = useState<string[]>([])
+  const [continuationCalMonth, setContinuationCalMonth] = useState<{ year: number; month: number } | null>(null)
+
+  // ─────────────────────────────────────────────────────────────
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const scanFileInputRef = useRef<HTMLInputElement>(null)
+  const [showcaseOpen, setShowcaseOpen] = useState(false)
+
+  // ── Schedules "more filters" popup: whole-month + branch-negotiator view ──
+  const [monthFilterModalOpen, setMonthFilterModalOpen] = useState(false)
+  const [monthFilterMonth, setMonthFilterMonth] = useState(() => todayDateKey().slice(0, 7))
+  const [monthFilterNegotiatorId, setMonthFilterNegotiatorId] = useState('')
+  /** Specific SCHEDULE_STATUS_OPTS value (e.g. 'INSTALL', 'DONE_CLEANING'), or '' for all statuses. */
+  const [monthFilterStatus, setMonthFilterStatus] = useState('')
+  const [monthFilterLoading, setMonthFilterLoading] = useState(false)
+  const [monthFilterError, setMonthFilterError] = useState('')
+  /** True once "Apply" has populated the main table with a whole month's tickets instead of one day. */
+  const [monthViewActive, setMonthViewActive] = useState(false)
+  const monthViewActiveRef = useRef(false)
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
   const [scanning, setScanning] = useState(false)
   const [importing, setImporting] = useState(false)
   void importing
@@ -3020,7 +3364,11 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
             return
           }
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
           // Swap temp → real id (carry any cell edits made while create was in flight)
+========
+          // ─────────────────────────────────────────────────────────────
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
           setTickets(prev => {
             const next = [promoted.ticket, ...prev.filter(t => t.id !== tempId && t.id !== createdTicket.id)]
             const cacheKey = schedulesCacheKeyForTab()
@@ -3080,7 +3428,7 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       contactPhone: ticket.contactPhone || ticket.contact_phone || ticket.customer_phone || ticket.phone || '',
       location: formatAddress(ticket.location),
       district: ticket.district || parseDistrict(ticket.location) || '',
-      commitTerms: ticket.commitTerms || ticket.commitType || ticket.description || '',
+      commitTerms: getTicketCommitDisplay(ticket),
       unitType: parseBrand(ticket) || ticket.unitType || ticket.unit_type || '',
       sourceVendor: ticket.sourceVendor || ticket.source_vendor || ticket.dealer || 'Direct',
       serviceDriver: isMyTickets ? formatRelayTicketTypeShort(ticket) : formatServiceDriver(ticket),
@@ -3091,9 +3439,26 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       controlNumber: ticket.controlNumber || ticket.control_number || '',
       ticketCategory: inferCategoryFromTicket(ticket),
       status,
+<<<<<<<< HEAD:src/pages/Schedules.tsx
       installationCharges: ticket.installationCharges ?? ticket.installation_charges,
       modeOfPayment: ticket.modeOfPayment ?? ticket.mode_of_payment,
       remarks: ticket.remarks || ticket.remarksUpdate || '',
+========
+      installationCharges: ticket.installationCharges ?? ticket.installation_charges ?? payment.amount,
+      modeOfPayment: (ticket.modeOfPayment ?? ticket.mode_of_payment ?? payment.mode) || 'NO_PAYMENT',
+      remarks: (() => {
+        const AUTO_STATUS_REMARKS = new Set([
+          'done installed', 'done install', 'done_installed',
+          'done cleaning', 'done_cleaning',
+          'done survey', 'done_survey',
+          'done checkup', 'done_checkup',
+          'done backjob', 'done_backjob',
+          'installed', 'completed', 'cancelled',
+        ])
+        const raw = (ticket.remarks || ticket.remarksUpdate || '').trim()
+        return AUTO_STATUS_REMARKS.has(raw.toLowerCase()) ? '' : raw
+      })(),
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
       acDetails: ticket.acDetails || ticket.ac_details,
       rescheduleToDate: (ticket.status || '').toUpperCase() === 'RESCHED' && !isReschedulePending(ticket) ? preferred : '',
       reschedulePending: isReschedulePending(ticket),
@@ -3172,10 +3537,34 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
         return 'Select a reschedule date or choose Pending if no slot is available yet'
       }
     }
+<<<<<<<< HEAD:src/pages/Schedules.tsx
     if (!editForm.negotiatorId) return 'Negotiator is required'
     if (!editForm.customerName?.trim()) return 'Customer Name is required'
     if (!editForm.contactPhone?.trim()) return 'Contact No. is required'
     if (!editForm.location?.trim()) return 'Destination/Address is required'
+========
+    if (!form.negotiatorId) return 'Negotiator is required'
+    if (!form.branchId?.trim()) return 'Assigned branch is required'
+    const selectedNeg = branchEmployees.find(emp => emp.id === form.negotiatorId)
+    if (selectedNeg?.branchId && form.branchId
+      && !branchScopesMatch(selectedNeg.branchId, form.branchId, selectedNeg.email)) {
+      return 'Negotiator must belong to the assigned branch'
+    }
+    if (!form.customerName?.trim()) return 'Customer Name is required'
+    if (!form.contactPhone?.trim()) return 'Contact No. is required'
+    if (!form.location?.trim()) return 'Destination/Address is required'
+
+    const targetStatus = (form.status || '').toUpperCase().replace(/\s+/g, '_')
+    const isClosing = CLOSING_SCHEDULE_STATUSES.has(targetStatus)
+      || ['COMPLETED', 'INSTALLED', 'CANCELLED'].includes(targetStatus)
+    if (isClosing && targetStatus !== 'CANCELLED') {
+      const missing = getEmptyRequiredColumnsForClose(form)
+      if (missing.length > 0) {
+        return `Cannot close ticket because the following columns are empty:\n\u2022 ${missing.join('\n\u2022 ')}`
+      }
+    }
+
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
     return null
   }
 
@@ -3209,7 +3598,11 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       }
     }
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
     // Modal still has the row data — save by id even if the list no longer holds it.
+========
+    // ─────────────────────────────────────────────────────────────
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
     if (!isTempTicketId(formId)) {
       return {
         id: formId,
@@ -3360,22 +3753,91 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
 
       const finalDateKey = editForm.finalDate?.split('T')[0]?.trim() || ''
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
       const paymentCharges = editForm.installationCharges ?? originalTicket?.installationCharges ?? originalTicket?.installation_charges
       const paymentMode = editForm.modeOfPayment ?? originalTicket?.modeOfPayment ?? originalTicket?.mode_of_payment
       if (paymentCharges != null && !Number.isNaN(Number(paymentCharges))) {
         body.installationCharges = Number(paymentCharges)
+========
+      const paymentCharges = activeForm.installationCharges ?? originalTicket?.installationCharges ?? originalTicket?.installation_charges
+      const paymentMode = activeForm.modeOfPayment ?? originalTicket?.modeOfPayment ?? originalTicket?.mode_of_payment
+      if (isNoPaymentMode(activeForm.modeOfPayment)) {
+        // Explicit No Payment toggle — clear so PAYMENT column stays blank after save/reload.
+        body.modeOfPayment = 'NO_PAYMENT'
+        body.installationCharges = null
+        acMetaExtras.modeOfPayment = ''
+        acMetaExtras.paymentMode = ''
+        acMetaExtras.paymentStatus = ''
+        acMetaExtras.installationCharges = ''
+      } else {
+        if (paymentCharges != null && !Number.isNaN(Number(paymentCharges))) {
+          body.installationCharges = Number(paymentCharges)
+        }
+        if (paymentMode) body.modeOfPayment = paymentMode
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
       }
-      if (paymentMode) body.modeOfPayment = paymentMode
 
       if (finalDateKey && !isReschedStatus) {
         body.finalDate = finalDateKey
         body.preferredDate = finalDateKey
         const origStat = (originalTicket?.status || '').toUpperCase()
+<<<<<<<< HEAD:src/pages/Schedules.tsx
         if (['PENDING', 'ASSIGNED'].includes(origStat) && !isDateMove && String(body.status || '').toUpperCase() !== 'COMPLETED') {
+========
+        const bodyStat = String(body.status || '').toUpperCase()
+        if (
+          !isReschedStatus
+          && ['PENDING', 'ASSIGNED'].includes(origStat)
+          && !isDateMove
+          && bodyStat !== 'COMPLETED'
+          && bodyStat !== 'CANCELLED'
+        ) {
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
           body.status = 'SCHEDULED'
         }
       }
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
+========
+      const schedulePlacementDate = finalDateKey || newDateKey
+
+      const isReturningToMyTickets = !isReschedStatus
+        && !finalDateKey
+        && hadScheduleDate
+        && !CLOSING_SCHEDULE_STATUSES.has(scheduleVal)
+        && scheduleVal !== 'COMPLETED'
+        && scheduleVal !== 'CANCELLED'
+      if (isReturningToMyTickets && originalTicket) {
+        applyReturnToNegotiatorMyTicketsPatch(originalTicket, body, acMetaExtras)
+      }
+
+      // Persist branch + date anchors for cancelled Schedules ghosts (survives reload).
+      if (String(body.status || scheduleVal || '').toUpperCase() === 'CANCELLED') {
+        const cancelBranch = resolveScopedBranchId(
+          body.branchId || body.branch_id || activeForm.branchId || originalTicket?.branchId || originalTicket?.branch_id,
+        )
+        if (cancelBranch) {
+          body.branchId = cancelBranch
+          body.branch_id = cancelBranch
+          acMetaExtras.cancelledBranchId = cancelBranch
+        }
+        const cancelDate = finalDateKey
+          || oldDateKey
+          || resolveTicketScheduleDateKey(originalTicket)
+          || dateFilter
+          || ''
+        if (cancelDate) {
+          body.finalDate = cancelDate
+          body.preferredDate = cancelDate
+          acMetaExtras.finalDate = cancelDate
+          acMetaExtras.scheduledDate = cancelDate
+          acMetaExtras.cancelledScheduleDate = cancelDate
+        }
+      }
+
+      // A normal date move just updates finalDate/scheduledDate in place (set below) — no ghost
+      // row or reschedule history is written for it anymore.
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
       if (isDateMove && !leavingResched) {
         const existing = parseAcMeta(editForm as Ticket)
         const prevDates: string[] = Array.isArray(existing.previousScheduleDates)
@@ -3387,7 +3849,11 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
         acMetaExtras.reschedulePending = false
       }
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
       // Leaving RESCHED for Installation/etc. — never re-apply ghost-date metadata
+========
+      // ─────────────────────────────────────────────────────────────
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
       if (leavingResched) {
         acMetaExtras.previousScheduleDates = []
         acMetaExtras.rescheduledTo = ''
@@ -3429,8 +3895,12 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
           : {}),
       })
 
-      if (String(body.status || '').toUpperCase() === 'COMPLETED') {
-        const outcome = (statusOutcome || String(statusAcMeta.scheduleOutcome || '') || 'DONE_INSTALLED') as ScheduleOutcome
+      if (['COMPLETED', 'DONE_DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'INSTALLED'].includes(String(body.status || '').toUpperCase())) {
+        const outcome = (statusOutcome || String(statusAcMeta.scheduleOutcome || '') || (
+          String(body.status || '').toUpperCase() === 'DONE_DISMANTLE' ? 'DONE_DISMANTLE'
+            : String(body.status || '').toUpperCase() === 'DONE_SYSTEM_REPROCESS' ? 'DONE_SYSTEM_REPROCESS'
+              : 'DONE_INSTALLED'
+        )) as ScheduleOutcome
         body.scheduleOutcome = outcome
         body.acDetails = mergeAcMeta({ ...editForm, acDetails: body.acDetails } as Ticket, {
           scheduleOutcome: outcome,
@@ -3438,11 +3908,13 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
         })
       }
 
+      const alreadyClosed = ['COMPLETED', 'INSTALLED', 'DONE_DISMANTLE', 'DONE_SYSTEM_REPROCESS']
+        .includes((originalTicket?.status || '').toUpperCase())
       const shouldComplete = Boolean(
         originalTicket
         && !isReschedStatus
         && !isDateMove
-        && (originalTicket.status || '').toUpperCase() !== 'COMPLETED'
+        && !alreadyClosed
         && (
           CLOSING_SCHEDULE_STATUSES.has(scheduleVal)
           || scheduleVal === 'COMPLETED'
@@ -4056,7 +4528,11 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       .finally(() => setLoadingHistory(false))
   }, [detailTicket])
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   // ── Cell edit / expand ────────────────────────────────────────────────────
+========
+  // ─────────────────────────────────────────────────────────────
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
   const [editingCell, setEditingCell] = useState<{ ticketId: string; colLabel: string; value: string } | null>(null)
   const [statusPicker, setStatusPicker] = useState<{
@@ -4065,7 +4541,27 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     x: number
     y: number
   } | null>(null)
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   const [savingCellKey] = useState<string | null>(null)
+========
+  const [scheduleDetailsPopup, setScheduleDetailsPopup] = useState<{
+    ticket: Ticket
+    x: number
+    y: number
+    ghostKind?: 'completed' | 'resched' | 'cancelled' | null
+  } | null>(null)
+  const [checklistTicket, setChecklistTicket] = useState<Ticket | null>(null)
+  const [finalDatePicker, setFinalDatePicker] = useState<{
+    ticket: Ticket
+    x: number
+    y: number
+    value: string
+    preferredDate: string
+  } | null>(null)
+  const [finalDateCalMonth, setFinalDateCalMonth] = useState<{ year: number; month: number } | null>(null)
+  // Which ticket ids currently have a PATCH in flight — drives the row-level "Saving…" indicator.
+  const [savingTicketIds, setSavingTicketIds] = useState<Set<string>>(new Set())
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
   const cellEditBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cellEditDraftRef = useRef<{ ticketId: string; colLabel: string; value: string } | null>(null)
   const saveCellEditRef = useRef<(ticket: Ticket, colLabel: string, value: string, injectedPayment?: { amount: number; modeOfPayment: string }) => void>(() => { })
@@ -4118,34 +4614,43 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500) }
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   // ── Column config ─────────────────────────────────────────────────────────
+========
+  // ─────────────────────────────────────────────────────────────
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
   const columns = useMemo(() => {
     const scheduleCols = [
       { label: 'TICKET NO', display: 'TICKET NO', weight: 9, expMul: 1.2, sticky: true, freeze: false, align: 'center' as const },
+      // Month view spans many days, so surface the date up front — reuses the same
+      // already-editable 'FINAL DATE' column My Tickets has, just conditionally shown here too.
+      ...(monthViewActive
+        ? [{ label: 'FINAL DATE', display: 'DATE', weight: 9, expMul: 1.2, sticky: false, freeze: false, align: 'center' as const }]
+        : []),
       { label: "CUSTOMER'S NAME", display: "CUSTOMER", weight: 15, expMul: 1.5, sticky: true, freeze: false, align: 'left' as const },
-      { label: 'DESTINATION', display: 'DISTRICT', weight: 12, expMul: 1.5, sticky: true, freeze: true, align: 'center' as const },
+      { label: 'DESTINATION', display: 'DISTRICT', weight: 8, expMul: 1.5, sticky: true, freeze: true, align: 'center' as const, sortable: true },
       { label: 'BRAND', display: "BRAND", weight: 11, expMul: 1.5, sticky: false, freeze: false, align: 'center' as const },
       { label: 'DLR', display: isTaguigServices ? "ENDORSED BY" : "DEALER", weight: 10, expMul: 1.4, sticky: false, freeze: false, align: 'center' as const },
       { label: 'COMMIT', display: "COMMIT", weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'NEGOTIATOR', display: 'NEGOTIATOR', weight: 8, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'INSTALLER', display: isTaguigServices ? "TECHNICIAN" : "INSTALLER", weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'NEGOTIATOR', display: 'NEGOTIATOR', weight: 8, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'SERVICE', display: "DRIVER", weight: 9, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'VEHICLE', display: "VEHICLE", weight: 7, expMul: 1.2, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'STATUS', display: "STATUS", weight: 9, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'VEHICLE', display: "VEHICLE", weight: 9, expMul: 1.2, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'STATUS', display: "STATUS", weight: 13, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
       { label: 'UPDATE', display: "REMARKS", weight: 14, expMul: 1.55, sticky: false, freeze: false, align: 'right' as const },
       { label: 'PAYMENT', display: "PAYMENT", weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'right' as const },
     ]
     const myTicketsCols = [
       { label: 'TICKET NO', display: 'TICKET NO', weight: 9, expMul: 1.2, sticky: true, freeze: false, align: 'center' as const },
       { label: "CUSTOMER'S NAME", display: 'CUSTOMER', weight: 14, expMul: 1.5, sticky: true, freeze: false, align: 'left' as const },
-      { label: 'DESTINATION', display: 'DISTRICT', weight: 11, expMul: 1.5, sticky: true, freeze: true, align: 'center' as const },
+      { label: 'DESTINATION', display: 'DISTRICT', weight: 8, expMul: 1.5, sticky: true, freeze: true, align: 'center' as const, sortable: true },
       { label: 'BRAND', display: 'BRAND', weight: 10, expMul: 1.45, sticky: false, freeze: false, align: 'center' as const },
       { label: 'DLR', display: isTaguigServices ? 'ENDORSED BY' : 'DEALER', weight: 9, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'COMMIT', display: 'COMMIT', weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'FINAL DATE', display: 'FINAL DATE', weight: 10, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
       { label: 'NEGOTIATOR', display: 'NEGOTIATOR', weight: 10, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const, sortable: true },
       { label: 'SERVICE', display: 'TYPE', weight: 8, editHint: true, expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
-      { label: 'STATUS', display: 'STATUS', weight: 8, expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
+      { label: 'STATUS', display: 'STATUS', weight: 12, expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
       { label: 'UPDATE', display: 'REMARKS', weight: 13, expMul: 1.5, sticky: false, freeze: false, align: 'right' as const },
     ]
     const raw = isMyTickets ? myTicketsCols : scheduleCols
@@ -4160,14 +4665,79 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       if (c.sticky) left += (c.weight / totalWeight) * 100
       return { ...c, isExpanded, w: pct, left: l }
     })
-  }, [expandedCols, isTaguigServices, isMyTickets])
+  }, [expandedCols, isTaguigServices, isMyTickets, monthViewActive])
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   // ── Fetch ─────────────────────────────────────────────────────────────────
+========
+  // ─────────────────────────────────────────────────────────────
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
   const token = useCallback(() =>
     localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || '', [])
 
+  /** Negotiators assigned to the Active Branch — populates the month-filter popup's dropdown. */
+  const monthFilterNegotiatorOptions = useMemo(
+    () => negotiatorsForBranch(activeBranchId),
+    [negotiatorsForBranch, activeBranchId],
+  )
+
+  // Drop the selected negotiator if Active Branch changes and they're no longer listed.
+  useEffect(() => {
+    if (!monthFilterNegotiatorId) return
+    if (monthFilterNegotiatorOptions.some(n => n.id === monthFilterNegotiatorId)) return
+    setMonthFilterNegotiatorId('')
+  }, [monthFilterNegotiatorId, monthFilterNegotiatorOptions])
+
+  /** Whole-month ticket lookup for the Active Branch — populates the *same* `tickets` state and
+   * table the single-day view uses (see `monthViewActive` branches in `filtered`/`visible`
+   * below), rather than a separate report view, so editing/columns/sorting all keep working.
+   * Negotiator narrows further via the existing `filtered` memo, same as My Tickets does. */
+  const runMonthFilterQuery = useCallback(async () => {
+    if (!monthFilterMonth) return
+    setMonthFilterLoading(true)
+    setMonthFilterError('')
+    try {
+      const auth = token()
+      const scheduleBranchId = activeBranchId && activeBranchId !== 'ALL_BRANCHES'
+        ? resolveScopedBranchId(activeBranchId)
+        : undefined
+      const raw = await fetchTicketsPage('/tickets/branch', auth, {
+        size: 200,
+        paginate: true,
+        maxPages: 10,
+        month: monthFilterMonth,
+        ...(scheduleBranchId ? { branchId: scheduleBranchId } : {}),
+      })
+      let list = normalizeRelayScheduleTicketList(raw as Ticket[])
+      if (activeBranchId && activeBranchId !== 'ALL_BRANCHES') {
+        list = list.filter(t => ticketBelongsOnScheduleBranch(
+          t, activeBranchId, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+        ))
+      }
+      monthViewActiveRef.current = true
+      setTickets(list)
+      setMonthViewActive(true)
+      setMonthFilterModalOpen(false)
+    } catch (e) {
+      setMonthFilterError(formatFetchError(e))
+    } finally {
+      setMonthFilterLoading(false)
+    }
+  }, [monthFilterMonth, activeBranchId, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames, token])
+
+  // Switching Active Branch while month view is showing another branch's data would be
+  // misleading — exit back to the normal single-day view instead of silently keeping stale rows.
+  const prevActiveBranchForMonthViewRef = useRef(activeBranchId)
+  useEffect(() => {
+    const changed = prevActiveBranchForMonthViewRef.current !== activeBranchId
+    prevActiveBranchForMonthViewRef.current = activeBranchId
+    if (changed && monthViewActive) setMonthViewActive(false)
+  }, [activeBranchId, monthViewActive])
+
   const fetchTickets = useCallback(async (options?: { soft?: boolean; force?: boolean; quiet?: boolean }) => {
     if (!user) return
+    // Month view owns `tickets` while active — the normal per-day/branch fetch must not stomp it.
+    if (monthViewActiveRef.current) return
     const seq = ++fetchSeqRef.current
     const cacheKey = schedulesCacheKeyForTab()
     const cached = readTabCache<SchedulesTabCache>(cacheKey)
@@ -4230,6 +4800,7 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     }
     setFetchError(null)
     try {
+<<<<<<<< HEAD:src/pages/Schedules.tsx
       const ep = isMyTickets
         ? (isAdmin ? '/tickets/branch' : '/tickets/assigned')
         : isCustomer ? '/tickets/my' : isAdmin ? '/tickets' : '/tickets/branch'
@@ -4241,6 +4812,153 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       })
       if (seq !== fetchSeqRef.current) return
       const merged = applyOptimisticOverlay(list as Ticket[])
+========
+      const auth = token()
+      const scheduleBranchId = activeBranchId && activeBranchId !== 'ALL_BRANCHES'
+        ? resolveScopedBranchId(activeBranchId)
+        : undefined
+      let list: unknown[] = []
+
+      // Always load from /tickets/branch — skip by-number index (those calls were 500ing).
+      const ep = isMyTickets
+        ? (isAdmin ? '/tickets/branch' : '/tickets/assigned')
+        : isCustomer ? '/tickets/my' : '/tickets/branch'
+      const size = isMyTickets ? 200 : 200
+      list = await fetchTicketsPage(ep, auth, {
+        size,
+        paginate: false,
+        ...(scheduleBranchId ? { branchId: scheduleBranchId } : {}),
+        // Admin My Tickets = negotiator queue (PENDING or ASSIGNED, no finalDate) for Active Branch —
+        // not Schedules statuses. Filtering the server query to status=ASSIGNED only used to drop
+        // any ticket still sitting in PENDING (assigned to a negotiator but never formally flipped
+        // to ASSIGNED) before it even reached the client, showing an empty queue for that negotiator.
+        // shouldShowOnMyTickets below already excludes Scheduled/Cancelled/Installed/etc., so it's
+        // safe to let the server return the full FIELD category range and filter client-side.
+        ...(isMyTickets && isAdmin ? { categoryGroup: 'FIELD' as const } : {}),
+        ...(!isMyTickets && requestDate ? { date: requestDate } : {}),
+      })
+      list = normalizeRelayScheduleTicketList(list as Ticket[])
+      if (isMyTickets) {
+        list = (list as Ticket[]).filter(t => {
+          if (!shouldShowOnMyTickets(t)) return false
+          if (activeBranchId && activeBranchId !== 'ALL_BRANCHES'
+            && !ticketBelongsOnScheduleBranch(
+              t, activeBranchId, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+            )) return false
+          // Non-admin: only own assigned queue (API should already scope; keep as safety net).
+          if (!isAdmin && user?.id) {
+            return ticketMatchesNegotiatorFilter(t, user.id)
+          }
+          return true
+        })
+      }
+      // The server's branchId param on /tickets/branch does not always scope tightly enough
+      // (e.g. Taguig Sales/Services split, installer-lineup overrides) — always re-apply the
+      // client branch filter as a safety net instead of trusting it outright when scheduleBranchId is set.
+      // Every ticket shown here must match BOTH date and branch — never fall back to showing
+      // other-branch tickets just because the branch-scoped result is empty (that previously
+      // masked the real problem AND silently leaked cross-branch rows, e.g. Taguig Sales seeing
+      // Taguig Services or other branches' tickets). If branch-scoped comes back empty, the retry
+      // below tries harder instead.
+      if (!isMyTickets && requestDate) {
+        const dateScoped = (list as Ticket[]).filter(t => ticketBelongsOnScheduleDate(t, requestDate))
+        list = (activeBranchId && activeBranchId !== 'ALL_BRANCHES')
+          ? dateScoped.filter(t =>
+            ticketBelongsOnScheduleBranch(
+              t, activeBranchId, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+            )
+            // Legacy CANCELLED rows had branchId cleared server-side; the branch-scoped date
+            // query already decided they belong here (negotiator visibility), so keep the ghost.
+            || (t.status || '').toUpperCase() === 'CANCELLED',
+          )
+          : dateScoped
+        // Stamp Active Branch onto legacy cancelled ghosts with null branchId so later client
+        // filters (and cache) treat them as belonging here instead of dropping them again.
+        if (scheduleBranchId) {
+          list = (list as Ticket[]).map(t => {
+            if ((t.status || '').toUpperCase() !== 'CANCELLED') return t
+            if (resolveScopedBranchId(t.branchId || t.branch_id)) return t
+            return normalizeRelayScheduleTicket({
+              ...t,
+              branchId: scheduleBranchId,
+              branch_id: scheduleBranchId,
+              acDetails: mergeAcMeta(t, { cancelledBranchId: scheduleBranchId }),
+            }) as Ticket
+          })
+        }
+      }
+      // If still empty, retry date-only then apply the same strict branch+date filter.
+      if (!isMyTickets && requestDate && scheduleBranchId && list.length === 0) {
+        const unscoped = await fetchTicketsPage(ep, auth, {
+          size,
+          paginate: false,
+          date: requestDate,
+        })
+        list = normalizeRelayScheduleTicketList(unscoped as Ticket[]).filter(t =>
+          ticketBelongsOnScheduleDate(t, requestDate)
+          && ticketBelongsOnScheduleBranch(
+            t, activeBranchId, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+          ),
+        )
+      }
+      cacheTicketsByNumber(list)
+      if (!isMyTickets && requestDate) {
+        writeScheduleDateTicketNumbers(requestDate, extractTicketNumbers(list))
+      }
+      // Drop stale responses when the user switched date/branch while this request was in flight.
+      if (seq !== fetchSeqRef.current) return
+      if (!isMyTickets && requestDate !== (dateFilter || '')) return
+      if (requestCacheKey !== schedulesCacheKeyForTab()) return
+
+      // Date-scoped server list is authoritative for what's ON this date, but a ticket just
+      // edited elsewhere (e.g. Overview) may not be in the server response yet if its save
+      // (or the backend's previousScheduleDates indexing) hasn't landed — mergeServerListWithLocalEdits
+      // re-filters extraLocal by date AND active branch, so a cancelled ticket retained on its
+      // schedule date cannot reappear after an Active Branch switch.
+      // locallyEditedTicketIdsRef only covers edits made in THIS mount; Overview/Schedules/My Tickets
+      // are separate routes (separate <Tickets> mounts), so an edit made on one route has no in-memory
+      // record on another — seed from the persisted cross-route marker so it still gets protected here.
+      for (const id of getRecentlyLocallyEditedTicketIds()) locallyEditedTicketIdsRef.current.add(id)
+      // Also protect saves still queued/in-flight and not-yet-created temp rows — these have no
+      // confirmed backend state yet, so the server response can't be trusted to include them. Any
+      // row NOT in this protected set defers entirely to the server response (see
+      // mergeServerListWithLocalEdits) so this browser can't keep showing a row forever after
+      // another device/the backend has deleted or moved it.
+      const protectedIds = new Set(locallyEditedTicketIdsRef.current)
+      for (const id of pendingSavesRef.current.keys()) protectedIds.add(id)
+      for (const id of activeSavesRef.current) protectedIds.add(id)
+      for (const t of ticketsRef.current) if (isTempTicketId(t.id)) protectedIds.add(t.id)
+      const mergeOpts = {
+        dateFilter: isMyTickets ? undefined : requestDate,
+        extraLocal: ticketsRef.current,
+        branchId: activeBranchId,
+        email: user?.email,
+        jobTitle: user?.jobTitle,
+        lineupIndex: installerLineupIndex,
+        driverOnlyNames,
+      }
+      const withLocalEdits = mergeServerListWithLocalEdits(
+        list as Ticket[],
+        (readSchedulesTabCache(requestCacheKey)?.tickets as Ticket[]) || [],
+        protectedIds,
+        mergeOpts,
+      )
+      // Final safety net: never paint / cache another branch's rows (Schedules or My Tickets).
+      // Cancelled red ghosts that match this schedule date stay visible even when legacy
+      // branchId is empty (they were already admitted/stamped from the date fetch above).
+      let branchSafe = (activeBranchId && activeBranchId !== 'ALL_BRANCHES')
+        ? withLocalEdits.filter(t =>
+          ticketBelongsOnScheduleBranch(
+            t, activeBranchId, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+          )
+          || (!isMyTickets && !!requestDate && isCancelledScheduleGhost(t, requestDate)),
+        )
+        : withLocalEdits
+      if (isMyTickets) {
+        branchSafe = branchSafe.filter(t => shouldShowOnMyTickets(t))
+      }
+      const merged = applyOptimisticOverlay(branchSafe)
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
       setTickets(merged)
       writeSchedulesTabCache(cacheKey, merged, 'server')
       hasLoadedOnceRef.current = true
@@ -4254,7 +4972,26 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
         setLoading(false)
       }
     }
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   }, [user, isCustomer, isAdmin, isMyTickets, globalBranchId, dateFilter, token, schedulesCacheKeyForTab])
+========
+  }, [user, isCustomer, isAdmin, isMyTickets, globalBranchId, dateFilter, activeBranchId, token, schedulesCacheKeyForTab, installerLineupIndex, driverOnlyNames])
+
+  // Keep the ref in sync for the guarded fetch/hydrate callbacks above (they read the ref, not
+  // the state, so they see the change immediately — no stale-closure risk). On the true→false
+  // transition (user exits month view), kick a real refetch to restore the current day's data,
+  // since the guarded effects were silently no-op-ing the whole time month view was active.
+  const monthViewWasActiveRef = useRef(false)
+  useEffect(() => {
+    monthViewActiveRef.current = monthViewActive
+    if (monthViewWasActiveRef.current && !monthViewActive) {
+      void fetchTickets({ soft: false, force: true })
+    }
+    monthViewWasActiveRef.current = monthViewActive
+  }, [monthViewActive, fetchTickets])
+
+  const schedulesDateFetchMountedRef = useRef(false)
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
 
   useEffect(() => {
     const hadCache = hydrateFromTabCache()
@@ -4319,11 +5056,81 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       .catch(() => setDriverOnlyNames([]))
   }, [token])
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   // ── Filter ────────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
+========
+  // ─────────────────────────────────────────────────────────────
+  const filtered = useMemo(() => {
+    const effectiveBranch = activeBranchId
+
+    // Month view: `tickets` already IS the whole month for this branch (see runMonthFilterQuery)
+    // — skip the single-day date scoping entirely and just apply negotiator + search on top.
+    if (!isMyTickets && monthViewActive) {
+      let list = tickets.filter(t => isFieldCategory(inferCategoryFromTicket(t)))
+      if (monthFilterNegotiatorId) {
+        list = list.filter(t => ticketMatchesNegotiatorFilter(t, monthFilterNegotiatorId))
+      }
+      if (monthFilterStatus === 'PENDING_GROUP') {
+        list = list.filter(t => SCHEDULE_PENDING_STATUS_VALUES.has(getScheduleStatusValue(t)))
+      } else if (monthFilterStatus === 'CLOSING_GROUP') {
+        list = list.filter(t => CLOSING_SCHEDULE_STATUSES.has(getScheduleStatusValue(t)))
+      } else if (monthFilterStatus) {
+        list = list.filter(t => getScheduleStatusValue(t) === monthFilterStatus)
+      }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase()
+        list = list.filter(t =>
+          [t.customerName, t.customer_name, t.contactPhone, t.assignedEmployeeName,
+          t.assigned_employee_name, t.serviceType, t.service_type, t.description,
+          t.remarks, t.note, t.id, t.ticketNumber, t.ticket_number,
+          resolveNegotiatorDisplayName(t, branchEmployees)].some(v => v?.toLowerCase().includes(q))
+          || formatAddress(t.location).toLowerCase().includes(q)
+        )
+      }
+      return list
+    }
+
+    // Schedules date tab: active branch + schedule date (server already scopes branch for admin).
+    if (!isMyTickets && dateFilter) {
+      let list = tickets.filter(t => {
+        // Cancelled = red ghost on this date — always keep (field-category / branch gaps must not hide it).
+        if (isCancelledScheduleGhost(t, dateFilter)) return true
+        if (!isFieldCategory(inferCategoryFromTicket(t))) return false
+        if (!ticketBelongsOnScheduleDate(t, dateFilter)) return false
+        if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES'
+          && !ticketBelongsOnScheduleBranch(
+            t, effectiveBranch, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+          )) return false
+        return true
+      })
+      list = [...list].sort((a, b) => {
+        const aGhost = isScheduleGhostOnDate(a, dateFilter) || isCancelledTicket(a)
+        const bGhost = isScheduleGhostOnDate(b, dateFilter) || isCancelledTicket(b)
+        if (aGhost === bGhost) return 0
+        return aGhost ? 1 : -1
+      })
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase()
+        list = list.filter(t =>
+          [t.customerName, t.customer_name, t.contactPhone, t.assignedEmployeeName,
+          t.assigned_employee_name, t.serviceType, t.service_type, t.description,
+          t.remarks, t.note, t.id, t.ticketNumber, t.ticket_number,
+          resolveNegotiatorDisplayName(t, branchEmployees)].some(v => v?.toLowerCase().includes(q))
+          || formatAddress(t.location).toLowerCase().includes(q)
+        )
+      }
+      return list
+    }
+
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
     let list = tickets.filter(t => {
       const stat = (t.status || '').toUpperCase()
-      if (stat === 'CANCELLED') return false
+      // Cancelled tickets stay off the negotiator's My Tickets queue (shouldShowOnMyTickets
+      // below also excludes them), but they should still surface on Schedules as a muted ghost
+      // row on their scheduled date instead of vanishing outright.
+      if (stat === 'CANCELLED' && isMyTickets) return false
+      if (stat === 'CANCELLED' && dateFilter && isCancelledScheduleGhost(t, dateFilter)) return true
 
       if (isMyTickets) {
         const effectiveBranch = isAdmin ? globalBranchId : user?.branchId
@@ -4338,6 +5145,11 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
           }
         }
         if (!shouldShowOnMyTickets(t)) return false
+        if (isAdmin) {
+          if (myTicketsNegotiatorFilter && !ticketMatchesNegotiatorFilter(t, myTicketsNegotiatorFilter)) return false
+        } else if (user?.id && !ticketMatchesNegotiatorFilter(t, user.id)) {
+          return false
+        }
         return true
       }
 
@@ -4348,20 +5160,42 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       }
 
       const hasFinalDate = Boolean(getFinalDateKey(t))
+<<<<<<<< HEAD:src/pages/Schedules.tsx
+========
+      const hasScheduleDate = hasFinalDate
+        || Boolean(getPreferredDateKey(t))
+        || Boolean(String(parseAcMeta(t).scheduledDate || '').trim())
+        || getContinuationDates(t).length > 0
+      const isScheduledOrActive = [
+        'SCHEDULED', 'RESCHED', 'IN_PROGRESS', 'ON_THE_WAY', 'FOR_APPROVAL', 'SURVEY', 'CONTINUATION',
+        'SYSTEM_REPROCESS', 'DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE',
+      ].includes(stat)
+      if (!hasScheduleDate && !isScheduledOrActive) return false
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
 
       const scheduleValue = getScheduleStatusValue(t)
       const isResched = stat === 'RESCHED' || scheduleValue === 'RESCHED'
       const isForApproval = stat === 'FOR APPROVAL' || stat === 'FOR_APPROVAL' || stat === 'FOR QUOTATION' || stat === 'FOR_QUOTATION' || stat.includes('QUOTATION') || scheduleValue === 'FOR_APPROVAL'
       const isSurvey = scheduleValue === 'SURVEY' || scheduleValue === 'DONE_SURVEY'
       const isCleaning = scheduleValue === 'CLEANING' || scheduleValue === 'DONE_CLEANING'
+<<<<<<<< HEAD:src/pages/Schedules.tsx
       const isInstallation = scheduleValue === 'INSTALLATION' || scheduleValue === 'SERVICES' || scheduleValue === 'DONE_INSTALLED' || scheduleValue === 'DONE_CHECKUP'
       const isActiveSchedule = ['SCHEDULED', 'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'ON_THE_WAY'].includes(stat) || hasFinalDate
 
       return isInstallation || isCleaning || isResched || isForApproval || isSurvey || isActiveSchedule
+========
+      const isSystemReprocess = scheduleValue === 'SYSTEM_REPROCESS' || scheduleValue === 'DONE_SYSTEM_REPROCESS'
+      const isDismantle = scheduleValue === 'DISMANTLE' || scheduleValue === 'DONE_DISMANTLE'
+      const isInstallation = scheduleValue === 'INSTALLATION' || scheduleValue === 'SERVICES' || scheduleValue === 'DONE_INSTALLED' || scheduleValue === 'DONE_CHECKUP' || scheduleValue === 'DONE_BACKJOB'
+      const isActiveSchedule = ['SCHEDULED', 'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'ON_THE_WAY'].includes(stat) || hasScheduleDate
+
+      return isInstallation || isCleaning || isSystemReprocess || isDismantle || isResched || isContinuation || isForApproval || isSurvey || isActiveSchedule
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
     })
     if (!isMyTickets) {
       const effectiveBranch = isAdmin ? globalBranchId : user?.branchId
       if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
+<<<<<<<< HEAD:src/pages/Schedules.tsx
         list = list.filter(t => {
           const b = resolveTicketScheduleBranchId(t, installerLineupIndex, driverOnlyNames)
           // If no branch can be resolved (no installer assigned yet), show the ticket —
@@ -4379,9 +5213,21 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     }
     if (dateFilter) {
       list = list.filter(t => ticketMatchesDateKey(t, dateFilter) || isScheduleGhostOnDate(t, dateFilter))
+========
+        list = list.filter(t =>
+          (dateFilter && isCancelledScheduleGhost(t, dateFilter))
+          || ticketBelongsOnScheduleBranch(
+            t, effectiveBranch, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+          ),
+        )
+      }
+    }
+    if (dateFilter) {
+      list = list.filter(t => ticketBelongsOnScheduleDate(t, dateFilter) || isCancelledScheduleGhost(t, dateFilter))
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
       list = [...list].sort((a, b) => {
-        const aGhost = isScheduleGhostOnDate(a, dateFilter)
-        const bGhost = isScheduleGhostOnDate(b, dateFilter)
+        const aGhost = isScheduleGhostOnDate(a, dateFilter) || isCancelledTicket(a)
+        const bGhost = isScheduleGhostOnDate(b, dateFilter) || isCancelledTicket(b)
         if (aGhost === bGhost) return 0
         return aGhost ? 1 : -1
       })
@@ -4397,12 +5243,31 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       )
     }
     return list
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   }, [tickets, isAdmin, isMyTickets, globalBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, installerLineupIndex, driverOnlyNames, branchEmployees])
+========
+  }, [tickets, isMyTickets, activeBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, user?.jobTitle, installerLineupIndex, driverOnlyNames, isAdmin, myTicketsNegotiatorFilter, branchEmployees, isBranchMatch, monthViewActive, monthFilterNegotiatorId, monthFilterStatus])
+
+  // Auto-numbered vehicle trip labels ("STRADA - 1", "STRADA - 2") for the current filtered set —
+  // the vehicle is now the dispatch unit, so staff never type a manual "- N" suffix into the
+  // Driver or Vehicle fields; the trip number is derived from assignment order instead.
+  const vehicleTripLabels = useMemo(() => buildVehicleTripLabels(filtered), [filtered])
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
 
   const visible = useMemo(() => {
     let list = filtered
-    const cmpOpts = { myTickets: isMyTickets, employees: branchEmployees, branchId: activeBranchId }
+    const cmpOpts = { myTickets: isMyTickets, employees: branchEmployees, branchId: activeBranchId, vehicleTripLabels }
+    // Month view spans many days — vehicle/driver grouping (built for one day's dispatch lineup)
+    // doesn't apply across dates, so sort chronologically by schedule date instead.
+    if (!isMyTickets && monthViewActive) {
+      return [...list].sort((a, b) => {
+        const cmp = getFinalDateKey(a).localeCompare(getFinalDateKey(b))
+        if (cmp !== 0) return cmp
+        return compareTicketsByColumn(a, b, 'TICKET NO', cmpOpts)
+      })
+    }
     list = [...list].sort((a, b) => {
+<<<<<<<< HEAD:src/pages/Schedules.tsx
       // Schedules: sort Driver ASC → Installer ASC → Trip Number ASC
       if (!isMyTickets) {
         // 1. Driver name
@@ -4428,6 +5293,22 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
         const tripA = a.tripNumber ?? a.trip_number ?? 1
         const tripB = b.tripNumber ?? b.trip_number ?? 1
         if (tripA !== tripB) return tripA - tripB
+========
+      // Schedules: always group rows by vehicle first — the vehicle (e.g. "STRADA - 1",
+      // "STRADA - 2") is the actual dispatch unit and trip order, auto-numbered from assignment
+      // order. Driver name is the secondary tiebreaker so rows stay readable within a vehicle group.
+      if (!isMyTickets) {
+        const byVehicle = compareTicketsByColumn(a, b, 'VEHICLE', cmpOpts)
+        if (byVehicle !== 0) {
+          const desc = sortConfig.column === 'VEHICLE' && sortConfig.direction === 'desc'
+          return desc ? -byVehicle : byVehicle
+        }
+        const byDriver = compareTicketsByColumn(a, b, 'SERVICE', cmpOpts)
+        if (byDriver !== 0) {
+          const desc = sortConfig.column === 'SERVICE' && sortConfig.direction === 'desc'
+          return desc ? -byDriver : byDriver
+        }
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
       }
       if (isMyTickets || sortConfig.column !== 'INSTALLER') {
         const cmp = compareTicketsByColumn(a, b, sortConfig.column, cmpOpts)
@@ -4440,7 +5321,48 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       return compareTicketsByColumn(a, b, 'TICKET NO', cmpOpts)
     })
     return list
-  }, [filtered, sortConfig, isMyTickets, branchEmployees, activeBranchId])
+  }, [filtered, sortConfig, isMyTickets, branchEmployees, activeBranchId, vehicleTripLabels, monthViewActive])
+
+  // Each ticket's position within its contiguous vehicle-group run in `visible` — visible is
+  // already sorted with same-vehicle rows contiguous, so this is a single linear scan. Used to
+  // animate the "make room" row slide while dragging a VEHICLE cell.
+  const vehicleGroupPositions = useMemo(() => {
+    const map = new Map<string, { base: string; relIndex: number }>()
+    let i = 0
+    while (i < visible.length) {
+      const parsed = parseNameSiteToken(getTicketVehicleDisplay(visible[i]))
+      if (!parsed.name) { i += 1; continue }
+      let j = i
+      let rel = 0
+      while (j < visible.length && parseNameSiteToken(getTicketVehicleDisplay(visible[j])).name === parsed.name) {
+        map.set(visible[j].id, { base: parsed.name, relIndex: rel })
+        rel += 1
+        j += 1
+      }
+      i = j
+    }
+    return map
+  }, [visible])
+
+  // The would-be order of the currently-dragged vehicle group if dropped on the current hover
+  // target — drives both the live row-slide animation and (on drop) what actually gets saved, so
+  // what the user sees sliding into place is exactly what gets persisted.
+  const vehicleDragPreview = useMemo(() => {
+    if (!draggedVehicleTicketId || !vehicleDropTargetId || draggedVehicleTicketId === vehicleDropTargetId) return null
+    const draggedPos = vehicleGroupPositions.get(draggedVehicleTicketId)
+    const targetPos = vehicleGroupPositions.get(vehicleDropTargetId)
+    if (!draggedPos || !targetPos || draggedPos.base !== targetPos.base) return null
+    const groupIds = visible
+      .filter(t => vehicleGroupPositions.get(t.id)?.base === draggedPos.base)
+      .map(t => t.id)
+    const fromIndex = groupIds.indexOf(draggedVehicleTicketId)
+    const toIndex = groupIds.indexOf(vehicleDropTargetId)
+    if (fromIndex === -1 || toIndex === -1) return null
+    const reordered = [...groupIds]
+    const [moved] = reordered.splice(fromIndex, 1)
+    reordered.splice(toIndex, 0, moved)
+    return { base: draggedPos.base, order: reordered }
+  }, [draggedVehicleTicketId, vehicleDropTargetId, vehicleGroupPositions, visible])
 
   const sortDiffersFromDefault =
     sortConfig.column !== defaultSortForSchedulesView(isMyTickets).column
@@ -4476,8 +5398,17 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
 
   const showcaseRows = useMemo<ScheduleShowcaseRow[]>(() => {
     if (isMyTickets) return []
+<<<<<<<< HEAD:src/pages/Schedules.tsx
+========
+    // Mirror exactly what the schedules grid shows (all visible rows, including ghosts).
+    // INSTALLER / DRIVER (SERVICE column): name only — never trip "- N" suffixes.
+    // VEHICLE (exported as service): use the same auto trip labels as the table.
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
     return visible.map((ticket, index) => {
       const live = optimisticTicketsRef.current.get(ticket.id) || ticket
+      const installerRaw = getInstallerDisplay(live, branchEmployees, activeBranchId)
+      const driverRaw = getTicketDriverDisplay(live) || getTicketDriverName(live) || formatServiceDriver(live) || ''
+      const vehicleTrip = vehicleTripLabels.get(live.id || '') || getTicketVehicleDisplay(live) || ''
       return {
         id: String(live.id ?? index),
         index: index + 1,
@@ -4485,19 +5416,25 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
         name: getF(live, 'customerName', 'customer_name') || live.title || '',
         destination: formatAddress(live.location),
         district: parseDistrict(live.location, live.district) || resolveTicketDistrict(live),
-        contact: getF(live, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
+        contact: getF(live, 'contactPhone', 'contact_phone', 'customerPhone', 'customer_phone', 'phone', 'contactNumber', 'contact_number', 'mobile', 'mobileNumber', 'mobile_number') || '',
         brand: parseBrand(live),
         dealer: getF(live, 'dealer', 'sourceVendor', 'source_vendor') || '',
         status: getScheduleStatusLabel(getScheduleStatusValue(live)),
-        commit: getF(live, 'commitType', 'commitTerms', 'description'),
-        installer: getInstallerDisplay(live, branchEmployees, activeBranchId),
+        commit: getTicketCommitDisplay(live),
+        installer: parseNameSiteToken(installerRaw).label || installerRaw,
+        negotiator: getTicketNegotiatorName(live, branchEmployees) || '',
         update: getScheduleUpdateDisplay(live),
         payment: getSchedulePaymentDisplay(live, dateFilter, dateFilter ? getScheduleGhostKind(live, dateFilter) : null),
+<<<<<<<< HEAD:src/pages/Schedules.tsx
         driver: getF(live, 'driverName', 'driver_name') || getTicketDriverName(live) || '',
         service: getTicketVehicleDisplay(live) || '',
+========
+        driver: parseNameSiteToken(driverRaw).label || driverRaw,
+        service: vehicleTrip,
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
       }
     })
-  }, [visible, isMyTickets, branchEmployees, activeBranchId, tickets, dateFilter])
+  }, [visible, isMyTickets, branchEmployees, activeBranchId, tickets, dateFilter, vehicleTripLabels])
 
   const showcasePaymentByRowId = useMemo(() => {
     const map: Record<string, string> = {}
@@ -4516,6 +5453,7 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     return map
   }, [visible, tickets, dateFilter])
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   // ── Get display value for a column ────────────────────────────────────────
   function getCellDisplay(ticket: Ticket, colLabel: string): string {
     switch (colLabel) {
@@ -4541,6 +5479,36 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       case 'UPDATE': return getScheduleUpdateDisplay(ticket)
       default: return ''
     }
+========
+  // ─────────────────────────────────────────────────────────────
+  function getCellDisplay(ticket: Ticket, colLabel: string): string {
+    const raw = (() => {
+      switch (colLabel) {
+        case 'TICKET NO': return getTicketNumberDisplay(ticket)
+        case "CUSTOMER'S NAME": return getF(ticket, 'customerName', 'customer_name') || ticket.title
+        case 'DESTINATION': return resolveTicketDistrict(ticket)
+        case 'DISTRICT': return parseDistrict(ticket.location, ticket.district)
+        case 'CONTACT NO.': return getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
+        case 'BRAND': return parseBrand(ticket)
+        case 'DLR': return getF(ticket, 'dealer', 'sourceVendor', 'source_vendor') || ''
+        case 'STATUS': return getScheduleStatusLabel(getScheduleStatusValue(ticket))
+        case 'SCHEDULED DATE': return formatDateKeyLabel(getArchivedScheduleDate(ticket))
+        case 'INSTALLED DATE': return formatDateKeyLabel(getInstalledDateKey(ticket))
+        case 'FINAL DATE': return formatDateKeyLabel(getFinalDateKey(ticket))
+        case 'PAYMENT': return getSchedulePaymentDisplay(ticket, dateFilter, getScheduleGhostKind(ticket, dateFilter))
+        case 'MOP': return getPaymentMode(ticket)
+        case 'COMMIT': return getTicketCommitDisplay(ticket)
+        case 'INSTALLER': return getInstallerDisplay(ticket, branchEmployees, activeBranchId)
+        case 'NEGOTIATOR': return getTicketNegotiatorName(ticket, branchEmployees)
+        case 'NOTE': return ticket.note || ''
+        case 'SERVICE': return isMyTickets ? formatRelayTicketTypeShort(ticket) : getTicketDriverDisplay(ticket)
+        case 'VEHICLE': return isMyTickets ? '' : (vehicleTripLabels.get(ticket.id || '') || getTicketVehicleDisplay(ticket))
+        case 'UPDATE': return getScheduleUpdateDisplay(ticket)
+        default: return ''
+      }
+    })()
+    return sanitizeDisplayText(raw)
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
   }
 
   const discardCellEdit = () => {
@@ -4599,8 +5567,79 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     setStatusPicker({ ticket, mode, x: left, y: top })
   }, [])
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   const startCellEdit = (ticket: Ticket, colLabel: string) => {
     if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
+========
+  const openScheduleDetailsPopup = useCallback((
+    ticket: Ticket,
+    anchorEl?: HTMLElement | null,
+    ghostKind?: 'completed' | 'resched' | 'cancelled' | null,
+  ) => {
+    commitCellEditRef.current()
+    setExpandedCell(null)
+    setStatusPicker(null)
+
+    const popupW = 360
+    const popupH = 320
+    const el = anchorEl
+      || (document.querySelector(`[data-cell-key="${ticket.id}:STATUS"]`) as HTMLElement | null)
+    const rect = el?.getBoundingClientRect()
+    const left = rect
+      ? Math.min(Math.max(8, rect.left + rect.width / 2 - popupW / 2), window.innerWidth - popupW - 8)
+      : Math.max(8, (window.innerWidth - popupW) / 2)
+    const below = rect ? rect.bottom + 6 : 80
+    const above = rect ? rect.top - popupH - 6 : 80
+    const fitsBelow = below + Math.min(popupH, window.innerHeight * 0.75) <= window.innerHeight - 8
+    const top = fitsBelow
+      ? Math.min(below, window.innerHeight - 120)
+      : Math.max(8, above)
+
+    setScheduleDetailsPopup({ ticket, x: left, y: top, ghostKind })
+  }, [])
+
+  const closeFinalDatePicker = useCallback(() => {
+    setFinalDatePicker(null)
+    setFinalDateCalMonth(null)
+  }, [])
+
+  const openFinalDatePicker = useCallback((
+    ticket: Ticket,
+    anchorEl?: HTMLElement | null,
+  ) => {
+    commitCellEditRef.current()
+    setExpandedCell(null)
+
+    const preferredDate = getPreferredDateKey(ticket)
+    const existingFinal = getFinalDateKey(ticket)
+    const initDate = existingFinal || preferredDate || ''
+
+    const popupW = 288
+    const popupH = 400
+    const el = anchorEl
+      || (document.querySelector(`[data-cell-key="${ticket.id}:FINAL DATE"]`) as HTMLElement | null)
+    const rect = el?.getBoundingClientRect()
+    const left = rect
+      ? Math.min(Math.max(8, rect.left + rect.width / 2 - popupW / 2), window.innerWidth - popupW - 8)
+      : Math.max(8, (window.innerWidth - popupW) / 2)
+    const below = rect ? rect.bottom + 6 : 80
+    const above = rect ? rect.top - popupH - 6 : 80
+    const fitsBelow = below + Math.min(popupH, window.innerHeight * 0.75) <= window.innerHeight - 8
+    const top = fitsBelow
+      ? Math.min(below, window.innerHeight - 120)
+      : Math.max(8, above)
+
+    const calSeed = initDate ? new Date(`${initDate}T00:00:00`) : new Date()
+    setFinalDateCalMonth({ year: calSeed.getFullYear(), month: calSeed.getMonth() })
+    setFinalDatePicker({ ticket, x: left, y: top, value: initDate, preferredDate })
+  }, [])
+
+  const startCellEdit = (ticket: Ticket, colLabel: string, anchorEl?: HTMLElement | null, rowIndex?: number) => {
+    // Clicking straight from one open cell editor into another must save the first cell's
+    // draft rather than silently drop it — previously this only cleared the pending blur
+    // timer, which cancelled the SERVICE/VEHICLE (and other) cell's save entirely.
+    commitCellEdit()
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
     setExpandedCell(null)
     if (colLabel === 'STATUS') {
       openStatusPicker(ticket)
@@ -4616,11 +5655,103 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     const prevTicket = tickets.find(t => t.id === ticketId) || optimisticTicketsRef.current.get(ticketId)
     optimisticTicketsRef.current.set(ticketId, normalized)
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
     if (!isMyTickets) {
       const prevDate = prevTicket ? resolveTicketScheduleDateKey(prevTicket) : ''
       const nextDate = resolveTicketScheduleDateKey(normalized)
       if (nextDate && nextDate !== prevDate) {
         setDateFilter(nextDate)
+========
+    const prevDate = prevTicket ? resolveTicketScheduleDateKey(prevTicket) : ''
+    const nextDate = resolveTicketScheduleDateKey(normalized)
+
+    const patchCacheForDate = (dateKey: string | undefined, listUpdater: (list: Ticket[]) => Ticket[]) => {
+      if (!dateKey || isMyTickets) return
+      const cacheKey = schedulesCacheKey(user, globalBranchId, isCustomer, isAdmin, isMyTickets, dateKey)
+      const cached = readSchedulesTabCache(cacheKey)
+      const base = Array.isArray(cached?.tickets) ? (cached!.tickets as Ticket[]) : []
+      const nextList = normalizeRelayScheduleTicketList(listUpdater(base))
+      writeSchedulesTabCache(cacheKey, nextList, 'local')
+    }
+
+    // NB: intentionally NO auto-jump of the date filter here. Rescheduling / changing a schedule
+    // date must keep the user on the date they're viewing — the edited ticket "copies" in place
+    // (a muted ghost stays on the current date; the active copy is written into the new date's cache
+    // below via patchCacheForDate), rather than yanking the view to the new date. Jumping the tab was
+    // also what opened the stale-closure window that clobbered the old date's cached roster.
+
+    setTickets(prev => {
+      // Use the LIVE dateFilter, not the closure's — `prev` always reflects the current on-screen
+      // date, so a stale closure here would classify/cache rows against the wrong date (this is the
+      // exact race that clobbered the old date's cache after a reschedule auto-jumped the tab).
+      const liveDateFilter = dateFilterRef.current
+      const exists = prev.some(t => t.id === ticketId)
+      const prevOnDate = Boolean(
+        liveDateFilter
+        && prevTicket
+        && (
+          ticketMatchesDateKey(prevTicket, liveDateFilter)
+          || resolveTicketScheduleDateKey(prevTicket) === liveDateFilter
+          || isScheduleGhostOnDate(prevTicket, liveDateFilter)
+        ),
+      )
+      // Cancelled must remain a red ghost on the date it was cancelled from — never drop the row
+      // just because date fields briefly lag the status flip.
+      const cancelledStayOnDate = Boolean(
+        liveDateFilter
+        && isCancelledTicket(normalized)
+        && (isCancelledScheduleGhost(normalized, liveDateFilter) || prevOnDate),
+      )
+      const showOnCurrentFilter = !liveDateFilter
+        || ticketMatchesDateKey(normalized, liveDateFilter)
+        || isScheduleGhostOnDate(normalized, liveDateFilter)
+        || cancelledStayOnDate
+
+      let next: Ticket[]
+      if (showOnCurrentFilter) {
+        next = exists
+          ? prev.map(t => (t.id === ticketId ? normalized : t))
+          : [normalized, ...prev]
+      } else {
+        next = prev.filter(t => t.id !== ticketId)
+      }
+
+      if (!isMyTickets && liveDateFilter) {
+        writeSchedulesTabCache(schedulesCacheKeyForTab(liveDateFilter), next, 'local')
+      }
+      return next
+    })
+
+    if (!isMyTickets) {
+      if (prevDate && prevDate !== nextDate) {
+        // The old date must keep a ghost row (previousScheduleDates) rather than lose the ticket
+        // outright — otherwise a page reload while viewing the old date depends entirely on the
+        // backend also returning the ghost, and if that lags (or its previousScheduleDates OR-clause
+        // misses it), the row vanishes from the old date instead of showing muted.
+        const stillGhostOnPrevDate = isScheduleGhostOnDate(normalized, prevDate)
+          || (isCancelledTicket(normalized) && (
+            isCancelledScheduleGhost(normalized, prevDate) || prevDate === resolveTicketScheduleDateKey(prevTicket || normalized)
+          ))
+        patchCacheForDate(prevDate, list => {
+          const without = list.filter(t => t.id !== ticketId)
+          return stillGhostOnPrevDate ? [normalized, ...without] : without
+        })
+      }
+      // Cancelled tickets always stay on their schedule date cache (the date they were on when cancelled).
+      const cancelAnchorDate = isCancelledTicket(normalized)
+        ? (nextDate || prevDate || dateFilterRef.current || '')
+        : ''
+      if (cancelAnchorDate && isCancelledTicket(normalized)) {
+        patchCacheForDate(cancelAnchorDate, list => {
+          const without = list.filter(t => t.id !== ticketId)
+          return [normalized, ...without]
+        })
+      } else if (nextDate) {
+        patchCacheForDate(nextDate, list => {
+          const without = list.filter(t => t.id !== ticketId)
+          return [normalized, ...without]
+        })
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
       }
     }
 
@@ -4648,7 +5779,11 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
   }, [user, globalBranchId, isCustomer, isAdmin, isMyTickets, schedulesCacheKeyForTab])
 
   const flushTicketSave = useCallback(async (ticketId: string) => {
+<<<<<<<< HEAD:src/pages/Schedules.tsx
     // Never PATCH optimistic temp ids — edits stay queued until promoteTempTicketState.
+========
+    // ─────────────────────────────────────────────────────────────
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
     if (isTempTicketId(ticketId)) return
     if (activeSavesRef.current.has(ticketId)) return
     activeSavesRef.current.add(ticketId)
@@ -4723,8 +5858,34 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     const ticketId = ticket.id
     const existing = pendingSavesRef.current.get(ticketId)
     const baseTicket = optimisticTicketsRef.current.get(ticketId) || ticket
+    let patchBody = body
+    // Cancelling from Schedules must permanently anchor the row to this date so it stays as a
+    // red ghost after save/reload — never rely on a fleeting finalDate that sync might drop.
+    if (String(body.status || '').toUpperCase() === 'CANCELLED') {
+      const liveDate = (dateFilterRef.current || '').split('T')[0].split(' ')[0].trim()
+      const cancelDate = liveDate
+        || getFinalDateKey(baseTicket)
+        || getPreferredDateKey(baseTicket)
+        || resolveTicketScheduleDateKey(baseTicket)
+      if (cancelDate) {
+        const cancelBranch = resolveScopedBranchId(baseTicket.branchId || baseTicket.branch_id)
+        patchBody = {
+          ...body,
+          finalDate: cancelDate,
+          preferredDate: cancelDate,
+          ...(cancelBranch ? { branchId: cancelBranch } : {}),
+          acDetails: mergeAcMeta(baseTicket, {
+            ...(typeof body.acDetails === 'string' ? parseAcMeta({ acDetails: body.acDetails } as Ticket) : {}),
+            finalDate: cancelDate,
+            scheduledDate: cancelDate,
+            cancelledScheduleDate: cancelDate,
+            ...(cancelBranch ? { cancelledBranchId: cancelBranch } : {}),
+          }),
+        }
+      }
+    }
     const mergedBody = sanitizeTicketPatchBody(
-      existing ? mergePatchBodies(existing.body, body) : body,
+      existing ? mergePatchBodies(existing.body, patchBody) : patchBody,
     )
     const nextTicket = mergeTicketPatch(baseTicket, mergedBody)
     pendingSavesRef.current.set(ticketId, {
@@ -4733,11 +5894,186 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       afterSave: afterSave ?? existing?.afterSave,
     })
     applyTicketLocally(ticketId, nextTicket)
+<<<<<<<< HEAD:src/pages/Schedules.tsx
     // Temp rows are not on the server yet — flush after create promotes to a real id.
+========
+    // ─────────────────────────────────────────────────────────────
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
     if (!isTempTicketId(ticketId)) {
       void flushTicketSave(ticketId)
     }
   }, [applyTicketLocally, flushTicketSave])
+
+  /** Clear driver + vehicle on every active (non-ghost) schedule row for the current date. */
+  const clearAllDriversAndVehiclesForDate = useCallback(() => {
+    const dateKey = dateFilter || todayDateKey()
+    const targets = tickets.filter(t => {
+      const stat = (t.status || '').toUpperCase()
+      if (stat === 'CANCELLED') return false
+      if (!isFieldCategory(inferCategoryFromTicket(t))) return false
+      if (!ticketBelongsOnScheduleDate(t, dateKey)) return false
+      if (isScheduleGhostOnDate(t, dateKey)) return false
+      if (
+        activeBranchId
+        && activeBranchId !== 'ALL_BRANCHES'
+        && !ticketBelongsOnScheduleBranch(
+          t, activeBranchId, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+        )
+      ) {
+        return false
+      }
+      return Boolean(getTicketDriverDisplay(t) || getTicketVehicleDisplay(t))
+    })
+
+    if (targets.length === 0) {
+      showToast('No drivers or vehicles to clear on this date.')
+      return
+    }
+
+    const targetIds = new Set(targets.map(t => t.id))
+
+    setConfirmModal({
+      title: 'Clear all drivers & vehicles?',
+      message: `Remove driver and vehicle from all ${targets.length} ticket${targets.length === 1 ? '' : 's'} on ${dateKey}.`,
+      detail: 'Applies to every row on this schedule date (current branch). Installer assignments stay. This cannot be undone from here.',
+      variant: 'danger',
+      confirmText: 'Clear All',
+      onConfirm: () => {
+        setBulkClearSaving(true)
+
+        // Drop any in-flight per-ticket driver/vehicle patches so they can't undo the bulk clear
+        for (const id of targetIds) {
+          pendingSavesRef.current.delete(id)
+          optimisticTicketsRef.current.delete(id)
+        }
+
+        // Instant UI clear
+        setTickets(prev => {
+          const next = prev.map(t => {
+            if (!targetIds.has(t.id)) return t
+            const cleared = {
+              ...t,
+              driverName: undefined,
+              driver_name: undefined,
+              serviceVehicle: undefined,
+              service_vehicle: undefined,
+              acDetails: mergeAcMeta(t, {
+                driverName: '',
+                driver_name: '',
+                serviceVehicle: '',
+                service_vehicle: '',
+              }),
+            }
+            optimisticTicketsRef.current.set(t.id, cleared)
+            return cleared
+          })
+          writeSchedulesTabCache(schedulesCacheKeyForTab(), next, 'local')
+          return next
+        })
+
+        // Close modal immediately — persist in background
+        setBulkAssignOpen(false)
+        setBulkAssignInstaller('')
+        setBulkAssignDriver('')
+        setBulkAssignVehicle('')
+        showToast(`Clearing ${targets.length} ticket${targets.length !== 1 ? 's' : ''}…`)
+
+        void (async () => {
+          const tokenStr = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+          const headers = {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${tokenStr}`,
+          }
+
+          // Prod pool is often only 3 connections — fallback must be strictly sequential.
+          const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
+          const clearOne = async (t: Ticket) => {
+            const body = {
+              driverName: '',
+              serviceVehicle: '',
+              acDetails: mergeAcMeta(t, {
+                driverName: '',
+                driver_name: '',
+                serviceVehicle: '',
+                service_vehicle: '',
+              }),
+            }
+            const res = await fetch(`${API_BASE_URL}/tickets/${t.id}`, {
+              method: 'PATCH',
+              headers,
+              body: JSON.stringify(body),
+            })
+            if (!res.ok) throw new Error(await readApiError(res))
+          }
+
+          const clearSequential = async () => {
+            let failures = 0
+            for (const t of targets) {
+              if (String(t.id || '').startsWith('temp-') || String(t.id || '').startsWith('tmp-')) continue
+              try {
+                await clearOne(t)
+              } catch {
+                failures += 1
+                // Back off when pool is saturated
+                await sleep(150)
+              }
+              await sleep(40)
+            }
+            return failures
+          }
+
+          try {
+            let usedBulk = false
+            try {
+              const res = await fetch(`${API_BASE_URL}/tickets/bulk-clear-driver-vehicle`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                  scheduleDate: dateKey,
+                  branchId: activeBranchId && activeBranchId !== 'ALL_BRANCHES' ? activeBranchId : undefined,
+                  ticketIds: targets.map(t => t.id).filter(id => id && !id.startsWith('temp-') && !id.startsWith('tmp-')),
+                }),
+              })
+              if (res.ok) {
+                usedBulk = true
+                const data = await res.json().catch(() => ({}))
+                const count: number = data?.data?.updatedCount ?? targets.length
+                showToast(`Cleared drivers & vehicles on ${count} ticket${count !== 1 ? 's' : ''}`)
+              } else {
+                console.warn('[Schedules] bulk-clear failed, falling back to sequential PATCH', res.status)
+              }
+            } catch {
+              // fall through
+            }
+
+            if (!usedBulk) {
+              const failures = await clearSequential()
+              if (failures > 0) {
+                showToast(`Cleared locally · ${failures} still syncing — refresh if needed`)
+              } else {
+                showToast(`Cleared drivers & vehicles on ${targets.length} ticket${targets.length !== 1 ? 's' : ''}`)
+              }
+            }
+          } catch (err: unknown) {
+            // UI already cleared — don't block the user with a hard alert
+            console.error('[Schedules] clear persist failed', err)
+            showToast('Cleared in view · server sync lagged — refresh later if needed')
+          } finally {
+            setBulkClearSaving(false)
+          }
+        })()
+      },
+    })
+  }, [
+    tickets,
+    dateFilter,
+    activeBranchId,
+    user?.email,
+    user?.jobTitle,
+    showToast,
+    fetchTickets,
+    schedulesCacheKeyForTab,
+  ])
 
   const saveCellEdit = (
     ticket: Ticket,
@@ -4761,7 +6097,11 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       body.installationCharges = injectedPayment.amount
     }
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
     // Remarks always save in-cell — never open a payment popup.
+========
+    // ─────────────────────────────────────────────────────────────
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
     let finalBody: Record<string, unknown> = body
     const schedKey = resolveScheduleCompletionDateKey(ticket, dateFilter)
     const remarkText = colLabel === 'UPDATE'
@@ -4772,6 +6112,8 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     } else if (
       (body.status as string | undefined)?.toUpperCase() === 'COMPLETED'
       || (body.status as string | undefined)?.toUpperCase() === 'INSTALLED'
+      || (body.status as string | undefined)?.toUpperCase() === 'DONE_DISMANTLE'
+      || (body.status as string | undefined)?.toUpperCase() === 'DONE_SYSTEM_REPROCESS'
     ) {
       finalBody = enrichCompletePatchBody(body, ticket, schedKey)
     }
@@ -4779,8 +6121,9 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     cancelEdit()
     setStatusPicker(null)
 
-    // After marking DONE INSTALL, put the caret in REMARKS so the user types there.
-    const focusRemarksAfterStatus = colLabel === 'STATUS' && normalizedStatus === 'DONE_INSTALLED'
+    // After marking DONE INSTALL / DONE CLEANING / DONE DISMANTLE, put the caret in REMARKS.
+    const focusRemarksAfterStatus = colLabel === 'STATUS'
+      && (normalizedStatus === 'DONE_INSTALLED' || normalizedStatus === 'DONE_CLEANING' || normalizedStatus === 'DONE_DISMANTLE')
 
     const shouldArchive = shouldArchiveCompletedSchedule(ticket, finalBody)
       || (
@@ -4835,6 +6178,91 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
   }
   saveCellEditRef.current = (ticket, colLabel, value, injectedPayment) => { void saveCellEdit(ticket, colLabel, value, injectedPayment) }
 
+  // Writes a new trip order (1..N) for a vehicle group, skipping tickets whose PARSED position
+  // already matches — legacy formatting quirks (extra spaces, lowercase) otherwise look
+  // "different" every render and force a rewrite (and a save) of the whole group on every single
+  // move, which is what made this feel unreliable/slow.
+  const persistVehicleGroupOrder = useCallback((orderedGroup: Ticket[], baseName: string) => {
+    orderedGroup.forEach((t, i) => {
+      const existing = parseNameSiteToken(getTicketVehicleDisplay(t))
+      if (existing.name === baseName && existing.site === i + 1) return
+      const nextLabel = `${baseName} - ${i + 1}`
+      const body = buildCellPatchBody(t, 'VEHICLE', nextLabel, branchEmployees)
+      if (Object.keys(body).length > 0) queueTicketPatch(t, body)
+    })
+  }, [branchEmployees, queueTicketPatch])
+
+  // Click-and-drag reorder: commits directly from whichever row the drop actually landed on,
+  // recomputed fresh at drop time — not from the separately-tracked hover-preview state, which
+  // can only ever be as current as the last dragover event. Trusting that indirection was the
+  // likely source of drops that visually landed but silently failed to save.
+  const commitVehicleDrop = useCallback((targetTicket: Ticket) => {
+    if (!draggedVehicleTicketId || draggedVehicleTicketId === targetTicket.id) return
+    const draggedTicket = visible.find(t => t.id === draggedVehicleTicketId)
+      || tickets.find(t => t.id === draggedVehicleTicketId)
+    if (!draggedTicket) return
+    const parsed = parseNameSiteToken(getTicketVehicleDisplay(draggedTicket))
+    if (!parsed.name) return
+    const targetParsed = parseNameSiteToken(getTicketVehicleDisplay(targetTicket))
+    if (targetParsed.name !== parsed.name) return
+
+    const group = visible.filter(t => parseNameSiteToken(getTicketVehicleDisplay(t)).name === parsed.name)
+    const fromIndex = group.findIndex(t => t.id === draggedTicket.id)
+    const toIndex = group.findIndex(t => t.id === targetTicket.id)
+    if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return
+
+    const reordered = [...group]
+    const [moved] = reordered.splice(fromIndex, 1)
+    reordered.splice(toIndex, 0, moved)
+    persistVehicleGroupOrder(reordered, parsed.name)
+  }, [draggedVehicleTicketId, visible, tickets, persistVehicleGroupOrder])
+
+  // Keyboard reorder: with a VEHICLE cell selected (double-click), Up/Down swaps it with its
+  // immediate neighbor in the same vehicle group — same rule as drag-and-drop, never crosses into
+  // a different vehicle's rows.
+  const moveSelectedVehicleTrip = useCallback((direction: 'up' | 'down') => {
+    if (!selectedVehicleTicketId) return
+    const ticket = visible.find(t => t.id === selectedVehicleTicketId) || tickets.find(t => t.id === selectedVehicleTicketId)
+    if (!ticket) return
+    const parsed = parseNameSiteToken(getTicketVehicleDisplay(ticket))
+    if (!parsed.name) return
+    const group = visible.filter(t => parseNameSiteToken(getTicketVehicleDisplay(t)).name === parsed.name)
+    const currentIndex = group.findIndex(t => t.id === ticket.id)
+    if (currentIndex === -1) return
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+    if (targetIndex < 0 || targetIndex >= group.length) return
+
+    const reordered = [...group]
+    const [moved] = reordered.splice(currentIndex, 1)
+    reordered.splice(targetIndex, 0, moved)
+    persistVehicleGroupOrder(reordered, parsed.name)
+  }, [selectedVehicleTicketId, visible, tickets, persistVehicleGroupOrder])
+
+  useEffect(() => {
+    if (!selectedVehicleTicketId) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault()
+        moveSelectedVehicleTrip(e.key === 'ArrowUp' ? 'up' : 'down')
+      } else if (e.key === 'Escape') {
+        setSelectedVehicleTicketId(null)
+      }
+    }
+    // Any click outside the currently-selected VEHICLE cell deselects it.
+    const handleClickAway = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      const cell = target.closest('[data-cell-key]')
+      if (cell?.getAttribute('data-cell-key') === `${selectedVehicleTicketId}:VEHICLE`) return
+      setSelectedVehicleTicketId(null)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('click', handleClickAway)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('click', handleClickAway)
+    }
+  }, [selectedVehicleTicketId, moveSelectedVehicleTrip])
+
   const openReschedDialog = (ticket: Ticket) => {
     if (cellEditBlurTimer.current) clearTimeout(cellEditBlurTimer.current)
     cancelEdit()
@@ -4845,6 +6273,7 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     setReschedDialog({ ticket })
     setReschedToDate(initDate)
     setReschedPending(isReschedulePending(ticket))
+    setReschedRemarks('')
     const startKey = initDate || todayDateKey()
     const startDate = new Date(`${startKey}T00:00:00`)
     const todayDate = new Date(`${todayDateKey()}T00:00:00`)
@@ -4858,6 +6287,7 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     setReschedToDate('')
     setReschedPending(false)
     setReschedCalMonth(null)
+    setReschedRemarks('')
   }
 
   const commitInlineReschedule = async () => {
@@ -4867,10 +6297,16 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       alert('Pick a new date or mark as Pending if no slot is available yet.')
       return
     }
+    const cleanRemarks = reschedRemarks.trim()
+    if (!cleanRemarks) {
+      alert('Please enter a reason/remarks why this ticket is being rescheduled.')
+      return
+    }
 
     const body = buildReschedulePatchBody(ticket, {
       newDateKey: reschedPending ? null : reschedToDate,
       pending: reschedPending,
+      remarks: cleanRemarks,
     })
     if (Object.keys(body).length === 0) {
       alert('Could not build reschedule update.')
@@ -4881,7 +6317,43 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     queueTicketPatch(ticket, body)
   }
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   // ── Delete — remove row instantly, DELETE in background ───────────────────
+========
+  const openContinuationDialog = (ticket: Ticket) => {
+    commitCellEdit()
+    const existingDates = getContinuationDates(ticket)
+    setContinuationDialog({ ticket })
+    setContinuationSelectedDates(existingDates)
+
+    const todayKey = todayDateKey()
+    const startKey = existingDates[0] || todayKey
+    const startDate = new Date(`${startKey}T00:00:00`)
+    setContinuationCalMonth({ year: startDate.getFullYear(), month: startDate.getMonth() })
+  }
+
+  const closeContinuationDialog = () => {
+    setContinuationDialog(null)
+    setContinuationSelectedDates([])
+    setContinuationCalMonth(null)
+  }
+
+  const commitInlineContinuation = async () => {
+    if (!continuationDialog) return
+    const { ticket } = continuationDialog
+
+    const body: Record<string, unknown> = { status: 'CONTINUATION' }
+    const acUpdates: Record<string, unknown> = {
+      continuationDates: continuationSelectedDates
+    }
+    body.acDetails = mergeAcMeta(ticket, acUpdates)
+
+    closeContinuationDialog()
+    queueTicketPatch(ticket, body)
+  }
+
+  // ─────────────────────────────────────────────────────────────
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
   const handleDelete = (ticketId: string) => {
     const ticket = tickets.find(t => t.id === ticketId)
       || optimisticTicketsRef.current.get(ticketId)
@@ -4919,7 +6391,11 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     setEditModalOpen(false)
     setConfirmModal(null)
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
     // Temp rows are not on the server yet — local remove is enough.
+========
+    // ─────────────────────────────────────────────────────────────
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
     // If an in-flight Excel import later creates the real ticket, it will DELETE that id.
     if (isTempTicketId(ticketId)) {
       console.log('[Schedules] Removed unsaved ticket locally', { ticketId })
@@ -5030,8 +6506,19 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     )
   }
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   function renderInlineCellEditor(ticket: Ticket, colLabel: string, rowGhost?: boolean) {
     if (!editingCell || editingCell.ticketId !== ticket.id || editingCell.colLabel !== colLabel || rowGhost) return null
+========
+  function renderInlineCellEditor(ticket: Ticket, colLabel: string, rowIndex: number | undefined, rowGhost?: boolean) {
+    // Resched ghosts are the one ghost kind where remarks stay editable — a single shared
+    // remarksUpdate field, not per-date state, so editing it from the ghost row is safe.
+    const isReschedRemarksGhost = Boolean(rowGhost) && colLabel === 'UPDATE'
+      && getScheduleGhostKind(ticket, dateFilter) === 'resched'
+    if (!editingCell || editingCell.ticketId !== ticket.id || editingCell.colLabel !== colLabel
+      || (rowGhost && !isReschedRemarksGhost)) return null
+    if (rowIndex != null && editingCell.rowIndex !== rowIndex) return null
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
 
     const key = cellEditKey(ticket.id, colLabel)
     const isSaving = savingCellKey === key
@@ -5065,7 +6552,9 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       if (e.key === 'Escape') {
         e.preventDefault()
         discardCellEdit()
-      } else if (e.key === 'Enter' && !e.shiftKey && colLabel !== 'DESTINATION' && colLabel !== 'COMMIT') {
+      } else if (e.key === 'Enter' && !e.shiftKey) {
+        // Enter always saves inline edits (including COMMIT / DESTINATION / REMARKS textareas).
+        // Shift+Enter still inserts a newline in multiline fields.
         e.preventDefault()
         commit()
       }
@@ -5102,7 +6591,7 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
           disabled={isSaving}
           rows={3}
           value={editingCell.value}
-          onChange={e => syncDraftValue(e.target.value)}
+          onChange={e => syncDraftValue(colLabel === 'UPDATE' ? e.target.value.toUpperCase() : e.target.value)}
           onBlur={onBlur}
           onClick={e => e.stopPropagation()}
           onMouseDown={e => e.stopPropagation()}
@@ -5116,9 +6605,15 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
               try { el.setSelectionRange(len, len) } catch { /* ignore */ }
             }, 50)
           }}
+<<<<<<<< HEAD:src/pages/Schedules.tsx
           className="w-full resize-y rounded-md outline-none"
           style={{ ...inputStyle, minHeight: 52, maxHeight: 110 }}
           placeholder={colLabel === 'UPDATE' ? 'Type remarks…' : undefined}
+========
+          className={`w-full resize-y rounded-md outline-none ${colLabel === 'UPDATE' ? 'uppercase' : ''}`}
+          style={{ ...inputStyle, minHeight: 52, maxHeight: 110, textTransform: colLabel === 'UPDATE' ? 'uppercase' : undefined }}
+          placeholder={colLabel === 'UPDATE' ? 'Type remarks\u2026' : undefined}
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
         />,
         colLabel,
       )
@@ -5147,9 +6642,19 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     ticket: Ticket,
     colLabel: string,
     rowGhost?: boolean,
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   ) {
     if (!canEdit || rowGhost) return content
     const isEditing = editingCell?.ticketId === ticket.id && editingCell?.colLabel === colLabel
+========
+    rowIndex?: number,
+    allowGhostEdit?: boolean,
+  ) {
+    if (!canEdit || (rowGhost && !allowGhostEdit)) return content
+    const isEditing = editingCell?.ticketId === ticket.id
+      && editingCell?.colLabel === colLabel
+      && (rowIndex === undefined || editingCell.rowIndex === rowIndex)
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
     if (isEditing) return content
     const isHovered = hoveredCell?.ticketId === ticket.id && hoveredCell?.colLabel === colLabel
     if (!isHovered) return content
@@ -5188,16 +6693,23 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     }
   }
 
-  function renderCell(ticket: Ticket, col: (typeof columns)[0], idx?: number, rowGhost?: boolean, ghostKind?: 'completed' | 'resched' | null, cellExpanded = false) {
+  function renderCell(ticket: Ticket, col: (typeof columns)[0], idx?: number, rowGhost?: boolean, ghostKind?: 'completed' | 'resched' | 'cancelled' | null, cellExpanded = false) {
     const { label } = col
 
     const inlineEditor = renderInlineCellEditor(ticket, label, rowGhost)
     if (inlineEditor) return inlineEditor
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
     // ── DISPLAY STATE ──
+========
+    // ─────────────────────────────────────────────────────────────
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
     const val = getCellDisplay(ticket, label)
     const ghostMuted = rowGhost
-      ? (ghostKind === 'completed' ? (isLight ? '#166534' : '#86efac') : ghostKind === 'resched' ? (isLight ? '#a16207' : '#fbbf24') : textMuted)
+      ? (ghostKind === 'completed' ? (isLight ? '#166534' : '#86efac')
+        : ghostKind === 'resched' ? (isLight ? '#a16207' : '#fbbf24')
+          : ghostKind === 'cancelled' ? (isLight ? '#dc2626' : '#f87171')
+            : textMuted)
       : textPrimary
     const showExpanded = cellExpanded
     const truncStyle: React.CSSProperties = showExpanded
@@ -5268,9 +6780,40 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
               </span>
             )
           }
+<<<<<<<< HEAD:src/pages/Schedules.tsx
+========
+          if (outcome === 'DONE_BACKJOB') {
+            return (
+              <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#c2410c' : '#fdba74' }} title="Done Backjob">
+                DONE BACKJOB
+              </span>
+            )
+          }
+          if (outcome === 'DONE_SYSTEM_REPROCESS') {
+            return (
+              <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#4338ca' : '#a5b4fc' }} title="Done System Reprocess">
+                DONE SYSTEM REPROCESS
+              </span>
+            )
+          }
+          if (outcome === 'DONE_DISMANTLE') {
+            return (
+              <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#be123c' : '#fb7185' }} title="Done Dismantle">
+                DONE DISMANTLE
+              </span>
+            )
+          }
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
           return (
             <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#15803d' : '#86efac' }} title="Installed — see Archives tab">
               INSTALLED
+            </span>
+          )
+        }
+        if (ghostKind === 'cancelled') {
+          return (
+            <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#dc2626' : '#f87171' }} title="Cancelled">
+              CANCELLED
             </span>
           )
         }
@@ -5281,6 +6824,7 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
         )
       }
       const statusVal = getScheduleStatusValue(ticket)
+<<<<<<<< HEAD:src/pages/Schedules.tsx
       const badgeStyle = getScheduleStatusBadgeStyle(statusVal, isLight)
       const display = getScheduleStatusDisplay(ticket) || '—'
       const displayLabel = display === 'INSTALLATION' ? 'INSTALL' : (display === 'FOR APPROVAL' ? 'APPROVAL' : display)
@@ -5292,11 +6836,43 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
         >
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayLabel}</span>
           {canEdit && <ChevronDown className="w-2.5 h-2.5 shrink-0 opacity-70" />}
+========
+      const statusColor = getScheduleStatusBadgeStyle(statusVal, isLight).color
+      const display = getScheduleStatusDisplay(ticket) || EMPTY_CELL
+      let displayLabel = display === 'INSTALLATION' ? 'INSTALL' : ((display === 'FOR APPROVAL' || display === 'FOR QUOTATION') ? 'QUOTATION' : display)
+      if (display === 'CONTINUATION') {
+        const nextDate = getNextContinuationDate(ticket, dateFilter || todayDateKey())
+        if (nextDate) {
+          const formattedDate = formatSimpleDateShort(nextDate)
+          displayLabel = `CONT · ${formattedDate}`
+        } else {
+          displayLabel = 'CONT'
+        }
+      }
+      const showsDetails = statusShowsScheduleDetails(statusVal)
+      const statusTitle = showsDetails
+        ? `${display} ${EMPTY_CELL} click to view remarks & payment`
+        : (canEdit ? `${display} ${EMPTY_CELL} click to change` : display)
+      return (
+        <span
+          style={{
+            ...truncStyle,
+            fontWeight: 700,
+            color: statusColor,
+            cursor: 'pointer',
+            textTransform: 'uppercase',
+            letterSpacing: '0.02em',
+          }}
+          title={statusTitle}
+        >
+          {displayLabel}
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
         </span>
       )
     }
 
     if (label === 'TICKET NO') {
+<<<<<<<< HEAD:src/pages/Schedules.tsx
       const prefix = idx !== undefined ? `${idx + 1}. ` : ''
       const displayVal = val ? `${prefix}${val}` : `${prefix}—`
       return withEditPencil(
@@ -5304,6 +6880,28 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
           {displayVal}
         </span>,
         ticket, label, rowGhost,
+========
+      const rawVal = val || EMPTY_CELL
+      const isRowSaving = savingTicketIds.has(ticket.id)
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', width: '100%', minWidth: 0 }} title={rawVal}>
+          {idx !== undefined && (
+            <span style={{ color: isLight ? '#94a3b8' : '#64748b', marginRight: 6, flexShrink: 0, fontWeight: 600, fontSize: '0.7rem' }}>
+              {idx + 1}.
+            </span>
+          )}
+          <span style={{ ...truncStyle, fontWeight: 900, letterSpacing: '0.05em', color: textPrimary }}>
+            {rawVal}
+          </span>
+          {isRowSaving && (
+            <Loader2
+              className="w-3 h-3 shrink-0 animate-spin"
+              style={{ color: green, marginLeft: 4 }}
+              aria-label="Saving"
+            />
+          )}
+        </div>
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
       )
     }
 
@@ -5343,11 +6941,112 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     }
 
     if (label === 'SERVICE') {
+<<<<<<<< HEAD:src/pages/Schedules.tsx
+========
+      // Driver name only — val is already getTicketDriverDisplay's clean driverName-only read
+      // (no vehicle text ever leaks in here, no re-parsing needed). Strip any legacy "- N"
+      // suffix some older tickets still carry — trip numbering now lives on VEHICLE only.
+      // Use .label (not .name) so "MANNY / ROMAR - 2" keeps both names.
+      const driverName = parseNameSiteToken(val).label || val
+      if (!driverName && canEdit && !isMyTickets && !rowGhost) {
+        return (
+          <button
+            type="button"
+            onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
+            onClick={e => {
+              e.stopPropagation()
+              const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
+              startCellEdit(ticket, label, cell, rowIndex)
+            }}
+            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-all hover:opacity-80"
+            style={{
+              color: isLight ? '#16a34a' : '#86efac',
+              backgroundColor: isLight ? 'rgba(22,163,74,0.08)' : 'rgba(148,163,184,0.08)',
+              border: `1px dashed ${isLight ? 'rgba(22,163,74,0.35)' : 'rgba(148,163,184,0.28)'}`,
+            }}
+          >
+            + Add
+          </button>
+        )
+      }
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
       return withEditPencil(
         <span style={{ ...truncStyle, fontWeight: 500 }} title={val}>
           {val || '—'}
         </span>,
+<<<<<<<< HEAD:src/pages/Schedules.tsx
         ticket, label, rowGhost,
+========
+        ticket, label, rowGhost, rowIndex,
+      )
+    }
+
+    if (label === 'VEHICLE' && !isMyTickets) {
+      // Prefer auto trip label ("STRADA - 2") so the red number always matches table ordering.
+      const vehicleCode = vehicleTripLabels.get(ticket.id || '') || getTicketVehicleDisplay(ticket) || val
+      if (!vehicleCode && canEdit && !rowGhost) {
+        return (
+          <button
+            type="button"
+            onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
+            onClick={e => {
+              e.stopPropagation()
+              const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
+              startCellEdit(ticket, label, cell, rowIndex)
+            }}
+            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-all hover:opacity-80"
+            style={{
+              color: isLight ? '#2563eb' : '#93c5fd',
+              backgroundColor: isLight ? 'rgba(37,99,235,0.08)' : 'rgba(148,163,184,0.08)',
+              border: `1px dashed ${isLight ? 'rgba(37,99,235,0.35)' : 'rgba(148,163,184,0.28)'}`,
+            }}
+          >
+            + Add
+          </button>
+        )
+      }
+      const canDragVehicle = canEdit && !rowGhost && Boolean(vehicleCode)
+      // "MIRAGE - 2" splits into a plain name and a red trip number that live-updates as the
+      // ticket's position in its vehicle group changes (drag-and-drop) — never manually typed.
+      const parsedVehicle = parseNameSiteToken(vehicleCode)
+      // .label keeps full crew/vehicle text and strips only the "- N" trip suffix
+      const vehicleBaseName = parsedVehicle.label || vehicleCode
+      const vehicleTripNumber = parsedVehicle.site === Number.MAX_SAFE_INTEGER ? '' : String(parsedVehicle.site)
+      if (!vehicleCode) {
+        return (
+          <span
+            className="block w-full text-center font-bold tracking-wide uppercase leading-tight rounded"
+            style={{ color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }}
+          >
+            {EMPTY_CELL}
+          </span>
+        )
+      }
+      return (
+        <VehicleTripLabel
+          name={vehicleBaseName}
+          tripNumber={vehicleTripNumber}
+          nameColor={ghostMuted}
+          tripColor={isLight ? '#DC2626' : '#F87171'}
+          opacity={rowGhost ? 0.72 : 1}
+          title={vehicleCode}
+          canDrag={canDragVehicle}
+          onDragStart={e => {
+            e.stopPropagation()
+            e.dataTransfer.effectAllowed = 'move'
+            // No visible drag ghost — a live table row rendered as a drag image comes out garbled
+            // (overlapping/duplicated text). The row stays exactly where it is horizontally AND
+            // vertically; the slide animation on the other rows is what shows the move happening.
+            if (dragGhostImgRef.current) e.dataTransfer.setDragImage(dragGhostImgRef.current, 0, 0)
+            setDraggedVehicleTicketId(ticket.id)
+          }}
+          onDragEnd={e => {
+            e.stopPropagation()
+            setDraggedVehicleTicketId(null)
+            setVehicleDropTargetId(null)
+          }}
+        />
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
       )
     }
 
@@ -5375,14 +7074,46 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     }
 
     if (label === 'UPDATE') {
+<<<<<<<< HEAD:src/pages/Schedules.tsx
+========
+      const remarksText = rowGhost
+        ? formatGhostRemarks(ticket, ghostKind ?? null, dateFilter)
+        : getScheduleUpdateDisplay(ticket)
+      if (cellExpanded) {
+        const isCompletedGhost = ghostKind === 'completed' || isCompletedGhostOnDate(ticket, dateFilter)
+        const ghostRemarkColor = isCompletedGhost
+          ? (isLight ? '#15803d' : '#86efac')
+          : ghostKind === 'cancelled' ? (isLight ? '#dc2626' : '#f87171') : (isLight ? '#a16207' : '#fbbf24')
+        return (
+          <>
+            <div className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: textMuted }}>Remarks</div>
+            <div
+              className="whitespace-normal break-words leading-relaxed"
+              style={{
+                color: remarksText
+                  ? (rowGhost ? ghostRemarkColor : textGreen)
+                  : textMuted,
+                fontWeight: remarksText ? 600 : 400,
+                fontStyle: rowGhost ? 'italic' : undefined,
+              }}
+            >
+              {remarksText || EMPTY_CELL}
+            </div>
+          </>
+        )
+      }
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
       if (rowGhost) {
         const ghostRemarks = formatGhostRemarks(ticket, ghostKind ?? null, dateFilter)
         const isCompletedGhost = ghostKind === 'completed' || isCompletedGhostOnDate(ticket, dateFilter)
-        return (
+        const ghostRemarkColor = isCompletedGhost
+          ? (isLight ? '#15803d' : '#86efac')
+          : ghostKind === 'cancelled' ? (isLight ? '#dc2626' : '#f87171') : (isLight ? '#a16207' : '#fbbf24')
+        const ghostSpan = (
           <span
             style={{
               ...truncStyle,
-              color: isCompletedGhost ? (isLight ? '#15803d' : '#86efac') : (isLight ? '#a16207' : '#fbbf24'),
+              color: ghostRemarkColor,
               fontWeight: 600,
               fontStyle: 'italic',
             }}
@@ -5391,9 +7122,16 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
             {ghostRemarks || '—'}
           </span>
         )
+        // Resched ghosts alone stay editable — the old date row is still a legitimate place to
+        // leave a remark (e.g. why it moved), and remarksUpdate is one shared field, not
+        // per-date, so there's no per-ghost state to keep in sync.
+        if (ghostKind === 'resched') {
+          return withEditPencil(ghostSpan, ticket, label, rowGhost, rowIndex, true)
+        }
+        return ghostSpan
       }
       return withEditPencil(
-        <span style={{ ...truncStyle, color: val ? green : textMuted, fontWeight: val ? 600 : 400 }}
+        <span style={{ ...truncStyle, color: val ? textGreen : textMuted, fontWeight: val ? 600 : 400 }}
           title={val}>
           {val || ''}
         </span>,
@@ -5405,8 +7143,52 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       const combined = formatCombinedPayment(ticket)
       const mode = getPaymentMode(ticket).trim().toUpperCase()
       const amountStr = formatPaymentAmount(ticket)
+<<<<<<<< HEAD:src/pages/Schedules.tsx
       if (!combined) {
         return <span style={{ ...truncStyle, color: textMuted }}>—</span>
+========
+      const isHybrid = mode === 'HYBRID'
+      const breakdown = isHybrid ? getPaymentBreakdown(ticket) : []
+      const breakdownStr = formatPaymentBreakdownText(breakdown)
+      if (cellExpanded) {
+        return (
+          <>
+            <div className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: textMuted }}>Payment</div>
+            {!combined ? (
+              <div style={{ color: textMuted }}>{EMPTY_CELL}</div>
+            ) : mode === 'FREE' || mode === 'FREE INSTALL' ? (
+              <div style={{ fontWeight: 700, color: isLight ? '#047857' : '#6ee7b7' }}>FREE</div>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                {mode ? (
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Mode </span>
+                    <span style={{ fontWeight: 600, color: textPrimary }}>{mode}</span>
+                  </div>
+                ) : null}
+                {amountStr ? (
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Amount </span>
+                    <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: textPrimary }}>{formatPesoPrefix(amountStr)}</span>
+                  </div>
+                ) : null}
+                {isHybrid && breakdown.length ? (
+                  <div className="flex flex-col gap-0.5">
+                    {breakdown.map((entry, i) => (
+                      <div key={`${entry.mode}-${i}`} className="text-[10.5px]" style={{ color: textMuted }}>
+                        {entry.mode} <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: textPrimary }}>{Math.round(entry.amount).toLocaleString('en-PH')}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </>
+        )
+      }
+      if (!combined || combined === '0') {
+        return <span style={{ ...truncStyle, fontWeight: 700, color: textMuted }} title="0">0</span>
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
       }
       if (mode === 'FREE' || mode === 'FREE INSTALL') {
         return (
@@ -5431,9 +7213,79 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     }
 
     if (label === "CUSTOMER'S NAME") {
+      const phoneNum = getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
+      const formattedPhone = phoneNum ? fmtPhone(phoneNum) || phoneNum : ''
+      if (cellExpanded) {
+        return (
+          <>
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <div className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Contact Number</div>
+              {phoneNum && (
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation()
+                    void copyTextToClipboard(phoneNum)
+                  }}
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-slate-500/10"
+                  style={{ color: textMuted }}
+                  title="Copy phone number"
+                  aria-label="Copy phone number"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <div
+              className="whitespace-normal break-words text-left normal-case font-semibold leading-relaxed"
+              style={{ color: textPrimary }}
+            >
+              {formattedPhone || 'No contact number available'}
+            </div>
+          </>
+        )
+      }
       return withEditPencil(
+<<<<<<<< HEAD:src/pages/Schedules.tsx
         <span style={{ ...truncStyle, fontWeight: 600 }} title={val}>{val}</span>,
         ticket, label, rowGhost,
+========
+        <span style={{ ...truncStyle, fontWeight: 600 }} title={val}>
+          {val}
+        </span>,
+        ticket, label, rowGhost, rowIndex,
+      )
+    }
+
+    if (label === 'COMMIT') {
+      const commitVal = (val || '').trim()
+      if (!commitVal && canEdit && !isMyTickets && !rowGhost) {
+        return (
+          <button
+            type="button"
+            onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
+            onClick={e => {
+              e.stopPropagation()
+              const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
+              startCellEdit(ticket, label, cell, rowIndex)
+            }}
+            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-all hover:opacity-80"
+            style={{
+              color: isLight ? '#16a34a' : '#86efac',
+              backgroundColor: isLight ? 'rgba(22,163,74,0.08)' : 'rgba(148,163,184,0.08)',
+              border: `1px dashed ${isLight ? 'rgba(22,163,74,0.35)' : 'rgba(148,163,184,0.28)'}`,
+            }}
+          >
+            + Add
+          </button>
+        )
+      }
+      return withEditPencil(
+        <span style={{ ...truncStyle, fontWeight: 600 }} title={commitVal || undefined}>
+          {commitVal || EMPTY_CELL}
+        </span>,
+        ticket, label, rowGhost, rowIndex,
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
       )
     }
 
@@ -5459,6 +7311,30 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       const isNewInstallerGroup = idx != null && idx > 0 && curToken.name && prevToken.name && curToken.name !== prevToken.name
 
       if (isEmpty) {
+<<<<<<<< HEAD:src/pages/Schedules.tsx
+========
+        if (canEdit && !isMyTickets && !rowGhost) {
+          return (
+            <button
+              type="button"
+              onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
+              onClick={e => {
+                e.stopPropagation()
+                const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
+                startCellEdit(ticket, label, cell, rowIndex)
+              }}
+              className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-all hover:opacity-80"
+              style={{
+                color: isLight ? '#16a34a' : '#86efac',
+                backgroundColor: isLight ? 'rgba(22,163,74,0.08)' : 'rgba(148,163,184,0.08)',
+                border: `1px dashed ${isLight ? 'rgba(22,163,74,0.35)' : 'rgba(148,163,184,0.28)'}`,
+              }}
+            >
+              + Add
+            </button>
+          )
+        }
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
         return withEditPencil(
           <div
             className="w-full flex items-center justify-center rounded px-2 py-0.5 font-black text-[9px] border"
@@ -5474,6 +7350,7 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
         )
       }
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
       // Build trip suffix: 'JHUMAR - 1' for first site, 'JHUMAR - 2' for second
       const tripNum = ticket.tripNumber ?? ticket.trip_number ?? 1
       const hasTripSuffix = tripNum > 0
@@ -5487,6 +7364,10 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       const prevDriver = prevTicket ? (prevTicket.driverName || prevTicket.driver_name || '').trim() : ''
       const isNewDriverGroup = !isMyTickets && idx != null && idx > 0 && curDriver && prevDriver !== curDriver
 
+========
+      // Use .label (strips "- N" trip suffix) not .name — .name also chops "MANNY / ROMAR" to "MANNY".
+      const displayInstaller = curToken.label || rawInstaller
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
       return withEditPencil(
         <span
           style={{
@@ -5520,7 +7401,11 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
     )
   }
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
   // ── Render ────────────────────────────────────────────────────────────────
+========
+  // ─────────────────────────────────────────────────────────────
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
   return (
     <>
     <div className="flex flex-col flex-1 w-full min-h-0 h-full" onClick={() => {
@@ -5561,45 +7446,136 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
         onChange={handleScanFilePicked}
       />
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
       {/* ── Portal: Toolbar into header slot (matches origin/main) ── */}
       {!isMyTickets && ReactDOM.createPortal(
         <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
 
           {/* Left: Date chips & search */}
           <div className="flex flex-col md:flex-row md:items-center gap-3 flex-1 min-w-0">
+========
+      {/* ── Portal: My Tickets toolbar (Active Branch + negotiator filter) ── */}
+      {isMyTickets && ReactDOM.createPortal(
+        <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-col md:flex-row md:items-center gap-3">
+          <div className="flex items-center gap-2.5 w-full md:w-[240px] lg:w-[320px] h-9 md:h-11 px-3 md:px-4 rounded-xl md:rounded-2xl border transition-all shrink-0"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            <Search className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: textMuted }} />
+            <input
+              type="text"
+              placeholder="Search names, phone…"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="bg-transparent outline-none text-[12px] md:text-sm flex-1 min-w-0"
+              style={{ color: textPrimary }}
+              onClick={e => e.stopPropagation()}
+            />
+            {searchQuery && (
+              <button type="button" onClick={e => { e.stopPropagation(); setSearchQuery('') }}
+                className="shrink-0 p-1 md:p-1.5 rounded-full hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }}>
+                <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
+              </button>
+            )}
+          </div>
+
+          {isAdmin && (
+            <div className="flex items-center gap-2 min-w-0 flex-1 md:flex-none">
+              <label className="text-[10px] md:text-[11px] font-black uppercase tracking-wider shrink-0" style={{ color: textMuted }}>
+                Negotiator
+              </label>
+              <select
+                value={myTicketsNegotiatorFilter}
+                onChange={e => setMyTicketsNegotiatorFilter(e.target.value)}
+                className="h-9 md:h-11 px-3 rounded-xl md:rounded-2xl border text-[12px] md:text-sm font-semibold min-w-0 flex-1 md:w-[260px] outline-none"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                title={activeBranchLabel ? `Negotiators for ${activeBranchLabel}` : 'Filter by negotiator'}
+              >
+                <option value="">All negotiators{activeBranchLabel ? ` · ${activeBranchLabel}` : ''}</option>
+                {myTicketsNegotiatorOptions.map(emp => (
+                  <option key={emp.id} value={emp.id}>{formatNegotiatorLabel(emp)}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>,
+        document.getElementById('header-toolbar-slot') ?? document.body,
+      )}
+
+      {/* Portal: Toolbar into header slot */}
+      {!isMyTickets && activeTab !== 'overview' && ReactDOM.createPortal(
+        <div className="w-full min-w-0 max-w-full px-3 md:px-4 pt-2 pb-2.5 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-2 md:gap-3 items-center">
+
+          {/* Left: date chips (scroll) + search — can shrink */}
+          <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-2.5 min-w-0 overflow-hidden">
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
             {activeTab === 'schedules' && (
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
-                {weeklyTabs.map(tab => {
-                  const isActive = dateFilter === tab.key
-                  return (
-                    <button
-                      type="button"
-                      key={tab.key}
-                      onClick={() => handleDateFilterChange(tab.key)}
-                      className="h-8 md:h-10 px-3 md:px-5 rounded-full text-[11px] md:text-[13px] font-semibold border whitespace-nowrap shrink-0 transition-all active:scale-95"
+              <>
+                {/* Mobile: Date picker + Search (in between) + Filters button */}
+                <div className="md:hidden flex items-center gap-2 w-full min-w-0 py-0.5">
+                  {/* Mobile Date picker button — uses native dynamic OS date picker for iOS & Android */}
+                  <div className="relative shrink-0 flex items-center">
+                    <div
+                      className="flex items-center gap-1.5 h-9 px-2.5 rounded-full border transition-transform pointer-events-none"
                       style={{
+<<<<<<<< HEAD:src/pages/Schedules.tsx
                         backgroundColor: isActive ? green : inputBg,
                         borderColor: isActive ? green : inputBorder,
                         color: isActive ? '#ffffff' : textMuted,
                         boxShadow: isActive ? '0 2px 8px rgba(16,185,129,0.35)' : 'none',
+========
+                        backgroundColor: inputBg,
+                        borderColor: green,
+                        color: textPrimary,
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
                       }}
                     >
-                      {tab.dayName} {tab.dateLabel}
-                    </button>
-                  )
-                })}
+                      <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: green }} strokeWidth={2.2} />
+                      <span className="text-[11px] font-semibold whitespace-nowrap">
+                        {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </span>
+                    </div>
+                    <input
+                      type="date"
+                      value={dateFilter}
+                      onChange={e => handleDateFilterChange(e.target.value)}
+                      className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer"
+                      aria-label="Pick schedule date"
+                    />
+                  </div>
 
-                {isCustomSelected && (
-                  <button
-                    type="button"
-                    onClick={() => dateFilterInputRef.current?.showPicker?.()}
-                    className="h-8 md:h-10 px-3 md:px-5 rounded-full text-[11px] md:text-[13px] font-semibold border whitespace-nowrap shrink-0 active:scale-95"
-                    style={{ backgroundColor: green, borderColor: green, color: '#ffffff', boxShadow: '0 2px 8px rgba(16,185,129,0.35)' }}
+                  {/* Search field — in between Custom Date and Filters */}
+                  <div
+                    className="flex items-center gap-1.5 flex-1 min-w-0 h-9 px-3 rounded-full border"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder }}
                   >
-                    {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
-                  </button>
-                )}
+                    <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+                    <input
+                      type="search"
+                      inputMode="search"
+                      placeholder="Search…"
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      className="bg-transparent outline-none text-[11.5px] flex-1 min-w-0 font-medium"
+                      style={{ color: textPrimary }}
+                      onClick={e => e.stopPropagation()}
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); setSearchQuery('') }}
+                        className="shrink-0 p-0.5 rounded-full"
+                        style={{ color: textMuted }}
+                        aria-label="Clear search"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
                 <button
                   type="button"
                   onClick={() => dateFilterInputRef.current?.showPicker?.()}
@@ -5609,31 +7585,132 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
                 >
                   <CalendarDays className="w-4 h-4" style={{ color: green }} />
                 </button>
+========
+                  {/* Filters button */}
+                  {!isMyTickets && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setMonthFilterModalOpen(true) }}
+                      className="flex items-center gap-1.5 h-9 px-3 rounded-full text-[11.5px] font-bold shrink-0 transition-all active:scale-95 border shadow-sm"
+                      style={{
+                        backgroundColor: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? green : inputBg,
+                        borderColor: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? green : inputBorder,
+                        color: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? '#ffffff' : textPrimary,
+                      }}
+                      title="Filter by month, negotiator, or status"
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" style={{ color: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? '#ffffff' : green }} strokeWidth={2.2} />
+                      <span>Filters</span>
+                    </button>
+                  )}
+                </div>
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
 
-                <input
-                  ref={dateFilterInputRef}
-                  type="date"
-                  value={dateFilter}
-                  onChange={e => handleDateFilterChange(e.target.value)}
-                  tabIndex={-1}
-                  className="absolute opacity-0 pointer-events-none w-0 h-0"
-                  aria-label="Ticket date filter"
-                />
-              </div>
+                {/* Desktop: week chips + custom date (scrolls when tight) */}
+                <div className="hidden md:flex items-center gap-1.5 overflow-x-auto no-scrollbar min-w-0 flex-1">
+                  {weeklyTabs.map(tab => {
+                    const isActive = dateFilter === tab.key
+                    return (
+                      <button
+                        type="button"
+                        key={tab.key}
+                        onClick={() => handleDateFilterChange(tab.key)}
+                        className="h-10 px-4 lg:px-5 rounded-full text-[12px] lg:text-[13px] font-semibold border whitespace-nowrap shrink-0 transition-all active:scale-95"
+                        style={{
+                          backgroundColor: isActive ? green : inputBg,
+                          borderColor: isActive ? green : inputBorder,
+                          color: isActive ? '#ffffff' : textMuted,
+                          boxShadow: isActive ? `0 2px 8px rgba(16,185,129,0.35)` : 'none',
+                        }}
+                      >
+                        {tab.dayName} {tab.dateLabel}
+                      </button>
+                    )
+                  })}
+
+                  {/* Custom Date Picker Trigger */}
+                  <div className="relative shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const now = dateFilter ? new Date(dateFilter + 'T00:00:00') : new Date()
+                        setCustomDateCalMonth({ year: now.getFullYear(), month: now.getMonth() })
+                        setCustomDatePickerOpen(o => !o)
+                      }}
+                      className="relative flex items-center gap-2 h-10 min-w-[10.5rem] px-3 lg:px-4 rounded-full border shrink-0 cursor-pointer transition-all hover:opacity-90 active:scale-[0.98]"
+                      style={{
+                        backgroundColor: isCustomSelected ? green : inputBg,
+                        borderColor: isCustomSelected ? green : inputBorder,
+                        color: isCustomSelected ? '#ffffff' : textPrimary,
+                        boxShadow: isCustomSelected ? '0 2px 8px rgba(16,185,129,0.35)' : 'none',
+                      }}
+                      title="Pick a custom schedule date"
+                    >
+                      <CalendarDays
+                        className="w-[18px] h-[18px] shrink-0"
+                        style={{ color: isCustomSelected ? '#ffffff' : green }}
+                        strokeWidth={2.2}
+                      />
+                      <span className="text-[12px] lg:text-[13px] font-semibold whitespace-nowrap truncate flex-1 min-w-0 text-left">
+                        {isCustomSelected
+                          ? new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric',
+                          })
+                          : 'Custom date'}
+                      </span>
+                      <ChevronDown
+                        className="w-4 h-4 shrink-0 opacity-70"
+                        style={{ color: isCustomSelected ? '#ffffff' : textMuted }}
+                      />
+                    </button>
+                  </div>
+                  {/* Filters button — next to Custom date */}
+                  {!isMyTickets && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setMonthFilterModalOpen(true) }}
+                      className="flex items-center gap-1.5 h-10 px-2.5 xl:px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-all hover:opacity-90 active:scale-95"
+                      style={{
+                        backgroundColor: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? green : inputBg,
+                        border: `1px solid ${(monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? green : inputBorder}`,
+                        color: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? '#ffffff' : textPrimary,
+                      }}
+                      title="Whole-month view for this branch, filterable by negotiator"
+                    >
+                      <SlidersHorizontal className="w-4 h-4 shrink-0" style={{ color: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? '#ffffff' : green }} strokeWidth={2.1} />
+                      <span className="hidden xl:inline">{monthViewActive ? `Month: ${formatMonthFilterLabel(monthFilterMonth)}` : 'Filters'}</span>
+                    </button>
+                  )}
+                </div>
+              </>
             )}
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
             {activeTab === 'schedules' && (
               <div
                 className="flex items-center gap-2.5 w-full md:w-[240px] lg:w-[320px] h-9 md:h-11 px-3 md:px-4 rounded-xl md:rounded-2xl border transition-all shrink-0"
                 style={{ backgroundColor: inputBg, borderColor: inputBorder }}
               >
                 <Search className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" style={{ color: textMuted }} />
+========
+            {/* Search — desktop */}
+            {activeTab === 'schedules' && (
+              <div
+                className="hidden md:flex items-center gap-2 w-[140px] lg:w-[180px] xl:w-[240px] h-10 px-3 rounded-2xl border transition-all shrink-0"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+              >
+                <Search className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
                 <input
-                  type="text"
-                  placeholder="Search names, phone…"
+                  type="search"
+                  inputMode="search"
+                  placeholder="Customer, installer, ticket no, phone…"
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  className="bg-transparent outline-none text-[12px] md:text-sm flex-1 min-w-0"
+                  className="bg-transparent outline-none text-sm flex-1 min-w-0 placeholder:font-medium"
                   style={{ color: textPrimary }}
                   onClick={e => e.stopPropagation()}
                 />
@@ -5641,16 +7718,25 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
                   <button
                     type="button"
                     onClick={e => { e.stopPropagation(); setSearchQuery('') }}
+<<<<<<<< HEAD:src/pages/Schedules.tsx
                     className="shrink-0 p-1 md:p-1.5 rounded-full hover:bg-slate-500/10 transition-colors"
                     style={{ color: textMuted }}
                   >
                     <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
+========
+                    className="shrink-0 p-1 rounded-full hover:bg-slate-500/10 transition-colors"
+                    style={{ color: textMuted }}
+                    aria-label="Clear search"
+                  >
+                    <X className="w-3.5 h-3.5" />
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
                   </button>
                 )}
               </div>
             )}
           </div>
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
           {/* Assign Drivers */}
           {activeTab === 'schedules' && canEdit && !isMyTickets && (
             <button
@@ -5674,13 +7760,38 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
           {/* Showcase */}
           {activeTab === 'schedules' && !isMyTickets && (
             <div className="flex items-center gap-1.5 shrink-0 relative justify-end hidden md:flex">
+========
+          {/* Right actions — always pinned in view */}
+          <div className="hidden md:flex items-center gap-1.5 shrink-0 justify-self-end">
+
+
+            {activeTab === 'schedules' && canEdit && !isMyTickets && (
+              <button
+                type="button"
+                id="bulk-assign-driver-btn"
+                onClick={(e) => { e.stopPropagation(); setBulkAssignOpen(true) }}
+                className="flex items-center gap-1.5 h-10 px-2.5 xl:px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-all hover:opacity-90 active:scale-95"
+                style={{
+                  backgroundColor: inputBg,
+                  border: `1px solid ${inputBorder}`,
+                  color: textPrimary,
+                }}
+                title="Assign driver and vehicle to an installer's tickets"
+              >
+                <UsersRound className="w-4 h-4 shrink-0" style={{ color: green }} strokeWidth={2.1} />
+                <span className="hidden xl:inline">Assign Drivers</span>
+              </button>
+            )}
+
+            {activeTab === 'schedules' && !isMyTickets && (
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation()
                   setShowcaseOpen(true)
                 }}
-                className="flex items-center gap-1.5 md:gap-2 h-8 md:h-10 px-4 md:px-6 rounded-full text-[12px] md:text-[14px] font-bold transition-all shrink-0 active:scale-95"
+                className="flex items-center gap-1.5 h-10 px-2.5 xl:px-4 rounded-full text-[12px] xl:text-[13px] font-bold transition-all shrink-0 active:scale-95"
                 style={{
                   backgroundColor: showcaseOpen ? 'transparent' : green,
                   border: `1.5px solid ${green}`,
@@ -5689,13 +7800,64 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
                 }}
                 title="Open fullscreen schedule showcase for print / PDF"
               >
-                <Maximize2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                <span className="hidden sm:inline">{showcaseOpen ? 'Active' : 'Showcase'}</span>
+                <Maximize2 className="w-4 h-4 shrink-0" />
+                <span className="hidden xl:inline">{showcaseOpen ? 'Active' : 'Showcase'}</span>
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body
+      )}
+
+<<<<<<<< HEAD:src/pages/Schedules.tsx
+      {/* Sort reset strip — replaces the old stats bar */}
+      {!isMyTickets && activeTab === 'schedules' && sortDiffersFromDefault && (
+        <div className="flex items-center justify-end px-4 py-1.5 border-b shrink-0"
+          style={{ backgroundColor: cardBg, borderColor: border }}>
+========
+      {!isMyTickets && showcaseOpen && ReactDOM.createPortal(
+        <div className="flex items-center justify-between gap-3 px-5 md:px-8 py-2 bg-red-500/10 border-b border-red-500/20">
+          <span className="text-xs font-semibold text-red-600 dark:text-red-400">
+            Full-screen view &mdash; click <em>Export PDF to Print</em>, then Exit Showcase.
+          </span>
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
+          <button
+            type="button"
+            onClick={() => setSortConfig(defaultSortForSchedulesView(isMyTickets))}
+            className="text-[10px] font-bold uppercase tracking-wide hover:underline"
+            style={{ color: green }}
+          >
+            Reset sort
+          </button>
+<<<<<<<< HEAD:src/pages/Schedules.tsx
+========
+        </div>,
+        document.getElementById('header-toolbar-slot') ?? document.body
+      )}
+
+      {/* Month view banner — lets the user see & explicitly exit the whole-month table view */}
+      {!isMyTickets && monthViewActive && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2 border-b shrink-0"
+          style={{ backgroundColor: 'rgba(16,185,129,0.08)', borderColor: border }}>
+          <span className="text-xs font-semibold" style={{ color: green }}>
+            Month view — {formatMonthFilterLabel(monthFilterMonth)} · {activeBranchLabel || 'All branches'}
+            {monthFilterNegotiatorId
+              ? ` · ${formatNegotiatorLabel(monthFilterNegotiatorOptions.find(n => n.id === monthFilterNegotiatorId) || {})}`
+              : ''}
+            {monthFilterStatus
+              ? ` · ${monthFilterStatus === 'PENDING_GROUP' ? 'All Pending' : monthFilterStatus === 'CLOSING_GROUP' ? 'All Closing' : getScheduleStatusLabel(monthFilterStatus)}`
+              : ''}
+            {' '}({visible.length} ticket{visible.length === 1 ? '' : 's'})
+          </span>
+          <button
+            type="button"
+            onClick={() => setMonthViewActive(false)}
+            className="text-[11px] font-bold uppercase tracking-wide hover:underline shrink-0"
+            style={{ color: green }}
+          >
+            Exit month view
+          </button>
+        </div>
       )}
 
       {/* Sort reset strip — replaces the old stats bar */}
@@ -5710,6 +7872,7 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
           >
             Reset sort
           </button>
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
         </div>
       )}
 
@@ -5782,6 +7945,7 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
               </div>
             </div>
           ) : (
+<<<<<<<< HEAD:src/pages/Schedules.tsx
             <div
               ref={tableScrollRef}
               className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
@@ -5871,6 +8035,20 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
                       }) as ResponsiveColumnDef<any>[]
                     })() as any}
                   />
+========
+            <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              {(syncing || backgroundSyncing) && !searchQuery && (
+                <div
+                  className="flex items-center justify-center gap-2 px-4 py-2 border-b shrink-0 animate-in fade-in duration-200"
+                  style={{
+                    backgroundColor: isLight ? 'rgba(236,253,245,0.96)' : 'rgba(11,39,45,0.96)',
+                    borderColor: isMyTickets ? myTicketsTheadBorder : schedTheadBorder,
+                    color: textGreen,
+                  }}
+                >
+                  <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                  <span className="text-[11px] font-bold tracking-wide">Syncing with portal database...</span>
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
                 </div>
               )}
 
@@ -6045,7 +8223,31 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
                       })}
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody
+                    ref={vehicleDragTbodyRef}
+                    onDragOver={e => {
+                      if (!draggedVehicleTicketId) return
+                      const idx = getVehicleDragRowIndex(e.clientY)
+                      const targetTicket = visible[idx]
+                      if (!targetTicket) return
+                      const draggedTicket = visible.find(t => t.id === draggedVehicleTicketId)
+                      if (!draggedTicket) return
+                      const draggedBase = parseNameSiteToken(getTicketVehicleDisplay(draggedTicket)).name
+                      const targetBase = parseNameSiteToken(getTicketVehicleDisplay(targetTicket)).name
+                      if (!draggedBase || draggedBase !== targetBase) return
+                      e.preventDefault()
+                      setVehicleDropTargetId(prev => (prev === targetTicket.id ? prev : targetTicket.id))
+                    }}
+                    onDrop={e => {
+                      if (!draggedVehicleTicketId) return
+                      e.preventDefault()
+                      const idx = getVehicleDragRowIndex(e.clientY)
+                      const targetTicket = visible[idx]
+                      if (targetTicket) commitVehicleDrop(targetTicket)
+                      setDraggedVehicleTicketId(null)
+                      setVehicleDropTargetId(null)
+                    }}
+                  >
                     {visible.length === 0 ? (
                       <tr>
                         <td colSpan={columns.length} style={{ borderBottom: `1px solid ${tableBorder}`, padding: '40px 10px' }}>
@@ -6071,20 +8273,42 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
                         const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(getCustomerDisplayName(ticket)))
                         const rowColors = getScheduleRowColors(ticket, ghostKind, isLight, idx, rowEven, rowOdd, isDuplicateName)
                         const baseBg = rowColors.baseBg
-                        const bg = isHovered && !isGhost ? rowHover : baseBg
-                        const ghostAccent = rowColors.accent
+                        const isDragSourceRow = draggedVehicleTicketId === ticket.id
+                        const isDropTargetRow = vehicleDropTargetId === ticket.id && draggedVehicleTicketId !== null && !isDragSourceRow
+                        const dropTargetBg = isLight ? 'rgba(16,185,129,0.22)' : 'rgba(16,185,129,0.28)'
+                        const bg = isDropTargetRow ? dropTargetBg : (isHovered && !isGhost ? rowHover : baseBg)
                         const rowIsActive = columns.some(col =>
                           (editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label)
                           || (expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label),
                         )
+                        // "Make room" slide: every row in the affected vehicle group — INCLUDING
+                        // the dragged one — animates to its previewed slot. Exempting the dragged
+                        // row from this (leaving it static while its neighbor slid onto it) is what
+                        // caused the two rows to visually overlap; sliding both is what a normal
+                        // reorder-list swap looks like, and nothing else is left static to collide with.
+                        let vehicleDragOffsetPx = 0
+                        if (vehicleDragPreview) {
+                          const groupPos = vehicleGroupPositions.get(ticket.id)
+                          if (groupPos && groupPos.base === vehicleDragPreview.base) {
+                            const previewRel = vehicleDragPreview.order.indexOf(ticket.id)
+                            if (previewRel !== -1 && previewRel !== groupPos.relIndex) {
+                              vehicleDragOffsetPx = (previewRel - groupPos.relIndex) * TABLE_ROW_HEIGHT
+                            }
+                          }
+                        }
                         return (
                           <tr key={`${ticket.id}${isGhost ? `-ghost-${ghostKind}` : ''}`}
                             style={{
                               borderBottom: `1px solid ${tableBorder}`,
-                              boxShadow: ghostAccent ? `inset 3px 0 0 ${ghostAccent}` : undefined,
-                              position: rowIsActive ? 'relative' : undefined,
-                              zIndex: rowIsActive ? 80 : undefined,
+                              position: (rowIsActive || vehicleDragOffsetPx) ? 'relative' : undefined,
+                              zIndex: rowIsActive ? 80 : (isDragSourceRow ? 20 : (vehicleDragOffsetPx ? 10 : undefined)),
                               height: rowIsActive ? undefined : TABLE_ROW_HEIGHT,
+                              // Dimmed so it's obvious which row is being moved, but it slides right
+                              // along with everyone else in the group — it never sits still while
+                              // another row slides onto it (that's what caused the overlap).
+                              opacity: isDragSourceRow ? 0.65 : undefined,
+                              transform: vehicleDragOffsetPx ? `translateY(${vehicleDragOffsetPx}px)` : undefined,
+                              transition: 'transform 150ms ease, opacity 150ms ease',
                             }}
                             onMouseEnter={() => setHoveredRow(ticket.id)}
                             onMouseLeave={() => setHoveredRow(null)}
@@ -6101,12 +8325,20 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
                               const isEditingCell = editingCell?.ticketId === ticket.id && editingCell?.colLabel === col.label
                               const isExpandedCell = expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label
                               const isStatusCol = col.label === 'STATUS'
-                              const SKIP_EMPTY_HIGHLIGHT = new Set(['STATUS', 'INSTALLER', 'NOTE', 'UPDATE', 'PAYMENT', 'TICKET NO', 'FINAL DATE'])
+                              const SKIP_EMPTY_HIGHLIGHT = new Set(['STATUS', 'INSTALLER', 'SERVICE', 'VEHICLE', 'COMMIT', 'NOTE', 'UPDATE', 'PAYMENT', 'TICKET NO', 'FINAL DATE'])
                               const cellVal = getCellDisplay(ticket, col.label)
                               const isCellEmpty = !SKIP_EMPTY_HIGHLIGHT.has(col.label) && !isGhost && !isEditingCell && !cellVal.trim()
+                              // Quiet empty hint — no orange wash; subtle slate so dark mode stays clean.
                               const emptyCellBg = isCellEmpty
-                                ? (isLight ? 'rgba(251,146,60,0.13)' : 'rgba(251,146,60,0.18)')
+                                ? (isLight ? 'rgba(148,163,184,0.10)' : 'rgba(148,163,184,0.07)')
                                 : undefined
+                              const emptyCellInset = isCellEmpty
+                                ? `inset 0 0 0 1px ${isLight ? 'rgba(148,163,184,0.28)' : 'rgba(148,163,184,0.18)'}`
+                                : undefined
+                              const isSelectedVehicleCell = col.label === 'VEHICLE' && selectedVehicleTicketId === ticket.id
+                              // Resched ghosts alone keep remarks editable (one shared field, not
+                              // per-date state) — every other edit affordance stays locked on ghosts.
+                              const allowGhostCellEdit = isGhost && ghostKind === 'resched' && col.label === 'UPDATE'
                               return (
                                 <td key={col.label}
                                   data-cell-key={`${ticket.id}:${col.label}`}
@@ -6121,6 +8353,7 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
                                       openStatusPicker(ticket, 'inline', e.currentTarget as HTMLElement)
                                       return
                                     }
+<<<<<<<< HEAD:src/pages/Schedules.tsx
                                     if (col.label !== 'UPDATE') {
                                       setExpandedCell(prev =>
                                         prev?.ticketId === ticket.id && prev?.colLabel === col.label
@@ -6128,11 +8361,27 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
                                           : { ticketId: ticket.id, colLabel: col.label },
                                       )
                                     }
+========
+                                    // VEHICLE is drag-to-reorder now — a tap-to-view-details popup
+                                    // on the same cell just gets in the way of grabbing it.
+                                    if (col.label === 'VEHICLE' || col.label === 'TICKET NO') return
+                                    setExpandedCell(prev =>
+                                      prev?.ticketId === ticket.id && prev?.colLabel === col.label
+                                        ? null
+                                        : { ticketId: ticket.id, colLabel: col.label },
+                                    )
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
                                   }}
                                   onDoubleClick={e => {
                                     e.preventDefault()
                                     e.stopPropagation()
-                                    if (!canEdit || isGhost || isEditingCell) return
+                                    if (!canEdit || isEditingCell || (isGhost && !allowGhostCellEdit)) return
+                                    if (col.label === 'VEHICLE' || col.label === 'TICKET NO') {
+                                      if (col.label === 'VEHICLE') {
+                                        setSelectedVehicleTicketId(prev => (prev === ticket.id ? null : ticket.id))
+                                      }
+                                      return
+                                    }
                                     if (INLINE_EDIT_COLUMNS.has(col.label)) {
                                       startCellEdit(ticket, col.label)
                                     }
@@ -6140,8 +8389,13 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
                                   style={{
                                     padding: isEditingCell ? '6px' : '0 12px',
                                     color: isGhost ? textMuted : textPrimary,
+<<<<<<<< HEAD:src/pages/Schedules.tsx
                                     fontSize: '11px', fontWeight: isGhost ? 500 : 500,
                                     backgroundColor: emptyCellBg ?? bg,
+========
+                                    fontSize: '12.5px', fontWeight: isGhost ? 500 : 600,
+                                    backgroundColor: isSelectedVehicleCell ? `${green}22` : (emptyCellBg ?? bg),
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
                                     borderRight: `1px solid ${tableBorder}`,
                                     borderBottom: `1px solid ${tableBorder}`,
                                     width: col.w,
@@ -6151,21 +8405,35 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
                                     maxHeight: isEditingCell ? undefined : TABLE_ROW_HEIGHT,
                                     overflow: 'visible',
                                     textOverflow: 'ellipsis',
-                                    transition: 'background-color 0.1s ease',
-                                    cursor: canEdit && !isGhost && INLINE_EDIT_COLUMNS.has(col.label) ? 'text' : 'default',
+                                    transition: isDropTargetRow ? 'background-color 1s ease' : 'background-color 0.1s ease',
+                                    cursor: canEdit && (!isGhost || allowGhostCellEdit) && INLINE_EDIT_COLUMNS.has(col.label) ? 'text' : 'default',
                                     verticalAlign: 'middle',
                                     textAlign: col.align || 'left',
-                                    userSelect: isEditingCell ? 'text' : (canEdit && !isGhost ? 'none' : undefined),
-                                    WebkitUserSelect: isEditingCell ? 'text' : (canEdit && !isGhost ? 'none' : undefined),
+                                    userSelect: isEditingCell ? 'text' : (canEdit && (!isGhost || allowGhostCellEdit) ? 'none' : undefined),
+                                    WebkitUserSelect: isEditingCell ? 'text' : (canEdit && (!isGhost || allowGhostCellEdit) ? 'none' : undefined),
                                     ...(col.sticky
-                                      ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: (isEditingCell || isExpandedCell) ? 95 : 5, boxShadow: `2px 0 0 ${tableBorder}` }
+                                      ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: (isEditingCell || isExpandedCell) ? 95 : 5 }
                                       : { position: 'relative' as const, zIndex: (isEditingCell || isExpandedCell) ? (isEditingCell ? 90 : 85) : undefined }),
+                                    boxShadow: isSelectedVehicleCell
+                                      ? `inset 0 0 0 2px ${green}`
+                                      : emptyCellInset
+                                        ? emptyCellInset
+                                        : (col.sticky ? `2px 0 0 ${tableBorder}` : undefined),
                                   }}>
                                   {isEditingCell ? (
                                     renderCell(ticket, col, idx, isGhost, ghostKind, false)
                                   ) : (
+<<<<<<<< HEAD:src/pages/Schedules.tsx
                                     <div className="relative w-full h-full flex items-center" style={{ minHeight: TABLE_ROW_HEIGHT - 2 }}>
                                       <div className="w-full min-w-0 overflow-hidden">
+========
+                                    <div
+                                      className={`relative w-full h-full flex items-center ${col.align === 'center' ? 'justify-center' : col.align === 'right' ? 'justify-end' : ''
+                                        }`}
+                                      style={{ minHeight: TABLE_ROW_HEIGHT - 2 }}
+                                    >
+                                      <div className={`min-w-0 overflow-hidden ${col.align === 'center' && col.label !== 'VEHICLE' ? 'w-auto max-w-full' : 'w-full'}`}>
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
                                         {renderCell(ticket, col, idx, isGhost, ghostKind, false)}
                                       </div>
                                       {isExpandedCell && (
@@ -6194,10 +8462,661 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
                         )
                       }))}
                   </tbody>
+                  {(() => {
+                    let totalCash = 0;
+                    let totalGcash = 0;
+                    let totalBankTransfer = 0;
+                    let totalOther = 0;
+
+                    visible.forEach(ticket => {
+                      const ghostKind = dateFilter ? getScheduleGhostKind(ticket, dateFilter) : null;
+                      if (shouldBlankReschedGhostPayment(dateFilter, ghostKind)) return;
+
+                      const { mode: rawMode, amount } = resolveTicketPayment(ticket);
+
+                      if (rawMode === 'HYBRID') {
+                        const breakdown = getPaymentBreakdown(ticket);
+                        breakdown.forEach(entry => {
+                          const subRawMode = (entry.mode || '').trim().toUpperCase();
+                          const subAmount = entry.amount || 0;
+                          if (subRawMode === 'CASH') totalCash += subAmount;
+                          else if (subRawMode === 'GCASH') totalGcash += subAmount;
+                          else if (subRawMode === 'BANK TRANSFER' || subRawMode === 'BANK_TRANSFER' || subRawMode === 'BANK' || subRawMode === 'ONLINE') totalBankTransfer += subAmount;
+                          else if (subAmount > 0) totalOther += subAmount;
+                        });
+                      } else {
+                        if (rawMode === 'CASH') totalCash += amount;
+                        else if (rawMode === 'GCASH') totalGcash += amount;
+                        else if (rawMode === 'BANK TRANSFER' || rawMode === 'BANK_TRANSFER' || rawMode === 'BANK' || rawMode === 'ONLINE') totalBankTransfer += amount;
+                        else if (amount > 0) totalOther += amount;
+                      }
+                    });
+
+                    const totalEstimated = totalCash + totalGcash + totalBankTransfer + totalOther;
+                    // Hide the green TOTAL COLLECTION footer when nothing has been paid yet.
+                    if (totalEstimated <= 0) return null;
+
+                    return (
+                      <tfoot style={{ position: 'relative' }}>
+                        <tr>
+                          <td colSpan={columns.length - 2} style={{ border: 'none', background: 'transparent' }}></td>
+                          <td className="px-3 py-2 text-right font-black" style={{ backgroundColor: '#16a34a', color: '#fff', border: `1px solid ${tableBorder}` }}>
+                            TOTAL COLLECTION
+                          </td>
+                          <td className="px-3 py-2 text-right font-black tracking-wide" style={{ backgroundColor: '#16a34a', color: '#fff', border: `1px solid ${tableBorder}` }}>
+                            {totalEstimated.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                        {totalGcash > 0 && (
+                          <tr>
+                            <td colSpan={columns.length - 2} style={{ border: 'none', background: 'transparent' }}></td>
+                            <td className="px-3 py-2 text-right font-bold" style={{ backgroundColor: '#dbeafe', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              GCASH
+                            </td>
+                            <td className="px-3 py-2 text-right font-bold tracking-wide" style={{ backgroundColor: '#dbeafe', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              {totalGcash.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        )}
+                        {totalCash > 0 && (
+                          <tr>
+                            <td colSpan={columns.length - 2} style={{ border: 'none', background: 'transparent' }}></td>
+                            <td className="px-3 py-2 text-right font-bold" style={{ backgroundColor: '#dcfce7', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              CASH
+                            </td>
+                            <td className="px-3 py-2 text-right font-bold tracking-wide" style={{ backgroundColor: '#dcfce7', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              {totalCash.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        )}
+                        {totalBankTransfer > 0 && (
+                          <tr>
+                            <td colSpan={columns.length - 2} style={{ border: 'none', background: 'transparent' }}></td>
+                            <td className="px-3 py-2 text-right font-bold" style={{ backgroundColor: '#f3e8ff', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              BANK TRANSFER
+                            </td>
+                            <td className="px-3 py-2 text-right font-bold tracking-wide" style={{ backgroundColor: '#f3e8ff', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              {totalBankTransfer.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        )}
+                        {totalOther > 0 && (
+                          <tr>
+                            <td colSpan={columns.length - 2} style={{ border: 'none', background: 'transparent' }}></td>
+                            <td className="px-3 py-2 text-right font-bold" style={{ backgroundColor: '#f3e8ff', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              OTHER
+                            </td>
+                            <td className="px-3 py-2 text-right font-bold tracking-wide" style={{ backgroundColor: '#f3e8ff', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              {totalOther.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        )}
+                      </tfoot>
+                    );
+                  })()}
                 </table>
+<<<<<<<< HEAD:src/pages/Schedules.tsx
               </div>
             </div>
           ))}
+========
+                {/* Mobile Card View — important fields only (no branch; header already shows it) */}
+                <div className="flex flex-col md:hidden p-3 gap-2.5">
+                  {visible.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center gap-3 py-12">
+                      <p className="text-sm font-semibold" style={{ color: textMuted }}>
+                        No records found
+                      </p>
+                    </div>
+                  ) : (
+                    visible.map((ticket, idx) => {
+                      const ghostKind = dateFilter ? getScheduleGhostKind(ticket, dateFilter) : null
+                      const isGhost = Boolean(ghostKind)
+                      const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(getCustomerDisplayName(ticket)))
+                      const rowColors = getScheduleRowColors(ticket, ghostKind, isLight, idx, rowEven, rowOdd, isDuplicateName)
+                      const statusVal = getScheduleStatusValue(ticket)
+                      const statusStyle = getScheduleStatusBadgeStyle(statusVal, isLight)
+                      const statusDisplay = getScheduleStatusDisplay(ticket) || ticket.status || ''
+                      const ticketNo = ticket.ticketNumber || ticket.controlNumber || '—'
+                      const district = resolveTicketDistrict(ticket) || ticket.district || ''
+                      const fullAddress = ((ticket as any).address || (ticket as any).fullAddress || (ticket as any).full_address || (ticket as any).location || (ticket as any).siteAddress || (ticket as any).site_address || (ticket as any).streetAddress || (ticket as any).street_address || (ticket as any).city || (ticket as any).area || district || '').trim()
+                      const brand = parseBrand(ticket)
+                      const dealer = getF(ticket, 'dealer', 'sourceVendor', 'source_vendor')
+                      const installer = getInstallerDisplay(ticket, branchEmployees, activeBranchId)
+                      const driver = getTicketDriverDisplay(ticket)
+                      const vehicle = vehicleTripLabels.get(ticket.id || '') || getTicketVehicleDisplay(ticket)
+                      const payment = getSchedulePaymentDisplay(ticket, dateFilter, ghostKind)
+                      const commit = getTicketCommitDisplay(ticket)
+                      const phone = getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
+                      const remarks = sanitizeDisplayText(
+                        stripArchivedRemarkSuffix((ticket.remarksUpdate || ticket.remarks || '').trim()),
+                      )
+                      const negotiatorName = getTicketNegotiatorName(ticket, branchEmployees) || ''
+                      const cardNegId = ticket.negotiatorId || ticket.negotiator_id || ''
+                      const cardNegEmp = branchEmployees.find(e => {
+                        if (cardNegId && e.id === cardNegId) return true
+                        if (negotiatorName && e.name && namesMatchLoosely(e.name, negotiatorName)) return true
+                        const resolvedFull = resolveNegotiatorDisplayName(ticket, branchEmployees)
+                        if (resolvedFull && e.name && namesMatchLoosely(e.name, resolvedFull)) return true
+                        return false
+                      })
+                      const negotiatorPhone = (ticket as any).negotiatorPhone
+                        || (ticket as any).negotiator_phone
+                        || (ticket as any).negotiatorContact
+                        || (ticket as any).negotiator_contact
+                        || cardNegEmp?.phone
+                        || (cardNegId && user?.id === cardNegId ? (user?.phone || '') : '')
+                        || ''
+
+
+                      return (
+                        <div
+                          key={`${ticket.id}${isGhost ? `-ghost-${ghostKind}` : ''}`}
+                          onClick={() => setDetailTicket(ticket)}
+                          className="w-full rounded-xl overflow-hidden border transition-transform active:scale-[0.985] cursor-pointer"
+                          style={{
+                            backgroundColor: rowColors.baseBg,
+                            borderColor: tableBorder,
+                            opacity: isGhost ? 0.72 : 1,
+                          }}
+                        >
+                          {/* ── Top section: name / ticket / phone / status ── */}
+                          <div className="px-3 pt-2.5 pb-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-baseline gap-1.5 flex-wrap">
+                                  <span
+                                    className="font-extrabold text-[13px] uppercase tracking-wide leading-tight"
+                                    style={{ color: isDuplicateName ? (isLight ? '#9f1239' : '#f43f5e') : textPrimary }}
+                                  >
+                                    {getCustomerDisplayName(ticket)}
+                                  </span>
+                                  <span className="text-[11px] font-bold tabular-nums" style={{ color: textMuted }}>
+                                    {ticketNo}
+                                  </span>
+                                </div>
+                                {phone ? (
+                                  <a
+                                    href={`tel:${phone.replace(/[^\d+]/g, '')}`}
+                                    onClick={e => e.stopPropagation()}
+                                    onContextMenu={e => {
+                                      e.preventDefault(); e.stopPropagation()
+                                      void copyTextToClipboard(phone)
+                                      showToast(`Copied ${fmtPhone(phone) || phone}`)
+                                    }}
+                                    className="text-[11px] font-semibold tabular-nums hover:underline"
+                                    style={{ color: isLight ? '#0369a1' : '#7dd3fc' }}
+                                  >
+                                    {fmtPhone(phone) || phone}
+                                  </a>
+                                ) : null}
+                                {/* Brand / Dealer */}
+                                {(brand || dealer) ? (
+                                  <div className="text-[10.5px] font-semibold truncate mt-0.5" style={{ color: textMuted }}>
+                                    {[brand, dealer].filter(Boolean).join(' · ')}
+                                  </div>
+                                ) : null}
+                              </div>
+                              {statusDisplay ? (
+                                <span
+                                  className="text-[10.5px] font-black uppercase shrink-0 tracking-wider px-2.5 py-1 rounded-full border shadow-sm"
+                                  style={{
+                                    color: statusStyle.color,
+                                    backgroundColor: statusStyle.backgroundColor,
+                                    borderColor: statusStyle.borderColor,
+                                  }}
+                                >
+                                  {statusDisplay === 'INSTALLATION' ? 'INSTALL' : statusDisplay}
+                                </span>
+                              ) : null}
+                            </div>
+                            {/* Full Width Address */}
+                            {fullAddress ? (
+                              <div className="flex items-center gap-1 mt-1 w-full" style={{ color: textMuted }}>
+                                <MapPin className="w-2.5 h-2.5 shrink-0" style={{ color: green }} />
+                                <span className="text-[10.5px] font-medium truncate w-full" title={fullAddress}>{fullAddress}</span>
+                              </div>
+                            ) : null}
+                          </div>
+
+                          {/* ── Crew section: tight table ── */}
+                          <div
+                            className="px-3 py-1.5 border-t"
+                            style={{
+                              borderColor: tableBorder,
+                              backgroundColor: isLight ? 'rgba(15,23,42,0.04)' : 'rgba(148,163,184,0.08)',
+                            }}
+                          >
+                            {/* Negotiator row */}
+                            <div className="flex items-center justify-between gap-2 min-w-0">
+                              <div className="flex items-center gap-1 min-w-0">
+                                <span className="text-[9.5px] font-bold tracking-widest uppercase shrink-0" style={{ color: textMuted }}>NEGOTIATOR:</span>
+                                <span className="text-[11.5px] font-semibold truncate" style={{ color: (negotiatorName && negotiatorName !== EMPTY_CELL) ? textPrimary : textMuted }}>
+                                  {negotiatorName && negotiatorName !== EMPTY_CELL ? negotiatorName : '—'}
+                                </span>
+                              </div>
+                              {negotiatorPhone ? (
+                                <div className="flex items-center gap-1 shrink-0 ml-auto text-right">
+                                  <span className="text-[9.5px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>CONTACT NO:</span>
+                                  <a
+                                    href={`tel:${negotiatorPhone.replace(/[^\d+]/g, '')}`}
+                                    onClick={e => e.stopPropagation()}
+                                    onContextMenu={e => {
+                                      e.preventDefault(); e.stopPropagation()
+                                      void copyTextToClipboard(negotiatorPhone)
+                                      showToast(`Copied ${fmtPhone(negotiatorPhone) || negotiatorPhone}`)
+                                    }}
+                                    className="text-[11px] tabular-nums font-bold hover:underline"
+                                    style={{ color: isLight ? '#0369a1' : '#7dd3fc' }}
+                                  >
+                                    {fmtPhone(negotiatorPhone) || negotiatorPhone}
+                                  </a>
+                                </div>
+                              ) : null}
+                            </div>
+                            {/* Installer · Vehicle · Driver in one line */}
+                            <div className="grid grid-cols-3 gap-x-1 mt-0.5">
+                              <div className="col-span-1 flex flex-col min-w-0">
+                                <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Installer</span>
+                                <span className="text-[11px] font-semibold truncate" style={{ color: installer ? (isLight ? '#0369a1' : '#7dd3fc') : textMuted }}>
+                                  {installer || '—'}
+                                </span>
+                              </div>
+                              <div className="col-span-1 flex flex-col min-w-0">
+                                <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Vehicle</span>
+                                <span className="text-[11px] font-semibold truncate uppercase tabular-nums" style={{ color: vehicle ? textPrimary : textMuted }}>
+                                  {vehicle || '—'}
+                                </span>
+                              </div>
+                              <div className="col-span-1 flex flex-col items-end text-right min-w-0">
+                                <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Driver</span>
+                                <span className="text-[11px] font-semibold truncate" style={{ color: driver ? textPrimary : textMuted }}>
+                                  {driver || '—'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* ── Footer: commit / payment / remarks ── */}
+                          {(commit || payment || remarks) ? (
+                            <div
+                              className="px-3 py-1.5 border-t"
+                              style={{ borderColor: tableBorder }}
+                            >
+                              {(commit || payment) ? (
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-[10.5px] font-medium truncate" style={{ color: textMuted }}>{commit || '—'}</span>
+                                  {payment ? (
+                                    <span className="text-[11px] shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{payment}</span>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                              {remarks ? (
+                                <p className="text-[10.5px] truncate font-medium" style={{ color: textMuted }} title={remarks}>
+                                  {remarks}
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      )
+                    })
+                  )}
+                  {(() => {
+                    let totalCash = 0;
+                    let totalGcash = 0;
+                    let totalBankTransfer = 0;
+                    let totalOther = 0;
+
+                    visible.forEach(ticket => {
+                      const ghostKind = dateFilter ? getScheduleGhostKind(ticket, dateFilter) : null;
+                      if (shouldBlankReschedGhostPayment(dateFilter, ghostKind)) return;
+
+                      const { mode: rawMode, amount } = resolveTicketPayment(ticket);
+
+                      if (rawMode === 'HYBRID') {
+                        const breakdown = getPaymentBreakdown(ticket);
+                        breakdown.forEach(entry => {
+                          const subRawMode = (entry.mode || '').trim().toUpperCase();
+                          const subAmount = entry.amount || 0;
+                          if (subRawMode === 'CASH') totalCash += subAmount;
+                          else if (subRawMode === 'GCASH') totalGcash += subAmount;
+                          else if (subRawMode === 'BANK TRANSFER' || subRawMode === 'BANK_TRANSFER' || subRawMode === 'BANK' || subRawMode === 'ONLINE') totalBankTransfer += subAmount;
+                          else if (subAmount > 0) totalOther += subAmount;
+                        });
+                      } else {
+                        if (rawMode === 'CASH') totalCash += amount;
+                        else if (rawMode === 'GCASH') totalGcash += amount;
+                        else if (rawMode === 'BANK TRANSFER' || rawMode === 'BANK_TRANSFER' || rawMode === 'BANK' || rawMode === 'ONLINE') totalBankTransfer += amount;
+                        else if (amount > 0) totalOther += amount;
+                      }
+                    });
+
+                    const totalEstimated = totalCash + totalGcash + totalBankTransfer + totalOther;
+                    if (totalEstimated <= 0) return null;
+
+                    return (
+                      <div className="mt-3 p-3 rounded-xl border flex flex-col gap-2 shadow-sm" style={{ backgroundColor: cardBg, borderColor: tableBorder }}>
+                        <div className="flex items-center justify-between px-3 py-2 rounded-lg font-black" style={{ backgroundColor: '#16a34a', color: '#fff' }}>
+                          <span className="text-[11px] uppercase tracking-wider">TOTAL COLLECTION</span>
+                          <span className="text-xs font-black tracking-wide">
+                            ₱{totalEstimated.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                        {totalGcash > 0 && (
+                          <div className="flex items-center justify-between px-3 py-1.5 rounded-lg text-[11px] font-bold" style={{ backgroundColor: '#dbeafe', color: '#000' }}>
+                            <span>GCASH</span>
+                            <span>₱{totalGcash.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
+                        {totalCash > 0 && (
+                          <div className="flex items-center justify-between px-3 py-1.5 rounded-lg text-[11px] font-bold" style={{ backgroundColor: '#dcfce7', color: '#000' }}>
+                            <span>CASH</span>
+                            <span>₱{totalCash.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
+                        {totalBankTransfer > 0 && (
+                          <div className="flex items-center justify-between px-3 py-1.5 rounded-lg text-[11px] font-bold" style={{ backgroundColor: '#f3e8ff', color: '#000' }}>
+                            <span>BANK TRANSFER</span>
+                            <span>₱{totalBankTransfer.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
+                        {totalOther > 0 && (
+                          <div className="flex items-center justify-between px-3 py-1.5 rounded-lg text-[11px] font-bold" style={{ backgroundColor: '#f3e8ff', color: '#000' }}>
+                            <span>OTHER</span>
+                            <span>₱{totalOther.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+          )) : (
+          /* Render Overview Search Panel */
+          <div className="flex-1 flex flex-col min-h-0 w-full h-full overflow-hidden relative" style={{ backgroundColor: isLight ? '#f1f5f9' : '#060B18' }}>
+            {/* Top Header Row */}
+            <div className="flex items-center justify-center p-4 md:p-6 pb-2 w-full shrink-0 z-50 relative">
+              {/* Mobile Menu Button (absolute to keep branches perfectly centered) */}
+              <button
+                onClick={() => setSidebarOpen?.(true)}
+                className="md:hidden absolute left-4 p-2.5 rounded-xl border shadow-sm transition-transform active:scale-95 shrink-0 z-10"
+                style={{ borderColor: border, backgroundColor: cardBg, color: textPrimary }}
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+
+              {/* Branches Showcase (Centered) */}
+              <div
+                className="flex items-center justify-start overflow-x-auto hide-scrollbar py-1 w-full max-w-full"
+                style={{ WebkitOverflowScrolling: 'touch', maskImage: 'linear-gradient(to right, transparent, black 2%, black 98%, transparent)', WebkitMaskImage: 'linear-gradient(to right, transparent, black 2%, black 98%, transparent)' }}
+              >
+                <div className="flex items-center justify-center gap-4 px-4 mx-auto w-max">
+                  {[
+                    "BATANGAS", "BULACAN", "CANDELARIA", "DASMA, CAVITE",
+                    "GENTRI, CAVITE", "LAGUNA", "PAMPANGA", "RIZAL",
+                    "SILANG, CAVITE", "TAGUIG", "VALENZUELA"
+                  ].map((branch, idx, arr) => (
+                    <div key={branch} className="flex items-center gap-4 shrink-0">
+                      <span
+                        className="text-[13px] md:text-[16px] font-black uppercase tracking-[0.15em]"
+                        style={{ color: idx % 2 === 0 ? green : textPrimary }}
+                      >
+                        {branch}
+                      </span>
+                      {idx < arr.length - 1 && (
+                        <span className="text-[10px] opacity-40" style={{ color: textMuted }}>&bull;</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div
+              className={`flex-1 min-h-0 px-3 md:px-8 bg-transparent relative ${overviewSearchInput || overviewResults.length > 0 ? 'overflow-y-auto flex flex-col' : 'overflow-hidden'
+                }`}
+            >
+              <div
+                className={
+                  overviewSearchInput || overviewResults.length > 0
+                    ? 'max-w-4xl w-full mx-auto flex flex-col'
+                    : 'w-full max-w-4xl mx-auto px-3 md:px-0 pt-10 md:pt-16 flex flex-col items-center gap-6 md:gap-8'
+                }
+              >
+
+                {/* Sticky Header: Logo + Search Input (opaque bg so results don't show through while scrolling) */}
+                <div
+                  className={overviewSearchInput || overviewResults.length > 0
+                    ? 'sticky top-0 z-10 -mx-3 px-3 md:mx-0 md:px-0 pt-4 pb-3 md:pt-6 md:pb-4 flex flex-col gap-3 md:gap-4'
+                    : 'w-full flex flex-col items-center gap-6 md:gap-8'}
+                  style={overviewSearchInput || overviewResults.length > 0 ? { backgroundColor: isLight ? '#f1f5f9' : '#060B18' } : undefined}
+                >
+                  {/* Big Logo / Name (Google Style) */}
+                  <div className="flex flex-col items-center justify-center text-center w-full">
+                    <h1
+                      className={`font-black tracking-tighter ${overviewSearchInput || overviewResults.length > 0 ? 'text-2xl md:text-3xl mb-0 opacity-80' : 'text-5xl md:text-7xl mb-2 opacity-100'}`}
+                    >
+                      <span style={{ color: green }}>ASHCOL</span>
+                      <span style={{ color: textPrimary }} className="ml-2 md:ml-3">PORTAL</span>
+                    </h1>
+                  </div>
+
+                  {/* Search Input Box with Filter Dropdown */}
+                  <div className="w-full max-w-2xl mx-auto">
+                    <SearchFilterDropdown
+                      searchValue={overviewSearchInput}
+                      onSearchChange={val => { setOverviewSearchInput(val); if (!val) setOverviewResults([]) }}
+                      onFocus={() => setOverviewSearchFocused(true)}
+                      onBlur={() => setOverviewSearchFocused(false)}
+                      focused={overviewSearchFocused}
+                      colors={{
+                        cardBg,
+                        border,
+                        textPrimary,
+                        textMuted,
+                        green,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Results Section */}
+                {overviewLoading ? (
+                  <div className="flex flex-col items-center justify-center py-12 gap-3">
+                    <Loader2 className="w-6 h-6 animate-spin" style={{ color: green }} />
+                    <span className="text-xs font-semibold" style={{ color: textMuted }}>Searching portal database...</span>
+                  </div>
+                ) : overviewResults.length > 0 ? (
+                  <div className="flex flex-col gap-4">
+                    <div className="flex justify-between items-center px-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
+                        Found {overviewResults.length} {overviewResults.length === 1 ? 'ticket' : 'tickets'}
+                      </span>
+                    </div>
+
+                    {/* Results Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+                      {overviewResults.map(ticket => {
+                        const ticketNum = ticket.ticketNumber || ticket.ticket_number || ticket.id;
+                        const customer = ticket.customerName || ticket.customer_name || 'No Customer Name';
+                        const { value: statusVal, label: statusLabel } = getOverviewStatusBadge(ticket);
+                        const statusStyle = getScheduleStatusBadgeStyle(statusVal, isLight);
+                        const rawBranch = ticket.branchId || ticket.branch_id || null;
+                        const branchLabel = formatAssignedBranchLabel(
+                          resolveScopedBranchId(rawBranch) || rawBranch,
+                        );
+                        const negotiatorLabel = getTicketNegotiatorName(ticket, branchEmployees) || EMPTY_CELL;
+                        const cardNegId = ticket.negotiatorId || ticket.negotiator_id || '';
+                        const cardNegEmp = branchEmployees.find(e => {
+                          if (cardNegId && e.id === cardNegId) return true;
+                          const resolvedFull = resolveNegotiatorDisplayName(ticket, branchEmployees);
+                          if (resolvedFull && e.name && namesMatchLoosely(e.name, resolvedFull)) return true;
+                          return false;
+                        });
+                        const negotiatorPhone = (ticket as any).negotiatorPhone
+                          || (ticket as any).negotiator_phone
+                          || cardNegEmp?.phone
+                          || (cardNegId && user?.id === cardNegId ? (user?.phone || '') : '')
+                          || '';
+                        const finalDateKey = getFinalDateKey(ticket);
+                        const scheduleDateLabel = finalDateKey
+                          ? `Scheduled: ${formatDisplayDate(finalDateKey, '')}`
+                          : getPreferredDateKey(ticket)
+                            ? `Preferred: ${formatDisplayDate(getPreferredDateKey(ticket), '')}`
+                            : 'No Date';
+
+                        const cleanBranch = branchLabel && branchLabel !== EMPTY_CELL ? branchLabel.replace(/^ASHCOL\s+/i, '') : '';
+                        const custPhone = ticket.contactPhone || ticket.contact_phone || ticket.customer_phone || ticket.phone || '';
+                        const formattedCustPhone = custPhone ? (fmtPhone(custPhone) || custPhone) : '';
+
+                        return (
+                          <div
+                            key={ticket.id}
+                            className="rounded-2xl p-4 border shadow-sm transition-all duration-200 hover:shadow-md flex flex-col justify-between"
+                            style={{ backgroundColor: cardBg, borderColor: border }}
+                          >
+                            <div className="space-y-2.5">
+                              {/* Card Header */}
+                              <div className="flex justify-between items-center gap-2">
+                                <span className="text-[11px] font-black font-mono tracking-wider text-slate-400 dark:text-slate-500 uppercase">
+                                  {ticketNum}
+                                </span>
+                                <div className="flex gap-1.5 items-center flex-wrap justify-end">
+                                  {cleanBranch && (
+                                    <span
+                                      className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider"
+                                      style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textMuted }}
+                                    >
+                                      {cleanBranch}
+                                    </span>
+                                  )}
+                                  <span
+                                    className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wide shadow-sm"
+                                    style={{ backgroundColor: statusStyle.backgroundColor, color: statusStyle.color }}
+                                  >
+                                    {statusLabel}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Customer Name & Contact Phone */}
+                              <div className="flex items-baseline gap-2 flex-wrap">
+                                <h3 className="font-extrabold text-base leading-snug tracking-tight" style={{ color: textPrimary }}>
+                                  {highlightMatch(customer, overviewSearchInput)}
+                                </h3>
+                                {formattedCustPhone && (
+                                  <a
+                                    href={`tel:${custPhone.replace(/\D/g, '').replace(/^0/, '+63')}`}
+                                    className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline tracking-tight"
+                                  >
+                                    ({formattedCustPhone})
+                                  </a>
+                                )}
+                              </div>
+
+                              {/* Location */}
+                              {formatAddress(ticket.location) && (
+                                <div className="flex items-start gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                                  <MapPin className="w-3.5 h-3.5 shrink-0 text-emerald-500 mt-0.5" />
+                                  <span className="line-clamp-2 leading-relaxed">{formatAddress(ticket.location)}</span>
+                                </div>
+                              )}
+
+                              {/* Details Grid Box */}
+                              <div
+                                className="rounded-xl p-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs"
+                                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}
+                              >
+                                {(negotiatorLabel !== EMPTY_CELL || negotiatorPhone) && (
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Negotiator</span>
+                                    <div className="flex items-center gap-1 flex-wrap">
+                                      {negotiatorLabel !== EMPTY_CELL && (
+                                        <span className="font-bold uppercase" style={{ color: textPrimary }}>{negotiatorLabel}</span>
+                                      )}
+                                      {negotiatorPhone && (
+                                        <span className="text-[11px] font-medium" style={{ color: textMuted }}>
+                                          ({negotiatorPhone ? (
+                                            <a href={`tel:${negotiatorPhone.replace(/\D/g, '').replace(/^0/, '+63')}`} className="text-emerald-600 dark:text-emerald-400 hover:underline font-semibold">
+                                              {fmtPhone(negotiatorPhone) || negotiatorPhone}
+                                            </a>
+                                          ) : null})
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {ticket.assignedEmployeeName && (
+                                  <div className="flex flex-col gap-0.5 sm:col-span-2">
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Technician</span>
+                                    <span className="font-semibold" style={{ color: textPrimary }}>{ticket.assignedEmployeeName}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Card Footer */}
+                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 pt-3 mt-3 border-t border-dashed" style={{ borderColor: border }}>
+                              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>
+                                <CalendarDays className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
+                                <span>{scheduleDateLabel}</span>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDetailTicket(ticket);
+                                    setShowHistoryPanel(false);
+                                  }}
+                                  className="flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold text-white shadow-sm transition-all hover:opacity-90 active:scale-95"
+                                  style={{ backgroundColor: green }}
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  View Details
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : overviewSearchInput.trim() ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <AlertTriangle className="w-10 h-10 mb-3" style={{ color: textMuted }} />
+                    <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>No results found</h3>
+                    <p className="text-xs max-w-sm mt-2" style={{ color: textMuted }}>
+                      We couldn't find any tickets matching "{overviewSearchInput}". Try adjusting your search term.
+                    </p>
+                  </div>
+                ) : null}
+
+              </div>
+            </div>
+
+            {/* Dark Mode Toggle - Bottom Right Floating (Hidden when search result rows exist) */}
+            {overviewResults.length === 0 && (
+              <div className="fixed sm:absolute bottom-6 right-6 z-50">
+                <button
+                  onClick={toggleTheme}
+                  title={isLight ? 'Switch to Dark' : 'Switch to Light'}
+                  className="flex items-center justify-center w-12 h-12 rounded-full shadow-lg transition-transform hover:scale-110 active:scale-95"
+                  style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+                >
+                  {isLight ? (
+                    <Moon className="w-5 h-5" style={{ color: textMuted }} />
+                  ) : (
+                    <Sun className="w-5 h-5" style={{ color: '#F59E0B' }} />
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
       </div>
 
       {/* ── Right-click context menu ── */}
@@ -6266,6 +9185,7 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
         )
       })()}
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
       {/* ── Full Details Modal ── */}
       {detailTicket && ReactDOM.createPortal((() => {
         const t = detailTicket
@@ -7010,6 +9930,117 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
 
           </div>
         </div>
+========
+      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Full Details Modal Ã¢â€â‚¬Ã¢â€â‚¬ */}
+      {detailTicket && (
+        <TicketDetailsModal
+          ticket={detailTicket}
+          isLight={isLight}
+          isMyTickets={isMyTickets}
+          isTaguigServices={isTaguigServices}
+          canEdit={canEdit}
+          branchEmployees={branchEmployees}
+          activeBranchId={activeBranchId}
+          user={user}
+          duplicateNameKeys={duplicateNameKeys}
+          formatAssignedBranchLabel={formatAssignedBranchLabel}
+          history={history}
+          loadingHistory={loadingHistory}
+          showHistoryPanel={showHistoryPanel}
+          onClose={() => { setDetailTicket(null); setShowHistoryPanel(false) }}
+          onToggleHistory={() => setShowHistoryPanel(prev => !prev)}
+          onHideHistory={() => setShowHistoryPanel(false)}
+          onEdit={() => { openEditModal(detailTicket); setDetailTicket(null); setShowHistoryPanel(false) }}
+          onUpdateTicket={(updated) => {
+            setDetailTicket(updated)
+            setTickets(prev => prev.map(t => (t.id === updated.id ? { ...t, ...updated } : t)))
+          }}
+        />
+      )}
+
+      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Status Picker Modal Ã¢â€â‚¬Ã¢â€â‚¬ */}
+      {statusPicker && (
+        <TicketStatusPickerPopover
+          picker={statusPicker}
+          isLight={isLight}
+          activeTab={activeTab}
+          editFormStatus={editForm.status}
+          tickets={tickets}
+          optimisticTickets={optimisticTicketsRef.current}
+          onClose={() => setStatusPicker(null)}
+          onSetEditFormStatus={(status) => setEditForm(prev => ({ ...prev, status }))}
+          onOpenEditModal={openEditModal}
+          onOpenReschedDialog={openReschedDialog}
+          onOpenContinuationDialog={openContinuationDialog}
+          onOpenPaymentPrompt={(ticket, nextStatus) => {
+            setPaymentPrompt({ ticket, nextStatus })
+            setPromptAmount('')
+            setPromptMode('CASH')
+            setPromptHybridCash('')
+            setPromptHybridGcash('')
+          }}
+          onSaveCellEdit={(ticket, colLabel, value) => { void saveCellEdit(ticket, colLabel, value) }}
+        />
+      )}
+
+      {scheduleDetailsPopup && (
+        <TicketScheduleDetailsPopover
+          popup={scheduleDetailsPopup}
+          isLight={isLight}
+          dateFilter={dateFilter}
+          canEdit={canEdit}
+          onClose={() => setScheduleDetailsPopup(null)}
+          onOpenStatusPicker={openStatusPicker}
+          onOpenChecklist={(ticket) => {
+            setScheduleDetailsPopup(null)
+            setChecklistTicket(ticket)
+          }}
+          onUpdateTicket={(updated) => {
+            setTickets(prev => prev.map(t => (t.id === updated.id ? { ...t, ...updated } : t)))
+            setScheduleDetailsPopup(prev => prev ? { ...prev, ticket: updated } : null)
+          }}
+        />
+      )}
+
+      {checklistTicket && (
+        <ConfirmationChecklistModal
+          ticket={checklistTicket}
+          isLight={isLight}
+          onClose={() => setChecklistTicket(null)}
+          onSaved={(updated) => {
+            setTickets(prev => prev.map(t => (t.id === updated.id ? { ...t, ...updated } : t)))
+            setChecklistTicket(null)
+          }}
+        />
+      )}
+
+      {finalDatePicker && (
+        <TicketFinalDatePickerPopover
+          picker={finalDatePicker}
+          calMonth={finalDateCalMonth}
+          isLight={isLight}
+          isMyTickets={isMyTickets}
+          onSetCalMonth={setFinalDateCalMonth}
+          onPickDate={(dateKey) => setFinalDatePicker(prev => (prev ? { ...prev, value: dateKey } : null))}
+          onClose={closeFinalDatePicker}
+          onCommit={(ticket, value) => { void saveCellEdit(ticket, 'FINAL DATE', value) }}
+          onClear={(ticket) => { void saveCellEdit(ticket, 'FINAL DATE', '') }}
+        />
+      )}
+
+      {importResults && importResults.isOpen && (
+        <ExcelImportResultsModal
+          results={importResults}
+          isLight={isLight}
+          isTaguigServices={isTaguigServices}
+          targetDate={importTargetDate}
+          saving={saving}
+          onClose={() => setImportResults(null)}
+          onTargetDateChange={setImportTargetDate}
+          onPaymentFieldChange={handlePaymentFieldChange}
+          onApply={handleApplyImport}
+        />
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
       )}
 
       {addModalOpen && ReactDOM.createPortal(
@@ -7254,6 +10285,7 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
           boxShadow: isLight ? '0 0 0 3px rgba(251,191,36,0.2)' : '0 0 0 3px rgba(251,191,36,0.15)',
         }
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
         return (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
             onClick={e => e.stopPropagation()}>
@@ -7330,6 +10362,84 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
                     </Field>
                   </div>
                 </div>
+========
+          editOriginalDate={editOriginalDate ? formatDateKeyLabel(editOriginalDate) : ''}
+          onClose={closeEditModal}
+          onDelete={() => { if (editTicket?.id) { handleDelete(editTicket.id); closeEditModal() } }}
+          onSave={handleUnifiedEditSave}
+          getTicketNumber={(t) => (t.ticketNumber || t.ticket_number || t.id || '')}
+          parseAcDetails={(t) => { try { return t.acDetails ? JSON.parse(t.acDetails) : {} } catch { return {} } }}
+          draftExtensions={{
+            ticketNumber: editForm.ticketNumber || editTicket.ticketNumber || editTicket.ticket_number || '',
+            ticketCategory: editForm.ticketCategory || inferCategoryFromTicket(editTicket),
+            scheduleStatus: editForm.status || getScheduleStatusValue(editTicket),
+            finalDate: editForm.finalDate || getFinalDateKey(editTicket) || getPreferredDateKey(editTicket) || '',
+            serviceDriver: editForm.serviceDriver || getTicketVehicleDisplay(editTicket),
+            driverName: editForm.driverName || getTicketDriverDisplay(editTicket),
+            installerName: editForm.installerName || getInstallerDisplay(editTicket, branchEmployees, activeBranchId),
+            reschedulePending: Boolean(editForm.reschedulePending),
+            remarks: editForm.remarks || editTicket.remarks || editTicket.remarksUpdate || '',
+            commitTerms: editForm.commitTerms || editTicket.commitTerms || editTicket.commitType || '',
+            assignTechId: editForm.negotiatorId || editTicket.negotiatorId || editTicket.negotiator_id || editTicket.assignedTo || '',
+            assignBranchId: editForm.branchId || editTicket.branchId || editTicket.branch_id || activeBranchId || '',
+            modeOfPayment: editForm.modeOfPayment || resolveTicketPayment(editTicket).mode || 'NO_PAYMENT',
+            installationCharges: editForm.installationCharges ?? resolveTicketPayment(editTicket).amount ?? 0,
+          }}
+        />
+      )}
+
+      {editModalOpen && editTicket && activeTab !== 'overview' && (
+        <RelayEditTicketModal
+          ticket={editTicket}
+          ticketNumberLabel={editTicket.ticketNumber || editTicket.ticket_number || editTicket.id}
+          surface={isMyTickets ? 'my-tickets' : 'schedules'}
+          isAdmin={isAdmin}
+          isLight={isLight}
+          cardBg={cardBg}
+          border={border}
+          textPrimary={textPrimary}
+          textMuted={textMuted}
+          inputBg={inputBg}
+          inputBorder={inputBorder}
+          compactInput="w-full border rounded-xl px-3.5 py-2.5 sm:py-2.5 text-[13px] outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 normal-case"
+          branches={branches}
+          relayCustomStores={relayCustomStores}
+          onPersistCustomStores={handlePersistCustomStores}
+          dealers={dealers}
+          onDealersChanged={fetchDealers}
+          parseStoreVendor={parseStoreVendor}
+          resolveBranch={resolveBranch}
+          negotiatorsForBranch={negotiatorsForBranch}
+          saving={editSaving}
+          showDelete={canEdit}
+          driverRoster={editModalRoster.drivers}
+          installerRoster={editModalRoster.installers}
+          isTaguigServices={isTaguigServices}
+          editOriginalDate={editOriginalDate ? formatDateKeyLabel(editOriginalDate) : ''}
+          onClose={requestCloseEditModal}
+          onDelete={canEdit ? () => { if (editTicket?.id) { handleDelete(editTicket.id); closeEditModal() } } : undefined}
+          onSave={handleUnifiedEditSave}
+          getTicketNumber={(t) => (t.ticketNumber || t.ticket_number || t.id || '')}
+          parseAcDetails={(t) => { try { return t.acDetails ? JSON.parse(t.acDetails) : {} } catch { return {} } }}
+          draftExtensions={{
+            ticketNumber: editForm.ticketNumber || editTicket.ticketNumber || editTicket.ticket_number || '',
+            ticketCategory: editForm.ticketCategory || inferCategoryFromTicket(editTicket),
+            scheduleStatus: editForm.status || getScheduleStatusValue(editTicket),
+            finalDate: editForm.finalDate || getFinalDateKey(editTicket) || getPreferredDateKey(editTicket) || '',
+            serviceDriver: editForm.serviceDriver || getTicketVehicleDisplay(editTicket),
+            driverName: editForm.driverName || getTicketDriverDisplay(editTicket),
+            installerName: editForm.installerName || getInstallerDisplay(editTicket, branchEmployees, activeBranchId),
+            reschedulePending: Boolean(editForm.reschedulePending),
+            remarks: editForm.remarks || editTicket.remarks || editTicket.remarksUpdate || '',
+            commitTerms: editForm.commitTerms || editTicket.commitTerms || editTicket.commitType || '',
+            assignTechId: editForm.negotiatorId || editTicket.negotiatorId || editTicket.negotiator_id || editTicket.assignedTo || '',
+            assignBranchId: editForm.branchId || editTicket.branchId || editTicket.branch_id || activeBranchId || '',
+            modeOfPayment: editForm.modeOfPayment || resolveTicketPayment(editTicket).mode || 'NO_PAYMENT',
+            installationCharges: editForm.installationCharges ?? resolveTicketPayment(editTicket).amount ?? 0,
+          }}
+        />
+      )}
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
 
                 {/* Service & Unit Info Section */}
                 <div>
@@ -7762,6 +10872,21 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
                 </label>
               </div>
 
+              {/* Remarks / Reason Input */}
+              <div className="px-5 pb-4">
+                <label className="block text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>
+                  Remarks / Reason <span className="text-amber-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={reschedRemarks}
+                  onChange={e => setReschedRemarks(e.target.value.toUpperCase())}
+                  placeholder="e.g. HINDI MATAWAGAN / CLIENT REQUEST"
+                  className="w-full px-3 py-2 text-xs font-semibold rounded-xl border outline-none uppercase"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
+                />
+              </div>
+
               {/* Footer */}
               <div className="px-5 py-3 flex items-center justify-end gap-2 border-t" style={{ borderColor: border }}>
                 <button
@@ -7788,12 +10913,46 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
       })()}
 
       {paymentPrompt && (() => {
+<<<<<<<< HEAD:src/pages/Schedules.tsx
         const { ticket } = paymentPrompt
         const isFree = promptMode === 'FREE' || promptMode === 'FREE INSTALL'
         const handleSubmit = (e: React.FormEvent) => {
           e.preventDefault()
           const amt = isFree ? 0 : parseFloat(promptAmount) || 0
           void saveCellEdit(ticket, 'STATUS', paymentPrompt.nextStatus, { amount: amt, modeOfPayment: promptMode })
+========
+        const { ticket, nextStatus } = paymentPrompt
+        const isFreeOrPending = promptMode === 'FREE' || promptMode === 'FREE INSTALL' || promptMode === 'PENDING'
+        const isHybrid = promptMode === 'HYBRID'
+        const hybridCashNum = parseFloat(promptHybridCash) || 0
+        const hybridGcashNum = parseFloat(promptHybridGcash) || 0
+        const hybridTotal = hybridCashNum + hybridGcashNum
+        const isDoneCleaning = nextStatus === 'DONE_CLEANING'
+        const isDoneDismantle = nextStatus === 'DONE_DISMANTLE'
+        const paymentPromptHint = isDoneCleaning
+          ? 'Set payment to mark this cleaning ticket done'
+          : isDoneDismantle
+            ? 'Set payment to mark this dismantle ticket done'
+            : 'Set payment to complete and archive this ticket'
+        const paymentSubmitLabel = isDoneCleaning
+          ? 'Complete Cleaning'
+          : isDoneDismantle
+            ? 'Complete Dismantle'
+            : 'Complete & Archive'
+        const handleSubmit = (e: React.FormEvent) => {
+          e.preventDefault()
+          if (isHybrid) {
+            if (hybridTotal <= 0) return
+            const breakdown: PaymentBreakdownEntry[] = []
+            if (hybridCashNum > 0) breakdown.push({ mode: 'CASH', amount: hybridCashNum })
+            if (hybridGcashNum > 0) breakdown.push({ mode: 'GCASH', amount: hybridGcashNum })
+            void saveCellEdit(ticket, 'STATUS', nextStatus, { amount: hybridTotal, modeOfPayment: 'HYBRID', breakdown })
+            setPaymentPrompt(null)
+            return
+          }
+          const amt = isFreeOrPending ? undefined : parseFloat(promptAmount) || 0
+          void saveCellEdit(ticket, 'STATUS', nextStatus, { amount: amt, modeOfPayment: promptMode })
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
           setPaymentPrompt(null)
         }
         return ReactDOM.createPortal(
@@ -7809,7 +10968,7 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
                       Payment Details
                     </h3>
                     <p className="text-[11px] font-semibold mt-0.5" style={{ color: textMuted }}>
-                      Set payment to complete and archive this ticket
+                      {paymentPromptHint}
                     </p>
                   </div>
                   <button type="button" onClick={() => setPaymentPrompt(null)} className="p-1 rounded-md hover:bg-slate-500/10" style={{ color: textMuted }}>
@@ -7870,7 +11029,7 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
                     className="px-5 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-md"
                     style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
                   >
-                    Complete & Archive
+                    {paymentSubmitLabel}
                   </button>
                 </div>
               </form>
@@ -7880,6 +11039,7 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
         )
       })()}
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
       {/* ── Assign Drivers Modal ──────────────────────────────────────── */}
       {bulkAssignOpen && ReactDOM.createPortal(
         <div
@@ -7912,10 +11072,43 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
                 </div>
               </div>
               <button type="button" onClick={() => setBulkAssignOpen(false)} style={{ color: textMuted }}>
+========
+      {/* ── Schedules "more filters" popup: whole-month + branch-negotiator, populates the main table ──── */}
+      {monthFilterModalOpen && ReactDOM.createPortal(
+        <div
+          className="fixed inset-0 z-[9990] flex items-center justify-center p-4 sm:p-6"
+          style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}
+        >
+          <div
+            className="rounded-2xl shadow-2xl w-full max-w-2xl h-[90vh] sm:h-auto max-h-[90vh] flex flex-col border overflow-hidden shrink-0"
+            style={{ backgroundColor: cardBg, borderColor: border }}
+          >
+            {/* Header */}
+            <div
+              className="flex items-center justify-between px-5 py-4 border-b shrink-0"
+              style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}
+            >
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="flex items-center justify-center w-8 h-8 rounded-full"
+                  style={{ backgroundColor: isLight ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.18)' }}
+                >
+                  <CalendarRange className="w-4 h-4" style={{ color: green }} strokeWidth={2.1} />
+                </div>
+                <div>
+                  <div className="text-sm font-bold tracking-wide" style={{ color: textPrimary }}>Schedule Filters</div>
+                  <div className="text-[10px] font-medium" style={{ color: textMuted }}>
+                    {activeBranchLabel || 'All branches'}
+                  </div>
+                </div>
+              </div>
+              <button type="button" onClick={() => setMonthFilterModalOpen(false)} style={{ color: textMuted }}>
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
                 <X className="w-4 h-4" />
               </button>
             </div>
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
             {/* Body */}
             <form
               id="bulk-assign-form"
@@ -8076,6 +11269,191 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
           </div>
         </div>,
         document.body
+========
+            {/* Filter controls */}
+            <div className="px-5 py-4 flex flex-col gap-4 overflow-y-auto">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex flex-col gap-1 sm:w-56 shrink-0">
+                  <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
+                    Month
+                  </label>
+                  <input
+                    type="month"
+                    value={monthFilterMonth}
+                    onChange={e => setMonthFilterMonth(e.target.value)}
+                    className="h-10 px-3 rounded-xl border text-sm font-semibold outline-none"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  />
+                </div>
+                <div className="flex flex-col gap-1 flex-1 min-w-0">
+                  <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
+                    Negotiator
+                  </label>
+                  <select
+                    value={monthFilterNegotiatorId}
+                    onChange={e => setMonthFilterNegotiatorId(e.target.value)}
+                    className="h-10 px-3 rounded-xl border text-sm font-semibold outline-none"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                    title={activeBranchLabel ? `Negotiators for ${activeBranchLabel}` : 'Filter by negotiator'}
+                  >
+                    <option value="">All negotiators</option>
+                    {monthFilterNegotiatorOptions.map(emp => (
+                      <option key={emp.id} value={emp.id}>{formatNegotiatorLabel(emp)}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Status — wide pill grid with colored dots, same visual language as the row STATUS picker */}
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
+                  Status
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { value: '', label: 'All statuses' },
+                    { value: 'PENDING_GROUP', label: 'All Pending' },
+                    { value: 'CLOSING_GROUP', label: 'All Closing' },
+                  ].map(opt => {
+                    const active = monthFilterStatus === opt.value
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setMonthFilterStatus(opt.value)}
+                        className="px-3 h-8 rounded-full text-[11px] font-black uppercase tracking-wide transition-colors border"
+                        style={active
+                          ? { backgroundColor: green, borderColor: green, color: '#ffffff' }
+                          : { backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}
+                      >
+                        {opt.label}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {([
+                  { title: 'PENDING', opts: SCHEDULE_PENDING_OPTS },
+                  { title: 'CLOSING', opts: SCHEDULE_CLOSING_OPTS },
+                ] as const).map(section => (
+                  <div key={section.title} className="flex flex-col gap-1.5">
+                    <p className="text-[9px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>
+                      {section.title}
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                      {section.opts.map(opt => {
+                        const active = monthFilterStatus === opt.value
+                        const style = getScheduleStatusBadgeStyle(opt.value, isLight)
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setMonthFilterStatus(active ? '' : opt.value)}
+                            className="flex items-center gap-2 px-2.5 h-9 rounded-lg text-left transition-colors border min-w-0"
+                            style={active
+                              ? { backgroundColor: green, borderColor: green }
+                              : { backgroundColor: 'transparent', borderColor: inputBorder }}
+                          >
+                            <span
+                              className="w-2 h-2 rounded-full shrink-0 border"
+                              style={active
+                                ? { backgroundColor: '#ffffff', borderColor: '#ffffff' }
+                                : { backgroundColor: style.color, borderColor: style.borderColor }}
+                            />
+                            <span
+                              className="text-[10.5px] font-bold uppercase tracking-wide truncate"
+                              style={{ color: active ? '#ffffff' : textPrimary }}
+                            >
+                              {opt.label}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {monthFilterError && (
+                <div className="text-xs font-semibold text-red-500">{monthFilterError}</div>
+              )}
+              <button
+                type="button"
+                onClick={runMonthFilterQuery}
+                disabled={monthFilterLoading || !monthFilterMonth}
+                className="h-10 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60 flex items-center justify-center gap-2 shrink-0"
+                style={{ backgroundColor: green }}
+              >
+                {monthFilterLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Loading…
+                  </>
+                ) : 'Apply'}
+              </button>
+              <p className="text-[11px] leading-relaxed" style={{ color: textMuted }}>
+                Loads every ticket scheduled that month for this branch straight into the table below —
+                narrow by negotiator and/or status. Click a day chip above (or pick a custom date) to go
+                back to the normal single-day view.
+              </p>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {bulkAssignOpen && (
+        <AssignDriversModal
+          isLight={isLight}
+          installer={bulkAssignInstaller}
+          driver={bulkAssignDriver}
+          vehicle={bulkAssignVehicle}
+          saving={bulkAssignSaving}
+          clearSaving={bulkClearSaving}
+          visible={visible}
+          dateFilter={dateFilter}
+          activeBranchId={activeBranchId}
+          driverOnlyNames={driverOnlyNames}
+          onClose={() => setBulkAssignOpen(false)}
+          onInstallerChange={setBulkAssignInstaller}
+          onDriverChange={setBulkAssignDriver}
+          onVehicleChange={setBulkAssignVehicle}
+          onSetSaving={setBulkAssignSaving}
+          setTickets={setTickets}
+          schedulesCacheKeyForTab={schedulesCacheKeyForTab}
+          onShowToast={showToast}
+          onClearAll={clearAllDriversAndVehiclesForDate}
+        />
+      )}
+
+
+      {customDatePickerOpen && (
+        <CustomDatePickerModal
+          isLight={isLight}
+          calMonth={customDateCalMonth}
+          dateFilter={dateFilter}
+          onSetCalMonth={setCustomDateCalMonth}
+          onSelectDate={(dateKey) => {
+            handleDateFilterChange(dateKey)
+            setCustomDatePickerOpen(false)
+          }}
+          onClose={() => setCustomDatePickerOpen(false)}
+        />
+      )}
+
+      {!isMyTickets && (
+        <SchedulesShowcase
+          open={showcaseOpen}
+          onClose={() => setShowcaseOpen(false)}
+          branchLabel={activeBranchLabel}
+          dateLabel={showcaseDateLabel}
+          dateKey={dateFilter || ''}
+          isTaguigServices={isTaguigServices}
+          rows={showcaseRows}
+          paymentByRowId={showcasePaymentByRowId}
+          onBeforeExport={persistSchedulesSnapshot}
+        />
+>>>>>>>> 9eaec1af752f17756a4a81d7c292d3928586afd4:src/pages/Tickets.tsx
       )}
     </div>
 
@@ -8096,6 +11474,7 @@ export default function Schedules({ isMyTicketsProp }: { isMyTicketsProp?: boole
   )
 }
 
+<<<<<<<< HEAD:src/pages/Schedules.tsx
 function Field({ label, required, full, children }: {
   label: string
   required?: boolean
@@ -8111,3 +11490,4 @@ function Field({ label, required, full, children }: {
     </label>
   )
 }
+

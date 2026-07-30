@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, isPortalAdmin } from '../utils/api'
@@ -76,7 +76,7 @@ export default function Hris() {
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
   const excelGreen  = '#10B981'
 
-  const [activeTab, setActiveTab] = useState<'leaves' | 'advances' | 'drivers'>('leaves')
+  const [activeTab, setActiveTab] = useState<'leaves' | 'advances'>('leaves')
 
   const [error, setError] = useState<string | null>(null)
 
@@ -90,14 +90,6 @@ export default function Hris() {
     return () => window.removeEventListener('ashcol-global-branch-change', sync)
   }, [])
 
-  // Driver Route Sheets States
-  const [driverSheets, setDriverSheets] = useState<any[]>([])
-  const [showDriverSheetModal, setShowDriverSheetModal] = useState(false)
-  const [scanning, setScanning] = useState(false)
-  const [editingSheet, setEditingSheet] = useState<any | null>(null)
-
-  const driverFileInputRef = useRef<HTMLInputElement>(null)
-  
   // Data lists
   const [users, setUsers] = useState<User[]>([])
   const [leaves, setLeaves] = useState<LeaveRequest[]>([])
@@ -158,9 +150,6 @@ export default function Hris() {
       } else if (activeTab === 'advances') {
         const advancesRes = await fetch(`${API_BASE_URL}/hris/cash-advances`, { headers })
         if (advancesRes.ok) setAdvances(await advancesRes.json())
-      } else if (activeTab === 'drivers') {
-        const sheetsRes = await fetch(`${API_BASE_URL}/hris/driver-routes`, { headers })
-        if (sheetsRes.ok) setDriverSheets(await sheetsRes.json())
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to sync data with the server.')
@@ -171,7 +160,7 @@ export default function Hris() {
     fetchData()
   }, [fetchData])
 
-  // â”€â”€ User ID Helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── User ID Helper ────────────────────────────────────────────────────────────
   const getUserName = (userId: string) => {
     const found = users.find(u => u.id === userId)
     return found ? found.name : 'Unknown Employee'
@@ -194,7 +183,7 @@ export default function Hris() {
     return found ? getBranchDisplayName(found.branchId || null) : 'N/A'
   }
 
-  // â”€â”€ Action Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Action Handlers ───────────────────────────────────────────────
   
   // Scan Driver Sheet (Vision OCR)
   const handleScanDriverSheet = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -674,7 +663,6 @@ export default function Hris() {
           {[
             { id: 'leaves', label: 'Leaves Sheet', icon: Calendar },
             { id: 'advances', label: 'Cash Advances Sheet', icon: CreditCard },
-            { id: 'drivers', label: 'Drivers Monitoring Ledger', icon: FileSpreadsheet }
           ].map(tab => {
             const TabIcon = tab.icon
             const active = activeTab === tab.id
@@ -766,63 +754,6 @@ export default function Hris() {
               >
                 <Plus className="w-4 h-4" /> Request Cash Advance
               </button>
-            )}
-            {activeTab === 'drivers' && (
-              <div className="flex items-center gap-2">
-                <input
-                  ref={driverFileInputRef}
-                  type="file"
-                  accept="image/*,application/pdf"
-                  className="hidden"
-                  onChange={handleScanDriverSheet}
-                />
-                <button
-                  onClick={() => driverFileInputRef.current?.click()}
-                  disabled={scanning}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-[#10B981]/10 text-[#10B981] hover:bg-[#10B981]/25 transition-all"
-                >
-                  {scanning ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Scanning...
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="w-4 h-4" />
-                      Import Scan (Pic/PDF)
-                    </>
-                  )}
-                </button>
-                <button
-                  onClick={() => {
-                    setEditingSheet({
-                      dateFiled: new Date().toISOString().substring(0, 10),
-                      filedBy: '',
-                      driverName: '',
-                      position: 'Driver',
-                      branch: '',
-                      cutOffPeriod: '',
-                      validatedBy: '',
-                      totalApprovedOt: '',
-                      remarksOic: '',
-                      idleTimeRemarks: '',
-                      rows: Array.from({ length: 7 }, (_, i) => ({
-                        logDate: `June ${i + 2}`,
-                        postedSchedule: '7:00 AM',
-                        bioTimeIn: '',
-                        bioTimeOut: '',
-                        departureTime: '',
-                        arrivalTime: '',
-                        sites: []
-                      }))
-                    })
-                    setShowDriverSheetModal(true)
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-[#10B981] text-white hover:opacity-90 transition-all shadow-md"
-                >
-                  <Plus className="w-4 h-4" /> Add Driver Sheet
-                </button>
-              </div>
             )}
           </div>
         </div>
@@ -1060,8 +991,7 @@ export default function Hris() {
             </table>
           </div>
         )}
-
-        {/* â”€â”€ Drivers Sheets List View â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {/* ── Drivers Sheets List View ───────────────────────────── */}
         {activeTab === 'drivers' && (
           <div className="overflow-x-auto">
             <table className="excel-table">
@@ -1085,12 +1015,12 @@ export default function Hris() {
                 }).map(s => (
                   <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                     <td className="font-semibold">{s.driverName}</td>
-                    <td>{s.branch || 'â€”'}</td>
-                    <td>{s.position || 'â€”'}</td>
-                    <td className="font-medium">{s.cutOffPeriod || 'â€”'}</td>
-                    <td>{s.dateFiled ? new Date(s.dateFiled).toLocaleDateString() : 'â€”'}</td>
-                    <td>{s.validatedBy || 'â€”'}</td>
-                    <td className="font-bold">{s.totalApprovedOt || 'â€”'}</td>
+                    <td>{s.branch || '—'}</td>
+                    <td>{s.position || '—'}</td>
+                    <td className="font-medium">{s.cutOffPeriod || '—'}</td>
+                    <td>{s.dateFiled ? new Date(s.dateFiled).toLocaleDateString() : '—'}</td>
+                    <td>{s.validatedBy || '—'}</td>
+                    <td className="font-bold">{s.totalApprovedOt || '—'}</td>
                     <td>
                       <div className="flex items-center gap-1.5">
                         <button
@@ -1751,7 +1681,7 @@ export default function Hris() {
         </div>
       )}
 
-      {/* â”€â”€ Modals: Driver Route Sheet Preview/Edit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Modals: Driver Route Sheet Preview/Edit ─────────────── */}
       {showDriverSheetModal && editingSheet && (
         <>
           {/* ── DESKTOP MODAL (hidden on mobile) ── */}
@@ -2214,7 +2144,7 @@ export default function Hris() {
         </div>
         </>
       )}
-    </>
+    </div>
   )
 }
 

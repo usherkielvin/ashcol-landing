@@ -594,8 +594,12 @@ const getRelayStatusLabel = (ticket: Ticket) => {
   // Check specific backend lifecycle statuses before the generic "has a negotiator" fallback below,
   // otherwise every assigned ticket collapses to "Assigned" regardless of its real stage.
   if (status === 'SURVEY') return 'Survey'
-  if (status === 'FOR_APPROVAL') return 'For Approval'
+  if (status === 'FOR_APPROVAL') return 'For Quotation'
   if (status === 'CONTINUATION') return 'Continuation'
+  if (status === 'SYSTEM_REPROCESS') return 'System Reprocess'
+  if (status === 'DONE_SYSTEM_REPROCESS') return 'Done System Reprocess'
+  if (status === 'DISMANTLE') return 'Dismantle'
+  if (status === 'DONE_DISMANTLE') return 'Done Dismantle'
   if (status === 'IN_PROGRESS') return 'In Progress'
   if (status === 'ON_THE_WAY') return 'On the Way'
   
@@ -2074,7 +2078,14 @@ export default function Relays() {
     let assignedTo = ''
 
     if (finalStatus === 'CANCELLED') {
-      payload.branchId = ''
+      // Keep branch so cancelled tickets still appear as Schedules ghosts on their date/branch.
+      // Only drop the active assignee — Relays/My Tickets already exclude CANCELLED.
+      const selectedNegForCancel = employees.find((e: { id: string; branchId?: string; email?: string; jobTitle?: string }) => e.id === draft.assignTechId)
+      const cancelBranchRaw = draft.assignBranchId || selectedTicket.branchId || ''
+      branchId = cancelBranchRaw
+        ? (resolvePortalWriteBranchId(cancelBranchRaw, selectedNegForCancel?.email, selectedNegForCancel?.jobTitle) || cancelBranchRaw)
+        : ''
+      if (branchId) payload.branchId = branchId
       payload.assignedTo = ''
       payload.status = finalStatus
     } else {
@@ -2128,8 +2139,10 @@ export default function Relays() {
     if (newRemark) {
       payload.remarksUpdate = newRemark
     }
-    payload.installationCharges = Number(draft.installationCharges)
-    payload.modeOfPayment = draft.modeOfPayment || null
+    const isNoPayment = !draft.modeOfPayment
+      || String(draft.modeOfPayment).toUpperCase().replace(/\s+/g, '_') === 'NO_PAYMENT'
+    payload.installationCharges = isNoPayment ? null : Number(draft.installationCharges)
+    payload.modeOfPayment = isNoPayment ? 'NO_PAYMENT' : (draft.modeOfPayment || null)
     payload.controlNumber = draft.controlNumber || null
     const acDetailsObj = {
       // Start from the ticket's existing acDetails so keys this modal doesn't expose
@@ -3604,7 +3617,9 @@ export default function Relays() {
                                 { value: 'SERVICE', label: 'SERVICE' },
                                 { value: 'RESCHED', label: 'RESCHED' },
                                 { value: 'CONTINUATION', label: 'CONTINUATION' },
-                                { value: 'FOR APPROVAL', label: 'FOR APPROVAL' }
+                                { value: 'FOR APPROVAL', label: 'FOR QUOTATION' },
+                                { value: 'SYSTEM_REPROCESS', label: 'SYSTEM REPROCESS' },
+                                { value: 'DISMANTLE', label: 'DISMANTLE' },
                               ].map(renderStatusButton)}
                             </div>
                           </div>
@@ -3617,7 +3632,11 @@ export default function Relays() {
                                 { value: 'DONE_SURVEY', label: 'DONE SURVEY' },
                                 { value: 'DONE_CHECKUP', label: 'DONE CHECKUP' },
                                 { value: 'DONE_BACKJOB', label: 'DONE BACKJOB' },
-                                { value: 'CANCELLED', label: 'CANCELLED' }
+                                { value: 'DONE_SERVICE', label: 'DONE SERVICE' },
+                                { value: 'DONE_SYSTEM_REPROCESS', label: 'DONE SYSTEM REPROCESS' },
+                                { value: 'DONE_DISMANTLE', label: 'DONE DISMANTLE' },
+                                { value: 'DONE_QUOTATION', label: 'DONE QUOTATION' },
+                                { value: 'CANCELLED', label: 'CANCELLED' },
                               ].map(renderStatusButton)}
                             </div>
                           </div>
@@ -3826,7 +3845,10 @@ export default function Relays() {
                           setAddForm(prev => ({
                             ...prev,
                             assignedTo: val,
-                            installerName: foundEmp ? foundEmp.name : '',
+                            // Installer is field crew, assigned later on Schedules — never the
+                            // negotiator/office-staff account picked here. Leave it untouched
+                            // (empty until someone explicitly sets it) so it doesn't overlap with
+                            // the negotiator's own name.
                             branchId: (foundEmp && foundEmp.branchId) ? foundEmp.branchId : prev.branchId,
                             // Only promote PENDING to ASSIGNED — don't clobber a status/service-type already
                             // chosen via the status buttons above (SURVEY, INSTALL, CONTINUATION, etc).
