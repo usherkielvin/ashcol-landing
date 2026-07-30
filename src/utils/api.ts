@@ -726,13 +726,41 @@ export function formatDisplayUserLabel(label?: string | null): string {
     .replace(/\s*-\s*manager$/i, ' - OIC')
 }
 
-export function formatBranchName(name?: string | null): string {
-  if (!name) return ''
-  const upper = name.trim().toUpperCase()
-  if (upper.includes('TAGUIG') && (upper.includes('SERVICE') || upper.includes('SERVICES') || upper.includes('DEPT'))) {
+/** Canonical short labels used in the admin branch switcher (prod UI). */
+const BRANCH_DISPLAY_BY_ID: Record<string, string> = {
+  'BR-BATANGAS': 'BATANGAS',
+  'BR-BULACAN': 'BULACAN',
+  'BR-CALAUAN': 'CALAUAN',
+  'BR-CANDELARIA': 'CANDELARIA',
+  'BR-DASMA': 'DASMA',
+  'BR-GENTRI': 'GENTRI',
+  'BR-LAGUNA': 'LAGUNA',
+  'BR-PAMPANGA': 'PAMPANGA',
+  'BR-RIZAL': 'RIZAL',
+  'BR-SILANG': 'SILANG',
+  'BR-TAGUIG-SALES': 'TAGUIG-SALES',
+  'BR-TAGUIG-SERVICES': 'TAGUIG SERVICES',
+  'BR-VALENZUELA': 'VALENZUELA',
+}
+
+/**
+ * Short branch label for UI (matches production switcher).
+ * Prefer `branchId` (BR-*) when available so legacy long DB names still render cleanly.
+ */
+export function formatBranchName(name?: string | null, branchId?: string | null): string {
+  const id = (branchId || '').trim().toUpperCase()
+  if (id && BRANCH_DISPLAY_BY_ID[id]) return BRANCH_DISPLAY_BY_ID[id]
+
+  const upper = (name || id || '').trim().toUpperCase()
+  if (!upper) return ''
+
+  if (
+    id.includes('TAGUIG') && (id.includes('SERVICE') || id.includes('SERVICES'))
+    || (upper.includes('TAGUIG') && (upper.includes('SERVICE') || upper.includes('SERVICES') || upper.includes('DEPT')))
+  ) {
     return 'TAGUIG SERVICES'
   }
-  if (upper.includes('TAGUIG') || upper.includes('HEAD OFFICE')) {
+  if (id.includes('TAGUIG') || upper.includes('TAGUIG') || upper.includes('HEAD OFFICE')) {
     return 'TAGUIG-SALES'
   }
   if (upper.includes('SILANG') || upper.includes('STA ROSA') || upper.includes('STA. ROSA') || upper.includes('STO ROSA') || upper.includes('STO. ROSA')) {
@@ -741,7 +769,21 @@ export function formatBranchName(name?: string | null): string {
   if (upper.includes('DASMA') || upper.includes('DASMARIÑAS') || upper.includes('DASMARINAS')) {
     return 'DASMA'
   }
-  return upper.replace(/^ASHCOL\s*-?\s*/i, '').trim()
+  if (upper.includes('CALAUAN')) return 'CALAUAN'
+  if (upper.includes('CANDELARIA')) return 'CANDELARIA'
+  if (upper.includes('BULACAN')) return 'BULACAN'
+  if (upper.includes('PAMPANGA')) return 'PAMPANGA'
+  if (upper.includes('RIZAL') || upper.includes('RODRIGUEZ')) return 'RIZAL'
+  if (upper.includes('BATANGAS')) return 'BATANGAS'
+  if (upper.includes('GENTRI') || upper.includes('GENERAL TRIAS')) return 'GENTRI'
+  if (upper.includes('VALENZUELA')) return 'VALENZUELA'
+  if (upper.includes('LAGUNA') && !upper.includes('CALAUAN')) return 'LAGUNA'
+
+  // Strip "ASHCOL", then leftover separators ("- CALAUAN…", "– …")
+  return upper
+    .replace(/^ASHCOL\b[\s\-–—:]*/i, '')
+    .replace(/^[\s\-–—:]+/, '')
+    .trim()
 }
 
 type PortalUserLike = {

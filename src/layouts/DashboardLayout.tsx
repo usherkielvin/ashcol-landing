@@ -50,7 +50,7 @@ const normalizeBranchDisplayName = (branchId?: string | null, branchName?: strin
     return isServices ? 'TAGUIG SERVICES' : 'TAGUIG-SALES'
   }
 
-  return formatBranchName(name || id)
+  return formatBranchName(name || id, branchId)
 }
 
 const getBranchCode = (name: string) => {
@@ -215,27 +215,32 @@ export default function DashboardLayout() {
 
         const newList: BranchOption[] = []
         for (const b of list) {
-          const cleanName = b.name.replace(/^(ashcol\s+)/i, '').toUpperCase()
-          const isTaguigRow = (b.id || '').toLowerCase().includes('taguig')
-            || (b.id || '').toLowerCase().startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
-            || cleanName.includes('TAGUIG')
+          const branchId = String(b.id || '')
+          const displayName = formatBranchName(b.name, branchId)
+          const isTaguigRow = branchId.toUpperCase().includes('TAGUIG')
+            || branchId.toLowerCase().startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
+            || displayName.includes('TAGUIG')
           // Taguig (Sales/Services) is always available; other inactive branches are hidden.
           if (b.isActive === false && !isTaguigRow) continue
-          if (b.id === 'BR-TAGUIG-SALES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') {
+          if (branchId === 'BR-TAGUIG-SALES' || branchId === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') {
             if (!newList.some(item => item.id === 'BR-TAGUIG-SALES')) {
-              newList.push({ id: 'BR-TAGUIG-SALES', name: 'TAGUIG - SALES' })
+              newList.push({ id: 'BR-TAGUIG-SALES', name: 'TAGUIG-SALES' })
             }
             if (!newList.some(item => item.id === 'BR-TAGUIG-SERVICES')) {
-              newList.push({ id: 'BR-TAGUIG-SERVICES', name: 'TAGUIG - SERVICES' })
+              newList.push({ id: 'BR-TAGUIG-SERVICES', name: 'TAGUIG SERVICES' })
             }
-          } else if (b.id === 'BR-TAGUIG-SERVICES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-services' || b.id === 'BR-TAGUIG-SALES-services') {
+          } else if (
+            branchId === 'BR-TAGUIG-SERVICES'
+            || branchId === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-services'
+            || branchId === 'BR-TAGUIG-SALES-services'
+          ) {
             if (!newList.some(item => item.id === 'BR-TAGUIG-SERVICES')) {
-              newList.push({ id: 'BR-TAGUIG-SERVICES', name: 'TAGUIG - SERVICES' })
+              newList.push({ id: 'BR-TAGUIG-SERVICES', name: 'TAGUIG SERVICES' })
             }
-          } else if (cleanName.includes('TAGUIG')) {
+          } else if (displayName.includes('TAGUIG')) {
             // skip other taguig variants
           } else {
-            newList.push({ id: b.id, name: cleanName })
+            newList.push({ id: branchId, name: displayName })
           }
         }
         newList.sort((a, b) => a.name.localeCompare(b.name))
@@ -724,7 +729,7 @@ export default function DashboardLayout() {
                                   isSelected ? 'bg-white/15 text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'
                                 }`}
                               >
-                                <span>{formatBranchName(b.name)}</span>
+                                <span>{b.name}</span>
                                 {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
                               </button>
                             )
@@ -755,7 +760,7 @@ export default function DashboardLayout() {
                       >
                         {adminBranches.map((b) => (
                           <option key={b.id} value={b.id} style={{ backgroundColor: '#0a180f', color: '#fff' }}>
-                            {formatBranchName(b.name)}
+                            {b.name}
                           </option>
                         ))}
                       </select>
@@ -928,8 +933,10 @@ export default function DashboardLayout() {
         <main className={
           currentPage === 'DDRM'
             ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-[2px]"
-            : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search')
+            : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Registration' || currentPage === 'Search')
               ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
+              : currentPage === 'HRIS'
+                ? "flex-1 overflow-y-auto pt-5 pb-20 px-0 sm:px-5 md:p-8 relative"
               : "flex-1 overflow-y-auto p-5 md:p-8 relative"
         }>
           {/* Subtle ambient gradient */}

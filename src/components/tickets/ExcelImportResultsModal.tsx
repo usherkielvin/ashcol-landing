@@ -48,8 +48,8 @@ export function ExcelImportResultsModal({
   const inputBorder = isLight ? '#cbd5e1' : '#334155'
   const green = '#16A34A'
   const theadBg = isLight ? '#e8edf3' : '#0f172a'
-  const rowEven = isLight ? '#ffffff' : '#0f172a'
-  const rowOdd = isLight ? '#f7fbf8' : '#1b2330'
+  const rowEven = isLight ? '#ffffff' : '#060B18'
+  const rowOdd = isLight ? '#f7fbf8' : '#060B18'
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"

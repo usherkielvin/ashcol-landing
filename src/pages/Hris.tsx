@@ -1,18 +1,23 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, isPortalAdmin } from '../utils/api'
+import { ResponsiveTable, type ColumnDef as ResponsiveColumnDef } from '../components/ResponsiveTable'
 import {
-  FileSpreadsheet, Calendar, CreditCard, Plus, Check, X,
-  Search, Filter, AlertCircle, Eye
+  FileSpreadsheet, Calendar, CreditCard, Plus, X,
+  Search, Filter, AlertCircle, Upload, Eye, Loader2, ChevronRight
 } from 'lucide-react'
+import { HrisLeavesTab } from '../components/hris/HrisLeavesTab'
+import { HrisAdvancesTab } from '../components/hris/HrisAdvancesTab'
+import { HrisDriversTab } from '../components/hris/HrisDriversTab'
 
-// ── Types ──────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 interface User {
   id: string
   name: string
   email: string
   role: string
+  jobTitle?: string
   branchId?: string
 }
 
@@ -64,6 +69,7 @@ export default function Hris() {
   const { theme } = useTheme()
   const { user } = useAuth()
   const isLight = theme === 'light'
+  const isPortalAdminUser = isPortalAdmin(user?.role || '')
 
   // Theme Colors
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
@@ -75,7 +81,7 @@ export default function Hris() {
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
   const excelGreen  = '#10B981'
 
-  const [activeTab, setActiveTab] = useState<'leaves' | 'advances'>('leaves')
+  const [activeTab, setActiveTab] = useState<'leaves' | 'advances' | 'drivers'>('leaves')
 
   const [error, setError] = useState<string | null>(null)
 
@@ -94,6 +100,7 @@ export default function Hris() {
   const [leaves, setLeaves] = useState<LeaveRequest[]>([])
   const [balances, setBalances] = useState<LeaveBalance[]>([])
   const [advances, setAdvances] = useState<CashAdvance[]>([])
+  const [driverSheets, setDriverSheets] = useState<any[]>([])
   
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('')
@@ -104,6 +111,12 @@ export default function Hris() {
   const [showAdvanceModal, setShowAdvanceModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [selectedAdvance, setSelectedAdvance] = useState<CashAdvance | null>(null)
+
+  // Driver Sheets Modal & Scan State
+  const [showDriverSheetModal, setShowDriverSheetModal] = useState(false)
+  const [editingSheet, setEditingSheet] = useState<any | null>(null)
+  const [scanning, setScanning] = useState(false)
+  const driverFileInputRef = useRef<HTMLInputElement>(null)
 
   // Status Confirmation State
   const [confirmingAdvance, setConfirmingAdvance] = useState<CashAdvance | null>(null)
@@ -149,6 +162,9 @@ export default function Hris() {
       } else if (activeTab === 'advances') {
         const advancesRes = await fetch(`${API_BASE_URL}/hris/cash-advances`, { headers })
         if (advancesRes.ok) setAdvances(await advancesRes.json())
+      } else if (activeTab === 'drivers') {
+        const dsRes = await fetch(`${API_BASE_URL}/hris/driver-routes`, { headers })
+        if (dsRes.ok) setDriverSheets(await dsRes.json())
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to sync data with the server.')
@@ -159,7 +175,7 @@ export default function Hris() {
     fetchData()
   }, [fetchData])
 
-  // ── User ID Helper ───────────────────────────────────────────────
+  // ── User ID Helper ────────────────────────────────────────────────────────────
   const getUserName = (userId: string) => {
     const found = users.find(u => u.id === userId)
     return found ? found.name : 'Unknown Employee'
@@ -183,6 +199,148 @@ export default function Hris() {
   }
 
   // ── Action Handlers ───────────────────────────────────────────────
+  
+  // Scan Driver Sheet (Vision OCR)
+  const handleScanDriverSheet = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setScanning(true)
+    setError(null)
+    const fd = new FormData()
+    fd.append('file', file)
+
+    try {
+      const token = getToken()
+      const res = await fetch(`${API_BASE_URL}/hris/driver-routes/scan`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.error) {
+          alert(data.error)
+        } else {
+          // Setup editing state
+          setEditingSheet({
+            dateFiled: data.dateFiled || new Date().toISOString().substring(0, 10),
+            filedBy: data.filedBy || '',
+            driverName: data.driverName || '',
+            position: data.position || 'Driver',
+            branch: data.branch || '',
+            cutOffPeriod: data.cutOffPeriod || '',
+            validatedBy: data.validatedBy || '',
+            totalApprovedOt: data.totalApprovedOt || '',
+            remarksOic: data.remarksOic || '',
+            idleTimeRemarks: data.idleTimeRemarks || '',
+            rows: (data.rows || []).map((r: any) => ({
+              logDate: r.logDate || '',
+              postedSchedule: r.postedSchedule || '',
+              bioTimeIn: r.bioTimeIn || '',
+              bioTimeOut: r.bioTimeOut || '',
+              departureTime: r.departureTime || '',
+              arrivalTime: r.arrivalTime || '',
+              sites: r.sites || []
+            }))
+          })
+          setShowDriverSheetModal(true)
+        }
+      } else {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || err.message || `Scan failed (HTTP ${res.status})`)
+      }
+    } catch (err: any) {
+      alert('Error scanning sheet: ' + err.message)
+    } finally {
+      setScanning(false)
+      if (driverFileInputRef.current) driverFileInputRef.current.value = ''
+    }
+  }
+
+  // Save/Update Driver Sheet
+  const handleSaveDriverSheet = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingSheet) return
+
+    const token = getToken()
+    const url = editingSheet.id 
+      ? `${API_BASE_URL}/hris/driver-routes/${editingSheet.id}`
+      : `${API_BASE_URL}/hris/driver-routes/save`
+    const method = editingSheet.id ? 'PUT' : 'POST'
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(editingSheet)
+      })
+
+      if (res.ok) {
+        setShowDriverSheetModal(false)
+        setEditingSheet(null)
+        fetchData()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || err.message || 'Failed to save sheet')
+      }
+    } catch (err: any) {
+      alert('Error saving sheet: ' + err.message)
+    }
+  }
+
+  // Delete Driver Sheet
+  const handleDeleteDriverSheet = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this driver route sheet and all its logs?')) return
+    const token = getToken()
+    try {
+      const res = await fetch(`${API_BASE_URL}/hris/driver-routes/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.ok) {
+        fetchData()
+      } else {
+        alert('Failed to delete sheet')
+      }
+    } catch (err: any) {
+      alert('Error deleting sheet: ' + err.message)
+    }
+  }
+
+  // View Sheet details
+  const handleViewSheetDetails = async (id: string) => {
+    const token = getToken()
+    try {
+      const res = await fetch(`${API_BASE_URL}/hris/driver-routes/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const sheetData = data.sheet
+        const logs = data.logs.map((l: any) => {
+          try {
+            return {
+              ...l,
+              sites: l.sitesJson ? JSON.parse(l.sitesJson) : []
+            }
+          } catch (e) {
+            return { ...l, sites: [] }
+          }
+        })
+        sheetData.rows = logs
+        setEditingSheet(sheetData)
+        setShowDriverSheetModal(true)
+      } else {
+        alert('Failed to fetch details')
+      }
+    } catch (err: any) {
+      alert('Error fetching details: ' + err.message)
+    }
+  }
 
   // Submit Leave Request
   const handleLeaveRequest = async (e: React.FormEvent) => {
@@ -381,9 +539,98 @@ export default function Hris() {
     document.head.appendChild(style)
   }, [])
 
+  const leaveRequestResponsiveColumns: ResponsiveColumnDef<LeaveRequest>[] = [
+    {
+      header: 'Request ID',
+      accessorKey: 'id',
+      isMobileVisible: true,
+      cellRenderer: (req) => <span className="font-mono text-xs text-gray-500">{req.id.substring(0, 8).toUpperCase()}</span>
+    },
+    {
+      header: 'Employee Name',
+      accessorKey: 'employeeId',
+      isMobileVisible: true,
+      cellRenderer: (req) => <span className="font-bold text-gray-900 dark:text-gray-100">{getUserName(req.employeeId)}</span>
+    },
+    {
+      header: 'Leave Type',
+      accessorKey: 'leaveType',
+      isMobileVisible: true,
+    },
+    {
+      header: 'Start Date',
+      accessorKey: 'startDate',
+      isMobileVisible: false,
+    },
+    {
+      header: 'End Date',
+      accessorKey: 'endDate',
+      isMobileVisible: false,
+    },
+    {
+      header: 'Status',
+      accessorKey: 'status',
+      isMobileVisible: true,
+      cellRenderer: (req) => (
+        <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase"
+          style={{
+            backgroundColor: req.status === 'PENDING' ? 'rgba(245,158,11,0.1)' : req.status === 'APPROVED' ? 'rgba(59,130,246,0.1)' : 'rgba(239,68,68,0.1)',
+            color: req.status === 'PENDING' ? '#F59E0B' : req.status === 'APPROVED' ? '#3B82F6' : '#EF4444'
+          }}
+        >
+          {req.status}
+        </span>
+      )
+    },
+    {
+      header: 'Approved By',
+      accessorKey: 'approvedBy',
+      isMobileVisible: false,
+    },
+    {
+      header: 'Approved At',
+      accessorKey: 'approvedAt',
+      isMobileVisible: false,
+    },
+  ]
+
+  const leaveBalancesResponsiveColumns: ResponsiveColumnDef<LeaveBalance>[] = [
+    {
+      header: 'Employee Name',
+      accessorKey: 'employeeId',
+      isMobileVisible: true,
+      cellRenderer: (bal) => <span className="font-bold text-gray-900 dark:text-gray-100">{getUserName(bal.employeeId)}</span>
+    },
+    {
+      header: 'Year',
+      accessorKey: 'year',
+      isMobileVisible: true,
+    },
+    {
+      header: 'Vacation (Allocated)',
+      accessorKey: 'vacationAllocated',
+      isMobileVisible: false,
+    },
+    {
+      header: 'Sick (Allocated)',
+      accessorKey: 'sickAllocated',
+      isMobileVisible: false,
+    },
+    {
+      header: 'Emergency (Allocated)',
+      accessorKey: 'emergencyAllocated',
+      isMobileVisible: false,
+    }
+  ]
+
   return (
-    <div
-      className="flex flex-col gap-5 min-h-full"
+    <>
+      {/* ────────────────────────────────────────────────────────────
+          DESKTOP VIEW (FORKED)
+          ──────────────────────────────────────────────────────────── */}
+      <div className="hidden md:block">
+      <div
+        className="flex flex-col gap-5 min-h-full"
       style={{
         fontFamily: "'Inter', sans-serif",
         backgroundColor: pageBg,
@@ -431,6 +678,7 @@ export default function Hris() {
           {[
             { id: 'leaves', label: 'Leaves Sheet', icon: Calendar },
             { id: 'advances', label: 'Cash Advances Sheet', icon: CreditCard },
+            { id: 'drivers', label: 'Drivers Route Sheets', icon: FileSpreadsheet },
           ].map(tab => {
             const TabIcon = tab.icon
             const active = activeTab === tab.id
@@ -456,30 +704,27 @@ export default function Hris() {
         <div className="p-4 flex flex-col md:flex-row items-center justify-between gap-4" style={{ borderBottom: `1px solid ${border}` }}>
           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
             {/* Search */}
-            <div className="relative w-full md:w-64">
-              <Search className="absolute left-3.5 top-3 w-4 h-4" style={{ color: textMuted }} />
+            <div className="relative flex-1 md:w-64">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: textMuted }} />
               <input
                 type="text"
-                placeholder="Search employee name…"
+                placeholder="Search..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#10B981]/40"
+                className="w-full pl-9 pr-3 py-1.5 rounded-xl text-xs font-semibold focus:outline-none"
                 style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
               />
             </div>
 
-            {/* Filter status */}
-            <div className="flex items-center gap-1.5 w-full md:w-auto">
-              <Filter className="w-3.5 h-3.5" style={{ color: textMuted }} />
+            {/* Status Filter */}
+            <div className="relative">
               <select
                 value={statusFilter}
                 onChange={e => setStatusFilter(e.target.value)}
-                className="px-3 py-2 rounded-xl text-xs font-bold appearance-none focus:outline-none"
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold focus:outline-none cursor-pointer"
                 style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
               >
-                <option value="ALL">Status: All</option>
-                <option value="PENDING">PENDING</option>
-                <option value="APPROVED">APPROVED</option>
+                <option value="ALL">All Statuses</option>
                 {activeTab === 'leaves' ? (
                   <option value="REJECTED">REJECTED</option>
                 ) : (
@@ -523,242 +768,293 @@ export default function Hris() {
                 <Plus className="w-4 h-4" /> Request Cash Advance
               </button>
             )}
+            {activeTab === 'drivers' && (
+              <>
+                <input
+                  type="file"
+                  ref={driverFileInputRef}
+                  onChange={handleScanDriverSheet}
+                  accept="image/*,.pdf"
+                  className="hidden"
+                />
+                <button
+                  disabled={scanning}
+                  onClick={() => driverFileInputRef.current?.click()}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-[#10B981]/10 text-[#10B981] hover:bg-[#10B981]/25 transition-all disabled:opacity-50"
+                >
+                  {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                  {scanning ? 'Scanning...' : 'Import Scan'}
+                </button>
+              </>
+            )}
           </div>
         </div>
 
         {/* ── Leaves Grid Table View ─────────────────────────────── */}
         {activeTab === 'leaves' && (
-          <>
-            <div className="overflow-x-auto">
-              <table className="excel-table">
-                <thead>
-                  <tr>
-                    <th>Request ID</th>
-                    <th>Employee Name</th>
-                    <th>Leave Type</th>
-                    <th>Start Date</th>
-                    <th>End Date</th>
-                    <th>Status</th>
-                    <th>Approved By</th>
-                    <th>Approved At</th>
-                    <th style={{ width: 120 }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredLeaves.map(l => (
-                    <tr key={l.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                      <td className="font-mono text-xs select-all">{l.id.substring(0, 8).toUpperCase()}</td>
-                      <td className="font-semibold">{getUserName(l.employeeId)}</td>
-                      <td>
-                        <span className="px-2 py-0.5 rounded text-[11px] font-black uppercase"
-                          style={{
-                            backgroundColor: l.leaveType === 'SICK' ? 'rgba(239,68,68,0.1)' : 'rgba(59,130,246,0.1)',
-                            color: l.leaveType === 'SICK' ? '#EF4444' : '#3B82F6'
-                          }}
-                        >
-                          {l.leaveType}
-                        </span>
-                      </td>
-                      <td className="font-medium">{l.startDate}</td>
-                      <td className="font-medium">{l.endDate}</td>
-                      <td>
-                        <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase"
-                          style={{
-                            backgroundColor: l.status === 'PENDING' ? 'rgba(245,158,11,0.1)' : l.status === 'APPROVED' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-                            color: l.status === 'PENDING' ? '#F59E0B' : l.status === 'APPROVED' ? '#10B981' : '#EF4444'
-                          }}
-                        >
-                          {l.status}
-                        </span>
-                      </td>
-                      <td>{l.approvedBy ? getUserName(l.approvedBy) : '—'}</td>
-                      <td>{l.approvedAt ? new Date(l.approvedAt).toLocaleDateString() : '—'}</td>
-                      <td>
-                        {l.status === 'PENDING' ? (
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => handleLeaveApproval(l.id, 'APPROVED')}
-                              className="p-1 rounded bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20"
-                              title="Approve Leave"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleLeaveApproval(l.id, 'REJECTED')}
-                              className="p-1 rounded bg-red-500/10 text-red-500 hover:bg-red-500/20"
-                              title="Reject Leave"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-slate-400 font-semibold select-none">No Action</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                  {/* Excel Summary Row */}
-                  <tr className="excel-total-row">
-                    <td colSpan={2}>Total Leaves Count:</td>
-                    <td>{leavesSummary.total} Total</td>
-                    <td colSpan={2}>Approved: {leavesSummary.approved}</td>
-                    <td>Pending: {leavesSummary.pending}</td>
-                    <td colSpan={3}></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            
-            {/* Sheet Sub-Table B: LEAVE BALANCES */}
-            <div className="mt-6">
-              <div className="px-4 py-2 border-b font-bold text-xs bg-slate-50 dark:bg-slate-800/20 text-slate-500" style={{ borderColor: border }}>
-                B. EMPLOYEE LEAVE CREDITS BALANCES SHEET
-              </div>
-              <div className="overflow-x-auto border-t">
-                <table className="excel-table">
-                  <thead>
-                    <tr>
-                      <th>Employee Name</th>
-                      <th>Year</th>
-                      <th>Vacation (Allocated)</th>
-                      <th>Vacation (Used)</th>
-                      <th>Sick (Allocated)</th>
-                      <th>Sick (Used)</th>
-                      <th>Emergency (Allocated)</th>
-                      <th>Emergency (Used)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {balances.map(b => (
-                      <tr key={b.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                        <td className="font-semibold">{getUserName(b.employeeId)}</td>
-                        <td className="font-mono text-xs">{b.year}</td>
-                        <td>{b.vacationAllocated}</td>
-                        <td className="text-rose-500 font-medium">{b.vacationUsed}</td>
-                        <td>{b.sickAllocated}</td>
-                        <td className="text-rose-500 font-medium">{b.sickUsed}</td>
-                        <td>{b.emergencyAllocated}</td>
-                        <td className="text-rose-500 font-medium">{b.emergencyUsed}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </>
+          <HrisLeavesTab
+            filteredLeaves={filteredLeaves}
+            balances={balances}
+            getUserName={getUserName}
+            handleLeaveApproval={handleLeaveApproval}
+            leavesSummary={leavesSummary}
+            border={border}
+          />
         )}
 
         {/* ── Cash Advances Grid Table View ───────────────────────── */}
         {activeTab === 'advances' && (
-          <div className="overflow-x-auto">
-            <table className="excel-table">
-              <thead>
-                <tr>
-                  <th>Request ID</th>
-                  <th>Employee Name</th>
-                  <th>Branch</th>
-                  <th>Request Amount</th>
-                  <th>Purpose / Reason</th>
-                  <th>Status</th>
-                  <th>Submitted At</th>
-                  <th style={{ width: 240 }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredAdvances.map(a => (
-                  <tr key={a.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                    <td className="font-mono text-xs select-all">{a.id.substring(0, 8).toUpperCase()}</td>
-                    <td className="font-semibold">{getUserName(a.employeeId)}</td>
-                    <td className="text-xs font-semibold text-slate-500">{getBranchDisplayName(a.branchId || null)}</td>
-                    <td className="font-semibold">₱{a.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    <td className="text-xs text-slate-500 font-medium max-w-[250px] truncate" title={a.purpose}>{a.purpose || '—'}</td>
-                    <td>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase"
-                        style={{
-                          backgroundColor: a.status === 'PENDING' ? 'rgba(245,158,11,0.1)' : a.status === 'APPROVED' ? 'rgba(59,130,246,0.1)' : a.status === 'DISBURSED' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-                          color: a.status === 'PENDING' ? '#F59E0B' : a.status === 'APPROVED' ? '#3B82F6' : a.status === 'DISBURSED' ? '#10B981' : '#EF4444'
-                        }}
-                      >
-                        {a.status}
-                      </span>
-                    </td>
-                    <td className="text-xs text-slate-500 font-medium">
-                      {new Date(a.createdAt).toLocaleString('en-US', {
-                        year: 'numeric',
-                        month: '2-digit',
-                        day: '2-digit',
-                        hour: 'numeric',
-                        minute: '2-digit',
-                        hour12: true
-                      })}
-                    </td>
-                    <td>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => {
-                            setSelectedAdvance(a)
-                            setShowDetailsModal(true)
-                          }}
-                          className="px-2 py-1 rounded bg-slate-500/10 text-slate-500 hover:bg-slate-500/20 text-[10px] font-bold"
-                        >
-                          View Details
-                        </button>
-                        {a.status === 'PENDING' && (
-                          <>
-                            <button
-                              onClick={() => {
-                                setConfirmingAdvance(a)
-                                setConfirmingStatus('APPROVED')
-                                setApprovalNotes('')
-                              }}
-                              className="px-2 py-1 rounded bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 text-[10px] font-bold"
-                            >
-                              Approve
-                            </button>
-                            <button
-                              onClick={() => {
-                                setConfirmingAdvance(a)
-                                setConfirmingStatus('REJECTED')
-                                setApprovalNotes('')
-                              }}
-                              className="px-2 py-1 rounded bg-red-500/10 text-red-500 hover:bg-red-500/20 text-[10px] font-bold"
-                            >
-                              Reject
-                            </button>
-                          </>
-                        )}
-                        {a.status === 'APPROVED' && (
-                          <button
-                            onClick={() => {
-                              setConfirmingAdvance(a)
-                              setConfirmingStatus('DISBURSED')
-                              setApprovalNotes('')
-                            }}
-                            className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 text-[10px] font-bold"
-                          >
-                            Disburse
-                          </button>
-                        )}
-                        {a.status === 'DISBURSED' && (
-                          <span className="text-[10px] text-slate-400 font-bold select-none">Disbursed (Deducts to Salary)</span>
-                        )}
-                        {a.status === 'FULLY_PAID' && (
-                          <span className="text-[10px] text-slate-400 font-bold select-none">Fully Paid</span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {/* Excel Summary Row */}
-                <tr className="excel-total-row">
-                  <td colSpan={3}>Grand Total:</td>
-                  <td className="font-bold text-emerald-600 dark:text-emerald-400">₱{advancesSummary.originalSum.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  <td colSpan={4} className="text-xs text-slate-400 font-medium">Total cash advances requested</td>
-                </tr>
-              </tbody>
-            </table>
+          <HrisAdvancesTab
+            filteredAdvances={filteredAdvances}
+            getUserName={getUserName}
+            getUserBranchName={getUserBranchName}
+            isPortalAdminUser={isPortalAdminUser}
+            setConfirmingAdvance={setConfirmingAdvance}
+            setConfirmingStatus={setConfirmingStatus}
+            setSelectedAdvance={setSelectedAdvance}
+            setShowDetailsModal={setShowDetailsModal}
+            advancesSummary={advancesSummary}
+          />
+        )}
+
+        {/* ── Drivers Sheets List View ───────────────────────────── */}
+        {activeTab === 'drivers' && (
+          <HrisDriversTab
+            driverSheets={driverSheets}
+            searchQuery={searchQuery}
+            handleViewSheetDetails={handleViewSheetDetails}
+            handleDeleteDriverSheet={handleDeleteDriverSheet}
+          />
+        )}
+      </div>
+      </div>
+      </div>
+      {/* ────────────────────────────────────────────────────────────
+          END DESKTOP VIEW
+          ──────────────────────────────────────────────────────────── */}
+
+      {/* ────────────────────────────────────────────────────────────
+          MOBILE VIEW (FORKED)
+          ──────────────────────────────────────────────────────────── */}
+      <div className="md:hidden flex flex-col w-full bg-slate-50 dark:bg-slate-950 min-h-screen">
+        
+        {/* Part 1: Mobile Header (Static, scrolls away) */}
+        <div className="w-full bg-white dark:bg-slate-900 px-5 pt-5 pb-2">
+          <h2 className="text-2xl font-black tracking-tight flex items-center gap-2.5 text-gray-900 dark:text-white">
+            <FileSpreadsheet className="w-7 h-7 text-[#10B981]" />
+            HRIS Ledger
+          </h2>
+        </div>
+
+        {/* Sticky Tab Bar */}
+        <div className="w-full bg-white dark:bg-slate-900 sticky top-0 z-40 border-b border-gray-200 dark:border-slate-700 shadow-sm">
+          <div className="flex w-full overflow-x-auto no-scrollbar px-5">
+          {[
+            { id: 'leaves', mobileLabel: 'Leaves', icon: Calendar },
+            { id: 'advances', mobileLabel: 'Cash Advances', icon: CreditCard },
+            { id: 'drivers', mobileLabel: 'Drivers', icon: FileSpreadsheet }
+          ].map(tab => {
+            const TabIcon = tab.icon
+            const active = activeTab === tab.id
+            return (
+              <div
+                key={tab.id}
+                onClick={() => {
+                  setActiveTab(tab.id as any)
+                  setStatusFilter('ALL')
+                  setSearchQuery('')
+                }}
+                className={`flex-shrink-0 whitespace-nowrap px-4 py-3 text-sm font-medium transition-colors cursor-pointer flex items-center gap-2 ${
+                  active 
+                    ? 'text-green-700 border-b-2 border-green-500 dark:text-green-400 dark:border-green-400' 
+                    : 'text-gray-500 border-b-2 border-transparent hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                <TabIcon className="w-4 h-4" />
+                <span>{tab.mobileLabel}</span>
+              </div>
+            )
+          })}
+          </div>
+        </div>
+
+        {/* Main Mobile Content Area */}
+        <div className="w-full px-5 py-4 flex flex-col gap-4 dark:bg-slate-950">
+          {/* Scrolling Search/Filters */}
+          <div className="flex flex-col gap-3">
+          <div className="relative w-full">
+            <Search className="absolute left-3.5 top-3 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search employee name..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 rounded-xl text-sm font-semibold border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-green-500/40 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+            />
+          </div>
+          <div className="relative w-full">
+            <Filter className="absolute left-3.5 top-3 w-4 h-4 text-gray-400" />
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 rounded-xl text-sm font-bold appearance-none border border-gray-200 bg-white focus:outline-none dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+            >
+              <option value="ALL">Status: All</option>
+              <option value="PENDING">PENDING</option>
+              <option value="APPROVED">APPROVED</option>
+              {activeTab === 'leaves' ? (
+                <option value="REJECTED">REJECTED</option>
+              ) : (
+                <>
+                  <option value="DISBURSED">DISBURSED</option>
+                  <option value="REJECTED">REJECTED</option>
+                </>
+              )}
+            </select>
+          </div>
+        </div>
+
+        {/* Part 2: Mobile Leaves Sheet */}
+        {activeTab === 'leaves' && (
+          <div className="flex flex-col gap-4 mt-2">
+            <button
+              onClick={() => setShowLeaveModal(true)}
+              className="w-full bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30 py-3 rounded-lg font-medium flex items-center justify-center gap-2"
+            >
+              <Plus className="w-4 h-4" /> Apply Leave
+            </button>
+            {/* Summary Grid */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
+                <p className="text-[10px] uppercase font-bold text-gray-500 mb-1">Total</p>
+                <p className="text-lg font-black text-gray-900 dark:text-white">{leavesSummary.total}</p>
+              </div>
+              <div className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
+                <p className="text-[10px] uppercase font-bold text-emerald-500 mb-1">Approved</p>
+                <p className="text-lg font-black text-emerald-600 dark:text-emerald-400">{leavesSummary.approved}</p>
+              </div>
+              <div className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
+                <p className="text-[10px] uppercase font-bold text-amber-500 mb-1">Pending</p>
+                <p className="text-lg font-black text-amber-600 dark:text-amber-400">{leavesSummary.pending}</p>
+              </div>
+            </div>
+
+            {/* Mobile Tables */}
+            <div>
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-2">Leave Requests</h3>
+              <ResponsiveTable columns={leaveRequestResponsiveColumns} data={filteredLeaves} />
+            </div>
+
+            <div className="mt-4">
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-2">Leave Balances</h3>
+              <ResponsiveTable columns={leaveBalancesResponsiveColumns} data={balances} />
+            </div>
           </div>
         )}
+
+        {/* Part 3: Mobile Cash Advances Sheet */}
+        {activeTab === 'advances' && (
+          <div className="flex flex-col gap-3 mt-2">
+            <button
+              onClick={() => setShowAdvanceModal(true)}
+              className="w-full bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30 py-3 rounded-lg font-medium flex items-center justify-center gap-2"
+            >
+              <Plus className="w-4 h-4" /> Request Cash Advance
+            </button>
+            {filteredAdvances.map(a => (
+              <div
+                key={a.id}
+                onClick={() => {
+                  setSelectedAdvance(a)
+                  setShowDetailsModal(true)
+                }}
+                className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-4 shadow-sm cursor-pointer active:scale-[0.99] transition-transform"
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <span className="font-bold text-gray-900 dark:text-gray-100">{getUserName(a.employeeId)}</span>
+                  <span className="font-bold text-green-700 dark:text-green-500">
+                    ₱{a.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div className="text-sm text-gray-500 dark:text-slate-400 truncate mb-3">
+                  {a.purpose || '-'}
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-gray-400 dark:text-slate-500">
+                    {new Date(a.createdAt).toLocaleString('en-US', {
+                      month: 'short',
+                      day: '2-digit',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true
+                    })}
+                  </span>
+                  <div className="flex items-center">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase"
+                      style={{
+                        backgroundColor: a.status === 'PENDING' ? 'rgba(245,158,11,0.1)' : a.status === 'APPROVED' ? 'rgba(59,130,246,0.1)' : a.status === 'DISBURSED' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                        color: a.status === 'PENDING' ? '#F59E0B' : a.status === 'APPROVED' ? '#3B82F6' : a.status === 'DISBURSED' ? '#10B981' : '#EF4444'
+                      }}
+                    >
+                      {a.status}
+                    </span>
+                    <ChevronRight className="w-3 h-3 ml-1 text-gray-400 dark:text-slate-500" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Part 4: Mobile Drivers Monitoring Ledger */}
+        {activeTab === 'drivers' && (
+          <div className="flex flex-col mt-2">
+            <button
+              onClick={() => {
+                setEditingSheet({
+                  driverId: '',
+                  helperIds: [],
+                  plateNumber: '',
+                  dateRange: '',
+                  cutOffPeriod: '',
+                  validatedBy: '',
+                  totalApprovedOt: '',
+                  remarksOic: '',
+                  idleTimeRemarks: '',
+                  rows: Array.from({ length: 7 }, (_, i) => ({
+                    logDate: `June ${i + 2}`,
+                    postedSchedule: '7:00 AM',
+                    bioTimeIn: '',
+                    bioTimeOut: '',
+                    departureTime: '',
+                    arrivalTime: '',
+                    sites: []
+                  }))
+                })
+                setShowDriverSheetModal(true)
+              }}
+              className="w-full bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30 py-3 rounded-lg font-medium mb-4 flex items-center justify-center gap-2"
+            >
+              <Plus className="w-4 h-4" /> Add Driver Sheet
+            </button>
+            {driverSheets.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10">
+                <FileSpreadsheet className="w-12 h-12 text-gray-300 dark:text-slate-600 mx-auto mb-3" />
+                <p className="text-gray-500 dark:text-slate-400 font-medium mb-1">No driver sheets found</p>
+                <button className="w-full max-w-[250px] mt-4 bg-green-600 hover:bg-green-700 text-white rounded-lg py-3 font-bold transition-colors">
+                  + Import Scan (Pic/PDF)
+                </button>
+              </div>
+            ) : (
+              <div className="text-center py-10">
+                {/* Normally we'd map populated cards here, but prompt just requested empty state. */}
+                <p className="text-gray-500 dark:text-slate-400">Populated driver sheets view.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        </div>
       </div>
 
       {/* ── Modals: Apply Leave ──────────────────────────────────── */}
@@ -813,7 +1109,7 @@ export default function Hris() {
                   rows={3}
                   value={leaveReason}
                   onChange={e => setLeaveReason(e.target.value)}
-                  placeholder="State the reason for leave request…"
+                  placeholder="State the reason for leave request..."
                   className="w-full px-3 py-2 rounded-xl text-xs font-semibold focus:outline-none"
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
                 />
@@ -865,7 +1161,7 @@ export default function Hris() {
                 <input
                   type="text"
                   required
-                  placeholder="Type employee name…"
+                  placeholder="Type employee name..."
                   value={employeeNameInput}
                   onChange={e => {
                     setEmployeeNameInput(e.target.value)
@@ -928,7 +1224,7 @@ export default function Hris() {
                   rows={3}
                   value={advancePurpose}
                   onChange={e => setAdvancePurpose(e.target.value)}
-                  placeholder="State the reason or purpose of this cash advance request…"
+                  placeholder="State the reason or purpose of this cash advance request..."
                   className="w-full px-3 py-2.5 rounded-xl text-xs font-semibold focus:outline-none transition-all duration-200 border focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20"
                   style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                 />
@@ -1161,6 +1457,470 @@ export default function Hris() {
         </div>
       )}
 
-    </div>
+      {/* ── Modals: Driver Route Sheet Preview/Edit ─────────────── */}
+      {showDriverSheetModal && editingSheet && (
+        <>
+          {/* ── DESKTOP MODAL (hidden on mobile) ── */}
+          <div className="hidden md:flex fixed inset-0 z-50 items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setShowDriverSheetModal(false); setEditingSheet(null); }} />
+          <div className="relative w-full max-w-6xl rounded-2xl overflow-hidden p-6 shadow-2xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <h3 className="text-lg font-black mb-4">Drivers Daily Route Monitoring & Overtime Form</h3>
+            <form onSubmit={handleSaveDriverSheet} className="space-y-4">
+              
+              {/* Header Inputs */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-50 dark:bg-slate-800/10 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Driver Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingSheet.driverName || ''}
+                    onChange={e => setEditingSheet({ ...editingSheet, driverName: e.target.value })}
+                    className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold focus:outline-none"
+                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Branch</label>
+                  <input
+                    type="text"
+                    value={editingSheet.branch || ''}
+                    onChange={e => setEditingSheet({ ...editingSheet, branch: e.target.value })}
+                    className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold focus:outline-none"
+                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Position</label>
+                  <input
+                    type="text"
+                    value={editingSheet.position || ''}
+                    onChange={e => setEditingSheet({ ...editingSheet, position: e.target.value })}
+                    className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold focus:outline-none"
+                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Filed By</label>
+                  <input
+                    type="text"
+                    value={editingSheet.filedBy || ''}
+                    onChange={e => setEditingSheet({ ...editingSheet, filedBy: e.target.value })}
+                    className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold focus:outline-none"
+                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Date Filed</label>
+                  <input
+                    type="date"
+                    value={editingSheet.dateFiled || ''}
+                    onChange={e => setEditingSheet({ ...editingSheet, dateFiled: e.target.value })}
+                    className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold focus:outline-none"
+                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Cut-Off Period</label>
+                  <input
+                    type="text"
+                    placeholder="E.g., June 2-8, 2026"
+                    value={editingSheet.cutOffPeriod || ''}
+                    onChange={e => setEditingSheet({ ...editingSheet, cutOffPeriod: e.target.value })}
+                    className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold focus:outline-none"
+                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Validated By</label>
+                  <input
+                    type="text"
+                    value={editingSheet.validatedBy || ''}
+                    onChange={e => setEditingSheet({ ...editingSheet, validatedBy: e.target.value })}
+                    className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold focus:outline-none"
+                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                  />
+                </div>
+              </div>
+
+              {/* Rows spreadsheet view */}
+              <div className="overflow-x-auto border rounded-xl max-h-[350px]" style={{ borderColor: border }}>
+                <table className="excel-table" style={{ minWidth: 1800 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: 100 }}>Date</th>
+                      <th style={{ width: 100 }}>Schedule</th>
+                      <th style={{ width: 85 }}>Bio In</th>
+                      <th style={{ width: 85 }}>Bio Out</th>
+                      <th style={{ width: 100 }}>Garage Dep</th>
+                      <th style={{ width: 100 }}>Garage Arr</th>
+                      <th colSpan={4} className="text-center bg-[#10B981]/10 text-emerald-500 font-bold border-r">1ST SITE VISIT</th>
+                      <th colSpan={4} className="text-center bg-blue-500/10 text-blue-500 font-bold border-r">2ND SITE VISIT</th>
+                      <th colSpan={4} className="text-center bg-purple-500/10 text-purple-500 font-bold border-r">3RD SITE VISIT</th>
+                      <th colSpan={4} className="text-center bg-amber-500/10 text-amber-500 font-bold border-r">4TH SITE VISIT</th>
+                      <th colSpan={4} className="text-center bg-rose-500/10 text-rose-500 font-bold border-r">5TH SITE VISIT</th>
+                    </tr>
+                    <tr>
+                      <th colSpan={6} className="border-r"></th>
+                      {/* 1st Site */}
+                      <th>CX Name</th><th>Arrival</th><th>Departure</th><th className="border-r">Idle</th>
+                      {/* 2nd Site */}
+                      <th>CX Name</th><th>Arrival</th><th>Departure</th><th className="border-r">Idle</th>
+                      {/* 3rd Site */}
+                      <th>CX Name</th><th>Arrival</th><th>Departure</th><th className="border-r">Idle</th>
+                      {/* 4th Site */}
+                      <th>CX Name</th><th>Arrival</th><th>Departure</th><th className="border-r">Idle</th>
+                      {/* 5th Site */}
+                      <th>CX Name</th><th>Arrival</th><th>Departure</th><th className="border-r">Idle</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(editingSheet.rows || []).map((row: any, rIdx: number) => (
+                      <tr key={rIdx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                        <td>
+                          <input
+                            type="text"
+                            value={row.logDate || ''}
+                            onChange={e => {
+                              const newRows = [...editingSheet.rows]
+                              newRows[rIdx].logDate = e.target.value
+                              setEditingSheet({ ...editingSheet, rows: newRows })
+                            }}
+                            className="w-full bg-transparent border-0 text-xs font-semibold focus:ring-1 focus:ring-[#10B981]"
+                            style={{ color: textPrimary }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            value={row.postedSchedule || ''}
+                            onChange={e => {
+                              const newRows = [...editingSheet.rows]
+                              newRows[rIdx].postedSchedule = e.target.value
+                              setEditingSheet({ ...editingSheet, rows: newRows })
+                            }}
+                            className="w-full bg-transparent border-0 text-xs font-mono focus:ring-1 focus:ring-[#10B981]"
+                            style={{ color: textPrimary }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            value={row.bioTimeIn || ''}
+                            onChange={e => {
+                              const newRows = [...editingSheet.rows]
+                              newRows[rIdx].bioTimeIn = e.target.value
+                              setEditingSheet({ ...editingSheet, rows: newRows })
+                            }}
+                            className="w-full bg-transparent border-0 text-xs font-mono focus:ring-1 focus:ring-[#10B981]"
+                            style={{ color: textPrimary }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            value={row.bioTimeOut || ''}
+                            onChange={e => {
+                              const newRows = [...editingSheet.rows]
+                              newRows[rIdx].bioTimeOut = e.target.value
+                              setEditingSheet({ ...editingSheet, rows: newRows })
+                            }}
+                            className="w-full bg-transparent border-0 text-xs font-mono focus:ring-1 focus:ring-[#10B981]"
+                            style={{ color: textPrimary }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            value={row.departureTime || ''}
+                            onChange={e => {
+                              const newRows = [...editingSheet.rows]
+                              newRows[rIdx].departureTime = e.target.value
+                              setEditingSheet({ ...editingSheet, rows: newRows })
+                            }}
+                            className="w-full bg-transparent border-0 text-xs font-mono focus:ring-1 focus:ring-[#10B981]"
+                            style={{ color: textPrimary }}
+                          />
+                        </td>
+                        <td className="border-r">
+                          <input
+                            type="text"
+                            value={row.arrivalTime || ''}
+                            onChange={e => {
+                              const newRows = [...editingSheet.rows]
+                              newRows[rIdx].arrivalTime = e.target.value
+                              setEditingSheet({ ...editingSheet, rows: newRows })
+                            }}
+                            className="w-full bg-transparent border-0 text-xs font-mono focus:ring-1 focus:ring-[#10B981]"
+                            style={{ color: textPrimary }}
+                          />
+                        </td>
+                        
+                        {/* 5 Sites loops */}
+                        {Array.from({ length: 5 }).map((_, sIdx) => {
+                          const site = row.sites?.[sIdx] || { cxName: '', arrival: '', departure: '', idleTime: '' }
+                          return (
+                            <Fragment key={sIdx}>
+                              <td>
+                                <input
+                                  type="text"
+                                  value={site.cxName || ''}
+                                  onChange={e => {
+                                    const newRows = [...editingSheet.rows]
+                                    if (!newRows[rIdx].sites) newRows[rIdx].sites = []
+                                    while (newRows[rIdx].sites.length <= sIdx) {
+                                      newRows[rIdx].sites.push({ cxName: '', arrival: '', departure: '', idleTime: '' })
+                                    }
+                                    newRows[rIdx].sites[sIdx].cxName = e.target.value
+                                    setEditingSheet({ ...editingSheet, rows: newRows })
+                                  }}
+                                  className="w-full bg-transparent border-0 text-xs focus:ring-1 focus:ring-[#10B981]"
+                                  style={{ color: textPrimary }}
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  type="text"
+                                  value={site.arrival || ''}
+                                  onChange={e => {
+                                    const newRows = [...editingSheet.rows]
+                                    if (!newRows[rIdx].sites) newRows[rIdx].sites = []
+                                    while (newRows[rIdx].sites.length <= sIdx) {
+                                      newRows[rIdx].sites.push({ cxName: '', arrival: '', departure: '', idleTime: '' })
+                                    }
+                                    newRows[rIdx].sites[sIdx].arrival = e.target.value
+                                    setEditingSheet({ ...editingSheet, rows: newRows })
+                                  }}
+                                  className="w-full bg-transparent border-0 text-xs font-mono focus:ring-1 focus:ring-[#10B981]"
+                                  style={{ color: textPrimary }}
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  type="text"
+                                  value={site.departure || ''}
+                                  onChange={e => {
+                                    const newRows = [...editingSheet.rows]
+                                    if (!newRows[rIdx].sites) newRows[rIdx].sites = []
+                                    while (newRows[rIdx].sites.length <= sIdx) {
+                                      newRows[rIdx].sites.push({ cxName: '', arrival: '', departure: '', idleTime: '' })
+                                    }
+                                    newRows[rIdx].sites[sIdx].departure = e.target.value
+                                    setEditingSheet({ ...editingSheet, rows: newRows })
+                                  }}
+                                  className="w-full bg-transparent border-0 text-xs font-mono focus:ring-1 focus:ring-[#10B981]"
+                                  style={{ color: textPrimary }}
+                                />
+                              </td>
+                              <td className="border-r">
+                                <input
+                                  type="text"
+                                  value={site.idleTime || ''}
+                                  onChange={e => {
+                                    const newRows = [...editingSheet.rows]
+                                    if (!newRows[rIdx].sites) newRows[rIdx].sites = []
+                                    while (newRows[rIdx].sites.length <= sIdx) {
+                                      newRows[rIdx].sites.push({ cxName: '', arrival: '', departure: '', idleTime: '' })
+                                    }
+                                    newRows[rIdx].sites[sIdx].idleTime = e.target.value
+                                    setEditingSheet({ ...editingSheet, rows: newRows })
+                                  }}
+                                  className="w-full bg-transparent border-0 text-xs font-mono focus:ring-1 focus:ring-[#10B981]"
+                                  style={{ color: textPrimary }}
+                                />
+                              </td>
+                            </Fragment>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Footer Fields */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-50 dark:bg-slate-800/10 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Total Approved OT</label>
+                  <input
+                    type="text"
+                    value={editingSheet.totalApprovedOt || ''}
+                    onChange={e => setEditingSheet({ ...editingSheet, totalApprovedOt: e.target.value })}
+                    className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold focus:outline-none"
+                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Remarks of OIC/BC</label>
+                  <input
+                    type="text"
+                    value={editingSheet.remarksOic || ''}
+                    onChange={e => setEditingSheet({ ...editingSheet, remarksOic: e.target.value })}
+                    className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold focus:outline-none"
+                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Idle Time Remarks</label>
+                  <input
+                    type="text"
+                    value={editingSheet.idleTimeRemarks || ''}
+                    onChange={e => setEditingSheet({ ...editingSheet, idleTimeRemarks: e.target.value })}
+                    className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold focus:outline-none"
+                    style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-2 pt-2 border-t" style={{ borderColor: border }}>
+                <button
+                  type="button"
+                  onClick={() => { setShowDriverSheetModal(false); setEditingSheet(null); }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold"
+                  style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#10B981]"
+                >
+                  Save Route Sheet
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
+
+        {/* ── MOBILE FORM (full-screen, md:hidden) ── */}
+        <div className="md:hidden fixed inset-0 z-40 flex flex-col bg-slate-50 dark:bg-slate-950 overflow-y-auto pt-16">
+          {/* Part 1: Header & Metadata Inputs */}
+          <div className="w-full bg-white px-4 pt-5 pb-3 border-b border-gray-200 sticky top-0 z-10 shadow-sm">
+            <div className="flex justify-between items-center">
+              <h3 className="text-base font-black text-gray-900 leading-tight">Drivers Route & Overtime Form</h3>
+              <button type="button" onClick={() => { setShowDriverSheetModal(false); setEditingSheet(null); }} className="p-2 -mr-2 rounded-full bg-slate-100 text-slate-500">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          <form onSubmit={handleSaveDriverSheet} className="flex flex-col flex-1 pb-4">
+            <div className="grid grid-cols-1 gap-4 w-full px-4 pt-4">
+              {[
+                { label: 'Driver Name', key: 'driverName', type: 'text', required: true },
+                { label: 'Branch', key: 'branch', type: 'text' },
+                { label: 'Position', key: 'position', type: 'text' },
+                { label: 'Filed By', key: 'filedBy', type: 'text' },
+                { label: 'Date Filed', key: 'dateFiled', type: 'date' },
+                { label: 'Cut-Off Period', key: 'cutOffPeriod', type: 'text', placeholder: 'E.g., June 2-8, 2026' },
+                { label: 'Validated By', key: 'validatedBy', type: 'text' },
+              ].map(f => (
+                <div key={f.key}>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">{f.label}</label>
+                  <input
+                    type={f.type}
+                    required={f.required}
+                    placeholder={f.placeholder}
+                    value={(editingSheet as any)[f.key] || ''}
+                    onChange={e => setEditingSheet({ ...editingSheet, [f.key]: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-lg text-sm font-medium border border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500/40"
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Part 2: The Horizontal Scrolling Timesheet */}
+            <div className="w-full overflow-x-auto no-scrollbar border border-gray-200 rounded-lg shadow-sm bg-white my-4">
+              <table className="min-w-max w-full divide-y divide-gray-200 text-xs">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-gray-700 text-left">Date</th>
+                    <th className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-gray-700 text-left">Schedule</th>
+                    <th className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-gray-700 text-center">Bio In</th>
+                    <th className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-gray-700 text-center">Bio Out</th>
+                    <th className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-gray-700 text-center">Garage Dep</th>
+                    <th className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-gray-700 text-center border-r border-gray-200">Garage Arr</th>
+                    {['1ST','2ND','3RD','4TH','5TH'].map((n, i) => (
+                      <th key={i} colSpan={4} className={`whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-center border-r border-gray-200 ${
+                        i===0 ? 'bg-emerald-50 text-emerald-700'
+                        : i===1 ? 'bg-blue-50 text-blue-700'
+                        : i===2 ? 'bg-purple-50 text-purple-700'
+                        : i===3 ? 'bg-amber-50 text-amber-700'
+                        : 'bg-rose-50 text-rose-700'
+                      }`}>{n} SITE VISIT</th>
+                    ))}
+                  </tr>
+                  <tr className="bg-gray-50">
+                    <th colSpan={6} className="border-r border-gray-200"></th>
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Fragment key={i}>
+                        <th className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-gray-600 text-left">CX Name</th>
+                        <th className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-gray-600 text-center">Arrival</th>
+                        <th className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-gray-600 text-center">Departure</th>
+                        <th className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-gray-600 text-center border-r border-gray-200">Idle</th>
+                      </Fragment>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {(editingSheet.rows || []).map((row: any, rIdx: number) => (
+                    <tr key={rIdx} className="hover:bg-slate-50">
+                      <td className="px-2 py-1"><input type="text" value={row.logDate || ''} onChange={e => { const nr=[...editingSheet.rows]; nr[rIdx].logDate=e.target.value; setEditingSheet({...editingSheet,rows:nr}) }} className="w-full min-w-[90px] text-sm text-left border border-gray-300 rounded-md bg-white text-gray-900 px-2 py-1" /></td>
+                      <td className="px-2 py-1"><input type="text" value={row.postedSchedule || ''} onChange={e => { const nr=[...editingSheet.rows]; nr[rIdx].postedSchedule=e.target.value; setEditingSheet({...editingSheet,rows:nr}) }} className="w-full min-w-[90px] text-sm text-left border border-gray-300 rounded-md bg-white text-gray-900 px-2 py-1" /></td>
+                      <td className="px-2 py-1"><input type="text" value={row.bioTimeIn || ''} onChange={e => { const nr=[...editingSheet.rows]; nr[rIdx].bioTimeIn=e.target.value; setEditingSheet({...editingSheet,rows:nr}) }} className="w-full min-w-[90px] text-sm text-center border border-gray-300 rounded-md bg-white text-gray-900 px-2 py-1" /></td>
+                      <td className="px-2 py-1"><input type="text" value={row.bioTimeOut || ''} onChange={e => { const nr=[...editingSheet.rows]; nr[rIdx].bioTimeOut=e.target.value; setEditingSheet({...editingSheet,rows:nr}) }} className="w-full min-w-[90px] text-sm text-center border border-gray-300 rounded-md bg-white text-gray-900 px-2 py-1" /></td>
+                      <td className="px-2 py-1"><input type="text" value={row.departureTime || ''} onChange={e => { const nr=[...editingSheet.rows]; nr[rIdx].departureTime=e.target.value; setEditingSheet({...editingSheet,rows:nr}) }} className="w-full min-w-[90px] text-sm text-center border border-gray-300 rounded-md bg-white text-gray-900 px-2 py-1" /></td>
+                      <td className="px-2 py-1 border-r border-gray-200"><input type="text" value={row.arrivalTime || ''} onChange={e => { const nr=[...editingSheet.rows]; nr[rIdx].arrivalTime=e.target.value; setEditingSheet({...editingSheet,rows:nr}) }} className="w-full min-w-[90px] text-sm text-center border border-gray-300 rounded-md bg-white text-gray-900 px-2 py-1" /></td>
+                      {Array.from({ length: 5 }).map((_, sIdx) => {
+                        const site = row.sites?.[sIdx] || { cxName: '', arrival: '', departure: '', idleTime: '' }
+                        const updateSite = (field: string, val: string) => {
+                          const nr = [...editingSheet.rows]
+                          if (!nr[rIdx].sites) nr[rIdx].sites = []
+                          while (nr[rIdx].sites.length <= sIdx) nr[rIdx].sites.push({ cxName: '', arrival: '', departure: '', idleTime: '' })
+                          nr[rIdx].sites[sIdx][field] = val
+                          setEditingSheet({ ...editingSheet, rows: nr })
+                        }
+                        return (
+                          <Fragment key={sIdx}>
+                            <td className="px-2 py-1"><input type="text" value={site.cxName || ''} onChange={e => updateSite('cxName', e.target.value)} className="w-full min-w-[140px] text-sm text-left border border-gray-300 rounded-md bg-white text-gray-900 px-2 py-1" /></td>
+                            <td className="px-2 py-1"><input type="text" value={site.arrival || ''} onChange={e => updateSite('arrival', e.target.value)} className="w-full min-w-[90px] text-sm text-center border border-gray-300 rounded-md bg-white text-gray-900 px-2 py-1" /></td>
+                            <td className="px-2 py-1"><input type="text" value={site.departure || ''} onChange={e => updateSite('departure', e.target.value)} className="w-full min-w-[90px] text-sm text-center border border-gray-300 rounded-md bg-white text-gray-900 px-2 py-1" /></td>
+                            <td className="px-2 py-1 border-r border-gray-200"><input type="text" value={site.idleTime || ''} onChange={e => updateSite('idleTime', e.target.value)} className="w-full min-w-[90px] text-sm text-center border border-gray-300 rounded-md bg-white text-gray-900 px-2 py-1" /></td>
+                          </Fragment>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Part 3: Bottom Metrics & Action Controls */}
+            <div className="flex flex-col gap-4 w-full px-4">
+              {[
+                { label: 'Total Approved OT', key: 'totalApprovedOt' },
+                { label: 'Remarks of OIC/BC', key: 'remarksOic' },
+                { label: 'Idle Time Remarks', key: 'idleTimeRemarks' },
+              ].map(f => (
+                <div key={f.key}>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">{f.label}</label>
+                  <input type="text" value={(editingSheet as any)[f.key] || ''} onChange={e => setEditingSheet({ ...editingSheet, [f.key]: e.target.value })} className="w-full px-3 py-2.5 rounded-lg text-sm font-medium border border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500/40" />
+                </div>
+              ))}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col-reverse gap-3 w-full px-4 pt-4 pb-12">
+              <button type="button" onClick={() => { setShowDriverSheetModal(false); setEditingSheet(null); }} className="w-full py-3.5 text-center font-medium rounded-lg text-base bg-slate-100 text-slate-700">Cancel</button>
+              <button type="submit" className="w-full py-3.5 text-center font-medium rounded-lg text-base text-white bg-[#10B981] hover:bg-green-600 active:scale-[0.99] transition-all">Save Route Sheet</button>
+            </div>
+          </form>
+        </div>
+        </>
+      )}
+    </>
   )
 }
+
