@@ -888,7 +888,7 @@ export default function DashboardLayout() {
       <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
 
         {/* ── Global Header (Mobile/Tablet/Desktop) ──────────────── */}
-        {currentPage !== 'DDRM' && (
+        {currentPage !== 'DDRM' && currentPage !== 'Search' && (
           <header 
             className="flex-none z-20 backdrop-blur-md w-full min-w-0 max-w-full overflow-hidden"
             style={{ 
