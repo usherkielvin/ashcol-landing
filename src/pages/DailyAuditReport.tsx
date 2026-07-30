@@ -1057,7 +1057,7 @@ export default function DailyAuditReport() {
                       <td className="font-semibold text-sm tabular-nums" style={{ color: textPrimary, padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }}>{peso(row.grossSales)}</td>
 
                       {/* ⑤ Target Quota */}
-                      <td className="font-semibold text-sm tabular-nums" style={{ color: '#8B5CF6', padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }} >
+                      <td className="font-semibold text-sm tabular-nums" style={{ color: textMuted, padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }} >
                         <>{peso(row.targetDailyQuota)}</>
                       </td>
 
@@ -1265,7 +1265,7 @@ export default function DailyAuditReport() {
                       </div>
                       <div className="grid grid-cols-3 gap-3 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${border}` }}>
                         {renderMobileMetric('Sales', `₱${peso(row.grossSales)}`, '#3B82F6')}
-                        {renderMobileMetric('Quota', `₱${peso(row.targetDailyQuota)}`, '#8B5CF6')}
+                        {renderMobileMetric('Quota', `₱${peso(row.targetDailyQuota)}`, textMuted)}
                         {renderMobileMetric('Diff', noRecord ? '—' : `${isAbove ? '+' : ''}₱${peso(row.difference)}`, diffColor)}
                       </div>
                     </div>
@@ -1556,7 +1556,7 @@ export default function DailyAuditReport() {
                         <div className="flex flex-col gap-2.5">
                           {[
                             { label: 'Gross Sales', value: `₱${peso(selectedRow.grossSales)}`, color: textPrimary },
-                            { label: 'Target Quota', value: `₱${peso(selectedRow.targetDailyQuota)}`, color: '#8B5CF6' },
+                            { label: 'Target Quota', value: `₱${peso(selectedRow.targetDailyQuota)}`, color: textMuted },
                             { label: 'Difference', value: `${selectedRow.remarks === 'ABOVE QUOTA' ? '+' : ''}₱${peso(selectedRow.difference)}`, color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : '#EF4444' },
                             { label: 'Remarks', value: formatRemarksLabel(selectedRow.remarks, false), color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : selectedRow.remarks === 'PENDING' ? '#F59E0B' : isNoTransactionRemarks(selectedRow.remarks) ? textMuted : '#EF4444' },
                           ].map(r => (
