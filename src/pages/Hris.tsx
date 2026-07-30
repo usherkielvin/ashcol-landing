@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, isPortalAdmin } from '../utils/api'
@@ -8,7 +8,7 @@ import {
   Search, Filter, AlertCircle, Upload, Trash2, Eye, Loader2, ChevronRight
 } from 'lucide-react'
 
-// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Types ─────────────────────────────────────────────────────────────────────
 interface User {
   id: string
   name: string
@@ -76,7 +76,7 @@ export default function Hris() {
   const inputBorder = isLight ? '#cbd5e1' : '#243452'
   const excelGreen  = '#10B981'
 
-  const [activeTab, setActiveTab] = useState<'leaves' | 'advances'>('leaves')
+  const [activeTab, setActiveTab] = useState<'leaves' | 'advances' | 'drivers'>('leaves')
 
   const [error, setError] = useState<string | null>(null)
 
@@ -95,6 +95,7 @@ export default function Hris() {
   const [leaves, setLeaves] = useState<LeaveRequest[]>([])
   const [balances, setBalances] = useState<LeaveBalance[]>([])
   const [advances, setAdvances] = useState<CashAdvance[]>([])
+  const [driverSheets, setDriverSheets] = useState<any[]>([])
   
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('')
@@ -105,6 +106,12 @@ export default function Hris() {
   const [showAdvanceModal, setShowAdvanceModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [selectedAdvance, setSelectedAdvance] = useState<CashAdvance | null>(null)
+
+  // Driver Sheets Modal & Scan State
+  const [showDriverSheetModal, setShowDriverSheetModal] = useState(false)
+  const [editingSheet, setEditingSheet] = useState<any | null>(null)
+  const [scanning, setScanning] = useState(false)
+  const driverFileInputRef = useRef<HTMLInputElement>(null)
 
   // Status Confirmation State
   const [confirmingAdvance, setConfirmingAdvance] = useState<CashAdvance | null>(null)
@@ -123,12 +130,12 @@ export default function Hris() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('')
   const [employeeNameInput, setEmployeeNameInput] = useState('')
 
-  // â”€â”€ Helper: Get JWT Token â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Helper: Get JWT Token ─────────────────────────────────────────
   const getToken = useCallback((): string => {
     return localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
   }, [])
 
-  // â”€â”€ Fetch Operations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Fetch Operations ──────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     setError(null)
     const token = getToken()
@@ -150,6 +157,9 @@ export default function Hris() {
       } else if (activeTab === 'advances') {
         const advancesRes = await fetch(`${API_BASE_URL}/hris/cash-advances`, { headers })
         if (advancesRes.ok) setAdvances(await advancesRes.json())
+      } else if (activeTab === 'drivers') {
+        const dsRes = await fetch(`${API_BASE_URL}/hris/driver-routes`, { headers })
+        if (dsRes.ok) setDriverSheets(await dsRes.json())
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to sync data with the server.')
@@ -446,7 +456,7 @@ export default function Hris() {
     } catch (err) { /* ignore */ }
   }
 
-  // â”€â”€ Leaves Computations (Excel Summary) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Leaves Computations (Excel Summary) ───────────────────────────
   const filteredLeaves = useMemo(() => {
     return leaves.filter(l => {
       const matchesSearch = getUserName(l.employeeId).toLowerCase().includes(searchQuery.toLowerCase())
@@ -462,7 +472,7 @@ export default function Hris() {
     return { total, pending, approved }
   }, [filteredLeaves])
 
-  // â”€â”€ Cash Advances Computations (Excel Summary) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Cash Advances Computations (Excel Summary) ────────────────────
   const activeBranchFilter = useMemo(() => {
     const role = (user?.role || '').toLowerCase()
     if (isPortalAdmin(role)) {
@@ -506,7 +516,7 @@ export default function Hris() {
     }
   }, [filteredAdvances])
 
-  // â”€â”€ CSS Injection for spreadsheet cells â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── CSS Injection for spreadsheet cells ───────────────────────────
   useEffect(() => {
     const id = 'excel-workspace-styles'
     if (document.getElementById(id)) return
@@ -629,7 +639,7 @@ export default function Hris() {
         ['--excel-tab-active-bg' as any]: cardBg,
       }}
     >
-      {/* â”€â”€ Title Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Title Header ────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-2xl font-black tracking-tight mb-1 flex items-center gap-2.5">
@@ -642,7 +652,7 @@ export default function Hris() {
         </div>
       </div>
 
-      {/* â”€â”€ Error Banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Error Banner ────────────────────────────────────────── */}
       {error && (
         <div
           className="flex items-center gap-3 p-4 rounded-xl"
@@ -657,12 +667,13 @@ export default function Hris() {
         </div>
       )}
 
-      {/* â”€â”€ Excel style sheet tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Excel style sheet tabs ───────────────────────────────── */}
       <div className="rounded-2xl overflow-hidden shadow-xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
         <div className="excel-tab-bar">
           {[
             { id: 'leaves', label: 'Leaves Sheet', icon: Calendar },
             { id: 'advances', label: 'Cash Advances Sheet', icon: CreditCard },
+            { id: 'drivers', label: 'Drivers Route Sheets', icon: FileSpreadsheet },
           ].map(tab => {
             const TabIcon = tab.icon
             const active = activeTab === tab.id
@@ -688,30 +699,27 @@ export default function Hris() {
         <div className="p-4 flex flex-col md:flex-row items-center justify-between gap-4" style={{ borderBottom: `1px solid ${border}` }}>
           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
             {/* Search */}
-            <div className="relative w-full md:w-64">
-              <Search className="absolute left-3.5 top-3 w-4 h-4" style={{ color: textMuted }} />
+            <div className="relative flex-1 md:w-64">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: textMuted }} />
               <input
                 type="text"
-                placeholder="Search employee nameâ€¦"
+                placeholder="Search..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#10B981]/40"
+                className="w-full pl-9 pr-3 py-1.5 rounded-xl text-xs font-semibold focus:outline-none"
                 style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
               />
             </div>
 
-            {/* Filter status */}
-            <div className="flex items-center gap-1.5 w-full md:w-auto">
-              <Filter className="w-3.5 h-3.5" style={{ color: textMuted }} />
+            {/* Status Filter */}
+            <div className="relative">
               <select
                 value={statusFilter}
                 onChange={e => setStatusFilter(e.target.value)}
-                className="px-3 py-2 rounded-xl text-xs font-bold appearance-none focus:outline-none"
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold focus:outline-none cursor-pointer"
                 style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
               >
-                <option value="ALL">Status: All</option>
-                <option value="PENDING">PENDING</option>
-                <option value="APPROVED">APPROVED</option>
+                <option value="ALL">All Statuses</option>
                 {activeTab === 'leaves' ? (
                   <option value="REJECTED">REJECTED</option>
                 ) : (
@@ -755,10 +763,29 @@ export default function Hris() {
                 <Plus className="w-4 h-4" /> Request Cash Advance
               </button>
             )}
+            {activeTab === 'drivers' && (
+              <>
+                <input
+                  type="file"
+                  ref={driverFileInputRef}
+                  onChange={handleScanDriverSheet}
+                  accept="image/*,.pdf"
+                  className="hidden"
+                />
+                <button
+                  disabled={scanning}
+                  onClick={() => driverFileInputRef.current?.click()}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-[#10B981]/10 text-[#10B981] hover:bg-[#10B981]/25 transition-all disabled:opacity-50"
+                >
+                  {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                  {scanning ? 'Scanning...' : 'Import Scan'}
+                </button>
+              </>
+            )}
           </div>
         </div>
 
-        {/* â”€â”€ Leaves Grid Table View â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {/* ── Leaves Grid Table View ─────────────────────────────── */}
         {activeTab === 'leaves' && (
           <>
             <div className="overflow-x-auto">
@@ -803,8 +830,8 @@ export default function Hris() {
                           {l.status}
                         </span>
                       </td>
-                      <td>{l.approvedBy ? getUserName(l.approvedBy) : 'â€”'}</td>
-                      <td>{l.approvedAt ? new Date(l.approvedAt).toLocaleDateString() : 'â€”'}</td>
+                      <td>{l.approvedBy ? getUserName(l.approvedBy) : '—'}</td>
+                      <td>{l.approvedAt ? new Date(l.approvedAt).toLocaleDateString() : '—'}</td>
                       <td>
                         {l.status === 'PENDING' ? (
                           <div className="flex items-center gap-1">
@@ -880,7 +907,7 @@ export default function Hris() {
           </>
         )}
 
-        {/* â”€â”€ Cash Advances Grid Table View â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {/* ── Cash Advances Grid Table View ───────────────────────── */}
         {activeTab === 'advances' && (
           <div className="overflow-x-auto">
             <table className="excel-table">
@@ -902,8 +929,8 @@ export default function Hris() {
                     <td className="font-mono text-xs select-all">{a.id.substring(0, 8).toUpperCase()}</td>
                     <td className="font-semibold">{getUserName(a.employeeId)}</td>
                     <td className="text-xs font-semibold text-slate-500">{getBranchDisplayName(a.branchId || null)}</td>
-                    <td className="font-semibold">â‚±{a.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    <td className="text-xs text-slate-500 font-medium max-w-[250px] truncate" title={a.purpose}>{a.purpose || 'â€”'}</td>
+                    <td className="font-semibold">₱{a.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td className="text-xs text-slate-500 font-medium max-w-[250px] truncate" title={a.purpose}>{a.purpose || '—'}</td>
                     <td>
                       <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase"
                         style={{
@@ -984,7 +1011,7 @@ export default function Hris() {
                 {/* Excel Summary Row */}
                 <tr className="excel-total-row">
                   <td colSpan={3}>Grand Total:</td>
-                  <td className="font-bold text-emerald-600 dark:text-emerald-400">â‚±{advancesSummary.originalSum.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td className="font-bold text-emerald-600 dark:text-emerald-400">₱{advancesSummary.originalSum.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                   <td colSpan={4} className="text-xs text-slate-400 font-medium">Total cash advances requested</td>
                 </tr>
               </tbody>
@@ -1008,11 +1035,11 @@ export default function Hris() {
                 </tr>
               </thead>
               <tbody>
-                {driverSheets.filter(s => {
+                {driverSheets.filter((s: any) => {
                   const q = searchQuery.toLowerCase()
-                  return s.driverName.toLowerCase().includes(q) ||
+                  return (s.driverName || '').toLowerCase().includes(q) ||
                          (s.branch && s.branch.toLowerCase().includes(q))
-                }).map(s => (
+                }).map((s: any) => (
                   <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                     <td className="font-semibold">{s.driverName}</td>
                     <td>{s.branch || '—'}</td>
@@ -1281,7 +1308,7 @@ export default function Hris() {
         </div>
       </div>
 
-      {/* â”€â”€ Modals: Apply Leave â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Modals: Apply Leave ──────────────────────────────────── */}
       {showLeaveModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowLeaveModal(false)} />
@@ -1333,7 +1360,7 @@ export default function Hris() {
                   rows={3}
                   value={leaveReason}
                   onChange={e => setLeaveReason(e.target.value)}
-                  placeholder="State the reason for leave requestâ€¦"
+                  placeholder="State the reason for leave request..."
                   className="w-full px-3 py-2 rounded-xl text-xs font-semibold focus:outline-none"
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
                 />
@@ -1360,7 +1387,7 @@ export default function Hris() {
         </div>
       )}
 
-      {/* â”€â”€ Modals: Request Cash Advance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Modals: Request Cash Advance ─────────────────────────── */}
       {showAdvanceModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowAdvanceModal(false)} />
@@ -1385,7 +1412,7 @@ export default function Hris() {
                 <input
                   type="text"
                   required
-                  placeholder="Type employee nameâ€¦"
+                  placeholder="Type employee name..."
                   value={employeeNameInput}
                   onChange={e => {
                     setEmployeeNameInput(e.target.value)
@@ -1426,7 +1453,7 @@ export default function Hris() {
               <div>
                 <label className="text-xs font-bold mb-1.5 block" style={{ color: textPrimary }}>Requested Amount (PHP)</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">â‚±</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">₱</span>
                   <input
                     type="number"
                     required
@@ -1448,7 +1475,7 @@ export default function Hris() {
                   rows={3}
                   value={advancePurpose}
                   onChange={e => setAdvancePurpose(e.target.value)}
-                  placeholder="State the reason or purpose of this cash advance requestâ€¦"
+                  placeholder="State the reason or purpose of this cash advance request..."
                   className="w-full px-3 py-2.5 rounded-xl text-xs font-semibold focus:outline-none transition-all duration-200 border focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20"
                   style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                 />
@@ -1476,7 +1503,7 @@ export default function Hris() {
         </div>
       )}
 
-      {/* â”€â”€ Modals: Confirm Cash Advance Status Change â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Modals: Confirm Cash Advance Status Change ───────────── */}
       {confirmingAdvance && confirmingStatus && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setConfirmingAdvance(null); setConfirmingStatus(null); }} />
@@ -1498,7 +1525,7 @@ export default function Hris() {
             <div className="space-y-4">
               <div className="text-xs text-slate-400 font-semibold space-y-1">
                 <p>Employee: <span className="font-bold" style={{ color: textPrimary }}>{getUserName(confirmingAdvance.employeeId)}</span></p>
-                <p>Amount: <span className="font-bold" style={{ color: textPrimary }}>â‚±{confirmingAdvance.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></p>
+                <p>Amount: <span className="font-bold" style={{ color: textPrimary }}>₱{confirmingAdvance.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></p>
               </div>
 
               <div>
@@ -1543,7 +1570,7 @@ export default function Hris() {
         </div>
       )}
 
-      {/* â”€â”€ Modals: View Cash Advance Details â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Modals: View Cash Advance Details ────────────────────── */}
       {showDetailsModal && selectedAdvance && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setShowDetailsModal(false); setSelectedAdvance(null); }} />
@@ -1590,7 +1617,7 @@ export default function Hris() {
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Requested Amount</span>
-                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">â‚±{selectedAdvance.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">₱{selectedAdvance.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Submitted At</span>
@@ -1623,7 +1650,7 @@ export default function Hris() {
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 block">Reviewed By</span>
                     <span className="font-semibold" style={{ color: textPrimary }}>
-                      {selectedAdvance.approvedBy ? getUserName(selectedAdvance.approvedBy) : 'â€”'}
+                      {selectedAdvance.approvedBy ? getUserName(selectedAdvance.approvedBy) : '—'}
                     </span>
                   </div>
                   <div>
@@ -1636,7 +1663,7 @@ export default function Hris() {
                         hour: 'numeric',
                         minute: '2-digit',
                         hour12: true
-                      }) : 'â€”'}
+                      }) : '—'}
                     </span>
                   </div>
                   {selectedAdvance.disbursedAt && (
@@ -2144,7 +2171,7 @@ export default function Hris() {
         </div>
         </>
       )}
-    </div>
+    </>
   )
 }
 

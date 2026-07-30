@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import gsap from 'gsap'
 import { X } from 'lucide-react'
 
+// GSAP animations for filter dropdown
 // ─── Filter Data ────────────────────────────────────────────────────────────
 const FILTER_DATA = [
   {

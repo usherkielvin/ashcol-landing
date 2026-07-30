@@ -228,10 +228,7 @@ function driverRowToPdfCells(row: ScheduleShowcaseRow) {
     pdfCellText(row.service),
   ]
 }
-}
 
-const PDF_BW_TABLE = {
-  theme: 'grid' as const,
 const PDF_BW_TABLE = {
   theme: 'grid' as const,
   styles: {
@@ -253,9 +250,6 @@ const PDF_BW_TABLE = {
     fontSize: 7,
     cellPadding: 1.2,
     minCellHeight: 6.5,
-    lineColor: [0, 0, 0] as [number, number, number],
-  },
-}
     lineColor: [0, 0, 0] as [number, number, number],
   },
 }
@@ -292,7 +286,6 @@ const DRIVER_COLUMN_STYLES = {
   6: { halign: 'center' as const, cellWidth: 30 },
   7: { halign: 'center' as const, cellWidth: 32 },
   8: { halign: 'center' as const, cellWidth: 24 },
-}
 }
 
 function drawPdfDateTable(
@@ -550,21 +543,6 @@ export function SchedulesShowcase({
                 ))}
               </tr>
             )
-          })}
-        </tbody>
-                    key={cellIdx}
-                    style={{
-                      ...tdStyle,
-                      textAlign: [0, 1, 3, 6, 7, 8].includes(cellIdx) ? 'center' : 'left',
-                      fontWeight: cellIdx === 6 ? 700 : 500,
-                      fontSize: '11px',
-                      lineHeight: '1.4',
-                      padding: '5px 4px',
-                    }}
-                  >
-                    {value}
-                  </td>
-                ))}
           })}
         </tbody>
       </table>
