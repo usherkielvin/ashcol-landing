@@ -3,7 +3,7 @@ import {
   Search, Wrench, Mail, Phone, RefreshCw, Building2,
   CheckCircle, XCircle, Trash2, X, Plus, Copy,
   Check, Eye, EyeOff, ShieldCheck,
-  Camera, Calendar, User, UserCog,
+  Camera, Calendar, User,
   Loader2, ChevronDown
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
