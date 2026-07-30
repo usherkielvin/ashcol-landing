@@ -301,7 +301,7 @@ export function TicketDetailsModal({
                   <DField isLight={isLight} label="Brand / Unit" value={brand || EMPTY_CELL} className="sm:col-span-2" />
                   <DField isLight={isLight} label="Service / Driver" value={serviceDriver || EMPTY_CELL} />
                   <DField isLight={isLight} label={isTaguigServices ? "Technician" : "Installer / Technician"} value={installer || EMPTY_CELL} />
-                  <DField isLight={isLight} label={isTaguigServices ? "Endorsed By" : "Dealer (DLR)"} value={dealer || EMPTY_CELL} />
+                  <DField isLight={isLight} label={isTaguigServices ? "Endorsed By" : "Dealer / Store"} value={dealer || EMPTY_CELL} />
                   <DField isLight={isLight} label="Control No. / SI" value={t.controlNumber || t.control_number || EMPTY_CELL} />
                   {ROBINSON_APPLIANCES_RE.test(dealer || '') && (
                     <DField isLight={isLight} label="Transaction ID" value={String(parseAcMeta(t).robinsonsTransactionId || '') || EMPTY_CELL} />
@@ -548,7 +548,7 @@ export function TicketDetailsModal({
                                   )}
                                   {spec.dealer && (
                                     <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 9.5, fontWeight: 600, padding: '1.5px 6px', borderRadius: 4, backgroundColor: isLight ? 'rgba(100,116,139,0.08)' : 'rgba(100,116,139,0.14)', color: textPrimary, border: `1px solid ${border}` }}>
-                                      <span style={{ color: textMuted, marginRight: 3 }}>DEALER:</span>{spec.dealer}
+                                      <span style={{ color: textMuted, marginRight: 3 }}>DEALER / STORE:</span>{spec.dealer}
                                     </span>
                                   )}
                                   {spec.payment && (

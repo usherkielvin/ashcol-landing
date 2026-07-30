@@ -1053,49 +1053,49 @@ export function getScheduleRowColors(
   const statusVal = getScheduleStatusValue(ticket)
   if (statusVal === 'RESCHED') {
     return {
-      baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.28)',
+      baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.18)',
       accent: '#fbbf24',
     }
   }
   if (statusVal === 'SURVEY') {
     return {
-      baseBg: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.28)',
+      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
       accent: '#8B5CF6',
     }
   }
   if (statusVal === 'CLEANING' || statusVal === 'CHECKUP' || statusVal === 'BACKJOB') {
     return {
-      baseBg: isLight ? '#f0f9ff' : 'rgba(14,165,233,0.28)',
+      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
       accent: '#0EA5E9',
     }
   }
   if (statusVal === 'SYSTEM_REPROCESS') {
     return {
-      baseBg: isLight ? '#eef2ff' : 'rgba(99,102,241,0.28)',
+      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
       accent: '#6366F1',
     }
   }
   if (statusVal === 'DISMANTLE') {
     return {
-      baseBg: isLight ? '#fff1f2' : 'rgba(244,63,94,0.28)',
+      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
       accent: '#F43F5E',
     }
   }
   if (statusVal === 'INSTALLATION' || statusVal === 'SERVICES') {
     return {
-      baseBg: isLight ? '#eff6ff' : 'rgba(59,130,246,0.28)',
-      accent: '#3B82F6',
+      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
+      accent: '#10B981',
     }
   }
   if (statusVal === 'FOR_APPROVAL') {
     return {
-      baseBg: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.06)',
+      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
       accent: '#10B981',
     }
   }
 
   if (isDuplicateName) {
-    return { baseBg: isLight ? '#fef9c3' : '#221d0f' }
+    return { baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.12)' }
   }
 
   return { baseBg: idx % 2 === 0 ? rowEven : rowOdd }
@@ -1247,15 +1247,17 @@ export function hasFinalScheduleDate(ticket: Ticket): boolean {
 export function shouldShowOnMyTickets(ticket: Ticket): boolean {
   const stat = (ticket.status || '').toUpperCase()
   if (isInstalledWorkflowStatus(stat) || stat === 'CANCELLED') return false
-  // Once a finalDate exists the ticket belongs on Schedules, not the negotiator queue.
-  if (hasFinalScheduleDate(ticket)) return false
-  // SCHEDULED/SURVEY without a finalDate yet just means a pending sub-status was picked
-  // (e.g. INSTALL, SURVEY, S/I) — it still belongs in the negotiator's queue until a real date is set.
-  // IN_PROGRESS/ON_THE_WAY are active field-crew statuses (always date-backed by then); CONTINUATION
-  // tracks its own continuationDates array instead of finalDate, so it needs its own exclusion here.
+  // IN_PROGRESS/ON_THE_WAY are active field-crew statuses; CONTINUATION tracks its own
+  // continuationDates array instead of finalDate — none of these belong in the negotiator's queue.
   if (['IN_PROGRESS', 'ON_THE_WAY', 'CONTINUATION'].includes(stat)) return false
-
-  return true
+  // A finalDate no longer means "done with the negotiator" — RESCHED/QUOTATION/SURVEY/CHECKUP/
+  // BACKJOB etc. can already carry a scheduled date and still need monitoring until they reach a
+  // closing (DONE_*) outcome, instead of dropping off this queue the moment they get a date —
+  // that was hiding tickets Schedules' "All Pending" still counts as pending. Deny-list on
+  // CLOSING_SCHEDULE_STATUSES rather than allow-list on SCHEDULE_PENDING_STATUS_VALUES: the
+  // pending set only covers named sub-statuses, not fallback values like plain 'INSTALLATION'/
+  // 'SERVICES' that getScheduleStatusValue returns for tickets with no sub-status picked yet.
+  return !CLOSING_SCHEDULE_STATUSES.has(getScheduleStatusValue(ticket))
 }
 
 export function ticketMatchesNegotiatorFilter(
@@ -2835,12 +2837,15 @@ export function getBranchDisplayName(id: string | null): string {
   return name
 }
 
-/** Format negotiator for dropdown: FIRSTNAME (BRANCH_SHORT), e.g. BEVERLYN (RIZAL) */
-export function formatNegotiatorLabel(emp: { name?: string | null; branchId?: string | null }): string {
-  const fullName = (emp.name || '').trim()
-  const firstName = fullName.split(/\s+/)[0].toUpperCase()
+export function formatNegotiatorLabel(
+  emp: { name?: string | null; branchId?: string | null },
+  omitBranch = false,
+): string {
+  const fullName = (emp.name || '').trim().toUpperCase()
+  const firstName = fullName.split(/\s+/)[0]
+  if (omitBranch) return fullName || firstName
   const branch = getBranchDisplayName(emp.branchId || null)
-  return branch ? `${firstName} (${branch})` : firstName
+  return branch ? `${fullName || firstName} (${branch.toUpperCase()})` : (fullName || firstName)
 }
 
 export function todayDateKey() {
