@@ -171,12 +171,22 @@ export function ConfirmationChecklistModal({
 
       const json = await res.json()
       const returnedObj = json?.data || json
-      // Construct updated ticket object with confirmationChecklist guaranteed
+      const sentPayload = JSON.stringify(updatedData)
+      const persistedChecklist = returnedObj?.confirmationChecklist ?? returnedObj?.confirmation_checklist
+
+      // The server's response is the source of truth: if what it echoes back doesn't
+      // match what we sent, the write didn't actually stick (e.g. a schema mismatch that
+      // doesn't hard-fail, or a merge conflict) — trusting local state here would show
+      // "saved" even when it wasn't, and the gap would only surface on next refresh.
+      if (persistedChecklist !== sentPayload) {
+        throw new Error('Save did not persist — server returned different data than what was sent. Please retry.')
+      }
+
       const updatedTicket: Ticket = {
         ...ticket,
         ...returnedObj,
-        confirmationChecklist: JSON.stringify(updatedData),
-        confirmation_checklist: JSON.stringify(updatedData),
+        confirmationChecklist: persistedChecklist,
+        confirmation_checklist: persistedChecklist,
       }
 
       setToastMessage('Checklist saved successfully!')
