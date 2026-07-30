@@ -75,7 +75,7 @@ const ROLE_META: Record<AssignableRole, {
     canDelete: true,
   },
   MANAGER: {
-    label: 'Office In Charge',
+    label: 'Officer In Charge',
     hint: 'Branch OIC — manages branch team, lineup, and approvals. Requires a branch.',
     requiresBranch: true,
     requiresJobTitle: false,
@@ -149,7 +149,7 @@ const resolveLabel = (role: string, jobTitle: string) => {
   const r = role.toUpperCase()
   if (r === 'ADMIN') return 'Admin'
   if (r === 'MANAGEMENT') return 'Management'
-  if (r === 'MANAGER') return 'Office In Charge'
+  if (r === 'MANAGER') return 'Officer In Charge'
   if (jobTitle?.trim()) return formatJobTitleLabel(jobTitle)
   return formatRoleLabel(role)
 }
@@ -1194,7 +1194,7 @@ export default function Employees() {
                     {/* Role */}
                     <td className="px-6 py-5 border-r" style={{ borderColor: border }}>
                       <span className="text-sm font-semibold tracking-wider whitespace-nowrap" style={{ color: rc.text }}>
-                        {formatRoleLabel(e.role).toUpperCase()}
+                        {resolveLabel(e.role, e.jobTitle).toUpperCase()}
                       </span>
                     </td>
 

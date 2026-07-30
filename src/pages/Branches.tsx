@@ -806,7 +806,7 @@ export default function Branches() {
                 </div>
                 <div>
                   <div className="font-extrabold text-sm" style={{ color: textPrimary }}>{myBranch.oic}</div>
-                  <div className="text-[10px] text-slate-400 font-bold">OFFICE IN CHARGE</div>
+                  <div className="text-[10px] text-slate-400 font-bold">OFFICER IN CHARGE</div>
                 </div>
               </div>
             </div>

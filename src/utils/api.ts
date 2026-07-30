@@ -709,8 +709,8 @@ export function formatRole(role?: string): string {
   const labels: Record<string, string> = {
     admin: 'Admin',
     management: 'Management',
-    manager: 'Office In Charge',
-    oic: 'Office In Charge',
+    manager: 'Officer In Charge',
+    oic: 'Officer In Charge',
     employee: 'Employee',
     staff: 'Staff',
     customer: 'Customer',
