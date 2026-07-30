@@ -683,6 +683,11 @@ export function hasLocalScheduleValue(value: unknown): boolean {
   return true
 }
 
+/** Normalize a list of raw tickets (e.g. from cache) through the same relay-schedule normalization as a single ticket. */
+export function normalizeRelayScheduleTicketList(tickets: Ticket[]): Ticket[] {
+  return tickets.map(t => normalizeRelayScheduleTicket(t) as Ticket)
+}
+
 /** Keep installer / driver / payment / remarks from the user's local row when server sync returns stale data. */
 export function preserveLocalScheduleFields(local: Ticket, server: Ticket): Ticket {
   const normalizedServer = normalizeRelayScheduleTicket(server)
