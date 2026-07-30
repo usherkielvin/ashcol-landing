@@ -43,7 +43,7 @@ const resolveLabel = (role: string, jobTitle: string) => {
   const r = (role || '').toUpperCase()
   const j = (jobTitle || '').toUpperCase()
   if (r === 'ADMIN') return 'MANAGER'
-  if (r === 'MANAGER') return 'OIC'
+  if (r === 'MANAGER') return 'OFFICER IN CHARGE'
   if (j) return j
   return r
 }
@@ -290,11 +290,11 @@ export const EmployeeDetailsProvider: React.FC<{ children: React.ReactNode }> = 
                       { label: 'Personal Email', value: selectedEmployee.personalEmail || '—', icon: <Mail className="w-5 h-5" /> },
                       { label: 'Phone Number', value: selectedEmployee.phone || '—', icon: <Phone className="w-5 h-5" /> },
                     ].map(item => (
-                      <div key={item.label} className="p-4 rounded-xl border flex items-center gap-3.5" style={{ borderColor: border, backgroundColor: inputBg }}>
+                      <div key={item.label} className="p-4 rounded-xl border flex items-start gap-3.5" style={{ borderColor: border, backgroundColor: inputBg }}>
                         <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: border, backgroundColor: cardBg, color: textMuted }}>{item.icon}</div>
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <div className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>{item.label}</div>
-                          <div className="text-base font-semibold truncate" style={{ color: textPrimary }}>{item.value}</div>
+                          <div className="text-sm sm:text-base font-semibold break-words" style={{ color: textPrimary }}>{item.value}</div>
                         </div>
                       </div>
                     ))}
