@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } from 'react'
 import ReactDOM from 'react-dom'
+import { ResponsiveTable, type ColumnDef as ResponsiveColumnDef } from '../components/ResponsiveTable'
 import {
   Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
   Building2, Trash2, MapPin,
@@ -727,11 +728,6 @@ const normalizeRelayTicketNumber = (ticket: Pick<Ticket, 'ticketNumber'>): strin
   if (ashcol) {
     const seq = parseInt(ashcol[1], 10)
     return Number.isFinite(seq) ? `AS-${String(seq).padStart(3, '0')}` : raw.toUpperCase()
-  }
-  const acFormat = raw.match(/^AC-0*(\d+)$/i)
-  if (acFormat) {
-    const seq = parseInt(acFormat[1], 10)
-    return Number.isFinite(seq) ? `AC-${String(seq).padStart(3, '0')}` : raw.toUpperCase()
   }
   return raw.toUpperCase()
 }
@@ -2909,8 +2905,110 @@ export default function Relays() {
         document.getElementById('header-toolbar-slot') ?? document.body
       )}
 
-      <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg }}>
+      <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}>
           <div className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto" data-ticket-table-scroll>
+          <div className="md:hidden w-full">
+            <ResponsiveTable 
+              data={filtered} 
+              columns={(() => {
+                const MOBILE_VISIBLE_COLS = new Set(['TICKET NO', 'STATUS', 'CUSTOMER NAME', 'DISTRICT'])
+                return columns.map((col: any) => {
+                  const isMobileVisible = MOBILE_VISIBLE_COLS.has(col.label)
+                  
+                  if (col.label === 'TICKET NO') {
+                    return {
+                      header: col.label,
+                      accessorKey: col.label,
+                      isMobileVisible,
+                      cellRenderer: (ticket: Ticket) => {
+                        const rawId = ticket.id || (ticket as any).ticketId || (ticket as any).ticket_id || ''
+                        const cleanTicketNo = String(rawId).substring(0, 8).toUpperCase()
+                        return (
+                          <div className="flex items-center justify-end min-w-0 w-full" title={cleanTicketNo}>
+                            <span className="font-mono font-bold truncate max-w-[150px] block text-right" style={{ color: textPrimary }}>{cleanTicketNo}</span>
+                          </div>
+                        )
+                      }
+                    }
+                  }
+                  
+                  if (col.label === 'STATUS') {
+                    return {
+                      header: col.label,
+                      accessorKey: col.label,
+                      isMobileVisible,
+                      cellRenderer: (ticket: Ticket) => {
+                        const st = getRelayStatusLabel(ticket)
+                        return (
+                          <div className="flex justify-end w-full cursor-pointer items-center"
+                               onClick={(e) => {
+                                 e.stopPropagation()
+                                 setSelectedPreviewTicket(ticket)
+                                 setIsViewModalOpen(true)
+                               }}>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider text-green-700 bg-green-50 border border-green-200">
+                              {st}
+                            </span>
+                          </div>
+                        )
+                      }
+                    }
+                  }
+
+                  if (col.label === 'CUSTOMER NAME') {
+                    return {
+                      header: col.label,
+                      accessorKey: col.label,
+                      isMobileVisible,
+                      cellRenderer: (ticket: Ticket) => {
+                        return (
+                          <span className="font-bold text-gray-900 dark:text-gray-100 block truncate max-w-[180px] text-right ml-auto cursor-pointer" 
+                                title={ticket.customerName || 'Direct Client'}
+                                onClick={(e) => {
+                                 e.stopPropagation()
+                                 setSelectedPreviewTicket(ticket)
+                                 setIsViewModalOpen(true)
+                               }}>
+                            {ticket.customerName || 'Direct Client'}
+                          </span>
+                        )
+                      }
+                    }
+                  }
+                  
+                  return {
+                    header: col.label,
+                    accessorKey: col.label,
+                    isMobileVisible,
+                    cellRenderer: (ticket: Ticket) => {
+                      let val = ''
+                      switch(col.label) {
+                        case 'DISTRICT': val = ticket.district || guessDistrict(ticket.location || ''); break;
+                        case 'BRAND': val = (ticket as any).brand || '-'; break;
+                        case 'STORE / SOURCE': val = ticket.sourceVendor || '-'; break;
+                        case 'COMMIT': val = ticket.commitType || '-'; break;
+                        case 'PREFERRED DATE': val = ticket.preferredDate ? formatRelayDate(ticket.preferredDate) : '-'; break;
+                        case 'NEGOTIATOR': val = resolveRelayNegotiatorName(ticket, employees) || '-'; break;
+                        case 'FINAL DATE': val = resolveRelayFinalDate(ticket) ? formatRelayDate(resolveRelayFinalDate(ticket)!) : '-'; break;
+                        case 'REMARKS': val = ticket.description || '-'; break;
+                        case 'CATEGORY': val = (ticket as any).category || '-'; break;
+                        case 'STORE/SOURCE': val = ticket.sourceVendor || '-'; break;
+                        case 'DATE RELAYED': val = ticket.createdAt ? formatRelayDate(ticket.createdAt) : '-'; break;
+                        default: val = '-';
+                      }
+                      return (
+                        <span className="truncate block w-full text-sm text-right" title={val}>
+                          {val}
+                        </span>
+                      )
+                    }
+                  }
+                }) as ResponsiveColumnDef<any>[]
+              })() as any} 
+            />
+          </div>
+
+          <div className="hidden md:block w-full">
           <table
             key={activeTab}
             className="w-full hidden md:table"
@@ -3264,6 +3362,7 @@ export default function Relays() {
               )}
             </tbody>
           </table>
+          </div>
 
           {/* Mobile Card View */}
           <div className="flex flex-col md:hidden p-3 gap-3 w-full">
@@ -3549,9 +3648,9 @@ export default function Relays() {
 
                 {/* 1. Dealer & Transaction */}
                 <section>
-                  <RelayFormSectionHead step={1} icon={<Store className="w-3.5 h-3.5" />} title="Dealer / Store" subtitle="Where the relay came from" />
+                  <RelayFormSectionHead step={1} icon={<Store className="w-3.5 h-3.5" />} title="Dealer" subtitle="Where the relay came from" />
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
-                    <RelayFormField label="Dealer / Store" compact className="md:col-span-4">
+                    <RelayFormField label="Dealer" compact className="md:col-span-4">
                       <DealerSelect
                         value={addForm.dealer}
                         dealers={dealers}
@@ -3564,7 +3663,7 @@ export default function Relays() {
                         textMuted={textMuted}
                       />
                     </RelayFormField>
-                    <RelayFormField label="Dealer / Store Branch" compact className="md:col-span-4">
+                    <RelayFormField label="Dealer Branch" compact className="md:col-span-4">
                       <input
                         type="text"
                         value={addForm.dealerBranch}
@@ -4701,3 +4800,5 @@ export default function Relays() {
     </div>
   )
 }
+
+
