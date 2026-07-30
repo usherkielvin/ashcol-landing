@@ -907,20 +907,16 @@ export default function DashboardLayout() {
               </button>
 
               <div className="flex flex-col justify-center min-w-0 shrink-0">
-                {currentPage === 'Relays' ? (
+                {currentPage === 'Relays' || currentPage === 'Employees' ? (
                   <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
-                    Relays
+                    {currentPage}
                   </h1>
                 ) : (
                   <>
                     <span className="text-[10px] font-extrabold uppercase tracking-widest leading-none mb-1 opacity-70" style={{ color: textMuted }}>
                       {currentPage}
                     </span>
-                    {currentPage === 'Employees' ? (
-                      <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase" style={{ color: textPrimary }}>
-                        GLOBAL
-                      </h1>
-                    ) : branchLabel ? (
+                    {branchLabel ? (
                       <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }} title={branchLabel}>
                         {branchLabel}
                       </h1>

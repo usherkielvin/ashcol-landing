@@ -3,7 +3,7 @@ import {
   Search, Wrench, Mail, Phone, RefreshCw, Building2,
   CheckCircle, XCircle, Trash2, X, Plus, Copy,
   Check, Eye, EyeOff, ShieldCheck,
-  Camera, Calendar, User,
+  Camera, Calendar, User, UserCog,
   Loader2, ChevronDown
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -996,7 +996,7 @@ export default function Employees() {
         onChange={handleImageUpload}
       />
 
-      {/* ── Main Table Card (Redesigned & Moved Up) ── */}
+      {/* ── Main Table Card ── */}
       <div className="rounded-2xl flex flex-col shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
 
         {/* Search, Filter, & Action Bar */}
@@ -1078,7 +1078,7 @@ export default function Employees() {
             </div>
           </div>
 
-          {/* Add Employee Button (Moved inside table bar) */}
+          {/* Add Employee Button */}
           {(isAdmin || isManager) && (
             <button
               onClick={openCreateFlow}
@@ -1095,7 +1095,7 @@ export default function Employees() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#080f1c', borderBottom: `1px solid ${border}` }}>
-                {['Employee', 'Role / Title', 'Branch', 'Contact', 'Status'].map((h, idx, arr) => (
+                {['Employee', 'Role', 'Branch', 'Contact', 'Status'].map((h, idx, arr) => (
                   <th
                     key={h}
                     className="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider whitespace-nowrap border-r"
@@ -1110,13 +1110,22 @@ export default function Employees() {
               {loading ? (
                 Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i} style={{ borderBottom: `1px solid ${border}` }}>
-                    {[1, 2, 3, 4, 5].map((j, idx) => (
+                    <td className="px-3 py-1.5 border-r" style={{ borderColor: border }}>
+                      <div className="flex items-center gap-4">
+                        <div className="w-[64px] h-[64px] rounded-xl animate-pulse shrink-0" style={{ backgroundColor: inputBg }} />
+                        <div className="flex flex-col gap-2 flex-1">
+                          <div className="h-4 rounded animate-pulse w-36" style={{ backgroundColor: inputBg }} />
+                          <div className="h-3 rounded animate-pulse w-48" style={{ backgroundColor: inputBg }} />
+                        </div>
+                      </div>
+                    </td>
+                    {[2, 3, 4, 5].map((j, idx) => (
                       <td
                         key={j}
-                        className="px-6 py-4.5 border-r"
-                        style={{ borderColor: border, borderRight: idx === 4 ? 'none' : `1px solid ${border}` }}
+                        className="px-6 py-4 border-r"
+                        style={{ borderColor: border, borderRight: idx === 3 ? 'none' : `1px solid ${border}` }}
                       >
-                        <div className="h-4 rounded animate-pulse" style={{ backgroundColor: inputBg, width: j === 1 ? '70%' : '55%' }} />
+                        <div className="h-4 rounded animate-pulse" style={{ backgroundColor: inputBg, width: '60%' }} />
                       </td>
                     ))}
                   </tr>
@@ -1135,17 +1144,49 @@ export default function Employees() {
                     key={e.id}
                     onClick={() => handleRowClick(e)}
                     style={{ borderBottom: `1px solid ${border}` }}
-                    className="transition-colors cursor-pointer"
+                    className="transition-colors cursor-pointer group"
                     onMouseEnter={el => (el.currentTarget.style.backgroundColor = rowHover)}
                     onMouseLeave={el => (el.currentTarget.style.backgroundColor = 'transparent')}
                   >
                     {/* Employee */}
-                    <td className="px-6 py-5 border-r" style={{ borderColor: border }}>
-                      <div className="flex items-center gap-3">
-                        <UserAvatar name={e.name} imageUrl={e.profileImage} size="sm" />
+                    <td className="px-3 py-1.5 border-r" style={{ borderColor: border }}>
+                      <div className="flex items-center gap-4">
+                        {/* Large profile photo — almost full row height with 6px gap */}
+                        <div className="shrink-0 relative" style={{ width: 64, height: 64 }}>
+                          {e.profileImage ? (
+                            <img
+                              src={resolveImageUrl(e.profileImage)}
+                              alt={e.name}
+                              className="w-full h-full rounded-xl object-cover"
+                              style={{ border: `2px solid ${border}` }}
+                            />
+                          ) : (
+                            <div
+                              className="w-full h-full rounded-xl flex items-center justify-center text-white font-black text-xl shrink-0"
+                              style={{
+                                background: `linear-gradient(135deg, ${
+                                  ['#10B981','#3B82F6','#8B5CF6','#EC4899','#F59E0B','#14B8A6','#6366F1'][
+                                    (e.name.charCodeAt(0) || 0) % 7
+                                  ]
+                                }, #059669)`,
+                                border: `2px solid ${border}`,
+                              }}
+                            >
+                              {e.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
+                            </div>
+                          )}
+                          {/* Active status dot */}
+                          <div
+                            className="absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full border-2"
+                            style={{
+                              backgroundColor: e.isActive ? '#10B981' : '#94a3b8',
+                              borderColor: cardBg,
+                            }}
+                          />
+                        </div>
                         <div className="min-w-0">
-                          <div className="text-base font-bold truncate max-w-[220px]" style={{ color: textPrimary }}>{e.name.toUpperCase()}</div>
-                          <div className="text-xs truncate max-w-[220px]" style={{ color: textMuted }}>{e.email.toLowerCase()}</div>
+                          <div className="text-sm font-bold truncate max-w-[220px]" style={{ color: textPrimary }}>{e.name.toUpperCase()}</div>
+                          <div className="text-xs truncate max-w-[220px] mt-0.5" style={{ color: textMuted }}>{e.email.toLowerCase()}</div>
                         </div>
                       </div>
                     </td>
@@ -1153,7 +1194,7 @@ export default function Employees() {
                     {/* Role */}
                     <td className="px-6 py-5 border-r" style={{ borderColor: border }}>
                       <span className="text-sm font-semibold tracking-wider whitespace-nowrap" style={{ color: rc.text }}>
-                        {resolveLabel(e.role, e.jobTitle).toUpperCase()}
+                        {formatRoleLabel(e.role).toUpperCase()}
                       </span>
                     </td>
 
