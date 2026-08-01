@@ -9,7 +9,7 @@ import {
   PanelLeftOpen, ClipboardList, Search,
   User, Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
   Building2, Calendar, Landmark, Wifi, CircleDollarSign, ListOrdered,
-  LayoutDashboard, Route
+  LayoutDashboard, Route, Truck
 } from 'lucide-react'
 import {
   MdOutlineConfirmationNumber,
@@ -116,6 +116,7 @@ function buildNavGroups(navLinks: NavLinkDef[]) {
       Icon: MdMenuBook,
       subItems: [
         { name: 'Employees', icon: <MdOutlinePerson size={16} />, path: findPath('Employees') },
+        { name: 'Vehicles', icon: <Truck size={16} />, path: findPath('Vehicles') },
         { name: 'Branches', icon: <MdOutlineStorefront size={16} />, path: findPath('Directory') },
       ].filter(s => navLinks.some(l => l.path === s.path)),
     },
@@ -361,6 +362,7 @@ export default function DashboardLayout() {
     { name: 'Office tasks',    path: '/office-tasks',     icon: Building2,       roles: ['admin', 'management'] },
     { name: 'Lineup',          path: '/lineup',           icon: ListOrdered,     roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
+    { name: 'Vehicles',        path: '/vehicles',         icon: Truck,           roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Expense Records', path: '/audit-expenses',  icon: ClipboardList,  roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'For Collections',  path: '/collections',     icon: CircleDollarSign, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Daily Transaction', path: '/audit-report',   icon: TrendingUp,      roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },

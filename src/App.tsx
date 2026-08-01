@@ -11,6 +11,7 @@ import SearchTickets from './pages/SearchTickets'
 import CreateTicket from './pages/CreateTicket'
 import OfficeTasks from './pages/OfficeTasks'
 import Employees from './pages/Employees'
+import Vehicles from './pages/Vehicles'
 import Profile from './pages/Profile'
 import Branches from './pages/Branches'
 import Relays from './pages/Relays'
@@ -93,6 +94,7 @@ export default function App() {
           <Route path="/branches" element={<Branches />} />
           <Route path="/assigned-tickets" element={<Navigate to="/search" replace />} />
           <Route path="/employees" element={<Employees />} />
+          <Route path="/vehicles" element={<Vehicles />} />
           <Route path="/profile" element={<Profile />} />
 
           <Route path="/audit-report" element={<DailyAuditReport />} />

@@ -22,6 +22,14 @@ import { useAuth } from '../contexts/AuthContext'
 
 import { API_BASE_URL, isSameBaseBranch, isPortalAdmin, resolvePortalWriteBranchId, resolveScopedBranchId, fetchTicketsPage, type InstallerBranchIndexEntry } from '../utils/api'
 
+import {
+  fetchVehicles as fetchVehiclesApi,
+  createVehicle as createVehicleApi,
+  updateVehicle as updateVehicleApi,
+  deleteVehicle as deleteVehicleApi,
+  type Vehicle as ApiVehicle,
+} from '../utils/vehicleApi'
+
 import { normalizeRelayScheduleTicketList } from '../utils/relayScheduleSync'
 
 import { fetchCachedLineupInstallerIndex, fetchCachedDriverOnlyNames } from '../utils/portalDirectoryCache'
@@ -376,59 +384,56 @@ export default function LineUp() {
     return checkBranchMatch(user.branchId, branchId)
   }, [role, user, branchId, checkBranchMatch])
 
-  const [vehicles, setVehicles] = useState<VehicleItem[]>(() => {
-
-    try {
-
-      const saved = localStorage.getItem('ashcol_vehicles_v1')
-
-      if (saved) return JSON.parse(saved)
-
-    } catch {}
-
-    return []
-
+  const mapApiVehicle = (v: ApiVehicle): VehicleItem => ({
+    id: v.id,
+    name: v.name || '',
+    plateNumber: v.plateNumber || '',
+    branchAssigned: v.branchId || '',
+    codingDay: v.codingDay || 'None',
   })
 
-  // Dynamic matching of branches to default vehicles upon fetching branches
+  const [vehicles, setVehicles] = useState<VehicleItem[]>([])
+  const [vehiclesLoaded, setVehiclesLoaded] = useState(false)
+  const vehicleSeedAttempted = useRef(false)
 
+  // Vehicle roster now lives on the backend (single source of truth shared with the Vehicles tab)
+  // instead of localStorage, so coding-day data no longer drifts out of sync per-browser.
   useEffect(() => {
-
-    if (branches.length > 0) {
-
-      const saved = localStorage.getItem('ashcol_vehicles_v1')
-
-      if (!saved || JSON.parse(saved).length === 0) {
-
-        const initialVehicles = VEHICLE_DEFAULTS.map((def, idx) => {
-
-          const matchedBranch = branches.find(b => def.branchPattern.test(b.name))
-
-          return {
-
-            id: `v-${idx + 1}`,
-
-            name: def.name,
-
-            plateNumber: def.plateNumber,
-
-            branchAssigned: matchedBranch ? matchedBranch.id : '',
-
-            codingDay: def.codingDay,
-
-          }
-
-        })
-
-        setVehicles(initialVehicles)
-
-        localStorage.setItem('ashcol_vehicles_v1', JSON.stringify(initialVehicles))
-
+    let cancelled = false
+    ;(async () => {
+      try {
+        const list = await fetchVehiclesApi()
+        if (!cancelled) setVehicles(list.map(mapApiVehicle))
+      } catch {
+        // best-effort; coding-day warnings simply won't show if this fails
+      } finally {
+        if (!cancelled) setVehiclesLoaded(true)
       }
+    })()
+    return () => { cancelled = true }
+  }, [])
 
-    }
-
-  }, [branches])
+  // One-time bootstrap of default vehicles, only if the backend roster is empty
+  useEffect(() => {
+    if (!vehiclesLoaded || vehicles.length > 0 || branches.length === 0 || vehicleSeedAttempted.current) return
+    vehicleSeedAttempted.current = true
+    ;(async () => {
+      try {
+        const created = await Promise.all(VEHICLE_DEFAULTS.map(def => {
+          const matchedBranch = branches.find(b => def.branchPattern.test(b.name))
+          return createVehicleApi({
+            name: def.name,
+            plateNumber: def.plateNumber,
+            branchId: matchedBranch ? matchedBranch.id : '',
+            codingDay: def.codingDay,
+          })
+        }))
+        setVehicles(created.map(mapApiVehicle))
+      } catch {
+        // best-effort seed; ignore failures
+      }
+    })()
+  }, [vehiclesLoaded, vehicles.length, branches])
 
   const lineupDayOfWeek = useMemo(() => {
 
@@ -476,50 +481,32 @@ export default function LineUp() {
 
     const [vehicleFilterBranch, setVehicleFilterBranch] = useState<string>('')
 
-  const handleAddVehicle = () => {
-
-    const newId = `v-${Date.now()}`
-
-    const newVehicle: VehicleItem = {
-
-      id: newId,
-
-      name: '',
-
-      plateNumber: '',
-
-      branchAssigned: branchId || '',
-
-      codingDay: 'None'
-
+  const handleAddVehicle = async () => {
+    try {
+      const created = await createVehicleApi({ name: '', plateNumber: '', branchId: branchId || '', codingDay: 'None' })
+      setVehicles(prev => [...prev, mapApiVehicle(created)])
+    } catch {
+      showToast('Failed to add vehicle', 'error')
     }
-
-    const updated = [...vehicles, newVehicle]
-
-    setVehicles(updated)
-
-    localStorage.setItem('ashcol_vehicles_v1', JSON.stringify(updated))
-
   }
 
-  const handleDeleteVehicle = (id: string) => {
-
-    const updated = vehicles.filter(v => v.id !== id)
-
-    setVehicles(updated)
-
-    localStorage.setItem('ashcol_vehicles_v1', JSON.stringify(updated))
-
+  const handleDeleteVehicle = async (id: string) => {
+    const previous = vehicles
+    setVehicles(v => v.filter(x => x.id !== id))
+    try {
+      await deleteVehicleApi(id)
+    } catch {
+      setVehicles(previous)
+      showToast('Failed to delete vehicle', 'error')
+    }
   }
 
   const handleUpdateVehicle = (id: string, field: keyof VehicleItem, value: string) => {
-
-    const updated = vehicles.map(v => v.id === id ? { ...v, [field]: value } : v)
-
-    setVehicles(updated)
-
-    localStorage.setItem('ashcol_vehicles_v1', JSON.stringify(updated))
-
+    setVehicles(prev => prev.map(v => v.id === id ? { ...v, [field]: value } : v))
+    const apiField = field === 'branchAssigned' ? 'branchId' : field
+    updateVehicleApi(id, { [apiField]: value }).catch(() => {
+      showToast('Failed to save vehicle change', 'error')
+    })
   }
 
   const branchName = branches.find(b => b.id === branchId)?.name ?? ''
