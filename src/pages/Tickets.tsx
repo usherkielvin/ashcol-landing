@@ -3,7 +3,7 @@ import { useOutletContext } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, X, Edit3, AlertTriangle, CalendarDays,
-  Eye, Loader2, Pencil, Moon, Sun,
+  Eye, Loader2, Pencil, Moon, Sun, Trash2,
   ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Maximize2,
   UsersRound, ChevronDown, SlidersHorizontal, CalendarRange,
 } from 'lucide-react'
@@ -7473,7 +7473,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         )}
       </div>
 
-      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Right-click context menu Ã¢â€â‚¬Ã¢â€â‚¬ */}
+      {/* ── Right-click context menu ── */}
       {contextMenu && (() => {
         const menuW = 220
         const menuH = 180
@@ -7524,6 +7524,18 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 </button>
               )}
 
+              {/* Delete Ticket (Admin Only) */}
+              {isAdmin && (
+                <button onClick={() => { handleDelete(contextMenu.ticket.id); setContextMenu(null) }}
+                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors"
+                  style={{ color: '#EF4444' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#fee2e2' : '#450a0a'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
+                  <Trash2 className="w-3.5 h-3.5 shrink-0 text-red-500" />
+                  Delete Ticket
+                </button>
+              )}
+
 
             </div>
           </div>
@@ -7550,6 +7562,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           onToggleHistory={() => setShowHistoryPanel(prev => !prev)}
           onHideHistory={() => setShowHistoryPanel(false)}
           onEdit={() => { openEditModal(detailTicket); setDetailTicket(null); setShowHistoryPanel(false) }}
+          onDelete={isAdmin ? () => handleDelete(detailTicket.id) : undefined}
           onUpdateTicket={(updated) => {
             setDetailTicket(updated)
             setTickets(prev => prev.map(t => (t.id === updated.id ? { ...t, ...updated } : t)))

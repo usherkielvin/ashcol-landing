@@ -20,6 +20,7 @@ import DailyAuditReport from './pages/DailyAuditReport'
 import AuditFinanceExpenses from './pages/AuditFinanceExpenses'
 import ForCollections from './pages/ForCollections'
 import DailyServiceReport from './pages/DailyServiceReport'
+import Registration from './pages/Registration'
 import LineUp from './pages/LineUp'
 
 import Hris from './pages/Hris'
@@ -105,6 +106,7 @@ export default function App() {
           <Route path="/lineup" element={<LineUp />} />
           <Route path="/weekly-field-schedule" element={<Navigate to="/lineup?tab=weekly" replace />} />
           <Route path="/service-report" element={<DailyServiceReport />} />
+          <Route path="/registration" element={<Registration />} />
 
           <Route path="/admin-hris" element={<Hris />} />
           <Route path="/ddrm" element={<Ddrm />} />

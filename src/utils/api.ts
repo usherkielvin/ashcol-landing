@@ -1102,3 +1102,14 @@ export function formatFetchError(err: unknown): string {
   if (parsed) return parsed
   return 'Unknown error'
 }
+
+export async function deleteTicket(id: string): Promise<void> {
+  const token = localStorage.getItem('token')
+  const res = await fetch(`${API_BASE_URL}/tickets/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    throw new Error(await readApiError(res))
+  }
+}

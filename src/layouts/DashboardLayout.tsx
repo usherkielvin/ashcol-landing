@@ -9,7 +9,7 @@ import {
   PanelLeftOpen, ClipboardList, Search,
   User, Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
   Building2, Calendar, Landmark, Wifi, CircleDollarSign, ListOrdered,
-  LayoutDashboard, Route, Truck
+  LayoutDashboard, Route, Truck, ClipboardCheck
 } from 'lucide-react'
 import {
   MdOutlineConfirmationNumber,
@@ -18,6 +18,7 @@ import {
   MdOutlineAssignmentInd,
   MdOutlineCalendarMonth,
   MdOutlineArchive,
+  MdOutlineAssignmentTurnedIn,
   MdOutlinePeopleAlt,
   MdOutlineDescription,
   MdOutlinePlaylistAdd,
@@ -87,6 +88,7 @@ function buildNavGroups(navLinks: NavLinkDef[]) {
         { name: 'My Tickets', icon: <MdOutlineAssignmentInd size={16} />, path: findPath('My Tickets') },
         { name: 'Schedules', icon: <MdOutlineCalendarMonth size={16} />, path: findPath('Schedules') },
         { name: 'Archives', icon: <MdOutlineArchive size={16} />, path: findPath('Archives') },
+        { name: 'Registration', icon: <MdOutlineAssignmentTurnedIn size={16} />, path: findPath('Registration') },
       ].filter(s => s.path !== '#' || hasLink(s.name)),
     },
     {
@@ -370,6 +372,7 @@ export default function DashboardLayout() {
     { name: 'Relays',          path: '/relays',           icon: Radio,           roles: ['admin', 'management'] },
     { name: 'Search',          path: '/search',          icon: Search },
     { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Registration',   path: '/registration',    icon: ClipboardCheck, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Office tasks',    path: '/office-tasks',     icon: Building2,       roles: ['admin', 'management'] },
     { name: 'Lineup',          path: '/lineup',           icon: ListOrdered,     roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
@@ -388,8 +391,8 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'management' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms']
-  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms']
+  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms']
+  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms']
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 
