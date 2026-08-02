@@ -1427,7 +1427,9 @@ export function buildReschedulePatchBody(
   const oldDateKey = getEffectiveScheduleDateKey(ticket) || getPreferredDateKey(ticket)
   const body: Record<string, unknown> = { status: 'RESCHED' }
   const acUpdates: Record<string, unknown> = { scheduleOutcome: '' }
-  const userRemarks = (options.remarks || '').trim()
+  // Strip any pre-existing "RESCHED PENDING:" prefix before re-adding it below — guards against
+  // the prefix nesting/doubling if this ever runs twice for the same remark (retry, merged patch).
+  const userRemarks = (options.remarks || '').trim().replace(/^RESCHED PENDING:\s*/i, '')
 
   if (options.pending) {
     acUpdates.reschedulePending = true
