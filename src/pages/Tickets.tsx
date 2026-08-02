@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { useOutletContext, useSearchParams } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, X, Edit3, AlertTriangle, CalendarDays,
@@ -153,11 +153,21 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     }
   }, [surface])
 
-  const [overviewSearchInput, setOverviewSearchInput] = useState('')
+  const [searchParams] = useSearchParams()
+  const initialUrlQuery = searchParams.get('q') || searchParams.get('ticket') || ''
+
+  const [overviewSearchInput, setOverviewSearchInput] = useState(() => initialUrlQuery)
   const [overviewSearchFocused, setOverviewSearchFocused] = useState(false)
   const [overviewResults, setOverviewResults] = useState<Ticket[]>([])
   const [overviewLoading, setOverviewLoading] = useState(false)
   const overviewSearchSeqRef = useRef(0)
+
+  useEffect(() => {
+    const q = searchParams.get('q') || searchParams.get('ticket') || ''
+    if (q) {
+      setOverviewSearchInput(q)
+    }
+  }, [searchParams])
 
   const fetchOverviewTickets = useCallback(async (query: string) => {
     const seq = ++overviewSearchSeqRef.current

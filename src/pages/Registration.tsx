@@ -12,6 +12,40 @@ function formatMonthLabel(monthStr: string): string {
   }
   return monthStr
 }
+
+function formatNegotiatorFirstName(name: string | null | undefined): string {
+  if (!name) return ''
+  const trimmed = name.trim()
+  if (!trimmed) return ''
+  const firstName = trimmed.split(/\s+/)[0]
+  return firstName.toUpperCase()
+}
+
+function getRegistrationCommitDisplay(t: Ticket): string {
+  const commit = getTicketCommitDisplay(t)
+  const { mode, amount } = resolveTicketPayment(t)
+  const breakdown = getPaymentBreakdown(t)
+  const breakdownText = breakdown.length ? formatPaymentBreakdownText(breakdown) : ''
+
+  let payTag = ''
+  if (mode && mode !== 'NO PAYMENT' && mode !== 'NONE') {
+    payTag = breakdownText ? `${mode} ${breakdownText}` : mode
+  }
+
+  if (!commit && !payTag) {
+    return amount > 0 ? `₱${amount.toLocaleString('en-PH')}` : ''
+  }
+
+  if (!commit) return payTag
+  if (!payTag) return commit
+
+  const commitUpper = commit.toUpperCase()
+  if (commitUpper.includes(mode.toUpperCase()) || (breakdownText && commitUpper.includes('GCASH'))) {
+    return commit
+  }
+
+  return `${payTag} • ${commit}`
+}
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, getCleanBranchName, branchScopesMatch, readApiError } from '../utils/api'
@@ -20,6 +54,7 @@ import {
   getScheduleStatusValue,
   getScheduleStatusBadgeStyle,
   getScheduleStatusLabel,
+  CLOSING_SCHEDULE_STATUSES,
   parseBrand,
   parseAcMeta,
   mergeAcMeta,
@@ -33,6 +68,9 @@ import {
   getInstalledDateKey,
   getFinalDateKey,
   formatDateKeyLabel,
+  resolveTicketPayment,
+  getPaymentBreakdown,
+  formatPaymentBreakdownText,
 } from '../utils/ticketHelpers'
 
 type RegTicket = Ticket & {
@@ -83,28 +121,34 @@ function errMsg(err: unknown, fallback: string): string {
 
 type BranchOption = { id: string; name: string }
 
-const PAGE_SIZE = 200
-const MAX_PAGES_PER_STATUS = 50 // safety cap (~10k tickets per status)
+// Every backend Ticket.Status that can represent a closed/done job (see CLOSING_SCHEDULE_STATUSES
+// in ticketHelpers.ts — COMPLETED/INSTALLED cover most outcomes, the rest are dedicated statuses).
+const CLOSING_BACKEND_STATUSES = ['INSTALLED', 'COMPLETED', 'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE']
 
-/** Fetches every page for one Ticket.Status value — status can't be OR'd server-side. */
+const PAGE_SIZE = 500
+const MAX_PAGES_PER_STATUS = 40 // safety cap (~20k tickets per status)
+
+async function fetchTicketsPage(token: string, status: string, branchId: string | null, page: number): Promise<{ rows: Ticket[]; totalPages: number }> {
+  const params = new URLSearchParams({ status, page: String(page), size: String(PAGE_SIZE) })
+  if (branchId) params.set('branchId', branchId)
+  const res = await fetch(`${API_BASE_URL}/tickets?${params}`, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) return { rows: [], totalPages: 0 }
+  const data = await res.json()
+  const rows: Ticket[] = data?.data?.tickets || data?.tickets || []
+  const totalPages = data?.data?.totalPages ?? data?.totalPages ?? 1
+  return { rows, totalPages }
+}
+
+/** Fetches every page for one Ticket.Status value — status can't be OR'd server-side.
+ * Page 0 first (to learn totalPages), then the rest in parallel for speed. */
 async function fetchAllTicketsByStatus(token: string, status: string, branchId: string | null): Promise<Ticket[]> {
-  const all: Ticket[] = []
-  let page = 0
-  while (page < MAX_PAGES_PER_STATUS) {
-    const params = new URLSearchParams({ status, page: String(page), size: String(PAGE_SIZE) })
-    if (branchId) params.set('branchId', branchId)
-    const res = await fetch(`${API_BASE_URL}/tickets?${params}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    if (!res.ok) break
-    const data = await res.json()
-    const rows: Ticket[] = data?.data?.tickets || data?.tickets || []
-    all.push(...rows)
-    const totalPages = data?.data?.totalPages ?? data?.totalPages ?? 1
-    page += 1
-    if (page >= totalPages || rows.length === 0) break
-  }
-  return all
+  const first = await fetchTicketsPage(token, status, branchId, 0)
+  const totalPages = Math.min(first.totalPages, MAX_PAGES_PER_STATUS)
+  if (totalPages <= 1) return first.rows
+  const rest = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, i) => fetchTicketsPage(token, status, branchId, i + 1)),
+  )
+  return [first.rows, ...rest.map(r => r.rows)].flat()
 }
 
 export default function Registration() {
@@ -179,23 +223,23 @@ export default function Registration() {
     try {
       const token = authToken()
       const branchId = branchFilter ? branchFilter : 'ALL'
-      // Schedule install closed — DB uses INSTALLED; legacy rows may still be COMPLETED.
-      const [installed, completed] = await Promise.all([
-        fetchAllTicketsByStatus(token, 'INSTALLED', branchId),
-        fetchAllTicketsByStatus(token, 'COMPLETED', branchId),
-      ])
+      // Every backend status that can carry a closing outcome, fetched in parallel.
+      const batches = await Promise.all(
+        CLOSING_BACKEND_STATUSES.map(status => fetchAllTicketsByStatus(token, status, branchId)),
+      )
       const merged = new Map<string, Ticket>()
-      for (const t of [...installed, ...completed]) merged.set(t.id, t)
-      // A COMPLETED status can also mean DONE_CLEANING/DONE_SURVEY/etc — keep only true installs.
-      let doneInstalled = Array.from(merged.values()).filter(t => getScheduleStatusValue(t) === 'DONE_INSTALLED')
+      for (const t of batches.flat()) merged.set(t.id, t)
+      // INSTALLED/COMPLETED also cover non-closing schedule statuses — keep only true closings
+      // (DONE_INSTALLED, DONE_CLEANING, DONE_CHECKUP, DONE_BACKJOB, DONE_SURVEY, etc).
+      let closed = Array.from(merged.values()).filter(t => CLOSING_SCHEDULE_STATUSES.has(getScheduleStatusValue(t)))
       if (branchFilter) {
-        doneInstalled = doneInstalled.filter(t => branchScopesMatch(t.branchId || t.branch_id, branchFilter))
+        closed = closed.filter(t => branchScopesMatch(t.branchId || t.branch_id, branchFilter))
       }
-      doneInstalled.sort((a, b) => {
+      closed.sort((a, b) => {
         const keyOf = (t: Ticket) => getInstalledDateKey(t) || getFinalDateKey(t) || t.updatedAt || t.updated_at || ''
         return keyOf(b).localeCompare(keyOf(a))
       })
-      setTickets(doneInstalled)
+      setTickets(closed)
     } catch (err) {
       setError(errMsg(err, 'Failed to load registration tickets'))
     } finally {
@@ -440,9 +484,9 @@ export default function Registration() {
                 </button>
               </th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Commit</th>
-              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Installer</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Installer/Tech</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Negotiator</th>
-              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Installed</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Completed</th>
               <th className="px-3 py-2.5" style={{ color: textMuted }}></th>
             </tr>
           </thead>
@@ -455,7 +499,7 @@ export default function Registration() {
             ) : visible.length === 0 ? (
               <tr><td colSpan={10} className="px-6 py-16 text-center" style={{ color: textMuted }}>
                 <ClipboardCheck className="w-7 h-7 mx-auto mb-2 opacity-40" />
-                No done-install tickets found.
+                No closed tickets found.
               </td></tr>
             ) : visible.map((t, idx) => {
               const custName = getCustomerDisplayName(t) || t.title
@@ -463,10 +507,12 @@ export default function Registration() {
               const brand = parseBrand(t)
               const commit = getTicketCommitDisplay(t)
               const installer = getInstallerDisplay(t)
-              const negotiator = getTicketNegotiatorName(t)
+              const negotiatorRaw = getTicketNegotiatorName(t)
+              const negotiator = formatNegotiatorFirstName(negotiatorRaw)
               const branchLabel = getBranchDisplayName(t.branchId || t.branch_id || null)
               const installedKey = getInstalledDateKey(t) || getFinalDateKey(t)
-              const statusColor = getScheduleStatusBadgeStyle('DONE_INSTALLED', isLight).color
+              const statusValue = getScheduleStatusValue(t)
+              const statusColor = getScheduleStatusBadgeStyle(statusValue, isLight).color
               const registered = isTicketRegistered(t)
               const tNum = t.ticketNumber || t.ticket_number || t.id
               return (
@@ -482,7 +528,7 @@ export default function Registration() {
                     {idx + 1}. {tNum}
                   </td>
                   <td className="px-2 py-2.5 text-[10px] font-extrabold uppercase tracking-tight leading-tight" style={{ color: statusColor }}>
-                    {getScheduleStatusLabel('DONE_INSTALLED')}
+                    {getScheduleStatusLabel(statusValue)}
                   </td>
                   <td className="px-3 py-2.5 overflow-hidden">
                     <div className="text-xs font-bold truncate" style={{ color: textPrimary }} title={custName}>{custName || '—'}</div>
@@ -564,9 +610,11 @@ function RegistrationDetailModal({ ticket, isLight, onClose }: { ticket: Ticket;
   const branchLabel = getBranchDisplayName(ticket.branchId || ticket.branch_id || null)
   const brand = parseBrand(ticket)
   const installer = getInstallerDisplay(ticket)
-  const negotiator = getTicketNegotiatorName(ticket)
+  const negotiatorRaw = getTicketNegotiatorName(ticket)
+  const negotiator = formatNegotiatorFirstName(negotiatorRaw)
   const installedKey = getInstalledDateKey(ticket) || getFinalDateKey(ticket)
-  const commit = getTicketCommitDisplay(ticket)
+  const commit = getRegistrationCommitDisplay(ticket)
+  const statusValue = getScheduleStatusValue(ticket)
   const meta = parseAcMeta(ticket)
   const registered = isTicketRegistered(ticket)
   const registeredBy = typeof meta.warrantyRegisteredBy === 'string' ? meta.warrantyRegisteredBy : (ticket as RegTicket).warrantyRegistrationCompletedBy || ''
@@ -589,7 +637,7 @@ function RegistrationDetailModal({ ticket, isLight, onClose }: { ticket: Ticket;
             <h2 className="text-sm font-black uppercase tracking-wider" style={{ color: textPrimary }}>
               {ticket.ticketNumber || ticket.ticket_number || ticket.id}
             </h2>
-            <p className="text-xs mt-0.5" style={{ color: textMuted }}>Done Install — Registration Details</p>
+            <p className="text-xs mt-0.5" style={{ color: textMuted }}>{getScheduleStatusLabel(statusValue)} — Registration Details</p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" style={{ color: textMuted }}>
             <X className="w-4 h-4" />
@@ -603,7 +651,7 @@ function RegistrationDetailModal({ ticket, isLight, onClose }: { ticket: Ticket;
           <DField isLight={isLight} label="Branch" value={branchLabel} />
           <DField isLight={isLight} label="Brand / Unit" value={brand} />
           <DField isLight={isLight} label="Commit" value={commit} />
-          <DField isLight={isLight} label="Installed" value={installedKey ? formatDateKeyLabel(installedKey) : ''} />
+          <DField isLight={isLight} label="Completed" value={installedKey ? formatDateKeyLabel(installedKey) : ''} />
           <DField isLight={isLight} label="Installer / Technician" value={installer} />
           <DField isLight={isLight} label="Negotiator" value={negotiator} />
           <DField isLight={isLight} label="Dealer / Store" value={ticket.dealer || ''} />
