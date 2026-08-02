@@ -63,9 +63,11 @@ interface Props {
   onCancel: () => void
   onConfirm: (blob: Blob) => void
   isDark: boolean
+  cropShape?: 'round' | 'rect'
+  aspectRatio?: number
 }
 
-export default function ImageCropModal({ imageSrc, onCancel, onConfirm, isDark }: Props) {
+export default function ImageCropModal({ imageSrc, onCancel, onConfirm, isDark, cropShape = 'round', aspectRatio = 1 }: Props) {
   const [crop, setCrop]                   = useState({ x: 0, y: 0 })
   const [zoom, setZoom]                   = useState(1)
   const [rotation, setRotation]           = useState(0)
@@ -85,39 +87,54 @@ export default function ImageCropModal({ imageSrc, onCancel, onConfirm, isDark }
     }
   }
 
-  const bg     = isDark ? '#0A1120' : '#ffffff'
-  const border = isDark ? '#1E2D48' : '#e2e8f0'
-  const text   = isDark ? '#E2E8F0' : '#0f172a'
-  const muted  = isDark ? '#7A95B8' : '#64748b'
+  const bg      = isDark ? '#0A1120' : '#ffffff'
+  const border  = isDark ? '#1E2D48' : '#e2e8f0'
+  const text    = isDark ? '#E2E8F0' : '#0f172a'
+  const muted   = isDark ? '#7A95B8' : '#64748b'
   const trackBg = isDark ? '#1E2D48' : '#e2e8f0'
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
       <div
-        className="relative w-full max-w-md rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        className="relative w-full max-w-xl rounded-2xl shadow-2xl flex flex-col overflow-hidden"
         style={{ backgroundColor: bg, border: `1px solid ${border}` }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${border}` }}>
-          <div>
-            <h3 className="font-black text-[16px]" style={{ color: text }}>Crop Photo</h3>
-            <p className="text-[11px] mt-0.5" style={{ color: muted }}>Drag to reposition · Pinch or scroll to zoom</p>
+        <div
+          className="flex items-center justify-between px-5 py-3.5"
+          style={{ borderBottom: `1px solid ${border}` }}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center"
+              style={{ backgroundColor: 'rgba(16,185,129,0.15)' }}
+            >
+              <RotateCw className="w-4 h-4" style={{ color: '#10B981' }} />
+            </div>
+            <div>
+              <h3 className="font-black text-[15px] leading-tight" style={{ color: text }}>Adjust Photo</h3>
+              <p className="text-[11px]" style={{ color: muted }}>Drag · Scroll to zoom · Slider to rotate</p>
+            </div>
           </div>
-          <button onClick={onCancel} className="p-1.5 rounded-lg transition-colors hover:text-red-400" style={{ color: muted }}>
+          <button
+            onClick={onCancel}
+            className="p-1.5 rounded-lg transition-colors hover:bg-red-500/10 hover:text-red-400"
+            style={{ color: muted }}
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Crop area */}
-        <div className="relative w-full" style={{ height: 320, backgroundColor: '#000' }}>
+        {/* Crop canvas */}
+        <div className="relative w-full" style={{ height: 280, backgroundColor: '#000' }}>
           <Cropper
             image={imageSrc}
             crop={crop}
             zoom={zoom}
             rotation={rotation}
-            aspect={1}
-            cropShape="round"
-            showGrid={false}
+            aspect={aspectRatio}
+            cropShape={cropShape}
+            showGrid={cropShape === 'rect'}
             onCropChange={setCrop}
             onZoomChange={setZoom}
             onCropComplete={onCropComplete}
@@ -125,11 +142,17 @@ export default function ImageCropModal({ imageSrc, onCancel, onConfirm, isDark }
         </div>
 
         {/* Controls */}
-        <div className="flex flex-col gap-4 px-5 py-5" style={{ borderTop: `1px solid ${border}` }}>
+        <div className="flex flex-col gap-3 px-5 py-4" style={{ borderTop: `1px solid ${border}` }}>
 
-          {/* Zoom */}
+          {/* Zoom row */}
           <div className="flex items-center gap-3">
-            <ZoomOut className="w-4 h-4 flex-shrink-0" style={{ color: muted }} />
+            <button
+              onClick={() => setZoom(v => Math.max(1, +(v - 0.25).toFixed(2)))}
+              className="w-7 h-7 flex items-center justify-center rounded-lg transition-colors hover:bg-white/10"
+              style={{ color: muted }}
+            >
+              <ZoomOut className="w-4 h-4" />
+            </button>
             <input
               type="range" min={1} max={3} step={0.01}
               value={zoom}
@@ -137,12 +160,28 @@ export default function ImageCropModal({ imageSrc, onCancel, onConfirm, isDark }
               className="flex-1 h-1.5 rounded-full appearance-none cursor-pointer accent-[#10B981]"
               style={{ backgroundColor: trackBg }}
             />
-            <ZoomIn className="w-4 h-4 flex-shrink-0" style={{ color: muted }} />
+            <button
+              onClick={() => setZoom(v => Math.min(3, +(v + 0.25).toFixed(2)))}
+              className="w-7 h-7 flex items-center justify-center rounded-lg transition-colors hover:bg-white/10"
+              style={{ color: muted }}
+            >
+              <ZoomIn className="w-4 h-4" />
+            </button>
+            <span className="text-[11px] w-8 text-right font-mono tabular-nums" style={{ color: muted }}>
+              {zoom.toFixed(1)}×
+            </span>
           </div>
 
-          {/* Rotation */}
+          {/* Rotation row */}
           <div className="flex items-center gap-3">
-            <RotateCw className="w-4 h-4 flex-shrink-0" style={{ color: muted }} />
+            <button
+              onClick={() => setRotation(0)}
+              title="Reset rotation"
+              className="w-7 h-7 flex items-center justify-center rounded-lg transition-colors hover:bg-white/10"
+              style={{ color: rotation !== 0 ? '#10B981' : muted }}
+            >
+              <RotateCw className="w-4 h-4" />
+            </button>
             <input
               type="range" min={-180} max={180} step={1}
               value={rotation}
@@ -150,14 +189,16 @@ export default function ImageCropModal({ imageSrc, onCancel, onConfirm, isDark }
               className="flex-1 h-1.5 rounded-full appearance-none cursor-pointer accent-[#10B981]"
               style={{ backgroundColor: trackBg }}
             />
-            <span className="text-[11px] w-10 text-right font-mono" style={{ color: muted }}>{rotation}°</span>
+            <span className="text-[11px] w-8 text-right font-mono tabular-nums" style={{ color: muted }}>
+              {rotation > 0 ? '+' : ''}{rotation}°
+            </span>
           </div>
 
           {/* Actions */}
-          <div className="flex gap-3 mt-1">
+          <div className="flex gap-3 pt-1">
             <button
               onClick={onCancel}
-              className="flex-1 py-3 rounded-xl font-bold text-sm border transition-all"
+              className="flex-1 py-2.5 rounded-xl font-bold text-sm border transition-all hover:bg-white/5"
               style={{ borderColor: border, color: muted, backgroundColor: 'transparent' }}
             >
               Cancel
@@ -165,9 +206,15 @@ export default function ImageCropModal({ imageSrc, onCancel, onConfirm, isDark }
             <button
               onClick={handleConfirm}
               disabled={applying}
-              className="flex-1 py-3 rounded-xl font-bold text-sm text-white bg-[#10B981] hover:bg-emerald-500 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg"
+              style={{
+                background: applying ? '#10B981' : 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+              }}
             >
-              {applying ? 'Applying...' : <><Check className="w-4 h-4" /> Apply Photo</>}
+              {applying
+                ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />Applying…</>
+                : <><Check className="w-4 h-4" />Apply Photo</>
+              }
             </button>
           </div>
         </div>

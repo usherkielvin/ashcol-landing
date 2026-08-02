@@ -165,6 +165,9 @@ export default function DashboardLayout() {
   // navVisible lags behind sidebarCollapsed so text never renders mid-transition
   // collapse → hide text immediately; expand → show text only after width finishes
   const [navVisible, setNavVisible] = useState(true)
+  // showCollapsedIcons controls the icon-rail visibility independently:
+  // set to false immediately on hover-enter so icons never drift to center
+  const [showCollapsedIcons, setShowCollapsedIcons] = useState(false)
   const [profileOpen, setProfileOpen]           = useState(false)
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false)
   const [openAccordion, setOpenAccordion]       = useState<string | null>(null)
@@ -185,10 +188,13 @@ export default function DashboardLayout() {
     if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
     if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
     if (sidebarCollapsed) {
+      // Immediately hide the collapsed icon rail BEFORE width starts growing
+      // so icons never appear centered in the expanding sidebar
+      setShowCollapsedIcons(false)
       setSidebarCollapsed(false)
       setIsHoverExpanded(true)
-      // slight delay so icons fade out before expanded text fades in
-      navVisibleTimeout.current = setTimeout(() => setNavVisible(true), 80)
+      // Show expanded text content after sidebar has grown enough
+      navVisibleTimeout.current = setTimeout(() => setNavVisible(true), 180)
     }
   }
 
@@ -199,7 +205,9 @@ export default function DashboardLayout() {
       hoverTimeout.current = setTimeout(() => {
         setSidebarCollapsed(true)
         setIsHoverExpanded(false)
-      }, 120)
+        // Re-show icon rail after sidebar has collapsed
+        setShowCollapsedIcons(true)
+      }, 80)
     }
   }
 
@@ -213,9 +221,12 @@ export default function DashboardLayout() {
       if (sidebarCollapsed) {
         if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
         setNavVisible(false)
+        // Show icon rail after sidebar has finished collapsing
+        navVisibleTimeout.current = setTimeout(() => setShowCollapsedIcons(true), 180)
       } else {
+        setShowCollapsedIcons(false)
         if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
-        navVisibleTimeout.current = setTimeout(() => setNavVisible(true), 80)
+        navVisibleTimeout.current = setTimeout(() => setNavVisible(true), 180)
       }
     }
   }, [sidebarCollapsed, isHoverExpanded])
@@ -510,7 +521,7 @@ export default function DashboardLayout() {
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
           ${sidebarCollapsed ? 'md:w-[64px]' : 'w-[260px] md:w-[220px] lg:w-[240px]'}
         `}
-        style={{ transition: 'width 320ms cubic-bezier(0.4,0,0.2,1), transform 300ms cubic-bezier(0.4,0,0.2,1)' }}
+        style={{ transition: 'width 180ms cubic-bezier(0.4,0,0.2,1), transform 200ms cubic-bezier(0.4,0,0.2,1)' }}
       >
         {/* Brand */}
         <div
@@ -691,8 +702,9 @@ export default function DashboardLayout() {
             <div
               className="w-full py-1 flex flex-col gap-1 items-center"
               style={{
-                opacity: !navVisible ? 1 : 0,
-                transition: 'opacity 160ms ease',
+                opacity: showCollapsedIcons ? 1 : 0,
+                transition: 'opacity 120ms ease',
+                pointerEvents: showCollapsedIcons ? 'auto' : 'none',
               }}
             >
               {collapsedNavItems.map((item) => {

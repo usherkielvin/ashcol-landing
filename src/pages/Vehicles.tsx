@@ -205,7 +205,7 @@ export default function Vehicles() {
   return (
     <div className="p-4 sm:p-6 flex flex-col gap-5">
       <ConfirmDialog dialog={confirmModal} onClose={() => setConfirmModal(null)} />
-      {cropSrc && <ImageCropModal imageSrc={cropSrc} isDark={!isLight} onCancel={() => setCropSrc(null)} onConfirm={handleCropConfirm} />}
+      {cropSrc && <ImageCropModal imageSrc={cropSrc} isDark={!isLight} cropShape="rect" aspectRatio={16 / 9} onCancel={() => setCropSrc(null)} onConfirm={handleCropConfirm} />}
       {diaryVehicle && (
         <VehicleDiaryModal
           vehicle={diaryVehicle}
@@ -280,28 +280,50 @@ export default function Vehicles() {
           <p className="text-xs mt-1" style={{ color: textMuted }}>Try adjusting your search or filters.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {filtered.map(v => (
             <div
               key={v.id}
-              className="rounded-2xl shadow-sm overflow-hidden flex flex-col cursor-pointer transition-transform hover:-translate-y-0.5"
-              style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+              className="rounded-xl shadow-sm flex flex-row cursor-pointer overflow-hidden"
+              style={{ backgroundColor: cardBg, border: `1px solid ${border}`, transition: 'box-shadow 150ms ease, transform 150ms ease' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.transform = ''}              
               onClick={() => setDiaryVehicle(v)}
             >
-              {/* Photo holder */}
-              <div className="relative w-full h-28 flex items-center justify-center" style={{ backgroundColor: inputBg }}>
+              {/* Square photo — left */}
+              <div
+                className="relative shrink-0 w-[89px] h-[89px] self-center m-2.5 rounded-lg overflow-hidden"
+                style={{ backgroundColor: inputBg }}
+              >
                 {v.photoUrl ? (
-                  <img src={resolveImageUrl(v.photoUrl)} alt={v.name} className="w-full h-full object-cover" />
+                  <img
+                    src={resolveImageUrl(v.photoUrl)}
+                    alt={v.name}
+                    className="w-full h-full object-cover"
+                    style={{ transform: 'none', transition: 'none' }}
+                  />
                 ) : (
-                  <Truck className="w-10 h-10" style={{ color: textMuted }} />
+                  <div className="w-full h-full flex items-center justify-center">
+                    <Truck className="w-7 h-7" style={{ color: textMuted }} />
+                  </div>
                 )}
+                {/* Coding day strip */}
+                {v.codingDay && v.codingDay !== 'None' && (
+                  <span
+                    className="absolute bottom-0 left-0 right-0 text-center text-[8px] font-black uppercase tracking-wider text-white py-0.5"
+                    style={{ backgroundColor: '#F59E0B' }}
+                  >
+                    {v.codingDay}
+                  </span>
+                )}
+                {/* Camera hover overlay */}
                 {canManage && (
                   <label
-                    className="absolute bottom-2 right-2 p-1.5 rounded-lg cursor-pointer shadow-sm"
-                    style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+                    className="absolute inset-0 flex items-center justify-center cursor-pointer opacity-0 hover:opacity-100 transition-opacity"
+                    style={{ backgroundColor: 'rgba(0,0,0,0.62)' }}
                     onClick={e => e.stopPropagation()}
                   >
-                    <Camera className="w-3.5 h-3.5" style={{ color: textMuted }} />
+                    <Camera className="w-5 h-5 text-white" />
                     <input
                       type="file"
                       accept="image/*"
@@ -310,47 +332,52 @@ export default function Vehicles() {
                     />
                   </label>
                 )}
-                {v.codingDay && v.codingDay !== 'None' && (
-                  <span
-                    className="absolute top-2 left-2 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider text-white"
-                    style={{ backgroundColor: '#F59E0B' }}
-                  >
-                    {v.codingDay}
-                  </span>
+              </div>
+
+              {/* Info — centre */}
+              <div className="flex-1 min-w-0 flex flex-col justify-center py-3 pr-2 gap-0.5">
+                <div className="text-sm font-bold truncate" style={{ color: textPrimary }}>{v.name}</div>
+                {v.brandModel && (
+                  <div className="text-[12px] truncate" style={{ color: textMuted }}>{v.brandModel}</div>
                 )}
-              </div>
-
-              {/* Info */}
-              <div className="p-3 flex flex-col gap-1.5 flex-1">
-                <div className="flex items-start justify-between gap-1">
-                  <div className="min-w-0">
-                    <div className="text-xs font-bold truncate" style={{ color: textPrimary }}>{v.name}</div>
-                    {v.brandModel && (
-                      <div className="text-[11px] truncate" style={{ color: textMuted }}>{v.brandModel}</div>
-                    )}
-                    <div className="text-[11px]" style={{ color: textMuted }}>{v.plateNumber || 'No plate'}</div>
-                  </div>
-                  {canManage && (
-                    <div className="flex items-center gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => openEditForm(v)} className="p-1 rounded-lg hover:bg-slate-500/10" style={{ color: textMuted }}>
-                        <Pencil className="w-3 h-3" />
-                      </button>
-                      <button onClick={() => handleDelete(v)} className="p-1 rounded-lg hover:bg-red-500/10" style={{ color: '#EF4444' }}>
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-1 text-[11px]" style={{ color: textMuted }}>
-                  <Building2 className="w-3 h-3 shrink-0" />
-                  <span className="truncate">{branchName(v.branchId) || 'Unassigned'}</span>
-                </div>
-                <div className="flex items-center gap-1 text-[11px]" style={{ color: textMuted }}>
-                  <UserIcon className="w-3 h-3 shrink-0" />
-                  <span className="truncate">{v.driverName || 'Unassigned'}</span>
+                <div className="text-[11px] font-mono" style={{ color: textMuted }}>{v.plateNumber || 'No plate'}</div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1">
+                  <span className="flex items-center gap-1 text-[11px]" style={{ color: textMuted }}>
+                    <Building2 className="w-3 h-3 shrink-0" />
+                    <span className="truncate max-w-[100px]">{branchName(v.branchId) || 'Unassigned'}</span>
+                  </span>
+                  <span className="flex items-center gap-1 text-[11px]" style={{ color: textMuted }}>
+                    <UserIcon className="w-3 h-3 shrink-0" />
+                    <span className="truncate max-w-[100px]">{v.driverName || 'Unassigned'}</span>
+                  </span>
                 </div>
               </div>
+
+              {/* Edit / Delete — right */}
+              {canManage && (
+                <div
+                  className="flex flex-col items-center justify-center gap-1 px-3 shrink-0"
+                  style={{ borderLeft: `1px solid ${border}` }}
+                  onClick={e => e.stopPropagation()}
+                >
+                  <button
+                    onClick={() => openEditForm(v)}
+                    className="p-1.5 rounded-lg transition-colors hover:bg-slate-500/10"
+                    style={{ color: textMuted }}
+                    title="Edit"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(v)}
+                    className="p-1.5 rounded-lg transition-colors hover:bg-red-500/10"
+                    style={{ color: '#EF4444' }}
+                    title="Delete"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>

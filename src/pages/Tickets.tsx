@@ -7322,6 +7322,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                         const cleanBranch = branchLabel && branchLabel !== EMPTY_CELL ? branchLabel.replace(/^ASHCOL\s+/i, '') : '';
                         const custPhone = ticket.contactPhone || ticket.contact_phone || ticket.customer_phone || ticket.phone || '';
                         const formattedCustPhone = custPhone ? (fmtPhone(custPhone) || custPhone) : '';
+                        // Never read assignedEmployeeName for this — it's the negotiator/assigned
+                        // sales staff, not the installer/technician (see getInstallerDisplay).
+                        const cardTechnician = getInstallerDisplay(ticket, branchEmployees, activeBranchId);
 
                         return (
                           <div
@@ -7401,10 +7404,10 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                   </div>
                                 )}
 
-                                {ticket.assignedEmployeeName && (
+                                {cardTechnician && (
                                   <div className="flex flex-col gap-0.5 sm:col-span-2">
                                     <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Technician</span>
-                                    <span className="font-semibold" style={{ color: textPrimary }}>{ticket.assignedEmployeeName}</span>
+                                    <span className="font-semibold" style={{ color: textPrimary }}>{cardTechnician}</span>
                                   </div>
                                 )}
                               </div>
