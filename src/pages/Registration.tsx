@@ -54,7 +54,6 @@ import {
   getScheduleStatusValue,
   getScheduleStatusBadgeStyle,
   getScheduleStatusLabel,
-  CLOSING_SCHEDULE_STATUSES,
   parseBrand,
   parseAcMeta,
   mergeAcMeta,
@@ -120,10 +119,6 @@ function errMsg(err: unknown, fallback: string): string {
 }
 
 type BranchOption = { id: string; name: string }
-
-// Every backend Ticket.Status that can represent a closed/done job (see CLOSING_SCHEDULE_STATUSES
-// in ticketHelpers.ts — COMPLETED/INSTALLED cover most outcomes, the rest are dedicated statuses).
-const CLOSING_BACKEND_STATUSES = ['INSTALLED', 'COMPLETED', 'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE']
 
 const PAGE_SIZE = 500
 const MAX_PAGES_PER_STATUS = 40 // safety cap (~20k tickets per status)
@@ -223,15 +218,22 @@ export default function Registration() {
     try {
       const token = authToken()
       const branchId = branchFilter ? branchFilter : 'ALL'
-      // Every backend status that can carry a closing outcome, fetched in parallel.
-      const batches = await Promise.all(
-        CLOSING_BACKEND_STATUSES.map(status => fetchAllTicketsByStatus(token, status, branchId)),
-      )
+      // New tickets: DONE_INSTALLED always saves with status=INSTALLED (never COMPLETED).
+      // Legacy only: some old rows have status=COMPLETED with scheduleOutcome=DONE_INSTALLED in acDetails.
+      // Fetch INSTALLED (all new) + COMPLETED (legacy only, filtered strictly below).
+      const [installedRows, completedRows] = await Promise.all([
+        fetchAllTicketsByStatus(token, 'INSTALLED', branchId),
+        fetchAllTicketsByStatus(token, 'COMPLETED', branchId),
+      ])
+      // For COMPLETED rows, only include ones with an explicit DONE_INSTALLED outcome in acDetails.
+      const legacyInstalled = completedRows.filter(t => {
+        const meta = parseAcMeta(t)
+        return String(meta.scheduleOutcome || '').toUpperCase() === 'DONE_INSTALLED'
+      })
       const merged = new Map<string, Ticket>()
-      for (const t of batches.flat()) merged.set(t.id, t)
-      // INSTALLED/COMPLETED also cover non-closing schedule statuses — keep only true closings
-      // (DONE_INSTALLED, DONE_CLEANING, DONE_CHECKUP, DONE_BACKJOB, DONE_SURVEY, etc).
-      let closed = Array.from(merged.values()).filter(t => CLOSING_SCHEDULE_STATUSES.has(getScheduleStatusValue(t)))
+      for (const t of [...installedRows, ...legacyInstalled]) merged.set(t.id, t)
+      // Final gate: resolved schedule status must be DONE_INSTALLED.
+      let closed = Array.from(merged.values()).filter(t => getScheduleStatusValue(t) === 'DONE_INSTALLED')
       if (branchFilter) {
         closed = closed.filter(t => branchScopesMatch(t.branchId || t.branch_id, branchFilter))
       }
