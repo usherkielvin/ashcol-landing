@@ -14,7 +14,7 @@ function formatMonthLabel(monthStr: string): string {
 }
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, isPortalAdmin, getCleanBranchName, branchScopesMatch, readApiError } from '../utils/api'
+import { API_BASE_URL, getCleanBranchName, branchScopesMatch, readApiError } from '../utils/api'
 import {
   type Ticket,
   getScheduleStatusValue,
@@ -122,8 +122,6 @@ export default function Registration() {
   const rowHover = isLight ? '#f8fafc' : '#0F1A2E'
   const green = '#10B981'
 
-  const role = (user?.role || '').toLowerCase()
-  const isAdmin = isPortalAdmin(role)
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [branches, setBranches] = useState<BranchOption[]>([])
   const [loading, setLoading] = useState(true)
@@ -137,7 +135,7 @@ export default function Registration() {
   const [resolveTicket, setResolveTicket] = useState<Ticket | null>(null)
   const monthInputRef = useRef<HTMLInputElement>(null)
 
-  type SortField = 'ticketNumber' | 'customer' | 'branch' | 'brand' | 'installer' | 'negotiator' | 'installed'
+  type SortField = 'ticketNumber' | 'branch' | 'brand'
   type SortOrder = 'asc' | 'desc'
   const [sortField, setSortField] = useState<SortField | null>(null)
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
@@ -180,7 +178,7 @@ export default function Registration() {
     setError('')
     try {
       const token = authToken()
-      const branchId = branchFilter ? branchFilter : null
+      const branchId = branchFilter ? branchFilter : 'ALL'
       // Schedule install closed — DB uses INSTALLED; legacy rows may still be COMPLETED.
       const [installed, completed] = await Promise.all([
         fetchAllTicketsByStatus(token, 'INSTALLED', branchId),
@@ -190,11 +188,8 @@ export default function Registration() {
       for (const t of [...installed, ...completed]) merged.set(t.id, t)
       // A COMPLETED status can also mean DONE_CLEANING/DONE_SURVEY/etc — keep only true installs.
       let doneInstalled = Array.from(merged.values()).filter(t => getScheduleStatusValue(t) === 'DONE_INSTALLED')
-      // The backend's branch visibility query also OR-includes tickets personally assigned to
-      // the current user regardless of branch — re-assert the exact branch here so a report
-      // filter never silently pulls in someone's cross-branch assignments.
-      if (branchId) {
-        doneInstalled = doneInstalled.filter(t => branchScopesMatch(t.branchId || t.branch_id, branchId))
+      if (branchFilter) {
+        doneInstalled = doneInstalled.filter(t => branchScopesMatch(t.branchId || t.branch_id, branchFilter))
       }
       doneInstalled.sort((a, b) => {
         const keyOf = (t: Ticket) => getInstalledDateKey(t) || getFinalDateKey(t) || t.updatedAt || t.updated_at || ''
@@ -280,10 +275,6 @@ export default function Registration() {
           valA = a.ticketNumber || a.ticket_number || ''
           valB = b.ticketNumber || b.ticket_number || ''
           break
-        case 'customer':
-          valA = getCustomerDisplayName(a) || a.title || ''
-          valB = getCustomerDisplayName(b) || b.title || ''
-          break
         case 'branch':
           valA = getBranchDisplayName(a.branchId || a.branch_id || null)
           valB = getBranchDisplayName(b.branchId || b.branch_id || null)
@@ -291,18 +282,6 @@ export default function Registration() {
         case 'brand':
           valA = parseBrand(a)
           valB = parseBrand(b)
-          break
-        case 'installer':
-          valA = getInstallerDisplay(a)
-          valB = getInstallerDisplay(b)
-          break
-        case 'negotiator':
-          valA = getTicketNegotiatorName(a)
-          valB = getTicketNegotiatorName(b)
-          break
-        case 'installed':
-          valA = getInstalledDateKey(a) || getFinalDateKey(a) || a.updatedAt || a.updated_at || ''
-          valB = getInstalledDateKey(b) || getFinalDateKey(b) || b.updatedAt || b.updated_at || ''
           break
         default:
           valA = ''
@@ -316,17 +295,7 @@ export default function Registration() {
 
   return (
     <div className="p-[5px] flex flex-col gap-2 h-full min-h-0">
-      <div className="flex flex-nowrap items-center justify-between gap-3 px-1 py-1 overflow-x-auto no-scrollbar select-none">
-        <h1 className="text-lg font-bold flex items-center gap-2 shrink-0 whitespace-nowrap" style={{ color: textPrimary }}>
-          <ClipboardCheck className="w-5 h-5 shrink-0" style={{ color: green }} />
-          <span>Registration</span>
-          {(loading || visible.length > 0) && (
-            <span className="text-xs font-semibold px-2 py-0.5 rounded-full shrink-0" style={{ backgroundColor: inputBg, color: textMuted, border: `1px solid ${inputBorder}` }}>
-              {loading ? '…' : visible.length}
-            </span>
-          )}
-        </h1>
-
+      <div className="flex flex-nowrap items-center justify-end gap-2 px-1 py-1 overflow-x-auto no-scrollbar select-none">
         {/* Search / filter bar */}
         <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
           <div className="flex items-center gap-2 w-48 sm:w-56 rounded-lg px-2.5 py-1.5 border shrink-0 h-8" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
@@ -457,12 +426,7 @@ export default function Registration() {
                 </button>
               </th>
               <th className="px-2 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Status</th>
-              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>
-                <button type="button" onClick={() => handleSort('customer')} className="group inline-flex items-center gap-1 hover:text-emerald-500 transition-colors select-none" title="Sort Alphabetically by Customer">
-                  <span>Customer</span>
-                  {renderSortIcon('customer')}
-                </button>
-              </th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Customer</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>
                 <button type="button" onClick={() => handleSort('branch')} className="group inline-flex items-center gap-1 hover:text-emerald-500 transition-colors select-none" title="Sort Alphabetically by Branch">
                   <span className={sortField === 'branch' ? 'text-emerald-500 font-extrabold' : ''}>Branch</span>
@@ -476,24 +440,9 @@ export default function Registration() {
                 </button>
               </th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Commit</th>
-              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>
-                <button type="button" onClick={() => handleSort('installer')} className="group inline-flex items-center gap-1 hover:text-emerald-500 transition-colors select-none" title="Sort Alphabetically by Installer">
-                  <span>Installer</span>
-                  {renderSortIcon('installer')}
-                </button>
-              </th>
-              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>
-                <button type="button" onClick={() => handleSort('negotiator')} className="group inline-flex items-center gap-1 hover:text-emerald-500 transition-colors select-none" title="Sort Alphabetically by Negotiator">
-                  <span>Negotiator</span>
-                  {renderSortIcon('negotiator')}
-                </button>
-              </th>
-              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>
-                <button type="button" onClick={() => handleSort('installed')} className="group inline-flex items-center gap-1 hover:text-emerald-500 transition-colors select-none" title="Sort by Installed Date">
-                  <span>Installed</span>
-                  {renderSortIcon('installed')}
-                </button>
-              </th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Installer</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Negotiator</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Installed</th>
               <th className="px-3 py-2.5" style={{ color: textMuted }}></th>
             </tr>
           </thead>
@@ -508,7 +457,7 @@ export default function Registration() {
                 <ClipboardCheck className="w-7 h-7 mx-auto mb-2 opacity-40" />
                 No done-install tickets found.
               </td></tr>
-            ) : visible.map(t => {
+            ) : visible.map((t, idx) => {
               const custName = getCustomerDisplayName(t) || t.title
               const phone = t.contactPhone || t.contact_phone || t.customerPhone || t.customer_phone || ''
               const brand = parseBrand(t)
@@ -519,6 +468,7 @@ export default function Registration() {
               const installedKey = getInstalledDateKey(t) || getFinalDateKey(t)
               const statusColor = getScheduleStatusBadgeStyle('DONE_INSTALLED', isLight).color
               const registered = isTicketRegistered(t)
+              const tNum = t.ticketNumber || t.ticket_number || t.id
               return (
                 <tr
                   key={t.id}
@@ -528,8 +478,8 @@ export default function Registration() {
                   onMouseLeave={el => (el.currentTarget.style.backgroundColor = cardBg)}
                   onContextMenu={(e) => { e.preventDefault(); setDetailTicket(t) }}
                 >
-                  <td className="px-2 py-2.5 text-xs font-bold truncate" style={{ color: textMuted }} title={t.ticketNumber || t.ticket_number || t.id}>
-                    {t.ticketNumber || t.ticket_number || t.id}
+                  <td className="px-2 py-2.5 text-xs font-bold truncate" style={{ color: textMuted }} title={`${idx + 1}. ${tNum}`}>
+                    {idx + 1}. {tNum}
                   </td>
                   <td className="px-2 py-2.5 text-[10px] font-extrabold uppercase tracking-tight leading-tight" style={{ color: statusColor }}>
                     {getScheduleStatusLabel('DONE_INSTALLED')}

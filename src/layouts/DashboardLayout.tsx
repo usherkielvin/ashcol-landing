@@ -924,7 +924,7 @@ export default function DashboardLayout() {
               </button>
 
               <div className="flex flex-col justify-center min-w-0 shrink-0">
-                {currentPage === 'Relays' || currentPage === 'Employees' ? (
+                {currentPage === 'Relays' || currentPage === 'Employees' || currentPage === 'Registration' ? (
                   <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
                     {currentPage}
                   </h1>

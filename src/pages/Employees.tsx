@@ -184,6 +184,80 @@ const formatJobTitleLabel = (title: string) => {
     .replace(/\b\w/g, char => char.toUpperCase())
 }
 
+/** jobTitle is stored as one comma-separated string so an employee can hold multiple roles
+ * (e.g. "COORDINATOR, WARRANTY REGISTRAR") without a backend schema change. */
+const parseJobTitles = (raw: string): string[] =>
+  raw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+
+const joinJobTitles = (titles: string[]): string => titles.join(', ')
+
+interface JobTitleMultiSelectProps {
+  value: string
+  onChange: (next: string) => void
+  options: string[]
+  onAddCustom: (title: string) => void
+  inputCls: string
+  inputStyle: React.CSSProperties
+  textMuted: string
+  border: string
+}
+
+const JobTitleMultiSelect = ({ value, onChange, options, onAddCustom, inputCls, inputStyle, textMuted, border }: JobTitleMultiSelectProps) => {
+  const selected = parseJobTitles(value)
+  const [newTitle, setNewTitle] = useState('')
+
+  const toggle = (title: string) => {
+    const next = selected.includes(title)
+      ? selected.filter(t => t !== title)
+      : [...selected, title]
+    onChange(joinJobTitles(next))
+  }
+
+  const addCustom = () => {
+    const title = newTitle.trim().toUpperCase()
+    if (!title) return
+    if (!options.includes(title)) onAddCustom(title)
+    if (!selected.includes(title)) onChange(joinJobTitles([...selected, title]))
+    setNewTitle('')
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap gap-x-4 gap-y-2 p-3 rounded-xl border" style={{ borderColor: border }}>
+        {options.map(title => (
+          <label key={title} className="flex items-center gap-1.5 text-xs cursor-pointer select-none" style={{ color: textMuted }}>
+            <input
+              type="checkbox"
+              checked={selected.includes(title)}
+              onChange={() => toggle(title)}
+              className="accent-emerald-500"
+            />
+            {formatJobTitleLabel(title)}
+          </label>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          className={inputCls}
+          style={inputStyle}
+          placeholder="Add a new role (e.g. Warranty Registrar)"
+          value={newTitle}
+          onChange={e => setNewTitle(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustom() } }}
+        />
+        <button
+          type="button"
+          onClick={addCustom}
+          className="px-3 rounded-xl text-xs font-bold shrink-0"
+          style={{ backgroundColor: '#10B981', color: '#fff' }}
+        >
+          Add
+        </button>
+      </div>
+    </div>
+  )
+}
 
 
 const CREATE_STEPS = [
@@ -362,6 +436,16 @@ export default function Employees() {
 
 
   const allJobTitles = [...DEFAULT_JOB_TITLES, ...customJobTitles]
+
+  const addCustomJobTitle = (title: string) => {
+    const upper = title.trim().toUpperCase()
+    if (!upper || allJobTitles.includes(upper)) return
+    setCustomJobTitles(prev => {
+      const next = [...prev, upper]
+      localStorage.setItem('ashcol-custom-job-titles', JSON.stringify(next))
+      return next
+    })
+  }
 
   useEffect(() => {
     if (activeDrawerTab !== 'history' || !selectedEmployee) {
@@ -682,8 +766,9 @@ export default function Employees() {
       showToast('error', 'System admin accounts cannot be edited here.')
       return
     }
-    const jt = (emp.jobTitle || '').toUpperCase()
-    const validJt = allJobTitles.includes(jt) ? jt : (jt || 'TECHNICIAN')
+    const titles = parseJobTitles(emp.jobTitle || '')
+    titles.filter(t => !allJobTitles.includes(t)).forEach(addCustomJobTitle)
+    const validJt = titles.length ? joinJobTitles(titles) : 'TECHNICIAN'
     setEditForm({
       name: formatPersonName(emp.name), email: emp.email, phone: emp.phone,
       role: emp.role, jobTitle: validJt,
@@ -1670,12 +1755,17 @@ export default function Employees() {
                     )}
                     {(editForm.role === 'EMPLOYEE' || editForm.role === 'MANAGEMENT') && (
                       <div className="col-span-1 sm:col-span-2">
-                        <Field label="Job Title" labelColor={textMuted}>
-                          <select className={inputCls} style={inputStyle} value={editForm.jobTitle} onChange={e => setEditForm(p => ({ ...p, jobTitle: e.target.value }))}>
-                            {allJobTitles.map(title => (
-                              <option key={title} value={title}>{formatJobTitleLabel(title)}</option>
-                            ))}
-                          </select>
+                        <Field label="Job Title (select any that apply)" labelColor={textMuted}>
+                          <JobTitleMultiSelect
+                            value={editForm.jobTitle}
+                            onChange={next => setEditForm(p => ({ ...p, jobTitle: next }))}
+                            options={allJobTitles}
+                            onAddCustom={addCustomJobTitle}
+                            inputCls={inputCls}
+                            inputStyle={inputStyle}
+                            textMuted={textMuted}
+                            border={border}
+                          />
                         </Field>
                       </div>
                     )}
@@ -1861,12 +1951,17 @@ export default function Employees() {
                   )}
                   {(createForm.role === 'EMPLOYEE' || createForm.role === 'MANAGEMENT') && (
                     <div className="sm:col-span-2">
-                      <Field label="Job title" labelColor={textMuted}>
-                        <select className={inputCls} style={inputStyle} value={createForm.jobTitle} onChange={e => setCreateForm(p => ({ ...p, jobTitle: e.target.value }))}>
-                          {allJobTitles.map(title => (
-                            <option key={title} value={title}>{formatJobTitleLabel(title)}</option>
-                          ))}
-                        </select>
+                      <Field label="Job title (select any that apply)" labelColor={textMuted}>
+                        <JobTitleMultiSelect
+                          value={createForm.jobTitle}
+                          onChange={next => setCreateForm(p => ({ ...p, jobTitle: next }))}
+                          options={allJobTitles}
+                          onAddCustom={addCustomJobTitle}
+                          inputCls={inputCls}
+                          inputStyle={inputStyle}
+                          textMuted={textMuted}
+                          border={border}
+                        />
                       </Field>
                     </div>
                   )}
