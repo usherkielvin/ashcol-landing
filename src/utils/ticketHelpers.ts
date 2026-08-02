@@ -909,6 +909,8 @@ export function sanitizeTicketPatchBody(body: Record<string, unknown>): Record<s
     status = 'INSTALLED'
     next.status = 'INSTALLED'
   }
+  // Only restore scheduleOutcome from acDetails for INSTALLED/COMPLETED statuses that should have an outcome.
+  // Don't restore for RESCHED or other non-completion statuses - they should have empty scheduleOutcome.
   if ((status === 'INSTALLED' || status === 'COMPLETED') && !next.scheduleOutcome) {
     let fromAc = ''
     if (typeof next.acDetails === 'string') {
@@ -926,6 +928,15 @@ export function sanitizeTicketPatchBody(body: Record<string, unknown>): Record<s
       next.acDetails = mergeAcMeta(
         { acDetails: next.acDetails } as Ticket,
         { scheduleOutcome: next.scheduleOutcome, schedulePhase: '' },
+      )
+    }
+  }
+  // For non-completion statuses like RESCHED, ensure scheduleOutcome is cleared in acDetails
+  if (status !== 'INSTALLED' && status !== 'COMPLETED' && status !== 'DONE_DISMANTLE' && status !== 'DONE_SYSTEM_REPROCESS' && !next.scheduleOutcome) {
+    if (typeof next.acDetails === 'string') {
+      next.acDetails = mergeAcMeta(
+        { acDetails: next.acDetails } as Ticket,
+        { scheduleOutcome: '', schedulePhase: '' },
       )
     }
   }
