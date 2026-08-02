@@ -190,26 +190,24 @@ export default function DashboardLayout() {
     if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
     if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
     if (sidebarCollapsed) {
-      // Immediately hide the collapsed icon rail BEFORE width starts growing
-      // so icons never appear centered in the expanding sidebar
+      // Hide collapsed icons immediately, expand width, show text right away
       setShowCollapsedIcons(false)
       setSidebarCollapsed(false)
       setIsHoverExpanded(true)
-      // Show expanded text content after sidebar has grown enough
-      navVisibleTimeout.current = setTimeout(() => setNavVisible(true), 180)
+      setNavVisible(true)
     }
   }
 
   const handleMouseLeave = () => {
     if (isHoverExpanded) {
+      // Hide text immediately on leave, then collapse width
       setNavVisible(false)
       if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
       hoverTimeout.current = setTimeout(() => {
         setSidebarCollapsed(true)
         setIsHoverExpanded(false)
-        // Re-show icon rail after sidebar has collapsed
         setShowCollapsedIcons(true)
-      }, 80)
+      }, 160)
     }
   }
 
@@ -228,7 +226,8 @@ export default function DashboardLayout() {
       } else {
         setShowCollapsedIcons(false)
         if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
-        navVisibleTimeout.current = setTimeout(() => setNavVisible(true), 180)
+        // Show text immediately when pin-expanding
+        setNavVisible(true)
       }
     }
   }, [sidebarCollapsed, isHoverExpanded])
@@ -524,7 +523,7 @@ export default function DashboardLayout() {
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
           ${sidebarCollapsed ? 'md:w-[64px]' : 'w-[260px] md:w-[220px] lg:w-[240px]'}
         `}
-        style={{ transition: 'width 180ms cubic-bezier(0.4,0,0.2,1), transform 200ms cubic-bezier(0.4,0,0.2,1)' }}
+        style={{ transition: 'width 120ms cubic-bezier(0.4,0,0.2,1), transform 200ms cubic-bezier(0.4,0,0.2,1)' }}
       >
         {/* Brand */}
         <div
@@ -564,14 +563,16 @@ export default function DashboardLayout() {
         {/* ── Nav Links ──────────────────────────────────── */}
         <nav className="flex-1 min-h-0 overflow-y-auto py-3 px-2 flex flex-col gap-0.5 relative">
 
-          {/* ══ EXPANDED CONTENT — rendered only when navVisible is true ══ */}
-          {navVisible && (
-            <div
-              style={{
-                opacity: navVisible ? 1 : 0,
-                transition: 'opacity 160ms ease',
-              }}
-            >
+          {/* ══ EXPANDED CONTENT — shown when navVisible, fades smoothly ══ */}
+          <div
+            style={{
+              opacity: navVisible ? 1 : 0,
+              transition: 'opacity 120ms ease',
+              pointerEvents: navVisible ? 'auto' : 'none',
+              display: !navVisible && !sidebarCollapsed ? 'none' : undefined,
+            }}
+          >
+            {navVisible && (<>
               <div className="text-[10px] font-bold uppercase tracking-[2px] px-3 mb-2 text-white/40 w-full">
                 Navigation
               </div>
@@ -697,8 +698,8 @@ export default function DashboardLayout() {
                   </div>
                 )
               })}
-            </div>
-          )}
+            </>)}
+          </div>
 
           {/* ══ COLLAPSED ICON RAIL — rendered only when navVisible is false ══ */}
           {!navVisible && (

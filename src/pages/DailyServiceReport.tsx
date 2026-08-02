@@ -121,11 +121,20 @@ const formatDateKeyLabel = (key: string) => {
 const getInstalledDateKey = (row: ServiceRow) =>
   toDateKey(row.installedDate) || toDateKey(row.reportDate) || ''
 
-function formatNegotiatorFirstName(name: string | null | undefined): string {
+function formatCleanName(name: string | null | undefined): string {
   if (!name) return ''
   const trimmed = name.trim()
   if (!trimmed) return ''
-  const firstName = trimmed.split(/\s+/)[0]
+  // Strip trailing dash + number/digits e.g. "ALLAN - 2", "ALLAN -2", "SONNYBOY - 1", "RYAN - 2"
+  const cleaned = trimmed.replace(/\s*-\s*\d+\s*$/, '').trim()
+  return cleaned.toUpperCase()
+}
+
+function formatNegotiatorFirstName(name: string | null | undefined): string {
+  if (!name) return ''
+  const cleaned = formatCleanName(name)
+  if (!cleaned) return ''
+  const firstName = cleaned.split(/\s+/)[0]
   return firstName.toUpperCase()
 }
 
@@ -261,7 +270,7 @@ export default function DailyServiceReport() {
   const isLight = theme === 'light'
 
   const cardBg = isLight ? '#ffffff' : '#0A1120'
-  const border = isLight ? '#e2e8f0' : '#1E2D48'
+  const border = isLight ? '#cbd5e1' : '#2d4266'
   const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
   const textMuted = isLight ? '#64748b' : '#7A95B8'
   const inputBg = isLight ? '#f8fafc' : '#0F1A2E'
@@ -1026,25 +1035,25 @@ export default function DailyServiceReport() {
       case 'DATE INSTALLED':  return formatDateKeyLabel(getInstalledDateKey(row))
       case "CUSTOMER'S NAME": return row.customerName || ''
       case 'DESTINATION':     return row.customerAddress || ''
-      case 'DISTRICT':        return row.district || ''
+      case 'DISTRICT':        return (row.district || '').toUpperCase()
       case 'CONTACT NO.':     return row.customerPhone || ''
-      case 'BRAND':           return row.unitBrandModel || ''
-      case 'COMPLAIN/REQUEST': return row.complainRequest || ''
-      case 'DLR':             return row.dealer || ''
-      case 'INSTALLER':       return row.technicianName || ''
+      case 'BRAND':           return (row.unitBrandModel || '').toUpperCase()
+      case 'COMPLAIN/REQUEST': return (row.complainRequest || '').toUpperCase()
+      case 'DLR':             return (row.dealer || '').toUpperCase()
+      case 'INSTALLER':       return formatCleanName(row.technicianName)
       case 'NEGOTIATOR':      return formatNegotiatorFirstName(row.negotiator)
-      case 'NOTE':            return row.note || ''
-      case 'SERVICE':         return row.serviceColumn || ''
-      case 'UPDATE':          return row.remarks || ''
+      case 'NOTE':            return (row.note || '').toUpperCase()
+      case 'SERVICE':         return (row.serviceColumn || '').toUpperCase()
+      case 'UPDATE':          return (row.remarks || '').toUpperCase()
       case 'INSTALLATION CHARGES': {
         const mode = (row.paymentStatus || '').trim().toUpperCase()
         const amt = row.amountCharged != null ? parseFloat(String(row.amountCharged)) : null
         const amtStr = amt != null ? `₱${amt.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''
         if (!mode && !amtStr) return ''
         if (mode === 'FREE' || mode === 'FREE INSTALL') return 'FREE INSTALL ₱0.00'
-        if (mode && amtStr) return `${mode} ${amtStr}`
-        if (mode) return mode
-        return amtStr
+        if (amtStr && mode) return `${amtStr} ${mode}`
+        if (amtStr) return amtStr
+        return mode
       }
       case 'MODE OF PAYMENT':      return row.paymentStatus || ''
       case 'SUBMITTED BY':         return row.inputBy || ''
@@ -1282,7 +1291,14 @@ export default function DailyServiceReport() {
 
     if (isThisEditing) {
       const inputClass = 'w-full text-xs rounded px-2 py-1 outline-none focus:ring-2 focus:ring-slate-400 font-medium'
-      const inputSt    = { backgroundColor: inputBg, border: `1.5px solid ${inputBorder}`, color: textPrimary }
+      const UPPERCASE_COLS = ['DISTRICT', 'UPDATE', 'NOTE', 'SERVICE', 'BRAND', 'COMPLAIN/REQUEST', 'DLR']
+      const shouldUppercase = UPPERCASE_COLS.includes(label)
+      const inputSt = {
+        backgroundColor: inputBg,
+        border: `1.5px solid ${inputBorder}`,
+        color: textPrimary,
+        ...(shouldUppercase ? { textTransform: 'uppercase' as const } : {}),
+      }
 
       if (label === 'MODE OF PAYMENT') {
         return (
@@ -1304,7 +1320,7 @@ export default function DailyServiceReport() {
           <textarea
             ref={el => { inputRef.current = el as any }}
             value={cellValue}
-            onChange={e => setCellValue(e.target.value)}
+            onChange={e => setCellValue(shouldUppercase ? e.target.value.toUpperCase() : e.target.value)}
             onBlur={() => saveCell(r.id, label, cellValue)}
             onKeyDown={e => handleKeyDown(e as any, r.id, label)}
             rows={3}
@@ -1319,7 +1335,7 @@ export default function DailyServiceReport() {
           type={label === 'INSTALLATION CHARGES' ? 'number' : label === 'CONTACT NO.' ? 'tel' : label === 'DATE INSTALLED' ? 'date' : 'text'}
           list={label === 'INSTALLER' ? 'installer-options' : label === 'NEGOTIATOR' ? 'negotiator-options' : undefined}
           value={cellValue}
-          onChange={e => setCellValue(e.target.value)}
+          onChange={e => setCellValue(shouldUppercase ? e.target.value.toUpperCase() : e.target.value)}
           onBlur={() => saveCell(r.id, label, cellValue)}
           onKeyDown={e => handleKeyDown(e, r.id, label)}
           className={inputClass} style={inputSt} />
@@ -1337,7 +1353,7 @@ export default function DailyServiceReport() {
 
     if (label === 'TICKET NO.') {
       return (
-        <span style={{ ...truncStyle, ...editHint }} title={val} className="whitespace-nowrap text-xs font-bold">
+        <span style={{ ...truncStyle, ...editHint, fontSize: '11px', fontWeight: 700 }} title={val}>
           {idx + 1}. {val || '—'}
         </span>
       )
@@ -1345,7 +1361,7 @@ export default function DailyServiceReport() {
 
     if (label === 'DATE INSTALLED') {
       return (
-        <span style={{ ...truncStyle, ...editHint }} title={val} className="whitespace-nowrap text-[10px] font-semibold text-center block">
+        <span style={{ ...truncStyle, ...editHint, fontSize: '11px', fontWeight: 500 }} title={val} className="block text-center">
           {val || '—'}
         </span>
       )
@@ -1353,7 +1369,7 @@ export default function DailyServiceReport() {
 
     if (label === "CUSTOMER'S NAME") {
       return (
-        <span style={{ ...truncStyle, ...editHint }} title={val} className="font-semibold truncate block">
+        <span style={{ ...truncStyle, ...editHint, fontSize: '11px', fontWeight: 600 }} title={val} className="block">
           {val || '—'}
         </span>
       )
@@ -1374,7 +1390,7 @@ export default function DailyServiceReport() {
 
     if (label === 'SERVICE') {
       return (
-        <span className="text-[10px] font-semibold uppercase block text-center" style={{ color: textPrimary }}>
+        <span style={{ fontSize: '11px', fontWeight: 500, textTransform: 'uppercase', display: 'block', textAlign: 'center', color: textPrimary }}>
           {val || '—'}
         </span>
       )
@@ -1382,14 +1398,14 @@ export default function DailyServiceReport() {
 
     if (label === 'MODE OF PAYMENT') {
       return (
-        <span className="text-[10px] font-semibold uppercase block text-center" style={{ color: textPrimary }}>
+        <span style={{ fontSize: '11px', fontWeight: 500, textTransform: 'uppercase', display: 'block', textAlign: 'center', color: textPrimary }}>
           {val || ''}
         </span>
       )
     }
 
     if (label === 'INSTALLATION CHARGES') {
-      return <span style={{ ...truncStyle, fontWeight: 600 }}>{val || ''}</span>
+      return <span style={{ ...truncStyle, fontSize: '11px', fontWeight: 600 }}>{val || ''}</span>
     }
 
     if (label === 'INSTALLER') {
@@ -1779,41 +1795,39 @@ export default function DailyServiceReport() {
                 ))}
               </colgroup>
               <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
-                <tr style={{ backgroundColor: inputBg, borderBottom: `2px solid ${border}` }}>
-                  {columns.map(col => (
-                    <th key={col.label}
-                      style={{
-                        padding: '9px 10px',
-                        textAlign: (col.align as any) || 'left',
-                        color: textMuted,
-                        fontWeight: 700,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        borderRight: `1px solid ${border}`,
-                        borderBottom: `2px solid ${border}`,
-                        fontSize: '10px',
-                        letterSpacing: '0.07em',
-                        width: col.w,
-                        minWidth: 0,
-                        maxWidth: col.w,
-                        backgroundColor: inputBg,
-                        userSelect: 'none',
-                        ...(col.sticky ? {
-                          position: 'sticky' as const,
-                          left: `${col.left}%`,
-                          zIndex: 15,
-                        } : {}),
-                        ...(col.freeze ? {
-                          borderRight: `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`,
-                          boxShadow: isLight
-                             ? '6px 0 12px -3px rgba(0, 0, 0, 0.12), 2px 0 4px -2px rgba(0, 0, 0, 0.05)'
-                             : '8px 0 18px -4px rgba(0, 0, 0, 0.45), 3px 0 6px -3px rgba(0, 0, 0, 0.25)',
-                        } : {}),
-                      }}>
-                      <span>{col.display}</span>
-                    </th>
-                  ))}
+                <tr style={{ backgroundColor: inputBg }}>
+                  {columns.map((col, colIdx) => {
+                    const isLast = colIdx === columns.length - 1
+                    return (
+                      <th key={col.label}
+                        style={{
+                          padding: '8px 10px',
+                          textAlign: (col.align as any) || 'left',
+                          color: textMuted,
+                          fontWeight: 700,
+                          fontSize: '10px',
+                          letterSpacing: '0.08em',
+                          textTransform: 'uppercase',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          borderRight: isLast ? 'none' : `1px solid ${border}`,
+                          borderBottom: `2px solid ${isLight ? '#94a3b8' : '#3a537a'}`,
+                          width: col.w,
+                          minWidth: 0,
+                          maxWidth: col.w,
+                          backgroundColor: inputBg,
+                          userSelect: 'none',
+                          ...(col.sticky ? {
+                            position: 'sticky' as const,
+                            left: `${col.left}%`,
+                            zIndex: 15,
+                          } : {}),
+                        }}>
+                        {col.display}
+                      </th>
+                    )
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -1860,9 +1874,10 @@ export default function DailyServiceReport() {
                       onMouseLeave={e => { e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => { td.style.backgroundColor = rowBaseBg }) }}
                       className="transition-colors">
 
-                      {columns.map((col) => {
+                      {columns.map((col, colIdx) => {
                         const isThisEditing = editingCell?.rowId === r.id && editingCell?.col === col.label
                         const isEditable    = EDITABLE_COLS.includes(col.label) && canEdit
+                        const isLastCol = colIdx === columns.length - 1
                         return (
                           <td key={col.label}
                               onClick={e => {
@@ -1878,28 +1893,27 @@ export default function DailyServiceReport() {
                                 if (isEditable && !isThisEditing) startEdit(r, col.label)
                               }}
                               style={{
-                                padding: isThisEditing ? '4px 6px' : '8px 10px',
+                                padding: isThisEditing ? '4px 6px' : '7px 10px',
                                 color: textPrimary,
-                                fontSize: '11px', fontWeight: 500,
+                                fontSize: '11px',
+                                fontWeight: 500,
+                                lineHeight: '1.4',
                                 backgroundColor: isThisEditing ? inputBg : rowBaseBg,
                                 textAlign: (col.align as any) || 'left',
-                                borderRight: col.freeze
-                                  ? `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`
-                                  : `1px solid ${border}`,
+                                borderRight: isLastCol ? 'none' : `1px solid ${border}`,
                                 borderBottom: `1px solid ${border}`,
                                 width: col.w, minWidth: 0, maxWidth: col.w,
                                 overflow: isThisEditing ? 'visible' : 'hidden',
                                 textOverflow: 'ellipsis',
                                 transition: 'background-color 0.1s ease',
                                 cursor: isThisEditing ? 'default' : 'pointer',
-                                verticalAlign: 'top',
+                                verticalAlign: 'middle',
                                 ...(col.sticky ? {
                                   position: 'sticky' as const,
                                   left: `${col.left}%`,
                                   zIndex: 5,
                                   backgroundColor: isThisEditing ? inputBg : rowBaseBg,
                                 } : {}),
-                                ...(col.freeze ? { boxShadow: isLight ? '6px 0 12px -3px rgba(0,0,0,0.10)' : '8px 0 18px -4px rgba(0,0,0,0.40)' } : {}),
                               }}>
                             {renderCell(r, col, idx)}
                           </td>
