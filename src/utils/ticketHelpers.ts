@@ -1076,6 +1076,17 @@ export function getScheduleRowColors(
   }
 
   const statusVal = getScheduleStatusValue(ticket)
+  // getScheduleOutcome() above can return null (e.g. a ticket whose acDetails.scheduleOutcome
+  // never got populated even though ticket.status is literally INSTALLED/COMPLETED) while
+  // getScheduleStatusValue() still falls back to the raw status and resolves to DONE_INSTALLED —
+  // which is exactly why the STATUS TEXT correctly reads "DONE INSTALL" while the row background
+  // fell through to the plain zebra stripe instead of green. Match that same fallback here.
+  if (statusVal === 'DONE_INSTALLED') {
+    return {
+      baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.28)',
+      accent: '#16A34A',
+    }
+  }
   if (statusVal === 'RESCHED') {
     return {
       baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.18)',
