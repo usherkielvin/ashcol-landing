@@ -1810,7 +1810,7 @@ export function resolveTicketPayment(ticket: Ticket): { mode: string; amount: nu
 export function formatPaymentAmount(ticket: Ticket): string {
   const { mode, amount } = resolveTicketPayment(ticket)
   if (mode === 'FREE' || mode === 'FREE INSTALL') return 'FREE ₱0'
-  if (amount == null || amount <= 0) return '₱0'
+  if (!amount || amount <= 0) return ''
   return `₱${amount.toLocaleString('en-PH')}`
 }
 
@@ -1824,14 +1824,17 @@ export function getSchedulePaymentDisplay(
   if (resolved.mode === 'FREE' || resolved.mode === 'FREE INSTALL') return 'FREE ₱0'
 
   const amount = resolved.amount
-  const amountStr = amount > 0 ? Math.round(amount).toLocaleString('en-PH') : '0'
   const mode = resolved.mode
+
+  // No payment set — leave blank instead of showing ₱0
+  if (amount === 0 && (!mode || mode === 'NO PAYMENT')) return ''
+
+  const amountStr = amount > 0 ? Math.round(amount).toLocaleString('en-PH') : '0'
   const breakdownStr = mode === 'HYBRID' ? formatPaymentBreakdownText(getPaymentBreakdown(ticket)) : ''
 
-  if (amount === 0 && (!mode || mode === 'NO PAYMENT')) return '₱0'
   if (mode && amountStr !== '0') return breakdownStr ? `${amountStr} ${mode} ${breakdownStr}` : `${amountStr} ${mode}`
-  if (mode) return `${mode} ₱${amountStr}`
-  return `₱${amountStr}`
+  if (mode && mode !== 'NO PAYMENT') return `${mode} ₱${amountStr}`
+  return amount > 0 ? `₱${amountStr}` : ''
 }
 
 export function formatCombinedPayment(ticket: Ticket): string {
