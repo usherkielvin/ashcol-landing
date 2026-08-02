@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import {
   Search, Wrench, Mail, Phone, RefreshCw, Building2,
   CheckCircle, XCircle, Trash2, X, Plus, Copy,
   Check, Eye, EyeOff, ShieldCheck,
-  Camera, Calendar, User,
+  Camera, Calendar, User, ArrowLeft,
   Loader2, ChevronDown
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -326,15 +327,21 @@ export default function Employees() {
   const [branches,  setBranches]  = useState<BranchOption[]>([])
   const [loading,   setLoading]   = useState(true)
 
+  const navigate = useNavigate()
+  const { id: routeEmployeeId } = useParams<{ id?: string }>()
+
   // Custom Job Titles / Role Levels (localStorage)
   const [customJobTitles, setCustomJobTitles] = useState<string[]>([])
-  // Drawer details panel state
+  // Detail panel state — now a full tab (routed at /employees/:id) rather than a modal overlay
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
+  const isDrawerOpen = Boolean(routeEmployeeId)
   const [activeDrawerTab, setActiveDrawerTab] = useState<'overview' | 'history'>('overview')
   const [employeeTicketHistory, setEmployeeTicketHistory] = useState<any[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
-  const [historyDateFilter, setHistoryDateFilter] = useState<string>('')
+  const [historyDateFilter, setHistoryDateFilter] = useState<string>(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })
   const [imageUploading, setImageUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -665,12 +672,24 @@ export default function Employees() {
 
 
 
-  // ── Drawer toggle ───────────────────────────────────────────────────────────
+  // ── Detail tab navigation ───────────────────────────────────────────────────
   const handleRowClick = (emp: Employee) => {
     setSelectedEmployee(emp)
-    setIsDrawerOpen(true)
     setActiveDrawerTab('overview')
+    navigate(`/employees/${emp.id}`)
   }
+
+  const closeDetailTab = () => navigate('/employees')
+
+  // Keep the detail tab's employee in sync with the URL (deep link / refresh / back button).
+  useEffect(() => {
+    if (!routeEmployeeId) {
+      setSelectedEmployee(null)
+      return
+    }
+    const found = employees.find(e => e.id === routeEmployeeId)
+    if (found) setSelectedEmployee(found)
+  }, [routeEmployeeId, employees])
 
   // ── CRUD Handlers ───────────────────────────────────────────────────────────
   const validateAccountForm = (
@@ -780,7 +799,6 @@ export default function Employees() {
     })
     setFormErr('')
     setShowPass(false)
-    setIsDrawerOpen(false)
     setEditTarget(emp)
   }
 
@@ -955,8 +973,8 @@ export default function Employees() {
         return
       }
       if (selectedEmployee?.id === deleteTarget.id) {
-        setIsDrawerOpen(false)
         setSelectedEmployee(null)
+        navigate('/employees')
       }
       setEmployees(prev => prev.filter(e => e.id !== deleteTarget.id))
       showToast('success', `${deleteTarget.name} removed.`)
@@ -1081,7 +1099,8 @@ export default function Employees() {
         onChange={handleImageUpload}
       />
 
-      {/* ── Main Table Card ── */}
+      {/* ── Main Table Card (hidden while an employee's detail tab is open) ── */}
+      {!isDrawerOpen && (
       <div className="rounded-2xl flex flex-col shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
 
         {/* Search, Filter, & Action Bar */}
@@ -1324,23 +1343,36 @@ export default function Employees() {
           </table>
         </div>
       </div>
+      )}
 
-      {/* ── Center Detail Modal (Redesigned) ── */}
+      {/* Deep link / refresh directly on /employees/:id lands here before `employees` has loaded */}
+      {isDrawerOpen && !selectedEmployee && loading && (
+        <div className="flex items-center justify-center py-24">
+          <Loader2 className="w-6 h-6 animate-spin" style={{ color: '#10B981' }} />
+        </div>
+      )}
+
+      {/* ── Employee Detail Tab (full-width, replaces the list while open — no longer a popup) ── */}
       {isDrawerOpen && selectedEmployee && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: isLight ? 'rgba(241,245,249,0.96)' : 'rgba(6,11,24,0.96)', backdropFilter: 'blur(12px)' }}>
-          <div className="absolute inset-0" onClick={() => setIsDrawerOpen(false)} />
-
           <div
-            className="w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[88vh] overflow-hidden relative"
+            className="rounded-2xl shadow-sm flex flex-col overflow-hidden"
             style={{
               backgroundColor: cardBg,
               border: `1px solid ${border}`,
-              animation: 'modalFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+              animation: 'modalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
             }}
           >
             {/* Header */}
             <div className="px-6 py-5 border-b flex items-center justify-between shrink-0" style={{ borderColor: border }}>
               <div className="flex items-center gap-3">
+                <button
+                  onClick={closeDetailTab}
+                  className="p-2 rounded-lg transition-all hover:bg-slate-500/10 shrink-0"
+                  style={{ color: textMuted }}
+                  aria-label="Back to Employees"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
                 <div className="relative group shrink-0">
                   <UserAvatar name={selectedEmployee.name} imageUrl={selectedEmployee.profileImage} size="md" ring className="" />
                   <div
@@ -1384,7 +1416,7 @@ export default function Employees() {
                   </button>
                 )}
                 <button
-                  onClick={() => setIsDrawerOpen(false)}
+                  onClick={closeDetailTab}
                   className="p-2 rounded-lg transition-all hover:bg-slate-500/10 ml-1"
                   style={{ color: textMuted }}
                 >
@@ -1489,8 +1521,8 @@ export default function Employees() {
                   {/* Date Filter Control */}
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 p-3 rounded-xl border" style={{ borderColor: border, backgroundColor: inputBg }}>
                     <div className="flex flex-col gap-1">
-                      <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>Filter by Date</span>
-                      <span className="text-[11px]" style={{ color: textMuted }}>Show tickets created or updated on:</span>
+                      <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>Filter by Date Created</span>
+                      <span className="text-[11px]" style={{ color: textMuted }}>Show tickets this employee created on:</span>
                     </div>
                     <div className="flex items-center gap-2 w-full sm:w-auto">
                       <input
@@ -1520,20 +1552,35 @@ export default function Employees() {
                   </div>
 
                   {(() => {
+                    // Counting how many tickets an employee CREATED that day only makes sense
+                    // against the creation timestamp — falling back to updatedAt (as this used to)
+                    // pulls in tickets merely touched that day, inflating the count.
                     const displayedHistory = employeeTicketHistory.filter((t: any) => {
                       if (!historyDateFilter) return true
-                      
-                      const checkDate = (dateStr: string) => {
-                        if (!dateStr) return false
-                        const d = new Date(dateStr)
-                        const yyyy = d.getFullYear()
-                        const mm = String(d.getMonth() + 1).padStart(2, '0')
-                        const dd = String(d.getDate()).padStart(2, '0')
-                        return `${yyyy}-${mm}-${dd}` === historyDateFilter
-                      }
-                      
-                      return checkDate(t.createdAt || t.created_at) || checkDate(t.updatedAt || t.updated_at)
+                      const dateStr = t.createdAt || t.created_at
+                      if (!dateStr) return false
+                      const d = new Date(dateStr)
+                      const yyyy = d.getFullYear()
+                      const mm = String(d.getMonth() + 1).padStart(2, '0')
+                      const dd = String(d.getDate()).padStart(2, '0')
+                      return `${yyyy}-${mm}-${dd}` === historyDateFilter
                     })
+
+                    const branchName = (t: any) => branches.find(b => b.id === (t.branchId || t.branch_id))?.name || '—'
+                    const scheduledDate = (t: any) => {
+                      const raw = t.finalDate || t.final_date || t.preferredDate || t.preferred_date || ''
+                      if (!raw) return '—'
+                      const d = new Date(raw)
+                      return isNaN(d.getTime()) ? '—' : d.toLocaleDateString(undefined, { month: 'long', day: '2-digit', year: 'numeric' })
+                    }
+                    const createdDateTime = (t: any) => {
+                      const raw = t.createdAt || t.created_at || ''
+                      if (!raw) return '—'
+                      const d = new Date(raw)
+                      return isNaN(d.getTime())
+                        ? '—'
+                        : d.toLocaleString(undefined, { month: 'short', day: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+                    }
 
                     return loadingHistory ? (
                       <div className="flex flex-col items-center justify-center py-16 gap-3">
@@ -1545,48 +1592,55 @@ export default function Employees() {
                         <RefreshCw className="w-8 h-8 mb-3" style={{ color: textMuted }} />
                         <span className="text-sm font-bold" style={{ color: textMuted }}>No ticket history found</span>
                         <span className="text-xs mt-1" style={{ color: textMuted }}>
-                          {historyDateFilter ? `No tickets created or updated on ${new Date(historyDateFilter).toLocaleDateString(undefined, { dateStyle: 'medium' })}.` : 'No tickets are associated with this employee.'}
+                          {historyDateFilter ? `No tickets created on ${new Date(historyDateFilter).toLocaleDateString(undefined, { dateStyle: 'medium' })}.` : 'No tickets are associated with this employee.'}
                         </span>
                       </div>
                     ) : (
                       <div className="flex flex-col gap-2">
                         <div className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: textMuted }}>
-                          {displayedHistory.length} tickets found {historyDateFilter && `for ${new Date(historyDateFilter).toLocaleDateString(undefined, { dateStyle: 'medium' })}`}
+                          {displayedHistory.length} ticket{displayedHistory.length === 1 ? '' : 's'} created {historyDateFilter && `on ${new Date(historyDateFilter).toLocaleDateString(undefined, { dateStyle: 'medium' })}`}
                         </div>
-                        {displayedHistory.map((t: any, idx: number) => {
-                          const custName = t.customerName || t.customer_name || '—'
-                          const tNum = t.ticketNumber || t.ticket_number || t.controlNumber || t.control_number || t.id?.slice(0, 8) || '—'
-                          const status = (t.status || '').toUpperCase()
-                          const district = t.district || t.destination || ''
-                          const brand = t.brand || ''
-                          const date = t.updatedAt || t.updated_at || t.createdAt || t.created_at || ''
-                          const dateStr = date ? new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : ''
-                          const isInstalled = status === 'INSTALLED' || status === 'COMPLETED'
-                          const isActive = status === 'PENDING' || status === 'ASSIGNED' || status === 'SCHEDULED'
-                          const statusColor = isInstalled ? '#10B981' : isActive ? '#3B82F6' : status === 'CANCELLED' ? '#EF4444' : textMuted
-                          const statusBg = isInstalled ? 'rgba(16,185,129,0.1)' : isActive ? 'rgba(59,130,246,0.1)' : status === 'CANCELLED' ? 'rgba(239,68,68,0.1)' : 'rgba(100,116,139,0.08)'
-                          return (
-                            <div key={t.id || idx}
-                              className="p-3.5 rounded-xl border flex items-center gap-4 hover:scale-[1.005] transition-all"
-                              style={{ borderColor: border, backgroundColor: idx % 2 === 0 ? inputBg : cardBg }}
-                            >
-                              <div className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black" style={{ backgroundColor: statusBg, color: statusColor }}>
-                                #{tNum.slice(-2)}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="text-sm font-semibold truncate" style={{ color: textPrimary }}>{custName}</span>
-                                  <span className="text-[10px] font-black uppercase tracking-wider shrink-0 px-2 py-0.5 rounded-full" style={{ backgroundColor: statusBg, color: statusColor }}>{status || '—'}</span>
-                                </div>
-                                <div className="flex items-center gap-3 mt-0.5 text-[11px]" style={{ color: textMuted }}>
-                                  {brand && <span>{brand}</span>}
-                                  {district && <span>· {district}</span>}
-                                  {dateStr && <span>· {dateStr}</span>}
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        })}
+                        <div className="overflow-x-auto rounded-xl border" style={{ borderColor: border }}>
+                          <table className="w-full text-sm border-collapse">
+                            <thead>
+                              <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#080f1c', borderBottom: `1px solid ${border}` }}>
+                                {['Date Created', 'Ticket No.', 'Customer', 'District', 'Branch', 'Negotiator', 'Scheduled Date', 'Status'].map((h, i, arr) => (
+                                  <th
+                                    key={h}
+                                    className={`px-4 py-2.5 text-[10px] font-black uppercase tracking-wider whitespace-nowrap border-r ${i === 0 ? 'text-left' : 'text-center'}`}
+                                    style={{ color: textMuted, borderColor: border, borderRight: i === arr.length - 1 ? 'none' : `1px solid ${border}` }}
+                                  >
+                                    {h}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {displayedHistory.map((t: any, idx: number) => {
+                                const custName = t.customerName || t.customer_name || '—'
+                                const tNum = t.ticketNumber || t.ticket_number || t.controlNumber || t.control_number || t.id?.slice(0, 8) || '—'
+                                const status = (t.status || '').toUpperCase()
+                                const district = t.district || t.destination || '—'
+                                const negotiator = t.negotiatorName || t.negotiator_name || '—'
+                                const isInstalled = status === 'INSTALLED' || status === 'COMPLETED'
+                                const isActive = status === 'PENDING' || status === 'ASSIGNED' || status === 'SCHEDULED'
+                                const statusColor = isInstalled ? '#10B981' : isActive ? '#3B82F6' : status === 'CANCELLED' ? '#EF4444' : textMuted
+                                return (
+                                  <tr key={t.id || idx} style={{ borderBottom: `1px solid ${border}`, backgroundColor: idx % 2 === 0 ? inputBg : cardBg }}>
+                                    <td className="px-4 py-2.5 text-xs font-semibold border-r whitespace-nowrap" style={{ color: textPrimary, borderColor: border }}>{createdDateTime(t)}</td>
+                                    <td className="px-4 py-2.5 text-xs font-bold text-center border-r" style={{ color: textPrimary, borderColor: border }}>{tNum}</td>
+                                    <td className="px-4 py-2.5 text-xs font-semibold text-center border-r" style={{ color: textPrimary, borderColor: border }}>{custName}</td>
+                                    <td className="px-4 py-2.5 text-xs text-center border-r" style={{ color: textMuted, borderColor: border }}>{district}</td>
+                                    <td className="px-4 py-2.5 text-xs text-center border-r" style={{ color: textMuted, borderColor: border }}>{branchName(t)}</td>
+                                    <td className="px-4 py-2.5 text-xs text-center border-r" style={{ color: textMuted, borderColor: border }}>{negotiator}</td>
+                                    <td className="px-4 py-2.5 text-xs text-center border-r" style={{ color: textPrimary, borderColor: border }}>{scheduledDate(t)}</td>
+                                    <td className="px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-center" style={{ color: statusColor }}>{status || '—'}</td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
                     )
                   })()}
@@ -1599,7 +1653,7 @@ export default function Employees() {
             <div className="px-6 py-3.5 border-t flex items-center justify-between shrink-0" style={{ borderColor: border, backgroundColor: isLight ? 'rgba(248,250,252,0.8)' : 'rgba(10,17,32,0.8)' }}>
               <span className="text-[11px]" style={{ color: textMuted }}>ID: {selectedEmployee.id.slice(0, 16)}…</span>
               <button
-                onClick={() => setIsDrawerOpen(false)}
+                onClick={closeDetailTab}
                 className="px-4 py-1.5 rounded-lg text-xs font-bold border transition-all hover:bg-slate-500/10"
                 style={{ borderColor: border, color: textMuted }}
               >
@@ -1607,7 +1661,6 @@ export default function Employees() {
               </button>
             </div>
           </div>
-        </div>
       )}
 
       {/* ── Edit Modal ── */}

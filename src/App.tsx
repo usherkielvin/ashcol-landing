@@ -95,6 +95,7 @@ export default function App() {
           <Route path="/branches" element={<Branches />} />
           <Route path="/assigned-tickets" element={<Navigate to="/search" replace />} />
           <Route path="/employees" element={<Employees />} />
+          <Route path="/employees/:id" element={<Employees />} />
           <Route path="/vehicles" element={<Vehicles />} />
           <Route path="/profile" element={<Profile />} />
 
