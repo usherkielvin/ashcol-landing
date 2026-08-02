@@ -112,9 +112,6 @@ export default function Registration() {
 
   const role = (user?.role || '').toLowerCase()
   const isAdmin = isPortalAdmin(role)
-  // Mirrors the backend's canCompleteWarrantyRegistration gate (admin/manager/"warranty" job title).
-  const canResolve = isAdmin || role === 'manager' || (user?.jobTitle || '').toLowerCase().includes('warranty')
-
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [branches, setBranches] = useState<BranchOption[]>([])
   const [loading, setLoading] = useState(true)
@@ -123,6 +120,7 @@ export default function Registration() {
   const [branchFilter, setBranchFilter] = useState('')
   const [brandFilter, setBrandFilter] = useState('ALL')
   const [monthFilter, setMonthFilter] = useState(() => new Date().toISOString().slice(0, 7))
+  const [registeredFilter, setRegisteredFilter] = useState<'ALL' | 'PENDING' | 'REGISTERED'>('ALL')
   const [detailTicket, setDetailTicket] = useState<Ticket | null>(null)
   const [resolveTicket, setResolveTicket] = useState<Ticket | null>(null)
 
@@ -214,6 +212,8 @@ export default function Registration() {
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
     return tickets.filter(t => {
+      if (registeredFilter === 'PENDING' && isTicketRegistered(t)) return false
+      if (registeredFilter === 'REGISTERED' && !isTicketRegistered(t)) return false
       if (brandFilter !== 'ALL' && getSimpleBrand(t) !== brandFilter) return false
       if (monthFilter) {
         const key = getInstalledDateKey(t) || getFinalDateKey(t)
@@ -234,7 +234,7 @@ export default function Registration() {
       ].filter(Boolean).join(' ').toLowerCase()
       return blob.includes(q)
     })
-  }, [tickets, search, brandFilter, monthFilter])
+  }, [tickets, search, brandFilter, monthFilter, registeredFilter])
 
   return (
     <div className="p-[5px] flex flex-col gap-2 h-full min-h-0">
@@ -266,7 +266,8 @@ export default function Registration() {
             type="month"
             value={monthFilter}
             onChange={e => setMonthFilter(e.target.value)}
-            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold border outline-none"
+            onClick={e => { (e.currentTarget as HTMLInputElement & { showPicker?: () => void }).showPicker?.() }}
+            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold border outline-none cursor-pointer w-full"
             style={{ backgroundColor: inputBg, borderColor: inputBorder, color: monthFilter ? textPrimary : textMuted }}
           />
 
@@ -291,6 +292,17 @@ export default function Registration() {
             <option value="ALL">All Brands</option>
             {uniqueBrands.map(b => <option key={b} value={b}>{b.toUpperCase()}</option>)}
           </select>
+
+          <select
+            value={registeredFilter}
+            onChange={e => setRegisteredFilter(e.target.value as 'ALL' | 'PENDING' | 'REGISTERED')}
+            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold uppercase border outline-none"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+          >
+            <option value="ALL">All</option>
+            <option value="PENDING">Pending</option>
+            <option value="REGISTERED">Registered</option>
+          </select>
         </div>
       </div>
 
@@ -302,11 +314,23 @@ export default function Registration() {
 
       {/* Table */}
       <div style={{ backgroundColor: cardBg, borderColor: border }} className="flex-1 min-h-[70vh] border rounded-xl overflow-auto shadow-sm">
-        <table className="w-full text-left min-w-[900px]">
+        <table className="w-full text-left table-fixed min-w-[1000px]">
+          <colgroup>
+            <col className="w-[7%]" />
+            <col className="w-[6%]" />
+            <col className="w-[17%]" />
+            <col className="w-[8%]" />
+            <col className="w-[14%]" />
+            <col className="w-[14%]" />
+            <col className="w-[9%]" />
+            <col className="w-[8%]" />
+            <col className="w-[8%]" />
+            <col className="w-[9%]" />
+          </colgroup>
           <thead className="sticky top-0 z-10">
             <tr style={{ backgroundColor: theadBg, color: textMuted, borderBottom: `1px solid ${border}` }} className="text-xs uppercase tracking-wider font-bold">
-              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Ticket #</th>
-              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Status</th>
+              <th className="px-2 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Ticket #</th>
+              <th className="px-2 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Status</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Customer</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Branch</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Brand / Unit</th>
@@ -337,7 +361,7 @@ export default function Registration() {
               const negotiator = getTicketNegotiatorName(t)
               const branchLabel = getBranchDisplayName(t.branchId || t.branch_id || null)
               const installedKey = getInstalledDateKey(t) || getFinalDateKey(t)
-              const statusBadge = getScheduleStatusBadgeStyle('DONE_INSTALLED', isLight)
+              const statusColor = getScheduleStatusBadgeStyle('DONE_INSTALLED', isLight).color
               const registered = isTicketRegistered(t)
               return (
                 <tr
@@ -348,45 +372,38 @@ export default function Registration() {
                   onMouseLeave={el => (el.currentTarget.style.backgroundColor = cardBg)}
                   onContextMenu={(e) => { e.preventDefault(); setDetailTicket(t) }}
                 >
-                  <td className="px-3 py-2 text-xs font-bold tracking-tight" style={{ color: textMuted }}>
+                  <td className="px-2 py-2.5 text-xs font-bold truncate" style={{ color: textMuted }} title={t.ticketNumber || t.ticket_number || t.id}>
                     {t.ticketNumber || t.ticket_number || t.id}
                   </td>
-                  <td className="px-3 py-2">
-                    <span
-                      className="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase tracking-wide whitespace-nowrap"
-                      style={{ backgroundColor: statusBadge.backgroundColor, color: statusBadge.color, border: `1px solid ${statusBadge.borderColor}` }}
-                    >
-                      {getScheduleStatusLabel('DONE_INSTALLED')}
-                    </span>
+                  <td className="px-2 py-2.5 text-[10px] font-extrabold uppercase tracking-tight leading-tight" style={{ color: statusColor }}>
+                    {getScheduleStatusLabel('DONE_INSTALLED')}
                   </td>
-                  <td className="px-3 py-2">
-                    <div className="text-xs font-bold" style={{ color: textPrimary }}>{custName || '—'}</div>
-                    {phone && <div className="text-[11px]" style={{ color: textMuted }}>{fmtPhone(phone) || phone}</div>}
+                  <td className="px-3 py-2.5 overflow-hidden">
+                    <div className="text-xs font-bold truncate" style={{ color: textPrimary }} title={custName}>{custName || '—'}</div>
+                    {phone && <div className="text-[11px] truncate" style={{ color: textMuted }}>{fmtPhone(phone) || phone}</div>}
                   </td>
-                  <td className="px-3 py-2 text-xs font-semibold uppercase" style={{ color: textPrimary }}>{branchLabel || '—'}</td>
-                  <td className="px-3 py-2 text-xs" style={{ color: textPrimary }}>{brand || '—'}</td>
-                  <td className="px-3 py-2 text-xs" style={{ color: textPrimary }}>{commit || '—'}</td>
-                  <td className="px-3 py-2 text-xs" style={{ color: textPrimary }}>{installer || '—'}</td>
-                  <td className="px-3 py-2 text-xs" style={{ color: textPrimary }}>{negotiator || '—'}</td>
-                  <td className="px-3 py-2 text-xs font-semibold whitespace-nowrap" style={{ color: textPrimary }}>
+                  <td className="px-3 py-2.5 text-xs font-semibold uppercase truncate" style={{ color: textPrimary }}>{branchLabel || '—'}</td>
+                  <td className="px-3 py-2.5 text-xs truncate" style={{ color: textPrimary }} title={brand}>{brand || '—'}</td>
+                  <td className="px-3 py-2.5 text-xs truncate" style={{ color: textPrimary }} title={commit}>{commit || '—'}</td>
+                  <td className="px-3 py-2.5 text-xs truncate" style={{ color: textPrimary }} title={installer}>{installer || '—'}</td>
+                  <td className="px-3 py-2.5 text-xs truncate" style={{ color: textPrimary }} title={negotiator}>{negotiator || '—'}</td>
+                  <td className="px-3 py-2.5 text-xs font-semibold whitespace-nowrap" style={{ color: textPrimary }}>
                     {installedKey ? formatDateKeyLabel(installedKey) : '—'}
                   </td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap">
                     {registered ? (
                       <span className="inline-flex items-center gap-1 text-[11px] font-bold" style={{ color: green }}>
                         <CheckCircle2 className="w-3.5 h-3.5" /> Registered
                       </span>
-                    ) : canResolve ? (
+                    ) : (
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); setResolveTicket(t) }}
-                        className="px-3 py-1.5 rounded-md text-[11px] font-bold text-white transition-opacity hover:opacity-90"
+                        className="px-2.5 py-1 rounded-md text-[11px] font-bold text-white transition-opacity hover:opacity-90"
                         style={{ backgroundColor: green }}
                       >
                         Resolve
                       </button>
-                    ) : (
-                      <span style={{ color: textMuted }}>—</span>
                     )}
                   </td>
                 </tr>
@@ -525,7 +542,8 @@ function ResolveRegistrationModal({ ticket, isLight, defaultName, onClose, onCon
   const inputBorder = isLight ? '#cbd5e1' : '#334155'
 
   const [date, setDate] = useState(todayIso())
-  const [by, setBy] = useState(defaultName)
+  // Locked to the currently logged-in user — this is an attestation of who is resolving it.
+  const by = defaultName.trim()
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
@@ -569,14 +587,12 @@ function ResolveRegistrationModal({ ticket, isLight, defaultName, onClose, onCon
 
           <label className="flex flex-col gap-1">
             <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>Registered By</span>
-            <input
-              type="text"
-              value={by}
-              onChange={e => setBy(e.target.value)}
-              placeholder="Name"
-              className="rounded-lg px-3 py-2 text-sm border outline-none"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-            />
+            <div
+              className="rounded-lg px-3 py-2 text-sm border"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, opacity: 0.85 }}
+            >
+              {by || '—'}
+            </div>
           </label>
 
           <label className="flex flex-col gap-1">
