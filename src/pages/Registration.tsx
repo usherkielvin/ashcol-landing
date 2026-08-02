@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
-import { Search, X, Loader2, ClipboardCheck, CheckCircle2, Calendar, ChevronDown } from 'lucide-react'
+import { Search, X, Loader2, ClipboardCheck, CheckCircle2, Calendar, ChevronDown, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 
 function formatMonthLabel(monthStr: string): string {
   if (!monthStr) return 'All Months'
@@ -137,8 +137,28 @@ export default function Registration() {
   const [resolveTicket, setResolveTicket] = useState<Ticket | null>(null)
   const monthInputRef = useRef<HTMLInputElement>(null)
 
+  type SortField = 'ticketNumber' | 'customer' | 'branch' | 'brand' | 'installer' | 'negotiator' | 'installed'
+  type SortOrder = 'asc' | 'desc'
+  const [sortField, setSortField] = useState<SortField | null>(null)
+  const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      if (sortOrder === 'asc') setSortOrder('desc')
+      else { setSortField(null); setSortOrder('asc') }
+    } else {
+      setSortField(field)
+      setSortOrder('asc')
+    }
+  }
+
+  const renderSortIcon = (field: SortField) => {
+    if (sortField !== field) return <ArrowUpDown className="w-3 h-3 opacity-40 group-hover:opacity-100 shrink-0 transition-opacity" />
+    if (sortOrder === 'asc') return <ArrowUp className="w-3 h-3 text-emerald-500 font-bold shrink-0" />
+    return <ArrowDown className="w-3 h-3 text-emerald-500 font-bold shrink-0" />
+  }
+
   useEffect(() => {
-    if (!isAdmin) return
     ;(async () => {
       try {
         const res = await fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${authToken()}` } })
@@ -153,14 +173,14 @@ export default function Registration() {
         // branch list is best-effort for the filter dropdown
       }
     })()
-  }, [isAdmin])
+  }, [])
 
   const loadTickets = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
       const token = authToken()
-      const branchId = isAdmin && branchFilter ? branchFilter : null
+      const branchId = branchFilter ? branchFilter : null
       // Schedule install closed — DB uses INSTALLED; legacy rows may still be COMPLETED.
       const [installed, completed] = await Promise.all([
         fetchAllTicketsByStatus(token, 'INSTALLED', branchId),
@@ -186,7 +206,7 @@ export default function Registration() {
     } finally {
       setLoading(false)
     }
-  }, [isAdmin, branchFilter])
+  }, [branchFilter])
 
   useEffect(() => { void loadTickets() }, [loadTickets])
 
@@ -224,7 +244,8 @@ export default function Registration() {
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return tickets.filter(t => {
+    const filtered = tickets.filter(t => {
+      if (branchFilter && !branchScopesMatch(t.branchId || t.branch_id, branchFilter)) return false
       if (registeredFilter === 'PENDING' && isTicketRegistered(t)) return false
       if (registeredFilter === 'REGISTERED' && !isTicketRegistered(t)) return false
       if (brandFilter !== 'ALL' && getSimpleBrand(t) !== brandFilter) return false
@@ -247,7 +268,51 @@ export default function Registration() {
       ].filter(Boolean).join(' ').toLowerCase()
       return blob.includes(q)
     })
-  }, [tickets, search, brandFilter, monthFilter, registeredFilter])
+
+    if (!sortField) return filtered
+
+    return [...filtered].sort((a, b) => {
+      let valA = ''
+      let valB = ''
+
+      switch (sortField) {
+        case 'ticketNumber':
+          valA = a.ticketNumber || a.ticket_number || ''
+          valB = b.ticketNumber || b.ticket_number || ''
+          break
+        case 'customer':
+          valA = getCustomerDisplayName(a) || a.title || ''
+          valB = getCustomerDisplayName(b) || b.title || ''
+          break
+        case 'branch':
+          valA = getBranchDisplayName(a.branchId || a.branch_id || null)
+          valB = getBranchDisplayName(b.branchId || b.branch_id || null)
+          break
+        case 'brand':
+          valA = parseBrand(a)
+          valB = parseBrand(b)
+          break
+        case 'installer':
+          valA = getInstallerDisplay(a)
+          valB = getInstallerDisplay(b)
+          break
+        case 'negotiator':
+          valA = getTicketNegotiatorName(a)
+          valB = getTicketNegotiatorName(b)
+          break
+        case 'installed':
+          valA = getInstalledDateKey(a) || getFinalDateKey(a) || a.updatedAt || a.updated_at || ''
+          valB = getInstalledDateKey(b) || getFinalDateKey(b) || b.updatedAt || b.updated_at || ''
+          break
+        default:
+          valA = ''
+          valB = ''
+      }
+
+      const cmp = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' })
+      return sortOrder === 'asc' ? cmp : -cmp
+    })
+  }, [tickets, search, branchFilter, brandFilter, monthFilter, registeredFilter, sortField, sortOrder])
 
   return (
     <div className="p-[5px] flex flex-col gap-2 h-full min-h-0">
@@ -329,17 +394,15 @@ export default function Registration() {
             </button>
           </div>
 
-          {isAdmin && (
-            <select
-              value={branchFilter}
-              onChange={e => setBranchFilter(e.target.value)}
-              className="rounded-lg px-2.5 py-1 text-xs font-semibold uppercase border outline-none shrink-0 h-8 cursor-pointer max-w-[150px]"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-            >
-              <option value="">All Branches</option>
-              {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
-            </select>
-          )}
+          <select
+            value={branchFilter}
+            onChange={e => setBranchFilter(e.target.value)}
+            className="rounded-lg px-2.5 py-1 text-xs font-semibold uppercase border outline-none shrink-0 h-8 cursor-pointer max-w-[150px]"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+          >
+            <option value="">All Branches</option>
+            {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
+          </select>
 
           <select
             value={brandFilter}
@@ -386,16 +449,51 @@ export default function Registration() {
             <col className="w-[9%]" />
           </colgroup>
           <thead className="sticky top-0 z-10">
-            <tr style={{ backgroundColor: theadBg, color: textMuted, borderBottom: `1px solid ${border}` }} className="text-xs uppercase tracking-wider font-bold">
-              <th className="px-2 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Ticket #</th>
+            <tr style={{ backgroundColor: theadBg, color: textMuted, borderBottom: `1px solid ${border}` }} className="text-xs uppercase tracking-wider font-bold select-none">
+              <th className="px-2 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>
+                <button type="button" onClick={() => handleSort('ticketNumber')} className="group inline-flex items-center gap-1 hover:text-emerald-500 transition-colors select-none" title="Sort by Ticket #">
+                  <span>Ticket #</span>
+                  {renderSortIcon('ticketNumber')}
+                </button>
+              </th>
               <th className="px-2 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Status</th>
-              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Customer</th>
-              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Branch</th>
-              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Brand / Unit</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>
+                <button type="button" onClick={() => handleSort('customer')} className="group inline-flex items-center gap-1 hover:text-emerald-500 transition-colors select-none" title="Sort Alphabetically by Customer">
+                  <span>Customer</span>
+                  {renderSortIcon('customer')}
+                </button>
+              </th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>
+                <button type="button" onClick={() => handleSort('branch')} className="group inline-flex items-center gap-1 hover:text-emerald-500 transition-colors select-none" title="Sort Alphabetically by Branch">
+                  <span className={sortField === 'branch' ? 'text-emerald-500 font-extrabold' : ''}>Branch</span>
+                  {renderSortIcon('branch')}
+                </button>
+              </th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>
+                <button type="button" onClick={() => handleSort('brand')} className="group inline-flex items-center gap-1 hover:text-emerald-500 transition-colors select-none" title="Sort Alphabetically by Brand">
+                  <span className={sortField === 'brand' ? 'text-emerald-500 font-extrabold' : ''}>Brand / Unit</span>
+                  {renderSortIcon('brand')}
+                </button>
+              </th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Commit</th>
-              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Installer</th>
-              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Negotiator</th>
-              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Installed</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>
+                <button type="button" onClick={() => handleSort('installer')} className="group inline-flex items-center gap-1 hover:text-emerald-500 transition-colors select-none" title="Sort Alphabetically by Installer">
+                  <span>Installer</span>
+                  {renderSortIcon('installer')}
+                </button>
+              </th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>
+                <button type="button" onClick={() => handleSort('negotiator')} className="group inline-flex items-center gap-1 hover:text-emerald-500 transition-colors select-none" title="Sort Alphabetically by Negotiator">
+                  <span>Negotiator</span>
+                  {renderSortIcon('negotiator')}
+                </button>
+              </th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>
+                <button type="button" onClick={() => handleSort('installed')} className="group inline-flex items-center gap-1 hover:text-emerald-500 transition-colors select-none" title="Sort by Installed Date">
+                  <span>Installed</span>
+                  {renderSortIcon('installed')}
+                </button>
+              </th>
               <th className="px-3 py-2.5" style={{ color: textMuted }}></th>
             </tr>
           </thead>
