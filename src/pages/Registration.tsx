@@ -1,5 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Search, X, Loader2, ClipboardCheck, CheckCircle2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
+import { Search, X, Loader2, ClipboardCheck, CheckCircle2, Calendar, ChevronDown } from 'lucide-react'
+
+function formatMonthLabel(monthStr: string): string {
+  if (!monthStr) return 'All Months'
+  const [year, month] = monthStr.split('-')
+  if (!year || !month) return monthStr
+  const monthNames = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+  const idx = parseInt(month, 10) - 1
+  if (idx >= 0 && idx < 12) {
+    return `${monthNames[idx]} ${year}`
+  }
+  return monthStr
+}
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, isPortalAdmin, getCleanBranchName, branchScopesMatch, readApiError } from '../utils/api'
@@ -123,6 +135,7 @@ export default function Registration() {
   const [registeredFilter, setRegisteredFilter] = useState<'ALL' | 'PENDING' | 'REGISTERED'>('ALL')
   const [detailTicket, setDetailTicket] = useState<Ticket | null>(null)
   const [resolveTicket, setResolveTicket] = useState<Ticket | null>(null)
+  const monthInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!isAdmin) return
@@ -238,44 +251,89 @@ export default function Registration() {
 
   return (
     <div className="p-[5px] flex flex-col gap-2 h-full min-h-0">
-      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-        <h1 className="text-lg font-bold flex items-center gap-2" style={{ color: textPrimary }}>
-          <ClipboardCheck className="w-4.5 h-4.5" style={{ color: green }} />
-          Registration
-          <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: inputBg, color: textMuted, border: `1px solid ${inputBorder}` }}>
-            {loading ? '…' : visible.length}
-          </span>
+      <div className="flex flex-nowrap items-center justify-between gap-3 px-1 py-1 overflow-x-auto no-scrollbar select-none">
+        <h1 className="text-lg font-bold flex items-center gap-2 shrink-0 whitespace-nowrap" style={{ color: textPrimary }}>
+          <ClipboardCheck className="w-5 h-5 shrink-0" style={{ color: green }} />
+          <span>Registration</span>
+          {(loading || visible.length > 0) && (
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full shrink-0" style={{ backgroundColor: inputBg, color: textMuted, border: `1px solid ${inputBorder}` }}>
+              {loading ? '…' : visible.length}
+            </span>
+          )}
         </h1>
 
         {/* Search / filter bar */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2 min-w-[220px] rounded-lg px-3 py-1.5 border" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+        <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
+          <div className="flex items-center gap-2 w-48 sm:w-56 rounded-lg px-2.5 py-1.5 border shrink-0 h-8" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
             <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
             <input
               type="text"
               placeholder="Search…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="bg-transparent text-xs outline-none w-full"
+              className="bg-transparent text-xs outline-none w-full min-w-0"
               style={{ color: textPrimary }}
             />
             {search && <button onClick={() => setSearch('')} style={{ color: textMuted }}><X className="w-3.5 h-3.5" /></button>}
           </div>
 
-          <input
-            type="month"
-            value={monthFilter}
-            onChange={e => setMonthFilter(e.target.value)}
-            onClick={e => { (e.currentTarget as HTMLInputElement & { showPicker?: () => void }).showPicker?.() }}
-            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold border outline-none cursor-pointer w-full"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: monthFilter ? textPrimary : textMuted }}
-          />
+          {/* Month picker button */}
+          <div className="relative inline-flex items-center shrink-0 select-none">
+            <input
+              ref={monthInputRef}
+              type="month"
+              value={monthFilter}
+              onChange={e => setMonthFilter(e.target.value)}
+              className="absolute inset-0 opacity-0 pointer-events-none w-full h-full"
+              tabIndex={-1}
+              aria-hidden="true"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (monthInputRef.current) {
+                  if ('showPicker' in monthInputRef.current && typeof monthInputRef.current.showPicker === 'function') {
+                    monthInputRef.current.showPicker()
+                  } else {
+                    monthInputRef.current.click()
+                  }
+                }
+              }}
+              className="select-none flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold uppercase border outline-none cursor-pointer h-8 transition-all hover:opacity-90 active:scale-95"
+              style={{
+                backgroundColor: inputBg,
+                borderColor: inputBorder,
+                color: monthFilter ? textPrimary : textMuted,
+                userSelect: 'none',
+                WebkitUserSelect: 'none',
+              }}
+            >
+              <Calendar className="w-3.5 h-3.5 shrink-0 opacity-80" style={{ color: monthFilter ? green : textMuted }} />
+              <span className="select-none truncate">{formatMonthLabel(monthFilter)}</span>
+              {monthFilter ? (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setMonthFilter('')
+                  }}
+                  className="ml-0.5 p-0.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 shrink-0"
+                  title="Clear month filter"
+                >
+                  <X className="w-3 h-3" style={{ color: textMuted }} />
+                </span>
+              ) : (
+                <ChevronDown className="w-3 h-3 shrink-0 opacity-60" />
+              )}
+            </button>
+          </div>
 
           {isAdmin && (
             <select
               value={branchFilter}
               onChange={e => setBranchFilter(e.target.value)}
-              className="rounded-lg px-2.5 py-1.5 text-xs font-semibold uppercase border outline-none"
+              className="rounded-lg px-2.5 py-1 text-xs font-semibold uppercase border outline-none shrink-0 h-8 cursor-pointer max-w-[150px]"
               style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
             >
               <option value="">All Branches</option>
@@ -286,7 +344,7 @@ export default function Registration() {
           <select
             value={brandFilter}
             onChange={e => setBrandFilter(e.target.value)}
-            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold uppercase border outline-none max-w-[160px]"
+            className="rounded-lg px-2.5 py-1 text-xs font-semibold uppercase border outline-none shrink-0 h-8 cursor-pointer max-w-[140px]"
             style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
           >
             <option value="ALL">All Brands</option>
@@ -296,7 +354,7 @@ export default function Registration() {
           <select
             value={registeredFilter}
             onChange={e => setRegisteredFilter(e.target.value as 'ALL' | 'PENDING' | 'REGISTERED')}
-            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold uppercase border outline-none"
+            className="rounded-lg px-2.5 py-1 text-xs font-semibold uppercase border outline-none shrink-0 h-8 cursor-pointer"
             style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
           >
             <option value="ALL">All</option>
