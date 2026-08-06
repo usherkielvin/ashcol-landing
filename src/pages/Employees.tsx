@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  Search, Wrench, Mail, Phone, RefreshCw, Building2,
+  Search, Wrench, Mail, Phone, Building2,
   CheckCircle, XCircle, Trash2, X, Plus, Copy,
   Check, Eye, EyeOff, ShieldCheck,
   Camera, Calendar, User, ArrowLeft,
@@ -10,6 +10,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import UserAvatar from '../components/UserAvatar'
+import TicketHistoryTable from '../components/TicketHistoryTable'
 import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName, notifyEmployeesDirectoryUpdated } from '../utils/api'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 
@@ -336,12 +337,6 @@ export default function Employees() {
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const isDrawerOpen = Boolean(routeEmployeeId)
   const [activeDrawerTab, setActiveDrawerTab] = useState<'overview' | 'history'>('overview')
-  const [employeeTicketHistory, setEmployeeTicketHistory] = useState<any[]>([])
-  const [loadingHistory, setLoadingHistory] = useState(false)
-  const [historyDateFilter, setHistoryDateFilter] = useState<string>(() => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  })
   const [imageUploading, setImageUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -453,73 +448,6 @@ export default function Employees() {
       return next
     })
   }
-
-  useEffect(() => {
-    if (activeDrawerTab !== 'history' || !selectedEmployee) {
-      setEmployeeTicketHistory([])
-      return
-    }
-    const fetchHistory = async () => {
-      setLoadingHistory(true)
-      try {
-        const headers = { Authorization: `Bearer ${token()}` }
-        const isAdminOrMgmt = user?.role?.toUpperCase() === 'ADMIN' || user?.role?.toUpperCase() === 'MANAGEMENT'
-        const endpoint = isAdminOrMgmt ? `${API_BASE_URL}/tickets?size=1000` : `${API_BASE_URL}/tickets/branch?size=1000`
-        const res = await fetch(endpoint, { headers })
-        if (!res.ok) return
-        const data = await res.json()
-        const tickets: any[] = data?.data?.tickets || data?.data?.content || data?.data || []
-        
-        const nameNorm = selectedEmployee.name.toLowerCase().trim()
-        const empId = selectedEmployee.id
-        const empEmail = selectedEmployee.email.toLowerCase().trim()
-        const empPersonalEmail = (selectedEmployee.personalEmail || '').toLowerCase().trim()
-
-        const relevant = tickets.filter((t: any) => {
-          // 1. Created by this employee
-          if (t.customerId === empId) return true
-          if (t.createdBy && t.createdBy.toLowerCase().trim() === nameNorm) return true
-
-          // 2. Negotiator
-          if (t.negotiatorId === empId) return true
-          if (t.negotiatorName && t.negotiatorName.toLowerCase().trim() === nameNorm) return true
-
-          // 3. Assignee / Installer / Driver
-          if (t.assignedTo === empId) return true
-          if (t.assignedEmployeeName && t.assignedEmployeeName.toLowerCase().trim() === nameNorm) return true
-          if (t.installerId === empId) return true
-          if (t.installerName && t.installerName.toLowerCase().trim() === nameNorm) return true
-
-          // 4. Closed by
-          if (t.closedBy === empId) return true
-          if (t.closedBy && t.closedBy.toLowerCase().trim() === nameNorm) return true
-          if (t.closedBy && t.closedBy.toLowerCase().trim() === empEmail) return true
-
-          // 5. Warranty registration completed by
-          if (t.warrantyRegistrationCompletedBy === empId) return true
-          if (t.warrantyRegistrationCompletedBy && t.warrantyRegistrationCompletedBy.toLowerCase().trim() === nameNorm) return true
-
-          // 6. Emails match
-          const customerEmail = (t.customerEmail || '').toLowerCase().trim()
-          if (customerEmail && (customerEmail === empEmail || (empPersonalEmail && customerEmail === empPersonalEmail))) return true
-
-          return false
-        })
-
-        relevant.sort((a: any, b: any) => {
-          const da = a.updatedAt || a.updated_at || a.createdAt || a.created_at || ''
-          const db = b.updatedAt || b.updated_at || b.createdAt || b.created_at || ''
-          return db.localeCompare(da)
-        })
-        setEmployeeTicketHistory(relevant)
-      } catch (err) {
-        console.error('Error loading employee ticket history:', err)
-      } finally {
-        setLoadingHistory(false)
-      }
-    }
-    fetchHistory()
-  }, [activeDrawerTab, selectedEmployee, user])
 
   // ── Data Loaders ────────────────────────────────────────────────────────────
   const fetchBranches = async () => {
@@ -1518,132 +1446,14 @@ export default function Employees() {
               {/* ── History Tab ── */}
               {activeDrawerTab === 'history' && (
                 <div className="p-6">
-                  {/* Date Filter Control */}
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 p-3 rounded-xl border" style={{ borderColor: border, backgroundColor: inputBg }}>
-                    <div className="flex flex-col gap-1">
-                      <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>Filter by Date Created</span>
-                      <span className="text-[11px]" style={{ color: textMuted }}>Show tickets this employee created on:</span>
-                    </div>
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
-                      <input
-                        type="date"
-                        value={historyDateFilter}
-                        onChange={e => setHistoryDateFilter(e.target.value)}
-                        className="px-3 py-1.5 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                        style={{
-                          backgroundColor: cardBg,
-                          borderColor: border,
-                          color: textPrimary
-                        }}
-                      />
-                      {historyDateFilter && (
-                        <button
-                          onClick={() => setHistoryDateFilter('')}
-                          className="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all hover:bg-slate-500/10"
-                          style={{
-                            color: '#EF4444',
-                            border: `1px solid ${border}`
-                          }}
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {(() => {
-                    // Counting how many tickets an employee CREATED that day only makes sense
-                    // against the creation timestamp — falling back to updatedAt (as this used to)
-                    // pulls in tickets merely touched that day, inflating the count.
-                    const displayedHistory = employeeTicketHistory.filter((t: any) => {
-                      if (!historyDateFilter) return true
-                      const dateStr = t.createdAt || t.created_at
-                      if (!dateStr) return false
-                      const d = new Date(dateStr)
-                      const yyyy = d.getFullYear()
-                      const mm = String(d.getMonth() + 1).padStart(2, '0')
-                      const dd = String(d.getDate()).padStart(2, '0')
-                      return `${yyyy}-${mm}-${dd}` === historyDateFilter
-                    })
-
-                    const branchName = (t: any) => branches.find(b => b.id === (t.branchId || t.branch_id))?.name || '—'
-                    const scheduledDate = (t: any) => {
-                      const raw = t.finalDate || t.final_date || t.preferredDate || t.preferred_date || ''
-                      if (!raw) return '—'
-                      const d = new Date(raw)
-                      return isNaN(d.getTime()) ? '—' : d.toLocaleDateString(undefined, { month: 'long', day: '2-digit', year: 'numeric' })
-                    }
-                    const createdDateTime = (t: any) => {
-                      const raw = t.createdAt || t.created_at || ''
-                      if (!raw) return '—'
-                      const d = new Date(raw)
-                      return isNaN(d.getTime())
-                        ? '—'
-                        : d.toLocaleString(undefined, { month: 'short', day: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit' })
-                    }
-
-                    return loadingHistory ? (
-                      <div className="flex flex-col items-center justify-center py-16 gap-3">
-                        <Loader2 className="w-6 h-6 animate-spin" style={{ color: '#10B981' }} />
-                        <span className="text-xs font-semibold" style={{ color: textMuted }}>Loading ticket history…</span>
-                      </div>
-                    ) : displayedHistory.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-16 border border-dashed rounded-2xl" style={{ borderColor: border, backgroundColor: inputBg }}>
-                        <RefreshCw className="w-8 h-8 mb-3" style={{ color: textMuted }} />
-                        <span className="text-sm font-bold" style={{ color: textMuted }}>No ticket history found</span>
-                        <span className="text-xs mt-1" style={{ color: textMuted }}>
-                          {historyDateFilter ? `No tickets created on ${new Date(historyDateFilter).toLocaleDateString(undefined, { dateStyle: 'medium' })}.` : 'No tickets are associated with this employee.'}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-2">
-                        <div className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: textMuted }}>
-                          {displayedHistory.length} ticket{displayedHistory.length === 1 ? '' : 's'} created {historyDateFilter && `on ${new Date(historyDateFilter).toLocaleDateString(undefined, { dateStyle: 'medium' })}`}
-                        </div>
-                        <div className="overflow-x-auto rounded-xl border" style={{ borderColor: border }}>
-                          <table className="w-full text-sm border-collapse">
-                            <thead>
-                              <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#080f1c', borderBottom: `1px solid ${border}` }}>
-                                {['Date Created', 'Ticket No.', 'Customer', 'District', 'Branch', 'Negotiator', 'Scheduled Date', 'Status'].map((h, i, arr) => (
-                                  <th
-                                    key={h}
-                                    className={`px-4 py-2.5 text-[10px] font-black uppercase tracking-wider whitespace-nowrap border-r ${i === 0 ? 'text-left' : 'text-center'}`}
-                                    style={{ color: textMuted, borderColor: border, borderRight: i === arr.length - 1 ? 'none' : `1px solid ${border}` }}
-                                  >
-                                    {h}
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {displayedHistory.map((t: any, idx: number) => {
-                                const custName = t.customerName || t.customer_name || '—'
-                                const tNum = t.ticketNumber || t.ticket_number || t.controlNumber || t.control_number || t.id?.slice(0, 8) || '—'
-                                const status = (t.status || '').toUpperCase()
-                                const district = t.district || t.destination || '—'
-                                const negotiator = t.negotiatorName || t.negotiator_name || '—'
-                                const isInstalled = status === 'INSTALLED' || status === 'COMPLETED'
-                                const isActive = status === 'PENDING' || status === 'ASSIGNED' || status === 'SCHEDULED'
-                                const statusColor = isInstalled ? '#10B981' : isActive ? '#3B82F6' : status === 'CANCELLED' ? '#EF4444' : textMuted
-                                return (
-                                  <tr key={t.id || idx} style={{ borderBottom: `1px solid ${border}`, backgroundColor: idx % 2 === 0 ? inputBg : cardBg }}>
-                                    <td className="px-4 py-2.5 text-xs font-semibold border-r whitespace-nowrap" style={{ color: textPrimary, borderColor: border }}>{createdDateTime(t)}</td>
-                                    <td className="px-4 py-2.5 text-xs font-bold text-center border-r" style={{ color: textPrimary, borderColor: border }}>{tNum}</td>
-                                    <td className="px-4 py-2.5 text-xs font-semibold text-center border-r" style={{ color: textPrimary, borderColor: border }}>{custName}</td>
-                                    <td className="px-4 py-2.5 text-xs text-center border-r" style={{ color: textMuted, borderColor: border }}>{district}</td>
-                                    <td className="px-4 py-2.5 text-xs text-center border-r" style={{ color: textMuted, borderColor: border }}>{branchName(t)}</td>
-                                    <td className="px-4 py-2.5 text-xs text-center border-r" style={{ color: textMuted, borderColor: border }}>{negotiator}</td>
-                                    <td className="px-4 py-2.5 text-xs text-center border-r" style={{ color: textPrimary, borderColor: border }}>{scheduledDate(t)}</td>
-                                    <td className="px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-center" style={{ color: statusColor }}>{status || '—'}</td>
-                                  </tr>
-                                )
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )
-                  })()}
+                  <TicketHistoryTable
+                    person={{
+                      id: selectedEmployee.id,
+                      name: selectedEmployee.name,
+                      email: selectedEmployee.email,
+                      personalEmail: selectedEmployee.personalEmail,
+                    }}
+                  />
                 </div>
               )}
 

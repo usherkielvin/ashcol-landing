@@ -76,6 +76,7 @@ type RegTicket = Ticket & {
   warrantyRegistrationCompleted?: boolean
   warrantyRegistrationCompletedAt?: string
   warrantyRegistrationCompletedBy?: string
+  warrantyRegistrationNumber?: string
 }
 
 function todayIso(): string {
@@ -265,8 +266,11 @@ export default function Registration() {
       body: JSON.stringify({ warrantyRegistrationCompleted: true, acDetails }),
     })
     if (!res.ok) throw new Error(await readApiError(res))
+    const updated = await res.json().catch(() => null) as RegTicket | null
     setTickets(prev => prev.map(t => (
-      t.id === ticket.id ? { ...t, acDetails, warrantyRegistrationCompleted: true } as Ticket : t
+      t.id === ticket.id
+        ? { ...t, acDetails, warrantyRegistrationCompleted: true, warrantyRegistrationNumber: updated?.warrantyRegistrationNumber } as Ticket
+        : t
     )))
     setResolveTicket(null)
   }, [])
@@ -667,6 +671,7 @@ function RegistrationDetailModal({ ticket, isLight, onClose }: { ticket: Ticket;
                 <CheckCircle2 className="w-3.5 h-3.5" /> Warranty Registered
               </div>
               <div className="grid grid-cols-2 gap-2">
+                <DField isLight={isLight} label="Registration No." value={(ticket as RegTicket).warrantyRegistrationNumber || ''} />
                 <DField isLight={isLight} label="Registered By" value={registeredBy} />
                 <DField isLight={isLight} label="Date" value={registeredDate ? formatDateKeyLabel(registeredDate.split('T')[0]) : ''} />
               </div>

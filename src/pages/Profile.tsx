@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { useAuth, getInitials } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import {
-  User, Shield,
+  User, Shield, History,
   KeyRound, Trash2, X, AlertTriangle, Lock, Eye, EyeOff
 } from 'lucide-react'
 import ImageCropModal from '../components/ImageCropModal'
+import TicketHistoryTable from '../components/TicketHistoryTable'
 import type { AddressValue } from '../components/PhAddressPicker'
 import {
   API_BASE_URL,
@@ -27,7 +28,7 @@ const authHeaders = () => ({
 })
 const ic = `w-full border rounded-xl px-4 py-3 font-medium transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] outline-none text-sm`
 
-type Tab = 'profile' | 'address' | 'password' | 'privacy' | 'notifications' | 'users'
+type Tab = 'profile' | 'address' | 'password' | 'privacy' | 'notifications' | 'users' | 'history'
 
 export default function Profile() {
   const { user, setUser, logout } = useAuth()
@@ -326,12 +327,13 @@ export default function Profile() {
 
   const sidebarLinks: { key: Tab; label: string; icon: any }[] = [
     { key: 'profile' as Tab, label: 'Profile', icon: User },
+    ...(isStaffUser ? [{ key: 'history' as Tab, label: 'Ticket History', icon: History }] : []),
     ...(isSystemAdmin(user?.role) ? [{ key: 'users' as Tab, label: 'User Management', icon: Shield }] : []),
     { key: 'password' as Tab, label: 'Change Password', icon: Lock },
   ]
 
   return (
-    <div className="w-full max-w-5xl mx-auto pb-16" style={{ backgroundColor: pageBg }}>
+    <div className={tab === 'history' ? 'w-full pb-16' : 'w-full max-w-5xl mx-auto pb-16'} style={{ backgroundColor: pageBg }}>
       <div className="flex flex-col md:flex-row gap-0 md:gap-6">
 
         {/* ══════════════════════════════════════════════════════════════════
@@ -824,6 +826,26 @@ export default function Profile() {
                     </label>
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Tab: Ticket History ─────────────────────────────── */}
+          {tab === 'history' && isStaffUser && user?.id && (
+            <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+              <div className="px-6 pt-6 pb-4" style={{ borderBottom: `1px solid ${border}` }}>
+                <h2 className="text-lg font-black" style={{ color: textPrimary }}>Ticket History</h2>
+                <p className="text-sm mt-0.5" style={{ color: textMuted }}>Tickets you created, negotiated, or worked on</p>
+              </div>
+              <div className="px-6 py-5">
+                <TicketHistoryTable
+                  person={{
+                    id: user.id,
+                    name: user.name || '',
+                    email: user.email || '',
+                    personalEmail: user.personalEmail || undefined,
+                  }}
+                />
               </div>
             </div>
           )}
