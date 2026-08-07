@@ -969,7 +969,7 @@ export function getScheduleRowColors(
   rowEven: string,
   rowOdd: string,
   isDuplicateName: boolean,
-): { baseBg: string; accent?: string } {
+): { baseBg: string; hoverBg?: string; accent?: string } {
   const outcome = getScheduleOutcome(ticket)
 
   // Dark mode: use higher-alpha color washes (~0.22–0.28) so closed rows clearly stand out.
@@ -977,6 +977,7 @@ export function getScheduleRowColors(
   if (ghostKind === 'cancelled' || (ticket.status || '').toUpperCase() === 'CANCELLED') {
     return {
       baseBg: isLight ? '#fee2e2' : 'rgba(239,68,68,0.28)',
+      hoverBg: isLight ? '#fca5a5' : 'rgba(239,68,68,0.38)',
       accent: '#EF4444',
     }
   }
@@ -985,47 +986,55 @@ export function getScheduleRowColors(
     if (outcome === 'DONE_CLEANING') {
       return {
         baseBg: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.22)',
+        hoverBg: isLight ? '#bae6fd' : 'rgba(14,165,233,0.34)',
         accent: '#0EA5E9',
       }
     }
     if (outcome === 'DONE_SURVEY') {
       return {
         baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.22)',
+        hoverBg: isLight ? '#fde68a' : 'rgba(251,191,36,0.34)',
         accent: '#fbbf24',
       }
     }
     if (outcome === 'DONE_CHECKUP') {
       return {
         baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.22)',
+        hoverBg: isLight ? '#fde68a' : 'rgba(251,191,36,0.34)',
         accent: '#fbbf24',
       }
     }
     if (outcome === 'DONE_BACKJOB') {
       return {
         baseBg: isLight ? '#dbeafe' : 'rgba(59,130,246,0.22)',
+        hoverBg: isLight ? '#bfdbfe' : 'rgba(59,130,246,0.34)',
         accent: '#3B82F6',
       }
     }
     if (outcome === 'DONE_SYSTEM_REPROCESS') {
       return {
         baseBg: isLight ? '#e0e7ff' : 'rgba(99,102,241,0.22)',
+        hoverBg: isLight ? '#c7d2fe' : 'rgba(99,102,241,0.34)',
         accent: '#6366F1',
       }
     }
     if (outcome === 'DONE_DISMANTLE') {
       return {
         baseBg: isLight ? '#ffe4e6' : 'rgba(244,63,94,0.22)',
+        hoverBg: isLight ? '#fecdd3' : 'rgba(244,63,94,0.34)',
         accent: '#F43F5E',
       }
     }
     if (outcome === 'DONE_QUOTATION' || outcome === 'DONE_SERVICE') {
       return {
         baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.28)',
+        hoverBg: isLight ? '#86efac' : 'rgba(22,163,74,0.38)',
         accent: '#16A34A',
       }
     }
     return {
       baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.28)',
+      hoverBg: isLight ? '#86efac' : 'rgba(22,163,74,0.38)',
       accent: '#16A34A',
     }
   }
@@ -1033,6 +1042,7 @@ export function getScheduleRowColors(
   if (ghostKind === 'resched') {
     return {
       baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.28)',
+      hoverBg: isLight ? '#fde68a' : 'rgba(251,191,36,0.38)',
       accent: '#fbbf24',
     }
   }
@@ -1040,6 +1050,7 @@ export function getScheduleRowColors(
   if (outcome === 'DONE_INSTALLED') {
     return {
       baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.28)',
+      hoverBg: isLight ? '#86efac' : 'rgba(22,163,74,0.38)',
       accent: '#16A34A',
     }
   }
@@ -1047,6 +1058,7 @@ export function getScheduleRowColors(
   if (outcome === 'DONE_SURVEY') {
     return {
       baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.28)',
+      hoverBg: isLight ? '#fde68a' : 'rgba(251,191,36,0.38)',
       accent: '#fbbf24',
     }
   }
@@ -1054,6 +1066,7 @@ export function getScheduleRowColors(
   if (outcome === 'DONE_CLEANING') {
     return {
       baseBg: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.28)',
+      hoverBg: isLight ? '#bae6fd' : 'rgba(14,165,233,0.38)',
       accent: '#0EA5E9',
     }
   }
@@ -1061,6 +1074,7 @@ export function getScheduleRowColors(
   if (outcome === 'DONE_CHECKUP') {
     return {
       baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.28)',
+      hoverBg: isLight ? '#fde68a' : 'rgba(251,191,36,0.38)',
       accent: '#fbbf24',
     }
   }
@@ -1068,6 +1082,7 @@ export function getScheduleRowColors(
   if (outcome === 'DONE_BACKJOB') {
     return {
       baseBg: isLight ? '#fef9c3' : 'rgba(59,130,246,0.28)',
+      hoverBg: isLight ? '#fef08a' : 'rgba(59,130,246,0.38)',
       accent: '#f59e0b',
     }
   }
@@ -1075,6 +1090,7 @@ export function getScheduleRowColors(
   if (outcome === 'DONE_SYSTEM_REPROCESS') {
     return {
       baseBg: isLight ? '#eef2ff' : 'rgba(99,102,241,0.28)',
+      hoverBg: isLight ? '#c7d2fe' : 'rgba(99,102,241,0.38)',
       accent: '#6366F1',
     }
   }
@@ -1082,6 +1098,7 @@ export function getScheduleRowColors(
   if (outcome === 'DONE_DISMANTLE') {
     return {
       baseBg: isLight ? '#fff1f2' : 'rgba(244,63,94,0.28)',
+      hoverBg: isLight ? '#fecdd3' : 'rgba(244,63,94,0.38)',
       accent: '#F43F5E',
     }
   }
@@ -1089,6 +1106,7 @@ export function getScheduleRowColors(
   if (outcome === 'DONE_QUOTATION' || outcome === 'DONE_SERVICE') {
     return {
       baseBg: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.28)',
+      hoverBg: isLight ? '#a7f3d0' : 'rgba(16,185,129,0.38)',
       accent: '#10B981',
     }
   }
@@ -1102,12 +1120,14 @@ export function getScheduleRowColors(
   if (statusVal === 'DONE_INSTALLED') {
     return {
       baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.28)',
+      hoverBg: isLight ? '#86efac' : 'rgba(22,163,74,0.38)',
       accent: '#16A34A',
     }
   }
   if (statusVal === 'RESCHED') {
     return {
       baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.18)',
+      hoverBg: isLight ? '#fef3c7' : 'rgba(251,191,36,0.28)',
       accent: '#fbbf24',
     }
   }
@@ -1117,12 +1137,16 @@ export function getScheduleRowColors(
   if (isOverduePendingScheduleTicket(ticket, ghostKind)) {
     return {
       baseBg: isLight ? '#ef4444' : '#dc2626',
+      hoverBg: isLight ? '#dc2626' : '#b91c1c',
       accent: '#ffffff',
     }
   }
 
   if (isDuplicateName) {
-    return { baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.12)' }
+    return {
+      baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.12)',
+      hoverBg: isLight ? '#fef08a' : 'rgba(251,191,36,0.22)',
+    }
   }
 
   return { baseBg: idx % 2 === 0 ? rowEven : rowOdd }
