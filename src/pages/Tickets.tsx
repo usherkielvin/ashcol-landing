@@ -75,7 +75,7 @@ import {
   getScheduleUpdateDisplay, getTicketCommitDisplay, getTicketDriverDisplay, getTicketDriverName,
   getTicketNegotiatorName, getTicketNumberDisplay, getTicketVehicleDisplay, importRowMatchesTicket,
   isCancelledScheduleGhost, isCancelledTicket, isCompletedGhostOnDate, isInstalledRemarks, isInstalledWorkflowStatus,
-  isMovedToRescheduleRemark, isNoPaymentMode, isReschedulePending, isScheduleGhostOnDate, isTempTicketId,
+  isMovedToRescheduleRemark, isNoPaymentMode, isPendingScheduleTicket, isReschedulePending, isScheduleGhostOnDate, isTempTicketId,
   isTicketNotFoundError, isUnmatchedImportComplete, lookupTicketByNumberOnServer, mergeAcMeta, mergePatchBodies, mergeServerListWithLocalEdits,
   mergeTicketPatch, namesMatchLoosely, normalizeCustomerKey, normalizeImportPaymentMode, parseAcMeta, parseBrand,
   parseDistrict, parseImportMoney, parseNameSiteToken, parseServiceDriverValue,
@@ -6652,6 +6652,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                         const isHovered = hoveredRow === ticket.id
                         const ghostKind = dateFilter ? getScheduleGhostKind(ticket, dateFilter) : null
                         const isGhost = Boolean(ghostKind)
+                        const isPendingRow = isPendingScheduleTicket(ticket, ghostKind)
                         const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(getCustomerDisplayName(ticket)))
                         const rowColors = getScheduleRowColors(ticket, ghostKind, isLight, idx, rowEven, rowOdd, isDuplicateName)
                         const baseBg = rowColors.baseBg
@@ -6816,6 +6817,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                       <div className={`min-w-0 overflow-hidden ${col.align === 'center' && col.label !== 'VEHICLE' ? 'w-auto max-w-full' : 'w-full'}`}>
                                         {renderCell(ticket, col, idx, isGhost, ghostKind, false)}
                                       </div>
+                                    </div>
+                                  )}
+                                  {isPendingRow && (
+                                    <div className="pending-row-highlight-bar">
+                                      <div className="pending-row-highlight-beam" />
                                     </div>
                                   )}
                                 </td>

@@ -1111,40 +1111,30 @@ export function getScheduleRowColors(
       accent: '#fbbf24',
     }
   }
-  if (statusVal === 'SURVEY') {
+  // Pending schedule rows (SURVEY, INSTALL, CLEANING, CHECKUP, BACKJOB, etc.)
+  // Turn red to highlight pending rows that haven't been updated yet
+  if (
+    statusVal === 'SURVEY' ||
+    statusVal === 'INSTALL' ||
+    statusVal === 'INSTALLATION' ||
+    statusVal === 'S/I' ||
+    statusVal === 'S_I' ||
+    statusVal === 'SI' ||
+    statusVal === 'SURVEY & INSTALL' ||
+    statusVal === 'CLEANING' ||
+    statusVal === 'CHECKUP' ||
+    statusVal === 'BACKJOB' ||
+    statusVal === 'SERVICES' ||
+    statusVal === 'SERVICE' ||
+    statusVal === 'SYSTEM_REPROCESS' ||
+    statusVal === 'DISMANTLE' ||
+    statusVal === 'FOR_APPROVAL' ||
+    statusVal === 'PENDING_APPROVAL' ||
+    statusVal === 'CONTINUATION'
+  ) {
     return {
-      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
-      accent: '#8B5CF6',
-    }
-  }
-  if (statusVal === 'CLEANING' || statusVal === 'CHECKUP' || statusVal === 'BACKJOB') {
-    return {
-      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
-      accent: '#0EA5E9',
-    }
-  }
-  if (statusVal === 'SYSTEM_REPROCESS') {
-    return {
-      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
-      accent: '#6366F1',
-    }
-  }
-  if (statusVal === 'DISMANTLE') {
-    return {
-      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
-      accent: '#F43F5E',
-    }
-  }
-  if (statusVal === 'INSTALLATION' || statusVal === 'SERVICES') {
-    return {
-      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
-      accent: '#10B981',
-    }
-  }
-  if (statusVal === 'FOR_APPROVAL') {
-    return {
-      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
-      accent: '#10B981',
+      baseBg: isLight ? '#fee2e2' : 'rgba(239,68,68,0.22)',
+      accent: '#EF4444',
     }
   }
 
@@ -1153,6 +1143,15 @@ export function getScheduleRowColors(
   }
 
   return { baseBg: idx % 2 === 0 ? rowEven : rowOdd }
+}
+
+export function isPendingScheduleTicket(ticket: Ticket, ghostKind?: string | null): boolean {
+  if (ghostKind) return false
+  const outcome = getScheduleOutcome(ticket)
+  if (outcome) return false
+  const stat = String(ticket.status || '').toUpperCase().replace(/\s+/g, '_')
+  if (stat === 'CANCELLED' || stat === 'RESCHED') return false
+  return true
 }
 
 export function shouldArchiveCompletedSchedule(ticket: Ticket, body: Record<string, unknown>): boolean {
