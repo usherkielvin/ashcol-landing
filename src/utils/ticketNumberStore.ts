@@ -137,7 +137,7 @@ export function readScheduleDateTicketNumbers(dateKey: string): string[] {
   }
 }
 
-const EDITED_TTL_MS = 5 * 60_000
+const EDITED_TTL_MS = 30 * 60_000
 const EDITED_KEY = 'ashcol-recently-edited-tickets'
 
 /**
