@@ -221,14 +221,14 @@ export default function Ddrm() {
         border-collapse: collapse;
         border-spacing: 0;
         font-size: 12px;
-        border: 1px solid ${isLight ? '#0f172a' : '#e2e8f0'};
+        border: 1px solid ${border};
       }
       .ddrm-sheet-table thead th {
         position: sticky; z-index: 5;
         font-size: 10px; font-weight: 800; letter-spacing: 0.05em;
         text-transform: uppercase; white-space: nowrap;
         padding: 8px 10px !important; text-align: center;
-        border: 1px solid ${isLight ? '#0f172a' : '#e2e8f0'} !important;
+        border: 1px solid ${border} !important;
         background: var(--excel-header-bg);
       }
       .ddrm-sheet-table thead tr:first-child th { top: 0; z-index: 6; }
@@ -237,7 +237,7 @@ export default function Ddrm() {
         padding: 4px 8px !important; vertical-align: middle;
         overflow: visible;
         height: 48px;
-        border: 1px solid ${isLight ? '#0f172a' : '#e2e8f0'} !important;
+        border: 1px solid ${border} !important;
         white-space: nowrap;
       }
       .ddrm-sheet-table th.ddrm-site-edge-l,
@@ -252,8 +252,8 @@ export default function Ddrm() {
       }
       .ddrm-sheet-table thead th.ddrm-site-edge-l,
       .ddrm-sheet-table thead th.ddrm-site-edge-r {
-        border-top: 1px solid ${isLight ? '#0f172a' : '#e2e8f0'} !important;
-        border-bottom: 1px solid ${isLight ? '#0f172a' : '#e2e8f0'} !important;
+        border-top: 1px solid ${border} !important;
+        border-bottom: 1px solid ${border} !important;
       }
       .ddrm-sheet-table input {
         display: block; box-sizing: border-box;
@@ -338,12 +338,12 @@ export default function Ddrm() {
       .ddrm-ledger-table.excel-table {
         width: 100%;
         border-collapse: collapse;
-        border: 1px solid ${isLight ? '#0f172a' : '#e2e8f0'};
+        border: 1px solid ${border};
       }
       .ddrm-ledger-table thead th {
         font-size: 11px; font-weight: 800; letter-spacing: 0.06em;
         text-transform: uppercase; padding: 14px 16px !important;
-        border: 1px solid ${isLight ? '#0f172a' : '#e2e8f0'} !important;
+        border: 1px solid ${border} !important;
         background: ${isLight ? '#f8fafc' : '#0F1A2E'} !important;
         color: ${isLight ? '#64748b' : '#7A95B8'} !important;
         position: sticky; top: 0; z-index: 2;
@@ -352,11 +352,11 @@ export default function Ddrm() {
         font-size: 14px; font-weight: 600;
         padding: 18px 16px !important;
         height: 64px;
-        border: 1px solid ${isLight ? '#0f172a' : '#e2e8f0'} !important;
+        border: 1px solid ${border} !important;
         vertical-align: middle;
       }
       .ddrm-ledger-table tbody tr:last-child td {
-        border-bottom: 1px solid ${isLight ? '#0f172a' : '#e2e8f0'} !important;
+        border-bottom: 1px solid ${border} !important;
       }
       .ddrm-meta-grid {
         display: grid;
@@ -661,8 +661,8 @@ export default function Ddrm() {
       {/* ── Page header (ledger only) ── */}
       {view === 'ledger' && (
       <div
-        className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 px-2 py-1.5 shrink-0"
-        style={{ backgroundColor: cardBg, border: `1px solid ${border}`, borderRadius: 8 }}
+        className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 px-2 py-1.5 shrink-0 rounded-2xl shadow-xl"
+        style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
       >
         <div className="flex items-center gap-2">
           <button
@@ -702,7 +702,7 @@ export default function Ddrm() {
 
       {/* ══ LEDGER VIEW ═══════════════════════════════════════════ */}
       {view === 'ledger' && (
-        <div className="overflow-hidden flex flex-col flex-1 min-h-0" style={{ backgroundColor: cardBg, border: `1px solid ${border}`, borderRadius: 8 }}>
+        <div className="overflow-hidden flex flex-col flex-1 min-h-0 rounded-2xl shadow-xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
           <div className="px-2 py-2 flex flex-col md:flex-row items-center justify-between gap-2 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
             <div className="relative w-full md:w-72">
               <Search className="absolute left-3.5 top-3 w-4 h-4" style={{ color: textMuted }} />
@@ -840,8 +840,8 @@ export default function Ddrm() {
       {view === 'sheet' && editingSheet && (
         <form
           onSubmit={handleSaveDriverSheet}
-          className="overflow-hidden flex flex-col flex-1 min-h-0"
-          style={{ backgroundColor: cardBg, borderRadius: 10 }}
+          className="overflow-hidden flex flex-col flex-1 min-h-0 rounded-2xl shadow-xl"
+          style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
         >
           {/* Clean top bar */}
           <div

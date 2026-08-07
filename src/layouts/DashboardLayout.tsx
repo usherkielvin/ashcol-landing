@@ -191,8 +191,11 @@ export default function DashboardLayout() {
   const handleMouseEnter = () => {
     if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
     if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
-    if (sidebarCollapsed) {
-      // Hide collapsed icons immediately, expand width, show text right away
+    if (sidebarCollapsed || (isHoverExpanded && !navVisible)) {
+      // Hide collapsed icons immediately, expand width, show text right away.
+      // Also covers re-entering mid-collapse (before the leave timeout flips
+      // sidebarCollapsed back to true) — otherwise navVisible stays stuck
+      // false while the sidebar width stays expanded, leaving a blank rail.
       setShowCollapsedIcons(false)
       setSidebarCollapsed(false)
       setIsHoverExpanded(true)

@@ -3991,7 +3991,7 @@ export default function LineUp() {
 
     <div
 
-      className="no-print mb-4 rounded-xl p-3 md:p-4 flex flex-col gap-3"
+      className="no-print mb-4 rounded-xl p-3 flex flex-col gap-3 md:hidden"
 
       style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
 
@@ -4063,50 +4063,6 @@ export default function LineUp() {
 
       </div>
 
-      {branches.length > 0 && (
-
-        <div className="flex flex-row overflow-x-auto gap-2 no-scrollbar pb-1 scroll-smooth">
-
-          {branches.map(b => {
-
-            const isSelected = b.id === branchId
-
-            return (
-
-              <button
-
-                key={b.id}
-
-                type="button"
-
-                onClick={() => setBranchId(b.id)}
-
-                className="px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider shadow-sm whitespace-nowrap shrink-0 transition-all"
-
-                style={{
-
-                  backgroundColor: isSelected ? currentTheme.accent : (isLight ? '#f8fafc' : '#0f172a'),
-
-                  color: isSelected ? '#fff' : textPrimary,
-
-                  border: `1px solid ${isSelected ? currentTheme.accent : inputBorder}`,
-
-                }}
-
-              >
-
-                {b.name}
-
-              </button>
-
-            )
-
-          })}
-
-        </div>
-
-      )}
-
     </div>
 
   )
@@ -4117,14 +4073,11 @@ export default function LineUp() {
 
       {branchLineupSelector}
 
-      {/* ── Inner Tab Switcher ───────────────────────────────────────── */}
+      {/* ── Inner Tab Switcher — standard physical segmented control ── */}
 
       <div
-
-        className="flex items-center gap-1 mb-5 p-1 rounded-xl w-fit"
-
-        style={{ backgroundColor: isLight ? '#e8edf4' : '#0a1628', border: `1px solid ${border}` }}
-
+        className="inline-flex p-1.5 rounded-xl shadow-inner mb-5 gap-1 max-w-full overflow-x-auto no-scrollbar"
+        style={{ backgroundColor: isLight ? '#f1f5f9' : '#030712', border: `1px solid ${isLight ? '#e2e8f0' : '#1e293b'}` }}
       >
 
         {([
@@ -4135,7 +4088,11 @@ export default function LineUp() {
 
           { id: 'vehicles', label: 'Vehicles', icon: <Wrench className="w-3.5 h-3.5" /> },
 
-        ] as const).map(tab => (
+        ] as const).map(tab => {
+
+          const active = activeTab === tab.id
+
+          return (
 
           <button
 
@@ -4145,17 +4102,25 @@ export default function LineUp() {
 
             onClick={() => setActiveTab(tab.id)}
 
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200"
+            className={`flex-shrink-0 flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold whitespace-nowrap transition-colors border outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-0 ${
 
-            style={{
+              active
 
-              backgroundColor: activeTab === tab.id ? (isLight ? '#fff' : '#1e2d48') : 'transparent',
+                ? isLight
 
-              color: activeTab === tab.id ? textPrimary : textMuted,
+                  ? 'bg-white shadow-[0_2px_8px_rgba(0,0,0,0.08)] border-slate-200 text-slate-900'
 
-              boxShadow: activeTab === tab.id ? '0 1px 4px rgba(0,0,0,0.12)' : 'none',
+                  : 'bg-gradient-to-b from-slate-700 to-slate-800 shadow-[0_2px_8px_rgba(0,0,0,0.4)] border-slate-600 text-white'
 
-            }}
+                : isLight
+
+                  ? 'text-slate-500 hover:text-slate-900 font-medium border-transparent'
+
+                  : 'text-slate-400 hover:text-white font-medium border-transparent'
+
+            }`}
+
+            style={{ ['--tw-ring-color' as any]: currentTheme.accent }}
 
           >
 
@@ -4165,7 +4130,9 @@ export default function LineUp() {
 
           </button>
 
-        ))}
+          )
+
+        })}
 
       </div>
 
@@ -5116,6 +5083,36 @@ export default function LineUp() {
 
           <div className="flex items-center gap-1.5 shrink-0 w-full xl:w-auto justify-start xl:justify-end flex-wrap">
 
+            {/* Select Branch */}
+
+            {branches.length > 0 && (
+
+              <div className="relative flex items-center">
+
+                <Building2 className="w-3.5 h-3.5" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: currentTheme.accent, pointerEvents: 'none', zIndex: 1 }} />
+
+                <select
+
+                  value={branchId}
+
+                  onChange={e => setBranchId(e.target.value)}
+
+                  className="rounded-lg pl-8 pr-8 py-2 text-xs font-bold appearance-none outline-none cursor-pointer"
+
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+
+                >
+
+                  {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+
+                </select>
+
+                <ChevronDown className="absolute right-2.5 w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
+
+              </div>
+
+            )}
+
             {/* Date */}
 
             <div onClick={() => {
@@ -5832,25 +5829,22 @@ export default function LineUp() {
 
             )}
 
-            {/* Team specific accent background title bar */}
+            {/* Command Center header — single tactile bar with accent top stripe */}
 
-            <div style={{ background: `linear-gradient(135deg, ${currentTheme.accent}, ${currentTheme.accentDark})`, padding: '10px 16px', textAlign: 'center' }}>
+            <div
+              className="flex justify-between items-center px-5 py-4 shadow-sm"
+              style={{
+                backgroundColor: isLight ? '#f8fafc' : '#0F1A2E',
+                borderTop: `4px solid ${currentTheme.accent}`,
+                borderBottom: `1px solid ${isLight ? '#e2e8f0' : '#334155'}`,
+              }}
+            >
 
-              <div style={{ color: '#fff', fontWeight: 950, fontSize: '16px', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-
+              <span className="font-black uppercase tracking-wide text-sm md:text-base" style={{ color: textPrimary }}>
                 TEAM {branchName ? branchName.toUpperCase() : '—'} LINE UP
+              </span>
 
-              </div>
-
-            </div>
-
-            
-
-            {/* Near black date bar */}
-
-            <div style={{ backgroundColor: '#020617', padding: '6px 16px', textAlign: 'center' }}>
-
-              <div style={{ color: '#fff', fontWeight: 800, fontSize: '11px', letterSpacing: '0.08em' }}>{englishLabel(date)}</div>
+              <span className="text-sm font-bold" style={{ color: textMuted }}>{englishLabel(date)}</span>
 
             </div>
 
@@ -5914,17 +5908,19 @@ export default function LineUp() {
 
                     <tr>
 
-                      <td colSpan={8} style={{ padding: '48px 24px', textAlign: 'center' }}>
+                      <td colSpan={8} style={{ padding: 0 }}>
 
-                        <div style={{ maxWidth: '480px', margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+                        <div className="flex flex-col items-center justify-center p-12 gap-3" style={{ backgroundColor: isLight ? '#f8fafc' : 'rgba(6,11,24,0.4)', border: `2px dashed ${isLight ? '#cbd5e1' : '#334155'}` }}>
 
-                          <div style={{ color: textPrimary, fontWeight: 800, fontSize: '15px' }}>
+                          <CalendarDays className="w-9 h-9" style={{ color: textMuted, opacity: 0.5 }} />
+
+                          <div style={{ color: textPrimary, fontWeight: 800, fontSize: '15px', textAlign: 'center' }}>
 
                             No entries scheduled for {branchName || 'this branch'} on {englishLabel(date)}
 
                           </div>
 
-                          <p style={{ color: textMuted, fontSize: '12px', margin: '0 0 8px 0', lineHeight: '1.5' }}>
+                          <p style={{ color: textMuted, fontSize: '12px', margin: 0, lineHeight: '1.5', textAlign: 'center' }}>
 
                             Start building today's lineup. You can add rows manually.
 
@@ -5932,67 +5928,15 @@ export default function LineUp() {
 
                           {canEdit && (
 
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'center', width: '100%' }}>
-
-                              <button
-
-                                type="button"
-
-                                onClick={handleAddRow}
-
-                                style={{
-
-                                  display: 'flex',
-
-                                  alignItems: 'center',
-
-                                  gap: '6px',
-
-                                  padding: '8px 16px',
-
-                                  borderRadius: '8px',
-
-                                  fontSize: '12px',
-
-                                  fontWeight: 700,
-
-                                  backgroundColor: currentTheme.accent,
-
-                                  color: '#FFFFFF',
-
-                                  border: 'none',
-
-                                  cursor: 'pointer',
-
-                                  transition: 'all 0.2s',
-
-                                }}
-
-                                onMouseEnter={e => {
-
-                                  e.currentTarget.style.opacity = '0.9';
-
-                                  e.currentTarget.style.transform = 'translateY(-1px)';
-
-                                }}
-
-                                onMouseLeave={e => {
-
-                                  e.currentTarget.style.opacity = '1';
-
-                                  e.currentTarget.style.transform = 'none';
-
-                                }}
-
-                              >
-
-                                <Plus className="w-4 h-4" />
-
-                                Add Row
-
-                              </button>
-
-                            </div>
+                            <button
+                              type="button"
+                              onClick={handleAddRow}
+                              className="flex items-center gap-1.5 rounded-lg px-4 py-2 font-bold text-white shadow-md transition-all hover:scale-105"
+                              style={{ backgroundColor: currentTheme.accent, border: `1px solid ${currentTheme.accentDark}` }}
+                            >
+                              <Plus className="w-4 h-4" />
+                              Add Row
+                            </button>
 
                           )}
 
@@ -6150,25 +6094,13 @@ export default function LineUp() {
 
             </div>
 
-            {/* Footer note */}
+            {/* Anchored footer metrics panel */}
 
-            <div style={{ padding: '12px 20px', borderTop: `1px solid ${border}`, backgroundColor: inputBg }}>
-
-              <p style={{ fontSize: '11px', fontStyle: 'italic', color: textMuted, fontWeight: 500 }}>
-
-                NOTE: Installers must report earlier than drivers to handle returns and log out.
-
-              </p>
-
-            </div>
-
-            {/* Summary boxes */}
-
-            <div style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderTop: `1px solid ${border}` }}>
+            <div className="p-4 flex flex-col md:flex-row gap-4 md:items-start print:block" style={{ backgroundColor: isLight ? '#f8fafc' : '#0A1120', borderTop: `1px solid ${isLight ? '#e2e8f0' : '#334155'}` }}>
 
               {/* Notes / Comments Section */}
 
-              <div className="w-[45%] flex flex-col gap-2 print:block">
+              <div className="flex-1 min-w-0 flex flex-col gap-2 print:block">
 
                 {canEdit ? (
 
@@ -6228,47 +6160,45 @@ export default function LineUp() {
 
                 )}
 
+                <p className="text-[11px] italic mt-2 print:hidden" style={{ color: textMuted, fontWeight: 500 }}>
+
+                  NOTE: Installers must report earlier than drivers to handle returns and log out.
+
+                </p>
+
               </div>
 
-              <div className="flex flex-col gap-3 items-end print:hidden">
+              <div className="flex flex-col gap-2 w-full md:w-auto md:min-w-[300px] print:hidden">
 
-                <table style={{ borderCollapse: 'collapse', minWidth: '360px' }}>
+                {([
 
-                  <tbody>
+                  ['TOTAL UNITS INSTALLATION', totalUnits, currentTheme.accent],
 
-                    <tr style={{ backgroundColor: isLight ? '#e8f5e9' : 'rgba(16,185,129,0.1)' }}>
+                  ['TOTAL UNITS FOR SURVEY', totalSurvey, isLight ? '#854d0e' : '#facc15'],
 
-                      <td style={{ border: `1px solid ${border}`, padding: '8px 16px', fontSize: '11px', fontWeight: 800, color: currentTheme.accent }}>TOTAL UNITS INSTALLATION</td>
+                  ['SERVICE / DISMANTLE', totalDismantle, '#F43F5E'],
 
-                      <td style={{ border: `1px solid ${border}`, padding: '8px 24px', fontSize: '13px', fontWeight: 900, textAlign: 'center', color: currentTheme.accent }}>{totalUnits}</td>
+                  ['TOTAL CLEANING', totalCleaning, '#0D9488'],
 
-                    </tr>
+                ] as [string, number, string][]).map(([label, value, color]) => (
 
-                    <tr style={{ backgroundColor: isLight ? '#fef9c3' : 'rgba(234,179,8,0.1)' }}>
+                  <div
 
-                      <td style={{ border: `1px solid ${border}`, padding: '8px 16px', fontSize: '11px', fontWeight: 800, color: isLight ? '#854d0e' : '#facc15' }}>TOTAL UNITS FOR SURVEY</td>
+                    key={label}
 
-                      <td style={{ border: `1px solid ${border}`, padding: '8px 24px', fontSize: '13px', fontWeight: 900, textAlign: 'center', color: isLight ? '#854d0e' : '#facc15' }}>{totalSurvey}</td>
+                    className="rounded-lg p-3 flex justify-between items-center gap-4"
 
-                    </tr>
+                    style={{ backgroundColor: isLight ? '#ffffff' : '#030712', border: `1px solid ${isLight ? '#e2e8f0' : '#1e293b'}`, borderLeft: `2px solid ${color}` }}
 
-                    
+                  >
 
-                    <tr style={{ backgroundColor: isLight ? '#fecdd3' : 'rgba(244,63,94,0.1)' }}>
+                    <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>{label}</span>
 
-                      <td style={{ border: `1px solid ${border}`, padding: '8px 16px', fontSize: '11px', fontWeight: 800, color: '#F43F5E' }}>SERVICE / DISMANTLE</td>
+                    <span className="text-sm font-black" style={{ color }}>{value}</span>
 
-                      <td style={{ border: `1px solid ${border}`, padding: '8px 24px', fontSize: '13px', fontWeight: 900, textAlign: 'center', color: '#F43F5E' }}>{totalDismantle}</td>
+                  </div>
 
-</tr>
-                    <tr style={{ backgroundColor: isLight ? '#ccfbf1' : 'rgba(13,148,136,0.1)' }}>
-                      <td style={{ border: `1px solid ${border}`, padding: '8px 16px', fontSize: '11px', fontWeight: 800, color: '#0D9488' }}>TOTAL CLEANING</td>
-                      <td style={{ border: `1px solid ${border}`, padding: '8px 24px', fontSize: '13px', fontWeight: 900, textAlign: 'center', color: '#0D9488' }}>{totalCleaning}</td>
-                    </tr>
-
-                  </tbody>
-
-                </table>
+                ))}
 
               </div>
 

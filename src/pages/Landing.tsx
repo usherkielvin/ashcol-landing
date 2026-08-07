@@ -717,9 +717,10 @@ export default function Landing() {
       {/* ── The AC Navbar — the split-type unit doubles as the header background ── */}
       {/* Scroll-crop: shrinks to just the top half (nav links) once scrolled, hiding the louver */}
       <header
-        className={`fixed top-0 left-0 z-50 w-full overflow-hidden rounded-b-[2rem] bg-white dark:bg-[#0A1120] transition-all duration-500 ease-in-out shadow-2xl dark:shadow-black/50 ${
-          isScrolled ? 'h-[80px]' : 'h-[160px]'
+        className={`fixed top-0 left-0 z-50 w-full overflow-hidden rounded-b-[2rem] transition-all duration-500 ease-in-out shadow-2xl ${
+          isScrolled ? 'h-[70px] md:h-[80px]' : 'h-[120px] md:h-[160px]'
         }`}
+        style={{ backgroundColor: t.bgCard }}
       >
 
         {/* AC details — vents, louver, LED. The chassis shape itself is the header's
@@ -728,25 +729,25 @@ export default function Landing() {
         <div className="absolute top-0 left-0 w-full h-[160px] pointer-events-none">
           <svg preserveAspectRatio="none" viewBox="0 0 1440 160" className="w-full h-full">
             {/* Subtle vent lines — pushed down so they're hidden once cropped */}
-            <line x1="40" y1="95" x2="1400" y2="95" className="stroke-slate-100 dark:stroke-slate-800/60" strokeWidth="2" strokeLinecap="round" />
-            <line x1="40" y1="105" x2="1400" y2="105" className="stroke-slate-100 dark:stroke-slate-800/60" strokeWidth="2" strokeLinecap="round" />
+            <line x1="40" y1="95" x2="1400" y2="95" stroke={t.border} strokeWidth="2" strokeLinecap="round" />
+            <line x1="40" y1="105" x2="1400" y2="105" stroke={t.border} strokeWidth="2" strokeLinecap="round" />
             {/* Inner louver housing */}
-            <rect x="30" y="115" width="1380" height="24" rx="4" className="fill-slate-100 dark:fill-slate-900 stroke-slate-300 dark:stroke-slate-700 transition-colors duration-300" strokeWidth="1" />
+            <rect x="30" y="115" width="1380" height="24" rx="4" fill={t.bgCardAlt} stroke={t.border} className="transition-colors duration-300" strokeWidth="1" />
             {/* Animated louver flap */}
-            <rect className="ac-flap fill-white dark:fill-[#121E33] stroke-slate-300 dark:stroke-slate-600 transition-colors duration-300" x="35" y="117" width="1370" height="20" rx="3" strokeWidth="1" />
+            <rect className="ac-flap transition-colors duration-300" x="35" y="117" width="1370" height="20" rx="3" fill={t.bg} stroke={t.border} strokeWidth="1" />
             {/* Power LED */}
             <circle cx="1400" cy="75" r="4" fill="#10B981" />
           </svg>
         </div>
 
         {/* Nav content, layered on top of the AC background — fixed h-[80px] for flawless vertical centering */}
-        <nav className="relative z-10 w-full h-[80px] py-0 grid grid-cols-[auto_1fr_auto] items-center gap-4 px-4 md:px-11 lg:px-20">
+        <nav className="relative z-10 w-full h-[70px] md:h-[80px] py-0 grid grid-cols-[auto_1fr_auto] items-center gap-4 px-4 md:px-11 lg:px-20">
 
           <button onClick={() => scrollTo('hero')} className="nav-element justify-self-start flex items-center gap-2.5 hover:opacity-90 transition-opacity">
             <img src={logoImg} alt="ASHCOL Logo" className="w-9 h-9 object-contain rounded-lg" />
             <div className="text-left">
-              <div className="text-[16px] font-black tracking-wide leading-none font-['Big_Shoulders_Display',sans-serif] text-slate-800 dark:text-slate-100">ASHCOL</div>
-              <div className="text-[9px] font-semibold leading-none mt-0.5 hidden sm:block font-['IBM_Plex_Mono',monospace] text-slate-500 dark:text-slate-400">Airconditioning Corp.</div>
+              <div className="text-[16px] font-black tracking-wide leading-none font-['Big_Shoulders_Display',sans-serif]" style={{ color: t.text }}>ASHCOL</div>
+              <div className="text-[9px] font-semibold leading-none mt-0.5 hidden sm:block font-['IBM_Plex_Mono',monospace]" style={{ color: t.textMuted }}>Airconditioning Corp.</div>
             </div>
           </button>
 
@@ -755,7 +756,8 @@ export default function Landing() {
               <button
                 key={key}
                 onClick={() => scrollTo(key)}
-                className={`relative text-sm font-medium transition-colors py-1 ${activeSection === key ? 'text-[#10B981]' : 'text-slate-600 dark:text-slate-300 hover:text-[#10B981] dark:hover:text-[#10B981]'}`}
+                className="relative text-sm font-medium transition-colors py-1 hover:opacity-80"
+                style={{ color: activeSection === key ? '#10B981' : t.textMuted }}
               >
                 {label}
                 {activeSection === key && (
@@ -772,7 +774,8 @@ export default function Landing() {
           <div className="nav-element justify-self-end flex items-center gap-3 sm:gap-4">
             <button
               onClick={() => setIsDark(!isDark)}
-              className="w-9 h-9 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#0f172a] flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-[#10B981] hover:border-[#10B981] transition-all"
+              className="w-9 h-9 rounded-full border flex items-center justify-center hover:text-[#10B981] hover:border-[#10B981] transition-all"
+              style={{ backgroundColor: t.bg, borderColor: t.border, color: t.textMuted }}
               aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
             >
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
@@ -786,7 +789,8 @@ export default function Landing() {
             </a>
 
             <button
-              className="md:hidden p-2 rounded-lg text-slate-500 dark:text-slate-300 hover:text-[#10B981] transition-colors"
+              className="md:hidden p-2 rounded-lg transition-colors hover:text-[#10B981]"
+              style={{ color: t.textMuted }}
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
               aria-expanded={mobileMenuOpen}
@@ -806,8 +810,12 @@ export default function Landing() {
         {mobileMenuOpen && (
           <motion.div
             id="mobile-nav-menu"
-            className="fixed left-0 right-0 z-40 md:hidden px-4 py-4 flex flex-col gap-3 overflow-hidden bg-white dark:bg-[#0A1120] border-b border-slate-200 dark:border-slate-800 shadow-md"
-            style={{ top: isScrolled ? 80 : 160 }}
+            className="fixed left-0 right-0 z-40 md:hidden px-4 py-4 flex flex-col gap-3 overflow-hidden shadow-md"
+            style={{
+              top: isScrolled ? 70 : 120,
+              backgroundColor: t.bgCard,
+              borderBottom: `1px solid ${t.border}`,
+            }}
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
@@ -817,7 +825,8 @@ export default function Landing() {
               <button
                 key={key}
                 onClick={() => scrollTo(key)}
-                className={`text-left text-sm font-semibold transition-colors py-2 min-h-[44px] ${activeSection === key ? 'text-[#10B981]' : 'text-slate-600 dark:text-slate-300'}`}
+                className="text-left text-sm font-semibold transition-colors py-2 min-h-[44px]"
+                style={{ color: activeSection === key ? t.accent : t.text }}
               >
                 {label}
               </button>
@@ -838,12 +847,21 @@ export default function Landing() {
       <section
         id="hero"
         ref={heroRef}
-        className="relative overflow-hidden bg-white dark:bg-[#060B18] flex flex-col items-center pt-[200px] transition-colors duration-300"
+        className="relative overflow-hidden flex flex-col items-center pt-[140px] md:pt-[200px] transition-colors duration-300"
+        style={{ backgroundColor: t.bg }}
       >
         {/* Dashed wind background — starts just below the AC louver (top-[100px]) so it
             reads as blowing directly out of the navbar's fixed header, which now sits
-            outside document flow */}
-        <div className="absolute top-[100px] left-0 right-0 bottom-0 z-0 pointer-events-none opacity-60 dark:opacity-30">
+            outside document flow. Fades out via a CSS mask instead of a hardcoded
+            gradient overlay div, which rendered dark-on-light since it didn't track
+            the theme token background. */}
+        <div
+          className="absolute top-[100px] left-0 right-0 bottom-0 z-0 pointer-events-none opacity-60 dark:opacity-30"
+          style={{
+            maskImage: 'linear-gradient(to bottom, black 70%, transparent 100%)',
+            WebkitMaskImage: 'linear-gradient(to bottom, black 70%, transparent 100%)',
+          }}
+        >
           <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 1400 800" fill="none">
             <path className="wind-dash" d="M 200 -100 Q 150 200 250 400 T 200 900" stroke="#bbf7d0" strokeWidth="6" strokeLinecap="round" strokeDasharray="15, 25" />
             <path className="wind-dash" d="M 400 -100 Q 450 250 380 450 T 420 900" stroke="#bbf7d0" strokeWidth="6" strokeLinecap="round" strokeDasharray="15, 25" />
@@ -854,11 +872,8 @@ export default function Landing() {
           </svg>
         </div>
 
-        {/* Fade-out gradient — blends the wind lines flawlessly into whatever section comes next */}
-        <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-b from-transparent to-white dark:to-[#060B18] z-10 pointer-events-none" />
-
-        {/* Typography & Info Cards */}
-        <div className="relative z-20 max-w-[900px] mx-auto text-center px-6 pb-24">
+        {/* Typography & CTA */}
+        <div className="relative z-20 max-w-[900px] mx-auto text-center px-6">
           <div className="hero-reveal inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#10B981]/30 bg-[#10B981]/10 mb-8 backdrop-blur-sm">
             <span className="w-1.5 h-1.5 rounded-full bg-[#10B981]" />
             <span className="text-[10px] font-bold text-[#10B981] tracking-[0.2em] uppercase">
@@ -866,39 +881,18 @@ export default function Landing() {
             </span>
           </div>
 
-          <h1 className="hero-reveal text-5xl md:text-7xl font-black tracking-tight leading-[1.05] mb-6 text-slate-900 dark:text-white font-['Big_Shoulders_Display',sans-serif]">
+          <h1 className="hero-reveal text-5xl md:text-7xl font-black tracking-tight leading-[1.05] mb-6 font-['Big_Shoulders_Display',sans-serif]" style={{ color: t.text }}>
             12+ Years of Expert <br className="hidden md:block" />
             <span className="text-[#10B981]">Air Conditioning Services.</span>
           </h1>
 
-          <p className="hero-reveal text-lg md:text-xl font-bold italic text-slate-500 dark:text-slate-400 mb-6">
+          <p className="hero-reveal text-lg md:text-xl font-bold italic mb-6" style={{ color: t.textFaint }}>
             "Keeping YOU Cool"
           </p>
 
-          <p className="hero-reveal text-sm md:text-base text-slate-600 dark:text-slate-300 max-w-2xl mx-auto mb-16 leading-relaxed font-medium">
+          <p className="hero-reveal text-sm md:text-base max-w-2xl mx-auto mb-12 leading-relaxed font-medium" style={{ color: t.textMuted }}>
             Your trusted partner for installation, repair, and maintenance of air conditioning systems — residential and commercial, throughout Metro Manila.
           </p>
-
-          <p className="hero-reveal text-[10px] font-black uppercase tracking-[0.25em] text-slate-400 dark:text-slate-500 mb-6">
-            How It Works
-          </p>
-
-          <div className="hero-reveal grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
-            {[
-              { num: '01', label: 'Call or Message', sub: 'Use the contacts below' },
-              { num: '02', label: 'Book a Service',  sub: 'Tell us your AC concern' },
-              { num: '03', label: 'We Come to You',  sub: 'Our team handles the rest' },
-            ].map((step) => (
-              <div
-                key={step.num}
-                className="bg-white/80 dark:bg-[#0A1120]/80 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow"
-              >
-                <p className="text-[#10B981] font-black text-xs mb-2">{step.num}</p>
-                <h3 className="font-bold text-slate-900 dark:text-slate-100 mb-1">{step.label}</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">{step.sub}</p>
-              </div>
-            ))}
-          </div>
 
           {/* CTA — magnetic on cursor to draw the eye */}
           <div className="hero-reveal max-w-lg mx-auto">
@@ -909,6 +903,36 @@ export default function Landing() {
             >
               Book a Service
             </Magnetic>
+          </div>
+        </div>
+
+        {/* ── "How It Works" — back inside the hero, standard top margin instead of a negative-margin overlap ── */}
+        <div className="relative z-30 w-full max-w-6xl mx-auto px-6 mt-20 mb-20 md:mt-28 md:mb-32">
+          <p className="hero-reveal text-[11px] text-center font-black uppercase tracking-[0.3em] mb-8" style={{ color: t.textFaint }}>
+            How It Works
+          </p>
+
+          <div className="hero-reveal grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
+            {[
+              { num: '01', label: 'Call or Message', sub: 'Use the contacts below to reach out.' },
+              { num: '02', label: 'Book a Service',  sub: 'Tell us your specific AC concern.' },
+              { num: '03', label: 'We Come to You',  sub: 'Our expert team handles the rest.' },
+            ].map((step) => (
+              <div
+                key={step.num}
+                className="relative overflow-hidden backdrop-blur-xl rounded-3xl p-8 shadow-sm hover:-translate-y-2 hover:shadow-xl transition-all duration-400 group"
+                style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-[#10B981] font-black text-2xl drop-shadow-md">{step.num}</p>
+                  <div className="w-8 h-8 rounded-full bg-[#10B981]/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <ArrowUpRight className="w-4 h-4 text-[#10B981]" />
+                  </div>
+                </div>
+                <h3 className="font-black text-xl mb-2" style={{ color: t.text }}>{step.label}</h3>
+                <p className="text-sm font-medium" style={{ color: t.textMuted }}>{step.sub}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -932,7 +956,7 @@ export default function Landing() {
               <span className="text-[10px] font-black uppercase tracking-widest px-3 font-['IBM_Plex_Mono',monospace]" style={{ color: t.textFaint }}>Company Branches</span>
               <div className="h-px flex-1" style={{ backgroundColor: t.border }} />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
               {BRANCHES.filter(b => !b.isFranchise).map((branch, i) => {
                 const mapUrl = branch.mapUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('ASHCOL Airconditioning ' + branch.name + ' ' + branch.address)}`
                 return (
@@ -1107,19 +1131,24 @@ export default function Landing() {
             Our <span className="font-semibold" style={{ color: t.text }}>mission</span> is to deliver high-quality, cost-effective AC solutions while maintaining a safe and healthy environment. Our <span className="font-semibold" style={{ color: t.text }}>vision</span> is to be the leading AC services provider in the Philippines.
           </p>
         </Reveal>
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 max-w-6xl mx-auto">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6 max-w-6xl mx-auto">
           {VALUES.map((v, i) => (
             <Reveal key={i} delay={i * 0.08} y={18}>
-              <div className="rounded-2xl p-3 sm:p-5 flex flex-col gap-2 sm:gap-3 transition-all hover:shadow-lg group relative overflow-hidden h-full"
+              <div className="rounded-2xl p-3 sm:p-5 flex flex-col gap-2 sm:gap-3 transition-all hover:shadow-lg hover:-translate-y-1 group relative overflow-hidden h-full"
                 style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = v.color + '60'}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = t.border}
               >
+                {/* Subtle gradient wash — gives the card a polished, buttonlike feel */}
+                <div
+                  className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+                  style={{ background: `linear-gradient(135deg, ${v.colorBg} 0%, transparent 60%)` }}
+                />
                 <div className="absolute top-0 left-0 right-0 h-[2px] opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: v.color }} />
-                <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ backgroundColor: v.colorBg, color: v.color }}>
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center relative z-10" style={{ backgroundColor: v.colorBg, color: v.color }}>
                   {v.icon}
                 </div>
-                <div>
+                <div className="relative z-10">
                   <div className="text-[14px] font-bold mb-1.5" style={{ color: t.text }}>{v.title}</div>
                   <div className="text-[11px] sm:text-[12px] leading-relaxed" style={{ color: t.textMuted }}>{v.desc}</div>
                 </div>
@@ -1145,37 +1174,51 @@ export default function Landing() {
         </Reveal>
 
         {/* Nameplate treatment — the signature card style, used here and on branch cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 max-w-6xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8 max-w-6xl mx-auto">
           {SERVICES.map((svc, i) => (
             <Reveal key={i} delay={(i % 3) * 0.1} y={22}>
               <GlowCard
                 onMouseEnter={() => setHoveredService(i)}
                 onMouseLeave={() => setHoveredService(null)}
-                className="nameplate nameplate-glow relative p-4 sm:p-6 pt-7 border overflow-hidden transition-all duration-300 cursor-default h-full"
+                className="nameplate nameplate-glow relative p-6 sm:p-8 pt-10 border overflow-hidden transition-all duration-300 cursor-default h-full min-h-[320px] rounded-3xl flex flex-col"
                 style={{
                   borderColor: hoveredService === i ? svc.colorBorder : t.border,
-                  boxShadow: hoveredService === i ? `0 16px 48px rgba(0,0,0,0.2)` : 'none',
+                  boxShadow: hoveredService === i ? `0 20px 50px rgba(0,0,0,0.15)` : 'none',
                   backgroundColor: hoveredService === i ? (isDark ? '#111E33' : '#F0FAF0') : t.bgCard,
                   color: svc.color,
-                  transform: hoveredService === i ? 'translateY(-3px)' : 'translateY(0)',
+                  transform: hoveredService === i ? 'translateY(-4px)' : 'translateY(0)',
                 }}
               >
-                <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: svc.color }} />
+                {/* Top border color bar */}
+                <div className="absolute top-0 left-0 right-0 h-[4px]" style={{ background: svc.color }} />
 
+                {/* Oversized watermark icon — premium, semi-transparent, bottom-right */}
                 <div
-                  className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl mb-4 transition-transform duration-300"
-                  style={{ background: svc.colorBg, color: svc.color, transform: hoveredService === i ? 'scale(1.08) rotate(-4deg)' : 'scale(1) rotate(0deg)' }}
+                  className="absolute -bottom-4 -right-4 w-32 h-32 opacity-10 transition-transform duration-500 pointer-events-none"
+                  style={{
+                    color: svc.color,
+                    transform: hoveredService === i ? 'scale(1.15) rotate(-8deg)' : 'scale(1) rotate(0deg)',
+                  }}
+                >
+                  {React.cloneElement(svc.icon as React.ReactElement<{ className?: string }>, { className: 'w-full h-full' })}
+                </div>
+
+                {/* Standard icon */}
+                <div
+                  className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl mb-6 transition-transform duration-300 relative z-10 shadow-sm"
+                  style={{ background: svc.colorBg, color: svc.color, transform: hoveredService === i ? 'scale(1.1)' : 'scale(1)' }}
                 >
                   {svc.icon}
                 </div>
 
-                <h3 className="text-[17px] font-bold mb-2" style={{ color: t.text }}>{svc.title}</h3>
-                <p className="text-[13px] leading-relaxed mb-4" style={{ color: t.textMuted }}>{svc.desc}</p>
-                <div className="pt-4 flex flex-col gap-2" style={{ borderTop: `1px solid ${t.border}` }}>
+                <h3 className="text-xl font-black mb-3 relative z-10" style={{ color: t.text }}>{svc.title}</h3>
+                <p className="text-[14px] leading-relaxed mb-6 flex-grow relative z-10 font-medium" style={{ color: t.textMuted }}>{svc.desc}</p>
+
+                <div className="pt-5 flex flex-col gap-2.5 relative z-10" style={{ borderTop: `1px solid ${t.border}` }}>
                   {svc.items.map((item, j) => (
-                    <div key={j} className="flex items-center gap-2">
-                      <Check className="w-3.5 h-3.5" style={{ color: svc.color }} />
-                      <span className="text-[13px]" style={{ color: t.textMuted }}>{item}</span>
+                    <div key={j} className="flex items-center gap-3">
+                      <Check className="w-4 h-4 flex-shrink-0" style={{ color: svc.color }} />
+                      <span className="text-[13px] font-semibold" style={{ color: t.textMuted }}>{item}</span>
                     </div>
                   ))}
                 </div>

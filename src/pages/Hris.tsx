@@ -65,6 +65,27 @@ interface CashAdvance {
   createdAt: string;
 }
 
+// Compact, theme-aware KPI tile — deliberately small since these are
+// secondary at-a-glance numbers, not the focus of the page.
+function KpiCard({ label, value, accent, valueColor, isLight }: { label: string; value: string | number; accent: string; valueColor?: string; isLight: boolean }) {
+  return (
+    <div
+      className={`rounded-lg px-3 py-2.5 border border-l-4 relative overflow-hidden ${
+        isLight ? 'bg-white shadow-sm' : 'bg-[#0F1A2E] shadow-[0_4px_16px_rgba(0,0,0,0.4)]'
+      }`}
+      style={{ borderColor: isLight ? '#e2e8f0' : '#334155', borderLeftColor: accent }}
+    >
+      <p className={`text-[9px] uppercase font-bold tracking-wider mb-0.5 ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>{label}</p>
+      <p
+        className={`text-base font-black ${valueColor ? '' : isLight ? 'text-slate-900' : 'text-white'}`}
+        style={valueColor ? { color: valueColor } : undefined}
+      >
+        {value}
+      </p>
+    </div>
+  )
+}
+
 export default function Hris() {
   const { theme } = useTheme()
   const { user } = useAuth()
@@ -516,8 +537,13 @@ export default function Hris() {
     filteredAdvances.forEach(a => {
       originalSum += a.amount
     })
+    const pending = filteredAdvances.filter(a => a.status === 'PENDING').length
+    const disbursed = filteredAdvances.filter(a => a.status === 'DISBURSED').length
     return {
-      originalSum
+      originalSum,
+      total: filteredAdvances.length,
+      pending,
+      disbursed,
     }
   }, [filteredAdvances])
 
@@ -532,9 +558,6 @@ export default function Hris() {
       .excel-table th { font-weight: 700; text-align: left; padding: 8px 12px; border: 1px solid var(--excel-border); background: var(--excel-header-bg); color: var(--excel-header-text); }
       .excel-table td { padding: 6px 12px; border: 1px solid var(--excel-border); color: var(--excel-cell-text); }
       .excel-total-row td { font-weight: 800; background: var(--excel-total-bg); border-top: 2px solid var(--excel-border); border-bottom: 2px double var(--excel-border); }
-      .excel-tab-bar { display: flex; border-bottom: 1px solid var(--excel-border); background: var(--excel-tab-bar-bg); }
-      .excel-tab { padding: 8px 24px; font-weight: 700; border-right: 1px solid var(--excel-border); cursor: pointer; transition: all 0.15s; font-size: 13px; position: relative; }
-      .excel-tab-active { background: var(--excel-tab-active-bg); color: #10B981; border-top: 3px solid #10B981; font-weight: 800; }
     `
     document.head.appendChild(style)
   }, [])
@@ -572,10 +595,12 @@ export default function Hris() {
       accessorKey: 'status',
       isMobileVisible: true,
       cellRenderer: (req) => (
-        <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase"
+        <span
+          className="px-3 py-1 rounded-full text-[11px] font-bold tracking-wide border"
           style={{
-            backgroundColor: req.status === 'PENDING' ? 'rgba(245,158,11,0.1)' : req.status === 'APPROVED' ? 'rgba(59,130,246,0.1)' : 'rgba(239,68,68,0.1)',
-            color: req.status === 'PENDING' ? '#F59E0B' : req.status === 'APPROVED' ? '#3B82F6' : '#EF4444'
+            backgroundColor: req.status === 'PENDING' ? '#78350F' : req.status === 'APPROVED' ? '#064E3B' : '#7F1D1D',
+            borderColor: req.status === 'PENDING' ? '#B45309' : req.status === 'APPROVED' ? '#047857' : '#B91C1C',
+            color: req.status === 'PENDING' ? '#FBBF24' : req.status === 'APPROVED' ? '#34D399' : '#F87171',
           }}
         >
           {req.status}
@@ -640,8 +665,6 @@ export default function Hris() {
         ['--excel-header-text' as any]: textPrimary,
         ['--excel-cell-text' as any]: textPrimary,
         ['--excel-total-bg' as any]: isLight ? '#f8fafc' : '#0B132B',
-        ['--excel-tab-bar-bg' as any]: isLight ? '#e2e8f0' : '#070C19',
-        ['--excel-tab-active-bg' as any]: cardBg,
       }}
     >
       {/* ── Title Header ────────────────────────────────────────── */}
@@ -672,32 +695,62 @@ export default function Hris() {
         </div>
       )}
 
+      {/* ── Tactile KPI Summary Cards (compact — secondary info) ─── */}
+      {activeTab === 'leaves' && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <KpiCard isLight={isLight} label="Total Requests" value={leavesSummary.total} accent="#64748b" />
+          <KpiCard isLight={isLight} label="Approved" value={leavesSummary.approved} accent="#34D399" valueColor="#34D399" />
+          <KpiCard isLight={isLight} label="Pending" value={leavesSummary.pending} accent="#FBBF24" valueColor="#FBBF24" />
+          <KpiCard isLight={isLight} label="Employees Tracked" value={balances.length} accent="#64748b" />
+        </div>
+      )}
+      {activeTab === 'advances' && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <KpiCard isLight={isLight} label="Total Requests" value={advancesSummary.total} accent="#64748b" />
+          <KpiCard isLight={isLight} label="Disbursed" value={advancesSummary.disbursed} accent="#34D399" valueColor="#34D399" />
+          <KpiCard isLight={isLight} label="Pending" value={advancesSummary.pending} accent="#FBBF24" valueColor="#FBBF24" />
+          <KpiCard isLight={isLight} label="Total Amount" value={`₱${advancesSummary.originalSum.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} accent="#64748b" />
+        </div>
+      )}
+
       {/* ── Excel style sheet tabs ───────────────────────────────── */}
       <div className="rounded-2xl overflow-hidden shadow-xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-        <div className="excel-tab-bar">
-          {[
-            { id: 'leaves', label: 'Leaves Sheet', icon: Calendar },
-            { id: 'advances', label: 'Cash Advances Sheet', icon: CreditCard },
-            { id: 'drivers', label: 'Drivers Route Sheets', icon: FileSpreadsheet },
-          ].map(tab => {
-            const TabIcon = tab.icon
-            const active = activeTab === tab.id
-            return (
-              <div
-                key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id as any)
-                  setStatusFilter('ALL')
-                  setSearchQuery('')
-                }}
-                className={`excel-tab flex items-center gap-2 ${active ? 'excel-tab-active' : ''}`}
-                style={{ borderRightColor: border }}
-              >
-                <TabIcon className="w-4 h-4" style={{ color: active ? excelGreen : textMuted }} />
-                {tab.label}
-              </div>
-            )
-          })}
+        <div className="p-3" style={{ borderBottom: `1px solid ${border}` }}>
+          <div
+            className="inline-flex p-1.5 rounded-xl shadow-inner max-w-full overflow-x-auto no-scrollbar gap-1"
+            style={{ backgroundColor: isLight ? '#f1f5f9' : '#030712', border: `1px solid ${isLight ? '#e2e8f0' : '#1e293b'}` }}
+          >
+            {[
+              { id: 'leaves', label: 'Leaves Sheet', icon: Calendar },
+              { id: 'advances', label: 'Cash Advances Sheet', icon: CreditCard },
+              { id: 'drivers', label: 'Drivers Route Sheets', icon: FileSpreadsheet },
+            ].map(tab => {
+              const TabIcon = tab.icon
+              const active = activeTab === tab.id
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id as any)
+                    setStatusFilter('ALL')
+                    setSearchQuery('')
+                  }}
+                  className={`flex-shrink-0 flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm transition-colors whitespace-nowrap border outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]/50 ${
+                    active
+                      ? isLight
+                        ? 'bg-white shadow-[0_2px_8px_rgba(0,0,0,0.08)] border-slate-200 text-slate-900 font-bold'
+                        : 'bg-gradient-to-b from-slate-700 to-slate-800 shadow-[0_2px_8px_rgba(0,0,0,0.4)] border-slate-600 text-white font-bold'
+                      : isLight
+                        ? 'text-slate-500 hover:text-slate-900 font-medium border-transparent'
+                        : 'text-slate-400 hover:text-white font-medium border-transparent'
+                  }`}
+                >
+                  <TabIcon className="w-4 h-4" style={{ color: active ? excelGreen : undefined }} />
+                  {tab.label}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         {/* Filter & Toolbar Area */}
@@ -799,6 +852,7 @@ export default function Hris() {
             handleLeaveApproval={handleLeaveApproval}
             leavesSummary={leavesSummary}
             border={border}
+            isLight={isLight}
           />
         )}
 
@@ -814,6 +868,7 @@ export default function Hris() {
             setSelectedAdvance={setSelectedAdvance}
             setShowDetailsModal={setShowDetailsModal}
             advancesSummary={advancesSummary}
+            isLight={isLight}
           />
         )}
 
@@ -923,19 +978,19 @@ export default function Hris() {
             >
               <Plus className="w-4 h-4" /> Apply Leave
             </button>
-            {/* Summary Grid */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
-                <p className="text-[10px] uppercase font-bold text-gray-500 mb-1">Total</p>
-                <p className="text-lg font-black text-gray-900 dark:text-white">{leavesSummary.total}</p>
+            {/* Summary Grid (compact — secondary info) */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-white dark:bg-[#0F1A2E] border border-gray-200 dark:border-slate-700 border-l-4 border-l-slate-400 dark:border-l-slate-500 rounded-lg px-2.5 py-2 shadow-sm dark:shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
+                <p className="text-[9px] uppercase font-bold tracking-wider text-gray-500 dark:text-slate-400 mb-0.5">Total</p>
+                <p className="text-base font-black text-gray-900 dark:text-white">{leavesSummary.total}</p>
               </div>
-              <div className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
-                <p className="text-[10px] uppercase font-bold text-emerald-500 mb-1">Approved</p>
-                <p className="text-lg font-black text-emerald-600 dark:text-emerald-400">{leavesSummary.approved}</p>
+              <div className="bg-white dark:bg-[#0F1A2E] border border-gray-200 dark:border-slate-700 border-l-4 border-l-[#34D399] rounded-lg px-2.5 py-2 shadow-sm dark:shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
+                <p className="text-[9px] uppercase font-bold tracking-wider text-gray-500 dark:text-slate-400 mb-0.5">Approved</p>
+                <p className="text-base font-black text-[#059669] dark:text-[#34D399]">{leavesSummary.approved}</p>
               </div>
-              <div className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
-                <p className="text-[10px] uppercase font-bold text-amber-500 mb-1">Pending</p>
-                <p className="text-lg font-black text-amber-600 dark:text-amber-400">{leavesSummary.pending}</p>
+              <div className="bg-white dark:bg-[#0F1A2E] border border-gray-200 dark:border-slate-700 border-l-4 border-l-[#FBBF24] rounded-lg px-2.5 py-2 shadow-sm dark:shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
+                <p className="text-[9px] uppercase font-bold tracking-wider text-gray-500 dark:text-slate-400 mb-0.5">Pending</p>
+                <p className="text-base font-black text-[#B45309] dark:text-[#FBBF24]">{leavesSummary.pending}</p>
               </div>
             </div>
 
@@ -990,10 +1045,12 @@ export default function Hris() {
                     })}
                   </span>
                   <div className="flex items-center">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase"
+                    <span
+                      className="px-3 py-1 rounded-full text-[11px] font-bold tracking-wide border"
                       style={{
-                        backgroundColor: a.status === 'PENDING' ? 'rgba(245,158,11,0.1)' : a.status === 'APPROVED' ? 'rgba(59,130,246,0.1)' : a.status === 'DISBURSED' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-                        color: a.status === 'PENDING' ? '#F59E0B' : a.status === 'APPROVED' ? '#3B82F6' : a.status === 'DISBURSED' ? '#10B981' : '#EF4444'
+                        backgroundColor: a.status === 'PENDING' ? '#78350F' : a.status === 'APPROVED' ? '#1E3A8A' : a.status === 'DISBURSED' ? '#064E3B' : '#7F1D1D',
+                        borderColor: a.status === 'PENDING' ? '#B45309' : a.status === 'APPROVED' ? '#1D4ED8' : a.status === 'DISBURSED' ? '#047857' : '#B91C1C',
+                        color: a.status === 'PENDING' ? '#FBBF24' : a.status === 'APPROVED' ? '#60A5FA' : a.status === 'DISBURSED' ? '#34D399' : '#F87171',
                       }}
                     >
                       {a.status}

@@ -419,27 +419,34 @@ export default function OperationsForms() {
 
       {/* Tab bar */}
       <div className="rounded-2xl overflow-hidden shadow-xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-        <div className="flex overflow-x-auto" style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#e2e8f0' : '#070C19' }}>
-          {TABS.map(tab => {
-            const Icon = tab.icon
-            const active = activeTab === tab.id
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className="flex items-center gap-2 px-6 py-3 text-xs font-bold whitespace-nowrap transition-all"
-                style={{
-                  borderRight: `1px solid ${border}`,
-                  borderTop: active ? `3px solid ${accent}` : '3px solid transparent',
-                  backgroundColor: active ? cardBg : 'transparent',
-                  color: active ? accent : textMuted,
-                }}
-              >
-                <Icon className="w-4 h-4" />
-                {tab.label}
-              </button>
-            )
-          })}
+        <div className="p-3" style={{ borderBottom: `1px solid ${border}` }}>
+          <div
+            className="inline-flex p-1.5 rounded-xl shadow-inner max-w-full overflow-x-auto no-scrollbar gap-1"
+            style={{ backgroundColor: isLight ? '#f1f5f9' : '#030712', border: `1px solid ${isLight ? '#e2e8f0' : '#1e293b'}` }}
+          >
+            {TABS.map(tab => {
+              const Icon = tab.icon
+              const active = activeTab === tab.id
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex-shrink-0 flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm transition-colors whitespace-nowrap border outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]/50 ${
+                    active
+                      ? isLight
+                        ? 'bg-white shadow-[0_2px_8px_rgba(0,0,0,0.08)] border-slate-200 text-slate-900 font-bold'
+                        : 'bg-gradient-to-b from-slate-700 to-slate-800 shadow-[0_2px_8px_rgba(0,0,0,0.4)] border-slate-600 text-white font-bold'
+                      : isLight
+                        ? 'text-slate-500 hover:text-slate-900 font-medium border-transparent'
+                        : 'text-slate-400 hover:text-white font-medium border-transparent'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" style={{ color: active ? accent : undefined }} />
+                  {tab.label}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         {/* List view toolbar */}
