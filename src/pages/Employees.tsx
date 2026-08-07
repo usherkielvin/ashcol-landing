@@ -1110,14 +1110,14 @@ export default function Employees() {
             </div>
           </div>
 
-          {/* Add Employee Button */}
+          {/* Add Member Button */}
           {(isAdmin || isManager) && (
             <button
               onClick={openCreateFlow}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-sm"
               style={{ backgroundColor: '#10B981' }}
             >
-              <Plus className="w-4 h-4" /> ADD EMPLOYEE
+              <Plus className="w-4 h-4" /> ADD MEMBER
             </button>
           )}
         </div>
@@ -1127,7 +1127,7 @@ export default function Employees() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#080f1c', borderBottom: `1px solid ${border}` }}>
-                {['Employee', 'Role', 'Branch', 'Contact', 'Status'].map((h, idx, arr) => (
+                {['Member', 'Role', 'Branch', 'Contact', 'Status'].map((h, idx, arr) => (
                   <th
                     key={h}
                     className={`px-6 py-3.5 text-xs font-semibold uppercase tracking-wider whitespace-nowrap border-r ${idx === 0 ? 'text-left' : 'text-center'}`}
@@ -1165,7 +1165,7 @@ export default function Employees() {
               ) : filtered.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-6 py-16 text-center">
-                    <p className="text-sm font-medium" style={{ color: textMuted }}>No accounts found</p>
+                    <p className="text-sm font-medium" style={{ color: textMuted }}>No members found</p>
                     <p className="text-xs mt-1" style={{ color: textMuted }}>Try a different search or filter.</p>
                   </td>
                 </tr>
