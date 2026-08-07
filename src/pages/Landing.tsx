@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { motion, useSpring, useTransform, AnimatePresence } from 'framer-motion'
+import gsap from 'gsap'
 import { 
   Wrench, Settings as ConfigIcon, TrendingUp, PhoneCall, Smartphone, Headset, 
   Mail, Calendar, Clock, Star, MapPin, Check, MessageSquare,
@@ -519,7 +520,8 @@ export default function Landing() {
   const [activeSection, setActiveSection] = useState('hero')
   const [hoveredService, setHoveredService] = useState<number | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [isDark, setIsDark] = useState(true)
+  const [isDark, setIsDark] = useState(false)
+  const [isScrolled, setIsScrolled] = useState(false)
   const [showComingSoon, setShowComingSoon] = useState(false)
   const [projectSlide, setProjectSlide] = useState(0)
   const [openFaq, setOpenFaq] = useState<number | null>(null)
@@ -618,6 +620,7 @@ export default function Landing() {
     copperBg:   isDark ? 'rgba(16,185,129,0.16)': 'rgba(16,185,129,0.12)',
   }
 
+  const pageRef     = useRef<HTMLDivElement>(null)
   const heroRef     = useRef<HTMLElement>(null)
   const servicesRef  = useRef<HTMLElement>(null)
   const showcaseRef  = useRef<HTMLElement>(null)
@@ -652,6 +655,49 @@ export default function Landing() {
     sectionRefs[key].current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
+  useEffect(() => {
+    const ctx = gsap.context(() => {
+      const tl = gsap.timeline()
+
+      // Nav fades/slides in first.
+      tl.fromTo(
+        '.nav-element',
+        { y: -20, opacity: 0 },
+        { y: 0, opacity: 1, duration: 0.5, stagger: 0.1, ease: 'power2.out' }
+      )
+
+      // Louver flap (built into the navbar's AC background) shrinks open,
+      // revealing the vent opening beneath it.
+      tl.to('.ac-flap', { scaleY: 0.2, transformOrigin: 'top', duration: 0.6, ease: 'power2.out' }, '-=0.1')
+
+      // Typography and info cards stagger up as the wind washes over them.
+      tl.fromTo(
+        '.hero-reveal',
+        { y: 20, opacity: 0 },
+        { y: 0, opacity: 1, duration: 0.8, stagger: 0.15, ease: 'power3.out' },
+        '-=0.4'
+      )
+
+      // Continuous dashed wind flow — animating stroke-dashoffset makes the
+      // dashes travel down each path indefinitely.
+      gsap.to('.wind-dash', {
+        strokeDashoffset: -1000,
+        duration: 20,
+        ease: 'none',
+        repeat: -1,
+      })
+    }, pageRef)
+    return () => ctx.revert()
+  }, [])
+
+  // Crops the AC navbar down to just its top half (nav links) once the page
+  // has scrolled past the hero, hiding the louver.
+  useEffect(() => {
+    const handleScroll = () => setIsScrolled(window.scrollY > 50)
+    window.addEventListener('scroll', handleScroll)
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
+
   const navLinks = [
     { key: 'hero', label: 'Home' },
     { key: 'about', label: 'About Us' },
@@ -661,37 +707,61 @@ export default function Landing() {
   ] as const
 
   return (
-    <div className="min-h-screen overflow-x-hidden pt-16 font-['Inter',sans-serif] transition-colors duration-300" style={{ backgroundColor: t.bg, color: t.text }}>
+    // Local, page-scoped dark mode: this Tailwind `dark:` ancestor class is
+    // independent of the dashboard's global ThemeContext (which targets
+    // <html> for the authenticated portal) — Landing keeps its own `isDark`
+    // state and toggle so the two don't fight over document.documentElement.
+    <div className={isDark ? 'dark' : ''}>
+    <div ref={pageRef} className="min-h-screen overflow-x-hidden font-['Inter',sans-serif] transition-colors duration-300" style={{ backgroundColor: t.bg, color: t.text }}>
 
-      {/* ── Sticky Navbar ─────────────────────────── */}
-      <div
-        className="fixed top-0 left-0 right-0 z-50 transition-colors duration-300"
-        style={{ backgroundColor: t.bgNav, borderBottom: `1px solid ${t.borderNav}`, backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
+      {/* ── The AC Navbar — the split-type unit doubles as the header background ── */}
+      {/* Scroll-crop: shrinks to just the top half (nav links) once scrolled, hiding the louver */}
+      <header
+        className={`fixed top-0 left-0 z-50 w-full overflow-hidden rounded-b-[2rem] bg-white dark:bg-[#0A1120] transition-all duration-500 ease-in-out shadow-2xl dark:shadow-black/50 ${
+          isScrolled ? 'h-[80px]' : 'h-[160px]'
+        }`}
       >
-        <nav className="flex items-center justify-between px-4 md:px-11 lg:px-20 py-3">
 
-          <button onClick={() => scrollTo('hero')} className="flex items-center gap-2.5 hover:opacity-90 transition-opacity">
+        {/* AC details — vents, louver, LED. The chassis shape itself is the header's
+            own CSS background + rounded corners, which avoids the SVG-vs-CSS-radius
+            edge artifacts a drawn chassis path used to leave in the corners. */}
+        <div className="absolute top-0 left-0 w-full h-[160px] pointer-events-none">
+          <svg preserveAspectRatio="none" viewBox="0 0 1440 160" className="w-full h-full">
+            {/* Subtle vent lines — pushed down so they're hidden once cropped */}
+            <line x1="40" y1="95" x2="1400" y2="95" className="stroke-slate-100 dark:stroke-slate-800/60" strokeWidth="2" strokeLinecap="round" />
+            <line x1="40" y1="105" x2="1400" y2="105" className="stroke-slate-100 dark:stroke-slate-800/60" strokeWidth="2" strokeLinecap="round" />
+            {/* Inner louver housing */}
+            <rect x="30" y="115" width="1380" height="24" rx="4" className="fill-slate-100 dark:fill-slate-900 stroke-slate-300 dark:stroke-slate-700 transition-colors duration-300" strokeWidth="1" />
+            {/* Animated louver flap */}
+            <rect className="ac-flap fill-white dark:fill-[#121E33] stroke-slate-300 dark:stroke-slate-600 transition-colors duration-300" x="35" y="117" width="1370" height="20" rx="3" strokeWidth="1" />
+            {/* Power LED */}
+            <circle cx="1400" cy="75" r="4" fill="#10B981" />
+          </svg>
+        </div>
+
+        {/* Nav content, layered on top of the AC background — fixed h-[80px] for flawless vertical centering */}
+        <nav className="relative z-10 w-full h-[80px] py-0 grid grid-cols-[auto_1fr_auto] items-center gap-4 px-4 md:px-11 lg:px-20">
+
+          <button onClick={() => scrollTo('hero')} className="nav-element justify-self-start flex items-center gap-2.5 hover:opacity-90 transition-opacity">
             <img src={logoImg} alt="ASHCOL Logo" className="w-9 h-9 object-contain rounded-lg" />
             <div className="text-left">
-              <div className="text-[16px] font-black tracking-wide leading-none font-['Big_Shoulders_Display',sans-serif]" style={{ color: t.text }}>ASHCOL</div>
-              <div className="text-[9px] font-semibold leading-none mt-0.5 hidden sm:block font-['IBM_Plex_Mono',monospace]" style={{ color: t.textFaint }}>Airconditioning Corp.</div>
+              <div className="text-[16px] font-black tracking-wide leading-none font-['Big_Shoulders_Display',sans-serif] text-slate-800 dark:text-slate-100">ASHCOL</div>
+              <div className="text-[9px] font-semibold leading-none mt-0.5 hidden sm:block font-['IBM_Plex_Mono',monospace] text-slate-500 dark:text-slate-400">Airconditioning Corp.</div>
             </div>
           </button>
 
-          <div className="hidden md:flex items-center gap-6">
+          <div className="nav-element hidden md:flex items-center justify-center gap-6 justify-self-center">
             {navLinks.map(({ key, label }) => (
               <button
                 key={key}
                 onClick={() => scrollTo(key)}
-                className="relative text-sm font-medium transition-colors py-1"
-                style={{ color: activeSection === key ? t.accent : t.textMuted }}
+                className={`relative text-sm font-medium transition-colors py-1 ${activeSection === key ? 'text-[#10B981]' : 'text-slate-600 dark:text-slate-300 hover:text-[#10B981] dark:hover:text-[#10B981]'}`}
               >
                 {label}
                 {activeSection === key && (
                   <motion.span
                     layoutId="nav-underline"
-                    className="absolute left-0 right-0 -bottom-0.5 h-[2px] rounded-full"
-                    style={{ backgroundColor: t.accent }}
+                    className="absolute left-0 right-0 -bottom-0.5 h-[2px] rounded-full bg-[#10B981]"
                     transition={{ type: 'spring', stiffness: 260, damping: 32 }}
                   />
                 )}
@@ -699,11 +769,10 @@ export default function Landing() {
             ))}
           </div>
 
-          <div className="flex items-center gap-3 sm:gap-4">
+          <div className="nav-element justify-self-end flex items-center gap-3 sm:gap-4">
             <button
               onClick={() => setIsDark(!isDark)}
-              className="w-9 h-9 rounded-lg flex items-center justify-center transition-all border"
-              style={{ backgroundColor: t.accentBg, color: t.accent, borderColor: isDark ? 'rgba(16,185,129,0.18)' : 'rgba(16,185,129,0.26)' }}
+              className="w-9 h-9 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#0f172a] flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-[#10B981] hover:border-[#10B981] transition-all"
               aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
             >
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
@@ -711,15 +780,13 @@ export default function Landing() {
 
             <a
               href={getPortalUrl('/login')}
-              className="hidden sm:flex items-center justify-center min-w-[118px] px-7 py-2.5 text-sm font-bold text-white rounded-lg transition-all glow-green hover:opacity-95 active:scale-95"
-              style={{ backgroundColor: t.accent }}
+              className="hidden sm:flex items-center justify-center min-w-[118px] px-7 py-2.5 text-sm font-bold text-white rounded-md transition-all bg-[#10B981] hover:bg-[#059669] shadow-md active:scale-95"
             >
               Login
             </a>
 
             <button
-              className="md:hidden p-2 rounded-lg transition-colors"
-              style={{ color: t.textMuted }}
+              className="md:hidden p-2 rounded-lg text-slate-500 dark:text-slate-300 hover:text-[#10B981] transition-colors"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
               aria-expanded={mobileMenuOpen}
@@ -729,136 +796,121 @@ export default function Landing() {
             </button>
           </div>
         </nav>
+      </header>
 
-        <AnimatePresence>
-          {mobileMenuOpen && (
-            <motion.div
-              id="mobile-nav-menu"
-              className="md:hidden px-4 py-4 flex flex-col gap-3 overflow-hidden"
-              style={{ borderTop: `1px solid ${t.borderNav}` }}
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-            >
-              {navLinks.map(({ key, label }) => (
-                <button
-                  key={key}
-                  onClick={() => scrollTo(key)}
-                  className="text-left text-sm font-semibold transition-colors py-2 min-h-[44px]"
-                  style={{ color: activeSection === key ? t.accent : t.textMuted }}
-                >
-                  {label}
-                </button>
-              ))}
-              <div className="flex gap-2 mt-1">
-                <a
-                  href={getPortalUrl('/login')}
-                  className="flex-1 flex items-center justify-center py-3 text-sm font-bold text-white rounded-lg transition-all glow-green"
-                  style={{ backgroundColor: t.accent }}
-                >
-                  Login
-                </a>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+      {/* Mobile menu — rendered outside <header> since the header is `fixed` (out of
+          flow) with overflow-hidden for the scroll-crop effect and would clip this.
+          Pinned to sit directly below the header at its current (scroll-dependent)
+          height, since normal document flow no longer places it there for us. */}
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <motion.div
+            id="mobile-nav-menu"
+            className="fixed left-0 right-0 z-40 md:hidden px-4 py-4 flex flex-col gap-3 overflow-hidden bg-white dark:bg-[#0A1120] border-b border-slate-200 dark:border-slate-800 shadow-md"
+            style={{ top: isScrolled ? 80 : 160 }}
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {navLinks.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => scrollTo(key)}
+                className={`text-left text-sm font-semibold transition-colors py-2 min-h-[44px] ${activeSection === key ? 'text-[#10B981]' : 'text-slate-600 dark:text-slate-300'}`}
+              >
+                {label}
+              </button>
+            ))}
+            <div className="flex gap-2 mt-1">
+              <a
+                href={getPortalUrl('/login')}
+                className="flex-1 flex items-center justify-center py-3 text-sm font-bold text-white rounded-md transition-all bg-[#10B981] hover:bg-[#059669]"
+              >
+                Login
+              </a>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Hero ────────────────────────────────────────────────────────── */}
-      <section id="hero" ref={heroRef} className="relative overflow-hidden flex flex-col items-center text-center px-4 md:px-11 lg:px-20 py-12 md:py-28" style={{ backgroundColor: t.bg }}>
-        {/* Blueprint texture */}
-        <div className="dot-grid absolute inset-0 opacity-[0.05] pointer-events-none" style={{ color: t.textFaint }} />
-        {/* Floating glow orbs — slow ambient drift, brand green + a supporting blue */}
-        <div className="absolute -top-20 -left-32 w-[480px] h-[480px] orb-green orb-float-a pointer-events-none" />
-        <div className="absolute top-10 -right-36 w-[380px] h-[380px] orb-blue orb-float-b pointer-events-none" />
+      <section
+        id="hero"
+        ref={heroRef}
+        className="relative overflow-hidden bg-white dark:bg-[#060B18] flex flex-col items-center pt-[200px] transition-colors duration-300"
+      >
+        {/* Dashed wind background — starts just below the AC louver (top-[100px]) so it
+            reads as blowing directly out of the navbar's fixed header, which now sits
+            outside document flow */}
+        <div className="absolute top-[100px] left-0 right-0 bottom-0 z-0 pointer-events-none opacity-60 dark:opacity-30">
+          <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 1400 800" fill="none">
+            <path className="wind-dash" d="M 200 -100 Q 150 200 250 400 T 200 900" stroke="#bbf7d0" strokeWidth="6" strokeLinecap="round" strokeDasharray="15, 25" />
+            <path className="wind-dash" d="M 400 -100 Q 450 250 380 450 T 420 900" stroke="#bbf7d0" strokeWidth="6" strokeLinecap="round" strokeDasharray="15, 25" />
+            <path className="wind-dash" d="M 1000 -100 Q 950 200 1020 400 T 980 900" stroke="#bbf7d0" strokeWidth="6" strokeLinecap="round" strokeDasharray="15, 25" />
+            <path className="wind-dash" d="M 1200 -100 Q 1250 300 1180 500 T 1220 900" stroke="#bbf7d0" strokeWidth="6" strokeLinecap="round" strokeDasharray="15, 25" />
+            <path className="wind-dash" d="M 1350 -100 Q 1300 200 1350 450 T 1300 900" stroke="#bbf7d0" strokeWidth="6" strokeLinecap="round" strokeDasharray="15, 25" />
+            <path className="wind-dash" d="M 50 -100 Q 100 250 30 450 T 80 900" stroke="#bbf7d0" strokeWidth="6" strokeLinecap="round" strokeDasharray="15, 25" />
+          </svg>
+        </div>
 
-        <motion.div
-          className="relative flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.3)] px-3 py-1.5 rounded-full mb-6"
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-        >
-          <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] glow-green-sm inline-block" />
-          <span className="text-[10px] sm:text-xs font-bold text-[#10B981] tracking-wide font-['IBM_Plex_Mono',monospace]">ASHCOL AIRCONDITIONING · SINCE 2014</span>
-        </motion.div>
+        {/* Fade-out gradient — blends the wind lines flawlessly into whatever section comes next */}
+        <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-b from-transparent to-white dark:to-[#060B18] z-10 pointer-events-none" />
 
-        <motion.h1
-          className="relative max-w-3xl text-[clamp(1.9rem,7.5vw,4.4rem)] font-black leading-[1.05] tracking-tight mb-3 font-['Big_Shoulders_Display',sans-serif]"
-          style={{ color: t.text }}
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.08 }}
-        >
-          12+ Years of Expert{' '}
-          <span style={{ color: t.copper }}>Air Conditioning Services.</span>
-        </motion.h1>
+        {/* Typography & Info Cards */}
+        <div className="relative z-20 max-w-[900px] mx-auto text-center px-6 pb-24">
+          <div className="hero-reveal inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#10B981]/30 bg-[#10B981]/10 mb-8 backdrop-blur-sm">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#10B981]" />
+            <span className="text-[10px] font-bold text-[#10B981] tracking-[0.2em] uppercase">
+              Ashcol Airconditioning &bull; Since 2014
+            </span>
+          </div>
 
-        <motion.p
-          className="relative text-base italic font-medium mb-4"
-          style={{ color: t.textMuted }}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.6, delay: 0.18 }}
-        >
-          "Keeping YOU Cool"
-        </motion.p>
+          <h1 className="hero-reveal text-5xl md:text-7xl font-black tracking-tight leading-[1.05] mb-6 text-slate-900 dark:text-white font-['Big_Shoulders_Display',sans-serif]">
+            12+ Years of Expert <br className="hidden md:block" />
+            <span className="text-[#10B981]">Air Conditioning Services.</span>
+          </h1>
 
-        <motion.p
-          className="relative max-w-xl text-[13px] sm:text-[14px] md:text-[17px] leading-relaxed mb-8"
-          style={{ color: t.textMuted }}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.24 }}
-        >
-          Your trusted partner for installation, repair, and maintenance of air conditioning systems —
-          residential and commercial, throughout Metro Manila.
-        </motion.p>
+          <p className="hero-reveal text-lg md:text-xl font-bold italic text-slate-500 dark:text-slate-400 mb-6">
+            "Keeping YOU Cool"
+          </p>
 
-        {/* How it works — nameplate-styled step tags, ordered so numbering is meaningful */}
-        <div className="relative w-full max-w-lg mb-6">
-          <p className="text-[10px] font-bold uppercase tracking-[2px] mb-3 font-['IBM_Plex_Mono',monospace]" style={{ color: t.textFaint }}>How it works</p>
-          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <p className="hero-reveal text-sm md:text-base text-slate-600 dark:text-slate-300 max-w-2xl mx-auto mb-16 leading-relaxed font-medium">
+            Your trusted partner for installation, repair, and maintenance of air conditioning systems — residential and commercial, throughout Metro Manila.
+          </p>
+
+          <p className="hero-reveal text-[10px] font-black uppercase tracking-[0.25em] text-slate-400 dark:text-slate-500 mb-6">
+            How It Works
+          </p>
+
+          <div className="hero-reveal grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
             {[
               { num: '01', label: 'Call or Message', sub: 'Use the contacts below' },
               { num: '02', label: 'Book a Service',  sub: 'Tell us your AC concern' },
               { num: '03', label: 'We Come to You',  sub: 'Our team handles the rest' },
-            ].map((step, i) => (
-              <motion.div
-                key={i}
-                className="nameplate flex flex-col items-center text-center px-2 py-4 sm:px-4 sm:py-5 gap-2"
-                style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}`, color: t.accent }}
-                initial={{ opacity: 0, y: 14 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.32 + i * 0.08 }}
+            ].map((step) => (
+              <div
+                key={step.num}
+                className="bg-white/80 dark:bg-[#0A1120]/80 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow"
               >
-                <span className="text-[10px] font-bold font-['IBM_Plex_Mono',monospace]" style={{ color: t.accent }}>{step.num}</span>
-                <div>
-                  <div className="text-[12px] sm:text-[13px] font-bold mb-0.5" style={{ color: t.text }}>{step.label}</div>
-                  <div className="text-[10px] sm:text-[11px] leading-tight" style={{ color: t.textFaint }}>{step.sub}</div>
-                </div>
-              </motion.div>
+                <p className="text-[#10B981] font-black text-xs mb-2">{step.num}</p>
+                <h3 className="font-bold text-slate-900 dark:text-slate-100 mb-1">{step.label}</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">{step.sub}</p>
+              </div>
             ))}
           </div>
+
+          {/* CTA — magnetic on cursor to draw the eye */}
+          <div className="hero-reveal max-w-lg mx-auto">
+            <Magnetic
+              href="#contact"
+              strength={0.15}
+              className="flex items-center justify-center gap-2 w-full py-4 text-[15px] font-bold text-white rounded-xl transition-shadow glow-green hover:shadow-[0_0_28px_rgba(16,185,129,0.5)] bg-[#10B981]"
+            >
+              Book a Service
+            </Magnetic>
+          </div>
         </div>
-
-        {/* CTA — copper/emerald, magnetic on cursor to draw the eye */}
-        <motion.div
-          className="relative w-full max-w-lg"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.58 }}
-        >
-          <Magnetic
-            href="#contact"
-            strength={0.15}
-            className="flex items-center justify-center gap-2 w-full py-4 text-[15px] font-bold text-white rounded-xl transition-shadow glow-green hover:shadow-[0_0_28px_rgba(16,185,129,0.5)]"
-            style={{ backgroundColor: t.copper }}
-          >
-            Book a Service
-          </Magnetic>
-        </motion.div>
-
       </section>
 
       {/* ── Branch Locations ──────────────────────────────────────────────── */}
@@ -1571,6 +1623,7 @@ export default function Landing() {
         </div>
       </footer>
 
+    </div>
     </div>
   )
 }
