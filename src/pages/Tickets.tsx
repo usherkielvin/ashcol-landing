@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
-import { useOutletContext, useSearchParams } from 'react-router-dom'
+import { useOutletContext, useSearchParams, useNavigate } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, X, Edit3, AlertTriangle, CalendarDays,
   Eye, Loader2, Pencil, Moon, Sun, Trash2,
   ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Maximize2,
   UsersRound, ChevronDown, SlidersHorizontal, CalendarRange,
+  TrendingUp, Receipt, Radio,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -113,6 +114,7 @@ export {
 export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const { theme, toggleTheme } = useTheme()
   const { user } = useAuth()
+  const navigate = useNavigate()
   const pathname = pathnameForSurface(surface)
   const { setSidebarOpen } = useOutletContext<{ setSidebarOpen: (v: boolean) => void }>() || {}
   const isMyTickets = surface === 'my-tickets'
@@ -303,6 +305,14 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const rowHover = isLight ? '#edf7f1' : '#0f1a2e'
   const green = '#16A34A'
   const textGreen = isLight ? '#16A34A' : '#4ade80'
+
+  // Overview/search landing quick links — hidden once a search is in progress.
+  const overviewQuickLinks = [
+    { label: 'Schedules', to: '/schedules', icon: CalendarDays },
+    { label: 'Daily Transaction', to: '/audit-report', icon: TrendingUp },
+    { label: 'Expenses', to: '/audit-expenses', icon: Receipt },
+    { label: 'Relays', to: '/relays', icon: Radio, adminOnly: true },
+  ].filter(link => !link.adminOnly || isPortalAdmin(user?.role))
 
   // ─────────────────────────────────────────────────────────────
   const initialSchedulesRef = useRef<ReturnType<typeof getInitialSchedulesFromCache> | null>(null)
@@ -7263,6 +7273,24 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       </button>
                     )}
                   </div>
+
+                  {/* Quick Links — only shown before a search has been entered */}
+                  {!overviewSearchInput && overviewResults.length === 0 && overviewQuickLinks.length > 0 && (
+                    <div className="flex flex-wrap items-center justify-center gap-2 md:gap-3">
+                      {overviewQuickLinks.map(link => (
+                        <button
+                          key={link.to}
+                          type="button"
+                          onClick={() => navigate(link.to)}
+                          className="flex items-center gap-1.5 px-3.5 py-2 md:px-4 md:py-2.5 rounded-full border text-xs md:text-sm font-semibold transition-all hover:-translate-y-0.5 hover:shadow-sm active:scale-95"
+                          style={{ backgroundColor: cardBg, borderColor: border, color: textPrimary }}
+                        >
+                          <link.icon className="w-3.5 h-3.5 md:w-4 md:h-4" style={{ color: green }} />
+                          {link.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Results Section */}
