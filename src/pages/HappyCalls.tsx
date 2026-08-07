@@ -376,24 +376,6 @@ export default function HappyCalls() {
   )
 }
 
-const PILL_TONES = {
-  green: { light: { bg: '#ecfdf5', fg: '#059669' }, dark: { bg: 'rgba(16,185,129,0.15)', fg: '#34D399' } },
-  amber: { light: { bg: '#fffbeb', fg: '#b45309' }, dark: { bg: 'rgba(245,158,11,0.15)', fg: '#FBBF24' } },
-  red: { light: { bg: '#fef2f2', fg: '#dc2626' }, dark: { bg: 'rgba(239,68,68,0.15)', fg: '#F87171' } },
-  slate: { light: { bg: '#f1f5f9', fg: '#475569' }, dark: { bg: 'rgba(148,163,184,0.15)', fg: '#94A3B8' } },
-} as const
-
-function Pill({ isLight, tone, children }: { isLight: boolean; tone: keyof typeof PILL_TONES; children: React.ReactNode }) {
-  const { bg, fg } = PILL_TONES[tone][isLight ? 'light' : 'dark']
-  return (
-    <span
-      className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide whitespace-nowrap"
-      style={{ backgroundColor: bg, color: fg }}
-    >
-      {children}
-    </span>
-  )
-}
 
 function Field({ label, isLight, children }: { label: string; isLight: boolean; children: React.ReactNode }) {
   const textMuted = isLight ? '#64748b' : '#7A95B8'
