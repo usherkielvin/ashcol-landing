@@ -51,7 +51,7 @@ async function fetchLeads(token: string, branchId: string): Promise<HappyCallLea
 }
 
 function formatLastContactDate(dateStr?: string): string {
-  if (!dateStr) return '—'
+  if (!dateStr || !dateStr.trim()) return ''
   const clean = dateStr.split('T')[0].trim()
   if (!/^\d{4}-\d{2}-\d{2}$/.test(clean)) return dateStr.toUpperCase()
   const [yearStr, monthStr, dayStr] = clean.split('-')
@@ -60,12 +60,6 @@ function formatLastContactDate(dateStr?: string): string {
   const monthName = MONTH_NAMES[monthNum] || 'JAN'
   const yy = yearStr.slice(-2)
   return `${monthName}-${dayStr.padStart(2, '0')}-${yy}`
-}
-
-function getLeadTicketNo(l: HappyCallLead): string {
-  if (l.sourceTicketId && l.sourceTicketId.trim()) return l.sourceTicketId.trim().toUpperCase()
-  if (l.scheduledTicketId && l.scheduledTicketId.trim()) return l.scheduledTicketId.trim().toUpperCase()
-  return '—'
 }
 
 export default function HappyCalls() {
@@ -134,7 +128,7 @@ export default function HappyCalls() {
   }, [branches])
 
   const getBranchLabel = useCallback((bId?: string) => {
-    if (!bId) return '—'
+    if (!bId) return 'NA'
     const found = branchMap.get(bId)
     if (found) return found.toUpperCase()
     const cleaned = getCleanBranchName(bId)
@@ -151,8 +145,7 @@ export default function HappyCalls() {
       if (statusFilter === 'NOT_CONTACTED' && (contacted || booked)) return false
       if (!q) return true
       const bLabel = getBranchLabel(l.branchId)
-      const ticketNo = getLeadTicketNo(l)
-      const blob = [ticketNo, l.customerName, bLabel, l.address, l.contactPhone, l.brandCapacity, l.assignedTech, l.bookingStatus]
+      const blob = [l.customerName, bLabel, l.address, l.contactPhone, l.brandCapacity, l.bookingStatus]
         .filter(Boolean).join(' ').toLowerCase()
       return blob.includes(q)
     })
@@ -199,7 +192,7 @@ export default function HappyCalls() {
             <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
             <input
               type="text"
-              placeholder="SEARCH TICKET, CUSTOMER, BRANCH, PHONE…"
+              placeholder="SEARCH CUSTOMER, BRANCH, PHONE…"
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="bg-transparent text-xs font-semibold uppercase outline-none w-full min-w-0 placeholder:uppercase"
@@ -250,100 +243,77 @@ export default function HappyCalls() {
       )}
 
       <div style={{ backgroundColor: cardBg, borderColor: border }} className="flex-1 min-h-0 border rounded-xl overflow-auto shadow-sm flex flex-col">
-        <table className="w-full text-left table-fixed min-w-[1100px] border-collapse">
+        <table className="w-full text-left table-fixed min-w-[1000px] border-collapse">
           <colgroup>
-            <col className="w-[11%]" />
-            <col className="w-[17%]" />
-            <col className="w-[11%]" />
-            <col className="w-[19%]" />
-            <col className="w-[16%]" />
-            <col className="w-[13%]" />
-            <col className="w-[7%]" />
-            <col className="w-[6%]" />
+            <col className="w-[22%]" />
+            <col className="w-[14%]" />
+            <col className="w-[26%]" />
+            <col className="w-[18%]" />
+            <col className="w-[12%]" />
+            <col className="w-[8%]" />
           </colgroup>
           <thead className="sticky top-0 z-10">
             <tr style={{ backgroundColor: theadBg, color: textMuted, borderBottom: `1px solid ${border}` }} className="text-xs uppercase tracking-wider font-bold select-none">
-              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>TICKET NO</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>CUSTOMER</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>BRANCH</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>ADDRESS</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>UNIT</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>LAST CONTACT</th>
-              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>TECH</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em] text-right" style={{ color: textMuted }}>ACTIONS</th>
             </tr>
           </thead>
           <tbody className="text-xs">
             {loading ? (
-              <tr><td colSpan={8} className="px-6 py-16 text-center font-bold uppercase" style={{ color: textMuted }}>
+              <tr><td colSpan={6} className="px-6 py-16 text-center font-bold uppercase" style={{ color: textMuted }}>
                 <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
                 LOADING HAPPY CALL LEADS…
               </td></tr>
             ) : visible.length === 0 ? (
-              <tr><td colSpan={8} className="px-6 py-16 text-center font-bold uppercase" style={{ color: textMuted }}>
+              <tr><td colSpan={6} className="px-6 py-16 text-center font-bold uppercase" style={{ color: textMuted }}>
                 <PhoneCall className="w-7 h-7 mx-auto mb-2 opacity-40" />
                 NO HAPPY CALL LEADS FOUND.
               </td></tr>
             ) : visible.map(l => {
               const booked = !!l.scheduledTicketId
-              const ticketNo = getLeadTicketNo(l)
+              const lastContactDateStr = formatLastContactDate(l.lastContactDate)
+              const contactParts = [
+                l.lastContactMethod ? l.lastContactMethod.trim().toUpperCase() : null,
+                lastContactDateStr || null,
+                l.bookingStatus ? l.bookingStatus.trim().toUpperCase() : null,
+              ].filter(Boolean)
+              const lastContactText = contactParts.length > 0 ? contactParts.join(' - ') : 'NA'
+
+              const unitParts = [
+                l.brandCapacity ? l.brandCapacity.trim() : null,
+                l.unitStatus ? l.unitStatus.replace('_', ' ').trim() : null,
+                l.commitAmount ? `₱${l.commitAmount.toLocaleString('en-PH')}` : null,
+              ].filter(Boolean).map(s => String(s).toUpperCase())
+              const unitText = unitParts.length > 0 ? unitParts.join(' ') : 'NA'
+
               return (
                 <tr
                   key={l.id}
                   style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}`, cursor: 'context-menu' }}
-                  className="transition-colors align-top"
+                  className="transition-colors align-middle"
                   onMouseEnter={el => (el.currentTarget.style.backgroundColor = rowHover)}
                   onMouseLeave={el => (el.currentTarget.style.backgroundColor = cardBg)}
                   onContextMenu={(e) => { e.preventDefault(); setEditLead(l) }}
                 >
                   <td className="px-3 py-2.5 overflow-hidden">
-                    <div className="text-xs font-bold uppercase tracking-wide truncate" style={{ color: textPrimary }} title={ticketNo}>{ticketNo}</div>
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.customerName}>{l.customerName ? l.customerName.toUpperCase() : 'NA'}</div>
                   </td>
                   <td className="px-3 py-2.5 overflow-hidden">
-                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.customerName}>{l.customerName ? l.customerName.toUpperCase() : '—'}</div>
-                    {l.contactPhone && <div className="text-[11px] font-semibold uppercase truncate mt-0.5" style={{ color: textMuted }}>{l.contactPhone}</div>}
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={getBranchLabel(l.branchId)}>{getBranchLabel(l.branchId)}</div>
+                  </td>
+                  <td className="px-3 py-2.5 text-xs font-semibold uppercase truncate" style={{ color: textPrimary }} title={l.address}>{l.address ? l.address.toUpperCase() : 'NA'}</td>
+                  <td className="px-3 py-2.5 overflow-hidden">
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={unitText}>{unitText}</div>
                   </td>
                   <td className="px-3 py-2.5 overflow-hidden">
-                    <span
-                      className="inline-block text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md truncate max-w-full"
-                      style={{
-                        backgroundColor: isLight ? 'rgba(148,163,184,0.12)' : 'rgba(148,163,184,0.18)',
-                        color: textPrimary,
-                        border: `1px solid ${isLight ? 'rgba(148,163,184,0.25)' : 'rgba(148,163,184,0.25)'}`,
-                      }}
-                      title={getBranchLabel(l.branchId)}
-                    >
-                      {getBranchLabel(l.branchId)}
-                    </span>
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={lastContactText}>{lastContactText}</div>
                   </td>
-                  <td className="px-3 py-2.5 text-xs font-semibold uppercase truncate" style={{ color: textPrimary }} title={l.address}>{l.address ? l.address.toUpperCase() : '—'}</td>
-                  <td className="px-3 py-2.5 overflow-hidden">
-                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.brandCapacity}>{l.brandCapacity ? l.brandCapacity.toUpperCase() : '—'}</div>
-                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      {l.unitStatus && (
-                        <Pill isLight={isLight} tone={l.unitStatus === 'FREE' ? 'green' : 'amber'}>
-                          {l.unitStatus.replace('_', ' ').toUpperCase()}
-                        </Pill>
-                      )}
-                      {!!l.commitAmount && (
-                        <span className="text-[11px] font-bold uppercase" style={{ color: textMuted }}>₱{l.commitAmount.toLocaleString('en-PH')}</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5 overflow-hidden">
-                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }}>{l.lastContactMethod ? l.lastContactMethod.toUpperCase() : '—'}</div>
-                    {l.lastContactDate && (
-                      <div className="text-[11px] font-bold uppercase tracking-wider truncate mt-0.5" style={{ color: textMuted }}>
-                        {formatLastContactDate(l.lastContactDate)}
-                      </div>
-                    )}
-                    {l.bookingStatus && (
-                      <div className="text-[11px] font-bold uppercase truncate mt-1" style={{ color: green }} title={l.bookingStatus}>{l.bookingStatus.toUpperCase()}</div>
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5 text-xs font-semibold uppercase truncate" style={{ color: textPrimary }}>{l.assignedTech ? l.assignedTech.toUpperCase() : '—'}</td>
                   <td className="px-3 py-2.5">
-                    <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                    <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                       {booked ? (
                         <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase whitespace-nowrap" style={{ color: green }}>
                           <CheckCircle2 className="w-3.5 h-3.5" /> BOOKED
