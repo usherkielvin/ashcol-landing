@@ -1586,42 +1586,6 @@ export default function DailyServiceReport() {
     }
   }
 
-  const handleClearAll = async () => {
-    if (!isAdmin) {
-      alert('Access denied: Only administrator accounts can clear all records.')
-      return
-    }
-    const targetDate = prompt("Enter specific date to clear (YYYY-MM-DD):", todayLocal())
-    if (!targetDate || !targetDate.trim()) return
-
-    // Strip the -sales/-services virtual suffix to get the real branch UUID
-    const realBranchId = resolveScopedBranchId(branchFilter)
-    if (!realBranchId) { alert('No branch selected'); return }
-    const branchLabel = branches.find(b => b.id === branchFilter)?.name || realBranchId
-    const prettyDate = new Date(targetDate + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-    const confirmed = window.confirm(
-      `⚠️ DANGER ZONE\n\nPermanently delete all service records for ${branchLabel} on ${prettyDate}?\n\nThis CANNOT be undone.`
-    )
-    if (!confirmed) return
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const params = new URLSearchParams({ branchId: branchFilter, date: targetDate })
-      const res = await fetch(`${API_BASE_URL}/v1/service-reports?${params}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        alert(err.error || err.message || `Clear failed (HTTP ${res.status})`)
-        return
-      }
-      const result = await res.json()
-      alert(`Deleted ${result.deleted} service record${result.deleted !== 1 ? 's' : ''} for ${branchLabel}.`)
-      fetchRows({ soft: true, force: true })
-    } catch (e) {
-      console.error(e); alert('Network error while clearing records')
-    }
-  }
 
   // ── Derived data ──────────────────────────────────────────────────────────
   const rowSearchBlob = (r: ServiceRow) => {
@@ -1927,28 +1891,7 @@ export default function DailyServiceReport() {
           </div>
         )}
 
-        {/* ── Clear records footer ── */}
-        {isAdmin && visible.length > 0 && (
-          <div className="flex items-center justify-between px-5 py-3"
-            style={{ borderTop: `1px solid ${border}`, backgroundColor: inputBg }}>
-            <div className="flex flex-col">
-              <span className="text-xs font-bold uppercase tracking-wider" style={{ color: textPrimary }}>Clear Records</span>
-              <span className="text-xs" style={{ color: textMuted }}>
-                Permanently delete all service records for a specific date under{' '}
-                <strong style={{ color: textPrimary }}>
-                  {branchFilter === 'ALL_BRANCHES' ? 'All Branches' : (branches.find(b => b.id === branchFilter)?.name || 'this branch')}
-                </strong>. This cannot be undone.
-              </span>
-            </div>
-            <button type="button" onClick={handleClearAll}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 shrink-0 ml-4"
-              style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = inputBg }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = cardBg }}>
-              <Trash2 className="w-3.5 h-3.5" /> Clear All Records
-            </button>
-          </div>
-        )}
+
       </div>
 
       {/* ── Right-click context menu ─────────────────────────────────── */}
