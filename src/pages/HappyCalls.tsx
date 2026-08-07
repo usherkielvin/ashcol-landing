@@ -109,6 +109,20 @@ export default function HappyCalls() {
 
   useEffect(() => { void loadLeads() }, [loadLeads])
 
+  const branchMap = useMemo(() => {
+    const map = new Map<string, string>()
+    branches.forEach(b => map.set(b.id, b.name))
+    return map
+  }, [branches])
+
+  const getBranchLabel = useCallback((bId?: string) => {
+    if (!bId) return '—'
+    const found = branchMap.get(bId)
+    if (found) return found.toUpperCase()
+    const cleaned = getCleanBranchName(bId)
+    return cleaned ? cleaned.toUpperCase() : bId.toUpperCase()
+  }, [branchMap])
+
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
     return leads.filter(l => {
@@ -118,11 +132,12 @@ export default function HappyCalls() {
       if (statusFilter === 'CONTACTED' && (!contacted || booked)) return false
       if (statusFilter === 'NOT_CONTACTED' && (contacted || booked)) return false
       if (!q) return true
-      const blob = [l.customerName, l.address, l.contactPhone, l.brandCapacity, l.assignedTech, l.bookingStatus]
+      const bLabel = getBranchLabel(l.branchId)
+      const blob = [l.customerName, bLabel, l.address, l.contactPhone, l.brandCapacity, l.assignedTech, l.bookingStatus]
         .filter(Boolean).join(' ').toLowerCase()
       return blob.includes(q)
     })
-  }, [leads, search, statusFilter])
+  }, [leads, search, statusFilter, getBranchLabel])
 
   const patchLead = useCallback(async (id: string, body: Record<string, unknown>) => {
     const res = await fetch(`${API_BASE_URL}/happy-calls/${id}`, {
@@ -158,14 +173,14 @@ export default function HappyCalls() {
   }, [])
 
   return (
-    <div className="p-[5px] flex flex-col gap-2 h-full min-h-0">
-      <div className="flex flex-nowrap items-center justify-between gap-2 px-1 py-1 overflow-x-auto no-scrollbar select-none">
+    <div className="p-2 sm:p-3 flex flex-col gap-2.5 h-full min-h-0 flex-1 overflow-hidden">
+      <div className="flex flex-nowrap items-center justify-between gap-2 px-1 py-0.5 overflow-x-auto no-scrollbar select-none shrink-0">
         <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
-          <div className="flex items-center gap-2 w-48 sm:w-56 rounded-lg px-2.5 py-1.5 border shrink-0 h-8" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+          <div className="flex items-center gap-2 w-48 sm:w-64 rounded-lg px-2.5 py-1.5 border shrink-0 h-8" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
             <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
             <input
               type="text"
-              placeholder="Search…"
+              placeholder="Search customer, branch, phone, unit…"
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="bg-transparent text-xs outline-none w-full min-w-0"
@@ -178,7 +193,7 @@ export default function HappyCalls() {
             <select
               value={branchFilter}
               onChange={e => setBranchFilter(e.target.value)}
-              className="rounded-lg px-2.5 py-1 text-xs font-semibold uppercase border outline-none shrink-0 h-8 cursor-pointer max-w-[150px]"
+              className="rounded-lg px-2.5 py-1 text-xs font-semibold uppercase border outline-none shrink-0 h-8 cursor-pointer max-w-[160px]"
               style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
             >
               <option value="">All Branches</option>
@@ -192,7 +207,7 @@ export default function HappyCalls() {
             className="rounded-lg px-2.5 py-1 text-xs font-semibold uppercase border outline-none shrink-0 h-8 cursor-pointer"
             style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
           >
-            <option value="ALL">All</option>
+            <option value="ALL">All Status</option>
             <option value="NOT_CONTACTED">Not Contacted</option>
             <option value="CONTACTED">Contacted</option>
             <option value="BOOKED">Booked</option>
@@ -210,45 +225,47 @@ export default function HappyCalls() {
       </div>
 
       {error && (
-        <div className="px-4 py-2.5 rounded-lg text-sm font-medium" style={{ backgroundColor: 'rgba(239,68,68,0.08)', color: '#EF4444' }}>
+        <div className="px-4 py-2 rounded-lg text-xs font-semibold shrink-0" style={{ backgroundColor: 'rgba(239,68,68,0.08)', color: '#EF4444' }}>
           {error}
         </div>
       )}
 
-      <div style={{ backgroundColor: cardBg, borderColor: border }} className="flex-1 min-h-[70vh] border rounded-xl overflow-auto shadow-sm">
-        <table className="w-full text-left table-fixed min-w-[1180px]">
+      <div style={{ backgroundColor: cardBg, borderColor: border }} className="flex-1 min-h-0 border rounded-xl overflow-auto shadow-sm flex flex-col">
+        <table className="w-full text-left table-fixed min-w-[1200px] border-collapse">
           <colgroup>
-            <col className="w-[17%]" />
-            <col className="w-[16%]" />
+            <col className="w-[15%]" />
+            <col className="w-[10%]" />
+            <col className="w-[15%]" />
             <col className="w-[14%]" />
             <col className="w-[7%]" />
-            <col className="w-[9%]" />
-            <col className="w-[7%]" />
+            <col className="w-[8%]" />
+            <col className="w-[6%]" />
             <col className="w-[11%]" />
-            <col className="w-[9%]" />
-            <col className="w-[10%]" />
+            <col className="w-[7%]" />
+            <col className="w-[7%]" />
           </colgroup>
           <thead className="sticky top-0 z-10">
             <tr style={{ backgroundColor: theadBg, color: textMuted, borderBottom: `1px solid ${border}` }} className="text-xs uppercase tracking-wider font-bold select-none">
-              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Customer</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Address</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Unit</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Priority</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Progress</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Due</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Last Contact</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Tech</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em] text-right" style={{ color: textMuted }}>Actions</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Customer</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Branch</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Address</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Unit</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Priority</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Progress</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Due</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Last Contact</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Tech</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em] text-right" style={{ color: textMuted }}>Actions</th>
             </tr>
           </thead>
-          <tbody className="text-sm">
+          <tbody className="text-xs">
             {loading ? (
-              <tr><td colSpan={9} className="px-6 py-16 text-center" style={{ color: textMuted }}>
+              <tr><td colSpan={10} className="px-6 py-16 text-center" style={{ color: textMuted }}>
                 <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
                 Loading happy call leads…
               </td></tr>
             ) : visible.length === 0 ? (
-              <tr><td colSpan={9} className="px-6 py-16 text-center" style={{ color: textMuted }}>
+              <tr><td colSpan={10} className="px-6 py-16 text-center" style={{ color: textMuted }}>
                 <PhoneCall className="w-7 h-7 mx-auto mb-2 opacity-40" />
                 No happy call leads found.
               </td></tr>
@@ -265,12 +282,25 @@ export default function HappyCalls() {
                   onMouseLeave={el => (el.currentTarget.style.backgroundColor = cardBg)}
                   onContextMenu={(e) => { e.preventDefault(); setEditLead(l) }}
                 >
-                  <td className="px-4 py-3 overflow-hidden">
+                  <td className="px-3 py-2.5 overflow-hidden">
                     <div className="text-xs font-bold truncate" style={{ color: textPrimary }} title={l.customerName}>{l.customerName || '—'}</div>
                     {l.contactPhone && <div className="text-[11px] truncate mt-0.5" style={{ color: textMuted }}>{l.contactPhone}</div>}
                   </td>
-                  <td className="px-4 py-3 text-xs truncate" style={{ color: textPrimary }} title={l.address}>{l.address || '—'}</td>
-                  <td className="px-4 py-3 overflow-hidden">
+                  <td className="px-3 py-2.5 overflow-hidden">
+                    <span
+                      className="inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md truncate max-w-full"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(148,163,184,0.12)' : 'rgba(148,163,184,0.18)',
+                        color: textPrimary,
+                        border: `1px solid ${isLight ? 'rgba(148,163,184,0.25)' : 'rgba(148,163,184,0.25)'}`,
+                      }}
+                      title={getBranchLabel(l.branchId)}
+                    >
+                      {getBranchLabel(l.branchId)}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 text-xs truncate" style={{ color: textPrimary }} title={l.address}>{l.address || '—'}</td>
+                  <td className="px-3 py-2.5 overflow-hidden">
                     <div className="text-xs font-semibold truncate" style={{ color: textPrimary }} title={l.brandCapacity}>{l.brandCapacity || '—'}</div>
                     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                       {l.unitStatus && (
@@ -283,27 +313,27 @@ export default function HappyCalls() {
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2.5">
                     {l.priority ? <Pill isLight={isLight} tone="slate">{l.priority}</Pill> : <span className="text-xs" style={{ color: textMuted }}>—</span>}
                   </td>
-                  <td className="px-4 py-3 text-xs" style={{ color: textPrimary }}>
+                  <td className="px-3 py-2.5 text-xs" style={{ color: textPrimary }}>
                     <div className="flex flex-col gap-0.5">
                       <span><span className="font-bold">{l.cleaningsCompleted ?? 0}</span> <span style={{ color: textMuted }}>cleaned</span></span>
                       <span><span className="font-bold">{l.contactAttempts ?? 0}</span> <span style={{ color: textMuted }}>attempts</span></span>
                     </div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2.5">
                     <Pill isLight={isLight} tone={due ? 'red' : 'slate'}>{months}mo</Pill>
                   </td>
-                  <td className="px-4 py-3 overflow-hidden">
+                  <td className="px-3 py-2.5 overflow-hidden">
                     <div className="text-xs font-semibold truncate" style={{ color: textPrimary }}>{l.lastContactMethod || '—'}</div>
                     {l.lastContactDate && <div className="text-[11px] truncate mt-0.5" style={{ color: textMuted }}>{l.lastContactDate}</div>}
                     {l.bookingStatus && (
                       <div className="text-[11px] truncate mt-1 font-semibold" style={{ color: green }} title={l.bookingStatus}>{l.bookingStatus}</div>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-xs truncate" style={{ color: textPrimary }}>{l.assignedTech || '—'}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2.5 text-xs truncate" style={{ color: textPrimary }}>{l.assignedTech || '—'}</td>
+                  <td className="px-3 py-2.5">
                     <div className="flex items-center justify-end gap-1.5 flex-wrap">
                       {booked ? (
                         <span className="inline-flex items-center gap-1 text-[11px] font-bold whitespace-nowrap" style={{ color: green }}>
