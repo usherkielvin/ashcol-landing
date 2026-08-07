@@ -5441,6 +5441,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       const remarksText = rowGhost
         ? formatGhostRemarks(ticket, ghostKind ?? null, dateFilter)
         : getScheduleUpdateDisplay(ticket)
+      
       if (cellExpanded) {
         const isCompletedGhost = ghostKind === 'completed' || isCompletedGhostOnDate(ticket, dateFilter)
         const ghostRemarkColor = isCompletedGhost
@@ -5464,39 +5465,43 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           </>
         )
       }
-      if (rowGhost) {
-        const ghostRemarks = remarksText
-        const isCompletedGhost = ghostKind === 'completed' || isCompletedGhostOnDate(ticket, dateFilter)
-        const ghostRemarkColor = isCompletedGhost
-          ? (isLight ? '#15803d' : '#86efac')
-          : ghostKind === 'cancelled' ? (isLight ? '#dc2626' : '#f87171') : (isLight ? '#a16207' : '#fbbf24')
-        const ghostSpan = (
-          <span
-            style={{
-              ...truncStyle,
-              color: ghostRemarkColor,
-              fontWeight: 600,
-              fontStyle: 'italic',
-            }}
-            title={ghostRemarks}
-          >
-            {ghostRemarks || EMPTY_CELL}
+
+      // Always show as a clickable button for REMARKS
+      const hasRemarks = Boolean(remarksText && remarksText.trim())
+      
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            e.nativeEvent.stopImmediatePropagation()
+            // Open the existing detail modal with history panel already shown
+            setDetailTicket(ticket)
+            setShowHistoryPanel(true)
+          }}
+          onMouseDown={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+          }}
+          className="w-full h-full min-h-[28px] px-3 py-2 rounded-md text-xs font-semibold transition-all hover:opacity-80 cursor-pointer flex items-center justify-center text-center"
+          style={{
+            backgroundColor: hasRemarks 
+              ? (isLight ? '#dcfce7' : 'rgba(34, 197, 94, 0.15)')
+              : (isLight ? '#f1f5f9' : 'rgba(148, 163, 184, 0.1)'),
+            border: `1px solid ${hasRemarks 
+              ? (isLight ? '#16a34a' : 'rgba(34, 197, 94, 0.3)')
+              : (isLight ? '#e2e8f0' : 'rgba(148, 163, 184, 0.2)')}`,
+            color: hasRemarks 
+              ? (isLight ? '#166534' : '#22c55e')
+              : textMuted,
+          }}
+          title={hasRemarks ? `Click to view history: ${remarksText}` : 'Click to view history'}
+        >
+          <span className="truncate">
+            {hasRemarks ? remarksText : 'View History'}
           </span>
-        )
-        // Resched ghosts alone stay editable — the old date row is still a legitimate place to
-        // leave a remark (e.g. why it moved), and remarksUpdate is one shared field, not
-        // per-date, so there's no per-ghost state to keep in sync.
-        if (ghostKind === 'resched') {
-          return withEditPencil(ghostSpan, ticket, label, rowGhost, rowIndex, true)
-        }
-        return ghostSpan
-      }
-      return withEditPencil(
-        <span style={{ ...truncStyle, color: val ? textGreen : textMuted, fontWeight: val ? 600 : 400 }}
-          title={val}>
-          {val || EMPTY_CELL}
-        </span>,
-        ticket, label, rowGhost, rowIndex,
+        </button>
       )
     }
 
