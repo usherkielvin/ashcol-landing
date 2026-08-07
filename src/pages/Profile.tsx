@@ -837,7 +837,7 @@ export default function Profile() {
                 <h2 className="text-lg font-black" style={{ color: textPrimary }}>Ticket History</h2>
                 <p className="text-sm mt-0.5" style={{ color: textMuted }}>Tickets you created, negotiated, or worked on</p>
               </div>
-              <div className="px-6 py-5">
+              <div>
                 <TicketHistoryTable
                   person={{
                     id: user.id,

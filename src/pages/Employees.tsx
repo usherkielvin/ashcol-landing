@@ -1371,11 +1371,11 @@ export default function Employees() {
             </div>
 
             {/* Tab Body */}
-            <div className="flex-1 overflow-y-auto" style={detailTokens}>
+            <div className="flex-1 min-h-0 flex flex-col" style={detailTokens}>
 
               {/* ── Overview Tab ── */}
               {activeDrawerTab === 'overview' && (
-                <div className="p-6 flex flex-col gap-6">
+                <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
 
                   {/* Contact Info */}
                   <div>
@@ -1445,7 +1445,7 @@ export default function Employees() {
 
               {/* ── History Tab ── */}
               {activeDrawerTab === 'history' && (
-                <div className="p-6">
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                   <TicketHistoryTable
                     person={{
                       id: selectedEmployee.id,
