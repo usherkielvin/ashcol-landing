@@ -1353,7 +1353,7 @@ export default function DailyServiceReport() {
 
     if (label === 'TICKET NO.') {
       return (
-        <span style={{ ...truncStyle, ...editHint, fontSize: '11px', fontWeight: 700 }} title={val}>
+        <span style={{ ...truncStyle, ...editHint, fontSize: '13px', fontWeight: 800 }} title={val}>
           {idx + 1}. {val || '—'}
         </span>
       )
@@ -1361,7 +1361,7 @@ export default function DailyServiceReport() {
 
     if (label === 'DATE INSTALLED') {
       return (
-        <span style={{ ...truncStyle, ...editHint, fontSize: '11px', fontWeight: 500 }} title={val} className="block text-center">
+        <span style={{ ...truncStyle, ...editHint, fontSize: '12.5px', fontWeight: 600 }} title={val} className="block text-center">
           {val || '—'}
         </span>
       )
@@ -1369,7 +1369,7 @@ export default function DailyServiceReport() {
 
     if (label === "CUSTOMER'S NAME") {
       return (
-        <span style={{ ...truncStyle, ...editHint, fontSize: '11px', fontWeight: 600 }} title={val} className="block">
+        <span style={{ ...truncStyle, ...editHint, fontSize: '13px', fontWeight: 700 }} title={val} className="block">
           {val || '—'}
         </span>
       )
@@ -1378,19 +1378,23 @@ export default function DailyServiceReport() {
     if (label === 'DESTINATION') {
       const showExpanded = col.isExpanded || isCellExpanded
       return (
-        <span className={showExpanded ? "leading-relaxed break-words block" : "line-clamp-2 leading-relaxed block"} title={val}>
+        <span className={showExpanded ? "leading-relaxed break-words block text-[12.5px]" : "line-clamp-2 leading-relaxed block text-[12.5px]"} title={val}>
           {val}
         </span>
       )
     }
 
     if (label === 'CONTACT NO.') {
-      return <FormatPhone raw={val} />
+      return (
+        <span style={{ ...truncStyle, ...editHint, fontSize: '12.5px', fontWeight: 600 }} title={val}>
+          <FormatPhone raw={val} />
+        </span>
+      )
     }
 
     if (label === 'SERVICE') {
       return (
-        <span style={{ fontSize: '11px', fontWeight: 500, textTransform: 'uppercase', display: 'block', textAlign: 'center', color: textPrimary }}>
+        <span style={{ fontSize: '12.5px', fontWeight: 600, textTransform: 'uppercase', display: 'block', textAlign: 'center', color: textPrimary }}>
           {val || '—'}
         </span>
       )
@@ -1398,14 +1402,14 @@ export default function DailyServiceReport() {
 
     if (label === 'MODE OF PAYMENT') {
       return (
-        <span style={{ fontSize: '11px', fontWeight: 500, textTransform: 'uppercase', display: 'block', textAlign: 'center', color: textPrimary }}>
+        <span style={{ fontSize: '12.5px', fontWeight: 600, textTransform: 'uppercase', display: 'block', textAlign: 'center', color: textPrimary }}>
           {val || ''}
         </span>
       )
     }
 
     if (label === 'INSTALLATION CHARGES') {
-      return <span style={{ ...truncStyle, fontSize: '11px', fontWeight: 600 }}>{val || ''}</span>
+      return <span style={{ ...truncStyle, fontSize: '13px', fontWeight: 700 }}>{val || ''}</span>
     }
 
     if (label === 'INSTALLER') {
@@ -1765,11 +1769,11 @@ export default function DailyServiceReport() {
                     return (
                       <th key={col.label}
                         style={{
-                          padding: '8px 10px',
+                          padding: '11px 12px',
                           textAlign: (col.align as any) || 'left',
                           color: textMuted,
-                          fontWeight: 700,
-                          fontSize: '10px',
+                          fontWeight: 800,
+                          fontSize: '11.5px',
                           letterSpacing: '0.08em',
                           textTransform: 'uppercase',
                           whiteSpace: 'nowrap',
@@ -1857,10 +1861,10 @@ export default function DailyServiceReport() {
                                 if (isEditable && !isThisEditing) startEdit(r, col.label)
                               }}
                               style={{
-                                padding: isThisEditing ? '4px 6px' : '7px 10px',
+                                padding: isThisEditing ? '6px 8px' : '10px 12px',
                                 color: textPrimary,
-                                fontSize: '11px',
-                                fontWeight: 500,
+                                fontSize: '12.5px',
+                                fontWeight: 600,
                                 lineHeight: '1.4',
                                 backgroundColor: isThisEditing ? inputBg : rowBaseBg,
                                 textAlign: (col.align as any) || 'left',
