@@ -702,6 +702,24 @@ export function preserveLocalScheduleFields(local: Ticket, server: Ticket): Tick
   const normalizedServer = normalizeRelayScheduleTicket(server)
   let next = mergeTicketPatch(local, normalizedServer as unknown as Record<string, unknown>)
 
+  // ── Terminal-status downgrade guard ──────────────────────────────────
+  // If the local ticket has a completion/terminal status (INSTALLED, COMPLETED, DONE_DISMANTLE,
+  // DONE_SYSTEM_REPROCESS, CANCELLED), a stale server response must never revert it to a non-terminal status
+  // (SCHEDULED, PENDING, ASSIGNED, etc.). Terminal statuses are monotonic — once a ticket is marked
+  // done, only another terminal status or an explicit user action should change it.
+  const TERMINAL_STATUSES = new Set(['INSTALLED', 'COMPLETED', 'DONE_DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'CANCELLED'])
+  const localStatus = String(local.status || '').toUpperCase()
+  const mergedStatus = String(next.status || '').toUpperCase()
+  if (TERMINAL_STATUSES.has(localStatus) && !TERMINAL_STATUSES.has(mergedStatus)) {
+    next.status = local.status
+    // Also preserve the scheduleOutcome so the display label stays correct
+    const localMeta = parseAcMeta(local)
+    if (localMeta.scheduleOutcome) {
+      next.acDetails = mergeAcMeta(next, { scheduleOutcome: localMeta.scheduleOutcome, schedulePhase: '' })
+      next.ac_details = next.acDetails
+    }
+  }
+
   const copyIfLocal = (field: keyof Ticket) => {
     const localVal = local[field]
     if (hasLocalScheduleValue(localVal)) {
