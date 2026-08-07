@@ -5316,27 +5316,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       // suffix some older tickets still carry — trip numbering now lives on VEHICLE only.
       // Use .label (not .name) so "MANNY / ROMAR - 2" keeps both names.
       const driverName = parseNameSiteToken(val).label || val
-      if (!driverName && canEdit && !isMyTickets && !rowGhost) {
-        return (
-          <button
-            type="button"
-            onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
-            onClick={e => {
-              e.stopPropagation()
-              const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
-              startCellEdit(ticket, label, cell, rowIndex)
-            }}
-            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-all hover:opacity-80"
-            style={{
-              color: isLight ? '#16a34a' : '#86efac',
-              backgroundColor: isLight ? 'rgba(22,163,74,0.08)' : 'rgba(148,163,184,0.08)',
-              border: `1px dashed ${isLight ? 'rgba(22,163,74,0.35)' : 'rgba(148,163,184,0.28)'}`,
-            }}
-          >
-            + Add
-          </button>
-        )
-      }
       return withEditPencil(
         <span
           className="block w-full text-center font-bold tracking-wide uppercase leading-tight"
@@ -5352,27 +5331,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     if (label === 'VEHICLE' && !isMyTickets) {
       // Prefer auto trip label ("STRADA - 2") so the red number always matches table ordering.
       const vehicleCode = vehicleTripLabels.get(ticket.id || '') || getTicketVehicleDisplay(ticket) || val
-      if (!vehicleCode && canEdit && !rowGhost) {
-        return (
-          <button
-            type="button"
-            onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
-            onClick={e => {
-              e.stopPropagation()
-              const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
-              startCellEdit(ticket, label, cell, rowIndex)
-            }}
-            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-all hover:opacity-80"
-            style={{
-              color: isLight ? '#2563eb' : '#93c5fd',
-              backgroundColor: isLight ? 'rgba(37,99,235,0.08)' : 'rgba(148,163,184,0.08)',
-              border: `1px dashed ${isLight ? 'rgba(37,99,235,0.35)' : 'rgba(148,163,184,0.28)'}`,
-            }}
-          >
-            + Add
-          </button>
-        )
-      }
       const canDragVehicle = canEdit && !rowGhost && Boolean(vehicleCode)
       // "MIRAGE - 2" splits into a plain name and a red trip number that live-updates as the
       // ticket's position in its vehicle group changes (drag-and-drop) — never manually typed.
