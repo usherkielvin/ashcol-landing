@@ -209,7 +209,10 @@ export function getScheduleTicketKind(ticket: Ticket): string {
   return 'INSTALLATION'
 }
 
-export function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: string; backgroundColor: string; borderColor: string } {
+export function getScheduleStatusBadgeStyle(value: string, isLight: boolean, isOverdue = false): { color: string; backgroundColor: string; borderColor: string } {
+  if (isOverdue) {
+    return { color: '#ffffff', backgroundColor: 'rgba(0, 0, 0, 0.35)', borderColor: '#ffffff' }
+  }
   const normalized = value.toUpperCase().replace(/\s+/g, '_')
   if (normalized === 'INSTALLATION' || normalized === 'INSTALL' || normalized === 'SCHEDULED' || normalized === 'S/I' || normalized === 'S_I' || normalized === 'SI') {
     return { color: isLight ? '#1d4ed8' : '#93c5fd', backgroundColor: isLight ? '#dbeafe' : 'rgba(59,130,246,0.18)', borderColor: isLight ? '#93c5fd' : 'rgba(59,130,246,0.35)' }
@@ -232,7 +235,7 @@ export function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { 
   if (normalized === 'SURVEY') {
     return { color: isLight ? '#6d28d9' : '#c4b5fd', backgroundColor: isLight ? '#ede9fe' : 'rgba(139,92,246,0.18)', borderColor: isLight ? '#c4b5fd' : 'rgba(139,92,246,0.35)' }
   }
-  if (normalized === 'DONE_SURVEY' || normalized === 'DONE_CHECKUP' || normalized === 'DONE_BACKJOB' || normalized === 'BACKJOB') {
+  if (normalized === 'DONE_SURVEY' || normalized === 'DONE_CHECKUP' || normalized === 'DONE_BACKJOB') {
     return { color: isLight ? '#a16207' : '#fbbf24', backgroundColor: isLight ? '#fef9c3' : 'rgba(251,191,36,0.18)', borderColor: isLight ? '#fcd34d' : 'rgba(251,191,36,0.35)' }
   }
   if (normalized === 'RESCHED') {
@@ -260,10 +263,7 @@ export function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { 
   if (normalized === 'SERVICES') {
     return { color: isLight ? '#0e7490' : '#67e8f9', backgroundColor: isLight ? '#cffafe' : 'rgba(6,182,212,0.15)', borderColor: isLight ? '#67e8f9' : 'rgba(6,182,212,0.3)' }
   }
-  if (normalized === 'CANCELLED') {
-    return { color: isLight ? '#b91c1c' : '#fca5a5', backgroundColor: isLight ? '#fee2e2' : 'rgba(239,68,68,0.12)', borderColor: isLight ? '#fca5a5' : 'rgba(239,68,68,0.3)' }
-  }
-  return { color: isLight ? '#475569' : '#94a3b8', backgroundColor: isLight ? '#f1f5f9' : 'rgba(148,163,184,0.12)', borderColor: isLight ? '#cbd5e1' : 'rgba(148,163,184,0.25)' }
+  return { color: isLight ? '#475569' : '#cbd5e1', backgroundColor: isLight ? '#f1f5f9' : 'rgba(148,163,184,0.12)', borderColor: isLight ? '#cbd5e1' : 'rgba(148,163,184,0.3)' }
 }
 
 export function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | null {
@@ -1113,28 +1113,11 @@ export function getScheduleRowColors(
   }
   // Pending schedule rows (SURVEY, INSTALL, CLEANING, CHECKUP, BACKJOB, etc.)
   // Turn red to highlight pending rows that haven't been updated yet
-  if (
-    statusVal === 'SURVEY' ||
-    statusVal === 'INSTALL' ||
-    statusVal === 'INSTALLATION' ||
-    statusVal === 'S/I' ||
-    statusVal === 'S_I' ||
-    statusVal === 'SI' ||
-    statusVal === 'SURVEY & INSTALL' ||
-    statusVal === 'CLEANING' ||
-    statusVal === 'CHECKUP' ||
-    statusVal === 'BACKJOB' ||
-    statusVal === 'SERVICES' ||
-    statusVal === 'SERVICE' ||
-    statusVal === 'SYSTEM_REPROCESS' ||
-    statusVal === 'DISMANTLE' ||
-    statusVal === 'FOR_APPROVAL' ||
-    statusVal === 'PENDING_APPROVAL' ||
-    statusVal === 'CONTINUATION'
-  ) {
+  // Overdue pending schedule rows (>24h past schedule date 3pm) highlight red
+  if (isOverduePendingScheduleTicket(ticket, ghostKind)) {
     return {
-      baseBg: isLight ? '#fee2e2' : 'rgba(239,68,68,0.22)',
-      accent: '#EF4444',
+      baseBg: isLight ? '#ef4444' : '#dc2626',
+      accent: '#ffffff',
     }
   }
 
@@ -1145,13 +1128,51 @@ export function getScheduleRowColors(
   return { baseBg: idx % 2 === 0 ? rowEven : rowOdd }
 }
 
-export function isPendingScheduleTicket(ticket: Ticket, ghostKind?: string | null): boolean {
+export function isOverduePendingScheduleTicket(
+  ticket: Ticket,
+  ghostKind?: string | null,
+  activeDateKey?: string,
+): boolean {
   if (ghostKind) return false
+
   const outcome = getScheduleOutcome(ticket)
   if (outcome) return false
+
   const stat = String(ticket.status || '').toUpperCase().replace(/\s+/g, '_')
-  if (stat === 'CANCELLED' || stat === 'RESCHED') return false
-  return true
+
+  // EXCEPTIONS: pending continuation, pending resched, for quotation/approval, pending approval, cancelled, done
+  const EXEMPT_STATUSES = new Set([
+    'CANCELLED',
+    'RESCHED',
+    'CONTINUATION',
+    'FOR_APPROVAL',
+    'FOR_QUOTATION',
+    'PENDING_APPROVAL',
+    'DONE_INSTALLED',
+    'DONE_CLEANING',
+    'DONE_SURVEY',
+    'DONE_CHECKUP',
+    'DONE_BACKJOB',
+    'DONE_SERVICE',
+    'DONE_SYSTEM_REPROCESS',
+    'DONE_DISMANTLE',
+    'DONE_QUOTATION',
+  ])
+  if (EXEMPT_STATUSES.has(stat)) return false
+
+  const schedDateStr = activeDateKey
+    || getFinalDateKey(ticket)
+    || getPreferredDateKey(ticket)
+    || String(parseAcMeta(ticket).scheduledDate || '').split('T')[0].split(' ')[0].trim()
+
+  if (!schedDateStr || !/^\d{4}-\d{2}-\d{2}$/.test(schedDateStr)) return false
+
+  const parts = schedDateStr.split('-').map(Number)
+  if (parts.length !== 3 || parts.some(isNaN)) return false
+
+  // Cutoff threshold: 24h past schedule date at 3:00 PM (e.g. Aug 7 schedule -> Aug 8 at 3:00 PM)
+  const cutoffDate = new Date(parts[0], parts[1] - 1, parts[2] + 1, 15, 0, 0, 0)
+  return Date.now() >= cutoffDate.getTime()
 }
 
 export function shouldArchiveCompletedSchedule(ticket: Ticket, body: Record<string, unknown>): boolean {

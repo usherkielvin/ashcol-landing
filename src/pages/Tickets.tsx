@@ -75,7 +75,7 @@ import {
   getScheduleUpdateDisplay, getTicketCommitDisplay, getTicketDriverDisplay, getTicketDriverName,
   getTicketNegotiatorName, getTicketNumberDisplay, getTicketVehicleDisplay, importRowMatchesTicket,
   isCancelledScheduleGhost, isCancelledTicket, isCompletedGhostOnDate, isInstalledRemarks, isInstalledWorkflowStatus,
-  isMovedToRescheduleRemark, isNoPaymentMode, isPendingScheduleTicket, isReschedulePending, isScheduleGhostOnDate, isTempTicketId,
+  isMovedToRescheduleRemark, isNoPaymentMode, isOverduePendingScheduleTicket, isReschedulePending, isScheduleGhostOnDate, isTempTicketId,
   isTicketNotFoundError, isUnmatchedImportComplete, lookupTicketByNumberOnServer, mergeAcMeta, mergePatchBodies, mergeServerListWithLocalEdits,
   mergeTicketPatch, namesMatchLoosely, normalizeCustomerKey, normalizeImportPaymentMode, parseAcMeta, parseBrand,
   parseDistrict, parseImportMoney, parseNameSiteToken, parseServiceDriverValue,
@@ -5084,12 +5084,15 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
     // ─────────────────────────────────────────────────────────────
     const val = getCellDisplay(ticket, label)
-    const ghostMuted = rowGhost
-      ? (ghostKind === 'completed' ? (isLight ? '#166534' : '#86efac')
-        : ghostKind === 'resched' ? (isLight ? '#a16207' : '#fbbf24')
-          : ghostKind === 'cancelled' ? (isLight ? '#dc2626' : '#f87171')
-            : textMuted)
-      : textPrimary
+    const isPendingRow = isOverduePendingScheduleTicket(ticket, rowGhost ? 'ghost' : null, dateFilter)
+    const ghostMuted = isPendingRow
+      ? '#ffffff'
+      : (rowGhost
+        ? (ghostKind === 'completed' ? (isLight ? '#166534' : '#86efac')
+          : ghostKind === 'resched' ? (isLight ? '#a16207' : '#fbbf24')
+            : ghostKind === 'cancelled' ? (isLight ? '#dc2626' : '#f87171')
+              : textMuted)
+        : textPrimary)
     const showExpanded = cellExpanded
     const truncStyle: React.CSSProperties = showExpanded
       ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.45, display: 'block', paddingRight: '4px', color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: label !== 'UPDATE' ? 'uppercase' : undefined }
@@ -5200,7 +5203,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         )
       }
       const statusVal = getScheduleStatusValue(ticket)
-      const statusColor = getScheduleStatusBadgeStyle(statusVal, isLight).color
+      const statusColor = getScheduleStatusBadgeStyle(statusVal, isLight, isPendingRow).color
       const display = getScheduleStatusDisplay(ticket) || EMPTY_CELL
       let displayLabel = display === 'INSTALLATION' ? 'INSTALL' : ((display === 'FOR APPROVAL' || display === 'FOR QUOTATION') ? 'QUOTATION' : display)
       if (display === 'CONTINUATION') {
@@ -5492,7 +5495,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         return ghostSpan
       }
       return withEditPencil(
-        <span style={{ ...truncStyle, color: val ? textGreen : textMuted, fontWeight: val ? 600 : 400 }}
+        <span style={{ ...truncStyle, color: isPendingRow ? '#ffffff' : (val ? textGreen : textMuted), fontWeight: val ? 600 : 400 }}
           title={val}>
           {val || EMPTY_CELL}
         </span>,
@@ -5502,7 +5505,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
     if (label === 'PAYMENT') {
       if (shouldBlankReschedGhostPayment(dateFilter, ghostKind)) {
-        return <span style={{ ...truncStyle, color: textMuted }}>{EMPTY_CELL}</span>
+        return <span style={{ ...truncStyle, color: isPendingRow ? '#ffffff' : textMuted }}>{EMPTY_CELL}</span>
       }
       const combined = sanitizeDisplayText(getSchedulePaymentDisplay(ticket, dateFilter, ghostKind))
       const mode = getPaymentMode(ticket).trim().toUpperCase()
@@ -5513,30 +5516,30 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       if (cellExpanded) {
         return (
           <>
-            <div className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: textMuted }}>Payment</div>
+            <div className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: isPendingRow ? 'rgba(255,255,255,0.8)' : textMuted }}>Payment</div>
             {!combined ? (
-              <div style={{ color: textMuted }}>{EMPTY_CELL}</div>
+              <div style={{ color: isPendingRow ? 'rgba(255,255,255,0.7)' : textMuted }}>{EMPTY_CELL}</div>
             ) : mode === 'FREE' || mode === 'FREE INSTALL' ? (
-              <div style={{ fontWeight: 700, color: isLight ? '#047857' : '#6ee7b7' }}>FREE</div>
+              <div style={{ fontWeight: 700, color: '#ffffff' }}>FREE</div>
             ) : (
               <div className="flex flex-col gap-1.5">
                 {mode ? (
                   <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Mode </span>
-                    <span style={{ fontWeight: 600, color: textPrimary }}>{mode}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: isPendingRow ? 'rgba(255,255,255,0.8)' : textMuted }}>Mode </span>
+                    <span style={{ fontWeight: 600, color: '#ffffff' }}>{mode}</span>
                   </div>
                 ) : null}
                 {amountStr ? (
                   <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Amount </span>
-                    <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: textPrimary }}>{formatPesoPrefix(amountStr)}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: isPendingRow ? 'rgba(255,255,255,0.8)' : textMuted }}>Amount </span>
+                    <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: '#ffffff' }}>{formatPesoPrefix(amountStr)}</span>
                   </div>
                 ) : null}
                 {isHybrid && breakdown.length ? (
                   <div className="flex flex-col gap-0.5">
                     {breakdown.map((entry, i) => (
-                      <div key={`${entry.mode}-${i}`} className="text-[10.5px]" style={{ color: textMuted }}>
-                        {entry.mode} <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: textPrimary }}>{Math.round(entry.amount).toLocaleString('en-PH')}</span>
+                      <div key={`${entry.mode}-${i}`} className="text-[10.5px]" style={{ color: isPendingRow ? 'rgba(255,255,255,0.8)' : textMuted }}>
+                        {entry.mode} <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: '#ffffff' }}>{Math.round(entry.amount).toLocaleString('en-PH')}</span>
                       </div>
                     ))}
                   </div>
@@ -5547,11 +5550,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         )
       }
       if (!combined || combined === '0') {
-        return <span style={{ ...truncStyle, fontWeight: 700, color: textMuted }} title="0">0</span>
+        return <span style={{ ...truncStyle, fontWeight: 700, color: isPendingRow ? '#ffffff' : textMuted }} title="0">0</span>
       }
       if (mode === 'FREE' || mode === 'FREE INSTALL') {
         return (
-          <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#047857' : '#6ee7b7' }} title={combined}>
+          <span style={{ ...truncStyle, fontWeight: 700, color: '#ffffff' }} title={combined}>
             FREE
           </span>
         )
@@ -5559,16 +5562,16 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       return (
         <span style={{ ...truncStyle, fontVariantNumeric: 'tabular-nums' }} title={combined}>
           {amountStr ? (
-            <span style={{ fontWeight: 700, color: isLight ? '#0f172a' : '#f1f5f9' }}>{amountStr}</span>
+            <span style={{ fontWeight: 700, color: isPendingRow ? '#ffffff' : (isLight ? '#0f172a' : '#f1f5f9') }}>{amountStr}</span>
           ) : null}
           {mode && amountStr ? ' ' : null}
           {mode && (
-            <span style={{ fontWeight: 600, color: isLight ? '#475569' : '#94a3b8', letterSpacing: '0.03em' }}>
+            <span style={{ fontWeight: 600, color: isPendingRow ? '#ffffff' : (isLight ? '#475569' : '#94a3b8'), letterSpacing: '0.03em' }}>
               {mode}
             </span>
           )}
           {isHybrid && breakdownStr ? (
-            <span style={{ fontWeight: 500, color: textMuted, marginLeft: 4 }}>
+            <span style={{ fontWeight: 500, color: isPendingRow ? 'rgba(255,255,255,0.9)' : textMuted, marginLeft: 4 }}>
               {breakdownStr}
             </span>
           ) : null}
@@ -6652,7 +6655,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                         const isHovered = hoveredRow === ticket.id
                         const ghostKind = dateFilter ? getScheduleGhostKind(ticket, dateFilter) : null
                         const isGhost = Boolean(ghostKind)
-                        const isPendingRow = isPendingScheduleTicket(ticket, ghostKind)
+                        const isPendingRow = isOverduePendingScheduleTicket(ticket, ghostKind, dateFilter)
                         const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(getCustomerDisplayName(ticket)))
                         const rowColors = getScheduleRowColors(ticket, ghostKind, isLight, idx, rowEven, rowOdd, isDuplicateName)
                         const baseBg = rowColors.baseBg
