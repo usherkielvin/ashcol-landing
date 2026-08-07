@@ -57,6 +57,7 @@ import { AssignDriversModal } from '../components/tickets/AssignDriversModal'
 import { ExcelImportResultsModal } from '../components/tickets/ExcelImportResultsModal'
 import { CustomDatePickerModal } from '../components/tickets/CustomDatePickerModal'
 import { ConfirmationChecklistModal } from '../components/tickets/ConfirmationChecklistModal'
+import TicketHistoryGraphModal from '../components/TicketHistoryGraphModal'
 import {
   CLOSING_SCHEDULE_STATUSES, INLINE_EDIT_COLUMNS, SCHEDULES_ACTIVE_DATE_KEY, SCHEDULE_CLOSING_OPTS,
   SCHEDULE_PENDING_OPTS, SCHEDULE_PENDING_STATUS_VALUES, TABLE_ROW_HEIGHT,
@@ -1038,6 +1039,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
    * unlike finalDate/preferredDate which aren't set yet for most of this queue. */
   const [myTicketsMonthFilter, setMyTicketsMonthFilter] = useState('')
   const [myTicketsFilterModalOpen, setMyTicketsFilterModalOpen] = useState(false)
+  const [historyGraphModal, setHistoryGraphModal] = useState<{ ticket: Ticket; isOpen: boolean } | null>(null)
   const [scanning, setScanning] = useState(false)
   const [_importing, setImporting] = useState(false)
   const [importResults, setImportResults] = useState<{
@@ -5476,9 +5478,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             e.preventDefault()
             e.stopPropagation()
             e.nativeEvent.stopImmediatePropagation()
-            // Open the existing detail modal with history panel already shown
-            setDetailTicket(ticket)
-            setShowHistoryPanel(true)
+            // Open the Git-style history modal
+            setHistoryGraphModal({ ticket, isOpen: true })
           }}
           onMouseDown={(e) => {
             e.preventDefault()
@@ -8924,6 +8925,14 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           rows={showcaseRows}
           paymentByRowId={showcasePaymentByRowId}
           onBeforeExport={persistSchedulesSnapshot}
+        />
+      )}
+
+      {historyGraphModal && (
+        <TicketHistoryGraphModal
+          ticket={historyGraphModal.ticket}
+          isOpen={historyGraphModal.isOpen}
+          onClose={() => setHistoryGraphModal(null)}
         />
       )}
     </div>
