@@ -6662,7 +6662,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                         const isDragSourceRow = draggedVehicleTicketId === ticket.id
                         const isDropTargetRow = vehicleDropTargetId === ticket.id && draggedVehicleTicketId !== null && !isDragSourceRow
                         const dropTargetBg = isLight ? 'rgba(16,185,129,0.22)' : 'rgba(16,185,129,0.28)'
-                        const bg = isDropTargetRow ? dropTargetBg : (isHovered && !isGhost ? rowHover : baseBg)
+                        const pendingHoverBg = isLight ? '#dc2626' : '#b91c1c'
+                        const bg = isDropTargetRow ? dropTargetBg : (isHovered && !isGhost ? (isPendingRow ? pendingHoverBg : rowHover) : baseBg)
                         const rowIsActive = columns.some(col =>
                           (editingCell?.ticketId === ticket.id && editingCell?.rowIndex === idx && editingCell?.colLabel === col.label)
                           || (expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label),
@@ -6722,10 +6723,10 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                               const cellVal = getCellDisplay(ticket, col.label)
                               const isCellEmpty = !SKIP_EMPTY_HIGHLIGHT.has(col.label) && !isGhost && !isEditingCell && !cellVal.trim()
                               // Quiet empty hint — no orange wash; subtle slate so dark mode stays clean.
-                              const emptyCellBg = isCellEmpty
+                              const emptyCellBg = (isCellEmpty && !isPendingRow)
                                 ? (isLight ? 'rgba(148,163,184,0.10)' : 'rgba(148,163,184,0.07)')
                                 : undefined
-                              const emptyCellInset = isCellEmpty
+                              const emptyCellInset = (isCellEmpty && !isPendingRow)
                                 ? `inset 0 0 0 1px ${isLight ? 'rgba(148,163,184,0.28)' : 'rgba(148,163,184,0.18)'}`
                                 : undefined
                               const isSelectedVehicleCell = col.label === 'VEHICLE' && selectedVehicleTicketId === ticket.id
