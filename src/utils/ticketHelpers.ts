@@ -1162,7 +1162,12 @@ export function isOverduePendingScheduleTicket(
   const outcome = getScheduleOutcome(ticket)
   if (outcome) return false
 
-  const stat = String(ticket.status || '').toUpperCase().replace(/\s+/g, '_')
+  const resolvedStatus = getScheduleStatusValue(ticket)
+  if (CLOSING_SCHEDULE_STATUSES.has(resolvedStatus)) return false
+
+  const rawStat = String(ticket.status || '').toUpperCase().replace(/\s+/g, '_')
+  if (isInstalledRemarks(ticket.remarksUpdate) || isInstalledWorkflowStatus(ticket.status)) return false
+  if (rawStat.startsWith('DONE_') || rawStat.startsWith('INSTALLED') || rawStat.startsWith('COMPLETED')) return false
 
   // EXCEPTIONS: pending continuation, pending resched, for quotation/approval, pending approval, cancelled, done
   const EXEMPT_STATUSES = new Set([
@@ -1182,7 +1187,7 @@ export function isOverduePendingScheduleTicket(
     'DONE_DISMANTLE',
     'DONE_QUOTATION',
   ])
-  if (EXEMPT_STATUSES.has(stat)) return false
+  if (EXEMPT_STATUSES.has(rawStat) || EXEMPT_STATUSES.has(resolvedStatus)) return false
 
   const schedDateStr = activeDateKey
     || getFinalDateKey(ticket)
