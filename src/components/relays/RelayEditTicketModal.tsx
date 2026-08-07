@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import ReactDOM from 'react-dom'
-import { AlertTriangle, FileText, X, Store, UserRound, Wind, Users, CalendarDays, MessageSquare, Info, Truck } from 'lucide-react'
+import { AlertTriangle, FileText, X, Store, UserRound, Wind, Users, CalendarDays, MessageSquare, Info, Truck, ClipboardList } from 'lucide-react'
+import { ConfirmationChecklistModal, isChecklistFilled } from '../tickets/ConfirmationChecklistModal'
 import { API_BASE_URL, formatBranchName } from '../../utils/api'
 import { resolveScheduleStatusFields } from '../../constants/ticketCategories'
 import { buildRelayEditDraft, type RelayEditDraft } from './relayEditForm'
@@ -135,6 +136,9 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
     buildRelayEditDraft(ticket, parseStoreVendor, resolveBranch, draftExtensions),
   )
   const [showHistory, setShowHistory] = useState(false)
+  const [show15QChecklist, setShow15QChecklist] = useState(false)
+  const rawChecklist = (ticket as any).confirmationChecklist || (ticket as any).confirmation_checklist
+  const has15QChecklist = isChecklistFilled(rawChecklist)
   const [confirmModal, setConfirmModal] = useState<{
     type: 'status' | 'discard'
     targetStatus?: { value: string; label: string }
@@ -239,9 +243,25 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
               })()}
             </div>
           </div>
-          <button type="button" onClick={requestClose} className="p-2 shrink-0 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-            <X className="w-5 h-5" style={{ color: textMuted }} />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShow15QChecklist(true)}
+              className="px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all hover:bg-emerald-500/10 hover:border-emerald-500/30 shrink-0"
+              style={{ borderColor: inputBorder, backgroundColor: inputBg, color: textPrimary }}
+              title="View & Fill 15Q Confirmation Checklist"
+            >
+              <ClipboardList className="w-4 h-4 text-emerald-500 shrink-0" />
+              <span className="hidden sm:inline">15Q CHECKLIST</span>
+              <span className="sm:hidden">15Q</span>
+              {has15QChecklist && (
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              )}
+            </button>
+            <button type="button" onClick={requestClose} className="p-2 shrink-0 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+              <X className="w-5 h-5" style={{ color: textMuted }} />
+            </button>
+          </div>
         </div>
 
         {showHistory && isOverview && (() => {
@@ -830,6 +850,16 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
     </div>,
     document.body,
   )}
+      {show15QChecklist && (
+        <ConfirmationChecklistModal
+          ticket={ticket as any}
+          isLight={isLight}
+          onClose={() => setShow15QChecklist(false)}
+          onSaved={(updatedTicket) => {
+            onSave?.(updatedTicket as any)
+          }}
+        />
+      )}
     </>
   )
 }
