@@ -4902,11 +4902,23 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       const ticketBranchId = resolveTicketScheduleBranchId(ticket, installerLineupIndex, driverOnlyNames) || activeBranchId
       const options = negotiatorsForBranch(ticketBranchId)
       const current = editingCell.value
+      // The stored cell value is sometimes a short/partial name (e.g. "ROMMEL" from an old
+      // import) rather than the full roster name ("ROMMEL NEIL LAURENTE"). Match loosely
+      // (case-insensitive, either-direction substring) so it resolves to the real employee
+      // instead of rendering a second, confusingly-duplicate "ROMMEL" option below.
+      const currentLower = current.trim().toLowerCase()
+      const matchedOption = currentLower
+        ? options.find(emp => {
+            const nameLower = emp.name.toLowerCase()
+            return nameLower === currentLower || nameLower.includes(currentLower) || currentLower.includes(nameLower)
+          })
+        : undefined
+      const selectValue = matchedOption ? matchedOption.name : current
       return wrapEditingCell(
         <select
           autoFocus
           disabled={isSaving}
-          value={current}
+          value={selectValue}
           onChange={e => syncDraftValue(e.target.value)}
           onBlur={onBlur}
           onClick={e => e.stopPropagation()}
@@ -4919,7 +4931,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           {options.map(emp => (
             <option key={emp.id} value={emp.name}>{formatNegotiatorLabel(emp)}</option>
           ))}
-          {current && !options.some(emp => emp.name === current) && (
+          {current && !matchedOption && !options.some(emp => emp.name === current) && (
             <option value={current}>{current}</option>
           )}
         </select>,

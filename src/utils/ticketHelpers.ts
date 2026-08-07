@@ -1719,6 +1719,17 @@ export function getInstalledDateKey(ticket: Ticket): string {
   return String(raw).split('T')[0].split(' ')[0].trim()
 }
 
+/** Whole months elapsed between a YYYY-MM-DD date key and today. Returns 0 for invalid/empty input. */
+export function monthsSince(dateKey: string): number {
+  if (!dateKey) return 0
+  const then = new Date(dateKey)
+  if (Number.isNaN(then.getTime())) return 0
+  const now = new Date()
+  let months = (now.getFullYear() - then.getFullYear()) * 12 + (now.getMonth() - then.getMonth())
+  if (now.getDate() < then.getDate()) months -= 1
+  return Math.max(0, months)
+}
+
 export function isScheduleGhostOnDate(ticket: Ticket, dateKey: string): boolean {
   return isRescheduledGhostOnDate(ticket, dateKey)
     || isCompletedGhostOnDate(ticket, dateKey)
