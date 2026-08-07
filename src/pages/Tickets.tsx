@@ -293,15 +293,19 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const textMuted = isLight ? '#64748b' : '#94a3b8'
   const inputBg = isLight ? '#f8fafc' : '#0f172a'
   const inputBorder = isLight ? '#cbd5e1' : '#334155'
-  const myTicketsTheadBg = isLight ? '#DEF2E6' : '#0a1f24'
-  const myTicketsTheadText = isLight ? '#14532D' : '#34d399'
-  const myTicketsTheadBorder = isLight ? 'rgba(22,163,74,0.42)' : '#0f3c33'
-  const schedTheadBg = isLight ? '#E3F4E9' : '#0a1f24'
-  const schedTheadText = isLight ? '#166534' : '#4ade80'
-  const schedTheadBorder = isLight ? 'rgba(22,163,74,0.38)' : '#0f3c33'
+  // Modern SaaS Data Grid: header matches the page background instead of a
+  // tinted band, and rows are flat (no zebra striping) — the same tokens now
+  // serve both My Tickets and Schedules, so the two tabs read as one grid.
+  const pageBg = isLight ? '#f8fafc' : '#060B18'
+  const myTicketsTheadBg = pageBg
+  const myTicketsTheadText = textMuted
+  const myTicketsTheadBorder = tableBorder
+  const schedTheadBg = pageBg
+  const schedTheadText = textMuted
+  const schedTheadBorder = tableBorder
   const rowEven = isLight ? '#ffffff' : '#060B18'
-  const rowOdd = isLight ? '#f7fbf8' : '#060B18'
-  const rowHover = isLight ? '#edf7f1' : '#0f1a2e'
+  const rowOdd = rowEven
+  const rowHover = isLight ? '#f8fafc' : '#0F1A2E'
   const green = '#16A34A'
   const textGreen = isLight ? '#16A34A' : '#4ade80'
 
@@ -5773,174 +5777,123 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
       {/* ── Portal: My Tickets toolbar (Active Branch + negotiator filter) ── */}
       {isMyTickets && ReactDOM.createPortal(
-        <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-col md:flex-row md:items-center gap-3">
-          <div className="flex items-center gap-2.5 w-full md:w-[240px] lg:w-[320px] h-10 md:h-11 px-3.5 md:px-4 rounded-full border transition-all shrink-0 shadow-sm focus-within:border-emerald-500/60"
+        <div className="w-full px-3 md:px-5 pt-3 pb-2 flex flex-col md:flex-row gap-3 bg-white dark:bg-[#0A1120] border-b" style={{ borderColor: border }}>
+
+          {/* Top Row / Left: Search Bar */}
+          <div className="flex items-center gap-2.5 w-full md:w-[320px] h-10 px-3.5 rounded-lg border transition-all shrink-0 focus-within:border-emerald-500/60"
             style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Search className="w-4 h-4 shrink-0 text-emerald-500" />
+            <Search className="w-4 h-4 shrink-0 text-slate-400" />
             <input
-              type="text"
+              type="search"
               placeholder="Search names, phone, ticket..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="bg-transparent outline-none text-xs md:text-sm flex-1 min-w-0 font-medium placeholder:font-medium placeholder:opacity-60"
+              className="bg-transparent outline-none text-xs flex-1 min-w-0 font-medium placeholder:text-slate-400"
               style={{ color: textPrimary }}
               onClick={e => e.stopPropagation()}
             />
             {searchQuery && (
               <button type="button" onClick={e => { e.stopPropagation(); setSearchQuery('') }}
-                className="shrink-0 p-1 rounded-full hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }}
-                aria-label="Clear search">
-                <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                className="shrink-0 p-1 rounded-full hover:bg-slate-500/10 transition-colors text-slate-400">
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
 
-          {!isAdmin && (
-            <div
-              className="flex items-center justify-center gap-2 h-9 md:h-10 px-3.5 rounded-full border text-xs font-black min-w-[180px] md:w-[220px] shrink-0"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: isLight ? '#15803d' : '#4ade80' }}
-              title="Your negotiator queue"
-            >
-              <span className="truncate uppercase font-extrabold tracking-wide">
-                {formatNegotiatorLabel({ name: user?.name, branchId: user?.branchId }, true) || 'ME'}
-              </span>
-            </div>
-          )}
-
-          {isAdmin && (
-            <div className="relative min-w-0 flex-1 md:flex-none">
-              {/* Custom Dropdown Trigger Button */}
-              <button
-                ref={negoDropdownRef}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  if (negoDropdownOpen) {
-                    setNegoDropdownOpen(false)
-                    return
-                  }
-                  const rect = e.currentTarget.getBoundingClientRect()
-                  setNegoDropdownPos({
-                    top: rect.bottom + 6,
-                    left: rect.left,
-                    width: Math.max(200, rect.width),
-                  })
-                  setNegoDropdownOpen(true)
-                }}
-                className="flex items-center justify-between gap-2 h-9 md:h-10 px-3.5 rounded-full border text-xs font-black min-w-[180px] md:w-[220px] outline-none shadow-sm cursor-pointer transition-all hover:border-emerald-500/70 active:scale-[0.98]"
-                style={{
-                  backgroundColor: inputBg,
-                  borderColor: negoDropdownOpen ? green : inputBorder,
-                  color: isLight ? '#15803d' : '#4ade80',
-                }}
+          {/* Bottom Row / Right: Horizontal Scrolling Filters (Guaranteed to scroll, no squishing) */}
+          <div
+            className="flex flex-nowrap items-center gap-2.5 overflow-x-auto no-scrollbar w-full pb-1 md:pb-0 flex-1 md:justify-end"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
+            {/* Negotiator */}
+            {!isAdmin && (
+              <div
+                className="shrink-0 whitespace-nowrap flex items-center justify-center h-9 px-3 rounded-md border text-[11px] font-bold shadow-sm"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: isLight ? '#15803d' : '#4ade80' }}
               >
-                <span className="truncate uppercase font-extrabold tracking-wide">
-                  {(() => {
-                    if (!myTicketsNegotiatorFilter) return 'ALL NEGOTIATORS'
-                    const match = myTicketsNegotiatorOptions.find(emp => emp.id === myTicketsNegotiatorFilter)
-                    return match ? formatNegotiatorLabel(match, true) : 'ALL NEGOTIATORS'
-                  })()}
+                <span className="uppercase tracking-wide">
+                  {formatNegotiatorLabel({ name: user?.name, branchId: user?.branchId }, true) || 'ME'}
                 </span>
-                <ChevronDown
-                  className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${negoDropdownOpen ? 'rotate-180' : ''}`}
-                  style={{ color: isLight ? '#15803d' : '#4ade80' }}
-                  strokeWidth={2.5}
-                />
-              </button>
+              </div>
+            )}
 
-              {/* Custom Dropdown Popover List — rendered directly to body so it ALWAYS floats above table & header */}
-              {negoDropdownOpen && negoDropdownPos && ReactDOM.createPortal(
-                <div
-                  ref={negoDropdownPopRef}
-                  className="fixed z-[99999] overflow-y-auto rounded-xl border shadow-2xl py-1 animate-in fade-in duration-100 select-none"
-                  style={{
-                    top: negoDropdownPos.top,
-                    left: negoDropdownPos.left,
-                    width: negoDropdownPos.width,
-                    maxHeight: 210,
-                    backgroundColor: isLight ? '#ffffff' : '#0a1120',
-                    borderColor: isLight ? '#cbd5e1' : '#334155',
-                    boxShadow: '0 12px 28px rgba(0, 0, 0, 0.5)',
+            {isAdmin && (
+              <div className="relative shrink-0 flex items-center">
+                <button
+                  ref={negoDropdownRef}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (negoDropdownOpen) {
+                      setNegoDropdownOpen(false)
+                      return
+                    }
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    setNegoDropdownPos({ top: rect.bottom + 6, left: rect.left, width: 220 })
+                    setNegoDropdownOpen(true)
                   }}
-                  onMouseDown={e => e.stopPropagation()}
-                  onClick={e => e.stopPropagation()}
+                  className="shrink-0 whitespace-nowrap flex items-center gap-1.5 h-9 px-3 rounded-md border text-[11px] font-bold shadow-sm transition-all"
+                  style={{
+                    backgroundColor: myTicketsNegotiatorFilter ? `${green}15` : inputBg,
+                    borderColor: myTicketsNegotiatorFilter ? green : inputBorder,
+                    color: myTicketsNegotiatorFilter ? green : (isLight ? '#15803d' : '#4ade80'),
+                  }}
                 >
-                  <button
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      setMyTicketsNegotiatorFilter('')
-                      setNegoDropdownOpen(false)
-                    }}
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      setMyTicketsNegotiatorFilter('')
-                      setNegoDropdownOpen(false)
-                    }}
-                    className="flex items-center justify-between w-full px-3 py-1.5 text-xs font-black uppercase tracking-wide text-left transition-colors hover:bg-emerald-500/10 cursor-pointer"
+                  <span className="uppercase tracking-wide truncate max-w-[140px]">
+                    {myTicketsNegotiatorFilter
+                      ? formatNegotiatorLabel(myTicketsNegotiatorOptions.find(emp => emp.id === myTicketsNegotiatorFilter) || {}, true)
+                      : 'ALL NEGOTIATORS'}
+                  </span>
+                  <ChevronDown className="w-3.5 h-3.5 opacity-70 shrink-0" />
+                </button>
+
+                {negoDropdownOpen && negoDropdownPos && ReactDOM.createPortal(
+                  <div
+                    ref={negoDropdownPopRef}
+                    className="fixed z-[99999] overflow-y-auto rounded-xl border shadow-2xl py-1 animate-in fade-in duration-100 select-none"
                     style={{
-                      color: !myTicketsNegotiatorFilter ? (isLight ? '#15803d' : '#4ade80') : textPrimary,
-                      backgroundColor: !myTicketsNegotiatorFilter ? (isLight ? 'rgba(22,163,74,0.1)' : 'rgba(74,222,128,0.12)') : undefined,
+                      top: negoDropdownPos.top, left: negoDropdownPos.left, width: negoDropdownPos.width, maxHeight: 210,
+                      backgroundColor: isLight ? '#ffffff' : '#0a1120', borderColor: isLight ? '#cbd5e1' : '#334155',
                     }}
                   >
-                    <span>ALL NEGOTIATORS</span>
-                    {!myTicketsNegotiatorFilter && <span className="text-emerald-500 font-extrabold text-xs">✓</span>}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => { setMyTicketsNegotiatorFilter(''); setNegoDropdownOpen(false) }}
+                      className="flex items-center justify-between w-full px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-left transition-colors"
+                      style={{ color: !myTicketsNegotiatorFilter ? green : textPrimary }}
+                    >
+                      <span>ALL NEGOTIATORS</span>
+                      {!myTicketsNegotiatorFilter && <span className="text-emerald-500">✓</span>}
+                    </button>
+                    <div className="my-1 border-t opacity-30" style={{ borderColor: inputBorder }} />
+                    {myTicketsNegotiatorOptions.map(emp => {
+                      const isSelected = myTicketsNegotiatorFilter === emp.id
+                      return (
+                        <button
+                          key={emp.id} type="button"
+                          onClick={() => { setMyTicketsNegotiatorFilter(emp.id); setNegoDropdownOpen(false) }}
+                          className="flex items-center justify-between w-full px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-left transition-colors"
+                          style={{ color: isSelected ? green : textPrimary }}
+                        >
+                          <span className="truncate">{formatNegotiatorLabel(emp, true)}</span>
+                          {isSelected && <span className="text-emerald-500">✓</span>}
+                        </button>
+                      )
+                    })}
+                  </div>,
+                  document.body,
+                )}
+              </div>
+            )}
 
-                  <div className="my-1 border-t opacity-30" style={{ borderColor: inputBorder }} />
-
-                  {myTicketsNegotiatorOptions.map(emp => {
-                    const label = formatNegotiatorLabel(emp, true)
-                    const isSelected = myTicketsNegotiatorFilter === emp.id
-                    return (
-                      <button
-                        type="button"
-                        key={emp.id}
-                        onMouseDown={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          setMyTicketsNegotiatorFilter(emp.id)
-                          setNegoDropdownOpen(false)
-                        }}
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          setMyTicketsNegotiatorFilter(emp.id)
-                          setNegoDropdownOpen(false)
-                        }}
-                        className="flex items-center justify-between w-full px-3 py-1.5 text-xs font-black uppercase tracking-wide text-left transition-colors hover:bg-emerald-500/10 cursor-pointer"
-                        style={{
-                          color: isSelected ? (isLight ? '#15803d' : '#4ade80') : textPrimary,
-                          backgroundColor: isSelected ? (isLight ? 'rgba(22,163,74,0.1)' : 'rgba(74,222,128,0.12)') : undefined,
-                        }}
-                      >
-                        <span className="truncate">{label}</span>
-                        {isSelected && <span className="text-emerald-500 font-extrabold text-xs">✓</span>}
-                      </button>
-                    )
-                  })}
-                </div>,
-                document.body,
-              )}
-            </div>
-          )}
-
-          {/* Pending/Closing — quick one-click toggles, always visible (not tucked behind the
-              Filters modal) so a negotiator can jump straight to "what's still not closed yet". */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {[
-              { value: 'PENDING_GROUP', label: 'Pending' },
-              { value: 'CLOSING_GROUP', label: 'Closing' },
-            ].map(opt => {
+            {/* Status Filters (Pending/Closing) */}
+            {[{ value: 'PENDING_GROUP', label: 'Pending' }, { value: 'CLOSING_GROUP', label: 'Closing' }].map(opt => {
               const active = myTicketsStatusFilter === opt.value
               return (
                 <button
-                  key={opt.value}
-                  type="button"
+                  key={opt.value} type="button"
                   onClick={(e) => { e.stopPropagation(); setMyTicketsStatusFilter(active ? '' : opt.value) }}
-                  className="h-9 md:h-10 px-3.5 rounded-full text-xs font-black uppercase tracking-wide shrink-0 transition-all active:scale-95 border shadow-sm"
+                  className="shrink-0 whitespace-nowrap h-9 px-3 rounded-md text-[11px] font-bold uppercase tracking-wide transition-all border shadow-sm"
                   style={active
                     ? { backgroundColor: green, borderColor: green, color: '#ffffff' }
                     : { backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
@@ -5949,176 +5902,160 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 </button>
               )
             })}
-          </div>
 
-          {/* Month — quick one-click custom picker, always visible (not tucked behind the
-              Filters modal). Filters by date created, since most of this queue has no
-              final/preferred date yet. */}
-          <div className="relative shrink-0 flex items-center gap-1.5">
+            {/* Month Picker */}
+            <div className="relative shrink-0 flex items-center gap-1.5">
+              <button
+                ref={myTicketsMonthPickerRef} type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (myTicketsMonthPickerOpen) { setMyTicketsMonthPickerOpen(false); return; }
+                  setMyTicketsMonthPickerYear(myTicketsMonthFilter ? Number(myTicketsMonthFilter.split('-')[0]) : new Date().getFullYear())
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  setMyTicketsMonthPickerPos({ top: rect.bottom + 6, left: Math.max(10, rect.right - 240), width: 240 })
+                  setMyTicketsMonthPickerOpen(true)
+                }}
+                className="shrink-0 whitespace-nowrap flex items-center gap-1.5 h-9 px-3 rounded-md border text-[11px] font-bold transition-all shadow-sm"
+                style={{
+                  backgroundColor: myTicketsMonthFilter ? `${green}15` : inputBg,
+                  borderColor: myTicketsMonthFilter ? green : inputBorder,
+                  color: myTicketsMonthFilter ? green : textPrimary,
+                }}
+              >
+                <CalendarDays className="w-3.5 h-3.5 shrink-0" />
+                <span>{myTicketsMonthFilter ? formatMonthFilterLabel(myTicketsMonthFilter) : 'Month'}</span>
+              </button>
+              {myTicketsMonthFilter && (
+                <button type="button" onClick={() => setMyTicketsMonthFilter('')} className="shrink-0 p-1 rounded-md text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+
+              {/* Calendar popover — not part of the reference snippet, but this is
+                  still the only way to actually pick a month, so it stays wired to
+                  the (repositioned) button above instead of being dropped. */}
+              {myTicketsMonthPickerOpen && myTicketsMonthPickerPos && ReactDOM.createPortal(
+                <div
+                  ref={myTicketsMonthPickerPopRef}
+                  className="fixed z-[99999] rounded-xl border shadow-2xl p-3 animate-in fade-in duration-100 select-none"
+                  style={{
+                    top: myTicketsMonthPickerPos.top,
+                    left: myTicketsMonthPickerPos.left,
+                    width: myTicketsMonthPickerPos.width,
+                    backgroundColor: isLight ? '#ffffff' : '#0a1120',
+                    borderColor: isLight ? '#cbd5e1' : '#334155',
+                    boxShadow: '0 12px 28px rgba(0, 0, 0, 0.5)',
+                  }}
+                  onMouseDown={e => e.stopPropagation()}
+                  onClick={e => e.stopPropagation()}
+                >
+                  {/* Year nav */}
+                  <div className="flex items-center justify-between mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setMyTicketsMonthPickerYear(y => y - 1)}
+                      className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
+                      style={{ color: textMuted }}
+                    >
+                      {'<'}
+                    </button>
+                    <span className="text-sm font-bold" style={{ color: textPrimary }}>
+                      {myTicketsMonthPickerYear}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setMyTicketsMonthPickerYear(y => y + 1)}
+                      className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
+                      style={{ color: textMuted }}
+                    >
+                      {'>'}
+                    </button>
+                  </div>
+
+                  {/* Month grid */}
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((label, idx) => {
+                      const key = `${myTicketsMonthPickerYear}-${String(idx + 1).padStart(2, '0')}`
+                      const isSelected = myTicketsMonthFilter === key
+                      const isCurrentMonth = key === todayDateKey().slice(0, 7)
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => { setMyTicketsMonthFilter(key); setMyTicketsMonthPickerOpen(false) }}
+                          className="h-9 rounded-lg text-xs font-bold transition-all"
+                          style={{
+                            color: isSelected ? '#ffffff' : isCurrentMonth ? green : textPrimary,
+                            backgroundColor: isSelected ? green : 'transparent',
+                            border: `1px solid ${isSelected ? green : isCurrentMonth ? green : inputBorder}`,
+                          }}
+                        >
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {/* Footer — quick actions */}
+                  <div className="flex items-center gap-2 pt-3 mt-2 border-t" style={{ borderColor: inputBorder }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const key = todayDateKey().slice(0, 7)
+                        setMyTicketsMonthFilter(key)
+                        setMyTicketsMonthPickerYear(Number(key.split('-')[0]))
+                        setMyTicketsMonthPickerOpen(false)
+                      }}
+                      className="flex-1 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:opacity-90"
+                      style={{ backgroundColor: `${green}22`, color: green }}
+                    >
+                      This month
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setMyTicketsMonthFilter(''); setMyTicketsMonthPickerOpen(false) }}
+                      className="flex-1 py-1.5 rounded-lg text-[11px] font-bold border transition-all hover:opacity-90"
+                      style={{ borderColor: inputBorder, color: textMuted, backgroundColor: 'transparent' }}
+                    >
+                      All months
+                    </button>
+                  </div>
+                </div>,
+                document.body,
+              )}
+            </div>
+
+            {/* Extended Filters Button */}
             <button
-              ref={myTicketsMonthPickerRef}
               type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                if (myTicketsMonthPickerOpen) {
-                  setMyTicketsMonthPickerOpen(false)
-                  return
-                }
-                setMyTicketsMonthPickerYear(
-                  myTicketsMonthFilter ? Number(myTicketsMonthFilter.split('-')[0]) : new Date().getFullYear(),
-                )
-                const rect = e.currentTarget.getBoundingClientRect()
-                setMyTicketsMonthPickerPos({ top: rect.bottom + 6, left: rect.left, width: Math.max(240, rect.width) })
-                setMyTicketsMonthPickerOpen(true)
-              }}
-              className="flex items-center gap-2 h-9 md:h-10 px-3.5 rounded-full border text-xs font-black outline-none shadow-sm cursor-pointer transition-all hover:border-emerald-500/70 active:scale-[0.98]"
+              onClick={(e) => { e.stopPropagation(); setMyTicketsFilterModalOpen(true) }}
+              className="shrink-0 whitespace-nowrap flex items-center gap-1.5 h-9 px-3 rounded-md border text-[11px] font-bold transition-all shadow-sm"
               style={{
-                backgroundColor: myTicketsMonthFilter ? green : inputBg,
-                borderColor: myTicketsMonthPickerOpen ? green : (myTicketsMonthFilter ? green : inputBorder),
-                color: myTicketsMonthFilter ? '#ffffff' : textPrimary,
+                backgroundColor: (myTicketsStatusFilter && myTicketsStatusFilter !== 'PENDING_GROUP' && myTicketsStatusFilter !== 'CLOSING_GROUP') ? `${green}15` : inputBg,
+                borderColor: (myTicketsStatusFilter && myTicketsStatusFilter !== 'PENDING_GROUP' && myTicketsStatusFilter !== 'CLOSING_GROUP') ? green : inputBorder,
+                color: (myTicketsStatusFilter && myTicketsStatusFilter !== 'PENDING_GROUP' && myTicketsStatusFilter !== 'CLOSING_GROUP') ? green : textPrimary,
               }}
-              title="Filter by month created"
             >
-              <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: myTicketsMonthFilter ? '#ffffff' : green }} strokeWidth={2.2} />
-              <span className="whitespace-nowrap">
-                {myTicketsMonthFilter ? formatMonthFilterLabel(myTicketsMonthFilter) : 'Month'}
+              <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                {/* Prevent redundant "Closing" label when using the quick toggles */}
+                {myTicketsMonthFilter
+                  ? formatMonthFilterLabel(myTicketsMonthFilter)
+                  : (myTicketsStatusFilter && myTicketsStatusFilter !== 'PENDING_GROUP' && myTicketsStatusFilter !== 'CLOSING_GROUP')
+                    ? getScheduleStatusLabel(myTicketsStatusFilter)
+                    : 'Filters'
+                }
               </span>
             </button>
-
-            {myTicketsMonthFilter && (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setMyTicketsMonthFilter('') }}
-                className="h-9 md:h-10 px-2.5 rounded-full text-xs font-bold border shrink-0 transition-all active:scale-95"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
-                aria-label="Clear month filter"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-
-            {myTicketsMonthPickerOpen && myTicketsMonthPickerPos && ReactDOM.createPortal(
-              <div
-                ref={myTicketsMonthPickerPopRef}
-                className="fixed z-[99999] rounded-xl border shadow-2xl p-3 animate-in fade-in duration-100 select-none"
-                style={{
-                  top: myTicketsMonthPickerPos.top,
-                  left: myTicketsMonthPickerPos.left,
-                  width: myTicketsMonthPickerPos.width,
-                  backgroundColor: isLight ? '#ffffff' : '#0a1120',
-                  borderColor: isLight ? '#cbd5e1' : '#334155',
-                  boxShadow: '0 12px 28px rgba(0, 0, 0, 0.5)',
-                }}
-                onMouseDown={e => e.stopPropagation()}
-                onClick={e => e.stopPropagation()}
-              >
-                {/* Year nav */}
-                <div className="flex items-center justify-between mb-2">
-                  <button
-                    type="button"
-                    onClick={() => setMyTicketsMonthPickerYear(y => y - 1)}
-                    className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
-                    style={{ color: textMuted }}
-                  >
-                    {'<'}
-                  </button>
-                  <span className="text-sm font-bold" style={{ color: textPrimary }}>
-                    {myTicketsMonthPickerYear}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setMyTicketsMonthPickerYear(y => y + 1)}
-                    className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
-                    style={{ color: textMuted }}
-                  >
-                    {'>'}
-                  </button>
-                </div>
-
-                {/* Month grid */}
-                <div className="grid grid-cols-3 gap-1.5">
-                  {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((label, idx) => {
-                    const key = `${myTicketsMonthPickerYear}-${String(idx + 1).padStart(2, '0')}`
-                    const isSelected = myTicketsMonthFilter === key
-                    const isCurrentMonth = key === todayDateKey().slice(0, 7)
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => { setMyTicketsMonthFilter(key); setMyTicketsMonthPickerOpen(false) }}
-                        className="h-9 rounded-lg text-xs font-bold transition-all"
-                        style={{
-                          color: isSelected ? '#ffffff' : isCurrentMonth ? green : textPrimary,
-                          backgroundColor: isSelected ? green : 'transparent',
-                          border: `1px solid ${isSelected ? green : isCurrentMonth ? green : inputBorder}`,
-                        }}
-                      >
-                        {label}
-                      </button>
-                    )
-                  })}
-                </div>
-
-                {/* Footer — quick actions */}
-                <div className="flex items-center gap-2 pt-3 mt-2 border-t" style={{ borderColor: inputBorder }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const key = todayDateKey().slice(0, 7)
-                      setMyTicketsMonthFilter(key)
-                      setMyTicketsMonthPickerYear(Number(key.split('-')[0]))
-                      setMyTicketsMonthPickerOpen(false)
-                    }}
-                    className="flex-1 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:opacity-90"
-                    style={{ backgroundColor: `${green}22`, color: green }}
-                  >
-                    This month
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setMyTicketsMonthFilter(''); setMyTicketsMonthPickerOpen(false) }}
-                    className="flex-1 py-1.5 rounded-lg text-[11px] font-bold border transition-all hover:opacity-90"
-                    style={{ borderColor: inputBorder, color: textMuted, backgroundColor: 'transparent' }}
-                  >
-                    All months
-                  </button>
-                </div>
-              </div>,
-              document.body,
-            )}
           </div>
-
-          {/* Month + status filter — mirrors Schedules' Filters button, but instant/client-side
-              (no month fetch): lets a negotiator narrow her queue to a specific sub-status
-              like SURVEY/INSTALL/RESCHED beyond the Pending/Closing quick toggles above, and/or
-              a month the ticket was created in. */}
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); setMyTicketsFilterModalOpen(true) }}
-            className="flex items-center gap-1.5 h-9 md:h-10 px-3 rounded-full text-xs font-bold shrink-0 transition-all active:scale-95 border shadow-sm"
-            style={{
-              backgroundColor: (myTicketsStatusFilter || myTicketsMonthFilter) ? green : inputBg,
-              borderColor: (myTicketsStatusFilter || myTicketsMonthFilter) ? green : inputBorder,
-              color: (myTicketsStatusFilter || myTicketsMonthFilter) ? '#ffffff' : textPrimary,
-            }}
-            title="Filter by month or status"
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" style={{ color: (myTicketsStatusFilter || myTicketsMonthFilter) ? '#ffffff' : green }} strokeWidth={2.2} />
-            <span>
-              {myTicketsMonthFilter ? formatMonthFilterLabel(myTicketsMonthFilter)
-                : myTicketsStatusFilter === 'PENDING_GROUP' ? 'All Pending'
-                : myTicketsStatusFilter === 'CLOSING_GROUP' ? 'All Closing'
-                : myTicketsStatusFilter ? getScheduleStatusLabel(myTicketsStatusFilter)
-                : 'Filters'}
-            </span>
-          </button>
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body,
       )}
 
       {/* Portal: Toolbar into header slot */}
       {!isMyTickets && activeTab !== 'overview' && ReactDOM.createPortal(
-        <div className="w-full min-w-0 max-w-full px-3 md:px-4 pt-2 pb-2.5 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-2 md:gap-3 items-center">
+        <div className="w-full min-w-0 max-w-full px-3 md:px-4 py-2.5 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-2 md:gap-3 items-center border-b"
+          style={{ backgroundColor: isLight ? '#ffffff' : '#0A1120', borderColor: tableBorder }}>
 
           {/* Left: date chips (scroll) + search — can shrink */}
           <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-2.5 min-w-0 overflow-hidden">
@@ -6556,9 +6493,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                 ? (isLight ? '#16A34A' : '#4ADE80')
                                 : (isMyTickets ? myTicketsTheadText : schedTheadText),
                               fontWeight: 700, whiteSpace: 'nowrap',
-                              borderRight: `1px solid ${isMyTickets ? myTicketsTheadBorder : schedTheadBorder}`,
-                              borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`,
-                              fontSize: '11px', letterSpacing: '0.06em',
+                              borderBottom: isMyTickets ? `2px solid ${myTicketsTheadBorder}` : `2px solid ${schedTheadBorder}`,
+                              fontSize: '10px', letterSpacing: '0.08em',
                               width: col.w, minWidth: 0, maxWidth: col.w,
                               overflow: 'hidden', textOverflow: 'ellipsis',
                               backgroundColor: isMyTickets ? myTicketsTheadBg : schedTheadBg,
@@ -6787,7 +6723,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                     color: isGhost ? textMuted : textPrimary,
                                     fontSize: '12.5px', fontWeight: isGhost ? 500 : 600,
                                     backgroundColor: isSelectedVehicleCell ? `${green}22` : (emptyCellBg ?? bg),
-                                    borderRight: `1px solid ${tableBorder}`,
                                     borderBottom: `1px solid ${tableBorder}`,
                                     width: col.w,
                                     minWidth: 0,
@@ -6984,144 +6919,148 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                             opacity: isGhost ? 0.72 : 1,
                           }}
                         >
-                          {/* ── Top section: name / ticket / phone / status ── */}
-                          <div className="px-3 pt-2.5 pb-2">
+                          {/* ── Card Header: ticket no (left) / status badge (right) ── */}
+                          <div
+                            className="px-3 py-2 flex justify-between items-center border-b"
+                            style={{ backgroundColor: isLight ? 'rgba(248,250,252,0.7)' : 'rgba(15,26,46,0.5)', borderColor: tableBorder }}
+                          >
+                            <span className="text-[10.5px] font-bold tabular-nums" style={{ color: textMuted }}>
+                              {ticketNo}
+                            </span>
+                            {statusDisplay ? (
+                              <span
+                                className="text-[10.5px] font-black uppercase shrink-0 tracking-wider px-2.5 py-1 rounded-full border shadow-sm"
+                                style={{
+                                  color: statusStyle.color,
+                                  backgroundColor: statusStyle.backgroundColor,
+                                  borderColor: statusStyle.borderColor,
+                                }}
+                              >
+                                {statusDisplay === 'INSTALLATION' ? 'INSTALL' : statusDisplay}
+                              </span>
+                            ) : null}
+                          </div>
+
+                          {/* ── Card Body: customer name / phone, then brand/dealer + location ── */}
+                          <div className="p-3">
                             <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-baseline gap-1.5 flex-wrap">
-                                  <span
-                                    className="font-extrabold text-[13px] uppercase tracking-wide leading-tight"
-                                    style={{ color: isDuplicateName ? (isLight ? '#9f1239' : '#f43f5e') : textPrimary }}
-                                  >
-                                    {getCustomerDisplayName(ticket)}
-                                  </span>
-                                  <span className="text-[11px] font-bold tabular-nums" style={{ color: textMuted }}>
-                                    {ticketNo}
-                                  </span>
-                                </div>
-                                {phone ? (
-                                  <a
-                                    href={`tel:${phone.replace(/[^\d+]/g, '')}`}
-                                    onClick={e => e.stopPropagation()}
-                                    onContextMenu={e => {
-                                      e.preventDefault(); e.stopPropagation()
-                                      void copyTextToClipboard(phone)
-                                      showToast(`Copied ${fmtPhone(phone) || phone}`)
-                                    }}
-                                    className="text-[11px] font-semibold tabular-nums hover:underline"
-                                    style={{ color: isLight ? '#0369a1' : '#7dd3fc' }}
-                                  >
-                                    {fmtPhone(phone) || phone}
-                                  </a>
-                                ) : null}
-                                {/* Brand / Dealer */}
-                                {(brand || dealer) ? (
-                                  <div className="text-[10.5px] font-semibold truncate mt-0.5" style={{ color: textMuted }}>
-                                    {[brand, dealer].filter(Boolean).join(' · ')}
-                                  </div>
-                                ) : null}
-                              </div>
-                              {statusDisplay ? (
-                                <span
-                                  className="text-[10.5px] font-black uppercase shrink-0 tracking-wider px-2.5 py-1 rounded-full border shadow-sm"
-                                  style={{
-                                    color: statusStyle.color,
-                                    backgroundColor: statusStyle.backgroundColor,
-                                    borderColor: statusStyle.borderColor,
+                              <span
+                                className="text-sm font-black uppercase tracking-wide leading-tight truncate"
+                                style={{ color: isDuplicateName ? (isLight ? '#9f1239' : '#f43f5e') : textPrimary }}
+                              >
+                                {getCustomerDisplayName(ticket)}
+                              </span>
+                              {phone ? (
+                                <a
+                                  href={`tel:${phone.replace(/[^\d+]/g, '')}`}
+                                  onClick={e => e.stopPropagation()}
+                                  onContextMenu={e => {
+                                    e.preventDefault(); e.stopPropagation()
+                                    void copyTextToClipboard(phone)
+                                    showToast(`Copied ${fmtPhone(phone) || phone}`)
                                   }}
+                                  className="text-[11px] font-semibold tabular-nums hover:underline shrink-0"
+                                  style={{ color: isLight ? '#0369a1' : '#7dd3fc' }}
                                 >
-                                  {statusDisplay === 'INSTALLATION' ? 'INSTALL' : statusDisplay}
-                                </span>
+                                  {fmtPhone(phone) || phone}
+                                </a>
                               ) : null}
                             </div>
-                            {/* Full Width Address */}
+                            {(brand || dealer) ? (
+                              <div className="text-[10.5px] font-semibold truncate mt-1" style={{ color: textMuted }}>
+                                {[brand, dealer].filter(Boolean).join(' · ')}
+                              </div>
+                            ) : null}
                             {fullAddress ? (
-                              <div className="flex items-center gap-1 mt-1 w-full" style={{ color: textMuted }}>
+                              <div className="flex items-center gap-1 mt-0.5 w-full" style={{ color: textMuted }}>
                                 <MapPin className="w-2.5 h-2.5 shrink-0" style={{ color: green }} />
                                 <span className="text-[10.5px] font-medium truncate w-full" title={fullAddress}>{fullAddress}</span>
                               </div>
                             ) : null}
                           </div>
 
-                          {/* ── Crew section: tight table ── */}
+                          {/* ── Card Crew: strict 2x2 grid — Negotiator, Installer, Vehicle, Driver ── */}
                           <div
-                            className="px-3 py-1.5 border-t"
-                            style={{
-                              borderColor: tableBorder,
-                              backgroundColor: isLight ? 'rgba(15,23,42,0.04)' : 'rgba(148,163,184,0.08)',
-                            }}
+                            className="grid grid-cols-2 gap-2 px-3 py-2.5 border-y"
+                            style={{ backgroundColor: isLight ? 'rgba(248,250,252,0.5)' : 'rgba(15,26,46,0.3)', borderColor: tableBorder }}
                           >
-                            {/* Negotiator row */}
-                            <div className="flex items-center justify-between gap-2 min-w-0">
-                              <div className="flex items-center gap-1 min-w-0">
-                                <span className="text-[9.5px] font-bold tracking-widest uppercase shrink-0" style={{ color: textMuted }}>NEGOTIATOR:</span>
-                                <span className="text-[11.5px] font-semibold truncate" style={{ color: (negotiatorName && negotiatorName !== EMPTY_CELL) ? textPrimary : textMuted }}>
-                                  {negotiatorName && negotiatorName !== EMPTY_CELL ? negotiatorName : '—'}
-                                </span>
-                              </div>
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Negotiator</span>
+                              <span className="text-[11px] font-semibold truncate" style={{ color: (negotiatorName && negotiatorName !== EMPTY_CELL) ? textPrimary : textMuted }}>
+                                {negotiatorName && negotiatorName !== EMPTY_CELL ? negotiatorName : '—'}
+                              </span>
                               {negotiatorPhone ? (
-                                <div className="flex items-center gap-1 shrink-0 ml-auto text-right">
-                                  <span className="text-[9.5px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>CONTACT NO:</span>
-                                  <a
-                                    href={`tel:${negotiatorPhone.replace(/[^\d+]/g, '')}`}
-                                    onClick={e => e.stopPropagation()}
-                                    onContextMenu={e => {
-                                      e.preventDefault(); e.stopPropagation()
-                                      void copyTextToClipboard(negotiatorPhone)
-                                      showToast(`Copied ${fmtPhone(negotiatorPhone) || negotiatorPhone}`)
-                                    }}
-                                    className="text-[11px] tabular-nums font-bold hover:underline"
-                                    style={{ color: isLight ? '#0369a1' : '#7dd3fc' }}
-                                  >
-                                    {fmtPhone(negotiatorPhone) || negotiatorPhone}
-                                  </a>
-                                </div>
+                                <a
+                                  href={`tel:${negotiatorPhone.replace(/[^\d+]/g, '')}`}
+                                  onClick={e => e.stopPropagation()}
+                                  onContextMenu={e => {
+                                    e.preventDefault(); e.stopPropagation()
+                                    void copyTextToClipboard(negotiatorPhone)
+                                    showToast(`Copied ${fmtPhone(negotiatorPhone) || negotiatorPhone}`)
+                                  }}
+                                  className="text-[10px] tabular-nums font-bold hover:underline truncate"
+                                  style={{ color: isLight ? '#0369a1' : '#7dd3fc' }}
+                                >
+                                  {fmtPhone(negotiatorPhone) || negotiatorPhone}
+                                </a>
                               ) : null}
                             </div>
-                            {/* Installer · Vehicle · Driver in one line */}
-                            <div className="grid grid-cols-3 gap-x-1 mt-0.5">
-                              <div className="col-span-1 flex flex-col min-w-0">
-                                <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Installer</span>
-                                <span className="text-[11px] font-semibold truncate" style={{ color: installer ? (isLight ? '#0369a1' : '#7dd3fc') : textMuted }}>
-                                  {installer || '—'}
-                                </span>
-                              </div>
-                              <div className="col-span-1 flex flex-col min-w-0">
-                                <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Vehicle</span>
-                                <span className="text-[11px] font-semibold truncate uppercase tabular-nums" style={{ color: vehicle ? textPrimary : textMuted }}>
-                                  {vehicle || '—'}
-                                </span>
-                              </div>
-                              <div className="col-span-1 flex flex-col items-end text-right min-w-0">
-                                <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Driver</span>
-                                <span className="text-[11px] font-semibold truncate" style={{ color: driver ? textPrimary : textMuted }}>
-                                  {driver || '—'}
-                                </span>
-                              </div>
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Installer</span>
+                              <span className="text-[11px] font-semibold truncate" style={{ color: installer ? (isLight ? '#0369a1' : '#7dd3fc') : textMuted }}>
+                                {installer || '—'}
+                              </span>
+                            </div>
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Vehicle</span>
+                              <span className="text-[11px] font-semibold truncate uppercase tabular-nums" style={{ color: vehicle ? textPrimary : textMuted }}>
+                                {vehicle || '—'}
+                              </span>
+                            </div>
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Driver</span>
+                              <span className="text-[11px] font-semibold truncate" style={{ color: driver ? textPrimary : textMuted }}>
+                                {driver || '—'}
+                              </span>
                             </div>
                           </div>
 
-                          {/* ── Footer: commit / payment / remarks ── */}
-                          {(commit || payment || remarks) ? (
-                            <div
-                              className="px-3 py-1.5 border-t"
-                              style={{ borderColor: tableBorder }}
-                            >
-                              {(commit || payment) ? (
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="text-[10.5px] font-medium truncate" style={{ color: textMuted }}>{commit || '—'}</span>
-                                  {payment ? (
-                                    <span className="text-[11px] shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{payment}</span>
+                          {/* ── Card Footer: commit/remarks (left) / final date (right) ── */}
+                          {(() => {
+                            const finalDateKey = getFinalDateKey(ticket)
+                            return (
+                              <div className="px-3 py-2 flex justify-between items-center gap-2">
+                                <div className="min-w-0 flex-1">
+                                  {(commit || payment) ? (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10.5px] font-medium truncate" style={{ color: textMuted }}>{commit || '—'}</span>
+                                      {payment ? (
+                                        <span className="text-[11px] shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{payment}</span>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
+                                  {remarks ? (
+                                    <p className="text-[10.5px] truncate font-medium" style={{ color: textMuted }} title={remarks}>
+                                      {remarks}
+                                    </p>
                                   ) : null}
                                 </div>
-                              ) : null}
-                              {remarks ? (
-                                <p className="text-[10.5px] truncate font-medium" style={{ color: textMuted }} title={remarks}>
-                                  {remarks}
-                                </p>
-                              ) : null}
-                            </div>
-                          ) : null}
+                                {finalDateKey ? (
+                                  <span className="text-[10.5px] font-bold tabular-nums shrink-0" style={{ color: textPrimary }}>
+                                    {formatDisplayDate(finalDateKey, '')}
+                                  </span>
+                                ) : canEdit && !isGhost ? (
+                                  <button
+                                    type="button"
+                                    onClick={e => { e.stopPropagation(); startCellEdit(ticket, 'FINAL DATE', e.currentTarget as HTMLElement, idx) }}
+                                    className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-1 rounded shrink-0"
+                                  >
+                                    + DATE
+                                  </button>
+                                ) : null}
+                              </div>
+                            )
+                          })()}
                         </div>
                       )
                     })

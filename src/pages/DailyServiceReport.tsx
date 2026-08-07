@@ -306,6 +306,30 @@ export default function DailyServiceReport() {
   const [negoFilter, setNegoFilter] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState('')
 
+  // ── Month popover (custom, replaces the native <select> that overflowed on mobile) ──
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false)
+  const [monthPickerYear, setMonthPickerYear] = useState(() => new Date().getFullYear())
+  const [monthPickerPos, setMonthPickerPos] = useState<{ top: number; left: number; width: number } | null>(null)
+  const monthPickerRef = useRef<HTMLButtonElement>(null)
+  const monthPickerPopRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!monthPickerOpen) return
+    const closeIfOutside = (target: EventTarget | null) => {
+      if (monthPickerPopRef.current && monthPickerPopRef.current.contains(target as Node)) return
+      if (monthPickerRef.current && monthPickerRef.current.contains(target as Node)) return
+      setMonthPickerOpen(false)
+    }
+    const handleMouseDown = (e: MouseEvent) => closeIfOutside(e.target)
+    const handleScroll = () => setMonthPickerOpen(false)
+    document.addEventListener('mousedown', handleMouseDown)
+    window.addEventListener('scroll', handleScroll, true)
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown)
+      window.removeEventListener('scroll', handleScroll, true)
+    }
+  }, [monthPickerOpen])
+
   const negotiatorOptions = useMemo(() => {
     const set = new Set<string>()
     rows.forEach(r => {
@@ -1651,20 +1675,6 @@ export default function DailyServiceReport() {
     return filtered.filter(r => rowSearchBlob(r).includes(q))
   }, [rows, searchQuery, negoFilter])
 
-  // Build month options from current items (+ last 12 months always available)
-  const monthOptions = useMemo(() => {
-    const seen = new Set<string>()
-    rows.forEach(item => {
-      if (item.reportDate) seen.add(item.reportDate.slice(0, 7))
-    })
-    const now = new Date()
-    for (let i = 0; i < 12; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      seen.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
-    }
-    return Array.from(seen).sort((a, b) => b.localeCompare(a))
-  }, [rows])
-
   const monthLabel = (ym: string) => {
     const [y, m] = ym.split('-')
     return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
@@ -1682,71 +1692,177 @@ export default function DailyServiceReport() {
       {/* ── Portal: Toolbar into header slot ────────────────── */}
       {ReactDOM.createPortal(
         <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2 select-none">
-          <div className="flex flex-wrap items-center gap-2.5 w-full">
-            {/* Branch Filter */}
-            <div className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border text-xs font-bold shrink-0 shadow-sm transition-all"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-              <Building2 className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
-              <select
-                value={branchFilter}
-                onChange={e => {
-                  const val = e.target.value
-                  handleBranchFilterChange(val)
-                  localStorage.setItem('ashcol-global-branch-id', val)
-                  window.dispatchEvent(new Event('ashcol-global-branch-change'))
-                }}
-                className="bg-transparent outline-none cursor-pointer font-bold pr-1"
-                style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
-              >
-                <option value="ALL_BRANCHES" style={{ backgroundColor: inputBg, color: textPrimary }}>All Branches</option>
-                {branches.map(b => (
-                  <option key={b.id} value={b.id} style={{ backgroundColor: inputBg, color: textPrimary }}>{formatBranchName(b.name)}</option>
-                ))}
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
+          <div className="flex flex-col md:flex-row md:items-center gap-2.5 w-full">
+
+            {/* Filter ribbon — Branch / Negotiator / Month, horizontally scrollable
+                so they never stack into a vertical tower on mobile. */}
+            <div className="flex flex-nowrap items-center gap-2.5 overflow-x-auto no-scrollbar order-2 md:order-1 pb-1 md:pb-0">
+              {/* Branch Filter */}
+              <div className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border text-xs font-bold shrink-0 shadow-sm transition-all"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+                <Building2 className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
+                <select
+                  value={branchFilter}
+                  onChange={e => {
+                    const val = e.target.value
+                    handleBranchFilterChange(val)
+                    localStorage.setItem('ashcol-global-branch-id', val)
+                    window.dispatchEvent(new Event('ashcol-global-branch-change'))
+                  }}
+                  className="bg-transparent outline-none cursor-pointer font-bold pr-1"
+                  style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
+                >
+                  <option value="ALL_BRANCHES" style={{ backgroundColor: inputBg, color: textPrimary }}>All Branches</option>
+                  {branches.map(b => (
+                    <option key={b.id} value={b.id} style={{ backgroundColor: inputBg, color: textPrimary }}>{formatBranchName(b.name)}</option>
+                  ))}
+                </select>
+                <ChevronDown className="w-3.5 h-3.5 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
+              </div>
+
+              {/* Nego (Negotiator) Filter */}
+              <div className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border text-xs font-bold shrink-0 shadow-sm transition-all"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+                <User className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
+                <select
+                  value={negoFilter}
+                  onChange={e => setNegoFilter(e.target.value)}
+                  className="bg-transparent outline-none cursor-pointer font-bold pr-1 uppercase"
+                  style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
+                >
+                  <option value="" style={{ backgroundColor: inputBg, color: textPrimary }}>All Negotiators</option>
+                  {negotiatorOptions.map(n => (
+                    <option key={n} value={n} style={{ backgroundColor: inputBg, color: textPrimary }}>{n}</option>
+                  ))}
+                </select>
+                <ChevronDown className="w-3.5 h-3.5 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
+              </div>
+
+              {/* Month Picker — custom popover (a native <select> here overflowed the
+                  viewport on mobile since the option list can't be positioned/clamped). */}
+              <div className="relative shrink-0">
+                <button
+                  ref={monthPickerRef}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (monthPickerOpen) { setMonthPickerOpen(false); return }
+                    setMonthPickerYear(monthFilter ? Number(monthFilter.split('-')[0]) : new Date().getFullYear())
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    const popWidth = 240
+                    setMonthPickerPos({
+                      top: rect.bottom + 6,
+                      left: Math.max(10, Math.min(rect.left, window.innerWidth - popWidth - 10)),
+                      width: popWidth,
+                    })
+                    setMonthPickerOpen(true)
+                  }}
+                  className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border text-xs font-bold shadow-sm transition-all"
+                  style={{ backgroundColor: inputBg, borderColor: monthPickerOpen ? '#16A34A' : inputBorder, color: textPrimary }}
+                >
+                  <CalendarDays className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
+                  <span className="whitespace-nowrap">{monthFilter ? monthLabel(monthFilter) : 'All Months'}</span>
+                  <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${monthPickerOpen ? 'rotate-180' : ''}`} style={{ color: textMuted }} />
+                </button>
+
+                {monthPickerOpen && monthPickerPos && ReactDOM.createPortal(
+                  <div
+                    ref={monthPickerPopRef}
+                    className="fixed z-[99999] rounded-xl border shadow-2xl p-3 animate-in fade-in duration-100 select-none"
+                    style={{
+                      top: monthPickerPos.top,
+                      left: monthPickerPos.left,
+                      width: monthPickerPos.width,
+                      backgroundColor: isLight ? '#ffffff' : '#0a1120',
+                      borderColor: isLight ? '#cbd5e1' : '#334155',
+                      boxShadow: '0 12px 28px rgba(0, 0, 0, 0.5)',
+                    }}
+                    onMouseDown={e => e.stopPropagation()}
+                    onClick={e => e.stopPropagation()}
+                  >
+                    {/* Year nav */}
+                    <div className="flex items-center justify-between mb-2">
+                      <button
+                        type="button"
+                        onClick={() => setMonthPickerYear(y => y - 1)}
+                        className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
+                        style={{ color: textMuted }}
+                      >
+                        {'<'}
+                      </button>
+                      <span className="text-sm font-bold" style={{ color: textPrimary }}>
+                        {monthPickerYear}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setMonthPickerYear(y => y + 1)}
+                        className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
+                        style={{ color: textMuted }}
+                      >
+                        {'>'}
+                      </button>
+                    </div>
+
+                    {/* Month grid */}
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((label, idx) => {
+                        const key = `${monthPickerYear}-${String(idx + 1).padStart(2, '0')}`
+                        const isSelected = monthFilter === key
+                        const isCurrentMonth = key === todayLocal().slice(0, 7)
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => {
+                              handleMonthFilterChange(key)
+                              setMonthPickerOpen(false)
+                            }}
+                            className="h-9 rounded-lg text-xs font-bold transition-all"
+                            style={{
+                              color: isSelected ? '#ffffff' : isCurrentMonth ? '#16A34A' : textPrimary,
+                              backgroundColor: isSelected ? '#16A34A' : 'transparent',
+                              border: `1px solid ${isSelected ? '#16A34A' : isCurrentMonth ? '#16A34A' : inputBorder}`,
+                            }}
+                          >
+                            {label}
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    {/* Footer — quick actions */}
+                    <div className="flex items-center gap-2 pt-3 mt-2 border-t" style={{ borderColor: inputBorder }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const key = todayLocal().slice(0, 7)
+                          handleMonthFilterChange(key)
+                          setMonthPickerYear(Number(key.split('-')[0]))
+                          setMonthPickerOpen(false)
+                        }}
+                        className="flex-1 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:opacity-90"
+                        style={{ backgroundColor: 'rgba(22,163,74,0.13)', color: '#16A34A' }}
+                      >
+                        This month
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { handleMonthFilterChange(''); setMonthPickerOpen(false) }}
+                        className="flex-1 py-1.5 rounded-lg text-[11px] font-bold border transition-all hover:opacity-90"
+                        style={{ borderColor: inputBorder, color: textMuted, backgroundColor: 'transparent' }}
+                      >
+                        All months
+                      </button>
+                    </div>
+                  </div>,
+                  document.body,
+                )}
+              </div>
             </div>
 
-            {/* Nego (Negotiator) Filter */}
-            <div className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border text-xs font-bold shrink-0 shadow-sm transition-all"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-              <User className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
-              <select
-                value={negoFilter}
-                onChange={e => setNegoFilter(e.target.value)}
-                className="bg-transparent outline-none cursor-pointer font-bold pr-1 uppercase"
-                style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
-              >
-                <option value="" style={{ backgroundColor: inputBg, color: textPrimary }}>All Negotiators</option>
-                {negotiatorOptions.map(n => (
-                  <option key={n} value={n} style={{ backgroundColor: inputBg, color: textPrimary }}>{n}</option>
-                ))}
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
-            </div>
-
-            {/* Month Picker */}
-            <div className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border text-xs font-bold shrink-0 shadow-sm transition-all"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-              <CalendarDays className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
-              <select
-                value={monthFilter}
-                onChange={e => handleMonthFilterChange(e.target.value)}
-                className="bg-transparent outline-none cursor-pointer font-bold pr-1"
-                style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
-              >
-                <option value="" style={{ backgroundColor: inputBg, color: textPrimary }}>All Months</option>
-                {monthOptions.map(ym => (
-                  <option key={ym} value={ym} style={{ backgroundColor: inputBg, color: textPrimary }}>
-                    {monthLabel(ym)}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
-            </div>
-
-            {/* Search bar */}
-            <div className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border flex-1 min-w-[200px] max-w-md shadow-sm transition-all"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            {/* Search bar — full width on mobile (top row), right-aligned on desktop */}
+            <div className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border w-full md:w-auto md:flex-1 md:min-w-[200px] md:max-w-md shadow-sm transition-all order-1 md:order-2 md:ml-auto bg-slate-100 dark:bg-[#0F1A2E]"
+              style={{ borderColor: inputBorder }}>
               <Search className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
               <input
                 type="text"
@@ -1788,16 +1904,15 @@ export default function DailyServiceReport() {
             )}
             <table
               key={`${branchFilter}|${monthFilter}`}
-              className="text-xs w-full" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
+              className="hidden md:table text-xs w-full" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
               <colgroup>
                 {columns.map(col => (
                   <col key={col.label} style={{ width: col.w }} />
                 ))}
               </colgroup>
               <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
-                <tr style={{ backgroundColor: inputBg }}>
-                  {columns.map((col, colIdx) => {
-                    const isLast = colIdx === columns.length - 1
+                <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#060B18' }}>
+                  {columns.map((col) => {
                     return (
                       <th key={col.label}
                         style={{
@@ -1811,12 +1926,11 @@ export default function DailyServiceReport() {
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
-                          borderRight: isLast ? 'none' : `1px solid ${border}`,
-                          borderBottom: `2px solid ${isLight ? '#94a3b8' : '#3a537a'}`,
+                          borderBottom: `2px solid ${isLight ? '#e2e8f0' : '#1e293b'}`,
                           width: col.w,
                           minWidth: 0,
                           maxWidth: col.w,
-                          backgroundColor: inputBg,
+                          backgroundColor: isLight ? '#f8fafc' : '#060B18',
                           userSelect: 'none',
                           ...(col.sticky ? {
                             position: 'sticky' as const,
@@ -1853,10 +1967,12 @@ export default function DailyServiceReport() {
                   </tr>
                 ) : (
                   visible.map((r, idx) => {
-                  const rowBaseBg = contextMenu?.row.id === r.id
+                  // Flat row background — no zebra striping; the context-menu-selected
+                  // row is the only row that carries its own background, everything
+                  // else is transparent so the tr's hover class shows through cleanly.
+                  const rowSelectedBg = contextMenu?.row.id === r.id
                     ? (isLight ? '#f1f5f9' : '#111827')
-                    : (idx % 2 === 0 ? (isLight ? '#ffffff' : '#0A1120') : (isLight ? '#fafafa' : '#0d1626'))
-                  const rowHoverBg = isLight ? '#f1f5f9' : '#0f1e36'
+                    : undefined
 
                   return (
                     <tr key={r.id}
@@ -1867,17 +1983,14 @@ export default function DailyServiceReport() {
                       onDoubleClick={() => handleViewDetailsPopup(r)}
                       style={{
                         borderBottom: `1px solid ${border}`,
-                        backgroundColor: rowBaseBg,
+                        backgroundColor: rowSelectedBg,
                         cursor: 'pointer',
                       }}
-                      onMouseEnter={e => { e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => { td.style.backgroundColor = rowHoverBg }) }}
-                      onMouseLeave={e => { e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => { td.style.backgroundColor = rowBaseBg }) }}
-                      className="transition-colors">
+                      className="transition-colors hover:bg-slate-50 dark:hover:bg-[#0F1A2E]">
 
-                      {columns.map((col, colIdx) => {
+                      {columns.map((col) => {
                         const isThisEditing = editingCell?.rowId === r.id && editingCell?.col === col.label
                         const isEditable    = EDITABLE_COLS.includes(col.label) && canEdit
-                        const isLastCol = colIdx === columns.length - 1
                         return (
                           <td key={col.label}
                               onClick={e => {
@@ -1898,9 +2011,8 @@ export default function DailyServiceReport() {
                                 fontSize: '11px',
                                 fontWeight: 500,
                                 lineHeight: '1.4',
-                                backgroundColor: isThisEditing ? inputBg : rowBaseBg,
+                                backgroundColor: isThisEditing ? inputBg : rowSelectedBg,
                                 textAlign: (col.align as any) || 'left',
-                                borderRight: isLastCol ? 'none' : `1px solid ${border}`,
                                 borderBottom: `1px solid ${border}`,
                                 width: col.w, minWidth: 0, maxWidth: col.w,
                                 overflow: isThisEditing ? 'visible' : 'hidden',
@@ -1912,7 +2024,7 @@ export default function DailyServiceReport() {
                                   position: 'sticky' as const,
                                   left: `${col.left}%`,
                                   zIndex: 5,
-                                  backgroundColor: isThisEditing ? inputBg : rowBaseBg,
+                                  backgroundColor: isThisEditing ? inputBg : (rowSelectedBg ?? cardBg),
                                 } : {}),
                               }}>
                             {renderCell(r, col, idx)}
@@ -1924,6 +2036,102 @@ export default function DailyServiceReport() {
                 }))}
               </tbody>
             </table>
+
+            {/* ── Mobile SaaS cards — table is desktop-only (hidden md:table above) ── */}
+            <div className="flex flex-col md:hidden p-3 gap-3">
+              {visible.length === 0 ? (
+                <div className="border-2 border-dashed rounded-xl p-10 text-center flex flex-col items-center gap-3"
+                  style={{ borderColor: isLight ? '#cbd5e1' : '#334155' }}>
+                  <AlertTriangle className="w-8 h-8 opacity-30" style={{ color: textMuted }} />
+                  <p className="text-sm font-semibold" style={{ color: textMuted }}>
+                    {searchQuery.trim()
+                      ? `No records match “${searchQuery.trim()}”${rows.length > 0 ? ` (${rows.length} loaded)` : ''}`
+                      : `No service records for ${viewMode === 'weekly' ? weekRange.label : 'this month'}`}
+                  </p>
+                  {searchQuery.trim() ? (
+                    <button type="button" onClick={() => setSearchQuery('')}
+                      className="text-xs font-bold hover:underline" style={{ color: textPrimary }}>Clear search</button>
+                  ) : canEdit && (
+                    <button onClick={handleAddRow}
+                      className="text-xs font-bold hover:underline" style={{ color: textPrimary }}>+ Add the first one</button>
+                  )}
+                </div>
+              ) : (
+                visible.map(r => {
+                  const chargesDisplay = getCellDisplay(r, 'INSTALLATION CHARGES')
+                  const negotiatorName = formatNegotiatorFirstName(r.negotiator)
+                  const installerName = formatCleanName(r.technicianName)
+                  const completedLabel = formatDateKeyLabel(getInstalledDateKey(r))
+                  return (
+                    <div
+                      key={r.id}
+                      onClick={() => handleViewDetailsPopup(r)}
+                      onContextMenu={e => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, row: r }) }}
+                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#0A1120] shadow-sm overflow-hidden active:scale-[0.985] transition-transform cursor-pointer"
+                    >
+                      {/* Header: ticket no (left) / completed date (right) */}
+                      <div className="px-3 py-2 flex justify-between items-center border-b" style={{ borderColor: border, backgroundColor: isLight ? 'rgba(248,250,252,0.7)' : 'rgba(15,26,46,0.5)' }}>
+                        <span className="text-[10.5px] font-bold tabular-nums" style={{ color: textMuted }}>
+                          {r.ticketNumber || '—'}
+                        </span>
+                        {completedLabel ? (
+                          <span className="flex items-center gap-1 text-[10.5px] font-bold" style={{ color: textPrimary }}>
+                            <CalendarDays className="w-3 h-3 shrink-0" style={{ color: textMuted }} />
+                            {completedLabel}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {/* Body: customer name / brand · dealer / district */}
+                      <div className="p-3">
+                        <span className="text-sm font-black uppercase tracking-wide leading-tight truncate block" style={{ color: textPrimary }}>
+                          {r.customerName || '—'}
+                        </span>
+                        {(r.unitBrandModel || r.dealer) ? (
+                          <div className="text-[10.5px] font-semibold truncate mt-1" style={{ color: textMuted }}>
+                            {[r.unitBrandModel, r.dealer].filter(Boolean).join(' · ')}
+                          </div>
+                        ) : null}
+                        {r.district ? (
+                          <div className="flex items-center gap-1 mt-0.5" style={{ color: textMuted }}>
+                            <Building2 className="w-2.5 h-2.5 shrink-0" />
+                            <span className="text-[10.5px] font-medium truncate">{r.district}</span>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      {/* Crew: 2-col grid — Negotiator / Installer */}
+                      <div className="grid grid-cols-2 gap-2 px-3 py-2.5 bg-slate-50/50 dark:bg-[#0F1A2E]/30 border-y" style={{ borderColor: border }}>
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Negotiator</span>
+                          <span className="text-[11px] font-semibold truncate" style={{ color: negotiatorName ? textPrimary : textMuted }}>
+                            {negotiatorName || '—'}
+                          </span>
+                        </div>
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Installer</span>
+                          <span className="text-[11px] font-semibold truncate" style={{ color: installerName ? textPrimary : textMuted }}>
+                            {installerName || '—'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Footer: remarks (left, clamped) / charges (right) */}
+                      <div className="px-3 py-2 flex justify-between items-start gap-2">
+                        <p className="text-[10.5px] font-medium min-w-0 flex-1" style={{ color: textMuted, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                          {r.remarks || '—'}
+                        </p>
+                        {chargesDisplay ? (
+                          <span className="text-[11px] font-black tabular-nums shrink-0" style={{ color: textPrimary }}>
+                            {chargesDisplay}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
           </div>
         )}
 
