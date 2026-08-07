@@ -4,15 +4,17 @@ import {
   CalendarDays, Upload, Plus, Edit3, Trash2,
   X, Search, AlertTriangle, Building2, Eye,
   Scan, Loader2, ClipboardPaste, Save,
-  Check, ChevronDown, Tag,
+  Check, ChevronDown, User,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, resolveArchiveWriteBranchId, resolveArchivesBranchFilter, ARCHIVE_UPDATED_EVENT, DEALERS_UPDATED_EVENT, notifyDealersUpdated, type InstallerBranchIndexEntry, formatBranchName } from '../utils/api'
+import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, resolveArchiveWriteBranchId, resolveArchivesBranchFilter, ARCHIVE_UPDATED_EVENT, fetchTicketByNumber, type InstallerBranchIndexEntry, formatBranchName } from '../utils/api'
 import { syncMissingTicketArchives } from '../utils/ticketArchive'
 import { archivesCacheKey, archivesCacheIsFresh, getInitialArchivesFromCache, readArchivesCache, storedArchivesBranchId, currentArchivesMonthKey, writeArchivesCache } from '../utils/ticketTabCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
+import { TicketDetailsModal } from '../components/tickets/TicketDetailsModal'
+import type { Ticket } from '../utils/ticketHelpers'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -64,9 +66,9 @@ interface ServiceRow {
 }
 
 const COL_FIELD: Record<string, keyof ServiceRow> = {
+  'TICKET NO.':           'ticketNumber',
   'DATE INSTALLED':       'installedDate',
   "CUSTOMER'S NAME":      'customerName',
-  'REF NO.':              'controlNumber',
   'DESTINATION':          'customerAddress',
   'DISTRICT':             'district',
   'CONTACT NO.':          'customerPhone',
@@ -83,7 +85,7 @@ const COL_FIELD: Record<string, keyof ServiceRow> = {
 }
 
 const EDITABLE_COLS = [
-  'DATE INSTALLED', "CUSTOMER'S NAME", 'REF NO.', 'DESTINATION', 'DISTRICT', 'CONTACT NO.', 'BRAND',
+  'TICKET NO.', 'DATE INSTALLED', "CUSTOMER'S NAME", 'DESTINATION', 'DISTRICT', 'CONTACT NO.', 'BRAND',
   'COMPLAIN/REQUEST', 'DLR', 'INSTALLER', 'NEGOTIATOR', 'NOTE', 'SERVICE', 'UPDATE',
   'INSTALLATION CHARGES', 'MODE OF PAYMENT',
 ]
@@ -118,6 +120,62 @@ const formatDateKeyLabel = (key: string) => {
 
 const getInstalledDateKey = (row: ServiceRow) =>
   toDateKey(row.installedDate) || toDateKey(row.reportDate) || ''
+
+function formatCleanName(name: string | null | undefined): string {
+  if (!name) return ''
+  const trimmed = name.trim()
+  if (!trimmed) return ''
+  // Strip trailing dash + number/digits e.g. "ALLAN - 2", "ALLAN -2", "SONNYBOY - 1", "RYAN - 2"
+  const cleaned = trimmed.replace(/\s*-\s*\d+\s*$/, '').trim()
+  return cleaned.toUpperCase()
+}
+
+function formatNegotiatorFirstName(name: string | null | undefined): string {
+  if (!name) return ''
+  const cleaned = formatCleanName(name)
+  if (!cleaned) return ''
+  const firstName = cleaned.split(/\s+/)[0]
+  return firstName.toUpperCase()
+}
+
+function serviceRowToTicket(r: ServiceRow): Ticket {
+  return {
+    id: r.ticketId || r.id,
+    ticketNumber: r.ticketNumber || r.controlNumber || r.id,
+    title: r.customerName ? `Ticket for ${r.customerName}` : (r.ticketNumber || 'Service Record'),
+    description: r.complainRequest || r.remarks || '',
+    serviceType: r.serviceType || (r.statusCode === 'I' ? 'Installation' : 'Service'),
+    service_type: r.serviceType || (r.statusCode === 'I' ? 'Installation' : 'Service'),
+    serviceVehicle: r.serviceColumn || '',
+    service_vehicle: r.serviceColumn || '',
+    customerName: r.customerName || '',
+    customer_name: r.customerName || '',
+    contactPhone: r.customerPhone || '',
+    customerPhone: r.customerPhone || '',
+    contactNumber: r.customerPhone || '',
+    location: r.customerAddress ? { address: r.customerAddress, district: r.district } : null,
+    acDetails: r.unitBrandModel || '',
+    unitType: r.unitBrandModel || '',
+    status: r.jobStatus || r.scheduleStatus || 'COMPLETED',
+    createdAt: r.createdAt || r.reportDate || undefined,
+    preferredDate: r.scheduledDate || r.installedDate || undefined,
+    actualCompletion: r.installedDate || r.reportDate || undefined,
+    assignedEmployeeName: r.technicianName || '',
+    assignedTo: r.technicianName || '',
+    negotiatorName: r.negotiator || '',
+    negotiator: r.negotiator || '',
+    branchId: r.branchId || undefined,
+    branchName: r.branchName || undefined,
+    remarks: r.remarks || '',
+    remarksUpdate: r.remarks || '',
+    note: r.note || '',
+    costing: r.costing || '',
+    amountCharged: r.amountCharged || undefined,
+    paymentStatus: r.paymentStatus || '',
+    controlNumber: r.controlNumber || '',
+    fifteenQuestions: r.fifteenQuestions || '',
+  } as unknown as Ticket
+}
 
 const formatDateTime = (isoStr: string | null | undefined) => {
   if (!isoStr) return '—'
@@ -202,21 +260,6 @@ const FormatPhone = ({ raw }: { raw: string | null | undefined }): React.ReactNo
   )
 }
 
-const BRANDS_LIST = [
-  'CARRIER', 'MIDEA', 'SAMSUNG', 'PANASONIC', 'KOPPEL', 'LG',
-  'DAIKIN', 'AUX', 'GREE', 'TCL', 'SHARP', 'KOLIN', 'FUJITSU', 'YORK', 'MITSUBISHI'
-] as const
-
-function getRowBrand(row: ServiceRow): string {
-  const raw = (row.unitBrandModel || '').toUpperCase().trim();
-  if (!raw) return 'OTHER';
-  for (const b of BRANDS_LIST) {
-    if (raw.includes(b)) return b;
-  }
-  const firstWord = raw.split(/\s+/)[0];
-  return firstWord || 'OTHER';
-}
-
 
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -227,7 +270,7 @@ export default function DailyServiceReport() {
   const isLight = theme === 'light'
 
   const cardBg = isLight ? '#ffffff' : '#0A1120'
-  const border = isLight ? '#e2e8f0' : '#1E2D48'
+  const border = isLight ? '#cbd5e1' : '#2d4266'
   const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
   const textMuted = isLight ? '#64748b' : '#7A95B8'
   const inputBg = isLight ? '#f8fafc' : '#0F1A2E'
@@ -260,8 +303,17 @@ export default function DailyServiceReport() {
   const [monthFilter, setMonthFilter] = useState(() => currentArchivesMonthKey())
   const [viewMode] = useState<'daily' | 'weekly'>('daily')
   const [branchFilter, setBranchFilter] = useState<string>(() => storedArchivesBranchId())
-  const [brandFilter, setBrandFilter] = useState<string>('')
+  const [negoFilter, setNegoFilter] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState('')
+
+  const negotiatorOptions = useMemo(() => {
+    const set = new Set<string>()
+    rows.forEach(r => {
+      const name = formatNegotiatorFirstName(r.negotiator)
+      if (name) set.add(name)
+    })
+    return Array.from(set).sort()
+  }, [rows])
   const [installerSuggestions, setInstallerSuggestions] = useState<string[]>([])
   const [negotiatorSuggestions, setNegotiatorSuggestions] = useState<string[]>([])
   const [installerLineupIndex, setInstallerLineupIndex] = useState<InstallerBranchIndexEntry[]>([])
@@ -275,11 +327,25 @@ export default function DailyServiceReport() {
   const lineupResyncedRef = useRef(false)
   const [expandedCells, setExpandedCells] = useState<Record<string, boolean>>({})
 
-  const uniqueBrands = useMemo(() => {
-    const set = new Set<string>()
-    rows.forEach((r) => set.add(getRowBrand(r)))
-    return Array.from(set).sort()
-  }, [rows])
+  const [detailTicket, setDetailTicket] = useState<Ticket | null>(null)
+
+  const handleViewDetailsPopup = useCallback(async (row: ServiceRow) => {
+    setContextMenu(null)
+    const baseTicket = serviceRowToTicket(row)
+    setDetailTicket(baseTicket)
+
+    if (row.ticketNumber && row.ticketNumber.trim()) {
+      try {
+        const tokenStr = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const fetched = await fetchTicketByNumber(tokenStr, row.ticketNumber.trim())
+        if (fetched && typeof fetched === 'object' && (fetched as any).id) {
+          setDetailTicket(prev => prev ? { ...prev, ...(fetched as Ticket) } : (fetched as Ticket))
+        }
+      } catch (e) {
+        console.error('Error fetching direct ticket details for popup:', e)
+      }
+    }
+  }, [])
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: ServiceRow } | null>(null)
 
@@ -287,49 +353,6 @@ export default function DailyServiceReport() {
   const [editingCell, setEditingCell] = useState<{ rowId: string; col: string } | null>(null)
   const [cellValue, setCellValue] = useState<string>('')
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null>(null)
-
-  // Details Modal States
-  const [detailRow, setDetailRow] = useState<ServiceRow | null>(null)
-  const [detailForm, setDetailForm] = useState<ServiceRow | null>(null)
-  const [addMenuOpen, setAddMenuOpen] = useState(false)
-  const green = '#16A34A'
-
-  useEffect(() => {
-    setDetailForm(detailRow)
-  }, [detailRow])
-
-  const handleSaveDetailRow = async (updatedRow: ServiceRow) => {
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const isNew = updatedRow.id.startsWith('temp-')
-      const payload = {
-        ...updatedRow,
-        id: isNew ? undefined : updatedRow.id,
-        branchId: resolveArchiveWriteBranchId(updatedRow.branchId) || null,
-        branchName: branches.find(b => b.id === updatedRow.branchId)?.name ?? updatedRow.branchName,
-      }
-      const url = isNew
-        ? `${API_BASE_URL}/v1/service-reports`
-        : `${API_BASE_URL}/v1/service-reports/${updatedRow.id}`
-      const method = isNew ? 'POST' : 'PUT'
-
-      const res = await fetch(url, {
-        method,
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const saved = await res.json()
-      if (isNew) {
-        setRows(prev => [saved, ...prev])
-      } else {
-        setRows(prev => prev.map(r => r.id === updatedRow.id ? { ...r, ...saved } : r))
-      }
-      setDetailRow(null)
-    } catch (e: any) {
-      alert(`Could not save details: ${e?.message || 'Unknown error'}`)
-    }
-  }
 
   const handleAddRow = () => {
     if (!canEdit) return
@@ -342,7 +365,7 @@ export default function DailyServiceReport() {
     const tempId = `temp-${Date.now()}`
     const newRow = blankRow(todayLocal(), isBranchScoped ? (user?.branchId ?? null) : realBranchId) as ServiceRow
     newRow.id = tempId
-    setDetailRow(newRow)
+    setRows(prev => [newRow, ...prev])
   }
 
   // Pending Excel import waiting for an all-branch user to choose a target branch
@@ -544,18 +567,17 @@ export default function DailyServiceReport() {
   const columns = useMemo(() => {
     const isServices = branchFilter && (branchFilter.toLowerCase().includes('service') || branchFilter.toLowerCase().includes('services'))
     const rawCols = [
-      { label: 'DATE INSTALLED',        display: 'DATE INSTALLED',                                                  weight: 10, expMul: 1.3, sticky: true,  freeze: false, align: 'left' },
+      { label: 'TICKET NO.',            display: "TICKET NO.",                                                      weight: 11, expMul: 1.3, sticky: true,  freeze: false, align: 'center' },
       { label: "CUSTOMER'S NAME",       display: "CUSTOMER NAME",                                                   weight: 18, expMul: 1.5, sticky: true,  freeze: false, align: 'left' },
       { label: 'DISTRICT',              display: "DISTRICT",                                                        weight: 12, expMul: 1.4, sticky: true,  freeze: true,  align: 'center' },
-      { label: 'TICKET NO.',            display: "TICKET NO.",                                                      weight: 11, expMul: 1.3, sticky: false, freeze: false, align: 'center' },
-      { label: 'REF NO.',               display: "REF NO.",                                                         weight: 10, expMul: 1.3, sticky: false, freeze: false, align: 'center' },
       { label: 'BRAND',                 display: "BRAND",                                                           weight: 12, expMul: 1.4, sticky: false, freeze: false, align: 'center' },
       ...(isServices ? [{ label: 'COMPLAIN/REQUEST', display: "COMPLAINT / REQUEST", weight: 12, expMul: 1.4, sticky: false, freeze: false, align: 'center' }] : []),
       { label: 'DLR',                   display: "DEALER",                                                          weight: 11, expMul: 1.3, sticky: false, freeze: false, align: 'center' },
       { label: 'INSTALLER',             display: "INSTALLER",                                                       weight: 12, expMul: 1.3, sticky: false, freeze: false, align: 'center' },
       { label: 'NEGOTIATOR',            display: "NEGOTIATOR",                                                      weight: 12, expMul: 1.3, sticky: false, freeze: false, align: 'center' },
       { label: 'UPDATE',                display: "REMARKS",                                                         weight: 15, expMul: 1.5, sticky: false, freeze: false, align: 'center' },
-      { label: 'INSTALLATION CHARGES',  display: "CHARGES",                                                         weight: 10, expMul: 1.3, sticky: false, freeze: false, align: 'right' },
+      { label: 'INSTALLATION CHARGES',  display: "CHARGES",                                                         weight: 12, expMul: 1.3, sticky: false, freeze: false, align: 'right' },
+      { label: 'DATE INSTALLED',        display: "COMPLETED",                                                      weight: 10, expMul: 1.3, sticky: false, freeze: false, align: 'center' },
     ]
 
     const weights = rawCols.map(c => c.weight * (expandedCols[c.label] ? c.expMul : 1))
@@ -846,40 +868,6 @@ export default function DailyServiceReport() {
 
   useEffect(() => { fetchBranches() }, [fetchBranches])
 
-  const [dealerOptions, setDealerOptions] = useState<string[]>([])
-  const fetchDealerOptions = useCallback(async () => {
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const res = await fetch(`${API_BASE_URL}/dealers`, { headers: { Authorization: `Bearer ${token}` } })
-      if (!res.ok) return
-      const list = await res.json()
-      setDealerOptions((list as { name: string }[]).map(d => d.name.toUpperCase()).sort((a, b) => a.localeCompare(b)))
-    } catch (err) {
-      console.error('Error fetching dealers in DailyServiceReport:', err)
-    }
-  }, [])
-  useEffect(() => { fetchDealerOptions() }, [fetchDealerOptions])
-  useEffect(() => {
-    window.addEventListener(DEALERS_UPDATED_EVENT, fetchDealerOptions)
-    return () => window.removeEventListener(DEALERS_UPDATED_EVENT, fetchDealerOptions)
-  }, [fetchDealerOptions])
-  const registerNewDealer = useCallback(async (name: string) => {
-    const upper = name.trim().toUpperCase()
-    if (!upper || upper.includes(' - ') || dealerOptions.some(d => d === upper)) return
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const res = await fetch(`${API_BASE_URL}/dealers`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name: upper })
-      })
-      fetchDealerOptions()
-      if (res.ok) notifyDealersUpdated()
-    } catch (err) {
-      console.error('Error auto-creating dealer from archives:', err)
-    }
-  }, [dealerOptions, fetchDealerOptions])
-
   useEffect(() => {
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
     if (!token) return
@@ -1043,22 +1031,30 @@ export default function DailyServiceReport() {
 
   function getCellDisplay(row: ServiceRow, colLabel: string): string {
     switch (colLabel) {
+      case 'TICKET NO.':      return row.ticketNumber || ''
       case 'DATE INSTALLED':  return formatDateKeyLabel(getInstalledDateKey(row))
       case "CUSTOMER'S NAME": return row.customerName || ''
-      case 'TICKET NO.':      return row.ticketNumber || ''
-      case 'REF NO.':         return row.controlNumber || ''
       case 'DESTINATION':     return row.customerAddress || ''
-      case 'DISTRICT':        return row.district || ''
+      case 'DISTRICT':        return (row.district || '').toUpperCase()
       case 'CONTACT NO.':     return row.customerPhone || ''
-      case 'BRAND':           return row.unitBrandModel || ''
-      case 'COMPLAIN/REQUEST': return row.complainRequest || ''
-      case 'DLR':             return row.dealer || ''
-      case 'INSTALLER':       return row.technicianName || ''
-      case 'NEGOTIATOR':      return row.negotiator || ''
-      case 'NOTE':            return row.note || ''
-      case 'SERVICE':         return row.serviceColumn || ''
-      case 'UPDATE':          return row.remarks || ''
-      case 'INSTALLATION CHARGES': return row.amountCharged != null ? String(row.amountCharged) : ''
+      case 'BRAND':           return (row.unitBrandModel || '').toUpperCase()
+      case 'COMPLAIN/REQUEST': return (row.complainRequest || '').toUpperCase()
+      case 'DLR':             return (row.dealer || '').toUpperCase()
+      case 'INSTALLER':       return formatCleanName(row.technicianName)
+      case 'NEGOTIATOR':      return formatNegotiatorFirstName(row.negotiator)
+      case 'NOTE':            return (row.note || '').toUpperCase()
+      case 'SERVICE':         return (row.serviceColumn || '').toUpperCase()
+      case 'UPDATE':          return (row.remarks || '').toUpperCase()
+      case 'INSTALLATION CHARGES': {
+        const mode = (row.paymentStatus || '').trim().toUpperCase()
+        const amt = row.amountCharged != null ? parseFloat(String(row.amountCharged)) : null
+        const amtStr = amt != null ? `₱${amt.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''
+        if (!mode && !amtStr) return ''
+        if (mode === 'FREE' || mode === 'FREE INSTALL') return 'FREE INSTALL ₱0.00'
+        if (amtStr && mode) return `${amtStr} ${mode}`
+        if (amtStr) return amtStr
+        return mode
+      }
       case 'MODE OF PAYMENT':      return row.paymentStatus || ''
       case 'SUBMITTED BY':         return row.inputBy || ''
       case 'DATE SUBMITTED':       return formatDateTime(row.createdAt)
@@ -1295,7 +1291,14 @@ export default function DailyServiceReport() {
 
     if (isThisEditing) {
       const inputClass = 'w-full text-xs rounded px-2 py-1 outline-none focus:ring-2 focus:ring-slate-400 font-medium'
-      const inputSt    = { backgroundColor: inputBg, border: `1.5px solid ${inputBorder}`, color: textPrimary }
+      const UPPERCASE_COLS = ['DISTRICT', 'UPDATE', 'NOTE', 'SERVICE', 'BRAND', 'COMPLAIN/REQUEST', 'DLR']
+      const shouldUppercase = UPPERCASE_COLS.includes(label)
+      const inputSt = {
+        backgroundColor: inputBg,
+        border: `1.5px solid ${inputBorder}`,
+        color: textPrimary,
+        ...(shouldUppercase ? { textTransform: 'uppercase' as const } : {}),
+      }
 
       if (label === 'MODE OF PAYMENT') {
         return (
@@ -1317,7 +1320,7 @@ export default function DailyServiceReport() {
           <textarea
             ref={el => { inputRef.current = el as any }}
             value={cellValue}
-            onChange={e => setCellValue(e.target.value)}
+            onChange={e => setCellValue(shouldUppercase ? e.target.value.toUpperCase() : e.target.value)}
             onBlur={() => saveCell(r.id, label, cellValue)}
             onKeyDown={e => handleKeyDown(e as any, r.id, label)}
             rows={3}
@@ -1332,7 +1335,7 @@ export default function DailyServiceReport() {
           type={label === 'INSTALLATION CHARGES' ? 'number' : label === 'CONTACT NO.' ? 'tel' : label === 'DATE INSTALLED' ? 'date' : 'text'}
           list={label === 'INSTALLER' ? 'installer-options' : label === 'NEGOTIATOR' ? 'negotiator-options' : undefined}
           value={cellValue}
-          onChange={e => setCellValue(e.target.value)}
+          onChange={e => setCellValue(shouldUppercase ? e.target.value.toUpperCase() : e.target.value)}
           onBlur={() => saveCell(r.id, label, cellValue)}
           onKeyDown={e => handleKeyDown(e, r.id, label)}
           className={inputClass} style={inputSt} />
@@ -1348,9 +1351,17 @@ export default function DailyServiceReport() {
     const editHint: React.CSSProperties = isEditable && canEdit
       ? { cursor: 'pointer' } : {}
 
+    if (label === 'TICKET NO.') {
+      return (
+        <span style={{ ...truncStyle, ...editHint, fontSize: '11px', fontWeight: 700 }} title={val}>
+          {idx + 1}. {val || '—'}
+        </span>
+      )
+    }
+
     if (label === 'DATE INSTALLED') {
       return (
-        <span style={{ ...truncStyle, ...editHint }} title={val} className="whitespace-nowrap text-[10px] font-semibold">
+        <span style={{ ...truncStyle, ...editHint, fontSize: '11px', fontWeight: 500 }} title={val} className="block text-center">
           {val || '—'}
         </span>
       )
@@ -1358,26 +1369,9 @@ export default function DailyServiceReport() {
 
     if (label === "CUSTOMER'S NAME") {
       return (
-        <div style={{ ...truncStyle, ...editHint }} title={val} className="flex items-center gap-1.5 justify-between">
-          <div className="flex flex-col min-w-0">
-            <div className="flex items-center gap-1.5">
-              <span style={{ color: textMuted, fontSize: '10px', marginRight: 5 }}>{idx + 1}</span>
-              <span className="font-semibold truncate">{val}</span>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              setDetailRow(r)
-            }}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[9px] font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all shrink-0 hover:scale-[1.03]"
-            title="View Details"
-          >
-            <Eye className="w-3 h-3" />
-            <span>DETAILS</span>
-          </button>
-        </div>
+        <span style={{ ...truncStyle, ...editHint, fontSize: '11px', fontWeight: 600 }} title={val} className="block">
+          {val || '—'}
+        </span>
       )
     }
 
@@ -1396,7 +1390,7 @@ export default function DailyServiceReport() {
 
     if (label === 'SERVICE') {
       return (
-        <span className="text-[10px] font-semibold uppercase block text-center" style={{ color: textPrimary }}>
+        <span style={{ fontSize: '11px', fontWeight: 500, textTransform: 'uppercase', display: 'block', textAlign: 'center', color: textPrimary }}>
           {val || '—'}
         </span>
       )
@@ -1404,14 +1398,14 @@ export default function DailyServiceReport() {
 
     if (label === 'MODE OF PAYMENT') {
       return (
-        <span className="text-[10px] font-semibold uppercase block text-center" style={{ color: textPrimary }}>
+        <span style={{ fontSize: '11px', fontWeight: 500, textTransform: 'uppercase', display: 'block', textAlign: 'center', color: textPrimary }}>
           {val || ''}
         </span>
       )
     }
 
     if (label === 'INSTALLATION CHARGES') {
-      return <span style={{ ...truncStyle, fontWeight: 600 }}>{val ? parseFloat(val).toLocaleString('en-PH', { minimumFractionDigits: 2 }) : ''}</span>
+      return <span style={{ ...truncStyle, fontSize: '11px', fontWeight: 600 }}>{val || ''}</span>
     }
 
     if (label === 'INSTALLER') {
@@ -1649,13 +1643,13 @@ export default function DailyServiceReport() {
     const q = searchQuery.trim().toLowerCase()
     let filtered = rows
 
-    if (brandFilter) {
-      filtered = filtered.filter(r => getRowBrand(r) === brandFilter)
+    if (negoFilter) {
+      filtered = filtered.filter(r => formatNegotiatorFirstName(r.negotiator) === negoFilter)
     }
 
     if (!q) return filtered
     return filtered.filter(r => rowSearchBlob(r).includes(q))
-  }, [rows, searchQuery, brandFilter])
+  }, [rows, searchQuery, negoFilter])
 
   // Build month options from current items (+ last 12 months always available)
   const monthOptions = useMemo(() => {
@@ -1678,7 +1672,7 @@ export default function DailyServiceReport() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col flex-1 w-full min-h-0 h-full" onClick={() => { setContextMenu(null); setAddMenuOpen(false); }}>
+    <div className="flex flex-col flex-1 w-full min-h-0 h-full" onClick={() => { setContextMenu(null); }}>
 
       {/* Hidden file input */}
       {canImport && (
@@ -1687,13 +1681,12 @@ export default function DailyServiceReport() {
 
       {/* ── Portal: Toolbar into header slot ────────────────── */}
       {ReactDOM.createPortal(
-        <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2">
-          <div className="flex flex-wrap items-center gap-2 w-full">
-          {/* Branch Filter */}
-          {isAdmin && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold"
+        <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2 select-none">
+          <div className="flex flex-wrap items-center gap-2.5 w-full">
+            {/* Branch Filter */}
+            <div className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border text-xs font-bold shrink-0 shadow-sm transition-all"
               style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-              <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+              <Building2 className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
               <select
                 value={branchFilter}
                 onChange={e => {
@@ -1702,144 +1695,74 @@ export default function DailyServiceReport() {
                   localStorage.setItem('ashcol-global-branch-id', val)
                   window.dispatchEvent(new Event('ashcol-global-branch-change'))
                 }}
-                className="bg-transparent outline-none cursor-pointer font-bold pr-2"
+                className="bg-transparent outline-none cursor-pointer font-bold pr-1"
                 style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
               >
-                {isAdmin && (
-                  <option value="ALL_BRANCHES" style={{ backgroundColor: inputBg, color: textPrimary }}>All Branches</option>
-                )}
+                <option value="ALL_BRANCHES" style={{ backgroundColor: inputBg, color: textPrimary }}>All Branches</option>
                 {branches.map(b => (
                   <option key={b.id} value={b.id} style={{ backgroundColor: inputBg, color: textPrimary }}>{formatBranchName(b.name)}</option>
                 ))}
               </select>
-              <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
+              <ChevronDown className="w-3.5 h-3.5 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
             </div>
-          )}
 
-          {/* Month Picker */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-            <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-            <select
-              value={monthFilter}
-              onChange={e => handleMonthFilterChange(e.target.value)}
-              className="bg-transparent outline-none cursor-pointer font-bold pr-2"
-              style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
-            >
-              <option value="" style={{ backgroundColor: inputBg, color: textPrimary }}>All Months</option>
-              {monthOptions.map(ym => (
-                <option key={ym} value={ym} style={{ backgroundColor: inputBg, color: textPrimary }}>
-                  {monthLabel(ym)}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
-          </div>
+            {/* Nego (Negotiator) Filter */}
+            <div className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border text-xs font-bold shrink-0 shadow-sm transition-all"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+              <User className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
+              <select
+                value={negoFilter}
+                onChange={e => setNegoFilter(e.target.value)}
+                className="bg-transparent outline-none cursor-pointer font-bold pr-1 uppercase"
+                style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
+              >
+                <option value="" style={{ backgroundColor: inputBg, color: textPrimary }}>All Negotiators</option>
+                {negotiatorOptions.map(n => (
+                  <option key={n} value={n} style={{ backgroundColor: inputBg, color: textPrimary }}>{n}</option>
+                ))}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
+            </div>
 
-          {/* Brand Filter */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-            <Tag className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-            <select
-              value={brandFilter}
-              onChange={e => setBrandFilter(e.target.value)}
-              className="bg-transparent outline-none cursor-pointer font-bold pr-2"
-              style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
-            >
-              <option value="" style={{ backgroundColor: inputBg, color: textPrimary }}>All Brands</option>
-              {uniqueBrands.map(b => (
-                <option key={b} value={b} style={{ backgroundColor: inputBg, color: textPrimary }}>
-                  {b}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="w-3 h-3 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
-          </div>
+            {/* Month Picker */}
+            <div className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border text-xs font-bold shrink-0 shadow-sm transition-all"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+              <CalendarDays className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
+              <select
+                value={monthFilter}
+                onChange={e => handleMonthFilterChange(e.target.value)}
+                className="bg-transparent outline-none cursor-pointer font-bold pr-1"
+                style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
+              >
+                <option value="" style={{ backgroundColor: inputBg, color: textPrimary }}>All Months</option>
+                {monthOptions.map(ym => (
+                  <option key={ym} value={ym} style={{ backgroundColor: inputBg, color: textPrimary }}>
+                    {monthLabel(ym)}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
+            </div>
 
-          {/* Search bar */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border flex-1 min-w-[150px] max-w-xs md:max-w-sm"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-            <input
-              type="text"
-              placeholder="Search..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="bg-transparent outline-none text-xs flex-1 font-medium"
-              style={{ color: textPrimary }}
-            />
-            {searchQuery && (
-              <button type="button" onClick={() => setSearchQuery('')} title="Clear"
-                className="shrink-0 p-0.5 rounded hover:bg-slate-200/20" style={{ color: textMuted }}>
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          {/* Action buttons wrapper */}
-          <div className="flex items-center gap-2 shrink-0 ml-auto">
-            {(canEdit || canImport) && (
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setAddMenuOpen(!addMenuOpen);
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all hover:scale-105 shrink-0"
-                  style={{ backgroundColor: green, borderColor: green, color: '#ffffff' }}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add Record</span>
-                  <ChevronDown className="w-3 h-3 ml-0.5" />
+            {/* Search bar */}
+            <div className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border flex-1 min-w-[200px] max-w-md shadow-sm transition-all"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+              <Search className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
+              <input
+                type="text"
+                placeholder="Search Archives…"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="bg-transparent outline-none text-xs flex-1 font-semibold"
+                style={{ color: textPrimary }}
+              />
+              {searchQuery && (
+                <button type="button" onClick={() => setSearchQuery('')} title="Clear"
+                  className="shrink-0 p-0.5 rounded hover:bg-slate-200/20" style={{ color: textMuted }}>
+                  <X className="w-3.5 h-3.5" />
                 </button>
-
-                {addMenuOpen && (
-                  <div
-                    className="absolute right-0 mt-1.5 rounded-xl shadow-2xl overflow-hidden z-[100] w-48 border"
-                    style={{ backgroundColor: cardBg, borderColor: border }}
-                    onClick={() => setAddMenuOpen(false)}
-                  >
-                    {canEdit && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={handleAddRow}
-                          className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors hover:bg-slate-500/10"
-                          style={{ color: textPrimary }}
-                        >
-                          <Plus className="w-3.5 h-3.5" style={{ color: green }} />
-                          Manual Add
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setScanModalOpen(true)}
-                          className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors hover:bg-slate-500/10"
-                          style={{ color: textPrimary }}
-                        >
-                          <Scan className="w-3.5 h-3.5 text-emerald-500" />
-                          Scan Image
-                        </button>
-                      </>
-                    )}
-
-                    {canImport && (
-                      <button
-                        type="button"
-                        disabled={importing || viewMode === 'weekly'}
-                        onClick={() => document.getElementById('svc-import-input')?.click()}
-                        className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors hover:bg-slate-500/10 disabled:opacity-50"
-                        style={{ color: textPrimary }}
-                      >
-                        <Upload className="w-3.5 h-3.5 text-amber-500" />
-                        Import Excel
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+              )}
+            </div>
           </div>
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body
@@ -1849,7 +1772,7 @@ export default function DailyServiceReport() {
 
 
       {/* Data table */}
-      <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}>
+      <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg }}>
         {loading && rows.length === 0 ? (
           <div className="flex flex-col gap-2 p-5 flex-1">
             {[1, 2, 3, 4].map(i => (
@@ -1872,41 +1795,39 @@ export default function DailyServiceReport() {
                 ))}
               </colgroup>
               <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
-                <tr style={{ backgroundColor: inputBg, borderBottom: `2px solid ${border}` }}>
-                  {columns.map(col => (
-                    <th key={col.label}
-                      style={{
-                        padding: '9px 10px',
-                        textAlign: (col.align as any) || 'left',
-                        color: textMuted,
-                        fontWeight: 700,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        borderRight: `1px solid ${border}`,
-                        borderBottom: `2px solid ${border}`,
-                        fontSize: '10px',
-                        letterSpacing: '0.07em',
-                        width: col.w,
-                        minWidth: 0,
-                        maxWidth: col.w,
-                        backgroundColor: inputBg,
-                        userSelect: 'none',
-                        ...(col.sticky ? {
-                          position: 'sticky' as const,
-                          left: `${col.left}%`,
-                          zIndex: 15,
-                        } : {}),
-                        ...(col.freeze ? {
-                          borderRight: `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`,
-                          boxShadow: isLight
-                             ? '6px 0 12px -3px rgba(0, 0, 0, 0.12), 2px 0 4px -2px rgba(0, 0, 0, 0.05)'
-                             : '8px 0 18px -4px rgba(0, 0, 0, 0.45), 3px 0 6px -3px rgba(0, 0, 0, 0.25)',
-                        } : {}),
-                      }}>
-                      <span>{col.display}</span>
-                    </th>
-                  ))}
+                <tr style={{ backgroundColor: inputBg }}>
+                  {columns.map((col, colIdx) => {
+                    const isLast = colIdx === columns.length - 1
+                    return (
+                      <th key={col.label}
+                        style={{
+                          padding: '8px 10px',
+                          textAlign: (col.align as any) || 'left',
+                          color: textMuted,
+                          fontWeight: 700,
+                          fontSize: '10px',
+                          letterSpacing: '0.08em',
+                          textTransform: 'uppercase',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          borderRight: isLast ? 'none' : `1px solid ${border}`,
+                          borderBottom: `2px solid ${isLight ? '#94a3b8' : '#3a537a'}`,
+                          width: col.w,
+                          minWidth: 0,
+                          maxWidth: col.w,
+                          backgroundColor: inputBg,
+                          userSelect: 'none',
+                          ...(col.sticky ? {
+                            position: 'sticky' as const,
+                            left: `${col.left}%`,
+                            zIndex: 15,
+                          } : {}),
+                        }}>
+                        {col.display}
+                      </th>
+                    )
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -1941,9 +1862,9 @@ export default function DailyServiceReport() {
                     <tr key={r.id}
                       onContextMenu={e => {
                         e.preventDefault()
-                        if (canEdit || canDelete) setContextMenu({ x: e.clientX, y: e.clientY, row: r })
+                        setContextMenu({ x: e.clientX, y: e.clientY, row: r })
                       }}
-                      onDoubleClick={() => setDetailRow(r)}
+                      onDoubleClick={() => handleViewDetailsPopup(r)}
                       style={{
                         borderBottom: `1px solid ${border}`,
                         backgroundColor: rowBaseBg,
@@ -1953,9 +1874,10 @@ export default function DailyServiceReport() {
                       onMouseLeave={e => { e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => { td.style.backgroundColor = rowBaseBg }) }}
                       className="transition-colors">
 
-                      {columns.map((col) => {
+                      {columns.map((col, colIdx) => {
                         const isThisEditing = editingCell?.rowId === r.id && editingCell?.col === col.label
                         const isEditable    = EDITABLE_COLS.includes(col.label) && canEdit
+                        const isLastCol = colIdx === columns.length - 1
                         return (
                           <td key={col.label}
                               onClick={e => {
@@ -1971,28 +1893,27 @@ export default function DailyServiceReport() {
                                 if (isEditable && !isThisEditing) startEdit(r, col.label)
                               }}
                               style={{
-                                padding: isThisEditing ? '4px 6px' : '8px 10px',
+                                padding: isThisEditing ? '4px 6px' : '7px 10px',
                                 color: textPrimary,
-                                fontSize: '11px', fontWeight: 500,
+                                fontSize: '11px',
+                                fontWeight: 500,
+                                lineHeight: '1.4',
                                 backgroundColor: isThisEditing ? inputBg : rowBaseBg,
                                 textAlign: (col.align as any) || 'left',
-                                borderRight: col.freeze
-                                  ? `2.5px solid ${isLight ? '#cbd5e1' : '#334155'}`
-                                  : `1px solid ${border}`,
+                                borderRight: isLastCol ? 'none' : `1px solid ${border}`,
                                 borderBottom: `1px solid ${border}`,
                                 width: col.w, minWidth: 0, maxWidth: col.w,
                                 overflow: isThisEditing ? 'visible' : 'hidden',
                                 textOverflow: 'ellipsis',
                                 transition: 'background-color 0.1s ease',
                                 cursor: isThisEditing ? 'default' : 'pointer',
-                                verticalAlign: 'top',
+                                verticalAlign: 'middle',
                                 ...(col.sticky ? {
                                   position: 'sticky' as const,
                                   left: `${col.left}%`,
                                   zIndex: 5,
                                   backgroundColor: isThisEditing ? inputBg : rowBaseBg,
                                 } : {}),
-                                ...(col.freeze ? { boxShadow: isLight ? '6px 0 12px -3px rgba(0,0,0,0.10)' : '8px 0 18px -4px rgba(0,0,0,0.40)' } : {}),
                               }}>
                             {renderCell(r, col, idx)}
                           </td>
@@ -2040,7 +1961,7 @@ export default function DailyServiceReport() {
               style={{ color: textPrimary }}
               onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.backgroundColor = inputBg}
               onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'}
-              onClick={() => { setDetailRow(contextMenu.row); setContextMenu(null) }}>
+              onClick={() => handleViewDetailsPopup(contextMenu.row)}>
               <Eye className="w-3.5 h-3.5" style={{ color: textMuted }} /> View details
             </button>
             {canEdit && (
@@ -2520,479 +2441,6 @@ export default function DailyServiceReport() {
           </div>
         </div>
       )}
-      {detailRow && detailForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
-          onClick={() => setDetailRow(null)}>
-          <div className="w-full max-w-3xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
-            style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
-            onClick={e => e.stopPropagation()}>
-            <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
-              <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>
-                {detailForm.id.startsWith('temp-') ? 'Add Service Record Details' : (canEdit ? 'Edit Service Record Details' : 'Service Record Details')}
-              </h3>
-              <button onClick={() => setDetailRow(null)} className="p-1.5 rounded-lg hover:bg-slate-200/20" style={{ color: textMuted }}>
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            
-            <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
-              {/* Branch & Schedule Link */}
-              <div>
-                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
-                  Branch & Schedule
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Field label="Branch" required>
-                    {canEdit && isAdmin ? (
-                      <select
-                        value={detailForm.branchId || ''}
-                        onChange={e => {
-                          const id = e.target.value
-                          const name = branches.find(b => b.id === id)?.name || null
-                          setDetailForm({ ...detailForm, branchId: id || null, branchName: name })
-                        }}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                      >
-                        <option value="">— Select branch —</option>
-                        {branches.map(b => (
-                          <option key={b.id} value={b.id}>{b.name}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>
-                        {detailForm.branchName || branches.find(b => b.id === detailForm.branchId)?.name || detailForm.branchId || '—'}
-                      </span>
-                    )}
-                  </Field>
-                  <Field label="Schedule Ticket ID">
-                    <span className="text-xs font-mono font-semibold break-all" style={{ color: textPrimary }}>
-                      {detailForm.ticketId || '—'}
-                    </span>
-                  </Field>
-                  <Field label="Service Type">
-                    {canEdit ? (
-                      <input type="text" value={detailForm.serviceType || ''}
-                        onChange={e => setDetailForm({ ...detailForm, serviceType: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.serviceType || '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="Status (S / I)">
-                    {canEdit ? (
-                      <select value={detailForm.statusCode || ''}
-                        onChange={e => setDetailForm({ ...detailForm, statusCode: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                        <option value="">—</option>
-                        <option value="I">I — Installation</option>
-                        <option value="S">S — Service</option>
-                      </select>
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.statusCode || '—'}</span>
-                    )}
-                  </Field>
-                </div>
-              </div>
-
-              {/* Customer Info Section */}
-              <div>
-                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
-                  Customer Information
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Field label="Report Date" required>
-                    {canEdit ? (
-                      <input type="date" value={detailForm.reportDate || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, reportDate: e.target.value || null })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.reportDate || '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="Customer Name">
-                    {canEdit ? (
-                      <input type="text" value={detailForm.customerName || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, customerName: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.customerName || '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="Contact No.">
-                    {canEdit ? (
-                      <input type="text" value={detailForm.customerPhone || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, customerPhone: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.customerPhone || '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="Destination/Address" full>
-                    {canEdit ? (
-                      <textarea value={detailForm.customerAddress || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, customerAddress: e.target.value })}
-                        rows={2}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 resize-none w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold break-words" style={{ color: textPrimary }}>{detailForm.customerAddress || '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="District">
-                    {canEdit ? (
-                      <input type="text" value={detailForm.district || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, district: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.district || '—'}</span>
-                    )}
-                  </Field>
-                  {((detailForm.branchId && (detailForm.branchId.toLowerCase().includes('service') || detailForm.branchId.toLowerCase().includes('services'))) ||
-                    (branchFilter && (branchFilter.toLowerCase().includes('service') || branchFilter.toLowerCase().includes('services')))) && (
-                    <Field label="Complain / Request">
-                      {canEdit ? (
-                        <input type="text" value={detailForm.complainRequest || ''} 
-                          onChange={e => setDetailForm({ ...detailForm, complainRequest: e.target.value })}
-                          className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                      ) : (
-                        <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.complainRequest || '—'}</span>
-                      )}
-                    </Field>
-                  )}
-                  <Field label="Commit Terms">
-                    {canEdit ? (
-                      <textarea value={detailForm.commitTerms || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, commitTerms: e.target.value })}
-                        rows={1}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 resize-none w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold break-words" style={{ color: textPrimary }}>{detailForm.commitTerms || '—'}</span>
-                    )}
-                  </Field>
-                </div>
-              </div>
-
-              {/* Service & Unit Info Section */}
-              <div>
-                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
-                  Service & Unit Details
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Field label="Brand">
-                    {canEdit ? (
-                      <input type="text" value={detailForm.unitBrandModel || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, unitBrandModel: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.unitBrandModel || '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="Serial No.">
-                    {canEdit ? (
-                      <input type="text" value={detailForm.unitSerial || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, unitSerial: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.unitSerial || '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="Quantity">
-                    {canEdit ? (
-                      <input type="number" value={detailForm.quantity != null ? detailForm.quantity : ''} 
-                        onChange={e => setDetailForm({ ...detailForm, quantity: parseInt(e.target.value, 10) || 1 })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.quantity ?? '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="Dealer (DLR)">
-                    {canEdit ? (
-                      <>
-                        <input type="text" value={detailForm.dealer || ''}
-                          list="archive-dealer-list"
-                          onChange={e => setDetailForm({ ...detailForm, dealer: e.target.value })}
-                          onBlur={e => registerNewDealer(e.target.value)}
-                          className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                        <datalist id="archive-dealer-list">{dealerOptions.map(d => <option key={d} value={d} />)}</datalist>
-                      </>
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.dealer || '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="Service Vehicle">
-                    {canEdit ? (
-                      <input type="text" value={detailForm.serviceColumn || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, serviceColumn: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.serviceColumn || '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="Installer / Technician">
-                    {canEdit ? (
-                      <input type="text" value={detailForm.technicianName || ''} 
-                        list="installer-options"
-                        onChange={e => setDetailForm({ ...detailForm, technicianName: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>
-                        <EmployeeNameLink nameOrId={detailForm.technicianName} />
-                      </span>
-                    )}
-                  </Field>
-                  <Field label="Negotiator">
-                    {canEdit ? (
-                      <input type="text" value={detailForm.negotiator || ''}
-                        list="negotiator-options"
-                        onChange={e => setDetailForm({ ...detailForm, negotiator: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>
-                        <EmployeeNameLink nameOrId={detailForm.negotiator} />
-                      </span>
-                    )}
-                  </Field>
-                </div>
-              </div>
-
-              {/* Workflow & Audit Section */}
-              <div>
-                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
-                  Workflow & Audit Details
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Field label="Control No. / SI">
-                    {canEdit ? (
-                      <input type="text" value={detailForm.controlNumber || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, controlNumber: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.controlNumber || '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="Papers">
-                    {canEdit ? (
-                      <input type="text" value={detailForm.papers || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, papers: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.papers || '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="Costing">
-                    {canEdit ? (
-                      <input type="text" value={detailForm.costing || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, costing: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.costing || '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="Relay Status">
-                    {canEdit ? (
-                      <input type="text" value={detailForm.relayStatus || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, relayStatus: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.relayStatus || '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="Schedule Time">
-                    {canEdit ? (
-                      <input type="text" value={detailForm.scheduleTime || ''}
-                        onChange={e => setDetailForm({ ...detailForm, scheduleTime: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.scheduleTime || '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="Schedule Status">
-                    {canEdit ? (
-                      <input type="text" value={detailForm.scheduleStatus || ''}
-                        onChange={e => setDetailForm({ ...detailForm, scheduleStatus: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.scheduleStatus || '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="Scheduled Date">
-                    {canEdit ? (
-                      <input type="date" value={detailForm.scheduledDate || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, scheduledDate: e.target.value || null })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.scheduledDate || '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="Installed Date">
-                    {canEdit ? (
-                      <input type="date" value={detailForm.installedDate || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, installedDate: e.target.value || null })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.installedDate || '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="15 Questions (15 Qs)" full>
-                    {canEdit ? (
-                      <input type="text" value={detailForm.fifteenQuestions || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, fifteenQuestions: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.fifteenQuestions || '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="Note" full>
-                    {canEdit ? (
-                      <textarea value={detailForm.note || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, note: e.target.value })}
-                        rows={2}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 resize-none w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold break-words" style={{ color: textPrimary }}>{detailForm.note || '—'}</span>
-                    )}
-                  </Field>
-                </div>
-              </div>
-
-              {/* Billing & Status Section */}
-              <div>
-                <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
-                  Billing & Status
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Field label="Installation Charges">
-                    {canEdit ? (
-                      <input type="number" value={detailForm.amountCharged != null ? detailForm.amountCharged : ''} 
-                        onChange={e => setDetailForm({ ...detailForm, amountCharged: parseFloat(e.target.value) || 0 })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{peso(detailForm.amountCharged)}</span>
-                    )}
-                  </Field>
-                  <Field label="Mode of Payment">
-                    {canEdit ? (
-                      <select value={detailForm.paymentStatus || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, paymentStatus: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                        {PAYMENT_MODES.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.paymentStatus || '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="Job Status">
-                    {canEdit ? (
-                      <select value={detailForm.jobStatus || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, jobStatus: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                        {['SCHEDULED', 'COMPLETED', 'CANCELLED'].map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    ) : (
-                      <span className="text-xs font-semibold" style={{ color: textPrimary }}>{detailForm.jobStatus || '—'}</span>
-                    )}
-                  </Field>
-                  <Field label="Update (Remarks)" full>
-                    {canEdit ? (
-                      <textarea value={detailForm.remarks || ''} 
-                        onChange={e => setDetailForm({ ...detailForm, remarks: e.target.value })}
-                        rows={2}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-400 resize-none w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    ) : (
-                      <span className="text-xs font-semibold break-words" style={{ color: textPrimary }}>{detailForm.remarks || '—'}</span>
-                    )}
-                  </Field>
-                </div>
-              </div>
-
-              {/* Audit Tracking Section */}
-              {(detailForm.inputBy || detailForm.createdAt || detailForm.updatedBy || detailForm.updatedAt) && (
-                <div>
-                  <h4 className="text-[10px] font-black uppercase tracking-wider mb-3 opacity-60 text-slate-400">
-                    Audit Tracking
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {detailForm.inputBy && (
-                      <Field label="Created By">
-                        <span className="text-xs font-semibold" style={{ color: textPrimary }}>
-                          <EmployeeNameLink nameOrId={detailForm.inputBy} />
-                        </span>
-                      </Field>
-                    )}
-                    {detailForm.createdAt && (
-                      <Field label="Created At">
-                        <span className="text-xs font-semibold" style={{ color: textPrimary }}>
-                          {formatDateTime(detailForm.createdAt)}
-                        </span>
-                      </Field>
-                    )}
-                    {detailForm.updatedBy && (
-                      <Field label="Updated By">
-                        <span className="text-xs font-semibold" style={{ color: textPrimary }}>
-                          <EmployeeNameLink nameOrId={detailForm.updatedBy} />
-                        </span>
-                      </Field>
-                    )}
-                    {detailForm.updatedAt && (
-                      <Field label="Updated At">
-                        <span className="text-xs font-semibold" style={{ color: textPrimary }}>
-                          {formatDateTime(detailForm.updatedAt)}
-                        </span>
-                      </Field>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="px-6 py-4 flex items-center justify-end gap-2" style={{ borderTop: `1px solid ${border}` }}>
-              <button onClick={() => setDetailRow(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold border"
-                style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}>
-                {canEdit ? 'Cancel' : 'Close'}
-              </button>
-              {canEdit && (
-                <button onClick={() => handleSaveDetailRow(detailForm)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold border"
-                  style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}>
-                  Save Changes
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       <datalist id="installer-options">
         {installerSuggestions.map(name => (
           <option key={name} value={name} />
@@ -3003,6 +2451,31 @@ export default function DailyServiceReport() {
           <option key={name} value={name} />
         ))}
       </datalist>
+
+      {/* ── View Ticket Details Modal Popup ── */}
+      {detailTicket && (
+        <TicketDetailsModal
+          ticket={detailTicket}
+          isLight={isLight}
+          isMyTickets={false}
+          isTaguigServices={false}
+          canEdit={canEdit}
+          branchEmployees={[]}
+          activeBranchId={branchFilter}
+          user={user}
+          duplicateNameKeys={new Set()}
+          formatAssignedBranchLabel={formatBranchName}
+          history={[]}
+          loadingHistory={false}
+          showHistoryPanel={false}
+          onClose={() => setDetailTicket(null)}
+          onToggleHistory={() => {}}
+          onHideHistory={() => {}}
+          onEdit={() => setDetailTicket(null)}
+          onDelete={undefined}
+          onUpdateTicket={(updated) => setDetailTicket(updated as Ticket)}
+        />
+      )}
     </div>
   )
 }

@@ -63,10 +63,6 @@ export function SearchFilterDropdown({
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [selectedFilters, setSelectedFilters] = useState<string[]>([])
 
-  // Dynamic Ticket Input States
-  const [isEditingTicket, setIsEditingTicket] = useState(false)
-  const [ticketInputValue, setTicketInputValue] = useState('')
-
   const dropdownRef = useRef<HTMLDivElement>(null)
   const filterIconRef = useRef<HTMLButtonElement>(null)
 
@@ -92,9 +88,6 @@ export function SearchFilterDropdown({
         display: 'none',
         ease: 'power2.in',
       })
-      // Reset typing state when dropdown closes
-      setIsEditingTicket(false)
-      setTicketInputValue('')
     }
   }, [isFilterOpen])
 
@@ -117,18 +110,6 @@ export function SearchFilterDropdown({
   }
 
   const handleClearAll = () => setSelectedFilters([])
-
-  // Handles submitting the dynamic ticket number
-  const handleTicketSubmit = () => {
-    if (ticketInputValue.trim()) {
-      const newFilter = `Ticket: ${ticketInputValue.trim()}`
-      if (!selectedFilters.includes(newFilter)) {
-        setSelectedFilters(prev => [...prev, newFilter])
-      }
-    }
-    setTicketInputValue('')
-    setIsEditingTicket(false)
-  }
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -316,62 +297,6 @@ export function SearchFilterDropdown({
                     </button>
                   )
                 })}
-
-                {/* ── Click-to-Type Ticket UI (Tickets category only) ──── */}
-                {category.title === 'Tickets' && (
-                  <>
-                    {/* Active ticket-number pills — click to remove */}
-                    {selectedFilters
-                      .filter(f => f.startsWith('Ticket: '))
-                      .map(ticket => (
-                        <button
-                          key={ticket}
-                          type="button"
-                          onClick={() => handleToggleFilter(ticket)}
-                          className="px-3 py-1.5 text-[12px] font-semibold rounded-lg transition-all border focus:outline-none"
-                          style={{ backgroundColor: green, color: '#fff', borderColor: green }}
-                        >
-                          {ticket}
-                        </button>
-                      ))
-                    }
-
-                    {/* Input or dashed add-button */}
-                    {isEditingTicket ? (
-                      <input
-                        autoFocus
-                        type="text"
-                        inputMode="numeric"
-                        value={ticketInputValue}
-                        onChange={e => setTicketInputValue(e.target.value.replace(/[^0-9]/g, ''))}
-                        onBlur={handleTicketSubmit}
-                        onKeyDown={e => e.key === 'Enter' && handleTicketSubmit()}
-                        placeholder="Enter No..."
-                        className="px-3 py-1.5 text-[12px] font-semibold rounded-lg border outline-none w-[110px] focus:ring-1"
-                        style={{
-                          borderColor: green,
-                          color: green,
-                          backgroundColor: `${green}10`,
-                          // @ts-ignore
-                          '--tw-ring-color': green,
-                        }}
-                      />
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setIsEditingTicket(true)}
-                        className="px-3 py-1.5 text-[12px] font-bold rounded-lg transition-all border border-dashed focus:outline-none"
-                        style={{
-                          borderColor: `${green}88`,
-                          color: green,
-                          backgroundColor: 'transparent',
-                        }}
-                      >
-                        + Add Ticket No.
-                      </button>
-                    )}
-                  </>
-                )}
               </div>
             </div>
           ))}

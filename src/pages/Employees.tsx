@@ -1,14 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import {
-  Search, Wrench, Mail, Phone, RefreshCw, Building2,
+  Search, Wrench, Mail, Phone, Building2,
   CheckCircle, XCircle, Trash2, X, Plus, Copy,
   Check, Eye, EyeOff, ShieldCheck,
-  Camera, Calendar, User,
+  Camera, Calendar, User, ArrowLeft,
   Loader2, ChevronDown
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import UserAvatar from '../components/UserAvatar'
+import TicketHistoryTable from '../components/TicketHistoryTable'
 import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName, notifyEmployeesDirectoryUpdated } from '../utils/api'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 
@@ -75,7 +77,7 @@ const ROLE_META: Record<AssignableRole, {
     canDelete: true,
   },
   MANAGER: {
-    label: 'Office In Charge',
+    label: 'Officer In Charge',
     hint: 'Branch OIC — manages branch team, lineup, and approvals. Requires a branch.',
     requiresBranch: true,
     requiresJobTitle: false,
@@ -149,7 +151,7 @@ const resolveLabel = (role: string, jobTitle: string) => {
   const r = role.toUpperCase()
   if (r === 'ADMIN') return 'Admin'
   if (r === 'MANAGEMENT') return 'Management'
-  if (r === 'MANAGER') return 'Office In Charge'
+  if (r === 'MANAGER') return 'Officer In Charge'
   if (jobTitle?.trim()) return formatJobTitleLabel(jobTitle)
   return formatRoleLabel(role)
 }
@@ -184,6 +186,80 @@ const formatJobTitleLabel = (title: string) => {
     .replace(/\b\w/g, char => char.toUpperCase())
 }
 
+/** jobTitle is stored as one comma-separated string so an employee can hold multiple roles
+ * (e.g. "COORDINATOR, WARRANTY REGISTRAR") without a backend schema change. */
+const parseJobTitles = (raw: string): string[] =>
+  raw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+
+const joinJobTitles = (titles: string[]): string => titles.join(', ')
+
+interface JobTitleMultiSelectProps {
+  value: string
+  onChange: (next: string) => void
+  options: string[]
+  onAddCustom: (title: string) => void
+  inputCls: string
+  inputStyle: React.CSSProperties
+  textMuted: string
+  border: string
+}
+
+const JobTitleMultiSelect = ({ value, onChange, options, onAddCustom, inputCls, inputStyle, textMuted, border }: JobTitleMultiSelectProps) => {
+  const selected = parseJobTitles(value)
+  const [newTitle, setNewTitle] = useState('')
+
+  const toggle = (title: string) => {
+    const next = selected.includes(title)
+      ? selected.filter(t => t !== title)
+      : [...selected, title]
+    onChange(joinJobTitles(next))
+  }
+
+  const addCustom = () => {
+    const title = newTitle.trim().toUpperCase()
+    if (!title) return
+    if (!options.includes(title)) onAddCustom(title)
+    if (!selected.includes(title)) onChange(joinJobTitles([...selected, title]))
+    setNewTitle('')
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap gap-x-4 gap-y-2 p-3 rounded-xl border" style={{ borderColor: border }}>
+        {options.map(title => (
+          <label key={title} className="flex items-center gap-1.5 text-xs cursor-pointer select-none" style={{ color: textMuted }}>
+            <input
+              type="checkbox"
+              checked={selected.includes(title)}
+              onChange={() => toggle(title)}
+              className="accent-emerald-500"
+            />
+            {formatJobTitleLabel(title)}
+          </label>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          className={inputCls}
+          style={inputStyle}
+          placeholder="Add a new role (e.g. Warranty Registrar)"
+          value={newTitle}
+          onChange={e => setNewTitle(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustom() } }}
+        />
+        <button
+          type="button"
+          onClick={addCustom}
+          className="px-3 rounded-xl text-xs font-bold shrink-0"
+          style={{ backgroundColor: '#10B981', color: '#fff' }}
+        >
+          Add
+        </button>
+      </div>
+    </div>
+  )
+}
 
 
 const CREATE_STEPS = [
@@ -252,15 +328,15 @@ export default function Employees() {
   const [branches,  setBranches]  = useState<BranchOption[]>([])
   const [loading,   setLoading]   = useState(true)
 
+  const navigate = useNavigate()
+  const { id: routeEmployeeId } = useParams<{ id?: string }>()
+
   // Custom Job Titles / Role Levels (localStorage)
   const [customJobTitles, setCustomJobTitles] = useState<string[]>([])
-  // Drawer details panel state
+  // Detail panel state — now a full tab (routed at /employees/:id) rather than a modal overlay
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
+  const isDrawerOpen = Boolean(routeEmployeeId)
   const [activeDrawerTab, setActiveDrawerTab] = useState<'overview' | 'history'>('overview')
-  const [employeeTicketHistory, setEmployeeTicketHistory] = useState<any[]>([])
-  const [loadingHistory, setLoadingHistory] = useState(false)
-  const [historyDateFilter, setHistoryDateFilter] = useState<string>('')
   const [imageUploading, setImageUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -363,72 +439,15 @@ export default function Employees() {
 
   const allJobTitles = [...DEFAULT_JOB_TITLES, ...customJobTitles]
 
-  useEffect(() => {
-    if (activeDrawerTab !== 'history' || !selectedEmployee) {
-      setEmployeeTicketHistory([])
-      return
-    }
-    const fetchHistory = async () => {
-      setLoadingHistory(true)
-      try {
-        const headers = { Authorization: `Bearer ${token()}` }
-        const isAdminOrMgmt = user?.role?.toUpperCase() === 'ADMIN' || user?.role?.toUpperCase() === 'MANAGEMENT'
-        const endpoint = isAdminOrMgmt ? `${API_BASE_URL}/tickets?size=1000` : `${API_BASE_URL}/tickets/branch?size=1000`
-        const res = await fetch(endpoint, { headers })
-        if (!res.ok) return
-        const data = await res.json()
-        const tickets: any[] = data?.data?.tickets || data?.data?.content || data?.data || []
-        
-        const nameNorm = selectedEmployee.name.toLowerCase().trim()
-        const empId = selectedEmployee.id
-        const empEmail = selectedEmployee.email.toLowerCase().trim()
-        const empPersonalEmail = (selectedEmployee.personalEmail || '').toLowerCase().trim()
-
-        const relevant = tickets.filter((t: any) => {
-          // 1. Created by this employee
-          if (t.customerId === empId) return true
-          if (t.createdBy && t.createdBy.toLowerCase().trim() === nameNorm) return true
-
-          // 2. Negotiator
-          if (t.negotiatorId === empId) return true
-          if (t.negotiatorName && t.negotiatorName.toLowerCase().trim() === nameNorm) return true
-
-          // 3. Assignee / Installer / Driver
-          if (t.assignedTo === empId) return true
-          if (t.assignedEmployeeName && t.assignedEmployeeName.toLowerCase().trim() === nameNorm) return true
-          if (t.installerId === empId) return true
-          if (t.installerName && t.installerName.toLowerCase().trim() === nameNorm) return true
-
-          // 4. Closed by
-          if (t.closedBy === empId) return true
-          if (t.closedBy && t.closedBy.toLowerCase().trim() === nameNorm) return true
-          if (t.closedBy && t.closedBy.toLowerCase().trim() === empEmail) return true
-
-          // 5. Warranty registration completed by
-          if (t.warrantyRegistrationCompletedBy === empId) return true
-          if (t.warrantyRegistrationCompletedBy && t.warrantyRegistrationCompletedBy.toLowerCase().trim() === nameNorm) return true
-
-          // 6. Emails match
-          const customerEmail = (t.customerEmail || '').toLowerCase().trim()
-          if (customerEmail && (customerEmail === empEmail || (empPersonalEmail && customerEmail === empPersonalEmail))) return true
-
-          return false
-        })
-
-        relevant.sort((a: any, b: any) => {
-          const da = a.updatedAt || a.updated_at || a.createdAt || a.created_at || ''
-          const db = b.updatedAt || b.updated_at || b.createdAt || b.created_at || ''
-          return db.localeCompare(da)
-        })
-        setEmployeeTicketHistory(relevant)
-      } catch (err) {
-        console.error('Error loading employee ticket history:', err)
-      } finally {
-        setLoadingHistory(false)
-      }
-    }
-    fetchHistory()
-  }, [activeDrawerTab, selectedEmployee, user])
+  const addCustomJobTitle = (title: string) => {
+    const upper = title.trim().toUpperCase()
+    if (!upper || allJobTitles.includes(upper)) return
+    setCustomJobTitles(prev => {
+      const next = [...prev, upper]
+      localStorage.setItem('ashcol-custom-job-titles', JSON.stringify(next))
+      return next
+    })
+  }
 
   // ── Data Loaders ────────────────────────────────────────────────────────────
   const fetchBranches = async () => {
@@ -581,12 +600,24 @@ export default function Employees() {
 
 
 
-  // ── Drawer toggle ───────────────────────────────────────────────────────────
+  // ── Detail tab navigation ───────────────────────────────────────────────────
   const handleRowClick = (emp: Employee) => {
     setSelectedEmployee(emp)
-    setIsDrawerOpen(true)
     setActiveDrawerTab('overview')
+    navigate(`/employees/${emp.id}`)
   }
+
+  const closeDetailTab = () => navigate('/employees')
+
+  // Keep the detail tab's employee in sync with the URL (deep link / refresh / back button).
+  useEffect(() => {
+    if (!routeEmployeeId) {
+      setSelectedEmployee(null)
+      return
+    }
+    const found = employees.find(e => e.id === routeEmployeeId)
+    if (found) setSelectedEmployee(found)
+  }, [routeEmployeeId, employees])
 
   // ── CRUD Handlers ───────────────────────────────────────────────────────────
   const validateAccountForm = (
@@ -682,8 +713,9 @@ export default function Employees() {
       showToast('error', 'System admin accounts cannot be edited here.')
       return
     }
-    const jt = (emp.jobTitle || '').toUpperCase()
-    const validJt = allJobTitles.includes(jt) ? jt : (jt || 'TECHNICIAN')
+    const titles = parseJobTitles(emp.jobTitle || '')
+    titles.filter(t => !allJobTitles.includes(t)).forEach(addCustomJobTitle)
+    const validJt = titles.length ? joinJobTitles(titles) : 'TECHNICIAN'
     setEditForm({
       name: formatPersonName(emp.name), email: emp.email, phone: emp.phone,
       role: emp.role, jobTitle: validJt,
@@ -695,7 +727,6 @@ export default function Employees() {
     })
     setFormErr('')
     setShowPass(false)
-    setIsDrawerOpen(false)
     setEditTarget(emp)
   }
 
@@ -870,8 +901,8 @@ export default function Employees() {
         return
       }
       if (selectedEmployee?.id === deleteTarget.id) {
-        setIsDrawerOpen(false)
         setSelectedEmployee(null)
+        navigate('/employees')
       }
       setEmployees(prev => prev.filter(e => e.id !== deleteTarget.id))
       showToast('success', `${deleteTarget.name} removed.`)
@@ -996,7 +1027,8 @@ export default function Employees() {
         onChange={handleImageUpload}
       />
 
-      {/* ── Main Table Card (Redesigned & Moved Up) ── */}
+      {/* ── Main Table Card (hidden while an employee's detail tab is open) ── */}
+      {!isDrawerOpen && (
       <div className="rounded-2xl flex flex-col shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
 
         {/* Search, Filter, & Action Bar */}
@@ -1078,7 +1110,7 @@ export default function Employees() {
             </div>
           </div>
 
-          {/* Add Employee Button (Moved inside table bar) */}
+          {/* Add Employee Button */}
           {(isAdmin || isManager) && (
             <button
               onClick={openCreateFlow}
@@ -1095,10 +1127,10 @@ export default function Employees() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#080f1c', borderBottom: `1px solid ${border}` }}>
-                {['Employee', 'Role / Title', 'Branch', 'Contact', 'Status'].map((h, idx, arr) => (
+                {['Employee', 'Role', 'Branch', 'Contact', 'Status'].map((h, idx, arr) => (
                   <th
                     key={h}
-                    className="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider whitespace-nowrap border-r"
+                    className={`px-6 py-3.5 text-xs font-semibold uppercase tracking-wider whitespace-nowrap border-r ${idx === 0 ? 'text-left' : 'text-center'}`}
                     style={{ color: textMuted, borderColor: border, borderRight: idx === arr.length - 1 ? 'none' : `1px solid ${border}` }}
                   >
                     {h}
@@ -1110,13 +1142,22 @@ export default function Employees() {
               {loading ? (
                 Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i} style={{ borderBottom: `1px solid ${border}` }}>
-                    {[1, 2, 3, 4, 5].map((j, idx) => (
+                    <td className="px-3 py-1.5 border-r" style={{ borderColor: border }}>
+                      <div className="flex items-center gap-4">
+                        <div className="w-[64px] h-[64px] rounded-xl animate-pulse shrink-0" style={{ backgroundColor: inputBg }} />
+                        <div className="flex flex-col gap-2 flex-1">
+                          <div className="h-4 rounded animate-pulse w-36" style={{ backgroundColor: inputBg }} />
+                          <div className="h-3 rounded animate-pulse w-48" style={{ backgroundColor: inputBg }} />
+                        </div>
+                      </div>
+                    </td>
+                    {[2, 3, 4, 5].map((j, idx) => (
                       <td
                         key={j}
-                        className="px-6 py-4.5 border-r"
-                        style={{ borderColor: border, borderRight: idx === 4 ? 'none' : `1px solid ${border}` }}
+                        className="px-6 py-4 border-r text-center"
+                        style={{ borderColor: border, borderRight: idx === 3 ? 'none' : `1px solid ${border}` }}
                       >
-                        <div className="h-4 rounded animate-pulse" style={{ backgroundColor: inputBg, width: j === 1 ? '70%' : '55%' }} />
+                        <div className="h-4 rounded animate-pulse mx-auto" style={{ backgroundColor: inputBg, width: '60%' }} />
                       </td>
                     ))}
                   </tr>
@@ -1135,32 +1176,64 @@ export default function Employees() {
                     key={e.id}
                     onClick={() => handleRowClick(e)}
                     style={{ borderBottom: `1px solid ${border}` }}
-                    className="transition-colors cursor-pointer"
+                    className="transition-colors cursor-pointer group"
                     onMouseEnter={el => (el.currentTarget.style.backgroundColor = rowHover)}
                     onMouseLeave={el => (el.currentTarget.style.backgroundColor = 'transparent')}
                   >
                     {/* Employee */}
-                    <td className="px-6 py-5 border-r" style={{ borderColor: border }}>
-                      <div className="flex items-center gap-3">
-                        <UserAvatar name={e.name} imageUrl={e.profileImage} size="sm" />
+                    <td className="px-3 py-1.5 border-r" style={{ borderColor: border }}>
+                      <div className="flex items-center gap-4">
+                        {/* Large profile photo — almost full row height with 6px gap */}
+                        <div className="shrink-0 relative" style={{ width: 64, height: 64 }}>
+                          {e.profileImage ? (
+                            <img
+                              src={resolveImageUrl(e.profileImage)}
+                              alt={e.name}
+                              className="w-full h-full rounded-xl object-cover"
+                              style={{ border: `2px solid ${border}` }}
+                            />
+                          ) : (
+                            <div
+                              className="w-full h-full rounded-xl flex items-center justify-center text-white font-black text-xl shrink-0"
+                              style={{
+                                background: `linear-gradient(135deg, ${
+                                  ['#10B981','#3B82F6','#8B5CF6','#EC4899','#F59E0B','#14B8A6','#6366F1'][
+                                    (e.name.charCodeAt(0) || 0) % 7
+                                  ]
+                                }, #059669)`,
+                                border: `2px solid ${border}`,
+                              }}
+                            >
+                              {e.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
+                            </div>
+                          )}
+                          {/* Active status dot */}
+                          <div
+                            className="absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full border-2"
+                            style={{
+                              backgroundColor: e.isActive ? '#10B981' : '#94a3b8',
+                              borderColor: cardBg,
+                            }}
+                          />
+                        </div>
                         <div className="min-w-0">
-                          <div className="text-base font-bold truncate max-w-[220px]" style={{ color: textPrimary }}>{e.name.toUpperCase()}</div>
-                          <div className="text-xs truncate max-w-[220px]" style={{ color: textMuted }}>{e.email.toLowerCase()}</div>
+                          <div className="text-sm font-bold truncate max-w-[220px]" style={{ color: textPrimary }}>{e.name.toUpperCase()}</div>
+                          <div className="text-xs truncate max-w-[220px] mt-0.5" style={{ color: textMuted }}>{e.email.toLowerCase()}</div>
                         </div>
                       </div>
                     </td>
 
                     {/* Role */}
-                    <td className="px-6 py-5 border-r" style={{ borderColor: border }}>
+                    <td className="px-6 py-5 border-r text-center" style={{ borderColor: border }}>
                       <span className="text-sm font-semibold tracking-wider whitespace-nowrap" style={{ color: rc.text }}>
                         {resolveLabel(e.role, e.jobTitle).toUpperCase()}
                       </span>
                     </td>
 
                     {/* Branch */}
-                    <td className="px-6 py-5 border-r" style={{ borderColor: border }}>
+                    <td className="px-6 py-5 border-r text-center" style={{ borderColor: border }}>
                       {e.branchName ? (
-                        <div className="flex items-center gap-1.5 text-sm whitespace-nowrap" style={{ color: textMuted }}>
+                        <div className="flex items-center justify-center gap-1.5 text-sm whitespace-nowrap" style={{ color: textMuted }}>
                           <span className="font-semibold" style={{ color: textPrimary }}>{e.branchName.toUpperCase()}</span>
                         </div>
                       ) : (
@@ -1169,7 +1242,7 @@ export default function Employees() {
                     </td>
 
                     {/* Contact */}
-                    <td className="px-6 py-5 border-r" style={{ borderColor: border }}>
+                    <td className="px-6 py-5 border-r text-center" style={{ borderColor: border }}>
                       {e.phone ? (
                         <span className="text-sm font-semibold" style={{ color: textPrimary }}>
                           {formatPhoneNumber(e.phone)}
@@ -1180,7 +1253,7 @@ export default function Employees() {
                     </td>
 
                     {/* Status */}
-                    <td className="px-6 py-5">
+                    <td className="px-6 py-5 text-center">
                       <button
                         onClick={evt => { evt.stopPropagation(); requestToggleActive(e) }}
                         className="inline-flex items-center gap-1 text-xs font-bold tracking-wider transition-all hover:opacity-85"
@@ -1190,6 +1263,7 @@ export default function Employees() {
                         {e.isActive ? 'ACTIVE' : 'INACTIVE'}
                       </button>
                     </td>
+
                   </tr>
                 )
               })}
@@ -1197,23 +1271,36 @@ export default function Employees() {
           </table>
         </div>
       </div>
+      )}
 
-      {/* ── Center Detail Modal (Redesigned) ── */}
+      {/* Deep link / refresh directly on /employees/:id lands here before `employees` has loaded */}
+      {isDrawerOpen && !selectedEmployee && loading && (
+        <div className="flex items-center justify-center py-24">
+          <Loader2 className="w-6 h-6 animate-spin" style={{ color: '#10B981' }} />
+        </div>
+      )}
+
+      {/* ── Employee Detail Tab (full-width, replaces the list while open — no longer a popup) ── */}
       {isDrawerOpen && selectedEmployee && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: isLight ? 'rgba(241,245,249,0.96)' : 'rgba(6,11,24,0.96)', backdropFilter: 'blur(12px)' }}>
-          <div className="absolute inset-0" onClick={() => setIsDrawerOpen(false)} />
-
           <div
-            className="w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[88vh] overflow-hidden relative"
+            className="rounded-2xl shadow-sm flex flex-col overflow-hidden"
             style={{
               backgroundColor: cardBg,
               border: `1px solid ${border}`,
-              animation: 'modalFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+              animation: 'modalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
             }}
           >
             {/* Header */}
             <div className="px-6 py-5 border-b flex items-center justify-between shrink-0" style={{ borderColor: border }}>
               <div className="flex items-center gap-3">
+                <button
+                  onClick={closeDetailTab}
+                  className="p-2 rounded-lg transition-all hover:bg-slate-500/10 shrink-0"
+                  style={{ color: textMuted }}
+                  aria-label="Back to Employees"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
                 <div className="relative group shrink-0">
                   <UserAvatar name={selectedEmployee.name} imageUrl={selectedEmployee.profileImage} size="md" ring className="" />
                   <div
@@ -1257,7 +1344,7 @@ export default function Employees() {
                   </button>
                 )}
                 <button
-                  onClick={() => setIsDrawerOpen(false)}
+                  onClick={closeDetailTab}
                   className="p-2 rounded-lg transition-all hover:bg-slate-500/10 ml-1"
                   style={{ color: textMuted }}
                 >
@@ -1359,110 +1446,14 @@ export default function Employees() {
               {/* ── History Tab ── */}
               {activeDrawerTab === 'history' && (
                 <div className="p-6">
-                  {/* Date Filter Control */}
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4 p-3 rounded-xl border" style={{ borderColor: border, backgroundColor: inputBg }}>
-                    <div className="flex flex-col gap-1">
-                      <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>Filter by Date</span>
-                      <span className="text-[11px]" style={{ color: textMuted }}>Show tickets created or updated on:</span>
-                    </div>
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
-                      <input
-                        type="date"
-                        value={historyDateFilter}
-                        onChange={e => setHistoryDateFilter(e.target.value)}
-                        className="px-3 py-1.5 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                        style={{
-                          backgroundColor: cardBg,
-                          borderColor: border,
-                          color: textPrimary
-                        }}
-                      />
-                      {historyDateFilter && (
-                        <button
-                          onClick={() => setHistoryDateFilter('')}
-                          className="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all hover:bg-slate-500/10"
-                          style={{
-                            color: '#EF4444',
-                            border: `1px solid ${border}`
-                          }}
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {(() => {
-                    const displayedHistory = employeeTicketHistory.filter((t: any) => {
-                      if (!historyDateFilter) return true
-                      
-                      const checkDate = (dateStr: string) => {
-                        if (!dateStr) return false
-                        const d = new Date(dateStr)
-                        const yyyy = d.getFullYear()
-                        const mm = String(d.getMonth() + 1).padStart(2, '0')
-                        const dd = String(d.getDate()).padStart(2, '0')
-                        return `${yyyy}-${mm}-${dd}` === historyDateFilter
-                      }
-                      
-                      return checkDate(t.createdAt || t.created_at) || checkDate(t.updatedAt || t.updated_at)
-                    })
-
-                    return loadingHistory ? (
-                      <div className="flex flex-col items-center justify-center py-16 gap-3">
-                        <Loader2 className="w-6 h-6 animate-spin" style={{ color: '#10B981' }} />
-                        <span className="text-xs font-semibold" style={{ color: textMuted }}>Loading ticket history…</span>
-                      </div>
-                    ) : displayedHistory.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-16 border border-dashed rounded-2xl" style={{ borderColor: border, backgroundColor: inputBg }}>
-                        <RefreshCw className="w-8 h-8 mb-3" style={{ color: textMuted }} />
-                        <span className="text-sm font-bold" style={{ color: textMuted }}>No ticket history found</span>
-                        <span className="text-xs mt-1" style={{ color: textMuted }}>
-                          {historyDateFilter ? `No tickets created or updated on ${new Date(historyDateFilter).toLocaleDateString(undefined, { dateStyle: 'medium' })}.` : 'No tickets are associated with this employee.'}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-2">
-                        <div className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: textMuted }}>
-                          {displayedHistory.length} tickets found {historyDateFilter && `for ${new Date(historyDateFilter).toLocaleDateString(undefined, { dateStyle: 'medium' })}`}
-                        </div>
-                        {displayedHistory.map((t: any, idx: number) => {
-                          const custName = t.customerName || t.customer_name || '—'
-                          const tNum = t.ticketNumber || t.ticket_number || t.controlNumber || t.control_number || t.id?.slice(0, 8) || '—'
-                          const status = (t.status || '').toUpperCase()
-                          const district = t.district || t.destination || ''
-                          const brand = t.brand || ''
-                          const date = t.updatedAt || t.updated_at || t.createdAt || t.created_at || ''
-                          const dateStr = date ? new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : ''
-                          const isInstalled = status === 'INSTALLED' || status === 'COMPLETED'
-                          const isActive = status === 'PENDING' || status === 'ASSIGNED' || status === 'SCHEDULED'
-                          const statusColor = isInstalled ? '#10B981' : isActive ? '#3B82F6' : status === 'CANCELLED' ? '#EF4444' : textMuted
-                          const statusBg = isInstalled ? 'rgba(16,185,129,0.1)' : isActive ? 'rgba(59,130,246,0.1)' : status === 'CANCELLED' ? 'rgba(239,68,68,0.1)' : 'rgba(100,116,139,0.08)'
-                          return (
-                            <div key={t.id || idx}
-                              className="p-3.5 rounded-xl border flex items-center gap-4 hover:scale-[1.005] transition-all"
-                              style={{ borderColor: border, backgroundColor: idx % 2 === 0 ? inputBg : cardBg }}
-                            >
-                              <div className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black" style={{ backgroundColor: statusBg, color: statusColor }}>
-                                #{tNum.slice(-2)}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="text-sm font-semibold truncate" style={{ color: textPrimary }}>{custName}</span>
-                                  <span className="text-[10px] font-black uppercase tracking-wider shrink-0 px-2 py-0.5 rounded-full" style={{ backgroundColor: statusBg, color: statusColor }}>{status || '—'}</span>
-                                </div>
-                                <div className="flex items-center gap-3 mt-0.5 text-[11px]" style={{ color: textMuted }}>
-                                  {brand && <span>{brand}</span>}
-                                  {district && <span>· {district}</span>}
-                                  {dateStr && <span>· {dateStr}</span>}
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )
-                  })()}
+                  <TicketHistoryTable
+                    person={{
+                      id: selectedEmployee.id,
+                      name: selectedEmployee.name,
+                      email: selectedEmployee.email,
+                      personalEmail: selectedEmployee.personalEmail,
+                    }}
+                  />
                 </div>
               )}
 
@@ -1472,7 +1463,7 @@ export default function Employees() {
             <div className="px-6 py-3.5 border-t flex items-center justify-between shrink-0" style={{ borderColor: border, backgroundColor: isLight ? 'rgba(248,250,252,0.8)' : 'rgba(10,17,32,0.8)' }}>
               <span className="text-[11px]" style={{ color: textMuted }}>ID: {selectedEmployee.id.slice(0, 16)}…</span>
               <button
-                onClick={() => setIsDrawerOpen(false)}
+                onClick={closeDetailTab}
                 className="px-4 py-1.5 rounded-lg text-xs font-bold border transition-all hover:bg-slate-500/10"
                 style={{ borderColor: border, color: textMuted }}
               >
@@ -1480,7 +1471,6 @@ export default function Employees() {
               </button>
             </div>
           </div>
-        </div>
       )}
 
       {/* ── Edit Modal ── */}
@@ -1628,12 +1618,17 @@ export default function Employees() {
                     )}
                     {(editForm.role === 'EMPLOYEE' || editForm.role === 'MANAGEMENT') && (
                       <div className="col-span-1 sm:col-span-2">
-                        <Field label="Job Title" labelColor={textMuted}>
-                          <select className={inputCls} style={inputStyle} value={editForm.jobTitle} onChange={e => setEditForm(p => ({ ...p, jobTitle: e.target.value }))}>
-                            {allJobTitles.map(title => (
-                              <option key={title} value={title}>{formatJobTitleLabel(title)}</option>
-                            ))}
-                          </select>
+                        <Field label="Job Title (select any that apply)" labelColor={textMuted}>
+                          <JobTitleMultiSelect
+                            value={editForm.jobTitle}
+                            onChange={next => setEditForm(p => ({ ...p, jobTitle: next }))}
+                            options={allJobTitles}
+                            onAddCustom={addCustomJobTitle}
+                            inputCls={inputCls}
+                            inputStyle={inputStyle}
+                            textMuted={textMuted}
+                            border={border}
+                          />
                         </Field>
                       </div>
                     )}
@@ -1819,12 +1814,17 @@ export default function Employees() {
                   )}
                   {(createForm.role === 'EMPLOYEE' || createForm.role === 'MANAGEMENT') && (
                     <div className="sm:col-span-2">
-                      <Field label="Job title" labelColor={textMuted}>
-                        <select className={inputCls} style={inputStyle} value={createForm.jobTitle} onChange={e => setCreateForm(p => ({ ...p, jobTitle: e.target.value }))}>
-                          {allJobTitles.map(title => (
-                            <option key={title} value={title}>{formatJobTitleLabel(title)}</option>
-                          ))}
-                        </select>
+                      <Field label="Job title (select any that apply)" labelColor={textMuted}>
+                        <JobTitleMultiSelect
+                          value={createForm.jobTitle}
+                          onChange={next => setCreateForm(p => ({ ...p, jobTitle: next }))}
+                          options={allJobTitles}
+                          onAddCustom={addCustomJobTitle}
+                          inputCls={inputCls}
+                          inputStyle={inputStyle}
+                          textMuted={textMuted}
+                          border={border}
+                        />
                       </Field>
                     </div>
                   )}

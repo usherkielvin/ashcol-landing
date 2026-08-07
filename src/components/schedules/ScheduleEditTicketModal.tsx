@@ -248,7 +248,7 @@ export function ScheduleEditTicketModal({
               </Field>
             </Row>
             <Row>
-              <Field label="Dealer (DLR)">
+              <Field label="Dealer / Store">
                 <input
                   type="text"
                   value={form.dealer || ''}

@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { useOutletContext, useSearchParams } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, X, Edit3, AlertTriangle, CalendarDays,
-  Eye, Loader2, Pencil, Moon, Sun,
+  Eye, Loader2, Pencil, Moon, Sun, Trash2,
   ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Maximize2,
   UsersRound, ChevronDown, SlidersHorizontal, CalendarRange,
 } from 'lucide-react'
@@ -34,7 +34,6 @@ import {
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import * as XLSX from 'xlsx'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
-import { SearchFilterDropdown } from '../components/SearchFilterDropdown'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 import { RelayEditTicketModal } from '../components/relays/RelayEditTicketModal'
 import { type RelayEditDraft } from '../components/relays/relayEditForm'
@@ -84,7 +83,7 @@ import {
   resolveFormScheduleDateKey, resolveInitialScheduleDate, resolveNegotiatorDisplayName, resolveNegotiatorName,
   resolveScheduleCompletionDateKey, resolveTicketDistrict, resolveTicketPayment, resolveTicketScheduleDateKey,
   sanitizeTicketPatchBody, shouldArchiveCompletedSchedule, shouldBlankReschedGhostPayment, shouldShowOnMyTickets,
-  sortOverviewSearchResults, statusCode, statusColor, statusShowsScheduleDetails, stripArchivedRemarkSuffix,
+  sortOverviewSearchResults, statusShowsScheduleDetails, stripArchivedRemarkSuffix,
   ticketBelongsOnScheduleBranch, ticketBelongsOnScheduleDate, ticketHadScheduleDate,
   ticketHasRescheduleMeta, ticketMatchesDateKey, ticketMatchesNegotiatorFilter, ticketMatchesOverviewQuery,
   todayDateKey, wantsTicketArchive,
@@ -154,11 +153,21 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     }
   }, [surface])
 
-  const [overviewSearchInput, setOverviewSearchInput] = useState('')
+  const [searchParams] = useSearchParams()
+  const initialUrlQuery = searchParams.get('q') || searchParams.get('ticket') || ''
+
+  const [overviewSearchInput, setOverviewSearchInput] = useState(() => initialUrlQuery)
   const [overviewSearchFocused, setOverviewSearchFocused] = useState(false)
   const [overviewResults, setOverviewResults] = useState<Ticket[]>([])
   const [overviewLoading, setOverviewLoading] = useState(false)
   const overviewSearchSeqRef = useRef(0)
+
+  useEffect(() => {
+    const q = searchParams.get('q') || searchParams.get('ticket') || ''
+    if (q) {
+      setOverviewSearchInput(q)
+    }
+  }, [searchParams])
 
   const fetchOverviewTickets = useCallback(async (query: string) => {
     const seq = ++overviewSearchSeqRef.current
@@ -289,9 +298,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const schedTheadBg = isLight ? '#E3F4E9' : '#0a1f24'
   const schedTheadText = isLight ? '#166534' : '#4ade80'
   const schedTheadBorder = isLight ? 'rgba(22,163,74,0.38)' : '#0f3c33'
-  const rowEven = isLight ? '#ffffff' : '#0f172a'
-  const rowOdd = isLight ? '#f7fbf8' : '#1b2330'
-  const rowHover = isLight ? '#edf7f1' : '#222f44'
+  const rowEven = isLight ? '#ffffff' : '#060B18'
+  const rowOdd = isLight ? '#f7fbf8' : '#060B18'
+  const rowHover = isLight ? '#edf7f1' : '#0f1a2e'
   const green = '#16A34A'
   const textGreen = isLight ? '#16A34A' : '#4ade80'
 
@@ -354,6 +363,61 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const [searchQuery, setSearchQuery] = useState('')
   /** Admin My Tickets: filter pending/assigned rows to one negotiator (e.g. GLESEL). */
   const [myTicketsNegotiatorFilter, setMyTicketsNegotiatorFilter] = useState('')
+  const [negoDropdownOpen, setNegoDropdownOpen] = useState(false)
+  const [negoDropdownPos, setNegoDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null)
+  const negoDropdownRef = useRef<HTMLButtonElement>(null)
+  const negoDropdownPopRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!negoDropdownOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (negoDropdownRef.current && negoDropdownRef.current.contains(target)) return
+      if (negoDropdownPopRef.current && negoDropdownPopRef.current.contains(target)) return
+      setNegoDropdownOpen(false)
+    }
+    const handleScroll = (e: Event) => {
+      const target = e.target as Node
+      if (negoDropdownPopRef.current && negoDropdownPopRef.current.contains(target)) return
+      setNegoDropdownOpen(false)
+    }
+    window.addEventListener('mousedown', handleClickOutside)
+    window.addEventListener('scroll', handleScroll, true)
+    return () => {
+      window.removeEventListener('mousedown', handleClickOutside)
+      window.removeEventListener('scroll', handleScroll, true)
+    }
+  }, [negoDropdownOpen])
+
+  // My Tickets month picker — custom button + floating year/month grid popover,
+  // same mechanics as the negotiator dropdown above (position-tracked portal, outside-click close).
+  const [myTicketsMonthPickerOpen, setMyTicketsMonthPickerOpen] = useState(false)
+  const [myTicketsMonthPickerPos, setMyTicketsMonthPickerPos] = useState<{ top: number; left: number; width: number } | null>(null)
+  const [myTicketsMonthPickerYear, setMyTicketsMonthPickerYear] = useState(() => new Date().getFullYear())
+  const myTicketsMonthPickerRef = useRef<HTMLButtonElement>(null)
+  const myTicketsMonthPickerPopRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!myTicketsMonthPickerOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (myTicketsMonthPickerRef.current && myTicketsMonthPickerRef.current.contains(target)) return
+      if (myTicketsMonthPickerPopRef.current && myTicketsMonthPickerPopRef.current.contains(target)) return
+      setMyTicketsMonthPickerOpen(false)
+    }
+    const handleScroll = (e: Event) => {
+      const target = e.target as Node
+      if (myTicketsMonthPickerPopRef.current && myTicketsMonthPickerPopRef.current.contains(target)) return
+      setMyTicketsMonthPickerOpen(false)
+    }
+    window.addEventListener('mousedown', handleClickOutside)
+    window.addEventListener('scroll', handleScroll, true)
+    return () => {
+      window.removeEventListener('mousedown', handleClickOutside)
+      window.removeEventListener('scroll', handleScroll, true)
+    }
+  }, [myTicketsMonthPickerOpen])
+
   const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' }>(
     () => defaultSortForSchedulesView(isMyTickets),
   )
@@ -962,6 +1026,18 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   /** True once "Apply" has populated the main table with a whole month's tickets instead of one day. */
   const [monthViewActive, setMonthViewActive] = useState(false)
   const monthViewActiveRef = useRef(false)
+
+  /**
+   * My Tickets status filter — same PENDING_GROUP/CLOSING_GROUP/specific-value shape as
+   * monthFilterStatus, but applied client-side instantly (no server month-fetch involved,
+   * unlike Schedules' "Apply"/runMonthFilterQuery) so a negotiator can narrow her queue by
+   * sub-status (SURVEY, INSTALL, RESCHED, etc.) to see what's still not closed yet.
+   */
+  const [myTicketsStatusFilter, setMyTicketsStatusFilter] = useState('')
+  /** 'YYYY-MM', or '' for all months. Filters on date created — the one date every ticket has,
+   * unlike finalDate/preferredDate which aren't set yet for most of this queue. */
+  const [myTicketsMonthFilter, setMyTicketsMonthFilter] = useState('')
+  const [myTicketsFilterModalOpen, setMyTicketsFilterModalOpen] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [_importing, setImporting] = useState(false)
   const [importResults, setImportResults] = useState<{
@@ -3440,6 +3516,17 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         } else if (user?.id && !ticketMatchesNegotiatorFilter(t, user.id)) {
           return false
         }
+        if (myTicketsStatusFilter === 'PENDING_GROUP') {
+          if (!SCHEDULE_PENDING_STATUS_VALUES.has(getScheduleStatusValue(t))) return false
+        } else if (myTicketsStatusFilter === 'CLOSING_GROUP') {
+          if (!CLOSING_SCHEDULE_STATUSES.has(getScheduleStatusValue(t))) return false
+        } else if (myTicketsStatusFilter) {
+          if (getScheduleStatusValue(t) !== myTicketsStatusFilter) return false
+        }
+        if (myTicketsMonthFilter) {
+          const createdMonth = (t.createdAt || t.created_at || '').slice(0, 7)
+          if (createdMonth !== myTicketsMonthFilter) return false
+        }
         return true
       }
 
@@ -3504,7 +3591,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       )
     }
     return list
-  }, [tickets, isMyTickets, activeBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, user?.jobTitle, installerLineupIndex, driverOnlyNames, isAdmin, myTicketsNegotiatorFilter, branchEmployees, isBranchMatch, monthViewActive, monthFilterNegotiatorId, monthFilterStatus])
+  }, [tickets, isMyTickets, activeBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, user?.jobTitle, installerLineupIndex, driverOnlyNames, isAdmin, myTicketsNegotiatorFilter, myTicketsStatusFilter, myTicketsMonthFilter, branchEmployees, isBranchMatch, monthViewActive, monthFilterNegotiatorId, monthFilterStatus])
 
   // Auto-numbered vehicle trip labels ("STRADA - 1", "STRADA - 2") for the current filtered set —
   // the vehicle is now the dispatch unit, so staff never type a manual "- N" suffix into the
@@ -4815,11 +4902,23 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       const ticketBranchId = resolveTicketScheduleBranchId(ticket, installerLineupIndex, driverOnlyNames) || activeBranchId
       const options = negotiatorsForBranch(ticketBranchId)
       const current = editingCell.value
+      // The stored cell value is sometimes a short/partial name (e.g. "ROMMEL" from an old
+      // import) rather than the full roster name ("ROMMEL NEIL LAURENTE"). Match loosely
+      // (case-insensitive, either-direction substring) so it resolves to the real employee
+      // instead of rendering a second, confusingly-duplicate "ROMMEL" option below.
+      const currentLower = current.trim().toLowerCase()
+      const matchedOption = currentLower
+        ? options.find(emp => {
+            const nameLower = emp.name.toLowerCase()
+            return nameLower === currentLower || nameLower.includes(currentLower) || currentLower.includes(nameLower)
+          })
+        : undefined
+      const selectValue = matchedOption ? matchedOption.name : current
       return wrapEditingCell(
         <select
           autoFocus
           disabled={isSaving}
-          value={current}
+          value={selectValue}
           onChange={e => syncDraftValue(e.target.value)}
           onBlur={onBlur}
           onClick={e => e.stopPropagation()}
@@ -4832,7 +4931,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           {options.map(emp => (
             <option key={emp.id} value={emp.name}>{formatNegotiatorLabel(emp)}</option>
           ))}
-          {current && !options.some(emp => emp.name === current) && (
+          {current && !matchedOption && !options.some(emp => emp.name === current) && (
             <option value={current}>{current}</option>
           )}
         </select>,
@@ -5666,113 +5765,347 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         onChange={handleScanFilePicked}
       />
 
-      {/* ── Portal: My Tickets toolbar (Active Branch + negotiator filter + pills) ── */}
+      {/* ── Portal: My Tickets toolbar (Active Branch + negotiator filter) ── */}
       {isMyTickets && ReactDOM.createPortal(
-        <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-wrap items-center gap-2.5">
-          {/* Search Input Box (Rounded Pill) */}
-          <div
-            className="flex items-center gap-2.5 h-10 px-4 rounded-full border transition-all shrink-0 w-full sm:w-[260px] lg:w-[300px]"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder }}
-          >
-            <Search className="w-4 h-4 shrink-0" style={{ color: green }} />
+        <div className="w-full px-3 md:px-5 pt-2 pb-2.5 flex flex-col md:flex-row md:items-center gap-3">
+          <div className="flex items-center gap-2.5 w-full md:w-[240px] lg:w-[320px] h-10 md:h-11 px-3.5 md:px-4 rounded-full border transition-all shrink-0 shadow-sm focus-within:border-emerald-500/60"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            <Search className="w-4 h-4 shrink-0 text-emerald-500" />
             <input
               type="text"
               placeholder="Search names, phone, ticket..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="bg-transparent outline-none text-xs font-semibold flex-1 min-w-0 placeholder:font-medium"
+              className="bg-transparent outline-none text-xs md:text-sm flex-1 min-w-0 font-medium placeholder:font-medium placeholder:opacity-60"
               style={{ color: textPrimary }}
               onClick={e => e.stopPropagation()}
             />
             {searchQuery && (
-              <button
-                type="button"
-                onClick={e => { e.stopPropagation(); setSearchQuery('') }}
-                className="shrink-0 p-1 rounded-full hover:bg-slate-500/10 transition-colors"
-                style={{ color: textMuted }}
-              >
-                <X className="w-3.5 h-3.5" />
+              <button type="button" onClick={e => { e.stopPropagation(); setSearchQuery('') }}
+                className="shrink-0 p-1 rounded-full hover:bg-slate-500/10 transition-colors" style={{ color: textMuted }}
+                aria-label="Clear search">
+                <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
               </button>
             )}
           </div>
 
-          {/* Negotiator Filter Pill (Admin & Sales) */}
-          {isAdmin && (
-            <div className="relative shrink-0">
-              <select
-                value={myTicketsNegotiatorFilter}
-                onChange={e => setMyTicketsNegotiatorFilter(e.target.value)}
-                className="h-10 pl-4 pr-8 rounded-full border text-xs font-black uppercase tracking-wide outline-none cursor-pointer appearance-none"
-                style={{
-                  backgroundColor: inputBg,
-                  borderColor: isLight ? 'rgba(16,185,129,0.4)' : 'rgba(16,185,129,0.3)',
-                  color: green,
-                }}
-                title={activeBranchLabel ? `Negotiators for ${activeBranchLabel}` : 'Filter by negotiator'}
-              >
-                <option value="">ALL NEGOTIATORS</option>
-                {myTicketsNegotiatorOptions.map(emp => (
-                  <option key={emp.id} value={emp.id}>{formatNegotiatorLabel(emp, true)}</option>
-                ))}
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: green }} />
+          {!isAdmin && (
+            <div
+              className="flex items-center justify-center gap-2 h-9 md:h-10 px-3.5 rounded-full border text-xs font-black min-w-[180px] md:w-[220px] shrink-0"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: isLight ? '#15803d' : '#4ade80' }}
+              title="Your negotiator queue"
+            >
+              <span className="truncate uppercase font-extrabold tracking-wide">
+                {formatNegotiatorLabel({ name: user?.name, branchId: user?.branchId }, true) || 'ME'}
+              </span>
             </div>
           )}
 
-          {/* Quick Filter Pills: PENDING & CLOSING */}
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => setMonthFilterStatus(prev => prev === 'PENDING_GROUP' ? '' : 'PENDING_GROUP')}
-              className={`h-10 px-4 rounded-full text-xs font-black uppercase tracking-wider border transition-all active:scale-95 ${
-                monthFilterStatus === 'PENDING_GROUP'
-                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-emerald-600 dark:border-emerald-600 shadow-sm'
-                  : 'bg-slate-100/80 text-slate-700 border-slate-200 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-200 dark:border-slate-700'
-              }`}
-            >
-              PENDING
-            </button>
-            <button
-              type="button"
-              onClick={() => setMonthFilterStatus(prev => prev === 'CLOSING_GROUP' ? '' : 'CLOSING_GROUP')}
-              className={`h-10 px-4 rounded-full text-xs font-black uppercase tracking-wider border transition-all active:scale-95 ${
-                monthFilterStatus === 'CLOSING_GROUP'
-                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-emerald-600 dark:border-emerald-600 shadow-sm'
-                  : 'bg-slate-100/80 text-slate-700 border-slate-200 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-200 dark:border-slate-700'
-              }`}
-            >
-              CLOSING
-            </button>
+          {isAdmin && (
+            <div className="relative min-w-0 flex-1 md:flex-none">
+              {/* Custom Dropdown Trigger Button */}
+              <button
+                ref={negoDropdownRef}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (negoDropdownOpen) {
+                    setNegoDropdownOpen(false)
+                    return
+                  }
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  setNegoDropdownPos({
+                    top: rect.bottom + 6,
+                    left: rect.left,
+                    width: Math.max(200, rect.width),
+                  })
+                  setNegoDropdownOpen(true)
+                }}
+                className="flex items-center justify-between gap-2 h-9 md:h-10 px-3.5 rounded-full border text-xs font-black min-w-[180px] md:w-[220px] outline-none shadow-sm cursor-pointer transition-all hover:border-emerald-500/70 active:scale-[0.98]"
+                style={{
+                  backgroundColor: inputBg,
+                  borderColor: negoDropdownOpen ? green : inputBorder,
+                  color: isLight ? '#15803d' : '#4ade80',
+                }}
+              >
+                <span className="truncate uppercase font-extrabold tracking-wide">
+                  {(() => {
+                    if (!myTicketsNegotiatorFilter) return 'ALL NEGOTIATORS'
+                    const match = myTicketsNegotiatorOptions.find(emp => emp.id === myTicketsNegotiatorFilter)
+                    return match ? formatNegotiatorLabel(match, true) : 'ALL NEGOTIATORS'
+                  })()}
+                </span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${negoDropdownOpen ? 'rotate-180' : ''}`}
+                  style={{ color: isLight ? '#15803d' : '#4ade80' }}
+                  strokeWidth={2.5}
+                />
+              </button>
 
-            {/* Month Filter Button */}
+              {/* Custom Dropdown Popover List — rendered directly to body so it ALWAYS floats above table & header */}
+              {negoDropdownOpen && negoDropdownPos && ReactDOM.createPortal(
+                <div
+                  ref={negoDropdownPopRef}
+                  className="fixed z-[99999] overflow-y-auto rounded-xl border shadow-2xl py-1 animate-in fade-in duration-100 select-none"
+                  style={{
+                    top: negoDropdownPos.top,
+                    left: negoDropdownPos.left,
+                    width: negoDropdownPos.width,
+                    maxHeight: 210,
+                    backgroundColor: isLight ? '#ffffff' : '#0a1120',
+                    borderColor: isLight ? '#cbd5e1' : '#334155',
+                    boxShadow: '0 12px 28px rgba(0, 0, 0, 0.5)',
+                  }}
+                  onMouseDown={e => e.stopPropagation()}
+                  onClick={e => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setMyTicketsNegotiatorFilter('')
+                      setNegoDropdownOpen(false)
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setMyTicketsNegotiatorFilter('')
+                      setNegoDropdownOpen(false)
+                    }}
+                    className="flex items-center justify-between w-full px-3 py-1.5 text-xs font-black uppercase tracking-wide text-left transition-colors hover:bg-emerald-500/10 cursor-pointer"
+                    style={{
+                      color: !myTicketsNegotiatorFilter ? (isLight ? '#15803d' : '#4ade80') : textPrimary,
+                      backgroundColor: !myTicketsNegotiatorFilter ? (isLight ? 'rgba(22,163,74,0.1)' : 'rgba(74,222,128,0.12)') : undefined,
+                    }}
+                  >
+                    <span>ALL NEGOTIATORS</span>
+                    {!myTicketsNegotiatorFilter && <span className="text-emerald-500 font-extrabold text-xs">✓</span>}
+                  </button>
+
+                  <div className="my-1 border-t opacity-30" style={{ borderColor: inputBorder }} />
+
+                  {myTicketsNegotiatorOptions.map(emp => {
+                    const label = formatNegotiatorLabel(emp, true)
+                    const isSelected = myTicketsNegotiatorFilter === emp.id
+                    return (
+                      <button
+                        type="button"
+                        key={emp.id}
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setMyTicketsNegotiatorFilter(emp.id)
+                          setNegoDropdownOpen(false)
+                        }}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setMyTicketsNegotiatorFilter(emp.id)
+                          setNegoDropdownOpen(false)
+                        }}
+                        className="flex items-center justify-between w-full px-3 py-1.5 text-xs font-black uppercase tracking-wide text-left transition-colors hover:bg-emerald-500/10 cursor-pointer"
+                        style={{
+                          color: isSelected ? (isLight ? '#15803d' : '#4ade80') : textPrimary,
+                          backgroundColor: isSelected ? (isLight ? 'rgba(22,163,74,0.1)' : 'rgba(74,222,128,0.12)') : undefined,
+                        }}
+                      >
+                        <span className="truncate">{label}</span>
+                        {isSelected && <span className="text-emerald-500 font-extrabold text-xs">✓</span>}
+                      </button>
+                    )
+                  })}
+                </div>,
+                document.body,
+              )}
+            </div>
+          )}
+
+          {/* Pending/Closing — quick one-click toggles, always visible (not tucked behind the
+              Filters modal) so a negotiator can jump straight to "what's still not closed yet". */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {[
+              { value: 'PENDING_GROUP', label: 'Pending' },
+              { value: 'CLOSING_GROUP', label: 'Closing' },
+            ].map(opt => {
+              const active = myTicketsStatusFilter === opt.value
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setMyTicketsStatusFilter(active ? '' : opt.value) }}
+                  className="h-9 md:h-10 px-3.5 rounded-full text-xs font-black uppercase tracking-wide shrink-0 transition-all active:scale-95 border shadow-sm"
+                  style={active
+                    ? { backgroundColor: green, borderColor: green, color: '#ffffff' }
+                    : { backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                >
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Month — quick one-click custom picker, always visible (not tucked behind the
+              Filters modal). Filters by date created, since most of this queue has no
+              final/preferred date yet. */}
+          <div className="relative shrink-0 flex items-center gap-1.5">
             <button
+              ref={myTicketsMonthPickerRef}
               type="button"
               onClick={(e) => {
                 e.stopPropagation()
-                const now = dateFilter ? new Date(dateFilter + 'T00:00:00') : new Date()
-                setCustomDateCalMonth({ year: now.getFullYear(), month: now.getMonth() })
-                setCustomDatePickerOpen(o => !o)
+                if (myTicketsMonthPickerOpen) {
+                  setMyTicketsMonthPickerOpen(false)
+                  return
+                }
+                setMyTicketsMonthPickerYear(
+                  myTicketsMonthFilter ? Number(myTicketsMonthFilter.split('-')[0]) : new Date().getFullYear(),
+                )
+                const rect = e.currentTarget.getBoundingClientRect()
+                setMyTicketsMonthPickerPos({ top: rect.bottom + 6, left: rect.left, width: Math.max(240, rect.width) })
+                setMyTicketsMonthPickerOpen(true)
               }}
-              className="flex items-center gap-1.5 h-10 px-4 rounded-full text-xs font-bold border transition-all active:scale-95 bg-slate-100/80 text-slate-700 border-slate-200 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-200 dark:border-slate-700"
+              className="flex items-center gap-2 h-9 md:h-10 px-3.5 rounded-full border text-xs font-black outline-none shadow-sm cursor-pointer transition-all hover:border-emerald-500/70 active:scale-[0.98]"
+              style={{
+                backgroundColor: myTicketsMonthFilter ? green : inputBg,
+                borderColor: myTicketsMonthPickerOpen ? green : (myTicketsMonthFilter ? green : inputBorder),
+                color: myTicketsMonthFilter ? '#ffffff' : textPrimary,
+              }}
+              title="Filter by month created"
             >
-              <CalendarDays className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              <span>Month</span>
+              <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: myTicketsMonthFilter ? '#ffffff' : green }} strokeWidth={2.2} />
+              <span className="whitespace-nowrap">
+                {myTicketsMonthFilter ? formatMonthFilterLabel(myTicketsMonthFilter) : 'Month'}
+              </span>
             </button>
 
-            {/* Filters Button */}
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setMonthFilterModalOpen(true) }}
-              className={`flex items-center gap-1.5 h-10 px-4 rounded-full text-xs font-bold border transition-all active:scale-95 ${
-                (monthViewActive || monthFilterStatus || monthFilterNegotiatorId)
-                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                  : 'bg-slate-100/80 text-slate-700 border-slate-200 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-200 dark:border-slate-700'
-              }`}
-            >
-              <SlidersHorizontal className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              <span>Filters</span>
-            </button>
+            {myTicketsMonthFilter && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setMyTicketsMonthFilter('') }}
+                className="h-9 md:h-10 px-2.5 rounded-full text-xs font-bold border shrink-0 transition-all active:scale-95"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
+                aria-label="Clear month filter"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {myTicketsMonthPickerOpen && myTicketsMonthPickerPos && ReactDOM.createPortal(
+              <div
+                ref={myTicketsMonthPickerPopRef}
+                className="fixed z-[99999] rounded-xl border shadow-2xl p-3 animate-in fade-in duration-100 select-none"
+                style={{
+                  top: myTicketsMonthPickerPos.top,
+                  left: myTicketsMonthPickerPos.left,
+                  width: myTicketsMonthPickerPos.width,
+                  backgroundColor: isLight ? '#ffffff' : '#0a1120',
+                  borderColor: isLight ? '#cbd5e1' : '#334155',
+                  boxShadow: '0 12px 28px rgba(0, 0, 0, 0.5)',
+                }}
+                onMouseDown={e => e.stopPropagation()}
+                onClick={e => e.stopPropagation()}
+              >
+                {/* Year nav */}
+                <div className="flex items-center justify-between mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setMyTicketsMonthPickerYear(y => y - 1)}
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
+                    style={{ color: textMuted }}
+                  >
+                    {'<'}
+                  </button>
+                  <span className="text-sm font-bold" style={{ color: textPrimary }}>
+                    {myTicketsMonthPickerYear}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setMyTicketsMonthPickerYear(y => y + 1)}
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
+                    style={{ color: textMuted }}
+                  >
+                    {'>'}
+                  </button>
+                </div>
+
+                {/* Month grid */}
+                <div className="grid grid-cols-3 gap-1.5">
+                  {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((label, idx) => {
+                    const key = `${myTicketsMonthPickerYear}-${String(idx + 1).padStart(2, '0')}`
+                    const isSelected = myTicketsMonthFilter === key
+                    const isCurrentMonth = key === todayDateKey().slice(0, 7)
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => { setMyTicketsMonthFilter(key); setMyTicketsMonthPickerOpen(false) }}
+                        className="h-9 rounded-lg text-xs font-bold transition-all"
+                        style={{
+                          color: isSelected ? '#ffffff' : isCurrentMonth ? green : textPrimary,
+                          backgroundColor: isSelected ? green : 'transparent',
+                          border: `1px solid ${isSelected ? green : isCurrentMonth ? green : inputBorder}`,
+                        }}
+                      >
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {/* Footer — quick actions */}
+                <div className="flex items-center gap-2 pt-3 mt-2 border-t" style={{ borderColor: inputBorder }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const key = todayDateKey().slice(0, 7)
+                      setMyTicketsMonthFilter(key)
+                      setMyTicketsMonthPickerYear(Number(key.split('-')[0]))
+                      setMyTicketsMonthPickerOpen(false)
+                    }}
+                    className="flex-1 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:opacity-90"
+                    style={{ backgroundColor: `${green}22`, color: green }}
+                  >
+                    This month
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setMyTicketsMonthFilter(''); setMyTicketsMonthPickerOpen(false) }}
+                    className="flex-1 py-1.5 rounded-lg text-[11px] font-bold border transition-all hover:opacity-90"
+                    style={{ borderColor: inputBorder, color: textMuted, backgroundColor: 'transparent' }}
+                  >
+                    All months
+                  </button>
+                </div>
+              </div>,
+              document.body,
+            )}
           </div>
+
+          {/* Month + status filter — mirrors Schedules' Filters button, but instant/client-side
+              (no month fetch): lets a negotiator narrow her queue to a specific sub-status
+              like SURVEY/INSTALL/RESCHED beyond the Pending/Closing quick toggles above, and/or
+              a month the ticket was created in. */}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setMyTicketsFilterModalOpen(true) }}
+            className="flex items-center gap-1.5 h-9 md:h-10 px-3 rounded-full text-xs font-bold shrink-0 transition-all active:scale-95 border shadow-sm"
+            style={{
+              backgroundColor: (myTicketsStatusFilter || myTicketsMonthFilter) ? green : inputBg,
+              borderColor: (myTicketsStatusFilter || myTicketsMonthFilter) ? green : inputBorder,
+              color: (myTicketsStatusFilter || myTicketsMonthFilter) ? '#ffffff' : textPrimary,
+            }}
+            title="Filter by month or status"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" style={{ color: (myTicketsStatusFilter || myTicketsMonthFilter) ? '#ffffff' : green }} strokeWidth={2.2} />
+            <span>
+              {myTicketsMonthFilter ? formatMonthFilterLabel(myTicketsMonthFilter)
+                : myTicketsStatusFilter === 'PENDING_GROUP' ? 'All Pending'
+                : myTicketsStatusFilter === 'CLOSING_GROUP' ? 'All Closing'
+                : myTicketsStatusFilter ? getScheduleStatusLabel(myTicketsStatusFilter)
+                : 'Filters'}
+            </span>
+          </button>
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body,
       )}
@@ -6097,7 +6430,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       )}
 
       {/* Ã¢â€â‚¬Ã¢â€â‚¬ Table card Ã¢â€â‚¬Ã¢â€â‚¬ */}
-      <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}` }}
+      <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg }}
         onClick={e => e.stopPropagation()}>
         {activeTab === 'schedules' ? (
           loading && !hasHydratedOnce && !initialSchedulesReady && tickets.length === 0 ? (
@@ -6928,22 +7261,38 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     </h1>
                   </div>
 
-                  {/* Search Input Box with Filter Dropdown */}
-                  <div className="w-full max-w-2xl mx-auto">
-                    <SearchFilterDropdown
-                      searchValue={overviewSearchInput}
-                      onSearchChange={val => { setOverviewSearchInput(val); if (!val) setOverviewResults([]) }}
+                  {/* Search Input Box */}
+                  <div
+                    className="w-full max-w-2xl mx-auto flex items-center gap-3 px-5 py-4 md:px-8 md:py-5 rounded-2xl shadow-md border-2 transition-[border-color,box-shadow] duration-150"
+                    style={{
+                      backgroundColor: cardBg,
+                      borderColor: overviewSearchFocused ? green : border,
+                      boxShadow: overviewSearchFocused ? `0 0 0 4px ${green}15` : 'none'
+                    }}
+                  >
+                    <Search className="w-5 h-5 shrink-0" style={{ color: green }} />
+                    <input
+                      type="text"
+                      placeholder="Search tickets, customers, or contacts..."
+                      value={overviewSearchInput}
+                      onChange={e => setOverviewSearchInput(e.target.value)}
                       onFocus={() => setOverviewSearchFocused(true)}
                       onBlur={() => setOverviewSearchFocused(false)}
-                      focused={overviewSearchFocused}
-                      colors={{
-                        cardBg,
-                        border,
-                        textPrimary,
-                        textMuted,
-                        green,
-                      }}
+                      enterKeyHint="search"
+                      autoComplete="off"
+                      className="bg-transparent outline-none text-base flex-1 min-w-0 font-medium"
+                      style={{ color: textPrimary }}
                     />
+                    {overviewSearchInput && (
+                      <button
+                        type="button"
+                        onClick={() => { setOverviewSearchInput(''); setOverviewResults([]); }}
+                        style={{ color: textMuted }}
+                        className="hover:scale-110 transition-transform p-1"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -6995,6 +7344,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                         const cleanBranch = branchLabel && branchLabel !== EMPTY_CELL ? branchLabel.replace(/^ASHCOL\s+/i, '') : '';
                         const custPhone = ticket.contactPhone || ticket.contact_phone || ticket.customer_phone || ticket.phone || '';
                         const formattedCustPhone = custPhone ? (fmtPhone(custPhone) || custPhone) : '';
+                        // Never read assignedEmployeeName for this — it's the negotiator/assigned
+                        // sales staff, not the installer/technician (see getInstallerDisplay).
+                        const cardTechnician = getInstallerDisplay(ticket, branchEmployees, activeBranchId);
 
                         return (
                           <div
@@ -7074,10 +7426,10 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                   </div>
                                 )}
 
-                                {ticket.assignedEmployeeName && (
+                                {cardTechnician && (
                                   <div className="flex flex-col gap-0.5 sm:col-span-2">
                                     <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Technician</span>
-                                    <span className="font-semibold" style={{ color: textPrimary }}>{ticket.assignedEmployeeName}</span>
+                                    <span className="font-semibold" style={{ color: textPrimary }}>{cardTechnician}</span>
                                   </div>
                                 )}
                               </div>
@@ -7143,31 +7495,32 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         )}
       </div>
 
-      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Right-click context menu Ã¢â€â‚¬Ã¢â€â‚¬ */}
+      {/* ── Right-click context menu ── */}
       {contextMenu && (() => {
         const menuW = 220
         const menuH = 180
         const leftPos = contextMenu.x + menuW > window.innerWidth ? Math.max(10, window.innerWidth - menuW - 10) : contextMenu.x
         const topPos = contextMenu.y + menuH > window.innerHeight ? Math.max(10, window.innerHeight - menuH - 10) : contextMenu.y
         return (
-          <div ref={contextMenuRef} className="fixed z-[200]" style={{ top: topPos, left: leftPos }}
+          <div ref={contextMenuRef} className="fixed z-[99999] animate-in fade-in zoom-in-95 duration-100 select-none" style={{ top: topPos, left: leftPos }}
             onClick={e => e.stopPropagation()}>
-            <div className="rounded-2xl shadow-2xl overflow-hidden"
-              style={{ backgroundColor: cardBg, border: `1px solid ${border}`, minWidth: 200 }}>
+            <div className="rounded-2xl shadow-2xl overflow-hidden backdrop-blur-md"
+              style={{ backgroundColor: isLight ? '#ffffff' : '#0a1120', border: `1px solid ${border}`, minWidth: 210 }}>
 
-              {/* Current status label */}
-              <div className="px-4 py-2.5 flex items-center gap-2"
-                style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
-                {(() => {
-                  const sc = statusColor(contextMenu.ticket.status, isLight); return (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-black border"
-                      style={{ color: sc.text, backgroundColor: sc.bg, borderColor: sc.b }}>
-                      {statusCode(contextMenu.ticket.status)}
-                    </span>
-                  )
-                })()}
-                <span className="text-[11px] font-bold truncate" style={{ color: textMuted }}>
-                  {(contextMenu.ticket.customerName || contextMenu.ticket.customer_name || contextMenu.ticket.title || '').split(' ').slice(0, 3).join(' ')}
+              {/* Header: Ticket No & Customer Name (No SCH status code badge) */}
+              <div
+                className="px-4 py-2 border-b flex flex-col gap-0.5"
+                style={{ borderColor: isLight ? '#f1f5f9' : 'rgba(255,255,255,0.06)' }}
+              >
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-500">
+                  {getTicketNumberDisplay(contextMenu.ticket)}
+                </span>
+                <span
+                  className="text-xs font-black uppercase tracking-wide truncate"
+                  style={{ color: textPrimary }}
+                  title={getCustomerDisplayName(contextMenu.ticket)}
+                >
+                  {getCustomerDisplayName(contextMenu.ticket).toUpperCase() || 'TICKET ACTION'}
                 </span>
               </div>
 
@@ -7190,6 +7543,18 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
                   <Edit3 className="w-3.5 h-3.5 shrink-0" style={{ color: '#6366F1' }} />
                   Edit Details
+                </button>
+              )}
+
+              {/* Delete Ticket (Admin Only) */}
+              {isAdmin && (
+                <button onClick={() => { handleDelete(contextMenu.ticket.id); setContextMenu(null) }}
+                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors"
+                  style={{ color: '#EF4444' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#fee2e2' : '#450a0a'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
+                  <Trash2 className="w-3.5 h-3.5 shrink-0 text-red-500" />
+                  Delete Ticket
                 </button>
               )}
 
@@ -7219,6 +7584,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           onToggleHistory={() => setShowHistoryPanel(prev => !prev)}
           onHideHistory={() => setShowHistoryPanel(false)}
           onEdit={() => { openEditModal(detailTicket); setDetailTicket(null); setShowHistoryPanel(false) }}
+          onDelete={isAdmin ? () => handleDelete(detailTicket.id) : undefined}
           onUpdateTicket={(updated) => {
             setDetailTicket(updated)
             setTickets(prev => prev.map(t => (t.id === updated.id ? { ...t, ...updated } : t)))
@@ -7415,7 +7781,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
                   </Field>
-                  <Field label="Dealer (DLR)">
+                  <Field label="Dealer / Store">
                     <input type="text" value={addForm.dealer || ''}
                       list="add-ticket-dealer-list"
                       onChange={e => setAddForm({ ...addForm, dealer: e.target.value })}
@@ -7478,7 +7844,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   </Field>
                   <Field label="Ticket No.">
                     <input type="text" value={addForm.ticketNumber || ''}
-                      placeholder="Auto-generated if left blank (e.g. AS-001)"
+                      placeholder="Auto-generated if left blank (e.g. AC-001)"
                       onChange={e => setAddForm({ ...addForm, ticketNumber: e.target.value })}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
@@ -8376,6 +8742,126 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 Loads every ticket scheduled that month for this branch straight into the table below —
                 narrow by negotiator and/or status. Click a day chip above (or pick a custom date) to go
                 back to the normal single-day view.
+              </p>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {/* ── My Tickets status filter — same visual language as Schedule Filters, but instant
+          client-side status narrowing (SURVEY/INSTALL/RESCHED/etc.) for the negotiator's queue ── */}
+      {myTicketsFilterModalOpen && ReactDOM.createPortal(
+        <div
+          className="fixed inset-0 z-[9990] flex items-center justify-center p-4 sm:p-6"
+          style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}
+          onClick={() => setMyTicketsFilterModalOpen(false)}
+        >
+          <div
+            className="rounded-2xl shadow-2xl w-full max-w-2xl h-[90vh] sm:h-auto max-h-[90vh] flex flex-col border overflow-hidden shrink-0"
+            style={{ backgroundColor: cardBg, borderColor: border }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div
+              className="flex items-center justify-between px-5 py-4 border-b shrink-0"
+              style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}
+            >
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="flex items-center justify-center w-8 h-8 rounded-full"
+                  style={{ backgroundColor: isLight ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.18)' }}
+                >
+                  <SlidersHorizontal className="w-4 h-4" style={{ color: green }} strokeWidth={2.1} />
+                </div>
+                <div>
+                  <div className="text-sm font-bold tracking-wide" style={{ color: textPrimary }}>My Tickets Filters</div>
+                  <div className="text-[10px] font-medium" style={{ color: textMuted }}>
+                    {activeBranchLabel || 'All branches'}
+                  </div>
+                </div>
+              </div>
+              <button type="button" onClick={() => setMyTicketsFilterModalOpen(false)} style={{ color: textMuted }}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Filter controls — Month has its own custom picker button in the toolbar now
+                (before this Filters button); this modal only handles the finer sub-status pick. */}
+            <div className="px-5 py-4 flex flex-col gap-4 overflow-y-auto">
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
+                  Status
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { value: '', label: 'All statuses' },
+                    { value: 'PENDING_GROUP', label: 'All Pending' },
+                    { value: 'CLOSING_GROUP', label: 'All Closing' },
+                  ].map(opt => {
+                    const active = myTicketsStatusFilter === opt.value
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setMyTicketsStatusFilter(opt.value)}
+                        className="px-3 h-8 rounded-full text-[11px] font-black uppercase tracking-wide transition-colors border"
+                        style={active
+                          ? { backgroundColor: green, borderColor: green, color: '#ffffff' }
+                          : { backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}
+                      >
+                        {opt.label}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {([
+                  { title: 'PENDING', opts: SCHEDULE_PENDING_OPTS },
+                  { title: 'CLOSING', opts: SCHEDULE_CLOSING_OPTS },
+                ] as const).map(section => (
+                  <div key={section.title} className="flex flex-col gap-1.5">
+                    <p className="text-[9px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>
+                      {section.title}
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                      {section.opts.map(opt => {
+                        const active = myTicketsStatusFilter === opt.value
+                        const style = getScheduleStatusBadgeStyle(opt.value, isLight)
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setMyTicketsStatusFilter(active ? '' : opt.value)}
+                            className="flex items-center gap-2 px-2.5 h-9 rounded-lg text-left transition-colors border min-w-0"
+                            style={active
+                              ? { backgroundColor: green, borderColor: green }
+                              : { backgroundColor: 'transparent', borderColor: inputBorder }}
+                          >
+                            <span
+                              className="w-2 h-2 rounded-full shrink-0 border"
+                              style={active
+                                ? { backgroundColor: '#ffffff', borderColor: '#ffffff' }
+                                : { backgroundColor: style.color, borderColor: style.borderColor }}
+                            />
+                            <span
+                              className="text-[10.5px] font-bold uppercase tracking-wide truncate"
+                              style={{ color: active ? '#ffffff' : textPrimary }}
+                            >
+                              {opt.label}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-[11px] leading-relaxed" style={{ color: textMuted }}>
+                Narrows the queue to tickets matching this status — applies instantly, no need to click
+                Apply. Closed/scheduled tickets already leave this queue on their own once a final date
+                is set, so "All Closing" will usually be empty here; use it to double-check nothing lingers.
               </p>
             </div>
           </div>

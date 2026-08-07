@@ -11,6 +11,7 @@ import SearchTickets from './pages/SearchTickets'
 import CreateTicket from './pages/CreateTicket'
 import OfficeTasks from './pages/OfficeTasks'
 import Employees from './pages/Employees'
+import Vehicles from './pages/Vehicles'
 import Profile from './pages/Profile'
 import Branches from './pages/Branches'
 import Relays from './pages/Relays'
@@ -19,6 +20,8 @@ import DailyAuditReport from './pages/DailyAuditReport'
 import AuditFinanceExpenses from './pages/AuditFinanceExpenses'
 import ForCollections from './pages/ForCollections'
 import DailyServiceReport from './pages/DailyServiceReport'
+import Registration from './pages/Registration'
+import HappyCalls from './pages/HappyCalls'
 import LineUp from './pages/LineUp'
 
 import Hris from './pages/Hris'
@@ -93,6 +96,8 @@ export default function App() {
           <Route path="/branches" element={<Branches />} />
           <Route path="/assigned-tickets" element={<Navigate to="/search" replace />} />
           <Route path="/employees" element={<Employees />} />
+          <Route path="/employees/:id" element={<Employees />} />
+          <Route path="/vehicles" element={<Vehicles />} />
           <Route path="/profile" element={<Profile />} />
 
           <Route path="/audit-report" element={<DailyAuditReport />} />
@@ -103,6 +108,8 @@ export default function App() {
           <Route path="/lineup" element={<LineUp />} />
           <Route path="/weekly-field-schedule" element={<Navigate to="/lineup?tab=weekly" replace />} />
           <Route path="/service-report" element={<DailyServiceReport />} />
+          <Route path="/registration" element={<Registration />} />
+          <Route path="/happy-calls" element={<HappyCalls />} />
 
           <Route path="/admin-hris" element={<Hris />} />
           <Route path="/ddrm" element={<Ddrm />} />

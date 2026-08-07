@@ -561,7 +561,7 @@ export default function CreateTicket() {
             </div>
             {isStaffOrAdmin && (
               <div>
-                <FL label="Dealer" />
+                <FL label="Dealer / Store" />
                 <select
                   value={selectedDealer}
                   onChange={e => {
