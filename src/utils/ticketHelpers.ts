@@ -149,7 +149,7 @@ export type ImportUnmatchedRow = {
 export const STATUS_OPTS = [
   'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR_APPROVAL', 'SURVEY',
   'INSTALLED', 'COMPLETED', 'CONTINUATION',
-  'SYSTEM_REPROCESS', 'DONE_SYSTEM_REPROCESS', 'DISMANTLE', 'DONE_DISMANTLE',
+  'SYSTEM_REPROCESS', 'DONE_SYSTEM_REPROCESS', 'DISMANTLE', 'DONE_DISMANTLE', 'PENDING_APPROVAL',
 ]
 export const TABLE_ROW_HEIGHT = 50
 
@@ -174,6 +174,7 @@ export const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: Schedu
   { value: 'RESCHED', label: 'RESCHED', group: 'pending' },
   { value: 'CONTINUATION', label: 'CONTINUATION', group: 'pending' },
   { value: 'FOR_APPROVAL', label: 'FOR QUOTATION', group: 'pending' },
+  { value: 'PENDING_APPROVAL', label: 'PENDING APPROVAL', group: 'pending' },
   { value: 'SYSTEM_REPROCESS', label: 'SYSTEM REPROCESS', group: 'pending' },
   { value: 'DISMANTLE', label: 'DISMANTLE', group: 'pending' },
   // Closing
@@ -243,6 +244,9 @@ export function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { 
   if (normalized === 'FOR_APPROVAL') {
     return { color: isLight ? '#047857' : '#6ee7b7', backgroundColor: isLight ? '#d1fae5' : 'rgba(16,185,129,0.15)', borderColor: isLight ? '#6ee7b7' : 'rgba(16,185,129,0.3)' }
   }
+  if (normalized === 'PENDING_APPROVAL') {
+    return { color: isLight ? '#b45309' : '#fcd34d', backgroundColor: isLight ? '#fef3c7' : 'rgba(245,158,11,0.16)', borderColor: isLight ? '#fcd34d' : 'rgba(245,158,11,0.35)' }
+  }
   if (
     normalized === 'DONE_INSTALLED' ||
     normalized === 'INSTALLED' ||
@@ -307,6 +311,7 @@ export function getScheduleStatusValue(ticket: Ticket): string {
   if (phase === 'BACKJOB') return 'BACKJOB'
   if (phase === 'SYSTEM_REPROCESS') return 'SYSTEM_REPROCESS'
   if (phase === 'DISMANTLE') return 'DISMANTLE'
+  if (phase === 'PENDING_APPROVAL') return 'PENDING_APPROVAL'
 
   let stat = (ticket.status || 'SCHEDULED').toUpperCase().replace(/\s+/g, '_')
   if (stat === 'S/I' || stat === 'S_I' || stat === 'SI') return 'S/I'
@@ -317,6 +322,7 @@ export function getScheduleStatusValue(ticket: Ticket): string {
   if (stat === 'RESCHED') return 'RESCHED'
   if (stat === 'SURVEY') return 'SURVEY'
   if (stat === 'FOR_APPROVAL') return 'FOR_APPROVAL'
+  if (stat === 'PENDING_APPROVAL') return 'PENDING_APPROVAL'
   if (stat === 'CONTINUATION') return 'CONTINUATION'
   if (stat === 'SYSTEM_REPROCESS') return 'SYSTEM_REPROCESS'
   if (stat === 'DONE_SYSTEM_REPROCESS') return 'DONE_SYSTEM_REPROCESS'
@@ -613,6 +619,9 @@ export function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string):
   } else if (val === 'FOR_APPROVAL') {
     body.status = 'FOR_APPROVAL'
     acUpdates.scheduleOutcome = ''
+  } else if (val === 'PENDING_APPROVAL') {
+    body.status = 'PENDING_APPROVAL'
+    acUpdates.scheduleOutcome = ''
   } else if (val === 'CONTINUATION') {
     body.status = 'CONTINUATION'
     acUpdates.scheduleOutcome = ''
@@ -681,6 +690,11 @@ export function hasLocalScheduleValue(value: unknown): boolean {
   if (typeof value === 'number') return value > 0
   if (typeof value === 'string') return value.trim().length > 0
   return true
+}
+
+/** Normalize a list of raw tickets (e.g. from cache) through the same relay-schedule normalization as a single ticket. */
+export function normalizeRelayScheduleTicketList(tickets: Ticket[]): Ticket[] {
+  return tickets.map(t => normalizeRelayScheduleTicket(t) as Ticket)
 }
 
 /** Keep installer / driver / payment / remarks from the user's local row when server sync returns stale data. */
@@ -895,6 +909,8 @@ export function sanitizeTicketPatchBody(body: Record<string, unknown>): Record<s
     status = 'INSTALLED'
     next.status = 'INSTALLED'
   }
+  // Only restore scheduleOutcome from acDetails for INSTALLED/COMPLETED statuses that should have an outcome.
+  // Don't restore for RESCHED or other non-completion statuses - they should have empty scheduleOutcome.
   if ((status === 'INSTALLED' || status === 'COMPLETED') && !next.scheduleOutcome) {
     let fromAc = ''
     if (typeof next.acDetails === 'string') {
@@ -912,6 +928,15 @@ export function sanitizeTicketPatchBody(body: Record<string, unknown>): Record<s
       next.acDetails = mergeAcMeta(
         { acDetails: next.acDetails } as Ticket,
         { scheduleOutcome: next.scheduleOutcome, schedulePhase: '' },
+      )
+    }
+  }
+  // For non-completion statuses like RESCHED, ensure scheduleOutcome is cleared in acDetails
+  if (status !== 'INSTALLED' && status !== 'COMPLETED' && status !== 'DONE_DISMANTLE' && status !== 'DONE_SYSTEM_REPROCESS' && !next.scheduleOutcome) {
+    if (typeof next.acDetails === 'string') {
+      next.acDetails = mergeAcMeta(
+        { acDetails: next.acDetails } as Ticket,
+        { scheduleOutcome: '', schedulePhase: '' },
       )
     }
   }
@@ -1051,6 +1076,17 @@ export function getScheduleRowColors(
   }
 
   const statusVal = getScheduleStatusValue(ticket)
+  // getScheduleOutcome() above can return null (e.g. a ticket whose acDetails.scheduleOutcome
+  // never got populated even though ticket.status is literally INSTALLED/COMPLETED) while
+  // getScheduleStatusValue() still falls back to the raw status and resolves to DONE_INSTALLED —
+  // which is exactly why the STATUS TEXT correctly reads "DONE INSTALL" while the row background
+  // fell through to the plain zebra stripe instead of green. Match that same fallback here.
+  if (statusVal === 'DONE_INSTALLED') {
+    return {
+      baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.28)',
+      accent: '#16A34A',
+    }
+  }
   if (statusVal === 'RESCHED') {
     return {
       baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.18)',
@@ -1402,7 +1438,9 @@ export function buildReschedulePatchBody(
   const oldDateKey = getEffectiveScheduleDateKey(ticket) || getPreferredDateKey(ticket)
   const body: Record<string, unknown> = { status: 'RESCHED' }
   const acUpdates: Record<string, unknown> = { scheduleOutcome: '' }
-  const userRemarks = (options.remarks || '').trim()
+  // Strip any pre-existing "RESCHED PENDING:" prefix before re-adding it below — guards against
+  // the prefix nesting/doubling if this ever runs twice for the same remark (retry, merged patch).
+  const userRemarks = (options.remarks || '').trim().replace(/^RESCHED PENDING:\s*/i, '')
 
   if (options.pending) {
     acUpdates.reschedulePending = true
@@ -1681,6 +1719,17 @@ export function getInstalledDateKey(ticket: Ticket): string {
   return String(raw).split('T')[0].split(' ')[0].trim()
 }
 
+/** Whole months elapsed between a YYYY-MM-DD date key and today. Returns 0 for invalid/empty input. */
+export function monthsSince(dateKey: string): number {
+  if (!dateKey) return 0
+  const then = new Date(dateKey)
+  if (Number.isNaN(then.getTime())) return 0
+  const now = new Date()
+  let months = (now.getFullYear() - then.getFullYear()) * 12 + (now.getMonth() - then.getMonth())
+  if (now.getDate() < then.getDate()) months -= 1
+  return Math.max(0, months)
+}
+
 export function isScheduleGhostOnDate(ticket: Ticket, dateKey: string): boolean {
   return isRescheduledGhostOnDate(ticket, dateKey)
     || isCompletedGhostOnDate(ticket, dateKey)
@@ -1796,7 +1845,7 @@ export function resolveTicketPayment(ticket: Ticket): { mode: string; amount: nu
 export function formatPaymentAmount(ticket: Ticket): string {
   const { mode, amount } = resolveTicketPayment(ticket)
   if (mode === 'FREE' || mode === 'FREE INSTALL') return 'FREE ₱0'
-  if (amount == null || amount <= 0) return '₱0'
+  if (!amount || amount <= 0) return ''
   return `₱${amount.toLocaleString('en-PH')}`
 }
 
@@ -1810,14 +1859,17 @@ export function getSchedulePaymentDisplay(
   if (resolved.mode === 'FREE' || resolved.mode === 'FREE INSTALL') return 'FREE ₱0'
 
   const amount = resolved.amount
-  const amountStr = amount > 0 ? Math.round(amount).toLocaleString('en-PH') : '0'
   const mode = resolved.mode
+
+  // No payment set — leave blank instead of showing ₱0
+  if (amount === 0 && (!mode || mode === 'NO PAYMENT')) return ''
+
+  const amountStr = amount > 0 ? Math.round(amount).toLocaleString('en-PH') : '0'
   const breakdownStr = mode === 'HYBRID' ? formatPaymentBreakdownText(getPaymentBreakdown(ticket)) : ''
 
-  if (amount === 0 && (!mode || mode === 'NO PAYMENT')) return '₱0'
   if (mode && amountStr !== '0') return breakdownStr ? `${amountStr} ${mode} ${breakdownStr}` : `${amountStr} ${mode}`
-  if (mode) return `${mode} ₱${amountStr}`
-  return `₱${amountStr}`
+  if (mode && mode !== 'NO PAYMENT') return `${mode} ₱${amountStr}`
+  return amount > 0 ? `₱${amountStr}` : ''
 }
 
 export function formatCombinedPayment(ticket: Ticket): string {

@@ -4,6 +4,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { API_BASE_URL } from '../utils/api'
 import { useOutletContext } from 'react-router-dom'
 import SearchResultDetailModal from '../components/SearchResultDetailModal'
+import { getInstallerDisplay } from '../utils/ticketHelpers'
 
 interface Ticket {
   id: string
@@ -14,6 +15,8 @@ interface Ticket {
   location?: any
   contactPhone?: string
   assignedEmployeeName?: string
+  installerName?: string
+  installer_name?: string
   preferredDate?: string
   preferred_date?: string
   status: string
@@ -229,6 +232,9 @@ export default function SearchTab() {
                   const ticketNum = ticket.ticketNumber || ticket.ticket_number || ticket.id
                   const customer = ticket.customerName || ticket.customer_name || 'No Customer Name'
                   const statusStyle = getStatusStyle(ticket.status)
+                  // Never fall back to assignedEmployeeName here — that field holds the
+                  // negotiator/assigned sales staff, not the installer/technician.
+                  const technician = getInstallerDisplay(ticket as any)
 
                   return (
                     <div
@@ -263,10 +269,10 @@ export default function SearchTab() {
                               <span>{ticket.contactPhone}</span>
                             </div>
                           )}
-                          {ticket.assignedEmployeeName && (
+                          {technician && (
                             <div className="flex items-center gap-1.5">
                               <span className="font-bold">Technician:</span>
-                              <span>{ticket.assignedEmployeeName}</span>
+                              <span>{technician}</span>
                             </div>
                           )}
                         </div>

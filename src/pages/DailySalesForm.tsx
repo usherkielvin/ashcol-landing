@@ -218,6 +218,7 @@ const mkPart = (): PartsSaleRow => ({ id: uid(), customer: '', description: '', 
 const mkColl = (): ForCollRow  => ({ id: uid(), installer: '', customer: '', amount: '', collectionResolved: false })
 const mkReb  = (): RebateRow   => ({ id: uid(), customer: '', company: '', raNumber: '', hp: '', amount: '' })
 const mkOrd  = (): OrderRow    => ({ id: uid(), customer: '', description: '', amount: '', receiptReturned: false })
+const mkPay  = (): OrderRow    => ({ id: uid(), customer: '', description: '', amount: '', receiptReturned: false })
 const mkExp  = (): ExpenseRow  => ({ id: uid(), name: '', description: '', amount: '', receiptReturned: false })
 const mkInc  = (): IncentiveRow => ({ id: uid(), customer: '', company: '', hp: '', promodiser: '', amount: '', collectionResolved: false })
 
@@ -644,6 +645,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const [rebates, setRebates]           = useState<RebateRow[]>([mkReb()])
   // Parts Order / Units Order
   const [orders, setOrders]             = useState<OrderRow[]>([mkOrd()])
+  // Payables
+  const [payables, setPayables]         = useState<OrderRow[]>([mkPay()])
   // Expenses with Receipts
   const [expReceipt, setExpReceipt]     = useState<ExpenseRow[]>([mkExp()])
   // Expenses for Purchase
@@ -921,6 +924,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
       const expPurchList: ExpenseRow[] = []
       const ordersList: OrderRow[] = []
       const forCollList: ForCollRow[] = []
+      const payablesList: OrderRow[] = []
 
       if (data.items && Array.isArray(data.items)) {
         data.items.forEach((item: any) => {
@@ -1022,6 +1026,20 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
               amount: amt,
               collectionResolved: item.collectionResolved || false
             })
+          } else if (type === 'PAYABLE') {
+            const parts = desc.split('|')
+            payablesList.push({
+              id: uid(),
+              customer: parts[1] || '',
+              description: parts[2] || '',
+              amount: amt,
+              receiptReturned: false,
+              actualAmount: '',
+              receiptNo: '',
+              receiptDate: '',
+              resolvedExpenseId: '',
+              receiptStatus: ''
+            })
           }
         })
       }
@@ -1104,6 +1122,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
       setExpPurch(expPurchList.length > 0 ? expPurchList : [mkExp()])
 
       setOrders(ordersList.length > 0 ? ordersList : [mkOrd()])
+      setPayables(payablesList.length > 0 ? payablesList : [mkPay()])
       setForColl(forCollList.length > 0 ? forCollList : [mkColl()])
 
       if (options?.enterEditMode) {
@@ -1625,6 +1644,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const totalForColl         = sumArr(forColl.map(r => r.amount))
   const totalRebates         = rebates.reduce((s, r) => s + num(r.amount), 0)
   const totalOrders          = sumArr(orders.map(r => r.amount))
+  const totalPayables        = sumArr(payables.map(r => r.amount))
   const totalExpReceipt      = sumArr(expReceipt.map(r => r.amount))
   const totalExpPurch        = sumArr(expPurch.map(r => r.amount))
   const totalIncentives      = sumArr(incentives.map(r => r.amount))
@@ -1730,6 +1750,16 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           receiptNo: r.receiptNo || null,
           receiptDate: r.receiptDate || null,
           resolvedExpenseId: r.resolvedExpenseId || null
+        })),
+        ...payables.filter(r => r.customer || r.amount).map(r => ({
+          type: 'PAYABLE',
+          description: `PAYABLE|${r.customer}|${r.description}`,
+          amount: parseFloat(r.amount) || 0,
+          receiptReturned: false,
+          actualAmount: null,
+          receiptNo: null,
+          receiptDate: null,
+          resolvedExpenseId: null
         })),
         ...rebates.filter(r => r.customer || r.company || r.amount).map(r => ({
           type: 'REBATE',
@@ -1881,29 +1911,6 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   return (
     <div className="flex flex-col gap-4 pb-10 max-w-6xl mx-auto">
 
-      {/* ── Header ──────────────────────────────────────────────── */}
-      <div className="rounded-xl p-4 md:p-6 relative overflow-hidden bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-4">
-        <div>
-          <div className="absolute -top-10 -right-10 w-48 h-48 rounded-full opacity-[0.03] pointer-events-none"
-            style={{ background: 'radial-gradient(circle, #10B981, transparent)' }} />
-          <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5 text-emerald-600 dark:text-emerald-400">Branch Daily Report</p>
-          <h2 className="text-xl md:text-2xl font-black tracking-tight mb-1" style={{ color: textPrimary }}>
-            {reportId ? (isEditingExisting ? 'Edit Daily Report' : 'View Daily Report') : 'Branch Daily Report'}
-          </h2>
-          <p className="text-xs" style={{ color: textMuted }}>ASHCOL Airconditioning Corporation — Daily Report</p>
-        </div>
-        {onSwitchToSummary && !reviewMode && (
-          <button
-            type="button"
-            onClick={onSwitchToSummary}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-slate-900/50 focus:outline-none shrink-0"
-            style={{ borderColor: border, color: textMuted }}
-          >
-            ← Back to Summary
-          </button>
-        )}
-      </div>
-
       {reportId && !isEditingExisting && canEditExistingReport && (
         <div className="rounded-xl p-4 flex items-center gap-3 bg-blue-500/5 border border-blue-500/20">
           <Receipt className="w-5 h-5 shrink-0 text-blue-500" />
@@ -1946,102 +1953,110 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
       {/* Draft banner removed */}
 
-      {/* ── Metadata Header ─────────────────────────────────────────── */}
+      {/* ── Header ─────────────────────────────────────────── */}
       <div className={`rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-4 transition-opacity ${isViewOnlyReport ? 'opacity-80' : ''}`}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-              Report Date
-              {checkingExistingReport && (
-                <span className="normal-case font-medium text-emerald-600 dark:text-emerald-400">Checking…</span>
-              )}
-            </label>
-            <input
-              ref={dateInputRef}
-              id="report-date-input"
-              type="date"
-              defaultValue={reportDate}
-              onFocus={() => {
-                datePickerLastValue.current = reportDate
-                clearDatePickerCommitTimer()
-              }}
-              onKeyDown={e => {
-                isTypingReportDate.current = true
-                if (e.key === 'Enter') {
-                  isTypingReportDate.current = false
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="flex items-end gap-4 flex-wrap">
+            <div className="flex flex-col gap-1 w-36">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                Report Date
+                {checkingExistingReport && (
+                  <span className="normal-case font-medium text-emerald-600 dark:text-emerald-400">Checking…</span>
+                )}
+              </label>
+              <input
+                ref={dateInputRef}
+                id="report-date-input"
+                type="date"
+                defaultValue={reportDate}
+                onFocus={() => {
+                  datePickerLastValue.current = reportDate
                   clearDatePickerCommitTimer()
-                  finalizeReportDateSelection((e.target as HTMLInputElement).value)
-                }
-              }}
-              onChange={e => {
-                if (isTypingReportDate.current) return
-                queueDatePickerCommit(e.target.value)
-              }}
-              onBlur={e => {
-                if (isTypingReportDate.current) {
-                  isTypingReportDate.current = false
-                  clearDatePickerCommitTimer()
-                  finalizeReportDateSelection(e.target.value)
-                  return
-                }
+                }}
+                onKeyDown={e => {
+                  isTypingReportDate.current = true
+                  if (e.key === 'Enter') {
+                    isTypingReportDate.current = false
+                    clearDatePickerCommitTimer()
+                    finalizeReportDateSelection((e.target as HTMLInputElement).value)
+                  }
+                }}
+                onChange={e => {
+                  if (isTypingReportDate.current) return
+                  queueDatePickerCommit(e.target.value)
+                }}
+                onBlur={e => {
+                  if (isTypingReportDate.current) {
+                    isTypingReportDate.current = false
+                    clearDatePickerCommitTimer()
+                    finalizeReportDateSelection(e.target.value)
+                    return
+                  }
 
-                const pending = e.target.value
-                if (pending && pending !== reportDate && datePickerCommitTimer.current) {
-                  clearDatePickerCommitTimer()
-                  finalizeReportDateSelection(pending)
-                }
-              }}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 disabled:opacity-60"
-              disabled={reviewMode}
-            />
+                  const pending = e.target.value
+                  if (pending && pending !== reportDate && datePickerCommitTimer.current) {
+                    clearDatePickerCommitTimer()
+                    finalizeReportDateSelection(pending)
+                  }
+                }}
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 disabled:opacity-60"
+                disabled={reviewMode}
+              />
+            </div>
+            <div className="flex flex-col gap-1 w-36">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">TR No.</label>
+              <input
+                id="tr-no-input"
+                type="text"
+                placeholder={`e.g. ${trNoExample}`}
+                value={trNo}
+                readOnly={true}
+                className="w-full bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 focus:outline-none cursor-not-allowed"
+              />
+            </div>
+            <div className="flex flex-col gap-1 w-36">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Prepared By</label>
+              <input
+                id="received-by-input"
+                type="text"
+                placeholder="Name"
+                value={receivedBy || user?.name || ''}
+                readOnly={true}
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none cursor-default"
+              />
+            </div>
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Prepared By</label>
-            <input
-              id="received-by-input"
-              type="text"
-              placeholder="Name"
-              value={receivedBy || user?.name || ''}
-              readOnly={true}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none cursor-default"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">TR No.</label>
-            <input
-              id="tr-no-input"
-              type="text"
-              placeholder={`e.g. ${trNoExample}`}
-              value={trNo}
-              readOnly={true}
-              className="w-full bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 focus:outline-none cursor-not-allowed"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Branch</label>
-            <select
-              id="branch-select-disabled"
-              value={`${selectedBranchId}-${selectedAuditLine || ''}`}
-              disabled={true}
-              className="w-full bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 focus:outline-none cursor-not-allowed"
-            >
-              {branchesList.length === 0 || !branchesList.some(b => `${b.id}-${b.auditLine || ''}` === `${selectedBranchId}-${selectedAuditLine || ''}`) ? (
-                <>
-                  <option value={`${selectedBranchId}-${selectedAuditLine || ''}`}>{branchName}</option>
-                  {branchesList.map(b => (
-                    <option key={`${b.id}-${b.auditLine || ''}`} value={`${b.id}-${b.auditLine || ''}`}>
-                      {b.name}
-                    </option>
-                  ))}
-                </>
-              ) : (
-                branchesList.map(b => (
-                  <option key={`${b.id}-${b.auditLine || ''}`} value={`${b.id}-${b.auditLine || ''}`}>
-                    {b.name}
-                  </option>
-                ))
-              )}
-            </select>
+          <div className="flex items-center gap-2 flex-wrap">
+            {canEditOrSubmit && !reviewMode && !isViewOnlyReport && (
+              <>
+                <button
+                  disabled={scanning}
+                  onClick={handlePasteClick}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50 disabled:opacity-50"
+                >
+                  <ClipboardPaste size={14} /> Paste
+                </button>
+                <button
+                  disabled={scanning}
+                  onClick={() => fileRef.current?.click()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 text-white bg-blue-500 disabled:opacity-50"
+                >
+                  {scanning ? <Loader2 size={14} className="animate-spin" /> : <Scan size={14} />}
+                  {scanning ? 'Scanning...' : 'Upload Image'}
+                </button>
+                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleScanImage} />
+              </>
+            )}
+            {onSwitchToSummary && !reviewMode && (
+              <button
+                type="button"
+                onClick={onSwitchToSummary}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-slate-900/50 focus:outline-none shrink-0"
+                style={{ borderColor: border, color: textMuted }}
+              >
+                ← Back to Summary
+              </button>
+            )}
           </div>
         </div>
 
@@ -2082,39 +2097,6 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         )}
       </div>
 
-      {/* ── DTR Scanner Actions ──────────────────────────────────────── */}
-      {canEditOrSubmit && !reviewMode && !isViewOnlyReport && (
-        <div className="rounded-xl p-4 flex flex-col sm:flex-row justify-between items-center gap-4 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl" style={{ backgroundColor: 'rgba(59,130,246,0.1)' }}>
-              <Scan size={18} style={{ color: '#3B82F6' }} />
-            </div>
-            <div>
-              <p className="text-sm font-bold text-slate-800 dark:text-slate-200">Auto-Fill from DTR Document</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Upload or paste an image of your DTR receipt</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              disabled={scanning}
-              onClick={handlePasteClick}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50 disabled:opacity-50"
-            >
-              <ClipboardPaste size={14} /> Paste
-            </button>
-            <button
-              disabled={scanning}
-              onClick={() => fileRef.current?.click()}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 text-white bg-blue-500 disabled:opacity-50"
-            >
-              {scanning ? <Loader2 size={14} className="animate-spin" /> : <Scan size={14} />} 
-              {scanning ? 'Scanning...' : 'Upload Image'}
-            </button>
-            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleScanImage} />
-          </div>
-        </div>
-      )}
-      
       {scanError && (
         <div className="rounded-xl p-3 flex items-start gap-2 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30">
           <p className="text-xs text-red-600 dark:text-red-400">{scanError}</p>
@@ -2552,6 +2534,50 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                 </tbody>
               </table>
               {canSubmit && !reviewMode && <AddRowBtn onClick={() => setExpPurch(p => [...p, mkExp()])} label="Add row" />}
+            </div>
+          </div>
+
+          {/* Payables */}
+          <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+            <SectionHeader label="Payables" total={totalPayables} variant="expense" />
+            <div className="p-2">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr>
+                    <th className={tableTh}>Customer</th>
+                    <th className={tableTh}>Description</th>
+                    <th className={tableTh + ' text-right w-28'}>Amount</th>
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {payables.map(row => (
+                    <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Customer" value={row.customer}
+                          onChange={e => setPayables(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Description" value={row.description}
+                          onChange={e => setPayables(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
+                          onValueChange={(values) => setPayables(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
+                          className={flushInputNumber} disabled={isFormDisabled} />
+                      </td>
+                      {canSubmit && !reviewMode && (
+                        <td className={tableTd + ' text-center'}>
+                          <DelBtn onClick={() => setPayables(p => p.filter(r => r.id !== row.id))} />
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setPayables(p => [...p, mkPay()])} label="Add row" />}
             </div>
           </div>
 

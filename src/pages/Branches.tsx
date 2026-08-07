@@ -1,13 +1,13 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Search, MapPin, Phone, Mail, Building2, ExternalLink, Edit3, X, Loader2, FileText, CheckCircle2, XCircle, Gift, Receipt, HelpCircle, Plus, ArrowLeft, Trash2, Users, Camera } from 'lucide-react'
+import { Search, MapPin, Phone, Mail, Building2, ExternalLink, Edit3, X, Loader2, FileText, CheckCircle2, XCircle, Gift, Receipt, HelpCircle, Plus } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { PUBLIC_BRANCHES } from '../data/branches'
-import UserAvatar from '../components/UserAvatar'
-import { API_BASE_URL, formatPersonName, isSameBaseBranch, resolveScopedBranchId, isMayDtrEditWindow, isEmployeePortalRole, isPortalAdmin, isTaguigServicesScope, resolveImageUrl } from '../utils/api'
+import { API_BASE_URL, isSameBaseBranch, resolveScopedBranchId, isMayDtrEditWindow, isEmployeePortalRole, isPortalAdmin, isTaguigServicesScope } from '../utils/api'
 import {
   buildBranchRoster,
   isDriverEmployee,
+  isInstallerEmployee,
   isSalesCoordinatorEmployee,
   notifyBranchRosterUpdated,
   resolveBranchApiId,
@@ -163,171 +163,6 @@ const initialsFor = (name?: string) => {
   return name.split(' ').filter(Boolean).map(part => part[0]).join('').slice(0, 3).toUpperCase()
 }
 
-type StaffRecord = {
-  id?: string
-  name?: string
-  phone?: string
-  jobTitle?: string
-  role?: string
-  dateHired?: string
-  date_hired?: string
-  branchId?: string
-  email?: string
-  profileImage?: string
-}
-
-type EditableTeamMember = {
-  key: string
-  name: string
-  kind: 'drivers' | 'installers'
-  roleLabel: string
-  phone: string
-  dateHired: string
-  profileImage: string
-  userId?: string
-}
-
-type MemberModalMode = 'add' | 'edit'
-
-type MemberFormState = {
-  name: string
-  kind: 'drivers' | 'installers'
-  roleLabel: string
-  phone: string
-  dateHired: string
-  profileImage: string
-  userId?: string
-  employeePickId: string
-}
-
-const emptyMemberForm = (kind: 'drivers' | 'installers' = 'drivers'): MemberFormState => ({
-  name: '',
-  kind,
-  roleLabel: kind === 'drivers' ? 'DRIVER' : 'INSTALLER',
-  phone: '',
-  dateHired: '',
-  profileImage: '',
-  userId: undefined,
-  employeePickId: '',
-})
-
-const ROSTER_DETAILS_STORAGE_KEY = 'ashcol-branch-roster-details'
-
-type StoredRosterDetails = Record<string, {
-  phone?: string
-  dateHired?: string
-  profileImage?: string
-  roleLabel?: string
-  kind?: 'drivers' | 'installers'
-}>
-
-function loadStoredRosterDetails(branchId: string): StoredRosterDetails {
-  try {
-    const raw = localStorage.getItem(ROSTER_DETAILS_STORAGE_KEY)
-    if (!raw) return {}
-    const all = JSON.parse(raw) as Record<string, StoredRosterDetails>
-    return all[branchId] || {}
-  } catch {
-    return {}
-  }
-}
-
-function saveStoredRosterDetails(branchId: string, members: EditableTeamMember[]) {
-  try {
-    const raw = localStorage.getItem(ROSTER_DETAILS_STORAGE_KEY)
-    const all = (raw ? JSON.parse(raw) : {}) as Record<string, StoredRosterDetails>
-    const next: StoredRosterDetails = {}
-    for (const m of members) {
-      const key = m.name.trim().toLowerCase()
-      if (!key) continue
-      next[key] = {
-        phone: m.phone,
-        dateHired: m.dateHired,
-        profileImage: m.profileImage,
-        roleLabel: m.roleLabel,
-        kind: m.kind,
-      }
-    }
-    all[branchId] = next
-    localStorage.setItem(ROSTER_DETAILS_STORAGE_KEY, JSON.stringify(all))
-  } catch {
-    // ignore quota / private mode
-  }
-}
-
-function hireDateInputValue(raw?: string | null): string {
-  if (!raw) return ''
-  const key = String(raw).slice(0, 10)
-  return /^\d{4}-\d{2}-\d{2}$/.test(key) ? key : ''
-}
-
-function findStaffByName(name: string, staff: StaffRecord[]): StaffRecord | undefined {
-  const key = name.trim().toLowerCase()
-  if (!key) return undefined
-  return staff.find((s) => (s.name || '').trim().toLowerCase() === key)
-}
-
-function resolveRoleLabel(kind: 'drivers' | 'installers', title?: string | null, fallback?: string): string {
-  if (fallback) return fallback
-  const t = (title || '').trim().toUpperCase()
-  if (kind === 'drivers') {
-    if (t.includes('DRIVER')) return t
-    return 'DRIVER'
-  }
-  if (t.includes('TECHNICIAN')) return 'TECHNICIAN'
-  if (t.includes('HELPER')) return 'HELPER'
-  if (t.includes('INSTALLER')) return 'INSTALLER'
-  return t || 'INSTALLER'
-}
-
-function newMemberKey() {
-  return `m-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-function hydrateTeamMembers(
-  roster: BranchRoster,
-  staff: StaffRecord[],
-  branchId: string,
-): EditableTeamMember[] {
-  const stored = loadStoredRosterDetails(branchId)
-  const build = (names: string[], kind: 'drivers' | 'installers') =>
-    names.map((name) => {
-      const match = findStaffByName(name, staff)
-      const cached = stored[name.trim().toLowerCase()]
-      return {
-        key: newMemberKey(),
-        name,
-        kind: cached?.kind || kind,
-        roleLabel: resolveRoleLabel(kind, match?.jobTitle, cached?.roleLabel),
-        phone: (match?.phone || cached?.phone || '').trim(),
-        dateHired: hireDateInputValue(match?.dateHired || match?.date_hired || cached?.dateHired),
-        profileImage: (match?.profileImage || cached?.profileImage || '').trim(),
-        userId: match?.id ? String(match.id) : undefined,
-      } satisfies EditableTeamMember
-    })
-  return [...build(roster.drivers, 'drivers'), ...build(roster.installers, 'installers')]
-    .sort((a, b) => {
-      if (a.kind !== b.kind) return a.kind === 'drivers' ? -1 : 1
-      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-    })
-}
-
-function rosterFromMembers(members: EditableTeamMember[]): BranchRoster {
-  const drivers: string[] = []
-  const installers: string[] = []
-  const seen = new Set<string>()
-  for (const m of members) {
-    const name = m.name.trim()
-    if (!name) continue
-    const key = name.toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
-    if (m.kind === 'drivers') drivers.push(name)
-    else installers.push(name)
-  }
-  return { drivers, installers }
-}
-
 export default function Branches() {
   const { theme } = useTheme()
   const { user } = useAuth()
@@ -357,37 +192,9 @@ export default function Branches() {
     targetDailyQuota: ''
   })
   const [editRoster, setEditRoster] = useState<BranchRoster>({ drivers: [], installers: [] })
-  const [teamMembers, setTeamMembers] = useState<EditableTeamMember[]>([])
-  const [memberModalOpen, setMemberModalOpen] = useState(false)
-  const [memberModalMode, setMemberModalMode] = useState<MemberModalMode>('add')
-  const [editingMemberKey, setEditingMemberKey] = useState<string | null>(null)
-  const [memberForm, setMemberForm] = useState<MemberFormState>(emptyMemberForm())
-  const [memberFormError, setMemberFormError] = useState('')
-  const [oicContact, setOicContact] = useState({
-    id: '',
-    name: '',
-    phone: '',
-    email: '',
-    profileImage: '',
-  })
+  const [newDriverName, setNewDriverName] = useState('')
+  const [newInstallerName, setNewInstallerName] = useState('')
   const [saving, setSaving] = useState(false)
-
-  const resolveOicPerson = (branch: Branch) => {
-    const byId = branch.managerId
-      ? (
-          managers.find((m: any) => m.id === branch.managerId)
-          || employeesList.find((e: any) => e.id === branch.managerId)
-        )
-      : null
-    if (byId) return byId
-    const oicName = (branch.oic || '').trim().toLowerCase()
-    if (!oicName || oicName === 'unassigned') return null
-    return (
-      managers.find((m: any) => (m.name || '').trim().toLowerCase() === oicName)
-      || employeesList.find((e: any) => (e.name || '').trim().toLowerCase() === oicName)
-      || null
-    )
-  }
 
   // Performance data for the selected branch
   const [branchPerfData, setBranchPerfData] = useState<AuditRow | null>(null)
@@ -579,11 +386,10 @@ export default function Branches() {
       const headers = { Authorization: `Bearer ${token}` }
       const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
       
-      const [resB, resM, resE, resAll] = await Promise.all([
+      const [resB, resM, resE] = await Promise.all([
         fetch(`${apiUrl}/branches`, { headers }),
         fetch(`${apiUrl}/user/all?role=MANAGER`, { headers }).catch(() => null),
-        fetch(`${apiUrl}/user/all?role=EMPLOYEE`, { headers }).catch(() => null),
-        fetch(`${apiUrl}/user/all`, { headers }).catch(() => null),
+        fetch(`${apiUrl}/user/all?role=EMPLOYEE`, { headers }).catch(() => null)
       ])
       
       if (!resB.ok) {
@@ -604,14 +410,6 @@ export default function Branches() {
       if (resE && resE.ok) {
         const payload = await resE.json()
         employeesList = payload?.data || payload || []
-      }
-      // Prefer full directory for contact / date-hired lookup on team tables
-      if (resAll && resAll.ok) {
-        const payload = await resAll.json()
-        const allUsers = payload?.data || payload || []
-        if (Array.isArray(allUsers) && allUsers.length > 0) {
-          employeesList = allUsers
-        }
       }
       setEmployeesList(employeesList)
 
@@ -650,7 +448,6 @@ export default function Branches() {
         // Roster assignment
         // 1. OIC
         let oicName = ''
-        let oicManagerId = api.managerId || ''
         const branchManagers = managersList.filter((m: any) =>
           m.branchId === api.id ||
           (suffix ? m.branchId === `${api.id}-${suffix}` : false) ||
@@ -664,19 +461,12 @@ export default function Branches() {
               || nameLower.includes('service')
             return suffix === 'services' ? isServiceMgr : !isServiceMgr
           })
-          if (matchedMgr) {
-            oicName = matchedMgr.name
-            oicManagerId = matchedMgr.id
-          }
+          if (matchedMgr) oicName = matchedMgr.name
         } else if (api.managerId) {
           const foundMgr = managersList.find((m: any) => m.id === api.managerId)
-          if (foundMgr) {
-            oicName = foundMgr.name
-            oicManagerId = foundMgr.id
-          }
+          if (foundMgr) oicName = foundMgr.name
         } else if (branchManagers.length > 0) {
           oicName = branchManagers[0].name
-          oicManagerId = branchManagers[0].id
         }
 
         // 2. Employees (Drivers vs Installers)
@@ -726,7 +516,6 @@ export default function Branches() {
           mapUrl: pub?.mapUrl || api.mapUrl || '',
           region: pub?.region || api.region || 'Luzon',
           isHQ: pub?.isHQ || api.isHQ || false,
-          managerId: oicManagerId || undefined,
           oic: oicName,
           salesCoordinator: salesCoordinator?.name,
           drivers,
@@ -779,165 +568,43 @@ export default function Branches() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const syncRosterFromMembers = (members: EditableTeamMember[]) => {
-    setTeamMembers(members)
-    setEditRoster(rosterFromMembers(members))
-  }
-
   const handleEditClick = (branch: Branch) => {
     setEditingBranch(branch)
-    const oicPerson = resolveOicPerson(branch)
     setEditForm({
       name: branch.name,
       location: branch.location || '',
       address: branch.address || '',
       phone: branch.phone || '',
       email: branch.email || '',
-      managerId: oicPerson?.id || branch.managerId || '',
+      managerId: branch.managerId || '',
       isActive: branch.isActive,
       targetDailyQuota: branch.targetDailyQuota != null ? String(branch.targetDailyQuota) : ''
     })
-    setOicContact({
-      id: oicPerson?.id ? String(oicPerson.id) : '',
-      name: oicPerson?.name || (branch.oic !== 'Unassigned' ? branch.oic : '') || '',
-      phone: String(oicPerson?.phone || ''),
-      email: String(oicPerson?.email || oicPerson?.personalEmail || ''),
-      profileImage: String(oicPerson?.profileImage || ''),
-    })
-    const roster = {
+    setEditRoster({
       drivers: [...branch.drivers],
       installers: [...branch.installers],
-    }
-    setEditRoster(roster)
-    setTeamMembers(hydrateTeamMembers(roster, employeesList as StaffRecord[], branch.id || ''))
-    setMemberModalOpen(false)
-    setEditingMemberKey(null)
-    setMemberForm(emptyMemberForm())
-    setMemberFormError('')
-    setSelectedBranch(null)
-  }
-
-  const openAddMemberModal = () => {
-    setMemberModalMode('add')
-    setEditingMemberKey(null)
-    setMemberForm(emptyMemberForm('drivers'))
-    setMemberFormError('')
-    setMemberModalOpen(true)
-  }
-
-  const openEditMemberModal = (member: EditableTeamMember) => {
-    setMemberModalMode('edit')
-    setEditingMemberKey(member.key)
-    setMemberForm({
-      name: member.name,
-      kind: member.kind,
-      roleLabel: member.roleLabel,
-      phone: member.phone,
-      dateHired: member.dateHired,
-      profileImage: member.profileImage,
-      userId: member.userId,
-      employeePickId: member.userId || '',
     })
-    setMemberFormError('')
-    setMemberModalOpen(true)
+    setNewDriverName('')
+    setNewInstallerName('')
   }
 
-  const applyEmployeePickToForm = (employeeId: string) => {
-    const emp = employeesList.find((e: any) => String(e.id) === employeeId)
-    if (!emp) return
-    const kind: 'drivers' | 'installers' = isDriverEmployee(emp) ? 'drivers' : 'installers'
-    setMemberForm((prev) => ({
+  const addRosterName = (kind: 'drivers' | 'installers', raw: string) => {
+    const name = raw.trim()
+    if (!name) return
+    setEditRoster((prev) => {
+      const list = prev[kind]
+      if (list.some((n) => n.toLowerCase() === name.toLowerCase())) return prev
+      return { ...prev, [kind]: [...list, name] }
+    })
+    if (kind === 'drivers') setNewDriverName('')
+    else setNewInstallerName('')
+  }
+
+  const removeRosterName = (kind: 'drivers' | 'installers', name: string) => {
+    setEditRoster((prev) => ({
       ...prev,
-      employeePickId: employeeId,
-      userId: String(emp.id),
-      name: String(emp.name || prev.name),
-      kind,
-      roleLabel: resolveRoleLabel(kind, emp.jobTitle),
-      phone: String(emp.phone || prev.phone || ''),
-      dateHired: hireDateInputValue(emp.dateHired || emp.date_hired) || prev.dateHired,
-      profileImage: String(emp.profileImage || prev.profileImage || ''),
+      [kind]: prev[kind].filter((n) => n !== name),
     }))
-  }
-
-  const readProfileImageFile = (file: File, onDone: (dataUrl: string) => void) => {
-    if (file.size > 2 * 1024 * 1024) {
-      alert('Image must be smaller than 2MB')
-      return
-    }
-    const reader = new FileReader()
-    reader.onloadend = () => onDone(reader.result as string)
-    reader.readAsDataURL(file)
-  }
-
-  const commitMemberForm = () => {
-    const name = formatPersonName(memberForm.name.trim())
-    if (!name) {
-      setMemberFormError('Full name is required.')
-      return
-    }
-    const duplicate = teamMembers.some(
-      (m) => m.key !== editingMemberKey && m.name.trim().toLowerCase() === name.toLowerCase(),
-    )
-    if (duplicate) {
-      setMemberFormError('That person is already on this branch team.')
-      return
-    }
-    const roleLabel = memberForm.kind === 'drivers'
-      ? (memberForm.roleLabel.trim() || 'DRIVER')
-      : (memberForm.roleLabel.trim() || 'INSTALLER')
-
-    if (memberModalMode === 'edit' && editingMemberKey) {
-      syncRosterFromMembers(
-        teamMembers.map((m) =>
-          m.key === editingMemberKey
-            ? {
-                ...m,
-                name,
-                kind: memberForm.kind,
-                roleLabel,
-                phone: memberForm.phone.trim(),
-                dateHired: memberForm.dateHired,
-                profileImage: memberForm.profileImage,
-                userId: memberForm.userId,
-              }
-            : m,
-        ),
-      )
-    } else {
-      syncRosterFromMembers([
-        ...teamMembers,
-        {
-          key: newMemberKey(),
-          name,
-          kind: memberForm.kind,
-          roleLabel,
-          phone: memberForm.phone.trim(),
-          dateHired: memberForm.dateHired,
-          profileImage: memberForm.profileImage,
-          userId: memberForm.userId,
-        },
-      ])
-    }
-    setMemberModalOpen(false)
-    setEditingMemberKey(null)
-    setMemberFormError('')
-  }
-
-  const updateTeamMember = (key: string, patch: Partial<EditableTeamMember>) => {
-    syncRosterFromMembers(
-      teamMembers.map((m) => {
-        if (m.key !== key) return m
-        const next = { ...m, ...patch }
-        if (patch.kind && !patch.roleLabel) {
-          next.roleLabel = patch.kind === 'drivers' ? 'DRIVER' : (m.roleLabel === 'DRIVER' ? 'INSTALLER' : m.roleLabel)
-        }
-        return next
-      }),
-    )
-  }
-
-  const removeTeamMember = (key: string) => {
-    syncRosterFromMembers(teamMembers.filter((m) => m.key !== key))
   }
 
   const editBranchEmployeeOptions = useMemo(() => {
@@ -961,9 +628,6 @@ export default function Branches() {
         id: String(e.id || ''),
         name: String(e.name || ''),
         jobTitle: e.jobTitle,
-        phone: e.phone,
-        dateHired: e.dateHired || e.date_hired,
-        profileImage: e.profileImage,
       }))
       .filter((e) => e.id && e.name)
   }, [editingBranch?.id, employeesList])
@@ -975,9 +639,7 @@ export default function Branches() {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
       const apiBranchId = resolveBranchApiId(editingBranch.id)
-      const roster = rosterFromMembers(teamMembers)
-      setEditRoster(roster)
-
+      
       const quotaNum = parseFloat(editForm.targetDailyQuota)
       const payload = {
         name: editForm.name,
@@ -986,7 +648,7 @@ export default function Branches() {
         phone: editForm.phone,
         email: editForm.email,
         managerId: editForm.managerId || null,
-        // Do not send isActive — OIC/roster edits must not deactivate a branch.
+        isActive: editForm.isActive,
         targetDailyQuota: !isNaN(quotaNum) && quotaNum >= 0 ? quotaNum : null
       }
       
@@ -1003,59 +665,7 @@ export default function Branches() {
         throw new Error('Failed to save changes')
       }
 
-      await saveBranchRosterToLineup(token, editingBranch.id || apiBranchId, roster, apiUrl)
-
-      // Persist contact / hire date / photo onto linked employee accounts when possible
-      const patchUrl = (userId: string) =>
-        isRoleAdmin
-          ? `${apiUrl}/admin/users/${userId}`
-          : `${apiUrl}/manager/employees/${userId}`
-
-      if (oicContact.id) {
-        try {
-          await fetch(patchUrl(oicContact.id), {
-            method: 'PATCH',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              phone: oicContact.phone.trim(),
-              email: oicContact.email.trim(),
-            }),
-          })
-        } catch {
-          // OIC contact sync is best-effort
-        }
-      }
-
-      await Promise.all(
-        teamMembers
-          .filter((m) => m.userId && m.name.trim())
-          .map(async (m) => {
-            const body: Record<string, unknown> = {
-              name: formatPersonName(m.name.trim()),
-              phone: m.phone.trim(),
-              dateHired: m.dateHired || null,
-              profileImage: m.profileImage || '',
-              jobTitle: m.roleLabel,
-            }
-            try {
-              await fetch(patchUrl(m.userId!), {
-                method: 'PATCH',
-                headers: {
-                  'Content-Type': 'application/json',
-                  Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(body),
-              })
-            } catch {
-              // Roster save already succeeded; skip individual profile failures
-            }
-          }),
-      )
-
-      saveStoredRosterDetails(editingBranch.id || apiBranchId, teamMembers)
+      await saveBranchRosterToLineup(token, editingBranch.id || apiBranchId, editRoster, apiUrl)
       notifyBranchRosterUpdated()
       
       setEditingBranch(null)
@@ -1116,514 +726,6 @@ export default function Branches() {
 
     return true
   })
-
-  // ── Full-page Branch Team editor (not a popup) ───────────────────────────
-  if (editingBranch) {
-    const driverCount = teamMembers.filter((m) => m.kind === 'drivers').length
-    const installerCount = teamMembers.filter((m) => m.kind === 'installers').length
-    const alreadyOnTeam = new Set(teamMembers.map((m) => m.name.trim().toLowerCase()).filter(Boolean))
-    const availableEmployees = editBranchEmployeeOptions.filter((e) => {
-      if (memberModalMode === 'edit' && memberForm.userId && e.id === memberForm.userId) return true
-      return !alreadyOnTeam.has(e.name.trim().toLowerCase())
-    })
-    const sortedMembers = [...teamMembers].sort((a, b) => {
-      if (a.kind !== b.kind) return a.kind === 'drivers' ? -1 : 1
-      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-    })
-    const cellInputCls = 'w-full border rounded-lg px-2.5 py-2 text-xs font-semibold focus:outline-none focus:border-[#10B981]'
-    const modalInputCls = 'w-full border rounded-xl px-3 py-2.5 text-sm font-semibold focus:outline-none focus:border-[#10B981]'
-
-    return (
-      <div className="flex flex-col gap-5 min-h-0 flex-1 w-full relative">
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
-          <div className="flex items-start gap-3 min-w-0">
-            <button
-              type="button"
-              onClick={() => setEditingBranch(null)}
-              disabled={saving}
-              className="mt-1 p-2 rounded-xl border shrink-0 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              style={{ borderColor: border, color: textMuted }}
-              title="Back to directory"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <Users className="w-4 h-4 text-[#10B981] shrink-0" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Branch Team</span>
-              </div>
-              <h2 className="text-2xl md:text-3xl font-black tracking-tight truncate" style={{ color: textPrimary }}>
-                {editingBranch.name}
-              </h2>
-              <p className="text-sm mt-1" style={{ color: textMuted }}>
-                Add members with details, edit rows inline, and attach profile photos.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => setEditingBranch(null)}
-              disabled={saving}
-              className="px-4 py-2.5 rounded-xl border text-xs font-bold"
-              style={{ borderColor: border, color: textMuted }}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSaveEdit}
-              disabled={saving}
-              className="px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider text-white hover:opacity-90 transition-all flex items-center gap-2"
-              style={{ backgroundColor: '#10B981' }}
-            >
-              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-              {saving ? 'Saving…' : 'Save Team'}
-            </button>
-          </div>
-        </div>
-
-        {/* Office In Charge — person details (not branch contact) */}
-        <div
-          className="rounded-2xl border p-4 md:p-5"
-          style={{ backgroundColor: cardBg, borderColor: border }}
-        >
-          <div className="flex flex-col sm:flex-row sm:items-start gap-4">
-            <div className="flex items-center gap-3 shrink-0 min-w-[220px]">
-              <UserAvatar
-                name={oicContact.name || 'OIC'}
-                imageUrl={oicContact.profileImage}
-                size="md"
-                ring
-              />
-              <div className="min-w-0">
-                <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
-                  Office In Charge
-                </div>
-                <div
-                  className="text-sm font-black uppercase tracking-wide truncate"
-                  style={{ color: textPrimary }}
-                  title={oicContact.name || 'Unassigned'}
-                >
-                  {oicContact.name || 'Unassigned'}
-                </div>
-                <div className="text-[10px] font-bold mt-0.5" style={{ color: textMuted }}>
-                  Full name is fixed from account
-                </div>
-              </div>
-            </div>
-
-            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 min-w-0">
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                  OIC Phone Number
-                </label>
-                <div className="relative">
-                  <Phone className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: textMuted }} />
-                  <input
-                    type="text"
-                    value={oicContact.phone}
-                    onChange={(e) => setOicContact((prev) => ({ ...prev, phone: e.target.value }))}
-                    disabled={saving || !oicContact.id}
-                    placeholder={oicContact.id ? '09XX XXX XXXX' : 'No OIC account linked'}
-                    style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                    className="border rounded-xl pl-9 pr-3 py-2.5 text-xs focus:outline-none focus:border-[#10B981] w-full disabled:opacity-60"
-                  />
-                </div>
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                  OIC Email
-                </label>
-                <div className="relative">
-                  <Mail className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: textMuted }} />
-                  <input
-                    type="email"
-                    value={oicContact.email}
-                    onChange={(e) => setOicContact((prev) => ({ ...prev, email: e.target.value }))}
-                    disabled={saving || !oicContact.id}
-                    placeholder={oicContact.id ? 'oic@ashcol.com.ph' : 'No OIC account linked'}
-                    style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                    className="border rounded-xl pl-9 pr-3 py-2.5 text-xs focus:outline-none focus:border-[#10B981] w-full disabled:opacity-60"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Combined roster table */}
-        <div
-          className="rounded-2xl border overflow-hidden flex flex-col min-h-[420px]"
-          style={{ backgroundColor: cardBg, borderColor: border }}
-        >
-          <div className="px-5 py-3 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-3" style={{ borderColor: border }}>
-            <div>
-              <h3 className="text-sm font-black tracking-tight" style={{ color: textPrimary }}>
-                Branch roster
-              </h3>
-              <p className="text-[11px]" style={{ color: textMuted }}>
-                {teamMembers.length} member{teamMembers.length === 1 ? '' : 's'}
-                {' · '}
-                {driverCount} driver{driverCount === 1 ? '' : 's'}
-                {' · '}
-                {installerCount} installer{installerCount === 1 ? '' : 's'} / tech
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={openAddMemberModal}
-              disabled={saving}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider text-white disabled:opacity-40"
-              style={{ backgroundColor: '#10B981' }}
-            >
-              <Plus className="w-4 h-4" /> Add Member
-            </button>
-          </div>
-
-          <div className="overflow-auto flex-1">
-            <table className="w-full text-left border-collapse min-w-[900px]">
-              <thead className="sticky top-0 z-10">
-                <tr style={{ backgroundColor: isLight ? '#E3F4E9' : '#0B272D' }}>
-                  {['#', 'Photo', 'Full Name', 'Role', 'Contact Number', 'Date Hired', ''].map((h) => (
-                    <th
-                      key={h || 'actions'}
-                      className="px-3 py-3.5 text-[10px] font-black uppercase tracking-wider whitespace-nowrap"
-                      style={{
-                        color: isLight ? '#166534' : '#86EFAC',
-                        borderBottom: `1px solid ${isLight ? 'rgba(22,163,74,0.35)' : 'rgba(74,222,128,0.28)'}`,
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {sortedMembers.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-16 text-center text-sm font-semibold" style={{ color: textMuted }}>
-                      No team members yet. Click Add Member to open the details form.
-                    </td>
-                  </tr>
-                ) : (
-                  sortedMembers.map((row, idx) => {
-                    const isDriver = row.kind === 'drivers'
-                    return (
-                      <tr
-                        key={row.key}
-                        style={{
-                          backgroundColor: idx % 2 === 0 ? (isLight ? '#ffffff' : '#111827') : (isLight ? '#f7fbf8' : '#131f30'),
-                          borderBottom: `1px solid ${border}`,
-                        }}
-                      >
-                        <td className="px-3 py-2.5 text-xs font-bold tabular-nums" style={{ color: textMuted }}>{idx + 1}</td>
-                        <td className="px-3 py-2.5">
-                          <label className="relative inline-flex cursor-pointer group" title="Change photo">
-                            <UserAvatar name={row.name || '?'} imageUrl={row.profileImage} size="sm" />
-                            <span className="absolute inset-0 rounded-full bg-black/45 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                              <Camera className="w-3.5 h-3.5 text-white" />
-                            </span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              disabled={saving}
-                              onChange={(e) => {
-                                const file = e.target.files?.[0]
-                                if (!file) return
-                                readProfileImageFile(file, (dataUrl) => updateTeamMember(row.key, { profileImage: dataUrl }))
-                                e.target.value = ''
-                              }}
-                            />
-                          </label>
-                        </td>
-                        <td className="px-3 py-2.5 min-w-[180px]">
-                          <input
-                            type="text"
-                            value={row.name}
-                            disabled={saving}
-                            onChange={(e) => updateTeamMember(row.key, { name: e.target.value })}
-                            onBlur={(e) => updateTeamMember(row.key, { name: formatPersonName(e.target.value) })}
-                            style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                            className={`${cellInputCls} uppercase tracking-wide`}
-                          />
-                        </td>
-                        <td className="px-3 py-2.5 min-w-[150px]">
-                          <select
-                            value={`${row.kind}|${row.roleLabel}`}
-                            disabled={saving}
-                            onChange={(e) => {
-                              const [kind, ...rest] = e.target.value.split('|')
-                              const roleLabel = rest.join('|')
-                              updateTeamMember(row.key, {
-                                kind: kind as 'drivers' | 'installers',
-                                roleLabel,
-                              })
-                            }}
-                            style={{
-                              backgroundColor: isDriver ? 'rgba(37,99,235,0.08)' : 'rgba(16,185,129,0.08)',
-                              borderColor: isDriver ? 'rgba(37,99,235,0.35)' : 'rgba(16,185,129,0.35)',
-                              color: isDriver ? '#2563EB' : '#10B981',
-                            }}
-                            className={`${cellInputCls} font-black uppercase tracking-wider`}
-                          >
-                            <option value="drivers|DRIVER">DRIVER</option>
-                            <option value="installers|INSTALLER">INSTALLER</option>
-                            <option value="installers|TECHNICIAN">TECHNICIAN</option>
-                            <option value="installers|HELPER">HELPER</option>
-                          </select>
-                        </td>
-                        <td className="px-3 py-2.5 min-w-[140px]">
-                          <input
-                            type="text"
-                            value={row.phone}
-                            disabled={saving}
-                            placeholder="09XX XXX XXXX"
-                            onChange={(e) => updateTeamMember(row.key, { phone: e.target.value })}
-                            style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                            className={cellInputCls}
-                          />
-                        </td>
-                        <td className="px-3 py-2.5 min-w-[140px]">
-                          <input
-                            type="date"
-                            value={row.dateHired}
-                            disabled={saving}
-                            onChange={(e) => updateTeamMember(row.key, { dateHired: e.target.value })}
-                            style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                            className={cellInputCls}
-                          />
-                        </td>
-                        <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => openEditMemberModal(row)}
-                            disabled={saving}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold mr-1 hover:bg-slate-500/10 transition-colors"
-                            style={{ color: textMuted }}
-                            title="Edit details"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" /> Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => removeTeamMember(row.key)}
-                            disabled={saving}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-red-500 hover:bg-red-500/10 transition-colors"
-                            title={`Remove ${row.name}`}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" /> Remove
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Add / Edit member popup */}
-        {memberModalOpen && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={{ backgroundColor: isLight ? 'rgba(241,245,249,0.92)' : 'rgba(6,11,24,0.88)', backdropFilter: 'blur(10px)' }}
-            onClick={() => !saving && setMemberModalOpen(false)}
-          >
-            <div
-              className="w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
-              style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between px-5 py-4 border-b shrink-0" style={{ borderColor: border }}>
-                <div>
-                  <h3 className="text-base font-black" style={{ color: textPrimary }}>
-                    {memberModalMode === 'add' ? 'Add Team Member' : 'Edit Team Member'}
-                  </h3>
-                  <p className="text-xs mt-0.5" style={{ color: textMuted }}>
-                    Name, role, contact, hire date, and profile photo.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setMemberModalOpen(false)}
-                  className="p-2 rounded-xl hover:bg-slate-500/10"
-                  style={{ color: textMuted }}
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-5 flex flex-col md:flex-row gap-6">
-                <div className="w-full md:w-44 shrink-0 flex flex-col items-center gap-3">
-                  <div className="text-[10px] font-black uppercase tracking-widest self-start" style={{ color: textMuted }}>
-                    Profile Photo
-                  </div>
-                  <label
-                    className="w-40 h-40 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center overflow-hidden relative group cursor-pointer hover:border-emerald-500 transition-colors"
-                    style={{ borderColor: border, backgroundColor: inputBg }}
-                  >
-                    {memberForm.profileImage ? (
-                      <>
-                        <img src={resolveImageUrl(memberForm.profileImage)} alt="" className="w-full h-full object-cover" />
-                        <div className="absolute inset-0 bg-black/55 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-1 transition-opacity text-white">
-                          <Camera className="w-5 h-5" />
-                          <span className="text-[10px] font-black uppercase">Change</span>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="flex flex-col items-center gap-2 p-3 text-center">
-                        <Plus className="w-6 h-6" style={{ color: textMuted }} />
-                        <span className="text-[11px] font-bold" style={{ color: textMuted }}>Upload photo</span>
-                      </div>
-                    )}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0]
-                        if (!file) return
-                        readProfileImageFile(file, (dataUrl) =>
-                          setMemberForm((prev) => ({ ...prev, profileImage: dataUrl })),
-                        )
-                        e.target.value = ''
-                      }}
-                    />
-                  </label>
-                  {memberForm.profileImage && (
-                    <button
-                      type="button"
-                      onClick={() => setMemberForm((prev) => ({ ...prev, profileImage: '' }))}
-                      className="text-xs font-bold text-red-500 hover:underline"
-                    >
-                      Remove photo
-                    </button>
-                  )}
-                </div>
-
-                <div className="flex-1 flex flex-col gap-3 min-w-0">
-                  {memberFormError && (
-                    <div className="text-xs text-red-500 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2 font-semibold">
-                      {memberFormError}
-                    </div>
-                  )}
-
-                  {availableEmployees.length > 0 && (
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
-                        Prefill from employees
-                      </label>
-                      <select
-                        value={memberForm.employeePickId}
-                        onChange={(e) => {
-                          if (e.target.value) applyEmployeePickToForm(e.target.value)
-                          else setMemberForm((prev) => ({ ...prev, employeePickId: '' }))
-                        }}
-                        style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                        className={modalInputCls}
-                      >
-                        <option value="">— Select employee (optional) —</option>
-                        {availableEmployees.map((e) => (
-                          <option key={e.id} value={e.id}>{e.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="flex flex-col gap-1 sm:col-span-2">
-                      <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
-                        Full Name
-                      </label>
-                      <input
-                        type="text"
-                        value={memberForm.name}
-                        onChange={(e) => setMemberForm((prev) => ({ ...prev, name: e.target.value }))}
-                        onBlur={(e) => setMemberForm((prev) => ({ ...prev, name: formatPersonName(e.target.value) }))}
-                        placeholder="Juan Dela Cruz"
-                        style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                        className={modalInputCls}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
-                        Team Role
-                      </label>
-                      <select
-                        value={`${memberForm.kind}|${memberForm.roleLabel}`}
-                        onChange={(e) => {
-                          const [kind, ...rest] = e.target.value.split('|')
-                          setMemberForm((prev) => ({
-                            ...prev,
-                            kind: kind as 'drivers' | 'installers',
-                            roleLabel: rest.join('|'),
-                          }))
-                        }}
-                        style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                        className={modalInputCls}
-                      >
-                        <option value="drivers|DRIVER">Driver</option>
-                        <option value="installers|INSTALLER">Installer</option>
-                        <option value="installers|TECHNICIAN">Technician</option>
-                        <option value="installers|HELPER">Helper</option>
-                      </select>
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
-                        Contact Number
-                      </label>
-                      <input
-                        type="text"
-                        value={memberForm.phone}
-                        onChange={(e) => setMemberForm((prev) => ({ ...prev, phone: e.target.value }))}
-                        placeholder="09XX XXX XXXX"
-                        style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                        className={modalInputCls}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1 sm:col-span-2">
-                      <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
-                        Date Hired
-                      </label>
-                      <input
-                        type="date"
-                        value={memberForm.dateHired}
-                        onChange={(e) => setMemberForm((prev) => ({ ...prev, dateHired: e.target.value }))}
-                        style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                        className={modalInputCls}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="px-5 py-4 border-t flex justify-end gap-2 shrink-0" style={{ borderColor: border }}>
-                <button
-                  type="button"
-                  onClick={() => setMemberModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl border text-xs font-bold"
-                  style={{ borderColor: border, color: textMuted }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={commitMemberForm}
-                  className="px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider text-white"
-                  style={{ backgroundColor: '#10B981' }}
-                >
-                  {memberModalMode === 'add' ? 'Add to Roster' : 'Save Details'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    )
-  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -1696,43 +798,18 @@ export default function Branches() {
           {/* Roster list shown in a bigger and better layout */}
           <div className={`grid grid-cols-1 ${myBranch.salesCoordinator ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-6`}>
             {/* OIC / Manager */}
-            {(() => {
-              const oicPerson = resolveOicPerson(myBranch)
-              return (
-                <div className="p-5 rounded-2xl border border-slate-100 dark:border-slate-800/40 bg-slate-50/30 dark:bg-slate-900/10 flex flex-col gap-3">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Officer In Charge (OIC)</span>
-                  <div className="flex items-center gap-3">
-                    <UserAvatar
-                      name={oicPerson?.name || myBranch.oic}
-                      imageUrl={oicPerson?.profileImage}
-                      size="sm"
-                    />
-                    <div className="min-w-0">
-                      <div className="font-extrabold text-sm truncate" style={{ color: textPrimary }}>
-                        {oicPerson?.name || myBranch.oic}
-                      </div>
-                      <div className="text-[10px] text-slate-400 font-bold">OFFICE IN CHARGE</div>
-                    </div>
-                  </div>
-                  {(oicPerson?.phone || oicPerson?.email) && (
-                    <div className="flex flex-col gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-800/50">
-                      {oicPerson?.phone && (
-                        <div className="flex items-center gap-2 text-[11px] font-semibold" style={{ color: textMuted }}>
-                          <Phone className="w-3 h-3 text-emerald-500 shrink-0" />
-                          <span>{oicPerson.phone}</span>
-                        </div>
-                      )}
-                      {oicPerson?.email && (
-                        <div className="flex items-center gap-2 text-[11px] font-semibold truncate" style={{ color: textMuted }}>
-                          <Mail className="w-3 h-3 text-emerald-500 shrink-0" />
-                          <span className="truncate">{oicPerson.email}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
+            <div className="p-5 rounded-2xl border border-slate-100 dark:border-slate-800/40 bg-slate-50/30 dark:bg-slate-900/10 flex flex-col gap-3">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Officer In Charge (OIC)</span>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-500 font-bold text-sm shrink-0">
+                  {initialsFor(myBranch.oic)}
                 </div>
-              )
-            })()}
+                <div>
+                  <div className="font-extrabold text-sm" style={{ color: textPrimary }}>{myBranch.oic}</div>
+                  <div className="text-[10px] text-slate-400 font-bold">OFFICER IN CHARGE</div>
+                </div>
+              </div>
+            </div>
 
             {myBranch.salesCoordinator && (
               <div className="p-5 rounded-2xl border border-slate-100 dark:border-slate-800/40 bg-slate-50/30 dark:bg-slate-900/10 flex flex-col gap-3">
@@ -1855,6 +932,17 @@ export default function Branches() {
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      <span 
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border"
+                        style={{ 
+                          backgroundColor: branch.isActive ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.06)', 
+                          color: branch.isActive ? '#10B981' : '#EF4444',
+                          borderColor: branch.isActive ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)'
+                        }}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${branch.isActive ? 'bg-[#10B981]' : 'bg-[#EF4444]'}`} />
+                        {branch.isActive ? 'Active' : 'Inactive'}
+                      </span>
                       {branch.targetDailyQuota != null && branch.targetDailyQuota > 0 && (
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black border" style={{ backgroundColor: 'rgba(139,92,246,0.07)', color: '#8B5CF6', borderColor: 'rgba(139,92,246,0.2)' }}>
                           ₱{(branch.targetDailyQuota).toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} / day quota
@@ -1948,11 +1036,11 @@ export default function Branches() {
                     {(isRoleAdmin || ((user?.role === 'MANAGER' || user?.role === 'OIC') && user.branchId && isSameBaseBranch(user.branchId, branch.id))) && (
                       <button 
                         onClick={() => handleEditClick(branch)}
-                        className="px-4 py-2 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all hover:text-[#10B981] hover:border-[#10B981] inline-flex items-center gap-1.5"
+                        className="px-3 py-2 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all hover:text-[#10B981] hover:border-[#10B981]"
                         style={{ color: textMuted, borderColor: border }}
-                        title="Edit branch team roster"
+                        title="Edit Branch Team Details"
                       >
-                        <Edit3 className="w-3.5 h-3.5" /> Edit Team
+                        <Edit3 className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>
@@ -1993,6 +1081,16 @@ export default function Branches() {
                   <h3 className="text-lg font-black tracking-tight" style={{ color: textPrimary }}>{selectedBranch.name}</h3>
                   <div className="flex items-center gap-2.5 mt-0.5">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{getConciseLocationTag(selectedBranch)}</span>
+                    <span
+                      className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border"
+                      style={{
+                        backgroundColor: selectedBranch.isActive ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
+                        color: selectedBranch.isActive ? '#10B981' : '#EF4444',
+                        borderColor: selectedBranch.isActive ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'
+                      }}
+                    >
+                      {selectedBranch.isActive ? 'ACTIVE' : 'INACTIVE'}
+                    </span>
                     <span className="text-[11px]" style={{ color: textMuted }}>
                       {new Date().toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                     </span>
@@ -2307,37 +1405,15 @@ export default function Branches() {
                 <div className="px-8 py-5">
                   <div className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: textMuted }}>Assigned Personnel</div>
                   <div className="flex flex-col gap-4">
-                    {(() => {
-                      const oicPerson = resolveOicPerson(selectedBranch)
-                      return (
-                        <>
-                          <div className="flex gap-4">
-                            <span className="text-[11px] font-semibold w-20 shrink-0 pt-px" style={{ color: textMuted }}>OIC</span>
-                            <span className="text-[11px]" style={{ color: textPrimary }}>
-                              {oicPerson?.name || selectedBranch.oic || 'Unassigned'}
-                            </span>
-                          </div>
-                          <div className="flex gap-4">
-                            <span className="text-[11px] font-semibold w-20 shrink-0 pt-px" style={{ color: textMuted }}>OIC Phone</span>
-                            <span className="text-[11px]" style={{ color: textPrimary }}>
-                              {oicPerson?.phone || '—'}
-                            </span>
-                          </div>
-                          <div className="flex gap-4">
-                            <span className="text-[11px] font-semibold w-20 shrink-0 pt-px" style={{ color: textMuted }}>OIC Email</span>
-                            <span className="text-[11px] break-all" style={{ color: textPrimary }}>
-                              {oicPerson?.email || '—'}
-                            </span>
-                          </div>
-                          <div className="flex gap-4">
-                            <span className="text-[11px] font-semibold w-20 shrink-0 pt-px" style={{ color: textMuted }}>Coordinator</span>
-                            <span className="text-[11px]" style={{ color: textPrimary }}>
-                              {selectedBranch.salesCoordinator || '—'}
-                            </span>
-                          </div>
-                        </>
-                      )
-                    })()}
+                    {[
+                      { label: 'OIC', value: selectedBranch.oic || 'Unassigned' },
+                      { label: 'Coordinator', value: selectedBranch.salesCoordinator || '—' },
+                    ].map(row => (
+                      <div key={row.label} className="flex gap-4">
+                        <span className="text-[11px] font-semibold w-20 shrink-0 pt-px" style={{ color: textMuted }}>{row.label}</span>
+                        <span className="text-[11px]" style={{ color: textPrimary }}>{row.value}</span>
+                      </div>
+                    ))}
                     <div className="flex flex-col gap-2">
                       <span className="text-[11px] font-semibold" style={{ color: textMuted }}>
                         Drivers ({selectedBranch.drivers.length})
@@ -2367,6 +1443,310 @@ export default function Branches() {
                 style={{ backgroundColor: selectedBranch.color || '#10B981' }}
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Branch Details Modal ────────────────────── */}
+      {editingBranch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div 
+            className="w-full max-w-lg rounded-2xl border overflow-hidden shadow-xl"
+            style={{ backgroundColor: cardBg, borderColor: border }}
+          >
+            <div className="p-5 flex justify-between items-start border-b" style={{ borderColor: border }}>
+              <div>
+                <h3 className="text-base font-black tracking-tight" style={{ color: textPrimary }}>Edit Branch Team Details</h3>
+                <p className="text-xs" style={{ color: textMuted }}>Update branch info, OIC, and field crew rosters (drivers & installers).</p>
+              </div>
+              <button 
+                onClick={() => setEditingBranch(null)} 
+                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                style={{ color: textMuted }}
+                disabled={saving}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 flex flex-col gap-4 overflow-y-auto max-h-[65vh]">
+              {/* Branch Name */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Branch Name</label>
+                <input 
+                  type="text" 
+                  value={editForm.name}
+                  onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                  style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                  className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] w-full"
+                  disabled={saving}
+                  placeholder="e.g. ASHCOL CALAUAN"
+                />
+              </div>
+
+              {/* City / Location */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">City / Location Tag</label>
+                <input 
+                  type="text" 
+                  value={editForm.location}
+                  onChange={e => setEditForm(prev => ({ ...prev, location: e.target.value }))}
+                  style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                  className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] w-full"
+                  disabled={saving}
+                  placeholder="e.g. Calauan"
+                />
+              </div>
+
+              {/* Full Address */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Full Address</label>
+                <textarea 
+                  rows={2}
+                  value={editForm.address}
+                  onChange={e => setEditForm(prev => ({ ...prev, address: e.target.value }))}
+                  style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                  className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] w-full resize-none"
+                  disabled={saving}
+                  placeholder="Purok 4, Bangyas..."
+                />
+              </div>
+
+              {/* Phone */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Contact Number</label>
+                <input 
+                  type="text" 
+                  value={editForm.phone}
+                  onChange={e => setEditForm(prev => ({ ...prev, phone: e.target.value }))}
+                  style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                  className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] w-full"
+                  disabled={saving}
+                  placeholder="e.g. 0999 990 5224"
+                />
+              </div>
+
+              {/* Email */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Email Address</label>
+                <input 
+                  type="email" 
+                  value={editForm.email}
+                  onChange={e => setEditForm(prev => ({ ...prev, email: e.target.value }))}
+                  style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                  className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] w-full"
+                  disabled={saving}
+                  placeholder="e.g. ashcolcalauan@gmail.com"
+                />
+              </div>
+
+              {/* Daily Quota */}
+              <div className="flex flex-col gap-1 p-4 rounded-xl border" style={{ borderColor: 'rgba(139,92,246,0.25)', backgroundColor: 'rgba(139,92,246,0.04)' }}>
+                <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: '#8B5CF6' }}>Daily Sales Quota (₱)</label>
+                <p className="text-[10px]" style={{ color: textMuted }}>Setting this will update the branch's daily target quota for all future DTR reports.</p>
+                <input
+                  type="number"
+                  min="0"
+                  step="100"
+                  value={editForm.targetDailyQuota}
+                  onChange={e => setEditForm(prev => ({ ...prev, targetDailyQuota: e.target.value }))}
+                  style={{ backgroundColor: inputBg, borderColor: 'rgba(139,92,246,0.3)', color: textPrimary }}
+                  className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#8B5CF6] w-full mt-1 font-bold"
+                  disabled={saving}
+                  placeholder="e.g. 50000"
+                />
+              </div>
+
+              {/* OIC Dropdown selector */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Assign Officer In Charge (OIC)</label>
+                <select
+                  value={editForm.managerId}
+                  onChange={e => setEditForm(prev => ({ ...prev, managerId: e.target.value }))}
+                  style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                  className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] w-full cursor-pointer font-semibold"
+                  disabled={saving}
+                >
+                  <option value="">-- Select OIC --</option>
+                  {managers.map(mgr => (
+                    <option key={mgr.id} value={mgr.id}>{mgr.name} ({mgr.email})</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Drivers roster */}
+              <div className="flex flex-col gap-2 border-t pt-4" style={{ borderColor: border }}>
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  Drivers ({editRoster.drivers.length})
+                </label>
+                <div className="flex flex-wrap gap-1.5 min-h-[28px]">
+                  {editRoster.drivers.map((name) => (
+                    <span
+                      key={name}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20"
+                    >
+                      {name}
+                      <button
+                        type="button"
+                        onClick={() => removeRosterName('drivers', name)}
+                        className="hover:text-red-500"
+                        disabled={saving}
+                        aria-label={`Remove ${name}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newDriverName}
+                    onChange={(e) => setNewDriverName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        addRosterName('drivers', newDriverName)
+                      }
+                    }}
+                    placeholder="Add driver name"
+                    disabled={saving}
+                    style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                    className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => addRosterName('drivers', newDriverName)}
+                    disabled={saving || !newDriverName.trim()}
+                    className="px-3 py-2 rounded-xl border text-xs font-bold text-[#10B981] border-[#10B981]/30 hover:bg-[#10B981]/5 disabled:opacity-40"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                {editBranchEmployeeOptions.some((e) => isDriverEmployee(e)) && (
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) addRosterName('drivers', e.target.value)
+                    }}
+                    disabled={saving}
+                    style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                    className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] w-full"
+                  >
+                    <option value="">Add from employees…</option>
+                    {editBranchEmployeeOptions
+                      .filter((e) => isDriverEmployee(e))
+                      .map((e) => (
+                        <option key={e.id} value={e.name}>{e.name}</option>
+                      ))}
+                  </select>
+                )}
+              </div>
+
+              {/* Installers roster */}
+              <div className="flex flex-col gap-2 border-t pt-4" style={{ borderColor: border }}>
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  Installers & Technicians ({editRoster.installers.length})
+                </label>
+                <div className="flex flex-wrap gap-1.5 min-h-[28px]">
+                  {editRoster.installers.map((name) => (
+                    <span
+                      key={name}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/40"
+                    >
+                      {name}
+                      <button
+                        type="button"
+                        onClick={() => removeRosterName('installers', name)}
+                        className="hover:text-red-500"
+                        disabled={saving}
+                        aria-label={`Remove ${name}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newInstallerName}
+                    onChange={(e) => setNewInstallerName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        addRosterName('installers', newInstallerName)
+                      }
+                    }}
+                    placeholder="Add installer / technician"
+                    disabled={saving}
+                    style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                    className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => addRosterName('installers', newInstallerName)}
+                    disabled={saving || !newInstallerName.trim()}
+                    className="px-3 py-2 rounded-xl border text-xs font-bold text-[#10B981] border-[#10B981]/30 hover:bg-[#10B981]/5 disabled:opacity-40"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                {editBranchEmployeeOptions.some((e) => isInstallerEmployee(e)) && (
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) addRosterName('installers', e.target.value)
+                    }}
+                    disabled={saving}
+                    style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                    className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] w-full"
+                  >
+                    <option value="">Add from employees…</option>
+                    {editBranchEmployeeOptions
+                      .filter((e) => isInstallerEmployee(e))
+                      .map((e) => (
+                        <option key={e.id} value={e.name}>{e.name}</option>
+                      ))}
+                  </select>
+                )}
+              </div>
+
+              {/* Active Toggle */}
+              <div className="flex items-center justify-between border-t pt-3 mt-1" style={{ borderColor: border }}>
+                <span className="text-xs font-bold" style={{ color: textPrimary }}>Active Operation Status</span>
+                <button
+                  type="button"
+                  onClick={() => setEditForm(prev => ({ ...prev, isActive: !prev.isActive }))}
+                  disabled={saving}
+                  className={`w-10 h-6 rounded-full transition-all relative shrink-0 ${editForm.isActive ? 'bg-[#10B981]' : 'bg-slate-300 dark:bg-slate-800'}`}
+                >
+                  <div 
+                    className="w-4 h-4 rounded-full bg-white absolute top-1 transition-all"
+                    style={{ left: editForm.isActive ? '1.25rem' : '0.25rem' }}
+                  />
+                </button>
+              </div>
+            </div>
+
+            <div className="px-5 py-4 border-t flex justify-end gap-2.5 shrink-0 bg-slate-50/50 dark:bg-slate-900/10" style={{ borderColor: border }}>
+              <button 
+                onClick={() => setEditingBranch(null)}
+                className="px-4 py-2 border rounded-xl text-xs font-bold transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+                style={{ color: textMuted, borderColor: border }}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleSaveEdit}
+                className="px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider text-white hover:opacity-90 transition-all shrink-0 flex items-center gap-1.5"
+                style={{ backgroundColor: '#10B981' }}
+                disabled={saving}
+              >
+                {saving ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </div>

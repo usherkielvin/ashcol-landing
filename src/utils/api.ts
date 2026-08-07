@@ -709,8 +709,8 @@ export function formatRole(role?: string): string {
   const labels: Record<string, string> = {
     admin: 'Admin',
     management: 'Management',
-    manager: 'Office In Charge',
-    oic: 'Office In Charge',
+    manager: 'Officer In Charge',
+    oic: 'Officer In Charge',
     employee: 'Employee',
     staff: 'Staff',
     customer: 'Customer',
@@ -1143,4 +1143,15 @@ export function formatFetchError(err: unknown): string {
   const parsed = extractErrorMessage(err)
   if (parsed) return parsed
   return 'Unknown error'
+}
+
+export async function deleteTicket(id: string): Promise<void> {
+  const token = localStorage.getItem('token')
+  const res = await fetch(`${API_BASE_URL}/tickets/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    throw new Error(await readApiError(res))
+  }
 }

@@ -364,9 +364,9 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
 
           {/* 1. Dealer & transaction */}
           <div>
-            <ESHead step={1} icon={<Store className="w-3.5 h-3.5" />} title="Dealer" subtitle="Where the relay came from" border={border} />
+            <ESHead step={1} icon={<Store className="w-3.5 h-3.5" />} title="Dealer / Store" subtitle="Where the relay came from" border={border} />
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5 sm:gap-4">
-              <EField label="Dealer">
+              <EField label="Dealer / Store">
                 <DealerSelect
                   value={draft.dealerName}
                   dealers={dealers}
@@ -379,7 +379,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                   textMuted={textMuted}
                 />
               </EField>
-              <EField label="Dealer Branch"><input type="text" value={draft.dealerBranch} onChange={(e) => patch({ dealerBranch: e.target.value })} className={relayInput} style={inputStyle} /></EField>
+              <EField label="Dealer / Store Branch"><input type="text" value={draft.dealerBranch} onChange={(e) => patch({ dealerBranch: e.target.value })} className={relayInput} style={inputStyle} /></EField>
               {ROBINSON_APPLIANCES_RE.test(draft.dealerName) && (
                 <EField label="Transaction ID">
                   <input type="text" value={draft.robinsonsTransactionId} onChange={(e) => patch({ robinsonsTransactionId: e.target.value })} className={relayInput} style={inputStyle} autoComplete="off" placeholder="Robinsons Transaction ID" />

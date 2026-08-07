@@ -1,0 +1,703 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Search, X, Loader2, PhoneCall, CheckCircle2, Plus } from 'lucide-react'
+import { useTheme } from '../contexts/ThemeContext'
+import { useAuth } from '../contexts/AuthContext'
+import { API_BASE_URL, getCleanBranchName, isPortalAdmin } from '../utils/api'
+import { monthsSince } from '../utils/ticketHelpers'
+
+export interface HappyCallLead {
+  id: string
+  branchId: string
+  customerName: string
+  address?: string
+  contactPhone?: string
+  brandCapacity?: string
+  unitStatus?: string
+  commitAmount?: number
+  cleaningsCompleted?: number
+  priority?: string
+  contactAttempts?: number
+  lastContactMethod?: string
+  lastContactDate?: string
+  bookingStatus?: string
+  assignedTech?: string
+  notes?: string
+  installedDate?: string
+  sourceTicketId?: string | null
+  scheduledTicketId?: string | null
+  monthsSinceInstall?: number
+}
+
+function authToken(): string {
+  return localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+}
+
+function errMsg(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback
+}
+
+function todayIso(): string {
+  return new Date().toISOString().split('T')[0]
+}
+
+type BranchOption = { id: string; name: string }
+
+async function fetchLeads(token: string, branchId: string): Promise<HappyCallLead[]> {
+  const params = new URLSearchParams()
+  if (branchId) params.set('branchId', branchId)
+  const res = await fetch(`${API_BASE_URL}/happy-calls?${params}`, { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) throw new Error('Failed to load happy call leads')
+  return res.json()
+}
+
+export default function HappyCalls() {
+  const { theme } = useTheme()
+  const { user } = useAuth()
+  const isLight = theme === 'light'
+  const isAdmin = isPortalAdmin(user?.role || '')
+
+  const cardBg = isLight ? '#ffffff' : '#0A1120'
+  const border = isLight ? '#e2e8f0' : '#1E2D48'
+  const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
+  const textMuted = isLight ? '#64748b' : '#7A95B8'
+  const inputBg = isLight ? '#f8fafc' : '#0F1A2E'
+  const inputBorder = isLight ? '#cbd5e1' : '#243452'
+  const theadBg = isLight ? '#f8fafc' : '#0F1A2E'
+  const rowHover = isLight ? '#f8fafc' : '#0F1A2E'
+  const green = '#10B981'
+
+  const [leads, setLeads] = useState<HappyCallLead[]>([])
+  const [branches, setBranches] = useState<BranchOption[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [search, setSearch] = useState('')
+  const [branchFilter, setBranchFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'NOT_CONTACTED' | 'CONTACTED' | 'BOOKED'>('ALL')
+  const [editLead, setEditLead] = useState<HappyCallLead | null>(null)
+  const [bookLead, setBookLead] = useState<HappyCallLead | null>(null)
+  const [addOpen, setAddOpen] = useState(false)
+
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${authToken()}` } })
+        if (!res.ok) return
+        const data = await res.json()
+        const list: { id: string; name: string }[] = data?.data || data || []
+        const options = list
+          .map(b => ({ id: b.id, name: getCleanBranchName(b.name) || b.name }))
+          .sort((a, b) => a.name.localeCompare(b.name))
+        setBranches(options)
+      } catch {
+        // best-effort
+      }
+    })()
+  }, [])
+
+  const loadLeads = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const rows = await fetchLeads(authToken(), branchFilter)
+      setLeads(rows)
+    } catch (err) {
+      setError(errMsg(err, 'Failed to load happy call leads'))
+    } finally {
+      setLoading(false)
+    }
+  }, [branchFilter])
+
+  useEffect(() => { void loadLeads() }, [loadLeads])
+
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return leads.filter(l => {
+      const booked = !!l.scheduledTicketId
+      const contacted = (l.contactAttempts || 0) > 0
+      if (statusFilter === 'BOOKED' && !booked) return false
+      if (statusFilter === 'CONTACTED' && (!contacted || booked)) return false
+      if (statusFilter === 'NOT_CONTACTED' && (contacted || booked)) return false
+      if (!q) return true
+      const blob = [l.customerName, l.address, l.contactPhone, l.brandCapacity, l.assignedTech, l.bookingStatus]
+        .filter(Boolean).join(' ').toLowerCase()
+      return blob.includes(q)
+    })
+  }, [leads, search, statusFilter])
+
+  const patchLead = useCallback(async (id: string, body: Record<string, unknown>) => {
+    const res = await fetch(`${API_BASE_URL}/happy-calls/${id}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${authToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) throw new Error(await res.text().catch(() => 'Failed to update lead'))
+    const updated = await res.json()
+    setLeads(prev => prev.map(l => (l.id === id ? updated : l)))
+  }, [])
+
+  const createLead = useCallback(async (body: Record<string, unknown>) => {
+    const res = await fetch(`${API_BASE_URL}/happy-calls`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${authToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) throw new Error(await res.text().catch(() => 'Failed to add customer'))
+    const created = await res.json()
+    setLeads(prev => [created, ...prev])
+  }, [])
+
+  const bookCleaning = useCallback(async (id: string, body: Record<string, unknown>) => {
+    const res = await fetch(`${API_BASE_URL}/happy-calls/${id}/book`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${authToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) throw new Error(await res.text().catch(() => 'Failed to book cleaning'))
+    const updated = await res.json()
+    setLeads(prev => prev.map(l => (l.id === id ? updated : l)))
+  }, [])
+
+  return (
+    <div className="p-[5px] flex flex-col gap-2 h-full min-h-0">
+      <div className="flex flex-nowrap items-center justify-between gap-2 px-1 py-1 overflow-x-auto no-scrollbar select-none">
+        <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
+          <div className="flex items-center gap-2 w-48 sm:w-56 rounded-lg px-2.5 py-1.5 border shrink-0 h-8" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+            <input
+              type="text"
+              placeholder="Search…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="bg-transparent text-xs outline-none w-full min-w-0"
+              style={{ color: textPrimary }}
+            />
+            {search && <button onClick={() => setSearch('')} style={{ color: textMuted }}><X className="w-3.5 h-3.5" /></button>}
+          </div>
+
+          {isAdmin && (
+            <select
+              value={branchFilter}
+              onChange={e => setBranchFilter(e.target.value)}
+              className="rounded-lg px-2.5 py-1 text-xs font-semibold uppercase border outline-none shrink-0 h-8 cursor-pointer max-w-[150px]"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+            >
+              <option value="">All Branches</option>
+              {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
+            </select>
+          )}
+
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
+            className="rounded-lg px-2.5 py-1 text-xs font-semibold uppercase border outline-none shrink-0 h-8 cursor-pointer"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+          >
+            <option value="ALL">All</option>
+            <option value="NOT_CONTACTED">Not Contacted</option>
+            <option value="CONTACTED">Contacted</option>
+            <option value="BOOKED">Booked</option>
+          </select>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setAddOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-opacity hover:opacity-90 shrink-0 h-8"
+          style={{ backgroundColor: green }}
+        >
+          <Plus className="w-3.5 h-3.5" /> Add Customer
+        </button>
+      </div>
+
+      {error && (
+        <div className="px-4 py-2.5 rounded-lg text-sm font-medium" style={{ backgroundColor: 'rgba(239,68,68,0.08)', color: '#EF4444' }}>
+          {error}
+        </div>
+      )}
+
+      <div style={{ backgroundColor: cardBg, borderColor: border }} className="flex-1 min-h-[70vh] border rounded-xl overflow-auto shadow-sm">
+        <table className="w-full text-left table-fixed min-w-[1180px]">
+          <colgroup>
+            <col className="w-[17%]" />
+            <col className="w-[16%]" />
+            <col className="w-[14%]" />
+            <col className="w-[7%]" />
+            <col className="w-[9%]" />
+            <col className="w-[7%]" />
+            <col className="w-[11%]" />
+            <col className="w-[9%]" />
+            <col className="w-[10%]" />
+          </colgroup>
+          <thead className="sticky top-0 z-10">
+            <tr style={{ backgroundColor: theadBg, color: textMuted, borderBottom: `1px solid ${border}` }} className="text-xs uppercase tracking-wider font-bold select-none">
+              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Customer</th>
+              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Address</th>
+              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Unit</th>
+              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Priority</th>
+              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Progress</th>
+              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Due</th>
+              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Last Contact</th>
+              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Tech</th>
+              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em] text-right" style={{ color: textMuted }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody className="text-sm">
+            {loading ? (
+              <tr><td colSpan={9} className="px-6 py-16 text-center" style={{ color: textMuted }}>
+                <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
+                Loading happy call leads…
+              </td></tr>
+            ) : visible.length === 0 ? (
+              <tr><td colSpan={9} className="px-6 py-16 text-center" style={{ color: textMuted }}>
+                <PhoneCall className="w-7 h-7 mx-auto mb-2 opacity-40" />
+                No happy call leads found.
+              </td></tr>
+            ) : visible.map(l => {
+              const months = l.monthsSinceInstall ?? monthsSince(l.installedDate || '')
+              const booked = !!l.scheduledTicketId
+              const due = months >= 6
+              return (
+                <tr
+                  key={l.id}
+                  style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}`, cursor: 'context-menu' }}
+                  className="transition-colors align-top"
+                  onMouseEnter={el => (el.currentTarget.style.backgroundColor = rowHover)}
+                  onMouseLeave={el => (el.currentTarget.style.backgroundColor = cardBg)}
+                  onContextMenu={(e) => { e.preventDefault(); setEditLead(l) }}
+                >
+                  <td className="px-4 py-3 overflow-hidden">
+                    <div className="text-xs font-bold truncate" style={{ color: textPrimary }} title={l.customerName}>{l.customerName || '—'}</div>
+                    {l.contactPhone && <div className="text-[11px] truncate mt-0.5" style={{ color: textMuted }}>{l.contactPhone}</div>}
+                  </td>
+                  <td className="px-4 py-3 text-xs truncate" style={{ color: textPrimary }} title={l.address}>{l.address || '—'}</td>
+                  <td className="px-4 py-3 overflow-hidden">
+                    <div className="text-xs font-semibold truncate" style={{ color: textPrimary }} title={l.brandCapacity}>{l.brandCapacity || '—'}</div>
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                      {l.unitStatus && (
+                        <Pill isLight={isLight} tone={l.unitStatus === 'FREE' ? 'green' : 'amber'}>
+                          {l.unitStatus.replace('_', ' ')}
+                        </Pill>
+                      )}
+                      {!!l.commitAmount && (
+                        <span className="text-[11px] font-semibold" style={{ color: textMuted }}>₱{l.commitAmount.toLocaleString('en-PH')}</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    {l.priority ? <Pill isLight={isLight} tone="slate">{l.priority}</Pill> : <span className="text-xs" style={{ color: textMuted }}>—</span>}
+                  </td>
+                  <td className="px-4 py-3 text-xs" style={{ color: textPrimary }}>
+                    <div className="flex flex-col gap-0.5">
+                      <span><span className="font-bold">{l.cleaningsCompleted ?? 0}</span> <span style={{ color: textMuted }}>cleaned</span></span>
+                      <span><span className="font-bold">{l.contactAttempts ?? 0}</span> <span style={{ color: textMuted }}>attempts</span></span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Pill isLight={isLight} tone={due ? 'red' : 'slate'}>{months}mo</Pill>
+                  </td>
+                  <td className="px-4 py-3 overflow-hidden">
+                    <div className="text-xs font-semibold truncate" style={{ color: textPrimary }}>{l.lastContactMethod || '—'}</div>
+                    {l.lastContactDate && <div className="text-[11px] truncate mt-0.5" style={{ color: textMuted }}>{l.lastContactDate}</div>}
+                    {l.bookingStatus && (
+                      <div className="text-[11px] truncate mt-1 font-semibold" style={{ color: green }} title={l.bookingStatus}>{l.bookingStatus}</div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-xs truncate" style={{ color: textPrimary }}>{l.assignedTech || '—'}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                      {booked ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold whitespace-nowrap" style={{ color: green }}>
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Booked
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setBookLead(l) }}
+                          className="px-2.5 py-1 rounded-md text-[11px] font-bold text-white transition-opacity hover:opacity-90 whitespace-nowrap"
+                          style={{ backgroundColor: green }}
+                        >
+                          Book
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setEditLead(l) }}
+                        className="px-2.5 py-1 rounded-md text-[11px] font-bold border transition-opacity hover:opacity-90 whitespace-nowrap"
+                        style={{ borderColor: inputBorder, color: textPrimary }}
+                      >
+                        Log
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {editLead && (
+        <EditLeadModal
+          lead={editLead}
+          isLight={isLight}
+          onClose={() => setEditLead(null)}
+          onSave={async (body) => { await patchLead(editLead.id, body); setEditLead(null) }}
+        />
+      )}
+
+      {bookLead && (
+        <BookCleaningModal
+          lead={bookLead}
+          isLight={isLight}
+          onClose={() => setBookLead(null)}
+          onConfirm={async (body) => { await bookCleaning(bookLead.id, body); setBookLead(null) }}
+        />
+      )}
+
+      {addOpen && (
+        <AddLeadModal
+          isLight={isLight}
+          branches={branches}
+          defaultBranchId={user?.branchId || ''}
+          onClose={() => setAddOpen(false)}
+          onCreate={async (body) => { await createLead(body); setAddOpen(false) }}
+        />
+      )}
+    </div>
+  )
+}
+
+const PILL_TONES = {
+  green: { light: { bg: '#ecfdf5', fg: '#059669' }, dark: { bg: 'rgba(16,185,129,0.15)', fg: '#34D399' } },
+  amber: { light: { bg: '#fffbeb', fg: '#b45309' }, dark: { bg: 'rgba(245,158,11,0.15)', fg: '#FBBF24' } },
+  red: { light: { bg: '#fef2f2', fg: '#dc2626' }, dark: { bg: 'rgba(239,68,68,0.15)', fg: '#F87171' } },
+  slate: { light: { bg: '#f1f5f9', fg: '#475569' }, dark: { bg: 'rgba(148,163,184,0.15)', fg: '#94A3B8' } },
+} as const
+
+function Pill({ isLight, tone, children }: { isLight: boolean; tone: keyof typeof PILL_TONES; children: React.ReactNode }) {
+  const { bg, fg } = PILL_TONES[tone][isLight ? 'light' : 'dark']
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide whitespace-nowrap"
+      style={{ backgroundColor: bg, color: fg }}
+    >
+      {children}
+    </span>
+  )
+}
+
+function Field({ label, isLight, children }: { label: string; isLight: boolean; children: React.ReactNode }) {
+  const textMuted = isLight ? '#64748b' : '#7A95B8'
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{label}</span>
+      {children}
+    </label>
+  )
+}
+
+function EditLeadModal({ lead, isLight, onClose, onSave }: {
+  lead: HappyCallLead
+  isLight: boolean
+  onClose: () => void
+  onSave: (body: Record<string, unknown>) => Promise<void>
+}) {
+  const cardBg = isLight ? '#ffffff' : '#0A1120'
+  const border = isLight ? '#e2e8f0' : '#1E2D48'
+  const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
+  const textMuted = isLight ? '#64748b' : '#7A95B8'
+  const inputBg = isLight ? '#f8fafc' : '#0f172a'
+  const inputBorder = isLight ? '#cbd5e1' : '#334155'
+  const inputCls = "rounded-lg px-3 py-2 text-sm border outline-none w-full"
+  const inputStyle = { backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }
+
+  const [contactAttempts, setContactAttempts] = useState(lead.contactAttempts ?? 0)
+  const [lastContactMethod, setLastContactMethod] = useState(lead.lastContactMethod || '')
+  const [lastContactDate, setLastContactDate] = useState(lead.lastContactDate || todayIso())
+  const [bookingStatus, setBookingStatus] = useState(lead.bookingStatus || '')
+  const [unitStatus, setUnitStatus] = useState(lead.unitStatus || '')
+  const [priority, setPriority] = useState(lead.priority || '')
+  const [assignedTech, setAssignedTech] = useState(lead.assignedTech || '')
+  const [notes, setNotes] = useState(lead.notes || '')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  const submit = async () => {
+    setSaving(true)
+    setErr('')
+    try {
+      await onSave({
+        contactAttempts,
+        lastContactMethod: lastContactMethod.trim() || null,
+        lastContactDate: lastContactDate || null,
+        bookingStatus: bookingStatus.trim() || null,
+        unitStatus: unitStatus || null,
+        priority: priority.trim() || null,
+        assignedTech: assignedTech.trim() || null,
+        notes: notes.trim() || null,
+      })
+    } catch (e) {
+      setErr(errMsg(e, 'Failed to save lead'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div className="w-full max-w-lg rounded-2xl shadow-xl max-h-[85vh] overflow-y-auto" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: border }}>
+          <div>
+            <h2 className="text-sm font-black uppercase tracking-wider" style={{ color: textPrimary }}>Log Contact</h2>
+            <p className="text-xs mt-0.5" style={{ color: textMuted }}>{lead.customerName}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" style={{ color: textMuted }}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5 grid grid-cols-2 gap-3">
+          <Field label="Contact Attempts" isLight={isLight}>
+            <input type="number" min={0} value={contactAttempts} onChange={e => setContactAttempts(Number(e.target.value))} className={inputCls} style={inputStyle} />
+          </Field>
+          <Field label="Last Contact Method" isLight={isLight}>
+            <input type="text" value={lastContactMethod} onChange={e => setLastContactMethod(e.target.value)} placeholder="CALL / SMS / VIBER" className={inputCls} style={inputStyle} />
+          </Field>
+          <Field label="Last Contact Date" isLight={isLight}>
+            <input type="date" value={lastContactDate} onChange={e => setLastContactDate(e.target.value)} className={inputCls} style={inputStyle} />
+          </Field>
+          <Field label="Unit Status" isLight={isLight}>
+            <select value={unitStatus} onChange={e => setUnitStatus(e.target.value)} className={inputCls} style={inputStyle}>
+              <option value="">—</option>
+              <option value="FREE">FREE</option>
+              <option value="WITH_CHARGE">WITH CHARGE</option>
+            </select>
+          </Field>
+          <Field label="Priority" isLight={isLight}>
+            <input type="text" value={priority} onChange={e => setPriority(e.target.value)} className={inputCls} style={inputStyle} />
+          </Field>
+          <Field label="Assigned Tech" isLight={isLight}>
+            <input type="text" value={assignedTech} onChange={e => setAssignedTech(e.target.value)} className={inputCls} style={inputStyle} />
+          </Field>
+          <div className="col-span-2">
+            <Field label="Booking Status" isLight={isLight}>
+              <input type="text" value={bookingStatus} onChange={e => setBookingStatus(e.target.value)} placeholder='e.g. "FOR BOOKING AUGUST 8"' className={inputCls} style={inputStyle} />
+            </Field>
+          </div>
+          <div className="col-span-2">
+            <Field label="Notes" isLight={isLight}>
+              <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} className={`${inputCls} resize-none`} style={inputStyle} />
+            </Field>
+          </div>
+        </div>
+
+        {err && <p className="px-5 text-xs font-medium" style={{ color: '#EF4444' }}>{err}</p>}
+
+        <div className="flex items-center justify-end gap-2 px-5 pb-5 pt-1">
+          <button onClick={onClose} disabled={saving} className="px-4 py-2 rounded-lg text-xs font-bold border disabled:opacity-50" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+            Cancel
+          </button>
+          <button onClick={() => void submit()} disabled={saving} className="px-4 py-2 rounded-lg text-xs font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50" style={{ backgroundColor: '#10B981' }}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BookCleaningModal({ lead, isLight, onClose, onConfirm }: {
+  lead: HappyCallLead
+  isLight: boolean
+  onClose: () => void
+  onConfirm: (body: Record<string, unknown>) => Promise<void>
+}) {
+  const cardBg = isLight ? '#ffffff' : '#0A1120'
+  const border = isLight ? '#e2e8f0' : '#1E2D48'
+  const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
+  const textMuted = isLight ? '#64748b' : '#7A95B8'
+  const inputBg = isLight ? '#f8fafc' : '#0f172a'
+  const inputBorder = isLight ? '#cbd5e1' : '#334155'
+
+  const [scheduledDate, setScheduledDate] = useState(todayIso())
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  const submit = async () => {
+    setSaving(true)
+    setErr('')
+    try {
+      await onConfirm({ scheduledDate, notes: notes.trim() })
+    } catch (e) {
+      setErr(errMsg(e, 'Failed to book cleaning'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div className="w-full max-w-sm rounded-2xl shadow-xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: border }}>
+          <div>
+            <h2 className="text-sm font-black uppercase tracking-wider" style={{ color: textPrimary }}>Book Cleaning</h2>
+            <p className="text-xs mt-0.5" style={{ color: textMuted }}>{lead.customerName}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" style={{ color: textMuted }}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5 flex flex-col gap-3">
+          <Field label="Scheduled Date" isLight={isLight}>
+            <input type="date" value={scheduledDate} onChange={e => setScheduledDate(e.target.value)} className="rounded-lg px-3 py-2 text-sm border outline-none" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+          </Field>
+          <Field label="Notes" isLight={isLight}>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Optional notes…" className="rounded-lg px-3 py-2 text-sm border outline-none resize-none" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }} />
+          </Field>
+
+          {err && <p className="text-xs font-medium" style={{ color: '#EF4444' }}>{err}</p>}
+
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button onClick={onClose} disabled={saving} className="px-4 py-2 rounded-lg text-xs font-bold border disabled:opacity-50" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+              Cancel
+            </button>
+            <button onClick={() => void submit()} disabled={saving || !scheduledDate} className="px-4 py-2 rounded-lg text-xs font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50" style={{ backgroundColor: '#10B981' }}>
+              {saving ? 'Booking…' : 'Confirm'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AddLeadModal({ isLight, branches, defaultBranchId, onClose, onCreate }: {
+  isLight: boolean
+  branches: BranchOption[]
+  defaultBranchId: string
+  onClose: () => void
+  onCreate: (body: Record<string, unknown>) => Promise<void>
+}) {
+  const cardBg = isLight ? '#ffffff' : '#0A1120'
+  const border = isLight ? '#e2e8f0' : '#1E2D48'
+  const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
+  const textMuted = isLight ? '#64748b' : '#7A95B8'
+  const inputBg = isLight ? '#f8fafc' : '#0f172a'
+  const inputBorder = isLight ? '#cbd5e1' : '#334155'
+  const inputCls = "rounded-lg px-3 py-2 text-sm border outline-none w-full"
+  const inputStyle = { backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }
+
+  const [customerName, setCustomerName] = useState('')
+  const [address, setAddress] = useState('')
+  const [contactPhone, setContactPhone] = useState('')
+  const [brandCapacity, setBrandCapacity] = useState('')
+  const [unitStatus, setUnitStatus] = useState('')
+  const [installedDate, setInstalledDate] = useState('')
+  const [branchId, setBranchId] = useState(defaultBranchId)
+  const [priority, setPriority] = useState('')
+  const [assignedTech, setAssignedTech] = useState('')
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  const submit = async () => {
+    if (!customerName.trim() || !branchId) {
+      setErr('Customer name and branch are required')
+      return
+    }
+    setSaving(true)
+    setErr('')
+    try {
+      await onCreate({
+        customerName: customerName.trim(),
+        address: address.trim() || null,
+        contactPhone: contactPhone.trim() || null,
+        brandCapacity: brandCapacity.trim() || null,
+        unitStatus: unitStatus || null,
+        installedDate: installedDate || null,
+        branchId,
+        priority: priority.trim() || null,
+        assignedTech: assignedTech.trim() || null,
+        notes: notes.trim() || null,
+      })
+    } catch (e) {
+      setErr(errMsg(e, 'Failed to add customer'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div className="w-full max-w-lg rounded-2xl shadow-xl max-h-[85vh] overflow-y-auto" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: border }}>
+          <h2 className="text-sm font-black uppercase tracking-wider" style={{ color: textPrimary }}>Add Customer</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" style={{ color: textMuted }}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5 grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <Field label="Customer Name" isLight={isLight}>
+              <input type="text" value={customerName} onChange={e => setCustomerName(e.target.value)} className={inputCls} style={inputStyle} />
+            </Field>
+          </div>
+          <div className="col-span-2">
+            <Field label="Address" isLight={isLight}>
+              <input type="text" value={address} onChange={e => setAddress(e.target.value)} className={inputCls} style={inputStyle} />
+            </Field>
+          </div>
+          <Field label="Phone" isLight={isLight}>
+            <input type="text" value={contactPhone} onChange={e => setContactPhone(e.target.value)} className={inputCls} style={inputStyle} />
+          </Field>
+          <Field label="Brand/Capacity" isLight={isLight}>
+            <input type="text" value={brandCapacity} onChange={e => setBrandCapacity(e.target.value)} className={inputCls} style={inputStyle} />
+          </Field>
+          <Field label="Branch" isLight={isLight}>
+            <select value={branchId} onChange={e => setBranchId(e.target.value)} className={inputCls} style={inputStyle}>
+              <option value="">Select branch…</option>
+              {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
+            </select>
+          </Field>
+          <Field label="Unit Status" isLight={isLight}>
+            <select value={unitStatus} onChange={e => setUnitStatus(e.target.value)} className={inputCls} style={inputStyle}>
+              <option value="">—</option>
+              <option value="FREE">FREE</option>
+              <option value="WITH_CHARGE">WITH CHARGE</option>
+            </select>
+          </Field>
+          <Field label="Installed Date" isLight={isLight}>
+            <input type="date" value={installedDate} onChange={e => setInstalledDate(e.target.value)} className={inputCls} style={inputStyle} />
+          </Field>
+          <Field label="Priority" isLight={isLight}>
+            <input type="text" value={priority} onChange={e => setPriority(e.target.value)} className={inputCls} style={inputStyle} />
+          </Field>
+          <div className="col-span-2">
+            <Field label="Assigned Tech" isLight={isLight}>
+              <input type="text" value={assignedTech} onChange={e => setAssignedTech(e.target.value)} className={inputCls} style={inputStyle} />
+            </Field>
+          </div>
+          <div className="col-span-2">
+            <Field label="Notes" isLight={isLight}>
+              <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} className={`${inputCls} resize-none`} style={inputStyle} />
+            </Field>
+          </div>
+        </div>
+
+        {err && <p className="px-5 text-xs font-medium" style={{ color: '#EF4444' }}>{err}</p>}
+
+        <div className="flex items-center justify-end gap-2 px-5 pb-5 pt-1">
+          <button onClick={onClose} disabled={saving} className="px-4 py-2 rounded-lg text-xs font-bold border disabled:opacity-50" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+            Cancel
+          </button>
+          <button onClick={() => void submit()} disabled={saving} className="px-4 py-2 rounded-lg text-xs font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50" style={{ backgroundColor: '#10B981' }}>
+            {saving ? 'Adding…' : 'Add'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

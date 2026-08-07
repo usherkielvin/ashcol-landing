@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react'
 import ReactDOM from 'react-dom'
-import { X, Edit3, Clock, ChevronDown, Loader2, ClipboardList } from 'lucide-react'
+import { X, Edit3, Clock, ChevronDown, Loader2, ClipboardList, Trash2 } from 'lucide-react'
 import { ConfirmationChecklistModal, isChecklistFilled } from './ConfirmationChecklistModal'
 import { EmployeeNameLink } from '../EmployeeNameLink'
 import { EMPTY_CELL } from '../../utils/textSanitize'
 import { ROBINSON_APPLIANCES_RE } from '../../utils/dealer'
 import type { AuthUser } from '../../contexts/AuthContext'
-import type { BranchStaffOption } from '../../utils/api'
+import { isPortalAdmin, type BranchStaffOption } from '../../utils/api'
 import {
   type Ticket,
   getScheduleStatusValue,
@@ -83,6 +83,7 @@ export function TicketDetailsModal({
   onToggleHistory,
   onHideHistory,
   onEdit,
+  onDelete,
   onUpdateTicket,
 }: {
   ticket: Ticket
@@ -103,10 +104,12 @@ export function TicketDetailsModal({
   onToggleHistory: () => void
   onHideHistory: () => void
   onEdit: () => void
+  onDelete?: () => void
   onUpdateTicket?: (updatedTicket: Ticket) => void
 }) {
   const [currentTicket, setCurrentTicket] = useState<Ticket>(ticket)
   const [showChecklist, setShowChecklist] = useState(false)
+  const isAdmin = isPortalAdmin(user?.role)
 
   useEffect(() => {
     setCurrentTicket(ticket)
@@ -236,6 +239,18 @@ export function TicketDetailsModal({
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 )}
               </button>
+              {onDelete && (
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  className="p-2 shrink-0 rounded-xl border transition-colors hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-500"
+                  style={{ borderColor: border, backgroundColor: inputBg, color: textMuted }}
+                  aria-label="Delete ticket"
+                  title="Delete ticket"
+                >
+                  <Trash2 className="w-4.5 h-4.5" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onClose}
@@ -374,11 +389,22 @@ export function TicketDetailsModal({
                   <button
                     type="button"
                     onClick={onEdit}
-                    className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold border transition-all"
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold border transition-all hover:bg-indigo-500/10"
                     style={{ borderColor: inputBorder, color: textPrimary, backgroundColor: inputBg }}
                   >
                     <Edit3 className="w-3.5 h-3.5" style={{ color: '#6366F1' }} />
                     Edit Details
+                  </button>
+                )}
+                {isAdmin && onDelete && (
+                  <button
+                    type="button"
+                    onClick={onDelete}
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold border transition-all hover:bg-red-500/10 hover:border-red-500/30"
+                    style={{ borderColor: inputBorder, color: '#EF4444', backgroundColor: inputBg }}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                    Delete Ticket
                   </button>
                 )}
               </div>
