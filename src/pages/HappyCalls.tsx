@@ -86,7 +86,7 @@ export default function HappyCalls() {
   const [search, setSearch] = useState('')
   const [branchFilter, setBranchFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'NOT_CONTACTED' | 'CONTACTED' | 'BOOKED'>('ALL')
-  const [dueFilter, setDueFilter] = useState<'ALL' | '3M' | '6M'>('ALL')
+  const [dueFilter, setDueFilter] = useState<'3M' | '6M'>('6M')
   const [editLead, setEditLead] = useState<HappyCallLead | null>(null)
   const [bookLead, setBookLead] = useState<HappyCallLead | null>(null)
   const [addOpen, setAddOpen] = useState(false)
@@ -146,8 +146,8 @@ export default function HappyCalls() {
       if (statusFilter === 'CONTACTED' && (!contacted || booked)) return false
       if (statusFilter === 'NOT_CONTACTED' && (contacted || booked)) return false
       const months = l.monthsSinceInstall
-      if (dueFilter === '3M' && (months == null || months < 3)) return false
-      if (dueFilter === '6M' && (months == null || months < 6)) return false
+      const dueThreshold = dueFilter === '3M' ? 3 : 6
+      if (months == null || months < dueThreshold) return false
       if (!q) return true
       const bLabel = getBranchLabel(l.branchId)
       const blob = [l.customerName, l.ticketNumber, bLabel, l.address, l.contactPhone, l.brandCapacity, l.bookingStatus]
@@ -236,7 +236,6 @@ export default function HappyCalls() {
             className="rounded-lg px-2.5 py-1 text-xs font-bold uppercase border outline-none shrink-0 h-8 cursor-pointer"
             style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
           >
-            <option value="ALL">ANY TIME SINCE INSTALL</option>
             <option value="3M">3+ MONTHS SINCE INSTALL</option>
             <option value="6M">6+ MONTHS SINCE INSTALL</option>
           </select>
