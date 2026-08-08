@@ -315,7 +315,6 @@ export default function HappyCalls() {
                 lastContactDateStr || null,
                 l.bookingStatus ? l.bookingStatus.trim().toUpperCase() : null,
               ].filter(Boolean)
-              const lastContactText = contactParts.length > 0 ? contactParts.join(' - ') : 'NA'
 
               const unitParts = [
                 l.brandCapacity ? l.brandCapacity.trim() : null,
