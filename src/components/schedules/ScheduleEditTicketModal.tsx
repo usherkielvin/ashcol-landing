@@ -390,6 +390,7 @@ export function ScheduleEditTicketModal({
                       <option value="BANK TRANSFER">BANK TRANSFER</option>
                       <option value="GCASH">GCASH</option>
                       <option value="CHEQUE">CHEQUE</option>
+                      <option value="FOR COLLECTION">FOR COLLECTION</option>
                       <option value="FREE INSTALL">FREE INSTALL</option>
                       <option value="PENDING">PENDING</option>
                     </select>

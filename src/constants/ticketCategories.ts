@@ -148,6 +148,10 @@ export function resolveScheduleStatusFields(rawValue: string): ResolvedScheduleS
       return { status: 'PENDING_APPROVAL', scheduleOutcome: '' }
     case 'FOR_NEGOTIATION':
       return { status: 'FOR_NEGOTIATION', scheduleOutcome: '' }
+    case 'DONE_NEGOTIATION':
+      return { status: 'COMPLETED', scheduleOutcome: 'DONE_NEGOTIATION' }
+    case 'FOR_COLLECTION':
+      return { status: 'FOR_COLLECTION', scheduleOutcome: '' }
     case 'CONTINUATION':
       return { status: 'CONTINUATION', scheduleOutcome: '' }
     case 'CANCELLED':

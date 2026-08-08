@@ -24,6 +24,7 @@ export interface HappyCallLead {
   notes?: string
   installedDate?: string
   sourceTicketId?: string | null
+  ticketNumber?: string | null
   scheduledTicketId?: string | null
   monthsSinceInstall?: number
 }
@@ -85,6 +86,7 @@ export default function HappyCalls() {
   const [search, setSearch] = useState('')
   const [branchFilter, setBranchFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'NOT_CONTACTED' | 'CONTACTED' | 'BOOKED'>('ALL')
+  const [dueFilter, setDueFilter] = useState<'ALL' | '3M' | '6M'>('ALL')
   const [editLead, setEditLead] = useState<HappyCallLead | null>(null)
   const [bookLead, setBookLead] = useState<HappyCallLead | null>(null)
   const [addOpen, setAddOpen] = useState(false)
@@ -143,13 +145,16 @@ export default function HappyCalls() {
       if (statusFilter === 'BOOKED' && !booked) return false
       if (statusFilter === 'CONTACTED' && (!contacted || booked)) return false
       if (statusFilter === 'NOT_CONTACTED' && (contacted || booked)) return false
+      const months = l.monthsSinceInstall
+      if (dueFilter === '3M' && (months == null || months < 3)) return false
+      if (dueFilter === '6M' && (months == null || months < 6)) return false
       if (!q) return true
       const bLabel = getBranchLabel(l.branchId)
-      const blob = [l.customerName, bLabel, l.address, l.contactPhone, l.brandCapacity, l.bookingStatus]
+      const blob = [l.customerName, l.ticketNumber, bLabel, l.address, l.contactPhone, l.brandCapacity, l.bookingStatus]
         .filter(Boolean).join(' ').toLowerCase()
       return blob.includes(q)
     })
-  }, [leads, search, statusFilter, getBranchLabel])
+  }, [leads, search, statusFilter, dueFilter, getBranchLabel])
 
   const patchLead = useCallback(async (id: string, body: Record<string, unknown>) => {
     const res = await fetch(`${API_BASE_URL}/happy-calls/${id}`, {
@@ -224,6 +229,17 @@ export default function HappyCalls() {
             <option value="CONTACTED">CONTACTED</option>
             <option value="BOOKED">BOOKED</option>
           </select>
+
+          <select
+            value={dueFilter}
+            onChange={e => setDueFilter(e.target.value as typeof dueFilter)}
+            className="rounded-lg px-2.5 py-1 text-xs font-bold uppercase border outline-none shrink-0 h-8 cursor-pointer"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+          >
+            <option value="ALL">ANY TIME SINCE INSTALL</option>
+            <option value="3M">3+ MONTHS SINCE INSTALL</option>
+            <option value="6M">6+ MONTHS SINCE INSTALL</option>
+          </select>
         </div>
 
         <button
@@ -243,33 +259,39 @@ export default function HappyCalls() {
       )}
 
       <div style={{ backgroundColor: cardBg, borderColor: border }} className="flex-1 min-h-0 border rounded-xl overflow-auto shadow-sm flex flex-col">
-        <table className="w-full text-left table-fixed min-w-[1000px] border-collapse">
+        <table className="w-full text-left table-fixed min-w-[1240px] border-collapse">
           <colgroup>
-            <col className="w-[22%]" />
-            <col className="w-[14%]" />
-            <col className="w-[26%]" />
-            <col className="w-[18%]" />
-            <col className="w-[12%]" />
+            <col className="w-[15%]" />
+            <col className="w-[9%]" />
+            <col className="w-[10%]" />
+            <col className="w-[15%]" />
+            <col className="w-[11%]" />
+            <col className="w-[11%]" />
+            <col className="w-[10%]" />
+            <col className="w-[11%]" />
             <col className="w-[8%]" />
           </colgroup>
           <thead className="sticky top-0 z-10">
             <tr style={{ backgroundColor: theadBg, color: textMuted, borderBottom: `1px solid ${border}` }} className="text-xs uppercase tracking-wider font-bold select-none">
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>CUSTOMER</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>TICKET NO.</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>BRANCH</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>ADDRESS</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>CONTACT</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>UNIT</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>INSTALLED</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>LAST CONTACT</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em] text-right" style={{ color: textMuted }}>ACTIONS</th>
             </tr>
           </thead>
           <tbody className="text-xs">
             {loading ? (
-              <tr><td colSpan={6} className="px-6 py-16 text-center font-bold uppercase" style={{ color: textMuted }}>
+              <tr><td colSpan={9} className="px-6 py-16 text-center font-bold uppercase" style={{ color: textMuted }}>
                 <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
                 LOADING HAPPY CALL LEADS…
               </td></tr>
             ) : visible.length === 0 ? (
-              <tr><td colSpan={6} className="px-6 py-16 text-center font-bold uppercase" style={{ color: textMuted }}>
+              <tr><td colSpan={9} className="px-6 py-16 text-center font-bold uppercase" style={{ color: textMuted }}>
                 <PhoneCall className="w-7 h-7 mx-auto mb-2 opacity-40" />
                 NO HAPPY CALL LEADS FOUND.
               </td></tr>
@@ -290,6 +312,11 @@ export default function HappyCalls() {
               ].filter(Boolean).map(s => String(s).toUpperCase())
               const unitText = unitParts.length > 0 ? unitParts.join(' ') : 'NA'
 
+              const installedDateStr = formatLastContactDate(l.installedDate)
+              const installedText = installedDateStr
+                ? `${installedDateStr}${l.monthsSinceInstall != null ? ` (${l.monthsSinceInstall}MO)` : ''}`
+                : 'NA'
+
               return (
                 <tr
                   key={l.id}
@@ -303,11 +330,20 @@ export default function HappyCalls() {
                     <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.customerName}>{l.customerName ? l.customerName.toUpperCase() : 'NA'}</div>
                   </td>
                   <td className="px-3 py-2.5 overflow-hidden">
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.ticketNumber || ''}>{l.ticketNumber ? l.ticketNumber.toUpperCase() : 'NA'}</div>
+                  </td>
+                  <td className="px-3 py-2.5 overflow-hidden">
                     <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={getBranchLabel(l.branchId)}>{getBranchLabel(l.branchId)}</div>
                   </td>
                   <td className="px-3 py-2.5 text-xs font-semibold uppercase truncate" style={{ color: textPrimary }} title={l.address}>{l.address ? l.address.toUpperCase() : 'NA'}</td>
                   <td className="px-3 py-2.5 overflow-hidden">
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.contactPhone || ''}>{l.contactPhone || 'NA'}</div>
+                  </td>
+                  <td className="px-3 py-2.5 overflow-hidden">
                     <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={unitText}>{unitText}</div>
+                  </td>
+                  <td className="px-3 py-2.5 overflow-hidden">
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={installedText}>{installedText}</div>
                   </td>
                   <td className="px-3 py-2.5 overflow-hidden">
                     <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={lastContactText}>{lastContactText}</div>

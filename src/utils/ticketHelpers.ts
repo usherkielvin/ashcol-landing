@@ -150,7 +150,7 @@ export const STATUS_OPTS = [
   'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR_APPROVAL', 'SURVEY',
   'INSTALLED', 'COMPLETED', 'CONTINUATION',
   'SYSTEM_REPROCESS', 'DONE_SYSTEM_REPROCESS', 'DISMANTLE', 'DONE_DISMANTLE', 'PENDING_APPROVAL',
-  'FOR_NEGOTIATION',
+  'FOR_NEGOTIATION', 'DONE_NEGOTIATION', 'FOR_COLLECTION',
 ]
 export const TABLE_ROW_HEIGHT = 50
 
@@ -160,7 +160,7 @@ export function isInstalledWorkflowStatus(status?: string | null): boolean {
   return s === 'INSTALLED' || s === 'COMPLETED'
 }
 
-export type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY' | 'DONE_CHECKUP' | 'DONE_BACKJOB' | 'DONE_SERVICE' | 'DONE_SYSTEM_REPROCESS' | 'DONE_DISMANTLE' | 'DONE_QUOTATION'
+export type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY' | 'DONE_CHECKUP' | 'DONE_BACKJOB' | 'DONE_SERVICE' | 'DONE_NEGOTIATION' | 'DONE_SYSTEM_REPROCESS' | 'DONE_DISMANTLE' | 'DONE_QUOTATION'
 export type ScheduleStatusGroup = 'pending' | 'closing'
 
 export const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatusGroup }[] = [
@@ -177,6 +177,7 @@ export const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: Schedu
   { value: 'FOR_APPROVAL', label: 'FOR QUOTATION', group: 'pending' },
   { value: 'PENDING_APPROVAL', label: 'PENDING APPROVAL', group: 'pending' },
   { value: 'FOR_NEGOTIATION', label: 'FOR NEGOTIATION', group: 'pending' },
+  { value: 'FOR_COLLECTION', label: 'FOR COLLECTION', group: 'pending' },
   { value: 'SYSTEM_REPROCESS', label: 'SYSTEM REPROCESS', group: 'pending' },
   { value: 'DISMANTLE', label: 'DISMANTLE', group: 'pending' },
   // Closing
@@ -186,6 +187,7 @@ export const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: Schedu
   { value: 'DONE_CHECKUP', label: 'DONE CHECKUP', group: 'closing' },
   { value: 'DONE_BACKJOB', label: 'DONE BACKJOB', group: 'closing' },
   { value: 'DONE_SERVICE', label: 'DONE SERVICE', group: 'closing' },
+  { value: 'DONE_NEGOTIATION', label: 'DONE NEGOTIATION', group: 'closing' },
   { value: 'DONE_SYSTEM_REPROCESS', label: 'DONE SYSTEM REPROCESS', group: 'closing' },
   { value: 'DONE_DISMANTLE', label: 'DONE DISMANTLE', group: 'closing' },
   { value: 'DONE_QUOTATION', label: 'DONE QUOTATION', group: 'closing' },
@@ -196,7 +198,7 @@ export const SCHEDULE_PENDING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group ==
 export const SCHEDULE_CLOSING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group === 'closing')
 export const CLOSING_SCHEDULE_STATUSES = new Set([
   'DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB', 'DONE_SERVICE',
-  'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE', 'DONE_QUOTATION',
+  'DONE_NEGOTIATION', 'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE', 'DONE_QUOTATION',
 ])
 export const SCHEDULE_PENDING_STATUS_VALUES = new Set(SCHEDULE_PENDING_OPTS.map(o => o.value))
 export const SCHEDULE_CLOSING_STATUS_VALUES = new Set(SCHEDULE_CLOSING_OPTS.map(o => o.value))
@@ -255,13 +257,17 @@ export function getScheduleStatusBadgeStyle(value: string, isLight: boolean, isO
   if (normalized === 'FOR_NEGOTIATION') {
     return { color: isLight ? '#7c3aed' : '#c084fc', backgroundColor: isLight ? '#f3e8ff' : 'rgba(124,58,237,0.18)', borderColor: isLight ? '#c084fc' : 'rgba(124,58,237,0.35)' }
   }
+  if (normalized === 'FOR_COLLECTION') {
+    return { color: isLight ? '#059669' : '#34d399', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.18)', borderColor: isLight ? '#34d399' : 'rgba(16,185,129,0.35)' }
+  }
   if (
     normalized === 'DONE_INSTALLED' ||
     normalized === 'INSTALLED' ||
     normalized === 'COMPLETED' ||
     normalized === 'DONE_CLEANING' ||
     normalized === 'DONE_QUOTATION' ||
-    normalized === 'DONE_SERVICE'
+    normalized === 'DONE_SERVICE' ||
+    normalized === 'DONE_NEGOTIATION'
   ) {
     return { color: isLight ? '#15803d' : '#86efac', backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.18)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)' }
   }
@@ -281,11 +287,12 @@ export function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | n
     || explicit === 'DONE_CHECKUP'
     || explicit === 'DONE_BACKJOB'
     || explicit === 'DONE_SERVICE'
+    || explicit === 'DONE_NEGOTIATION'
     || explicit === 'DONE_SYSTEM_REPROCESS'
     || explicit === 'DONE_DISMANTLE'
     || explicit === 'DONE_QUOTATION'
   ) {
-    return explicit
+    return explicit as ScheduleOutcome
   }
   const remarks = ticketRemarksText(ticket as Ticket).toLowerCase()
   const stat = String(ticket.status || '').toUpperCase()
@@ -299,6 +306,7 @@ export function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | n
   if (stat === 'SURVEY' && /done.*survey|survey.*done|surveyed/i.test(remarks)) return 'DONE_SURVEY'
   if (stat === 'DONE_SYSTEM_REPROCESS') return 'DONE_SYSTEM_REPROCESS'
   if (stat === 'DONE_DISMANTLE') return 'DONE_DISMANTLE'
+  if (stat === 'DONE_NEGOTIATION') return 'DONE_NEGOTIATION'
   return null
 }
 
@@ -318,6 +326,8 @@ export function getScheduleStatusValue(ticket: Ticket): string {
   if (phase === 'DISMANTLE') return 'DISMANTLE'
   if (phase === 'PENDING_APPROVAL') return 'PENDING_APPROVAL'
   if (phase === 'FOR_NEGOTIATION') return 'FOR_NEGOTIATION'
+  if (phase === 'DONE_NEGOTIATION') return 'DONE_NEGOTIATION'
+  if (phase === 'FOR_COLLECTION') return 'FOR_COLLECTION'
 
   let stat = (ticket.status || 'SCHEDULED').toUpperCase().replace(/\s+/g, '_')
   if (stat === 'S/I' || stat === 'S_I' || stat === 'SI') return 'S/I'
@@ -330,6 +340,8 @@ export function getScheduleStatusValue(ticket: Ticket): string {
   if (stat === 'FOR_APPROVAL') return 'FOR_APPROVAL'
   if (stat === 'PENDING_APPROVAL') return 'PENDING_APPROVAL'
   if (stat === 'FOR_NEGOTIATION') return 'FOR_NEGOTIATION'
+  if (stat === 'DONE_NEGOTIATION') return 'DONE_NEGOTIATION'
+  if (stat === 'FOR_COLLECTION') return 'FOR_COLLECTION'
   if (stat === 'CONTINUATION') return 'CONTINUATION'
   if (stat === 'SYSTEM_REPROCESS') return 'SYSTEM_REPROCESS'
   if (stat === 'DONE_SYSTEM_REPROCESS') return 'DONE_SYSTEM_REPROCESS'
@@ -631,6 +643,12 @@ export function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string):
     acUpdates.scheduleOutcome = ''
   } else if (val === 'FOR_NEGOTIATION') {
     body.status = 'FOR_NEGOTIATION'
+    acUpdates.scheduleOutcome = ''
+  } else if (val === 'DONE_NEGOTIATION') {
+    body.status = 'COMPLETED'
+    acUpdates.scheduleOutcome = 'DONE_NEGOTIATION'
+  } else if (val === 'FOR_COLLECTION') {
+    body.status = 'FOR_COLLECTION'
     acUpdates.scheduleOutcome = ''
   } else if (val === 'CONTINUATION') {
     body.status = 'CONTINUATION'
