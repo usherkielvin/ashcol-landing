@@ -5366,17 +5366,17 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           </button>
         )
       }
-      const finalDateColor = isPendingRow ? '#ffffff' : (hasDate ? green : textMuted)
+      const finalDateColor = isPendingRow ? '#ffffff' : (hasDate ? green : (isLight ? '#D97706' : '#FACC15'))
       return withEditPencil(
         <span
           style={{
             ...truncStyle,
-            fontWeight: hasDate ? 700 : 500,
+            fontWeight: hasDate ? 700 : 700,
             color: finalDateColor,
           }}
           title={val}
         >
-          {val || EMPTY_CELL}
+          {val || 'N/A'}
         </span>,
         ticket, label, rowGhost, rowIndex,
       )
@@ -5397,13 +5397,14 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       // suffix some older tickets still carry — trip numbering now lives on VEHICLE only.
       // Use .label (not .name) so "MANNY / ROMAR - 2" keeps both names.
       const driverName = parseNameSiteToken(val).label || val
+      const isDriverEmpty = !driverName || driverName === EMPTY_CELL || driverName === '—'
       return withEditPencil(
         <span
           className="block w-full text-center font-bold tracking-wide uppercase leading-tight"
-          style={{ color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }}
+          style={{ color: isDriverEmpty ? (isPendingRow ? '#FDE047' : (isLight ? '#D97706' : '#FACC15')) : ghostMuted, opacity: rowGhost ? 0.72 : 1 }}
           title={driverName}
         >
-          {driverName || EMPTY_CELL}
+          {isDriverEmpty ? 'N/A' : driverName}
         </span>,
         ticket, label, rowGhost, rowIndex,
       )
@@ -5423,9 +5424,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         return (
           <span
             className="block w-full text-center font-bold tracking-wide uppercase leading-tight rounded"
-            style={{ color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }}
+            style={{ color: isPendingRow ? '#FDE047' : (isLight ? '#D97706' : '#FACC15'), opacity: rowGhost ? 0.72 : 1 }}
           >
-            {EMPTY_CELL}
+            N/A
           </span>
         )
       }
@@ -5766,18 +5767,29 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
     if (label === 'NEGOTIATOR') {
       const negName = getTicketNegotiatorName(ticket, branchEmployees) || EMPTY_CELL
+      const isNegEmpty = !negName || negName === EMPTY_CELL || negName === '—'
       return withEditPencil(
         <div className="flex flex-col items-center justify-center text-center">
-          <span style={{ ...truncStyle, fontWeight: 600 }} title={negName}>
-            {negName !== EMPTY_CELL ? <EmployeeNameLink nameOrId={negName} /> : negName}
+          <span style={{ ...truncStyle, fontWeight: isNegEmpty ? 700 : 600, color: isNegEmpty ? (isPendingRow ? '#FDE047' : (isLight ? '#D97706' : '#FACC15')) : undefined }} title={negName}>
+            {!isNegEmpty ? <EmployeeNameLink nameOrId={negName} /> : 'N/A'}
           </span>
         </div>,
         ticket, label, rowGhost, rowIndex,
       )
     }
 
+    const isValEmpty = !val || val === '—' || val === '\u2014' || val === EMPTY_CELL
+    if (isValEmpty) {
+      return withEditPencil(
+        <span style={{ ...truncStyle, color: isPendingRow ? '#FDE047' : (isLight ? '#D97706' : '#FACC15'), fontWeight: 700 }} title="N/A">
+          N/A
+        </span>,
+        ticket, label, rowGhost,
+      )
+    }
+
     return withEditPencil(
-      <span style={truncStyle} title={val}>{val || (label === 'UPDATE' || label === 'SERVICE' ? EMPTY_CELL : '')}</span>,
+      <span style={truncStyle} title={val}>{val}</span>,
       ticket, label, rowGhost,
     )
   }

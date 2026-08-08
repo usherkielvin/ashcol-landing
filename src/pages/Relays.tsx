@@ -3171,7 +3171,7 @@ export default function Relays() {
                     // BRAND
                     { value: (
                       <span className="truncate block w-full font-semibold" title={displayUpper(brandLabel)} style={{ color: textPrimary }}>
-                        {displayUpper(brandLabel) || '—'}
+                        {displayUpper(brandLabel) || <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}
                       </span>
                     ) },
                     // DEALER
@@ -3183,7 +3183,7 @@ export default function Relays() {
                     // COMMIT
                     { value: (
                       <span className="truncate block w-full font-semibold" title={displayUpper(ticket.commitType || '')} style={{ color: textMuted }}>
-                        {displayUpper(ticket.commitType || '') || '—'}
+                        {displayUpper(ticket.commitType || '') || <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}
                       </span>
                     ) },
                     // BRANCH
@@ -3216,7 +3216,7 @@ export default function Relays() {
                     // REMARKS
                     { value: (
                       <span className="truncate block w-full font-semibold" title={(ticket.remarksUpdate || lastUpdate || '').toUpperCase()}>
-                        {(ticket.remarksUpdate || lastUpdate || '—').toUpperCase()}
+                        {(ticket.remarksUpdate || lastUpdate) ? (ticket.remarksUpdate || lastUpdate).toUpperCase() : <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}
                       </span>
                     ) }
                   ] : [
@@ -3253,7 +3253,7 @@ export default function Relays() {
                     { value: <span className="truncate block w-full font-semibold" title={displayUpper(storeStyle.label)}>{displayUpper(storeStyle.label)}</span> },
                     { value: <span className="whitespace-nowrap block w-full font-semibold">{displayUpper(relayedDate)}</span> },
                     { value: <span className="truncate block w-full font-semibold" title={displayUpper(branchName)}>{displayUpper(branchName)}</span> },
-                    { value: <span className="truncate block w-full font-semibold" title={displayUpper(ticket.commitType || '')}>{displayUpper(ticket.commitType || '') || '—'}</span> },
+                    { value: <span className="truncate block w-full font-semibold" title={displayUpper(ticket.commitType || '')}>{displayUpper(ticket.commitType || '') || <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}</span> },
                     { value: (
                       <span className="truncate block w-full font-bold max-w-full" title={displayUpper(negotiator)}>
                         {displayUpper(negotiator)}
@@ -3277,7 +3277,7 @@ export default function Relays() {
                         )}
                       </button>
                     ) },
-                    { value: <span className={`${!columns[11].isExpanded ? 'truncate' : 'break-words'} block w-full font-semibold`} title={(lastUpdate || '').toUpperCase()}>{(lastUpdate || '—').toUpperCase()}</span> },
+                    { value: <span className={`${!columns[11].isExpanded ? 'truncate' : 'break-words'} block w-full font-semibold`} title={(lastUpdate || '').toUpperCase()}>{lastUpdate ? lastUpdate.toUpperCase() : <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}</span> },
                   ]
                   return (
                     <tr key={ticket.id}

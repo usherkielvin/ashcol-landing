@@ -322,12 +322,8 @@ export default function HappyCalls() {
                 l.unitStatus ? l.unitStatus.replace('_', ' ').trim() : null,
                 l.commitAmount ? `₱${l.commitAmount.toLocaleString('en-PH')}` : null,
               ].filter(Boolean).map(s => String(s).toUpperCase())
-              const unitText = unitParts.length > 0 ? unitParts.join(' ') : 'NA'
 
               const installedDateStr = formatLastContactDate(l.installedDate)
-              const installedText = installedDateStr
-                ? `${installedDateStr}${l.monthsSinceInstall != null ? ` (${l.monthsSinceInstall}MO)` : ''}`
-                : 'NA'
 
               return (
                 <tr
@@ -339,26 +335,30 @@ export default function HappyCalls() {
                   onContextMenu={(e) => { e.preventDefault(); setEditLead(l) }}
                 >
                   <td className="px-3 py-2.5 overflow-hidden">
-                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.ticketNumber || ''}>{l.ticketNumber ? l.ticketNumber.toUpperCase() : 'NA'}</div>
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.ticketNumber || ''}>{l.ticketNumber ? l.ticketNumber.toUpperCase() : <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}</div>
                   </td>
                   <td className="px-3 py-2.5 overflow-hidden">
-                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.customerName}>{l.customerName ? l.customerName.toUpperCase() : 'NA'}</div>
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.customerName}>{l.customerName ? l.customerName.toUpperCase() : <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}</div>
                   </td>
                   <td className="px-3 py-2.5 overflow-hidden">
-                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.contactPhone || ''}>{l.contactPhone || 'NA'}</div>
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.contactPhone || ''}>{l.contactPhone ? l.contactPhone : <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}</div>
                   </td>
                   <td className="px-3 py-2.5 overflow-hidden">
                     <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={getBranchLabel(l.branchId)}>{getBranchLabel(l.branchId)}</div>
                   </td>
-                  <td className="px-3 py-2.5 text-xs font-semibold uppercase truncate" style={{ color: textPrimary }} title={l.address}>{l.address ? l.address.toUpperCase() : 'NA'}</td>
+                  <td className="px-3 py-2.5 text-xs font-semibold uppercase truncate" style={{ color: textPrimary }} title={l.address}>{l.address ? l.address.toUpperCase() : <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}</td>
                   <td className="px-3 py-2.5 overflow-hidden">
-                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={unitText}>{unitText}</div>
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={unitParts.join(' ')}>{unitParts.length > 0 ? unitParts.join(' ') : <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}</div>
                   </td>
                   <td className="px-3 py-2.5 overflow-hidden">
-                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={installedText}>{installedText}</div>
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }}>
+                      {installedDateStr ? `${installedDateStr}${l.monthsSinceInstall != null ? ` (${l.monthsSinceInstall}MO)` : ''}` : <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}
+                    </div>
                   </td>
                   <td className="px-3 py-2.5 overflow-hidden">
-                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={lastContactText}>{lastContactText}</div>
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }}>
+                      {contactParts.length > 0 ? contactParts.join(' - ') : <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}
+                    </div>
                   </td>
                   <td className="px-3 py-2.5">
                     <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
