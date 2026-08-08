@@ -150,6 +150,7 @@ export const STATUS_OPTS = [
   'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR_APPROVAL', 'SURVEY',
   'INSTALLED', 'COMPLETED', 'CONTINUATION',
   'SYSTEM_REPROCESS', 'DONE_SYSTEM_REPROCESS', 'DISMANTLE', 'DONE_DISMANTLE', 'PENDING_APPROVAL',
+  'FOR_NEGOTIATION',
 ]
 export const TABLE_ROW_HEIGHT = 50
 
@@ -175,6 +176,7 @@ export const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: Schedu
   { value: 'CONTINUATION', label: 'CONTINUATION', group: 'pending' },
   { value: 'FOR_APPROVAL', label: 'FOR QUOTATION', group: 'pending' },
   { value: 'PENDING_APPROVAL', label: 'PENDING APPROVAL', group: 'pending' },
+  { value: 'FOR_NEGOTIATION', label: 'FOR NEGOTIATION', group: 'pending' },
   { value: 'SYSTEM_REPROCESS', label: 'SYSTEM REPROCESS', group: 'pending' },
   { value: 'DISMANTLE', label: 'DISMANTLE', group: 'pending' },
   // Closing
@@ -250,6 +252,9 @@ export function getScheduleStatusBadgeStyle(value: string, isLight: boolean, isO
   if (normalized === 'PENDING_APPROVAL') {
     return { color: isLight ? '#b45309' : '#fcd34d', backgroundColor: isLight ? '#fef3c7' : 'rgba(245,158,11,0.16)', borderColor: isLight ? '#fcd34d' : 'rgba(245,158,11,0.35)' }
   }
+  if (normalized === 'FOR_NEGOTIATION') {
+    return { color: isLight ? '#7c3aed' : '#c084fc', backgroundColor: isLight ? '#f3e8ff' : 'rgba(124,58,237,0.18)', borderColor: isLight ? '#c084fc' : 'rgba(124,58,237,0.35)' }
+  }
   if (
     normalized === 'DONE_INSTALLED' ||
     normalized === 'INSTALLED' ||
@@ -312,6 +317,7 @@ export function getScheduleStatusValue(ticket: Ticket): string {
   if (phase === 'SYSTEM_REPROCESS') return 'SYSTEM_REPROCESS'
   if (phase === 'DISMANTLE') return 'DISMANTLE'
   if (phase === 'PENDING_APPROVAL') return 'PENDING_APPROVAL'
+  if (phase === 'FOR_NEGOTIATION') return 'FOR_NEGOTIATION'
 
   let stat = (ticket.status || 'SCHEDULED').toUpperCase().replace(/\s+/g, '_')
   if (stat === 'S/I' || stat === 'S_I' || stat === 'SI') return 'S/I'
@@ -323,6 +329,7 @@ export function getScheduleStatusValue(ticket: Ticket): string {
   if (stat === 'SURVEY') return 'SURVEY'
   if (stat === 'FOR_APPROVAL') return 'FOR_APPROVAL'
   if (stat === 'PENDING_APPROVAL') return 'PENDING_APPROVAL'
+  if (stat === 'FOR_NEGOTIATION') return 'FOR_NEGOTIATION'
   if (stat === 'CONTINUATION') return 'CONTINUATION'
   if (stat === 'SYSTEM_REPROCESS') return 'SYSTEM_REPROCESS'
   if (stat === 'DONE_SYSTEM_REPROCESS') return 'DONE_SYSTEM_REPROCESS'
@@ -621,6 +628,9 @@ export function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string):
     acUpdates.scheduleOutcome = ''
   } else if (val === 'PENDING_APPROVAL') {
     body.status = 'PENDING_APPROVAL'
+    acUpdates.scheduleOutcome = ''
+  } else if (val === 'FOR_NEGOTIATION') {
+    body.status = 'FOR_NEGOTIATION'
     acUpdates.scheduleOutcome = ''
   } else if (val === 'CONTINUATION') {
     body.status = 'CONTINUATION'

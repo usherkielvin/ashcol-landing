@@ -911,7 +911,7 @@ export default function DashboardLayout() {
         {/* ── Global Header (Mobile/Tablet/Desktop) ──────────────── */}
         {currentPage !== 'DDRM' && currentPage !== 'Search' && (
           <header 
-            className="flex-none z-20 backdrop-blur-md w-full min-w-0 max-w-full overflow-hidden"
+            className="flex-none z-30 backdrop-blur-md w-full min-w-0 max-w-full relative"
             style={{ 
               backgroundColor: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(10,17,32,0.8)'
             }}

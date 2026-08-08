@@ -3554,7 +3554,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         || getContinuationDates(t).length > 0
       const isScheduledOrActive = [
         'SCHEDULED', 'RESCHED', 'IN_PROGRESS', 'ON_THE_WAY', 'FOR_APPROVAL', 'SURVEY', 'CONTINUATION',
-        'SYSTEM_REPROCESS', 'DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE',
+        'SYSTEM_REPROCESS', 'DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE', 'PENDING_APPROVAL', 'FOR_NEGOTIATION',
       ].includes(stat)
       if (!hasScheduleDate && !isScheduledOrActive) return false
 
@@ -3562,6 +3562,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       const isResched = stat === 'RESCHED' || scheduleValue === 'RESCHED'
       const isContinuation = stat === 'CONTINUATION' || scheduleValue === 'CONTINUATION'
       const isForApproval = stat === 'FOR APPROVAL' || stat === 'FOR_APPROVAL' || stat === 'FOR QUOTATION' || stat === 'FOR_QUOTATION' || stat.includes('QUOTATION') || scheduleValue === 'FOR_APPROVAL'
+      const isForNegotiation = stat === 'FOR_NEGOTIATION' || stat === 'FOR NEGOTIATION' || scheduleValue === 'FOR_NEGOTIATION'
       const isSurvey = scheduleValue === 'SURVEY' || scheduleValue === 'DONE_SURVEY'
       const isCleaning = scheduleValue === 'CLEANING' || scheduleValue === 'DONE_CLEANING'
       const isSystemReprocess = scheduleValue === 'SYSTEM_REPROCESS' || scheduleValue === 'DONE_SYSTEM_REPROCESS'
@@ -3569,7 +3570,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       const isInstallation = scheduleValue === 'INSTALLATION' || scheduleValue === 'SERVICES' || scheduleValue === 'DONE_INSTALLED' || scheduleValue === 'DONE_CHECKUP' || scheduleValue === 'DONE_BACKJOB'
       const isActiveSchedule = ['SCHEDULED', 'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'ON_THE_WAY'].includes(stat) || hasScheduleDate
 
-      return isInstallation || isCleaning || isSystemReprocess || isDismantle || isResched || isContinuation || isForApproval || isSurvey || isActiveSchedule
+      return isInstallation || isCleaning || isSystemReprocess || isDismantle || isResched || isContinuation || isForApproval || isForNegotiation || isSurvey || isActiveSchedule
     })
     if (!isMyTickets) {
       if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {

@@ -262,7 +262,144 @@ const FormatPhone = ({ raw }: { raw: string | null | undefined }): React.ReactNo
 
 
 
+// ── Custom Select Component ──────────────────────────────────────────────────
+
+interface CustomSelectOption {
+  value: string
+  label: string
+}
+
+interface CustomSelectProps {
+  icon: React.ReactNode
+  value: string
+  options: CustomSelectOption[]
+  onChange: (value: string) => void
+  placeholder?: string
+  title?: string
+  minWidth?: string
+  inputBg: string
+  inputBorder: string
+  textPrimary: string
+  textMuted: string
+  isLight: boolean
+}
+
+function CustomSelect({
+  icon,
+  value,
+  options,
+  onChange,
+  placeholder = 'Select...',
+  title,
+  minWidth = 'min-w-[210px]',
+  inputBg,
+  inputBorder,
+  textPrimary,
+  textMuted,
+  isLight,
+}: CustomSelectProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isOpen])
+
+  const selectedOption = options.find(opt => opt.value === value)
+  const displayLabel = selectedOption ? selectedOption.label : (options[0]?.label || placeholder)
+
+  const popoverBg = isLight ? '#ffffff' : '#0B132B'
+  const popoverBorder = isLight ? '#cbd5e1' : '#1e293b'
+  const itemHoverBg = isLight ? '#f1f5f9' : '#172642'
+  const activeBg = isLight ? '#e0f2fe' : '#1e3a8a'
+  const activeText = isLight ? '#0284c7' : '#60a5fa'
+
+  return (
+    <div ref={dropdownRef} className="relative shrink-0 select-none">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border text-xs font-bold shrink-0 shadow-sm transition-all hover:border-slate-400 focus:outline-none cursor-pointer"
+        style={{
+          backgroundColor: inputBg,
+          borderColor: isOpen ? (isLight ? '#3b82f6' : '#60a5fa') : inputBorder,
+          color: textPrimary
+        }}
+      >
+        <span className="shrink-0" style={{ color: textMuted }}>{icon}</span>
+        <span className="truncate max-w-[160px] font-bold text-left tracking-tight uppercase">{displayLabel}</span>
+        <ChevronDown
+          className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          style={{ color: textMuted }}
+        />
+      </button>
+
+      {isOpen && (
+        <div
+          className={`absolute left-0 top-full mt-1.5 ${minWidth} rounded-xl border shadow-2xl z-[100] p-1.5 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150`}
+          style={{
+            backgroundColor: popoverBg,
+            borderColor: popoverBorder,
+          }}
+        >
+          {title && (
+            <div className="text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 border-b border-slate-200/10 mb-0.5" style={{ color: textMuted }}>
+              {title}
+            </div>
+          )}
+          <div className="max-h-64 overflow-y-auto flex flex-col gap-1 p-0.5 custom-scrollbar">
+            {options.map(opt => {
+              const isSelected = opt.value === value
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    onChange(opt.value)
+                    setIsOpen(false)
+                  }}
+                  className="flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold text-left transition-all cursor-pointer"
+                  style={{
+                    backgroundColor: isSelected ? activeBg : 'transparent',
+                    color: isSelected ? activeText : textPrimary
+                  }}
+                  onMouseEnter={e => {
+                    if (!isSelected) {
+                      e.currentTarget.style.backgroundColor = itemHoverBg
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (!isSelected) {
+                      e.currentTarget.style.backgroundColor = 'transparent'
+                    }
+                  }}
+                >
+                  <span className="truncate pr-2 uppercase">{opt.label}</span>
+                  {isSelected && (
+                    <Check className="w-4 h-4 shrink-0" style={{ color: activeText }} />
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
+
 
 export default function DailyServiceReport() {
   const { theme } = useTheme()
@@ -1638,6 +1775,21 @@ export default function DailyServiceReport() {
     return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
   }
 
+  const branchSelectOptions = useMemo(() => [
+    { value: 'ALL_BRANCHES', label: 'All Branches' },
+    ...branches.map(b => ({ value: b.id, label: formatBranchName(b.name) }))
+  ], [branches])
+
+  const negoSelectOptions = useMemo(() => [
+    { value: '', label: 'All Negotiators' },
+    ...negotiatorOptions.map(n => ({ value: n, label: n }))
+  ], [negotiatorOptions])
+
+  const monthSelectOptions = useMemo(() => [
+    { value: '', label: 'All Months' },
+    ...monthOptions.map(ym => ({ value: ym, label: monthLabel(ym) }))
+  ], [monthOptions])
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col flex-1 w-full min-h-0 h-full" onClick={() => { setContextMenu(null); }}>
@@ -1652,65 +1804,53 @@ export default function DailyServiceReport() {
         <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2 select-none">
           <div className="flex flex-wrap items-center gap-2.5 w-full">
             {/* Branch Filter */}
-            <div className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border text-xs font-bold shrink-0 shadow-sm transition-all"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-              <Building2 className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
-              <select
-                value={branchFilter}
-                onChange={e => {
-                  const val = e.target.value
-                  handleBranchFilterChange(val)
-                  localStorage.setItem('ashcol-global-branch-id', val)
-                  window.dispatchEvent(new Event('ashcol-global-branch-change'))
-                }}
-                className="bg-transparent outline-none cursor-pointer font-bold pr-1"
-                style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
-              >
-                <option value="ALL_BRANCHES" style={{ backgroundColor: inputBg, color: textPrimary }}>All Branches</option>
-                {branches.map(b => (
-                  <option key={b.id} value={b.id} style={{ backgroundColor: inputBg, color: textPrimary }}>{formatBranchName(b.name)}</option>
-                ))}
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
-            </div>
+            <CustomSelect
+              icon={<Building2 className="w-4 h-4 shrink-0" />}
+              title="Select Branch"
+              value={branchFilter}
+              options={branchSelectOptions}
+              onChange={val => {
+                handleBranchFilterChange(val)
+                localStorage.setItem('ashcol-global-branch-id', val)
+                window.dispatchEvent(new Event('ashcol-global-branch-change'))
+              }}
+              minWidth="min-w-[210px]"
+              inputBg={inputBg}
+              inputBorder={inputBorder}
+              textPrimary={textPrimary}
+              textMuted={textMuted}
+              isLight={isLight}
+            />
 
             {/* Nego (Negotiator) Filter */}
-            <div className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border text-xs font-bold shrink-0 shadow-sm transition-all"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-              <User className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
-              <select
-                value={negoFilter}
-                onChange={e => setNegoFilter(e.target.value)}
-                className="bg-transparent outline-none cursor-pointer font-bold pr-1 uppercase"
-                style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
-              >
-                <option value="" style={{ backgroundColor: inputBg, color: textPrimary }}>All Negotiators</option>
-                {negotiatorOptions.map(n => (
-                  <option key={n} value={n} style={{ backgroundColor: inputBg, color: textPrimary }}>{n}</option>
-                ))}
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
-            </div>
+            <CustomSelect
+              icon={<User className="w-4 h-4 shrink-0" />}
+              title="Select Negotiator"
+              value={negoFilter}
+              options={negoSelectOptions}
+              onChange={val => setNegoFilter(val)}
+              minWidth="min-w-[220px]"
+              inputBg={inputBg}
+              inputBorder={inputBorder}
+              textPrimary={textPrimary}
+              textMuted={textMuted}
+              isLight={isLight}
+            />
 
             {/* Month Picker */}
-            <div className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border text-xs font-bold shrink-0 shadow-sm transition-all"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-              <CalendarDays className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
-              <select
-                value={monthFilter}
-                onChange={e => handleMonthFilterChange(e.target.value)}
-                className="bg-transparent outline-none cursor-pointer font-bold pr-1"
-                style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
-              >
-                <option value="" style={{ backgroundColor: inputBg, color: textPrimary }}>All Months</option>
-                {monthOptions.map(ym => (
-                  <option key={ym} value={ym} style={{ backgroundColor: inputBg, color: textPrimary }}>
-                    {monthLabel(ym)}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
-            </div>
+            <CustomSelect
+              icon={<CalendarDays className="w-4 h-4 shrink-0" />}
+              title="Select Month"
+              value={monthFilter}
+              options={monthSelectOptions}
+              onChange={val => handleMonthFilterChange(val)}
+              minWidth="min-w-[200px]"
+              inputBg={inputBg}
+              inputBorder={inputBorder}
+              textPrimary={textPrimary}
+              textMuted={textMuted}
+              isLight={isLight}
+            />
 
             {/* Search bar */}
             <div className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border flex-1 min-w-[200px] max-w-md shadow-sm transition-all"
@@ -1809,12 +1949,9 @@ export default function DailyServiceReport() {
                             ? `No records match “${searchQuery.trim()}”${rows.length > 0 ? ` (${rows.length} loaded)` : ''}`
                             : `No service records for ${viewMode === 'weekly' ? weekRange.label : 'this month'}`}
                         </p>
-                        {searchQuery.trim() ? (
+                        {searchQuery.trim() && (
                           <button type="button" onClick={() => setSearchQuery('')}
                             className="text-xs font-bold hover:underline" style={{ color: textPrimary }}>Clear search</button>
-                        ) : canEdit && (
-                          <button onClick={handleAddRow}
-                            className="text-xs font-bold hover:underline" style={{ color: textPrimary }}>+ Add the first one</button>
                         )}
                       </div>
                     </td>
