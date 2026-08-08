@@ -274,10 +274,10 @@ export default function HappyCalls() {
         <table className="w-full text-left table-fixed min-w-[1240px] border-collapse">
           <colgroup>
             <col className="w-[9%]" />
-            <col className="w-[15%]" />
+            <col className="w-[14%]" />
+            <col className="w-[11%]" />
             <col className="w-[10%]" />
             <col className="w-[15%]" />
-            <col className="w-[11%]" />
             <col className="w-[11%]" />
             <col className="w-[10%]" />
             <col className="w-[11%]" />
@@ -287,9 +287,9 @@ export default function HappyCalls() {
             <tr style={{ backgroundColor: theadBg, color: textMuted, borderBottom: `1px solid ${border}` }} className="text-xs uppercase tracking-wider font-bold select-none">
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>TICKET NO.</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>CUSTOMER</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>CONTACT</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>BRANCH</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>ADDRESS</th>
-              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>CONTACT</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>UNIT</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>INSTALLED</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>LAST CONTACT</th>
@@ -345,12 +345,12 @@ export default function HappyCalls() {
                     <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.customerName}>{l.customerName ? l.customerName.toUpperCase() : 'NA'}</div>
                   </td>
                   <td className="px-3 py-2.5 overflow-hidden">
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.contactPhone || ''}>{l.contactPhone || 'NA'}</div>
+                  </td>
+                  <td className="px-3 py-2.5 overflow-hidden">
                     <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={getBranchLabel(l.branchId)}>{getBranchLabel(l.branchId)}</div>
                   </td>
                   <td className="px-3 py-2.5 text-xs font-semibold uppercase truncate" style={{ color: textPrimary }} title={l.address}>{l.address ? l.address.toUpperCase() : 'NA'}</td>
-                  <td className="px-3 py-2.5 overflow-hidden">
-                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.contactPhone || ''}>{l.contactPhone || 'NA'}</div>
-                  </td>
                   <td className="px-3 py-2.5 overflow-hidden">
                     <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={unitText}>{unitText}</div>
                   </td>

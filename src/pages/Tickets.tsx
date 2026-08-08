@@ -2825,6 +2825,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
   // ─────────────────────────────────────────────────────────────
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
+  const [tableScale, setTableScale] = useState(1)
+  const TABLE_NATURAL_PX = 1400
   const [editingCell, setEditingCell] = useState<{ ticketId: string; rowIndex: number; colLabel: string; value: string } | null>(null)
   const [statusPicker, setStatusPicker] = useState<{
     ticket: Ticket
@@ -2856,6 +2858,68 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const tableScrollRef = useRef<HTMLDivElement>(null)
   const toggleCol = useCallback((label: string) =>
     setExpandedCols(p => ({ ...p, [label]: !p[label] })), [])
+
+  // Drag-to-scroll: click-and-drag horizontally on the table for easy mouse access
+  useEffect(() => {
+    const el = tableScrollRef.current
+    if (!el) return
+    let isDown = false
+    let startX = 0
+    let scrollLeft = 0
+    const onMouseDown = (e: MouseEvent) => {
+      // Only activate on the scroll wrapper itself or its table/thead/tbody — not on interactive cells
+      const target = e.target as HTMLElement
+      if (target.closest('button, a, input, select, textarea, [data-no-drag-scroll]')) return
+      isDown = true
+      startX = e.pageX - el.offsetLeft
+      scrollLeft = el.scrollLeft
+      el.style.cursor = 'grabbing'
+      el.style.userSelect = 'none'
+    }
+    const onMouseUp = () => {
+      isDown = false
+      el.style.cursor = ''
+      el.style.userSelect = ''
+    }
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDown) return
+      e.preventDefault()
+      const x = e.pageX - el.offsetLeft
+      const walk = (x - startX) * 1.4
+      el.scrollLeft = scrollLeft - walk
+    }
+    const onMouseLeave = () => {
+      if (!isDown) return
+      isDown = false
+      el.style.cursor = ''
+      el.style.userSelect = ''
+    }
+    el.addEventListener('mousedown', onMouseDown)
+    window.addEventListener('mouseup', onMouseUp)
+    el.addEventListener('mousemove', onMouseMove)
+    el.addEventListener('mouseleave', onMouseLeave)
+    return () => {
+      el.removeEventListener('mousedown', onMouseDown)
+      window.removeEventListener('mouseup', onMouseUp)
+      el.removeEventListener('mousemove', onMouseMove)
+      el.removeEventListener('mouseleave', onMouseLeave)
+    }
+  }, [])
+
+  // Auto-scale: shrink the table proportionally when the container is narrower than its natural width
+  useEffect(() => {
+    const el = tableScrollRef.current
+    if (!el) return
+    const measure = () => {
+      const w = el.clientWidth
+      const scale = w >= TABLE_NATURAL_PX ? 1 : Math.max(0.45, w / TABLE_NATURAL_PX)
+      setTableScale(parseFloat(scale.toFixed(4)))
+    }
+    measure()
+    const obs = new ResizeObserver(measure)
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [])
 
   const activeCellOverlay = Boolean(editingCell || expandedCell)
 
@@ -5252,20 +5316,22 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     if (label === 'TICKET NO') {
       const rawVal = val || EMPTY_CELL
       const isRowSaving = savingTicketIds.has(ticket.id)
+      const ticketNoColor = isPendingRow ? '#ffffff' : (rowGhost ? ghostMuted : textPrimary)
+      const indexColor = isPendingRow ? '#ffffff' : (isLight ? '#94a3b8' : '#64748b')
       return (
         <div style={{ display: 'flex', alignItems: 'center', width: '100%', minWidth: 0 }} title={rawVal}>
           {idx !== undefined && (
-            <span style={{ color: isLight ? '#94a3b8' : '#64748b', marginRight: 6, flexShrink: 0, fontWeight: 600, fontSize: '0.7rem' }}>
+            <span style={{ color: indexColor, marginRight: 6, flexShrink: 0, fontWeight: 700, fontSize: '0.7rem' }}>
               {idx + 1}.
             </span>
           )}
-          <span style={{ ...truncStyle, fontWeight: 900, letterSpacing: '0.05em', color: textPrimary }}>
+          <span style={{ ...truncStyle, fontWeight: 900, letterSpacing: '0.05em', color: ticketNoColor }}>
             {rawVal}
           </span>
           {isRowSaving && (
             <Loader2
               className="w-3 h-3 shrink-0 animate-spin"
-              style={{ color: green, marginLeft: 4 }}
+              style={{ color: '#ffffff', marginLeft: 4 }}
               aria-label="Saving"
             />
           )}
@@ -5281,17 +5347,18 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             type="button"
             onMouseDown={e => e.stopPropagation()}
             onClick={e => { e.stopPropagation(); startCellEdit(ticket, label, e.currentTarget as HTMLElement, rowIndex) }}
-            className="inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded-md border border-dashed text-[9.5px] font-bold uppercase tracking-wide transition-colors"
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-1 rounded-full text-[10.5px] font-extrabold uppercase tracking-wider transition-all duration-150 active:scale-95 shadow-sm"
             style={{
-              color: isLight ? '#15803D' : '#6EE7B7',
-              borderColor: isLight ? 'rgba(22,163,74,0.32)' : 'rgba(110,231,183,0.35)',
-              backgroundColor: 'transparent',
+              color: isPendingRow ? '#ffffff' : (isLight ? '#15803D' : '#6EE7B7'),
+              borderColor: isPendingRow ? 'rgba(255,255,255,0.45)' : (isLight ? 'rgba(22,163,74,0.30)' : 'rgba(110,231,183,0.30)'),
+              backgroundColor: isPendingRow ? 'rgba(255,255,255,0.18)' : (isLight ? 'rgba(22,163,74,0.10)' : 'rgba(110,231,183,0.12)'),
+              borderStyle: 'solid',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = isLight ? 'rgba(22,163,74,0.07)' : 'rgba(16,185,129,0.12)'
+              e.currentTarget.style.backgroundColor = isPendingRow ? 'rgba(255,255,255,0.30)' : (isLight ? 'rgba(22,163,74,0.18)' : 'rgba(110,231,183,0.22)')
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'transparent'
+              e.currentTarget.style.backgroundColor = isPendingRow ? 'rgba(255,255,255,0.18)' : (isLight ? 'rgba(22,163,74,0.10)' : 'rgba(110,231,183,0.12)')
             }}
           >
             <CalendarDays className="w-3 h-3 shrink-0 opacity-90" />
@@ -5299,12 +5366,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           </button>
         )
       }
+      const finalDateColor = isPendingRow ? '#ffffff' : (hasDate ? green : textMuted)
       return withEditPencil(
         <span
           style={{
             ...truncStyle,
             fontWeight: hasDate ? 700 : 500,
-            color: hasDate ? green : textMuted,
+            color: finalDateColor,
           }}
           title={val}
         >
@@ -5603,14 +5671,21 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
               const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
               startCellEdit(ticket, label, cell, rowIndex)
             }}
-            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-all hover:opacity-80"
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-1 rounded-full text-[10.5px] font-extrabold uppercase tracking-wider transition-all duration-150 active:scale-95 shadow-sm"
             style={{
-              color: isLight ? '#16a34a' : '#86efac',
-              backgroundColor: isLight ? 'rgba(22,163,74,0.08)' : 'rgba(148,163,184,0.08)',
-              border: `1px dashed ${isLight ? 'rgba(22,163,74,0.35)' : 'rgba(148,163,184,0.28)'}`,
+              color: isPendingRow ? '#ffffff' : (isLight ? '#15803d' : '#4ade80'),
+              backgroundColor: isPendingRow ? 'rgba(255, 255, 255, 0.18)' : (isLight ? 'rgba(22, 163, 74, 0.10)' : 'rgba(74, 222, 128, 0.12)'),
+              border: `1px solid ${isPendingRow ? 'rgba(255, 255, 255, 0.45)' : (isLight ? 'rgba(22, 163, 74, 0.30)' : 'rgba(74, 222, 128, 0.30)')}`,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = isPendingRow ? 'rgba(255, 255, 255, 0.30)' : (isLight ? 'rgba(22, 163, 74, 0.18)' : 'rgba(74, 222, 128, 0.22)')
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = isPendingRow ? 'rgba(255, 255, 255, 0.18)' : (isLight ? 'rgba(22, 163, 74, 0.10)' : 'rgba(74, 222, 128, 0.12)')
             }}
           >
-            + Add
+            <Plus className="w-3 h-3 stroke-[2.5] shrink-0 opacity-90" />
+            Add
           </button>
         )
       }
@@ -5644,14 +5719,21 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
                 startCellEdit(ticket, label, cell, rowIndex)
               }}
-              className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-all hover:opacity-80"
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-1 rounded-full text-[10.5px] font-extrabold uppercase tracking-wider transition-all duration-150 active:scale-95 shadow-sm"
               style={{
-                color: isLight ? '#16a34a' : '#86efac',
-                backgroundColor: isLight ? 'rgba(22,163,74,0.08)' : 'rgba(148,163,184,0.08)',
-                border: `1px dashed ${isLight ? 'rgba(22,163,74,0.35)' : 'rgba(148,163,184,0.28)'}`,
+                color: isPendingRow ? '#ffffff' : (isLight ? '#15803d' : '#4ade80'),
+                backgroundColor: isPendingRow ? 'rgba(255, 255, 255, 0.18)' : (isLight ? 'rgba(22, 163, 74, 0.10)' : 'rgba(74, 222, 128, 0.12)'),
+                border: `1px solid ${isPendingRow ? 'rgba(255, 255, 255, 0.45)' : (isLight ? 'rgba(22, 163, 74, 0.30)' : 'rgba(74, 222, 128, 0.30)')}`,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = isPendingRow ? 'rgba(255, 255, 255, 0.30)' : (isLight ? 'rgba(22, 163, 74, 0.18)' : 'rgba(74, 222, 128, 0.22)')
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = isPendingRow ? 'rgba(255, 255, 255, 0.18)' : (isLight ? 'rgba(22, 163, 74, 0.10)' : 'rgba(74, 222, 128, 0.12)')
               }}
             >
-              + Add
+              <Plus className="w-3 h-3 stroke-[2.5] shrink-0 opacity-90" />
+              Add
             </button>
           )
         }
@@ -6479,13 +6561,49 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
               )}
               <div
                 ref={tableScrollRef}
-                className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
+                className="flex-1 min-h-0 overflow-y-auto overflow-x-auto relative"
                 data-ticket-table-scroll
                 style={{
                   paddingBottom: activeCellOverlay ? 72 : 12,
                 }}
               >
-                <table key={dateFilter || 'all'} className="text-xs w-full hidden md:table" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
+                {/* Creative auto-scale badge — shown only when table is zoomed out */}
+                {tableScale < 0.98 && (
+                  <div
+                    className="pointer-events-none sticky top-2 z-30 flex justify-end px-3"
+                    aria-hidden
+                  >
+                    <div
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest shadow-md"
+                      style={{
+                        background: isLight
+                          ? 'rgba(15,23,42,0.72)'
+                          : 'rgba(248,250,252,0.14)',
+                        backdropFilter: 'blur(8px)',
+                        border: `1px solid ${isLight ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.12)'}`,
+                        color: isLight ? '#e2e8f0' : '#94a3b8',
+                        letterSpacing: '0.12em',
+                      }}
+                    >
+                      <svg width="8" height="8" viewBox="0 0 10 10" fill="none" style={{ opacity: 0.8 }}>
+                        <path d="M1 1h3M1 1v3M9 9H6M9 9V6M9 1H6M9 1V4M1 9h3M1 9V6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                      </svg>
+                      {Math.round(tableScale * 100)}%
+                    </div>
+                  </div>
+                )}
+                <table
+                  key={dateFilter || 'all'}
+                  className="text-xs hidden md:table"
+                  style={{
+                    width: tableScale < 1 ? `${(100 / tableScale).toFixed(2)}%` : '100%',
+                    minWidth: tableScale >= 1 ? `${TABLE_NATURAL_PX}px` : undefined,
+                    tableLayout: 'fixed',
+                    borderCollapse: 'collapse',
+                    transformOrigin: 'top left',
+                    zoom: tableScale < 1 ? tableScale : undefined,
+                  }}
+                >
                   <colgroup>
                     {columns.map(col => (
                       <col key={col.label} style={{ width: col.w }} />
