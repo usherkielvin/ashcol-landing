@@ -1213,7 +1213,8 @@ export default function Relays() {
     status: 'S/I',
     branchId: '',
     relayedDate: new Date().toISOString().split('T')[0],
-    finalDate: ''
+    finalDate: '',
+    installedDate: '',
   })
 
   const setAddForm = (action: React.SetStateAction<typeof addForm>) => {
@@ -1830,6 +1831,7 @@ export default function Relays() {
       alternatePhone: cleanedPhones.slice(1).join(', '),
       relayedDate: addForm.relayedDate || new Date().toISOString().split('T')[0],
       finalDate: addForm.finalDate || '',
+      installedDate: addForm.installedDate || '',
       ...(resolvedCreateStatus.schedulePhase !== undefined ? { schedulePhase: resolvedCreateStatus.schedulePhase } : {}),
       ...(resolvedCreateStatus.scheduleOutcome !== undefined ? { scheduleOutcome: resolvedCreateStatus.scheduleOutcome } : {}),
     }
@@ -1862,6 +1864,7 @@ export default function Relays() {
       location: addForm.locationRaw?.trim() || 'No Address Provided',
       dealer: resolveRelayDealerForSubmit(addForm.dealer || 'Direct', addForm.dealerBranch || ''),
       preferredDate: addForm.preferredDate || undefined,
+      actualCompletion: addForm.installedDate || undefined,
       slaExpirationDate: addForm.slaExpirationDate ? new Date(addForm.slaExpirationDate).toISOString() : undefined,
       priorityTag: addForm.priorityTag || undefined,
       district: addForm.district || undefined,
@@ -1965,6 +1968,7 @@ export default function Relays() {
       branchId: '',
       relayedDate: new Date().toISOString().split('T')[0],
       finalDate: '',
+      installedDate: '',
     })
 
     void (async () => {
@@ -3872,7 +3876,7 @@ export default function Relays() {
 
                 {/* 5. Scheduling */}
                 <section>
-                  <RelayFormSectionHead step={5} icon={<CalendarDays className="w-3.5 h-3.5" />} title="Scheduling" subtitle="Requested date & collection details" />
+                  <RelayFormSectionHead step={5} icon={<CalendarDays className="w-3.5 h-3.5" />} title="Scheduling" subtitle="Requested, schedule & installed date details" />
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
                     {/* Requested Date */}
                     <RelayFormField label="Requested Date" compact className="md:col-span-4">
@@ -3911,6 +3915,33 @@ export default function Relays() {
                           type="date"
                           value={addForm.finalDate}
                           onChange={e => setAddForm(prev => ({ ...prev, finalDate: e.target.value }))}
+                          className="absolute opacity-0 pointer-events-none w-0 h-0"
+                          style={{ pointerEvents: 'none' }}
+                        />
+                      </button>
+                    </RelayFormField>
+                    {/* Installed Date */}
+                    <RelayFormField label="Installed Date" compact className="md:col-span-4">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          const input = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
+                          if (input && input.showPicker) input.showPicker();
+                        }}
+                        className={`${addInput} font-bold text-center relative flex flex-col items-center justify-center`}
+                        style={{
+                          backgroundColor: addForm.installedDate ? (isLight ? '#eff6ff' : 'rgba(59,130,246,0.08)') : inputBg,
+                          borderColor: addForm.installedDate ? (isLight ? '#93c5fd' : 'rgba(59,130,246,0.4)') : inputBorder,
+                          color: addForm.installedDate ? '#3B82F6' : textPrimary,
+                          colorScheme: isLight ? 'light' : 'dark',
+                          fontWeight: addForm.installedDate ? 700 : undefined,
+                        }}
+                      >
+                        {addForm.installedDate ? new Date(addForm.installedDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase() : 'ADD DATE'}
+                        <input
+                          type="date"
+                          value={addForm.installedDate}
+                          onChange={e => setAddForm(prev => ({ ...prev, installedDate: e.target.value }))}
                           className="absolute opacity-0 pointer-events-none w-0 h-0"
                           style={{ pointerEvents: 'none' }}
                         />
