@@ -188,41 +188,6 @@ const formatDateTime = (isoStr: string | null | undefined) => {
   }
 }
 
-const blankRow = (date: string, branchId?: string | null): Partial<ServiceRow> => ({
-  reportDate: date,
-  branchId: branchId ?? null,
-  customerName: '',
-  customerAddress: '',
-  customerPhone: '',
-  district: '',
-  serviceType: 'INSTALLATION',
-  statusCode: 'I',
-  commitTerms: '',
-  dealer: '',
-  unitBrandModel: '',
-  unitSerial: '',
-  quantity: 1,
-  technicianName: '',
-  negotiator: '',
-  scheduleTime: '',
-  scheduleStatus: '',
-  timeStarted: '',
-  timeEnded: '',
-  amountCharged: 0,
-  paymentStatus: 'CASH',
-  jobStatus: 'SCHEDULED',
-  remarks: '',
-  note: '',
-  controlNumber: '',
-  serviceColumn: '',
-  papers: '',
-  costing: '',
-  relayStatus: '',
-  fifteenQuestions: '',
-  freeInstallation: false,
-  scheduledDate: null,
-  installedDate: null,
-})
 
 const FormatPhone = ({ raw }: { raw: string | null | undefined }): React.ReactNode => {
   if (!raw) return null
@@ -491,19 +456,7 @@ export default function DailyServiceReport() {
   const [cellValue, setCellValue] = useState<string>('')
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null>(null)
 
-  const handleAddRow = () => {
-    if (!canEdit) return
-    let realBranchId = resolveScopedBranchId(
-      resolveArchivesBranchFilter(branchFilter, branches, user),
-    ) || null
-    if (!realBranchId) {
-      realBranchId = resolveScopedBranchId(branches[0]?.id) || null
-    }
-    const tempId = `temp-${Date.now()}`
-    const newRow = blankRow(todayLocal(), isBranchScoped ? (user?.branchId ?? null) : realBranchId) as ServiceRow
-    newRow.id = tempId
-    setRows(prev => [newRow, ...prev])
-  }
+
 
   // Pending Excel import waiting for an all-branch user to choose a target branch
   const [pendingImport, setPendingImport] = useState<{ file: File; branchId: string; detectedDate: string | null } | null>(null)

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Loader2, RefreshCw, Calendar } from 'lucide-react'
+import { Loader2, Calendar } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
@@ -17,7 +17,7 @@ const token = () => localStorage.getItem('ashcol-token') || sessionStorage.getIt
 
 /** Tickets this person created, negotiated, was assigned/installed/drove, closed, or completed
  *  warranty registration on. Shared by the admin "Employees" detail tab and a user's own Profile. */
-export default function TicketHistoryTable({ person }: { person: HistoryPerson }) {
+export default function TicketHistoryTable({ person, headerLeft }: { person: HistoryPerson; headerLeft?: React.ReactNode }) {
   const { theme } = useTheme()
   const { user } = useAuth()
   const isLight = theme === 'light'
@@ -113,29 +113,48 @@ export default function TicketHistoryTable({ person }: { person: HistoryPerson }
     fetchHistory()
   }, [person.id, person.name, person.email, person.personalEmail, user])
 
-  const branchName = (t: any) => branches.find(b => b.id === (t.branchId || t.branch_id))?.name || '—'
 
-  const displayedHistory = history.filter((t: any) => {
-    if (branchFilter && (t.branchId || t.branch_id) !== branchFilter) return false
-    if (!dateFilter) return true
-    const dateStr = t.createdAt || t.created_at
-    if (!dateStr) return false
-    const d = new Date(dateStr)
-    const yyyy = d.getFullYear()
-    const mm = String(d.getMonth() + 1).padStart(2, '0')
-    const dd = String(d.getDate()).padStart(2, '0')
-    return `${yyyy}-${mm}-${dd}` === dateFilter
+
+  // ── Filter logic ───────────────────────────────────────────────────────────
+  const displayedHistory = history.filter(t => {
+    if (branchFilter && t.branchId !== branchFilter && t.branch_id !== branchFilter) return false
+    if (dateFilter) {
+      const createdStr = t.createdAt || t.created_at
+      if (!createdStr) return false
+      const cDate = new Date(createdStr)
+      const fDate = new Date(dateFilter + 'T00:00:00')
+      return (
+        cDate.getFullYear() === fDate.getFullYear() &&
+        cDate.getMonth() === fDate.getMonth() &&
+        cDate.getDate() === fDate.getDate()
+      )
+    }
+    return true
   })
 
+  const formatBranchNameStr = (raw: string) => {
+    if (!raw) return '—'
+    const name = raw.replace(/^ashcol\s+/i, '').trim()
+    return name.toUpperCase()
+  }
+
+  const branchName = (t: any) => {
+    if (t.branchName || t.branch_name) return formatBranchNameStr(t.branchName || t.branch_name)
+    const bId = t.branchId || t.branch_id
+    if (!bId) return '—'
+    const match = branches.find(b => b.id === bId)
+    return match ? formatBranchNameStr(match.name) : bId
+  }
+
   const scheduledDate = (t: any) => {
-    const raw = t.finalDate || t.final_date || t.preferredDate || t.preferred_date || ''
+    const raw = t.scheduledDate || t.scheduled_date || t.preferredDate || t.preferred_date
     if (!raw) return '—'
     const d = new Date(raw)
-    return isNaN(d.getTime()) ? '—' : d.toLocaleDateString(undefined, { month: 'long', day: '2-digit', year: 'numeric' })
+    return isNaN(d.getTime()) ? '—' : d.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' })
   }
 
   const createdDateTime = (t: any) => {
-    const raw = t.createdAt || t.created_at || ''
+    const raw = t.createdAt || t.created_at
     if (!raw) return '—'
     const d = new Date(raw)
     return isNaN(d.getTime())
@@ -145,20 +164,21 @@ export default function TicketHistoryTable({ person }: { person: HistoryPerson }
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      {/* ── Filter Bar ──────────────────────────────────── */}
+      {/* ── Combined Header / Filter Bar ──────────────────────────────────── */}
       <div
-        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-6 py-4 border-b shrink-0"
-        style={{ borderColor: border, backgroundColor: inputBg }}
+        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-4 sm:px-6 border-b shrink-0 min-h-[52px]"
+        style={{ borderColor: border, backgroundColor: cardBg }}
       >
-        <div className="flex flex-col gap-0.5">
-          <span className="text-xs font-black uppercase tracking-widest" style={{ color: textMuted }}>Filters</span>
-          <span className="text-xs" style={{ color: textMuted }}>Show tickets created on, and/or from:</span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+        {headerLeft && (
+          <div className="flex items-center gap-0 min-w-0 flex-1 h-full">
+            {headerLeft}
+          </div>
+        )}
+        <div className={`flex flex-wrap items-center gap-2 py-2 sm:py-0 ${!headerLeft ? 'ml-auto' : ''}`}>
           <select
             value={branchFilter}
             onChange={e => setBranchFilter(e.target.value)}
-            className="px-3 py-2 rounded-lg border text-sm font-semibold outline-none focus:ring-1 focus:ring-emerald-500"
+            className="px-3 py-1.5 rounded-lg border text-xs sm:text-sm font-semibold outline-none focus:ring-1 focus:ring-emerald-500"
             style={{ backgroundColor: cardBg, borderColor: border, color: textPrimary }}
           >
             <option value="">All Branches</option>
@@ -167,16 +187,16 @@ export default function TicketHistoryTable({ person }: { person: HistoryPerson }
 
           <div
             onClick={openDatePicker}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-semibold cursor-pointer focus-within:ring-1 focus-within:ring-emerald-500"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs sm:text-sm font-semibold cursor-pointer focus-within:ring-1 focus-within:ring-emerald-500"
             style={{ backgroundColor: cardBg, borderColor: border, color: textPrimary }}
           >
-            <Calendar className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
+            <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" style={{ color: textMuted }} />
             <input
               ref={dateInputRef}
               type="date"
               value={dateFilter}
               onChange={e => setDateFilter(e.target.value)}
-              className="bg-transparent outline-none cursor-pointer text-sm"
+              className="bg-transparent outline-none cursor-pointer text-xs sm:text-sm"
               style={{ color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }}
             />
           </div>
@@ -184,7 +204,7 @@ export default function TicketHistoryTable({ person }: { person: HistoryPerson }
           {(dateFilter || branchFilter) && (
             <button
               onClick={() => { setDateFilter(''); setBranchFilter('') }}
-              className="px-3 py-2 rounded-lg text-sm font-bold transition-all hover:bg-slate-500/10"
+              className="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition-all hover:bg-slate-500/10"
               style={{ color: '#EF4444', border: `1px solid ${border}` }}
             >
               Clear
@@ -195,17 +215,13 @@ export default function TicketHistoryTable({ person }: { person: HistoryPerson }
 
       {/* ── Content ─────────────────────────────────────── */}
       {loading ? (
-        <div className="flex flex-col items-center justify-center flex-1 gap-4">
+        <div className="flex flex-col items-center justify-center flex-1 gap-4 py-16">
           <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#10B981' }} />
           <span className="text-sm font-semibold" style={{ color: textMuted }}>Loading ticket history…</span>
         </div>
       ) : displayedHistory.length === 0 ? (
-        <div className="flex flex-col items-center justify-center flex-1 gap-3">
-          <RefreshCw className="w-10 h-10" style={{ color: textMuted }} />
+        <div className="flex flex-col items-center justify-center flex-1 py-16">
           <span className="text-base font-bold" style={{ color: textMuted }}>No ticket history found</span>
-          <span className="text-sm" style={{ color: textMuted }}>
-            {dateFilter ? `No tickets created on ${new Date(dateFilter + 'T00:00:00').toLocaleDateString(undefined, { dateStyle: 'medium' })}.` : 'No tickets are associated with this account.'}
-          </span>
         </div>
       ) : (
         <div className="flex flex-col flex-1 min-h-0">
@@ -217,16 +233,9 @@ export default function TicketHistoryTable({ person }: { person: HistoryPerson }
             >
               {displayedHistory.length}
             </span>
-            <div className="flex flex-col">
-              <span className="text-sm font-bold uppercase tracking-wider" style={{ color: textPrimary }}>
-                {displayedHistory.length === 1 ? 'Ticket' : 'Tickets'}
-              </span>
-              <span className="text-xs" style={{ color: textMuted }}>
-                {dateFilter
-                  ? `created on ${new Date(dateFilter + 'T00:00:00').toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}`
-                  : 'all time'}
-              </span>
-            </div>
+            <span className="text-sm font-bold uppercase tracking-wider" style={{ color: textPrimary }}>
+              {displayedHistory.length === 1 ? 'Ticket' : 'Tickets'}
+            </span>
           </div>
 
           {/* Table */}

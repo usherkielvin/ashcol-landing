@@ -181,6 +181,7 @@ export default function DashboardLayout() {
   const lastPathname = useRef<string | null>(null)
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const navVisibleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hoverDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
@@ -189,28 +190,34 @@ export default function DashboardLayout() {
   const [branchLabel, setBranchLabel] = useState<string | null>(null)
 
   const handleMouseEnter = () => {
-    if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
-    if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
-    if (sidebarCollapsed) {
-      // Hide collapsed icons immediately, expand width, show text right away
-      setShowCollapsedIcons(false)
-      setSidebarCollapsed(false)
-      setIsHoverExpanded(true)
-      setNavVisible(true)
-    }
+    // Debounce: cancel any pending leave, schedule enter with small delay to ignore rapid oscillations
+    if (hoverDebounce.current) clearTimeout(hoverDebounce.current)
+    hoverDebounce.current = setTimeout(() => {
+      if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
+      if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
+      if (sidebarCollapsed) {
+        setShowCollapsedIcons(false)
+        setSidebarCollapsed(false)
+        setIsHoverExpanded(true)
+        setNavVisible(true)
+      }
+    }, 60)
   }
 
   const handleMouseLeave = () => {
-    if (isHoverExpanded) {
-      // Hide text immediately on leave, then collapse width
-      setNavVisible(false)
-      if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
-      hoverTimeout.current = setTimeout(() => {
-        setSidebarCollapsed(true)
-        setIsHoverExpanded(false)
-        setShowCollapsedIcons(true)
-      }, 160)
-    }
+    // Debounce: cancel any pending enter, schedule leave after debounce window
+    if (hoverDebounce.current) clearTimeout(hoverDebounce.current)
+    hoverDebounce.current = setTimeout(() => {
+      if (isHoverExpanded) {
+        setNavVisible(false)
+        if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
+        hoverTimeout.current = setTimeout(() => {
+          setSidebarCollapsed(true)
+          setIsHoverExpanded(false)
+          setShowCollapsedIcons(true)
+        }, 160)
+      }
+    }, 60)
   }
 
   const isPortalAdminUser = isPortalAdmin(user?.role)
@@ -928,7 +935,11 @@ export default function DashboardLayout() {
               </button>
 
               <div className="flex flex-col justify-center min-w-0 shrink-0">
-                {currentPage === 'Relays' || currentPage === 'Employees' || currentPage === 'Members' || currentPage === 'Registration' ? (
+                {location.pathname === '/profile' ? (
+                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
+                    Profile
+                  </h1>
+                ) : currentPage === 'Relays' || currentPage === 'Employees' || currentPage === 'Members' || currentPage === 'Registration' ? (
                   <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
                     {currentPage}
                   </h1>
