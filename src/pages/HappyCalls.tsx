@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useOutletContext } from 'react-router-dom'
 import { Search, X, Loader2, PhoneCall, CheckCircle2, Plus } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, getCleanBranchName, isPortalAdmin } from '../utils/api'
+import { API_BASE_URL, getCleanBranchName, isPortalAdmin, getActivePortalBranchId, resolveScopedBranchId, isSameBaseBranch } from '../utils/api'
 
 
 export interface HappyCallLead {
@@ -66,8 +67,30 @@ function formatLastContactDate(dateStr?: string): string {
 export default function HappyCalls() {
   const { theme } = useTheme()
   const { user } = useAuth()
+  const outletContext = useOutletContext<{ globalBranchId?: string }>() || {}
+  const globalBranchId = outletContext.globalBranchId
   const isLight = theme === 'light'
   const isAdmin = isPortalAdmin(user?.role || '')
+
+  const [activeBranchId, setActiveBranchId] = useState<string>(() => {
+    if (!isAdmin) {
+      return resolveScopedBranchId(user?.branchId) || user?.branchId || ''
+    }
+    const g = globalBranchId || getActivePortalBranchId(user) || ''
+    return resolveScopedBranchId(g) || g
+  })
+
+  useEffect(() => {
+    if (!isAdmin) return
+    const syncBranch = () => {
+      const g = localStorage.getItem('ashcol-global-branch-id') || getActivePortalBranchId(user) || ''
+      const resolved = resolveScopedBranchId(g) || g
+      setActiveBranchId(resolved)
+    }
+    syncBranch()
+    window.addEventListener('ashcol-global-branch-change', syncBranch)
+    return () => window.removeEventListener('ashcol-global-branch-change', syncBranch)
+  }, [isAdmin, user])
 
   const cardBg = isLight ? '#ffffff' : '#0A1120'
   const border = isLight ? '#e2e8f0' : '#1E2D48'
@@ -84,7 +107,6 @@ export default function HappyCalls() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
-  const [branchFilter, setBranchFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'NOT_CONTACTED' | 'CONTACTED' | 'BOOKED'>('ALL')
   const [dueFilter, setDueFilter] = useState<'3M' | '6M'>('6M')
   const [editLead, setEditLead] = useState<HappyCallLead | null>(null)
@@ -112,14 +134,14 @@ export default function HappyCalls() {
     setLoading(true)
     setError('')
     try {
-      const rows = await fetchLeads(authToken(), branchFilter)
+      const rows = await fetchLeads(authToken(), activeBranchId)
       setLeads(rows)
     } catch (err) {
       setError(errMsg(err, 'Failed to load happy call leads'))
     } finally {
       setLoading(false)
     }
-  }, [branchFilter])
+  }, [activeBranchId])
 
   useEffect(() => { void loadLeads() }, [loadLeads])
 
@@ -140,6 +162,9 @@ export default function HappyCalls() {
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
     return leads.filter(l => {
+      if (activeBranchId && activeBranchId !== 'ALL_BRANCHES') {
+        if (!isSameBaseBranch(l.branchId, activeBranchId)) return false
+      }
       const booked = !!l.scheduledTicketId
       const contacted = (l.contactAttempts || 0) > 0
       if (statusFilter === 'BOOKED' && !booked) return false
@@ -154,7 +179,7 @@ export default function HappyCalls() {
         .filter(Boolean).join(' ').toLowerCase()
       return blob.includes(q)
     })
-  }, [leads, search, statusFilter, dueFilter, getBranchLabel])
+  }, [leads, search, statusFilter, dueFilter, activeBranchId, getBranchLabel])
 
   const patchLead = useCallback(async (id: string, body: Record<string, unknown>) => {
     const res = await fetch(`${API_BASE_URL}/happy-calls/${id}`, {
@@ -190,7 +215,7 @@ export default function HappyCalls() {
   }, [])
 
   return (
-    <div className="p-2 sm:p-3 flex flex-col gap-2.5 h-full min-h-0 flex-1 overflow-hidden">
+    <div className="p-[5px] flex flex-col gap-2.5 h-full min-h-0 flex-1 overflow-hidden">
       <div className="flex flex-nowrap items-center justify-between gap-2 px-1 py-0.5 overflow-x-auto no-scrollbar select-none shrink-0">
         <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
           <div className="flex items-center gap-2 w-48 sm:w-64 rounded-lg px-2.5 py-1.5 border shrink-0 h-8" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
@@ -205,18 +230,6 @@ export default function HappyCalls() {
             />
             {search && <button onClick={() => setSearch('')} style={{ color: textMuted }}><X className="w-3.5 h-3.5" /></button>}
           </div>
-
-          {isAdmin && (
-            <select
-              value={branchFilter}
-              onChange={e => setBranchFilter(e.target.value)}
-              className="rounded-lg px-2.5 py-1 text-xs font-bold uppercase border outline-none shrink-0 h-8 cursor-pointer max-w-[160px]"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-            >
-              <option value="">ALL BRANCHES</option>
-              {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
-            </select>
-          )}
 
           <select
             value={statusFilter}
@@ -260,8 +273,8 @@ export default function HappyCalls() {
       <div style={{ backgroundColor: cardBg, borderColor: border }} className="flex-1 min-h-0 border rounded-xl overflow-auto shadow-sm flex flex-col">
         <table className="w-full text-left table-fixed min-w-[1240px] border-collapse">
           <colgroup>
-            <col className="w-[15%]" />
             <col className="w-[9%]" />
+            <col className="w-[15%]" />
             <col className="w-[10%]" />
             <col className="w-[15%]" />
             <col className="w-[11%]" />
@@ -272,8 +285,8 @@ export default function HappyCalls() {
           </colgroup>
           <thead className="sticky top-0 z-10">
             <tr style={{ backgroundColor: theadBg, color: textMuted, borderBottom: `1px solid ${border}` }} className="text-xs uppercase tracking-wider font-bold select-none">
-              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>CUSTOMER</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>TICKET NO.</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>CUSTOMER</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>BRANCH</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>ADDRESS</th>
               <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>CONTACT</th>
@@ -326,10 +339,10 @@ export default function HappyCalls() {
                   onContextMenu={(e) => { e.preventDefault(); setEditLead(l) }}
                 >
                   <td className="px-3 py-2.5 overflow-hidden">
-                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.customerName}>{l.customerName ? l.customerName.toUpperCase() : 'NA'}</div>
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.ticketNumber || ''}>{l.ticketNumber ? l.ticketNumber.toUpperCase() : 'NA'}</div>
                   </td>
                   <td className="px-3 py-2.5 overflow-hidden">
-                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.ticketNumber || ''}>{l.ticketNumber ? l.ticketNumber.toUpperCase() : 'NA'}</div>
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.customerName}>{l.customerName ? l.customerName.toUpperCase() : 'NA'}</div>
                   </td>
                   <td className="px-3 py-2.5 overflow-hidden">
                     <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={getBranchLabel(l.branchId)}>{getBranchLabel(l.branchId)}</div>
@@ -402,7 +415,7 @@ export default function HappyCalls() {
         <AddLeadModal
           isLight={isLight}
           branches={branches}
-          defaultBranchId={user?.branchId || ''}
+          defaultBranchId={activeBranchId || user?.branchId || ''}
           onClose={() => setAddOpen(false)}
           onCreate={async (body) => { await createLead(body); setAddOpen(false) }}
         />

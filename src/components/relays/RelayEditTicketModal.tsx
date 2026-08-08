@@ -8,6 +8,7 @@ import { buildRelayEditDraft, type RelayEditDraft } from './relayEditForm'
 import type { TicketEditSurface } from '../../utils/ticketEditBridge'
 import { DealerSelect, type DealerOption } from '../DealerSelect'
 import { ROBINSON_APPLIANCES_RE } from '../../utils/dealer'
+import { isInstalledWorkflowStatus } from '../../utils/ticketHelpers'
 
 
 
@@ -165,6 +166,12 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
   }
 
   const isReschedStatus = (draft.scheduleStatus || '').toUpperCase() === 'RESCHED'
+  const currentStatus = ((isFieldSurface ? draft.scheduleStatus : draft.updateStatus) || draft.serviceType || 'PENDING').toUpperCase()
+  // draft.scheduleStatus on the field surface holds the UI-facing schedule outcome (e.g.
+  // "DONE_INSTALLED"/"DONE_CLEANING" from getScheduleStatusValue), not the raw backend enum — so
+  // both forms need checking here, unlike isInstalledWorkflowStatus's other (raw-status) callers.
+  const showInstalledDate = isInstalledWorkflowStatus(currentStatus)
+    || currentStatus === 'DONE_INSTALLED' || currentStatus === 'DONE_CLEANING'
 
   const isSaving = saving || actionSaving
 
@@ -614,6 +621,28 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                   />
                 </button>
               </EField>
+              {showInstalledDate && (
+                <EField label="Installed Date">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      const input = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
+                      if (input && input.showPicker) input.showPicker();
+                    }}
+                    className={`${relayInput} font-bold text-center relative flex flex-col items-center justify-center`}
+                    style={inputStyle}
+                  >
+                    {draft.actualCompletion ? new Date(draft.actualCompletion).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase() : 'ADD DATE'}
+                    <input
+                      type="date"
+                      value={draft.actualCompletion}
+                      onChange={(e) => patch({ actualCompletion: e.target.value })}
+                      className="absolute opacity-0 pointer-events-none w-0 h-0"
+                      style={{ pointerEvents: 'none' }}
+                    />
+                  </button>
+                </EField>
+              )}
               {isFieldSurface && isReschedStatus && (
                 <label className={`flex items-center gap-2 text-xs font-semibold cursor-pointer ${isOverview ? 'sm:col-span-2' : 'md:col-span-2'}`} style={{ color: textPrimary }}>
                   <input

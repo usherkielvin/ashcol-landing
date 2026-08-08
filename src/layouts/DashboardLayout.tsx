@@ -1012,7 +1012,7 @@ export default function DashboardLayout() {
           )}
           <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'DDRM') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
             {/* Do not key Outlet by pathname — that remounts Schedules on every nav and forces a reload spinner. */}
-            <Outlet context={{ setSidebarOpen }} />
+            <Outlet context={{ setSidebarOpen, globalBranchId }} />
           </div>
         </main>
       </div>

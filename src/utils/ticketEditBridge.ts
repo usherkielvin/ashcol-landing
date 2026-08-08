@@ -8,6 +8,7 @@ export type ScheduleEditFormShape = {
   id?: string
   preferredDate?: string
   finalDate?: string
+  actualCompletion?: string
   customerName?: string
   contactPhone?: string
   location?: string
@@ -82,6 +83,7 @@ export function mapRelayDraftToScheduleEditForm(
     status: draft.scheduleStatus || draft.updateStatus || base.status,
     preferredDate: draft.finalDate || draft.preferredDate || base.preferredDate,
     finalDate: draft.finalDate !== undefined ? draft.finalDate : base.finalDate,
+    actualCompletion: draft.actualCompletion !== undefined ? draft.actualCompletion : base.actualCompletion,
     installationCharges: draft.installationCharges ?? base.installationCharges,
     modeOfPayment: draft.modeOfPayment !== undefined ? draft.modeOfPayment : base.modeOfPayment,
     remarks: remarksCombined !== undefined ? remarksCombined : base.remarks,

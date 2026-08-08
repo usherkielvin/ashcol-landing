@@ -1919,6 +1919,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         preferredDate: isReschedStatus && activeForm.reschedulePending
           ? (oldDateKey || activeForm.preferredDate?.split('T')[0]?.trim() || undefined)
           : newDateKey,
+        actualCompletion: activeForm.actualCompletion?.trim() || undefined,
         dealer: activeForm.dealer?.trim() || 'Direct',
         district: activeForm.district?.trim() || undefined,
         commitType: activeForm.commitTerms?.trim() || undefined,
