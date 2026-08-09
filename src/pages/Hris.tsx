@@ -891,10 +891,10 @@ export default function Hris() {
       {/* ────────────────────────────────────────────────────────────
           MOBILE VIEW (FORKED)
           ──────────────────────────────────────────────────────────── */}
-      <div className="md:hidden flex flex-col w-full bg-slate-50 dark:bg-slate-950 min-h-screen">
+      <div className="md:hidden flex flex-col bg-slate-50 dark:bg-slate-950 min-h-screen -mx-5 -mt-5">
         
         {/* Part 1: Mobile Header (Static, scrolls away) */}
-        <div className="w-full bg-white dark:bg-slate-900 px-5 pt-5 pb-2">
+        <div className="w-full bg-white dark:bg-slate-900 px-3 pt-4 pb-2">
           <h2 className="text-2xl font-black tracking-tight flex items-center gap-2.5 text-gray-900 dark:text-white">
             <FileSpreadsheet className="w-7 h-7 text-[#10B981]" />
             HRIS Ledger
@@ -903,7 +903,7 @@ export default function Hris() {
 
         {/* Sticky Tab Bar */}
         <div className="w-full bg-white dark:bg-slate-900 sticky top-0 z-40 border-b border-gray-200 dark:border-slate-700 shadow-sm">
-          <div className="flex w-full overflow-x-auto no-scrollbar px-5">
+          <div className="flex w-full overflow-x-auto no-scrollbar px-3">
           {[
             { id: 'leaves', mobileLabel: 'Leaves', icon: Calendar },
             { id: 'advances', mobileLabel: 'Cash Advances', icon: CreditCard },
@@ -934,7 +934,7 @@ export default function Hris() {
         </div>
 
         {/* Main Mobile Content Area */}
-        <div className="w-full px-5 py-4 flex flex-col gap-4 dark:bg-slate-950">
+        <div className="w-full px-3 py-4 flex flex-col gap-4 dark:bg-slate-950">
           {/* Scrolling Search/Filters */}
           <div className="flex flex-col gap-3">
           <div className="relative w-full">
@@ -997,12 +997,16 @@ export default function Hris() {
             {/* Mobile Tables */}
             <div>
               <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-2">Leave Requests</h3>
-              <ResponsiveTable columns={leaveRequestResponsiveColumns} data={filteredLeaves} />
+              <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm [&>div]:!bg-white dark:[&>div]:!bg-[#0F1A2E] [&_table]:!bg-white dark:[&_table]:!bg-[#0F1A2E] [&_th]:!bg-slate-50 dark:[&_th]:!bg-slate-800/80 [&_th]:!text-slate-900 dark:[&_th]:!text-white [&_td]:!text-slate-700 dark:[&_td]:!text-slate-300 [&_td_span]:!text-slate-900 dark:[&_td_span]:!text-slate-200 [&_td]:!border-slate-200 dark:[&_td]:!border-slate-700/50 [&_th]:!border-slate-200 dark:[&_th]:!border-slate-700/50">
+                <ResponsiveTable columns={leaveRequestResponsiveColumns} data={filteredLeaves} />
+              </div>
             </div>
 
             <div className="mt-4">
               <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-2">Leave Balances</h3>
-              <ResponsiveTable columns={leaveBalancesResponsiveColumns} data={balances} />
+              <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm [&>div]:!bg-white dark:[&>div]:!bg-[#0F1A2E] [&_table]:!bg-white dark:[&_table]:!bg-[#0F1A2E] [&_th]:!bg-slate-50 dark:[&_th]:!bg-slate-800/80 [&_th]:!text-slate-900 dark:[&_th]:!text-white [&_td]:!text-slate-700 dark:[&_td]:!text-slate-300 [&_td_span]:!text-slate-900 dark:[&_td_span]:!text-slate-200 [&_td]:!border-slate-200 dark:[&_td]:!border-slate-700/50 [&_th]:!border-slate-200 dark:[&_th]:!border-slate-700/50">
+                <ResponsiveTable columns={leaveBalancesResponsiveColumns} data={balances} />
+              </div>
             </div>
           </div>
         )}

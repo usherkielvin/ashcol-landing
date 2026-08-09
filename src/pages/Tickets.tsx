@@ -6054,93 +6054,18 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
       {/* Portal: Toolbar into header slot */}
       {!isMyTickets && activeTab !== 'overview' && ReactDOM.createPortal(
-        <div className="w-full min-w-0 max-w-full px-3 md:px-4 py-2.5 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-2 md:gap-3 items-center border-b"
-          style={{ backgroundColor: isLight ? '#ffffff' : '#0A1120', borderColor: tableBorder }}>
+        <div className="w-full px-3 md:px-5 pt-3 pb-2 flex flex-col md:flex-row gap-3 bg-white dark:bg-[#0A1120] border-b"
+          style={{ borderColor: tableBorder }}>
 
-          {/* Left: date chips (scroll) + search — can shrink */}
-          <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-2.5 min-w-0 overflow-hidden">
-            {activeTab === 'schedules' && (
-              <>
-                {/* Mobile: Date picker + Search (in between) + Filters button */}
-                <div className="md:hidden flex items-center gap-2 w-full min-w-0 py-0.5">
-                  {/* Mobile Date picker button — uses native dynamic OS date picker for iOS & Android */}
-                  <div className="relative shrink-0 flex items-center">
-                    <div
-                      className="flex items-center gap-1.5 h-9 px-2.5 rounded-full border transition-transform pointer-events-none"
-                      style={{
-                        backgroundColor: inputBg,
-                        borderColor: green,
-                        color: textPrimary,
-                      }}
-                    >
-                      <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: green }} strokeWidth={2.2} />
-                      <span className="text-[11px] font-semibold whitespace-nowrap">
-                        {new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', {
-                          weekday: 'short',
-                          month: 'short',
-                          day: 'numeric',
-                        })}
-                      </span>
-                    </div>
-                    <input
-                      type="date"
-                      value={dateFilter}
-                      onChange={e => handleDateFilterChange(e.target.value)}
-                      className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer"
-                      aria-label="Pick schedule date"
-                    />
-                  </div>
-
-                  {/* Search field — in between Custom Date and Filters */}
-                  <div
-                    className="flex items-center gap-1.5 flex-1 min-w-0 h-9 px-3 rounded-full border"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder }}
-                  >
-                    <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-                    <input
-                      type="search"
-                      inputMode="search"
-                      placeholder="Search…"
-                      value={searchQuery}
-                      onChange={e => setSearchQuery(e.target.value)}
-                      className="bg-transparent outline-none text-[11.5px] flex-1 min-w-0 font-medium"
-                      style={{ color: textPrimary }}
-                      onClick={e => e.stopPropagation()}
-                    />
-                    {searchQuery && (
-                      <button
-                        type="button"
-                        onClick={e => { e.stopPropagation(); setSearchQuery('') }}
-                        className="shrink-0 p-0.5 rounded-full"
-                        style={{ color: textMuted }}
-                        aria-label="Clear search"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Filters button */}
-                  {!isMyTickets && (
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setMonthFilterModalOpen(true) }}
-                      className="flex items-center gap-1.5 h-9 px-3 rounded-full text-[11.5px] font-bold shrink-0 transition-all active:scale-95 border shadow-sm"
-                      style={{
-                        backgroundColor: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? green : inputBg,
-                        borderColor: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? green : inputBorder,
-                        color: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? '#ffffff' : textPrimary,
-                      }}
-                      title="Filter by month, negotiator, or status"
-                    >
-                      <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" style={{ color: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? '#ffffff' : green }} strokeWidth={2.2} />
-                      <span>Filters</span>
-                    </button>
-                  )}
-                </div>
-
-                {/* Desktop: week chips + custom date (scrolls when tight) */}
-                <div className="hidden md:flex items-center gap-1.5 overflow-x-auto no-scrollbar min-w-0 flex-1">
+          {activeTab === 'schedules' && (
+            <>
+              {/* Filters & Dates ribbon — weekly date pills, custom date, filters, assign
+                  drivers, and showcase all live in one horizontally-scrolling row so nothing
+                  wraps or squishes on narrow screens; it just scrolls (same mechanism on
+                  mobile and desktop now, instead of two separately-built layouts). */}
+              <div className="flex flex-nowrap items-center gap-2.5 overflow-x-auto no-scrollbar w-full pb-1 md:pb-0 flex-1 order-2 md:order-1">
+                {/* Segmented weekly date pills */}
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-[#030712] p-1 rounded-lg shrink-0">
                   {weeklyTabs.map(tab => {
                     const isActive = dateFilter === tab.key
                     return (
@@ -6148,83 +6073,123 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                         type="button"
                         key={tab.key}
                         onClick={() => handleDateFilterChange(tab.key)}
-                        className="h-10 px-4 lg:px-5 rounded-full text-[12px] lg:text-[13px] font-semibold border whitespace-nowrap shrink-0 transition-all active:scale-95"
+                        className="h-8 px-3 rounded-md text-[12px] font-semibold whitespace-nowrap shrink-0 transition-all active:scale-95"
                         style={{
-                          backgroundColor: isActive ? green : inputBg,
-                          borderColor: isActive ? green : inputBorder,
+                          backgroundColor: isActive ? green : 'transparent',
                           color: isActive ? '#ffffff' : textMuted,
-                          boxShadow: isActive ? `0 2px 8px rgba(16,185,129,0.35)` : 'none',
                         }}
                       >
                         {tab.dayName} {tab.dateLabel}
                       </button>
                     )
                   })}
-
-                  {/* Custom Date Picker Trigger */}
-                  <div className="relative shrink-0">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        const now = dateFilter ? new Date(dateFilter + 'T00:00:00') : new Date()
-                        setCustomDateCalMonth({ year: now.getFullYear(), month: now.getMonth() })
-                        setCustomDatePickerOpen(o => !o)
-                      }}
-                      className="relative flex items-center gap-2 h-10 min-w-[10.5rem] px-3 lg:px-4 rounded-full border shrink-0 cursor-pointer transition-all hover:opacity-90 active:scale-[0.98]"
-                      style={{
-                        backgroundColor: isCustomSelected ? green : inputBg,
-                        borderColor: isCustomSelected ? green : inputBorder,
-                        color: isCustomSelected ? '#ffffff' : textPrimary,
-                        boxShadow: isCustomSelected ? '0 2px 8px rgba(16,185,129,0.35)' : 'none',
-                      }}
-                      title="Pick a custom schedule date"
-                    >
-                      <CalendarDays
-                        className="w-[18px] h-[18px] shrink-0"
-                        style={{ color: isCustomSelected ? '#ffffff' : green }}
-                        strokeWidth={2.2}
-                      />
-                      <span className="text-[12px] lg:text-[13px] font-semibold whitespace-nowrap truncate flex-1 min-w-0 text-left">
-                        {isCustomSelected
-                          ? new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', {
-                            weekday: 'short',
-                            month: 'short',
-                            day: 'numeric',
-                          })
-                          : 'Custom date'}
-                      </span>
-                      <ChevronDown
-                        className="w-4 h-4 shrink-0 opacity-70"
-                        style={{ color: isCustomSelected ? '#ffffff' : textMuted }}
-                      />
-                    </button>
-                  </div>
-                  {/* Filters button — next to Custom date */}
-                  {!isMyTickets && (
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setMonthFilterModalOpen(true) }}
-                      className="flex items-center gap-1.5 h-10 px-2.5 xl:px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-all hover:opacity-90 active:scale-95"
-                      style={{
-                        backgroundColor: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? green : inputBg,
-                        border: `1px solid ${(monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? green : inputBorder}`,
-                        color: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? '#ffffff' : textPrimary,
-                      }}
-                      title="Whole-month view for this branch, filterable by negotiator"
-                    >
-                      <SlidersHorizontal className="w-4 h-4 shrink-0" style={{ color: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? '#ffffff' : green }} strokeWidth={2.1} />
-                      <span className="hidden xl:inline">{monthViewActive ? `Month: ${formatMonthFilterLabel(monthFilterMonth)}` : 'Filters'}</span>
-                    </button>
-                  )}
                 </div>
-              </>
-            )}
 
-            {/* Search — desktop */}
-            {activeTab === 'schedules' && (
+                {/* Custom Date Picker Trigger */}
+                <div className="relative shrink-0">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      const now = dateFilter ? new Date(dateFilter + 'T00:00:00') : new Date()
+                      setCustomDateCalMonth({ year: now.getFullYear(), month: now.getMonth() })
+                      setCustomDatePickerOpen(o => !o)
+                    }}
+                    className="relative flex items-center gap-2 h-10 min-w-[10.5rem] px-3 lg:px-4 rounded-full border shrink-0 cursor-pointer transition-all hover:opacity-90 active:scale-[0.98]"
+                    style={{
+                      backgroundColor: isCustomSelected ? green : inputBg,
+                      borderColor: isCustomSelected ? green : inputBorder,
+                      color: isCustomSelected ? '#ffffff' : textPrimary,
+                      boxShadow: isCustomSelected ? '0 2px 8px rgba(16,185,129,0.35)' : 'none',
+                    }}
+                    title="Pick a custom schedule date"
+                  >
+                    <CalendarDays
+                      className="w-[18px] h-[18px] shrink-0"
+                      style={{ color: isCustomSelected ? '#ffffff' : green }}
+                      strokeWidth={2.2}
+                    />
+                    <span className="text-[12px] lg:text-[13px] font-semibold whitespace-nowrap truncate flex-1 min-w-0 text-left">
+                      {isCustomSelected
+                        ? new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                        })
+                        : 'Custom date'}
+                    </span>
+                    <ChevronDown
+                      className="w-4 h-4 shrink-0 opacity-70"
+                      style={{ color: isCustomSelected ? '#ffffff' : textMuted }}
+                    />
+                  </button>
+                </div>
+
+                {/* Filters button */}
+                {!isMyTickets && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setMonthFilterModalOpen(true) }}
+                    className="flex items-center gap-1.5 h-10 px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-all hover:opacity-90 active:scale-95"
+                    style={{
+                      backgroundColor: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? green : inputBg,
+                      border: `1px solid ${(monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? green : inputBorder}`,
+                      color: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? '#ffffff' : textPrimary,
+                    }}
+                    title="Whole-month view for this branch, filterable by negotiator"
+                  >
+                    <SlidersHorizontal className="w-4 h-4 shrink-0" style={{ color: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? '#ffffff' : green }} strokeWidth={2.1} />
+                    <span>{monthViewActive ? `Month: ${formatMonthFilterLabel(monthFilterMonth)}` : 'Filters'}</span>
+                  </button>
+                )}
+
+                {/* Assign Drivers */}
+                {canEdit && !isMyTickets && (
+                  <button
+                    type="button"
+                    id="bulk-assign-driver-btn"
+                    onClick={(e) => { e.stopPropagation(); setBulkAssignOpen(true) }}
+                    className="flex items-center gap-1.5 h-10 px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-all hover:opacity-90 active:scale-95"
+                    style={{
+                      backgroundColor: inputBg,
+                      border: `1px solid ${inputBorder}`,
+                      color: textPrimary,
+                    }}
+                    title="Assign driver and vehicle to an installer's tickets"
+                  >
+                    <UsersRound className="w-4 h-4 shrink-0" style={{ color: green }} strokeWidth={2.1} />
+                    <span>Assign Drivers</span>
+                  </button>
+                )}
+
+                {/* Showcase */}
+                {!isMyTickets && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      persistSchedulesSnapshot()
+                      setShowcaseOpen(true)
+                    }}
+                    className="flex items-center gap-1.5 h-10 px-3 rounded-full text-[12px] xl:text-[13px] font-bold transition-all shrink-0 active:scale-95"
+                    style={{
+                      backgroundColor: showcaseOpen ? 'transparent' : green,
+                      border: `1.5px solid ${green}`,
+                      color: showcaseOpen ? green : '#ffffff',
+                      boxShadow: showcaseOpen ? 'none' : '0 2px 8px rgba(16,185,129,0.3)',
+                    }}
+                    title="Open fullscreen schedule showcase for print / PDF"
+                  >
+                    <Maximize2 className="w-4 h-4 shrink-0" />
+                    <span>{showcaseOpen ? 'Active' : 'Showcase'}</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Search bar — full width on mobile (stacks first), fixed-width and
+                  right-aligned on desktop */}
               <div
-                className="hidden md:flex items-center gap-2 w-[140px] lg:w-[180px] xl:w-[240px] h-10 px-3 rounded-2xl border transition-all shrink-0"
+                className="order-1 md:order-2 md:ml-auto w-full md:w-[280px] flex items-center gap-2 h-10 px-3 rounded-2xl border transition-all shrink-0"
                 style={{ backgroundColor: inputBg, borderColor: inputBorder }}
               >
                 <Search className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
@@ -6250,53 +6215,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   </button>
                 )}
               </div>
-            )}
-          </div>
-
-          {/* Right actions — always pinned in view */}
-          <div className="hidden md:flex items-center gap-1.5 shrink-0 justify-self-end">
-
-
-            {activeTab === 'schedules' && canEdit && !isMyTickets && (
-              <button
-                type="button"
-                id="bulk-assign-driver-btn"
-                onClick={(e) => { e.stopPropagation(); setBulkAssignOpen(true) }}
-                className="flex items-center gap-1.5 h-10 px-2.5 xl:px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-all hover:opacity-90 active:scale-95"
-                style={{
-                  backgroundColor: inputBg,
-                  border: `1px solid ${inputBorder}`,
-                  color: textPrimary,
-                }}
-                title="Assign driver and vehicle to an installer's tickets"
-              >
-                <UsersRound className="w-4 h-4 shrink-0" style={{ color: green }} strokeWidth={2.1} />
-                <span className="hidden xl:inline">Assign Drivers</span>
-              </button>
-            )}
-
-            {activeTab === 'schedules' && !isMyTickets && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  persistSchedulesSnapshot()
-                  setShowcaseOpen(true)
-                }}
-                className="flex items-center gap-1.5 h-10 px-2.5 xl:px-4 rounded-full text-[12px] xl:text-[13px] font-bold transition-all shrink-0 active:scale-95"
-                style={{
-                  backgroundColor: showcaseOpen ? 'transparent' : green,
-                  border: `1.5px solid ${green}`,
-                  color: showcaseOpen ? green : '#ffffff',
-                  boxShadow: showcaseOpen ? 'none' : '0 2px 8px rgba(16,185,129,0.3)',
-                }}
-                title="Open fullscreen schedule showcase for print / PDF"
-              >
-                <Maximize2 className="w-4 h-4 shrink-0" />
-                <span className="hidden xl:inline">{showcaseOpen ? 'Active' : 'Showcase'}</span>
-              </button>
-            )}
-          </div>
+            </>
+          )}
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body
       )}
@@ -6373,7 +6293,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       )}
 
       {/* Ã¢â€â‚¬Ã¢â€â‚¬ Table card Ã¢â€â‚¬Ã¢â€â‚¬ */}
-      <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden" style={{ backgroundColor: cardBg }}
+      <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden md:mx-4 md:mt-4 md:mb-4 md:rounded-xl md:border shadow-sm"
+        style={{ backgroundColor: cardBg, borderColor: border }}
         onClick={e => e.stopPropagation()}>
         {activeTab === 'schedules' ? (
           loading && !hasHydratedOnce && !initialSchedulesReady && tickets.length === 0 ? (
@@ -6448,13 +6369,14 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
               )}
               <div
                 ref={tableScrollRef}
-                className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
+                className="flex-1 min-h-0 overflow-y-auto overflow-x-auto"
                 data-ticket-table-scroll
                 style={{
                   paddingBottom: activeCellOverlay ? 72 : 12,
                 }}
               >
-                <table key={dateFilter || 'all'} className="text-xs w-full hidden md:table" style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
+                <div className="w-full overflow-x-auto pb-4">
+                <table key={dateFilter || 'all'} className="text-xs w-full hidden md:table" style={{ width: '100%', minWidth: '1200px', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
                   <colgroup>
                     {columns.map(col => (
                       <col key={col.label} style={{ width: col.w }} />
@@ -6559,34 +6481,34 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   >
                     {visible.length === 0 ? (
                       <tr>
-                        <td colSpan={columns.length} style={{ borderBottom: `1px solid ${tableBorder}`, padding: '40px 10px' }}>
-                          <div className="flex flex-col items-center justify-center gap-3 py-6">
-                            {(syncing || backgroundSyncing) && !searchQuery ? (
-                              <div className="flex flex-col items-center justify-center gap-2 animate-in fade-in duration-200">
-                                <Loader2 className="w-8 h-8 animate-spin" style={{ color: green }} />
-                                <p className="text-sm font-bold tracking-wide" style={{ color: textMuted }}>
-                                  Syncing with portal database...
-                                </p>
-                              </div>
-                            ) : (
-                              <>
-                                <p className="text-sm font-semibold" style={{ color: textMuted }}>
-                                  {isMyTickets
-                                    ? (searchQuery
-                                      ? 'No pending or assigned tickets match your search'
-                                      : 'No pending or assigned tickets — scheduled jobs are on Schedules, installed jobs on Archives')
-                                    : tickets.length > 0
-                                      ? 'No tickets match this date or branch view'
-                                      : fetchError
-                                        ? 'Could not load schedules — use Retry above'
-                                        : 'No records'}
-                                </p>
-                                {searchQuery && (
-                                  <button onClick={() => setSearchQuery('')} className="text-xs font-bold hover:underline" style={{ color: green }}>Clear search</button>
-                                )}
-                              </>
-                            )}
-                          </div>
+                        <td colSpan={columns.length} style={{ height: '60vh', borderBottom: 'none', verticalAlign: 'middle' }}>
+                          {(syncing || backgroundSyncing) && !searchQuery ? (
+                            <div className="flex flex-col items-center justify-center gap-2 animate-in fade-in duration-200">
+                              <Loader2 className="w-8 h-8 animate-spin" style={{ color: green }} />
+                              <p className="text-sm font-bold tracking-wide" style={{ color: textMuted }}>
+                                Syncing with portal database...
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center justify-center p-12 mx-auto max-w-lg rounded-2xl border-2 border-dashed transition-all"
+                                 style={{ backgroundColor: isLight ? '#f8fafc' : '#0F1A2E', borderColor: isLight ? '#e2e8f0' : '#1E293B' }}>
+                              <CalendarDays className="w-12 h-12 mb-4 opacity-20" style={{ color: textMuted }} />
+                              <p className="text-sm font-bold text-center" style={{ color: textPrimary }}>
+                                {isMyTickets
+                                  ? (searchQuery ? 'No pending or assigned tickets match your search.' : 'No pending or assigned tickets found.')
+                                  : tickets.length > 0
+                                    ? 'No tickets match this date or branch view.'
+                                    : fetchError
+                                      ? 'Could not load schedules. Please click Retry.'
+                                      : 'No records scheduled for this date.'}
+                              </p>
+                              {searchQuery && (
+                                <button onClick={() => setSearchQuery('')} className="mt-4 px-4 py-2 rounded-lg text-xs font-bold text-white transition-all active:scale-95 shadow-md" style={{ backgroundColor: green }}>
+                                  Clear Search
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ) : (
@@ -6859,11 +6781,16 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     );
                   })()}
                 </table>
+                </div>
                 {/* Mobile Card View — important fields only (no branch; header already shows it) */}
                 <div className="flex flex-col md:hidden p-3 gap-2.5">
                   {visible.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center gap-3 py-12">
-                      <p className="text-sm font-semibold" style={{ color: textMuted }}>
+                    <div
+                      className="flex flex-col items-center justify-center gap-3 p-10 m-2 rounded-2xl border-2 border-dashed bg-slate-50/50 dark:bg-[#0F1A2E]/30"
+                      style={{ borderColor: isLight ? '#cbd5e1' : '#334155' }}
+                    >
+                      <CalendarDays className="w-8 h-8 opacity-25" style={{ color: textMuted }} />
+                      <p className="text-sm font-semibold text-center" style={{ color: textMuted }}>
                         No records found
                       </p>
                     </div>

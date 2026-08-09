@@ -392,6 +392,20 @@ export default function DailyServiceReport() {
     setRows(prev => [newRow, ...prev])
   }
 
+  // Escape hatch for the trailing "X" column on both the desktop table and
+  // mobile cards. An unsaved blank row (id still `temp-...`, same convention
+  // saveCell already uses to detect an in-progress add) is just dropped from
+  // local state — it was never persisted, so there's nothing to delete on the
+  // server. A real, saved row goes through the existing confirm+DELETE flow.
+  const handleRemoveRow = (id: string) => {
+    if (id.startsWith('temp-')) {
+      setRows(prev => prev.filter(r => r.id !== id))
+      return
+    }
+    const row = rows.find(r => r.id === id)
+    if (row) handleDelete(row)
+  }
+
   // Pending Excel import waiting for an all-branch user to choose a target branch
   const [pendingImport, setPendingImport] = useState<{ file: File; branchId: string; detectedDate: string | null } | null>(null)
 
@@ -1692,7 +1706,7 @@ export default function DailyServiceReport() {
       {/* ── Portal: Toolbar into header slot ────────────────── */}
       {ReactDOM.createPortal(
         <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2 select-none">
-          <div className="flex flex-col md:flex-row md:items-center gap-2.5 w-full">
+          <div className="flex flex-col md:flex-row md:items-center gap-3 w-full">
 
             {/* Filter ribbon — Branch / Negotiator / Month, horizontally scrollable
                 so they never stack into a vertical tower on mobile. */}
@@ -1909,6 +1923,9 @@ export default function DailyServiceReport() {
                 {columns.map(col => (
                   <col key={col.label} style={{ width: col.w }} />
                 ))}
+                {/* Trailing action column — row cancel/delete "X", fixed width so it
+                    never eats into the percentage-weighted data columns above. */}
+                <col style={{ width: '34px' }} />
               </colgroup>
               <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                 <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#060B18' }}>
@@ -1942,12 +1959,20 @@ export default function DailyServiceReport() {
                       </th>
                     )
                   })}
+                  <th style={{
+                    padding: '8px 10px',
+                    borderBottom: `2px solid ${isLight ? '#e2e8f0' : '#1e293b'}`,
+                    width: '34px',
+                    minWidth: 0,
+                    maxWidth: '34px',
+                    backgroundColor: isLight ? '#f8fafc' : '#060B18',
+                  }} />
                 </tr>
               </thead>
               <tbody>
                 {visible.length === 0 ? (
                   <tr>
-                    <td colSpan={columns.length} style={{ padding: '40px 10px', textAlign: 'center' }}>
+                    <td colSpan={columns.length + 1} style={{ padding: '40px 10px', textAlign: 'center' }}>
                       <div className="flex flex-col items-center justify-center gap-3 py-6">
                         <AlertTriangle className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
                         <p className="text-sm font-semibold" style={{ color: textMuted }}>
@@ -2031,6 +2056,23 @@ export default function DailyServiceReport() {
                           </td>
                         )
                       })}
+                      <td style={{
+                        padding: '7px 6px',
+                        borderBottom: `1px solid ${border}`,
+                        width: '34px', minWidth: 0, maxWidth: '34px',
+                        textAlign: 'center',
+                        verticalAlign: 'middle',
+                        backgroundColor: rowSelectedBg,
+                      }}>
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); handleRemoveRow(r.id) }}
+                          title={r.id.startsWith('temp-') ? 'Cancel this row' : 'Delete this record'}
+                          className="text-slate-400 hover:text-red-500 transition-colors p-1 rounded"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
                     </tr>
                   )
                 }))}
@@ -2069,17 +2111,27 @@ export default function DailyServiceReport() {
                       onContextMenu={e => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, row: r }) }}
                       className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#0A1120] shadow-sm overflow-hidden active:scale-[0.985] transition-transform cursor-pointer"
                     >
-                      {/* Header: ticket no (left) / completed date (right) */}
+                      {/* Header: ticket no (left) / completed date + cancel-delete "X" (right) */}
                       <div className="px-3 py-2 flex justify-between items-center border-b" style={{ borderColor: border, backgroundColor: isLight ? 'rgba(248,250,252,0.7)' : 'rgba(15,26,46,0.5)' }}>
                         <span className="text-[10.5px] font-bold tabular-nums" style={{ color: textMuted }}>
                           {r.ticketNumber || '—'}
                         </span>
-                        {completedLabel ? (
-                          <span className="flex items-center gap-1 text-[10.5px] font-bold" style={{ color: textPrimary }}>
-                            <CalendarDays className="w-3 h-3 shrink-0" style={{ color: textMuted }} />
-                            {completedLabel}
-                          </span>
-                        ) : null}
+                        <div className="flex items-center gap-2">
+                          {completedLabel ? (
+                            <span className="flex items-center gap-1 text-[10.5px] font-bold" style={{ color: textPrimary }}>
+                              <CalendarDays className="w-3 h-3 shrink-0" style={{ color: textMuted }} />
+                              {completedLabel}
+                            </span>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={e => { e.stopPropagation(); handleRemoveRow(r.id) }}
+                            title={r.id.startsWith('temp-') ? 'Cancel this row' : 'Delete this record'}
+                            className="text-slate-400 hover:text-red-500 transition-colors p-0.5 rounded shrink-0"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
 
                       {/* Body: customer name / brand · dealer / district */}
