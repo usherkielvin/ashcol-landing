@@ -6854,7 +6854,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 <div className="flex flex-col md:hidden px-4 py-4 gap-3 w-full">
                   {visible.length === 0 ? (
                     <div
-                      className="flex flex-col items-center justify-center gap-3 p-10 m-2 rounded-2xl border-2 border-dashed bg-slate-50/50 dark:bg-[#0F1A2E]/30"
+                      className="flex flex-col items-center justify-center gap-3 p-10 mx-2 my-10 min-h-[50vh] rounded-2xl border-2 border-dashed bg-slate-50/50 dark:bg-[#0F1A2E]/30"
                       style={{ borderColor: isLight ? '#cbd5e1' : '#334155' }}
                     >
                       <CalendarDays className="w-8 h-8 opacity-25" style={{ color: textMuted }} />
