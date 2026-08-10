@@ -410,8 +410,6 @@ export default function DailyServiceReport() {
 
   // ── Month popover (custom, replaces the native <select> that overflowed on mobile) ──
   const [monthPickerOpen, setMonthPickerOpen] = useState(false)
-  const [monthPickerYear, setMonthPickerYear] = useState(() => new Date().getFullYear())
-  const [monthPickerPos, setMonthPickerPos] = useState<{ top: number; left: number; width: number } | null>(null)
   const monthPickerRef = useRef<HTMLButtonElement>(null)
   const monthPickerPopRef = useRef<HTMLDivElement>(null)
 
@@ -494,6 +492,52 @@ export default function DailyServiceReport() {
     }
     const row = rows.find(r => r.id === id)
     if (row) handleDelete(row)
+  }
+
+  // "+ Add the first one" — appends a blank, unsaved row (temp- id) scoped to
+  // the currently selected branch/month so it's immediately editable inline;
+  // handleRemoveRow cancels it if the user backs out before saving.
+  const handleAddRow = () => {
+    const realBranchId = resolveScopedBranchId(
+      resolveArchivesBranchFilter(branchFilter, branches, user),
+    ) || resolveScopedBranchId(branches[0]?.id) || null
+    const blankRow: ServiceRow = {
+      id: `temp-${Date.now()}`,
+      branchId: realBranchId,
+      branchName: null,
+      reportDate: todayLocal(),
+      customerName: '',
+      customerAddress: '',
+      customerPhone: '',
+      district: '',
+      serviceType: '',
+      statusCode: 'I',
+      commitTerms: '',
+      dealer: '',
+      unitBrandModel: '',
+      unitSerial: '',
+      quantity: 1,
+      technicianName: '',
+      negotiator: '',
+      scheduleTime: '',
+      scheduleStatus: '',
+      timeStarted: '',
+      timeEnded: '',
+      amountCharged: 0,
+      paymentStatus: 'CASH',
+      jobStatus: 'SCHEDULED',
+      remarks: '',
+      note: '',
+      controlNumber: '',
+      serviceColumn: '',
+      papers: '',
+      costing: '',
+      relayStatus: '',
+      fifteenQuestions: '',
+      freeInstallation: false,
+      complainRequest: '',
+    }
+    setRows(prev => [blankRow, ...prev])
   }
 
   // Pending Excel import waiting for an all-branch user to choose a target branch
@@ -1751,6 +1795,18 @@ export default function DailyServiceReport() {
     const [y, m] = ym.split('-')
     return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
   }
+
+  // Descending list of selectable months (current month first, 24 months back).
+  const monthOptions = useMemo(() => {
+    const now = new Date()
+    const opts: string[] = []
+    for (let i = 0; i < 24; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      opts.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+    }
+    if (monthFilter && !opts.includes(monthFilter)) opts.push(monthFilter)
+    return opts
+  }, [monthFilter])
 
   const branchSelectOptions = useMemo(() => [
     { value: 'ALL_BRANCHES', label: 'All Branches' },

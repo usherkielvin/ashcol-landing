@@ -368,7 +368,7 @@ export default function OperationsForms() {
   }
 
   return (
-    <div className="flex flex-col gap-5 min-h-full" style={{ backgroundColor: pageBg, color: textPrimary }}>
+    <div className="flex flex-col gap-5 min-h-full w-full" style={{ backgroundColor: pageBg, color: textPrimary }}>
       {/* Page header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
