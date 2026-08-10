@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import ReactDOM from 'react-dom'
-import { X, GitCommit, Clock, User, Calendar } from 'lucide-react'
+import { X, GitCommit, Clock, User, Calendar, Send } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { API_BASE_URL } from '../utils/api'
 
@@ -36,69 +36,125 @@ interface TicketHistoryGraphModalProps {
   ticket: Ticket
   isOpen: boolean
   onClose: () => void
+  onRemarkSubmitted?: (ticketId: string, remark: string) => void
 }
 
-export default function TicketHistoryGraphModal({ ticket, isOpen, onClose }: TicketHistoryGraphModalProps) {
+export default function TicketHistoryGraphModal({
+  ticket,
+  isOpen,
+  onClose,
+  onRemarkSubmitted,
+}: TicketHistoryGraphModalProps) {
   const { theme } = useTheme()
   const isLight = theme === 'light'
   
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [loading, setLoading] = useState(false)
+  const [remark, setRemark] = useState('')
+  const [submittingRemark, setSubmittingRemark] = useState(false)
+  const [remarkError, setRemarkError] = useState<string | null>(null)
+  const historyListRef = useRef<HTMLDivElement>(null)
+  const remarkInputRef = useRef<HTMLTextAreaElement>(null)
 
   const cardBg = isLight ? '#ffffff' : '#1e293b'
   const border = isLight ? '#e5e7eb' : '#374151'
   const textPrimary = isLight ? '#111827' : '#f9fafb'
   const textMuted = isLight ? '#6b7280' : '#9ca3af'
 
-  useEffect(() => {
-    if (!isOpen || !ticket.id) return
+  const loadHistory = useCallback(async (showLoading = true) => {
+    if (!ticket.id) return
 
-    const fetchHistory = async () => {
-      setLoading(true)
-      try {
-        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
-        const response = await fetch(`${API_BASE_URL}/tickets/${ticket.id}/history`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        })
-        
-        if (response.ok) {
-          const result = await response.json()
-          if (result.success && Array.isArray(result.data)) {
-            setHistory(result.data)
-          } else {
-            setHistory([])
-          }
-        } else {
-          setHistory([])
-        }
-      } catch (err) {
-        console.error('Error fetching ticket history:', err)
+    if (showLoading) setLoading(true)
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
+      const response = await fetch(`${API_BASE_URL}/tickets/${ticket.id}/history`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        setHistory(result.success && Array.isArray(result.data) ? result.data : [])
+      } else {
         setHistory([])
-      } finally {
-        setLoading(false)
       }
+    } catch (err) {
+      console.error('Error fetching ticket history:', err)
+      setHistory([])
+    } finally {
+      if (showLoading) setLoading(false)
     }
+  }, [ticket.id])
 
-    fetchHistory()
-  }, [isOpen, ticket.id])
+  useEffect(() => {
+    if (!isOpen) return
+    void loadHistory()
+  }, [isOpen, loadHistory])
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    const focusTimer = window.setTimeout(() => remarkInputRef.current?.focus(), 0)
+    return () => window.clearTimeout(focusTimer)
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen || loading) return
+
+    const frame = window.requestAnimationFrame(() => {
+      const historyList = historyListRef.current
+      if (historyList) historyList.scrollTop = historyList.scrollHeight
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [history, isOpen, loading])
+
+  const submitRemark = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const trimmedRemark = remark.trim()
+    if (!trimmedRemark || submittingRemark) return
+
+    setSubmittingRemark(true)
+    setRemarkError(null)
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
+      const response = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ remarksUpdate: trimmedRemark })
+      })
+
+      if (!response.ok) throw new Error('Failed to save remark')
+
+      onRemarkSubmitted?.(ticket.id, trimmedRemark)
+      setRemark('')
+      await loadHistory(false)
+      remarkInputRef.current?.focus()
+    } catch (err) {
+      console.error('Error saving ticket remark:', err)
+      setRemarkError('Unable to save the update. Please try again.')
+    } finally {
+      setSubmittingRemark(false)
+    }
+  }
 
   const formatTime = (dateString: string) => {
     try {
       const date = new Date(dateString)
-      const now = new Date()
-      const diffMs = now.getTime() - date.getTime()
-      const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
-      const diffDays = Math.floor(diffHours / 24)
-      
-      if (diffDays > 7) {
-        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-      } else if (diffDays > 0) {
-        return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`
-      } else if (diffHours > 0) {
-        return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`
-      } else {
-        return 'Just now'
-      }
+      if (Number.isNaN(date.getTime())) return dateString
+
+      const dateLabel = date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      })
+      const timeLabel = date.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      })
+      return `${dateLabel} ${timeLabel}`
     } catch {
       return dateString
     }
@@ -224,7 +280,7 @@ export default function TicketHistoryGraphModal({ ticket, isOpen, onClose }: Tic
       onClick={onClose}
     >
       <div 
-        className="w-full max-w-lg max-h-[80vh] rounded-lg shadow-2xl overflow-hidden flex flex-col"
+        className="w-full max-w-4xl max-h-[90vh] rounded-lg shadow-2xl overflow-hidden flex flex-col"
         style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -258,7 +314,7 @@ export default function TicketHistoryGraphModal({ ticket, isOpen, onClose }: Tic
         </div>
 
         {/* Git-style commit list */}
-        <div className="flex-1 overflow-y-auto" style={{ backgroundColor: isLight ? '#fafafa' : '#111827' }}>
+        <div ref={historyListRef} className="flex-1 min-h-0 overflow-y-auto" style={{ backgroundColor: isLight ? '#fafafa' : '#111827' }}>
           {loading ? (
             <div className="flex items-center justify-center py-8">
               <Clock className="w-4 h-4 animate-spin mr-2" style={{ color: '#10B981' }} />
@@ -272,7 +328,7 @@ export default function TicketHistoryGraphModal({ ticket, isOpen, onClose }: Tic
           ) : (
             <div className="py-2">
               {[...history].sort(
-                (a, b) => new Date(b.createdAt || b.created_at || Date.now()).getTime() - new Date(a.createdAt || a.created_at || Date.now()).getTime()
+                (a, b) => new Date(a.createdAt || a.created_at || Date.now()).getTime() - new Date(b.createdAt || b.created_at || Date.now()).getTime()
               ).map((entry, index) => {
                 const safeEntry = {
                   ...entry,
@@ -308,8 +364,8 @@ export default function TicketHistoryGraphModal({ ticket, isOpen, onClose }: Tic
                         <div 
                           className="w-2.5 h-2.5 rounded-full border-2 shrink-0 relative z-10"
                           style={{ 
-                            backgroundColor: isFirst ? '#10B981' : '#6b7280',
-                            borderColor: isFirst ? '#10B981' : '#6b7280'
+                            backgroundColor: isLast ? '#10B981' : '#6b7280',
+                            borderColor: isLast ? '#10B981' : '#6b7280'
                           }}
                         />
                         
@@ -418,16 +474,50 @@ export default function TicketHistoryGraphModal({ ticket, isOpen, onClose }: Tic
           )}
         </div>
 
-        {/* Footer - like VS Code */}
-        <div 
-          className="px-4 py-2 border-t text-xs"
-          style={{ 
+        {/* Chat-style remark composer */}
+        <div
+          className="px-4 py-3 border-t"
+          style={{
             borderColor: border,
-            backgroundColor: isLight ? '#f8fafc' : '#0f172a',
-            color: textMuted
+            backgroundColor: isLight ? '#f8fafc' : '#0f172a'
           }}
         >
-          {history.length} commit{history.length === 1 ? '' : 's'}
+          <form onSubmit={submitRemark} className="flex items-end gap-3">
+            <div className="min-w-0 flex-1">
+              <label htmlFor="ticket-history-remark" className="sr-only">Add ticket remark</label>
+              <textarea
+                ref={remarkInputRef}
+                id="ticket-history-remark"
+                value={remark}
+                onChange={(event) => setRemark(event.target.value)}
+                placeholder="Add an update or remark..."
+                rows={2}
+                disabled={submittingRemark}
+                className="w-full resize-none rounded-md border px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                style={{
+                  backgroundColor: isLight ? '#ffffff' : '#111827',
+                  borderColor: border,
+                  color: textPrimary
+                }}
+              />
+              {remarkError && (
+                <p className="mt-1 text-xs" role="alert" style={{ color: '#ef4444' }}>
+                  {remarkError}
+                </p>
+              )}
+            </div>
+            <button
+              type="submit"
+              disabled={!remark.trim() || submittingRemark}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Send className="h-4 w-4" />
+              {submittingRemark ? 'Saving...' : 'Send'}
+            </button>
+          </form>
+          <div className="mt-2 text-xs" style={{ color: textMuted }}>
+            {history.length} commit{history.length === 1 ? '' : 's'}
+          </div>
         </div>
       </div>
     </div>,
