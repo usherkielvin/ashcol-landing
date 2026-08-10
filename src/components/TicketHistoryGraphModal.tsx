@@ -39,6 +39,35 @@ interface TicketHistoryGraphModalProps {
   onRemarkSubmitted?: (ticketId: string, remark: string) => void
 }
 
+/** Format a raw YYYY-MM-DD string to AUG-16-2026 */
+function formatDateBadge(raw: string): string {
+  try {
+    const d = new Date(raw + 'T00:00:00')
+    if (Number.isNaN(d.getTime())) return raw
+    const month = d.toLocaleString('en-US', { month: 'short' }).toUpperCase()
+    const day   = String(d.getDate()).padStart(2, '0')
+    const year  = d.getFullYear()
+    return `${month}-${day}-${year}`
+  } catch {
+    return raw
+  }
+}
+
+/** Format a full ISO timestamp to AUG-10-2026  4:44 PM */
+function formatTimestamp(dateString: string): string {
+  try {
+    const d = new Date(dateString)
+    if (Number.isNaN(d.getTime())) return dateString
+    const month = d.toLocaleString('en-US', { month: 'short' }).toUpperCase()
+    const day   = String(d.getDate()).padStart(2, '0')
+    const year  = d.getFullYear()
+    const time  = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+    return `${month}-${day}-${year}  ${time}`
+  } catch {
+    return dateString
+  }
+}
+
 export default function TicketHistoryGraphModal({
   ticket,
   isOpen,
@@ -47,7 +76,7 @@ export default function TicketHistoryGraphModal({
 }: TicketHistoryGraphModalProps) {
   const { theme } = useTheme()
   const isLight = theme === 'light'
-  
+
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [remark, setRemark] = useState('')
@@ -56,21 +85,21 @@ export default function TicketHistoryGraphModal({
   const historyListRef = useRef<HTMLDivElement>(null)
   const remarkInputRef = useRef<HTMLTextAreaElement>(null)
 
-  const cardBg = isLight ? '#ffffff' : '#1e293b'
-  const border = isLight ? '#e5e7eb' : '#374151'
-  const textPrimary = isLight ? '#111827' : '#f9fafb'
-  const textMuted = isLight ? '#6b7280' : '#9ca3af'
+  const cardBg      = isLight ? '#ffffff' : '#1e293b'
+  const border      = isLight ? '#e2e8f0' : '#334155'
+  const textPrimary = isLight ? '#0f172a' : '#f1f5f9'
+  const textMuted   = isLight ? '#475569' : '#94a3b8'
+  const headerBg    = isLight ? '#f8fafc' : '#0f172a'
+  const bodyBg      = isLight ? '#f9fafb' : '#111827'
 
   const loadHistory = useCallback(async (showLoading = true) => {
     if (!ticket.id) return
-
     if (showLoading) setLoading(true)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
       const response = await fetch(`${API_BASE_URL}/tickets/${ticket.id}/history`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       })
-
       if (response.ok) {
         const result = await response.json()
         setHistory(result.success && Array.isArray(result.data) ? result.data : [])
@@ -85,24 +114,18 @@ export default function TicketHistoryGraphModal({
     }
   }, [ticket.id])
 
-  useEffect(() => {
-    if (!isOpen) return
-    void loadHistory()
-  }, [isOpen, loadHistory])
+  useEffect(() => { if (isOpen) void loadHistory() }, [isOpen, loadHistory])
 
   useEffect(() => {
     if (!isOpen) return
-
-    const focusTimer = window.setTimeout(() => remarkInputRef.current?.focus(), 0)
-    return () => window.clearTimeout(focusTimer)
+    const t = window.setTimeout(() => remarkInputRef.current?.focus(), 0)
+    return () => window.clearTimeout(t)
   }, [isOpen])
 
   useEffect(() => {
     if (!isOpen || loading) return
-
     const frame = window.requestAnimationFrame(() => {
-      const historyList = historyListRef.current
-      if (historyList) historyList.scrollTop = historyList.scrollHeight
+      if (historyListRef.current) historyListRef.current.scrollTop = historyListRef.current.scrollHeight
     })
     return () => window.cancelAnimationFrame(frame)
   }, [history, isOpen, loading])
@@ -111,22 +134,16 @@ export default function TicketHistoryGraphModal({
     event.preventDefault()
     const trimmedRemark = remark.trim()
     if (!trimmedRemark || submittingRemark) return
-
     setSubmittingRemark(true)
     setRemarkError(null)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
       const response = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
         method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ remarksUpdate: trimmedRemark })
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ remarksUpdate: trimmedRemark }),
       })
-
       if (!response.ok) throw new Error('Failed to save remark')
-
       onRemarkSubmitted?.(ticket.id, trimmedRemark)
       setRemark('')
       await loadHistory(false)
@@ -139,49 +156,21 @@ export default function TicketHistoryGraphModal({
     }
   }
 
-  const formatTime = (dateString: string) => {
-    try {
-      const date = new Date(dateString)
-      if (Number.isNaN(date.getTime())) return dateString
-
-      const dateLabel = date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric'
-      })
-      const timeLabel = date.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true
-      })
-      return `${dateLabel} ${timeLabel}`
-    } catch {
-      return dateString
-    }
-  }
-
   const parseCommitMessage = (entry: HistoryEntry) => {
-    let fullMessage = entry.changeNote || entry.note || entry.description || entry.remarks || entry.reason || entry.action || 'Updated ticket'
-    
-    // Remove ALL bracketed content first
+    let fullMessage =
+      entry.changeNote || entry.note || entry.description ||
+      entry.remarks || entry.reason || entry.action || 'Updated ticket'
+
     fullMessage = fullMessage.replace(/\s*\[[^\]]+\]/g, '').trim()
-    
-    // Extract action phrases that should be in separate boxes
+
     const actionPhrases = [
-      'Details updated',
-      'AC details updated', 
-      'Description updated',
-      'Location updated',
-      'Service type updated',
-      'Dealer set to',
-      'Store referral fee set to',
-      'Negotiator set to'
+      'Details updated', 'AC details updated', 'Description updated',
+      'Location updated', 'Service type updated', 'Dealer set to',
+      'Store referral fee set to', 'Negotiator set to',
     ]
-    
     let cleanMessage = fullMessage
     const extractedActions: string[] = []
-    
-    // Extract action phrases
+
     actionPhrases.forEach(phrase => {
       const regex = new RegExp(`\\b${phrase}[^.]*\\.?`, 'gi')
       const matches = cleanMessage.match(regex)
@@ -192,282 +181,268 @@ export default function TicketHistoryGraphModal({
         })
       }
     })
-    
-    // Clean up extra spaces and punctuation
-    cleanMessage = cleanMessage
-      .replace(/\s+/g, ' ')
-      .replace(/\.\s*\./g, '.')
-      .replace(/\s*\.\s*$/, '.')
-      .trim()
-    
-    // Check if message is essentially empty after cleaning
+
+    cleanMessage = cleanMessage.replace(/\s+/g, ' ').replace(/\.\s*\./g, '.').replace(/\s*\.\s*$/, '.').trim()
+
     if (!cleanMessage || cleanMessage === '.' || cleanMessage === 'Updated ticket') {
-      return {
-        commitLines: ['No remarks'],
-        extractedActions
-      }
+      return { commitLines: ['No remarks'], extractedActions }
     }
-    
-    // Split message into logical bullet points like Git commits
+
     const commitLines: string[] = []
-    
-    // Check for rescheduling pattern
-    const rescheduleMatch = cleanMessage.match(/rescheduled\s+from\s+(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})/i)
+
+    const rescheduleMatch = cleanMessage.match(
+      /rescheduled\s+from\s+(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})/i
+    )
     if (rescheduleMatch) {
       const [, fromDate, toDate] = rescheduleMatch
       commitLines.push(`Rescheduled from ${fromDate} to ${toDate}`)
-      // Remove this from the message
       cleanMessage = cleanMessage.replace(rescheduleMatch[0], '').replace(/^\s*\.\s*/, '').trim()
     }
-    
-    // Check for title changes
+
     const titleMatch = cleanMessage.match(/title\s+set\s+to\s+'([^']+)'/i)
     if (titleMatch) {
       commitLines.push(`Title set to '${titleMatch[1]}'`)
-      // Remove this from the message  
       cleanMessage = cleanMessage.replace(titleMatch[0], '').replace(/^\s*\.\s*/, '').trim()
     }
-    
-    // Check for service type changes
+
     const serviceMatch = cleanMessage.match(/service\s+type\s+set\s+to\s+([^.]+)/i)
     if (serviceMatch) {
       commitLines.push(`Service type set to ${serviceMatch[1].trim()}`)
-      // Remove this from the message
       cleanMessage = cleanMessage.replace(serviceMatch[0], '').replace(/^\s*\.\s*/, '').trim()
     }
-    
-    // Check for final date changes
+
     const finalDateMatch = cleanMessage.match(/final\s+date\s+set\s+to\s+(\d{4}-\d{2}-\d{2})/i)
     if (finalDateMatch) {
       commitLines.push(`Final date set to ${finalDateMatch[1]}`)
-      // Remove this from the message
       cleanMessage = cleanMessage.replace(finalDateMatch[0], '').replace(/^\s*\.\s*/, '').trim()
     }
-    
-    // If there's any remaining meaningful text, add it as a line
-    if (cleanMessage && cleanMessage !== '.' && cleanMessage.length > 3) {
-      commitLines.push(cleanMessage)
-    }
-    
-    // If no structured lines found, just use the whole message
-    if (commitLines.length === 0) {
-      commitLines.push(fullMessage)
-    }
-    
-    return {
-      commitLines,
-      extractedActions
-    }
+
+    if (cleanMessage && cleanMessage !== '.' && cleanMessage.length > 3) commitLines.push(cleanMessage)
+    if (commitLines.length === 0) commitLines.push(fullMessage)
+
+    return { commitLines, extractedActions }
   }
 
   const getAuthorName = (entry: HistoryEntry) => {
     const actor = entry.changedByUserName || entry.actorName || entry.changed_by || entry.createdBy || 'System'
-    return actor.split(' ')[0].toUpperCase() // Take first name and uppercase like the original
+    return actor.split(' ')[0].toUpperCase()
   }
 
-  const getTimestamp = (entry: HistoryEntry) => {
-    return entry.createdAt || entry.created_at || new Date().toISOString()
-  }
+  const getTimestamp = (entry: HistoryEntry) =>
+    entry.createdAt || entry.created_at || new Date().toISOString()
 
   if (!isOpen) return null
 
   const ticketNumber = ticket.ticketNumber || ticket.ticket_number || 'Unknown'
 
+  const renderLineParts = (line: string) =>
+    line.split(/(\d{4}-\d{2}-\d{2}|'[^']*')/).map((part, partIdx) => {
+      if (!part) return null
+      const isDate   = /^\d{4}-\d{2}-\d{2}$/.test(part)
+      const isQuoted = /^'[^']*'$/.test(part)
+      if (isDate || isQuoted) {
+        const display = isDate ? formatDateBadge(part) : part
+        return (
+          <span
+            key={`part-${partIdx}`}
+            style={{
+              display: 'inline-block',
+              fontSize: '0.85rem',
+              fontFamily: '"Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+              padding: '2px 8px',
+              borderRadius: 6,
+              margin: '0 4px',
+              backgroundColor: isDate
+                ? (isLight ? '#fef3c7' : 'rgba(245,158,11,0.18)')
+                : (isLight ? '#f0fdf4'  : 'rgba(34,197,94,0.15)'),
+              color: isDate
+                ? (isLight ? '#92400e' : '#fbbf24')
+                : (isLight ? '#166534' : '#22c55e'),
+              border: `1px solid ${isDate
+                ? (isLight ? '#f59e0b' : 'rgba(245,158,11,0.35)')
+                : (isLight ? '#22c55e' : 'rgba(34,197,94,0.3)')}`,
+            }}
+          >
+            {display}
+          </span>
+        )
+      }
+      return <span key={`part-${partIdx}`}>{part}</span>
+    })
+
   return ReactDOM.createPortal(
-    <div 
+    <div
       className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
-      style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+      style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}
       onClick={onClose}
     >
-      <div 
-        className="w-full max-w-4xl max-h-[90vh] rounded-lg shadow-2xl overflow-hidden flex flex-col"
-        style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+      <div
+        className="w-full max-w-4xl max-h-[90vh] rounded-xl shadow-2xl overflow-hidden flex flex-col"
+        style={{
+          backgroundColor: cardBg,
+          border: `1.5px solid ${border}`,
+          fontFamily: '"Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
+        }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header - like VS Code */}
-        <div 
-          className="flex items-center justify-between px-4 py-3 border-b"
-          style={{ 
-            borderColor: border,
-            backgroundColor: isLight ? '#f8fafc' : '#0f172a'
-          }}
+        {/* Header */}
+        <div
+          className="flex items-center justify-between px-5 py-4 border-b"
+          style={{ borderColor: border, backgroundColor: headerBg }}
         >
-          <div className="flex items-center gap-2">
-            <GitCommit className="w-4 h-4" style={{ color: '#10B981' }} />
-            <span className="text-sm font-semibold" style={{ color: textPrimary }}>
+          <div className="flex items-center gap-3">
+            <GitCommit style={{ width: 22, height: 22, color: '#10B981' }} />
+            <span style={{ fontSize: '1.15rem', fontWeight: 700, color: textPrimary, letterSpacing: '-0.01em' }}>
               Commit History
             </span>
-            <span className="text-xs px-2 py-1 rounded" style={{ 
-              backgroundColor: isLight ? '#e5e7eb' : '#374151',
-              color: textMuted 
-            }}>
+            <span
+              style={{
+                fontSize: '0.8rem', fontWeight: 700, fontFamily: 'monospace',
+                padding: '2px 10px', borderRadius: 6,
+                backgroundColor: isLight ? '#e2e8f0' : '#1e293b',
+                color: textMuted, border: `1px solid ${border}`, letterSpacing: '0.06em',
+              }}
+            >
               {ticketNumber}
             </span>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded hover:bg-slate-500/10 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-slate-500/10 transition-colors"
             style={{ color: textMuted }}
           >
-            <X className="w-4 h-4" />
+            <X style={{ width: 20, height: 20 }} />
           </button>
         </div>
 
-        {/* Git-style commit list */}
-        <div ref={historyListRef} className="flex-1 min-h-0 overflow-y-auto" style={{ backgroundColor: isLight ? '#fafafa' : '#111827' }}>
+        {/* Commit list */}
+        <div ref={historyListRef} className="flex-1 min-h-0 overflow-y-auto" style={{ backgroundColor: bodyBg }}>
           {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <Clock className="w-4 h-4 animate-spin mr-2" style={{ color: '#10B981' }} />
-              <span className="text-sm" style={{ color: textMuted }}>Loading commits...</span>
+            <div className="flex items-center justify-center py-12">
+              <Clock style={{ width: 20, height: 20, color: '#10B981' }} className="animate-spin mr-3" />
+              <span style={{ fontSize: '1rem', color: textMuted }}>Loading commits...</span>
             </div>
           ) : history.length === 0 ? (
-            <div className="text-center py-8">
-              <GitCommit className="w-8 h-8 mx-auto mb-2 opacity-50" style={{ color: textMuted }} />
-              <div className="text-sm" style={{ color: textMuted }}>No commits yet</div>
+            <div className="text-center py-12">
+              <GitCommit style={{ width: 40, height: 40, margin: '0 auto 10px', opacity: 0.4, color: textMuted }} />
+              <div style={{ fontSize: '1rem', color: textMuted }}>No commits yet</div>
             </div>
           ) : (
-            <div className="py-2">
-              {[...history].sort(
-                (a, b) => new Date(a.createdAt || a.created_at || Date.now()).getTime() - new Date(b.createdAt || b.created_at || Date.now()).getTime()
-              ).map((entry, index) => {
-                const safeEntry = {
-                  ...entry,
-                  id: entry?.id || `commit-${index}`,
-                }
-                
-                const { commitLines, extractedActions } = parseCommitMessage(safeEntry)
-                const authorName = getAuthorName(safeEntry)
-                const timestamp = getTimestamp(safeEntry)
-                const isLast = index === history.length - 1
-                
-                // Get action type for the badge (keep the original oval badges only)
-                const actionType = entry.newStatus || entry.action || 'UPDATE'
-                
-                return (
-                  <div key={safeEntry.id} className="relative pb-4">
-                    {!isLast && (
-                      <div
-                        aria-hidden="true"
-                        className="pointer-events-none absolute left-[26px] top-[19px] z-0 w-px"
-                        style={{
-                          backgroundColor: isLight ? '#9ca3af' : '#6b7280',
-                          bottom: '-19px'
-                        }}
-                      />
-                    )}
-                    {/* Commit line */}
-                    <div className="flex items-start gap-4 px-4 py-3 hover:bg-slate-500/5 transition-colors">
-                      {/* Dot sits above the shared timeline connector. */}
-                      <div className="relative z-10 flex w-5 shrink-0 justify-center pt-0.5">
-                        <div 
-                          className="h-2.5 w-2.5 rounded-full border-2"
-                          style={{ 
-                            backgroundColor: isLast ? '#10B981' : '#6b7280',
-                            borderColor: isLast ? '#10B981' : '#6b7280'
-                          }}
+            <div className="py-3">
+              {[...history]
+                .sort(
+                  (a, b) =>
+                    new Date(a.createdAt || a.created_at || Date.now()).getTime() -
+                    new Date(b.createdAt || b.created_at || Date.now()).getTime()
+                )
+                .map((entry, index) => {
+                  const safeEntry = { ...entry, id: entry?.id || `commit-${index}` }
+                  const { commitLines, extractedActions } = parseCommitMessage(safeEntry)
+                  const authorName = getAuthorName(safeEntry)
+                  const timestamp  = getTimestamp(safeEntry)
+                  const isLast     = index === history.length - 1
+                  const actionType = (entry.newStatus || entry.action || 'UPDATE').toUpperCase()
+
+                  return (
+                    <div key={safeEntry.id} className="relative pb-2">
+                      {!isLast && (
+                        <div
+                          aria-hidden="true"
+                          className="pointer-events-none absolute left-[30px] top-[22px] z-0 w-px"
+                          style={{ backgroundColor: isLight ? '#cbd5e1' : '#374151', bottom: '-8px' }}
                         />
-                      </div>
-
-                      {/* Commit info */}
-                      <div className="min-w-0 flex-1">
-                        {/* Commit message with Git-style bullet points */}
-                        <div className="text-sm font-medium mb-2" style={{ color: textPrimary }}>
-                          {commitLines.map((line, lineIdx) => (
-                            <div key={`line-${lineIdx}`} className="flex items-start gap-2 mb-1">
-                              <span className="text-green-400 mt-0.5">•</span>
-                              <span className="flex-1">
-                                {/* Parse each line for dates and quoted text */}
-                                {line.split(/(\d{4}-\d{2}-\d{2}|'[^']*')/).map((part, partIdx) => {
-                                  if (!part) return null
-                                  
-                                  const isDate = /^\d{4}-\d{2}-\d{2}$/.test(part)
-                                  const isQuoted = /^'[^']*'$/.test(part)
-                                  
-                                  if (isDate || isQuoted) {
-                                    return (
-                                      <span
-                                        key={`part-${partIdx}`}
-                                        className="inline-block text-xs px-2 py-0.5 rounded font-mono mx-1"
-                                        style={{
-                                          backgroundColor: isDate
-                                            ? (isLight ? '#fef3c7' : 'rgba(245, 158, 11, 0.2)') // Date - amber
-                                            : (isLight ? '#f0fdf4' : 'rgba(34, 197, 94, 0.2)'), // Quoted - green
-                                          color: isDate
-                                            ? (isLight ? '#92400e' : '#fbbf24')
-                                            : (isLight ? '#166534' : '#22c55e'),
-                                          border: `1px solid ${isDate
-                                            ? (isLight ? '#f59e0b' : 'rgba(245, 158, 11, 0.3)')
-                                            : (isLight ? '#22c55e' : 'rgba(34, 197, 94, 0.3)')}`
-                                        }}
-                                      >
-                                        {part}
-                                      </span>
-                                    )
-                                  }
-                                  
-                                  return <span key={`part-${partIdx}`}>{part}</span>
-                                })}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                        
-                        {/* Author and time */}
-                        <div className="flex items-center gap-3 text-xs mb-2" style={{ color: textMuted }}>
-                          <div className="flex items-center gap-1">
-                            <User className="w-3 h-3" />
-                            <span>{authorName}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Calendar className="w-3 h-3" />
-                            <span>{formatTime(timestamp)}</span>
-                          </div>
-                        </div>
-
-                        {/* Status badges and extracted actions side by side */}
-                        <div className="flex flex-wrap items-center gap-2">
-                          {/* Action type badge - original oval ones */}
-                          <span 
-                            className="inline-block text-xs px-2 py-0.5 rounded-full font-medium"
+                      )}
+                      <div
+                        className="flex items-start gap-4 px-5 py-4 transition-colors"
+                        style={{ borderRadius: 8 }}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)')}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                      >
+                        {/* Dot */}
+                        <div className="relative z-10 flex w-5 shrink-0 justify-center" style={{ paddingTop: 4 }}>
+                          <div
                             style={{
-                              backgroundColor: isLight ? '#dcfce7' : 'rgba(34, 197, 94, 0.2)',
-                              color: isLight ? '#166534' : '#22c55e'
+                              width: 13, height: 13, borderRadius: '50%', border: '2.5px solid',
+                              backgroundColor: isLast ? '#10B981' : (isLight ? '#94a3b8' : '#475569'),
+                              borderColor:     isLast ? '#10B981' : (isLight ? '#94a3b8' : '#475569'),
                             }}
+                          />
+                        </div>
+
+                        {/* Content */}
+                        <div className="min-w-0 flex-1">
+                          <div style={{ marginBottom: 10 }}>
+                            {commitLines.map((line, lineIdx) => (
+                              <div
+                                key={`line-${lineIdx}`}
+                                className="flex items-start gap-2 mb-1"
+                                style={{ fontSize: '0.975rem', fontWeight: 600, color: textPrimary, lineHeight: 1.55 }}
+                              >
+                                <span style={{ color: '#10B981', marginTop: 2, fontSize: '1.1rem' }}>•</span>
+                                <span className="flex-1" style={{ display: 'inline' }}>
+                                  {renderLineParts(line)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Author + timestamp */}
+                          <div
+                            className="flex items-center gap-4 mb-3"
+                            style={{ fontSize: '0.82rem', color: textMuted, fontWeight: 500 }}
                           >
-                            {actionType}
-                          </span>
-                          
-                          {/* Extracted actions in colored boxes */}
-                          {extractedActions.map((action, idx) => (
+                            <span className="flex items-center gap-1.5">
+                              <User style={{ width: 13, height: 13 }} />
+                              {authorName}
+                            </span>
+                            <span className="flex items-center gap-1.5">
+                              <Calendar style={{ width: 13, height: 13 }} />
+                              {formatTimestamp(timestamp)}
+                            </span>
+                          </div>
+
+                          {/* Badges */}
+                          <div className="flex flex-wrap items-center gap-2">
                             <span
-                              key={`action-${idx}`}
-                              className="inline-block text-xs px-2 py-0.5 rounded font-medium"
                               style={{
-                                backgroundColor: isLight ? '#e0f2fe' : 'rgba(14, 165, 233, 0.2)',
-                                color: isLight ? '#0369a1' : '#38bdf8',
-                                border: `1px solid ${isLight ? '#0ea5e9' : 'rgba(14, 165, 233, 0.3)'}`
+                                fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.06em',
+                                padding: '3px 10px', borderRadius: 999, textTransform: 'uppercase',
+                                backgroundColor: isLight ? '#dcfce7' : 'rgba(34,197,94,0.15)',
+                                color: isLight ? '#166534' : '#22c55e',
                               }}
                             >
-                              {action}
+                              {actionType}
                             </span>
-                          ))}
+                            {extractedActions.map((action, idx) => (
+                              <span
+                                key={`action-${idx}`}
+                                style={{
+                                  fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.04em',
+                                  padding: '3px 10px', borderRadius: 6, textTransform: 'uppercase',
+                                  backgroundColor: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.15)',
+                                  color: isLight ? '#0369a1' : '#38bdf8',
+                                  border: `1px solid ${isLight ? '#0ea5e9' : 'rgba(14,165,233,0.3)'}`,
+                                }}
+                              >
+                                {action}
+                              </span>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
             </div>
           )}
         </div>
 
-        {/* Chat-style remark composer */}
+        {/* Remark composer */}
         <div
-          className="px-4 py-3 border-t"
-          style={{
-            borderColor: border,
-            backgroundColor: isLight ? '#f8fafc' : '#0f172a'
-          }}
+          className="px-5 py-4 border-t"
+          style={{ borderColor: border, backgroundColor: headerBg }}
         >
           <form onSubmit={submitRemark} className="flex items-end gap-3">
             <div className="min-w-0 flex-1">
@@ -476,19 +451,19 @@ export default function TicketHistoryGraphModal({
                 ref={remarkInputRef}
                 id="ticket-history-remark"
                 value={remark}
-                onChange={(event) => setRemark(event.target.value)}
+                onChange={(e) => setRemark(e.target.value)}
                 placeholder="Add an update or remark..."
                 rows={2}
                 disabled={submittingRemark}
-                className="w-full resize-none rounded-md border px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full resize-none rounded-lg border px-3.5 py-2.5 outline-none transition-colors focus:ring-2 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
                 style={{
+                  fontSize: '0.95rem',
                   backgroundColor: isLight ? '#ffffff' : '#111827',
-                  borderColor: border,
-                  color: textPrimary
+                  borderColor: border, color: textPrimary, fontFamily: 'inherit',
                 }}
               />
               {remarkError && (
-                <p className="mt-1 text-xs" role="alert" style={{ color: '#ef4444' }}>
+                <p className="mt-1 text-sm" role="alert" style={{ color: '#ef4444' }}>
                   {remarkError}
                 </p>
               )}
@@ -496,13 +471,14 @@ export default function TicketHistoryGraphModal({
             <button
               type="submit"
               disabled={!remark.trim() || submittingRemark}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              style={{ fontSize: '0.9rem' }}
             >
-              <Send className="h-4 w-4" />
+              <Send style={{ width: 16, height: 16 }} />
               {submittingRemark ? 'Saving...' : 'Send'}
             </button>
           </form>
-          <div className="mt-2 text-xs" style={{ color: textMuted }}>
+          <div className="mt-2" style={{ fontSize: '0.8rem', color: textMuted, fontWeight: 500 }}>
             {history.length} commit{history.length === 1 ? '' : 's'}
           </div>
         </div>
