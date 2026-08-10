@@ -1102,7 +1102,7 @@ export default function DailyAuditReport() {
                           fontWeight: 800,
                           letterSpacing: '0.06em',
                           textTransform: 'uppercase',
-                          color: '#bfdbfe',
+                          color: '#ffffff',
                           backgroundColor: col.bg,
                           borderBottom: '2px solid rgba(255,255,255,0.2)',
                           borderRight: '1px solid rgba(255,255,255,0.15)',
@@ -1127,7 +1127,7 @@ export default function DailyAuditReport() {
                         fontWeight: 800,
                         letterSpacing: '0.06em',
                         textTransform: 'uppercase',
-                        color: '#bbf7d0',
+                        color: '#ffffff',
                         backgroundColor: '#065f46',
                         borderBottom: '2px solid rgba(255,255,255,0.2)',
                         borderRight: '2px solid rgba(255,255,255,0.15)',
@@ -1151,7 +1151,7 @@ export default function DailyAuditReport() {
                         fontWeight: 800,
                         letterSpacing: '0.06em',
                         textTransform: 'uppercase',
-                        color: '#a7f3d0',
+                        color: '#ffffff',
                         backgroundColor: '#0f766e',
                         borderBottom: '2px solid rgba(255,255,255,0.2)',
                         borderRight: '2px solid rgba(255,255,255,0.15)',
@@ -1168,8 +1168,8 @@ export default function DailyAuditReport() {
 
                     {/* COLLECTIONS GROUP headers */}
                     {[
-                      { key: 'cashColl',   label: 'Cash Coll.',   short: 'Cash',   bg: '#047857', tc: '#6ee7b7' },
-                      { key: 'onlineColl', label: 'Online Coll.', short: 'Online', bg: '#1d4ed8', tc: '#bfdbfe' },
+                      { key: 'cashColl',   label: 'Cash Coll.',   short: 'Cash',   bg: '#047857' },
+                      { key: 'onlineColl', label: 'Online Coll.', short: 'Online', bg: '#1d4ed8' },
                     ].map(col => (
                       <th key={col.key} onClick={() => handleSort(col.key)}
                         className="text-right cursor-pointer select-none whitespace-nowrap"
@@ -1179,7 +1179,7 @@ export default function DailyAuditReport() {
                           fontWeight: 800,
                           letterSpacing: '0.06em',
                           textTransform: 'uppercase',
-                          color: col.tc,
+                          color: '#ffffff',
                           backgroundColor: col.bg,
                           borderBottom: '2px solid rgba(255,255,255,0.2)',
                           borderRight: '1px solid rgba(255,255,255,0.15)',
@@ -1204,7 +1204,7 @@ export default function DailyAuditReport() {
                         fontWeight: 800,
                         letterSpacing: '0.06em',
                         textTransform: 'uppercase',
-                        color: '#fca5a5',
+                        color: '#ffffff',
                         backgroundColor: '#7f1d1d',
                         borderBottom: '2px solid rgba(255,255,255,0.2)',
                         borderRight: '2px solid rgba(255,255,255,0.15)',
@@ -1221,8 +1221,8 @@ export default function DailyAuditReport() {
 
                     {/* FOR COLLECTION + REBATES headers */}
                     {[
-                      { key: 'forColl', label: 'For Collection', short: 'F.Coll.', bg: '#92400e', tc: '#fde68a' },
-                      { key: 'rebates', label: 'Rebates',        short: 'Reb.',    bg: '#1e3a5f', tc: '#bae6fd' },
+                      { key: 'forColl', label: 'For Collection', short: 'F.Coll.', bg: '#92400e' },
+                      { key: 'rebates', label: 'Rebates',        short: 'Reb.',    bg: '#1e3a5f' },
                     ].map(col => (
                       <th key={col.key} onClick={() => handleSort(col.key)}
                         className="text-right cursor-pointer select-none whitespace-nowrap"
@@ -1232,7 +1232,7 @@ export default function DailyAuditReport() {
                           fontWeight: 800,
                           letterSpacing: '0.06em',
                           textTransform: 'uppercase',
-                          color: col.tc,
+                          color: '#ffffff',
                           backgroundColor: col.bg,
                           borderBottom: '2px solid rgba(255,255,255,0.2)',
                           borderRight: '1px solid rgba(255,255,255,0.12)',
@@ -1328,17 +1328,17 @@ export default function DailyAuditReport() {
                       </td>
 
                       {/* Gross Sales */}
-                      <td className="text-right tabular-nums font-bold" style={{ color: '#60a5fa', padding: p, whiteSpace: 'nowrap', borderRight: colBorder, borderBottom: colBorder }}>
+                      <td className="text-right tabular-nums font-bold" style={{ color: isLight ? '#1d4ed8' : '#93c5fd', padding: p, whiteSpace: 'nowrap', borderRight: colBorder, borderBottom: colBorder }}>
                         {peso(row.grossSales)}
                       </td>
 
                       {/* Net Sales */}
-                      <td className="text-right tabular-nums font-bold" style={{ color: '#818cf8', padding: p, whiteSpace: 'nowrap', borderRight: colBorder, borderBottom: colBorder }}>
+                      <td className="text-right tabular-nums font-bold" style={{ color: isLight ? '#4338ca' : '#a5b4fc', padding: p, whiteSpace: 'nowrap', borderRight: colBorder, borderBottom: colBorder }}>
                         {peso(row.grossSales - (row.totalExpenses || 0) - (row.totalPayables || 0))}
                       </td>
 
                       {/* Target Quota */}
-                      <td className="text-right tabular-nums font-semibold" style={{ color: '#93c5fd', padding: p, whiteSpace: 'nowrap', borderRight: '2px solid #1d4ed8', borderBottom: colBorder }}>
+                      <td className="text-right tabular-nums font-semibold" style={{ color: isLight ? '#1e3a8a' : '#bfdbfe', padding: p, whiteSpace: 'nowrap', borderRight: '2px solid #1d4ed8', borderBottom: colBorder }}>
                         {peso(row.targetDailyQuota)}
                       </td>
 
@@ -1358,9 +1358,9 @@ export default function DailyAuditReport() {
                             {formatRemarksLabel(row.remarks, compactView)}
                           </span>
                           {noRecord ? (
-                            <span style={{ color: '#64748b' }}>—</span>
+                            <span style={{ color: textMuted }}>—</span>
                           ) : (
-                            <span className="font-bold text-xs tabular-nums" style={{ color: isAbove ? '#34d399' : '#f87171' }}>
+                            <span className="font-bold text-xs tabular-nums" style={{ color: isAbove ? (isLight ? '#047857' : '#34d399') : (isLight ? '#dc2626' : '#f87171') }}>
                               {isAbove ? '+' : ''}{peso(row.difference)}
                             </span>
                           )}
@@ -1368,17 +1368,17 @@ export default function DailyAuditReport() {
                       </td>
 
                       {/* COH/CFD */}
-                      <td className="text-right tabular-nums font-semibold" style={{ color: '#5eead4', padding: p, whiteSpace: 'nowrap', borderRight: '2px solid #0f766e', borderBottom: colBorder }}>
+                      <td className="text-right tabular-nums font-semibold" style={{ color: isLight ? '#0f766e' : '#5eead4', padding: p, whiteSpace: 'nowrap', borderRight: '2px solid #0f766e', borderBottom: colBorder }}>
                         {peso(row.totalCohCfd)}
                       </td>
 
                       {/* Cash Collection */}
-                      <td className="text-right tabular-nums font-bold" style={{ color: '#34d399', padding: p, whiteSpace: 'nowrap', borderRight: colBorder, borderBottom: colBorder }}>
+                      <td className="text-right tabular-nums font-bold" style={{ color: isLight ? '#047857' : '#34d399', padding: p, whiteSpace: 'nowrap', borderRight: colBorder, borderBottom: colBorder }}>
                         {peso(row.totalCashCollection)}
                       </td>
 
                       {/* Online Collection */}
-                      <td className="text-right tabular-nums font-bold" style={{ color: '#60a5fa', padding: p, whiteSpace: 'nowrap', borderRight: '2px solid #7f1d1d', borderBottom: colBorder }}>
+                      <td className="text-right tabular-nums font-bold" style={{ color: isLight ? '#1d4ed8' : '#93c5fd', padding: p, whiteSpace: 'nowrap', borderRight: '2px solid #7f1d1d', borderBottom: colBorder }}>
                         {peso(row.totalOnlineCollection)}
                       </td>
 
@@ -1393,19 +1393,19 @@ export default function DailyAuditReport() {
                             fetchRowExpenses(row)
                           }}
                           className="hover:underline transition-opacity hover:opacity-75"
-                          style={{ color: '#f87171', fontWeight: 700 }}
+                          style={{ color: isLight ? '#b91c1c' : '#f87171', fontWeight: 700 }}
                         >
                           {peso(row.totalExpenses)}
                         </button>
                       </td>
 
                       {/* For Collection */}
-                      <td className="text-right tabular-nums font-semibold" style={{ color: '#fbbf24', padding: p, whiteSpace: 'nowrap', borderRight: colBorder, borderBottom: colBorder }}>
+                      <td className="text-right tabular-nums font-semibold" style={{ color: isLight ? '#b45309' : '#fde68a', padding: p, whiteSpace: 'nowrap', borderRight: colBorder, borderBottom: colBorder }}>
                         {peso(row.forCollection)}
                       </td>
 
                       {/* Rebates */}
-                      <td className="text-right tabular-nums font-medium" style={{ color: '#7dd3fc', padding: p, whiteSpace: 'nowrap', borderBottom: colBorder }}>
+                      <td className="text-right tabular-nums font-medium" style={{ color: isLight ? '#0369a1' : '#bae6fd', padding: p, whiteSpace: 'nowrap', borderBottom: colBorder }}>
                         {peso(row.rebatesForCollection)}
                       </td>
 
