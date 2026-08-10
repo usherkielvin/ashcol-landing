@@ -1083,7 +1083,7 @@ export default function DailyAuditReport() {
                       }}
                     >
                       <div className="flex items-center gap-0.5">
-                        {compactView ? 'Branch' : 'Branch / Status'}
+                        Branch
                         {sortConfig?.key === 'branch' ? (sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3 ml-0.5" /> : <ArrowDown className="w-3 h-3 ml-0.5" />) : null}
                       </div>
                     </th>
@@ -1130,7 +1130,7 @@ export default function DailyAuditReport() {
                         color: '#ffffff',
                         backgroundColor: '#065f46',
                         borderBottom: '2px solid rgba(255,255,255,0.2)',
-                        borderRight: '2px solid rgba(255,255,255,0.15)',
+                        borderRight: '1px solid rgba(255,255,255,0.15)',
                         position: 'sticky',
                         top: 0,
                         zIndex: 20,
@@ -1168,8 +1168,8 @@ export default function DailyAuditReport() {
 
                     {/* COLLECTIONS GROUP headers */}
                     {[
-                      { key: 'cashColl',   label: 'Cash Coll.',   short: 'Cash',   bg: '#047857' },
-                      { key: 'onlineColl', label: 'Online Coll.', short: 'Online', bg: '#1d4ed8' },
+                      { key: 'cashColl',   label: 'Cash',          short: 'Cash',         bg: '#047857' },
+                      { key: 'onlineColl', label: 'Online / Bank', short: 'Online/Bank',  bg: '#1d4ed8' },
                     ].map(col => (
                       <th key={col.key} onClick={() => handleSort(col.key)}
                         className="text-right cursor-pointer select-none whitespace-nowrap"
