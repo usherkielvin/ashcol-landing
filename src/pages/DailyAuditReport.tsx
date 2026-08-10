@@ -1074,8 +1074,8 @@ export default function DailyAuditReport() {
                         textTransform: 'uppercase',
                         color: '#ffffff',
                         backgroundColor: isLight ? '#1e293b' : '#0f172a',
-                        borderBottom: '2px solid rgba(255,255,255,0.15)',
-                        borderRight: '2px solid rgba(255,255,255,0.15)',
+                        borderBottom: '2px solid rgba(255,255,255,0.25)',
+                        borderRight: '1px solid rgba(255,255,255,0.2)',
                         position: 'sticky',
                         top: 0,
                         left: 0,
@@ -1104,8 +1104,8 @@ export default function DailyAuditReport() {
                           textTransform: 'uppercase',
                           color: '#ffffff',
                           backgroundColor: col.bg,
-                          borderBottom: '2px solid rgba(255,255,255,0.2)',
-                          borderRight: '1px solid rgba(255,255,255,0.15)',
+                          borderBottom: '2px solid rgba(255,255,255,0.25)',
+                          borderRight: '1px solid rgba(255,255,255,0.2)',
                           position: 'sticky',
                           top: 0,
                           zIndex: 20,
@@ -1129,8 +1129,8 @@ export default function DailyAuditReport() {
                         textTransform: 'uppercase',
                         color: '#ffffff',
                         backgroundColor: '#065f46',
-                        borderBottom: '2px solid rgba(255,255,255,0.2)',
-                        borderRight: '1px solid rgba(255,255,255,0.15)',
+                        borderBottom: '2px solid rgba(255,255,255,0.25)',
+                        borderRight: '1px solid rgba(255,255,255,0.2)',
                         position: 'sticky',
                         top: 0,
                         zIndex: 20,
@@ -1153,8 +1153,8 @@ export default function DailyAuditReport() {
                         textTransform: 'uppercase',
                         color: '#ffffff',
                         backgroundColor: '#0f766e',
-                        borderBottom: '2px solid rgba(255,255,255,0.2)',
-                        borderRight: '2px solid rgba(255,255,255,0.15)',
+                        borderBottom: '2px solid rgba(255,255,255,0.25)',
+                        borderRight: '1px solid rgba(255,255,255,0.2)',
                         position: 'sticky',
                         top: 0,
                         zIndex: 20,
@@ -1181,8 +1181,8 @@ export default function DailyAuditReport() {
                           textTransform: 'uppercase',
                           color: '#ffffff',
                           backgroundColor: col.bg,
-                          borderBottom: '2px solid rgba(255,255,255,0.2)',
-                          borderRight: '1px solid rgba(255,255,255,0.15)',
+                          borderBottom: '2px solid rgba(255,255,255,0.25)',
+                          borderRight: '1px solid rgba(255,255,255,0.2)',
                           position: 'sticky',
                           top: 0,
                           zIndex: 20,
@@ -1206,8 +1206,8 @@ export default function DailyAuditReport() {
                         textTransform: 'uppercase',
                         color: '#ffffff',
                         backgroundColor: '#7f1d1d',
-                        borderBottom: '2px solid rgba(255,255,255,0.2)',
-                        borderRight: '2px solid rgba(255,255,255,0.15)',
+                        borderBottom: '2px solid rgba(255,255,255,0.25)',
+                        borderRight: '1px solid rgba(255,255,255,0.2)',
                         position: 'sticky',
                         top: 0,
                         zIndex: 20,
@@ -1234,8 +1234,8 @@ export default function DailyAuditReport() {
                           textTransform: 'uppercase',
                           color: '#ffffff',
                           backgroundColor: col.bg,
-                          borderBottom: '2px solid rgba(255,255,255,0.2)',
-                          borderRight: '1px solid rgba(255,255,255,0.12)',
+                          borderBottom: '2px solid rgba(255,255,255,0.25)',
+                          borderRight: '1px solid rgba(255,255,255,0.2)',
                           position: 'sticky',
                           top: 0,
                           zIndex: 20,
@@ -1269,7 +1269,7 @@ export default function DailyAuditReport() {
                       ? (isLight ? '#f8faff' : '#070e1c')
                       : (isLight ? '#ffffff' : '#0A1120')
 
-                  const colBorder = `1px solid ${isLight ? '#e2e8f0' : '#1a2b45'}`
+                  const colBorder = `1px solid ${isLight ? '#cbd5e1' : '#243452'}`
 
                   return (
                     <tr
@@ -1300,7 +1300,7 @@ export default function DailyAuditReport() {
                           backgroundColor: isSelected ? (isLight ? '#dbeafe' : '#1e3a5f') : isEven ? (isLight ? '#f8faff' : '#070e1c') : (isLight ? '#ffffff' : '#0A1120'),
                           padding: p,
                           whiteSpace: 'nowrap',
-                          borderRight: '2px solid #1d4ed8',
+                          borderRight: colBorder,
                           borderBottom: colBorder,
                           transition: 'background-color 0.12s ease',
                         }}>
@@ -1338,12 +1338,12 @@ export default function DailyAuditReport() {
                       </td>
 
                       {/* Target Quota */}
-                      <td className="text-right tabular-nums font-semibold" style={{ color: isLight ? '#1e3a8a' : '#bfdbfe', padding: p, whiteSpace: 'nowrap', borderRight: '2px solid #1d4ed8', borderBottom: colBorder }}>
+                      <td className="text-right tabular-nums font-semibold" style={{ color: isLight ? '#1e3a8a' : '#bfdbfe', padding: p, whiteSpace: 'nowrap', borderRight: colBorder, borderBottom: colBorder }}>
                         {peso(row.targetDailyQuota)}
                       </td>
 
                       {/* Difference & Remarks */}
-                      <td style={{ padding: p, whiteSpace: 'nowrap', borderRight: '2px solid #065f46', borderBottom: colBorder }}>
+                      <td style={{ padding: p, whiteSpace: 'nowrap', borderRight: colBorder, borderBottom: colBorder }}>
                         <div className="flex flex-col gap-0.5">
                           <span style={{
                             display: 'inline-block',
@@ -1368,7 +1368,7 @@ export default function DailyAuditReport() {
                       </td>
 
                       {/* COH/CFD */}
-                      <td className="text-right tabular-nums font-semibold" style={{ color: isLight ? '#0f766e' : '#5eead4', padding: p, whiteSpace: 'nowrap', borderRight: '2px solid #0f766e', borderBottom: colBorder }}>
+                      <td className="text-right tabular-nums font-semibold" style={{ color: isLight ? '#0f766e' : '#5eead4', padding: p, whiteSpace: 'nowrap', borderRight: colBorder, borderBottom: colBorder }}>
                         {peso(row.totalCohCfd)}
                       </td>
 
@@ -1378,12 +1378,12 @@ export default function DailyAuditReport() {
                       </td>
 
                       {/* Online Collection */}
-                      <td className="text-right tabular-nums font-bold" style={{ color: isLight ? '#1d4ed8' : '#93c5fd', padding: p, whiteSpace: 'nowrap', borderRight: '2px solid #7f1d1d', borderBottom: colBorder }}>
+                      <td className="text-right tabular-nums font-bold" style={{ color: isLight ? '#1d4ed8' : '#93c5fd', padding: p, whiteSpace: 'nowrap', borderRight: colBorder, borderBottom: colBorder }}>
                         {peso(row.totalOnlineCollection)}
                       </td>
 
                       {/* Total Expenses */}
-                      <td className="text-right tabular-nums font-bold" style={{ padding: p, whiteSpace: 'nowrap', borderRight: '2px solid #92400e', borderBottom: colBorder }}>
+                      <td className="text-right tabular-nums font-bold" style={{ padding: p, whiteSpace: 'nowrap', borderRight: colBorder, borderBottom: colBorder }}>
                         <button
                           id={`expense-drilldown-${idx}`}
                           onClick={e => {
@@ -1426,44 +1426,44 @@ export default function DailyAuditReport() {
                       padding: compactView ? '7px 12px' : '10px 16px',
                       background: isLight ? '#1e293b' : '#0f172a',
                       borderTop: '2px solid #3b82f6',
-                      borderRight: '2px solid #1d4ed8',
+                      borderRight: '1px solid rgba(255,255,255,0.2)',
                       letterSpacing: '0.08em',
                     }}
                   >
                     TOTALS
                   </td>
                   {/* Gross Sales */}
-                  <td className="text-right font-black whitespace-nowrap tabular-nums" style={{ color: '#93c5fd', fontSize: compactView ? 11 : 12, padding: compactView ? '7px 10px' : '10px 14px', borderTop: '2px solid #3b82f6', borderRight: `1px solid #1e3a5f` }}>
+                  <td className="text-right font-black whitespace-nowrap tabular-nums" style={{ color: '#93c5fd', fontSize: compactView ? 11 : 12, padding: compactView ? '7px 10px' : '10px 14px', borderTop: '2px solid #3b82f6', borderRight: '1px solid rgba(255,255,255,0.15)' }}>
                     {peso(totals.grossSales)}
                   </td>
                   {/* Net Sales */}
-                  <td className="text-right font-black whitespace-nowrap tabular-nums" style={{ color: '#a5b4fc', fontSize: compactView ? 11 : 12, padding: compactView ? '7px 10px' : '10px 14px', borderTop: '2px solid #3b82f6', borderRight: `1px solid #1e3a5f` }}>
+                  <td className="text-right font-black whitespace-nowrap tabular-nums" style={{ color: '#a5b4fc', fontSize: compactView ? 11 : 12, padding: compactView ? '7px 10px' : '10px 14px', borderTop: '2px solid #3b82f6', borderRight: '1px solid rgba(255,255,255,0.15)' }}>
                     {peso(totals.netSales)}
                   </td>
                   {/* Target Quota */}
-                  <td className="text-right font-black whitespace-nowrap tabular-nums" style={{ color: '#bfdbfe', fontSize: compactView ? 11 : 12, padding: compactView ? '7px 10px' : '10px 14px', borderTop: '2px solid #3b82f6', borderRight: '2px solid #065f46' }}>
+                  <td className="text-right font-black whitespace-nowrap tabular-nums" style={{ color: '#bfdbfe', fontSize: compactView ? 11 : 12, padding: compactView ? '7px 10px' : '10px 14px', borderTop: '2px solid #3b82f6', borderRight: '1px solid rgba(255,255,255,0.15)' }}>
                     {peso(totals.targetDailyQuota)}
                   </td>
                   {/* Difference + Remarks */}
-                  <td colSpan={1} style={{ borderTop: '2px solid #3b82f6', borderRight: '2px solid #0f766e' }} />
+                  <td colSpan={1} style={{ borderTop: '2px solid #3b82f6', borderRight: '1px solid rgba(255,255,255,0.15)' }} />
                   {/* CFD */}
-                  <td className="text-right font-black whitespace-nowrap tabular-nums" style={{ color: '#5eead4', fontSize: compactView ? 11 : 12, padding: compactView ? '7px 10px' : '10px 14px', borderTop: '2px solid #3b82f6', borderRight: '2px solid #047857' }}>
+                  <td className="text-right font-black whitespace-nowrap tabular-nums" style={{ color: '#5eead4', fontSize: compactView ? 11 : 12, padding: compactView ? '7px 10px' : '10px 14px', borderTop: '2px solid #3b82f6', borderRight: '1px solid rgba(255,255,255,0.15)' }}>
                     {peso(totals.totalCohCfd)}
                   </td>
                   {/* Cash Collection */}
-                  <td className="text-right font-black whitespace-nowrap tabular-nums" style={{ color: '#6ee7b7', fontSize: compactView ? 11 : 12, padding: compactView ? '7px 10px' : '10px 14px', borderTop: '2px solid #3b82f6', borderRight: `1px solid #1e3a5f` }}>
+                  <td className="text-right font-black whitespace-nowrap tabular-nums" style={{ color: '#6ee7b7', fontSize: compactView ? 11 : 12, padding: compactView ? '7px 10px' : '10px 14px', borderTop: '2px solid #3b82f6', borderRight: '1px solid rgba(255,255,255,0.15)' }}>
                     {peso(totals.totalCashCollection)}
                   </td>
                   {/* Online Collection */}
-                  <td className="text-right font-black whitespace-nowrap tabular-nums" style={{ color: '#93c5fd', fontSize: compactView ? 11 : 12, padding: compactView ? '7px 10px' : '10px 14px', borderTop: '2px solid #3b82f6', borderRight: '2px solid #7f1d1d' }}>
+                  <td className="text-right font-black whitespace-nowrap tabular-nums" style={{ color: '#93c5fd', fontSize: compactView ? 11 : 12, padding: compactView ? '7px 10px' : '10px 14px', borderTop: '2px solid #3b82f6', borderRight: '1px solid rgba(255,255,255,0.15)' }}>
                     {peso(totals.totalOnlineCollection)}
                   </td>
                   {/* Total Expenses */}
-                  <td className="text-right font-black whitespace-nowrap tabular-nums" style={{ color: '#fca5a5', fontSize: compactView ? 11 : 12, padding: compactView ? '7px 10px' : '10px 14px', borderTop: '2px solid #3b82f6', borderRight: '2px solid #92400e' }}>
+                  <td className="text-right font-black whitespace-nowrap tabular-nums" style={{ color: '#fca5a5', fontSize: compactView ? 11 : 12, padding: compactView ? '7px 10px' : '10px 14px', borderTop: '2px solid #3b82f6', borderRight: '1px solid rgba(255,255,255,0.15)' }}>
                     {peso(totals.totalExpenses)}
                   </td>
                   {/* For Collection */}
-                  <td className="text-right font-black whitespace-nowrap tabular-nums" style={{ color: '#fde68a', fontSize: compactView ? 11 : 12, padding: compactView ? '7px 10px' : '10px 14px', borderTop: '2px solid #3b82f6', borderRight: `1px solid #1e3a5f` }}>
+                  <td className="text-right font-black whitespace-nowrap tabular-nums" style={{ color: '#fde68a', fontSize: compactView ? 11 : 12, padding: compactView ? '7px 10px' : '10px 14px', borderTop: '2px solid #3b82f6', borderRight: '1px solid rgba(255,255,255,0.15)' }}>
                     {peso(totals.forCollection)}
                   </td>
                   {/* Rebates */}
