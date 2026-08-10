@@ -49,7 +49,6 @@ export default function TicketHistoryGraphModal({ ticket, isOpen, onClose }: Tic
   const border = isLight ? '#e5e7eb' : '#374151'
   const textPrimary = isLight ? '#111827' : '#f9fafb'
   const textMuted = isLight ? '#6b7280' : '#9ca3af'
-  const textSecondary = isLight ? '#4b5563' : '#d1d5db'
 
   useEffect(() => {
     if (!isOpen || !ticket.id) return
@@ -276,8 +275,8 @@ export default function TicketHistoryGraphModal({ ticket, isOpen, onClose }: Tic
                 (a, b) => new Date(b.createdAt || b.created_at || Date.now()).getTime() - new Date(a.createdAt || a.created_at || Date.now()).getTime()
               ).map((entry, index) => {
                 const safeEntry = {
+                  ...entry,
                   id: entry?.id || `commit-${index}`,
-                  ...entry
                 }
                 
                 const { commitLines, extractedActions } = parseCommitMessage(safeEntry)

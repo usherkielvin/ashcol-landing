@@ -1,5 +1,5 @@
-import Schedules from './Schedules'
+import Tickets from './Tickets'
 
 export default function MyTicketsTab() {
-  return <Schedules isMyTicketsProp={true} />
+  return <Tickets surface="my-tickets" />
 }

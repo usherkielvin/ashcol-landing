@@ -6850,7 +6850,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     );
                   })()}
                 </table>
-                </div>
                 {/* Mobile Card View — important fields only (no branch; header already shows it) */}
                 <div className="flex flex-col md:hidden p-3 gap-2.5">
                   {visible.length === 0 ? (
@@ -7132,7 +7131,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 </div>
               </div>
             </div>
-          )) : (
+          )
+        ) : (
           /* Render Overview Search Panel */
           <div className="flex-1 flex flex-col min-h-0 w-full h-full overflow-hidden relative" style={{ backgroundColor: isLight ? '#f1f5f9' : '#060B18' }}>
             {/* Top Header Row */}

@@ -19,7 +19,6 @@ export type ScheduleShowcaseRow = {
   payment: string
   driver: string
   service: string
-  service: string
 }
 
 type SchedulesShowcaseProps = {
