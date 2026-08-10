@@ -339,50 +339,37 @@ export default function TicketHistoryGraphModal({
                 const authorName = getAuthorName(safeEntry)
                 const timestamp = getTimestamp(safeEntry)
                 const isLast = index === history.length - 1
-                const isFirst = index === 0
                 
                 // Get action type for the badge (keep the original oval badges only)
                 const actionType = entry.newStatus || entry.action || 'UPDATE'
                 
                 return (
                   <div key={safeEntry.id} className="relative pb-4">
+                    {!isLast && (
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute left-[26px] top-[19px] z-0 w-px"
+                        style={{
+                          backgroundColor: isLight ? '#9ca3af' : '#6b7280',
+                          bottom: '-19px'
+                        }}
+                      />
+                    )}
                     {/* Commit line */}
-                    <div className="flex items-start px-4 py-3 hover:bg-slate-500/5 transition-colors">
-                      {/* Git graph line - FIXED to actually connect */}
-                      <div className="relative mr-3 flex flex-col items-center" style={{ width: '20px' }}>
-                        {/* Line coming from above (except first commit) */}
-                        {!isFirst && (
-                          <div 
-                            className="w-px h-3"
-                            style={{ 
-                              backgroundColor: isLight ? '#9ca3af' : '#6b7280'
-                            }}
-                          />
-                        )}
-                        
-                        {/* Commit dot */}
+                    <div className="flex items-start gap-4 px-4 py-3 hover:bg-slate-500/5 transition-colors">
+                      {/* Dot sits above the shared timeline connector. */}
+                      <div className="relative z-10 flex w-5 shrink-0 justify-center pt-0.5">
                         <div 
-                          className="w-2.5 h-2.5 rounded-full border-2 shrink-0 relative z-10"
+                          className="h-2.5 w-2.5 rounded-full border-2"
                           style={{ 
                             backgroundColor: isLast ? '#10B981' : '#6b7280',
                             borderColor: isLast ? '#10B981' : '#6b7280'
                           }}
                         />
-                        
-                        {/* Line going to below (except last commit) */}
-                        {!isLast && (
-                          <div 
-                            className="w-px flex-1 mt-1"
-                            style={{ 
-                              backgroundColor: isLight ? '#9ca3af' : '#6b7280',
-                              minHeight: '60px'
-                            }}
-                          />
-                        )}
                       </div>
 
                       {/* Commit info */}
-                      <div className="flex-1 min-w-0" style={{ paddingTop: isFirst ? '0' : '3px' }}>
+                      <div className="min-w-0 flex-1">
                         {/* Commit message with Git-style bullet points */}
                         <div className="text-sm font-medium mb-2" style={{ color: textPrimary }}>
                           {commitLines.map((line, lineIdx) => (
