@@ -5755,7 +5755,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       const isNegEmpty = !negName || negName === EMPTY_CELL || negName === '—'
       return withEditPencil(
         <div className="flex flex-col items-center justify-center text-center">
-          <span style={{ ...truncStyle, fontWeight: isNegEmpty ? 700 : 600, color: isNegEmpty ? (isPendingRow ? '#FDE047' : (isLight ? '#D97706' : '#FACC15')) : undefined }} title={negName}>
+          <span style={{ ...truncStyle, fontWeight: isNegEmpty ? 700 : 600, color: isNegEmpty ? (isPendingRow ? '#FDE047' : (isLight ? '#D97706' : '#FACC15')) : (isPendingRow ? '#ffffff' : undefined) }} title={negName}>
             {!isNegEmpty ? <EmployeeNameLink nameOrId={negName} /> : 'N/A'}
           </span>
         </div>,
@@ -7000,6 +7000,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     visible.map((ticket, idx) => {
                       const ghostKind = dateFilter ? getScheduleGhostKind(ticket, dateFilter) : null
                       const isGhost = Boolean(ghostKind)
+                      const isPendingRow = isOverduePendingScheduleTicket(ticket, ghostKind, dateFilter)
                       const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(getCustomerDisplayName(ticket)))
                       const rowColors = getScheduleRowColors(ticket, ghostKind, isLight, idx, rowEven, rowOdd, isDuplicateName)
                       const statusVal = getScheduleStatusValue(ticket)
@@ -7119,7 +7120,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                             <div className="flex items-center justify-between gap-2 min-w-0">
                               <div className="flex items-center gap-1 min-w-0">
                                 <span className="text-[9.5px] font-bold tracking-widest uppercase shrink-0" style={{ color: textMuted }}>NEGOTIATOR:</span>
-                                <span className="text-[11.5px] font-semibold truncate" style={{ color: (negotiatorName && negotiatorName !== EMPTY_CELL) ? textPrimary : textMuted }}>
+                                <span className="text-[11.5px] font-semibold truncate" style={{ color: (negotiatorName && negotiatorName !== EMPTY_CELL) ? (isPendingRow ? '#ffffff' : textPrimary) : textMuted }}>
                                   {negotiatorName && negotiatorName !== EMPTY_CELL ? negotiatorName : '—'}
                                 </span>
                               </div>
