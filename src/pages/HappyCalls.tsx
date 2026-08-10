@@ -42,6 +42,18 @@ function todayIso(): string {
   return new Date().toISOString().split('T')[0]
 }
 
+const FULL_MONTH_NAMES = [
+  'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
+  'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
+]
+
+/** "2025-12" -> "DECEMBER 2025" */
+function formatMonthFilterLabel(value: string): string {
+  const [yearStr, monthStr] = value.split('-')
+  const monthNum = parseInt(monthStr, 10) - 1
+  return `${FULL_MONTH_NAMES[monthNum] || monthStr} ${yearStr}`
+}
+
 type BranchOption = { id: string; name: string }
 
 async function fetchLeads(token: string, branchId: string): Promise<HappyCallLead[]> {
@@ -259,15 +271,26 @@ export default function HappyCalls() {
             <option value="6M">6+ MONTHS SINCE INSTALL</option>
           </select>
 
-          <div className="flex items-center gap-1 rounded-lg px-2.5 py-1 border shrink-0 h-8" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <input
-              type="month"
-              value={monthFilter}
-              onChange={e => setMonthFilter(e.target.value)}
-              title="Filter to a specific installed-date month (e.g. December 2025), overrides the months-since-install filter above"
-              className="bg-transparent text-xs font-bold uppercase outline-none cursor-pointer"
-              style={{ color: monthFilter ? textPrimary : textMuted, colorScheme: isLight ? 'light' : 'dark' }}
-            />
+          <div className="flex items-center gap-1 rounded-lg pl-2.5 pr-1.5 py-1 border shrink-0 h-8" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            <button
+              type="button"
+              onClick={(e) => {
+                const input = e.currentTarget.querySelector('input[type="month"]') as HTMLInputElement | null
+                if (input && input.showPicker) input.showPicker()
+              }}
+              className="relative flex items-center text-xs font-bold uppercase whitespace-nowrap cursor-pointer"
+              style={{ color: monthFilter ? textPrimary : textMuted }}
+              title="Filter to a specific installed-date month, overrides the months-since-install filter"
+            >
+              {monthFilter ? formatMonthFilterLabel(monthFilter) : 'ALL MONTHS'}
+              <input
+                type="month"
+                value={monthFilter}
+                onChange={e => setMonthFilter(e.target.value)}
+                className="absolute opacity-0 pointer-events-none w-0 h-0"
+                style={{ pointerEvents: 'none' }}
+              />
+            </button>
             {monthFilter && (
               <button type="button" onClick={() => setMonthFilter('')} style={{ color: textMuted }} title="Clear month filter">
                 <X className="w-3.5 h-3.5" />
