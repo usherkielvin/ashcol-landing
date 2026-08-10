@@ -466,8 +466,8 @@ export default function DailyAuditReport() {
   )
 
   if (sortConfig !== null) {
-    const keyMap: Record<string, keyof AuditRow> = {
-      branch: 'branchName', time: 'timeUploaded', status: 'status', grossSales: 'grossSales',
+    const keyMap: Record<string, keyof AuditRow | string> = {
+      branch: 'branchName', time: 'timeUploaded', status: 'status', grossSales: 'grossSales', netSales: 'netSales',
       target: 'targetDailyQuota', difference: 'difference', remarks: 'remarks',
       coh: 'cohPreviousDay', fundHo: 'fundFromHo', cashReturns: 'cashReturns',
       totalCohCfd: 'totalCohCfd', cashColl: 'totalCashCollection', onlineColl: 'totalOnlineCollection',
@@ -490,7 +490,8 @@ export default function DailyAuditReport() {
         }
         return a.branchName.localeCompare(b.branchName)
       }
-      const av = a[k], bv = b[k]
+      const av = k === 'netSales' ? (a.grossSales - (a.totalExpenses || 0) - (a.totalPayables || 0)) : (a as any)[k]
+      const bv = k === 'netSales' ? (b.grossSales - (b.totalExpenses || 0) - (b.totalPayables || 0)) : (b as any)[k]
       if (av === bv) return 0
       if (av == null) return 1; if (bv == null) return -1
       if (typeof av === 'string' && typeof bv === 'string')
@@ -507,6 +508,7 @@ export default function DailyAuditReport() {
 
   const totals = visibleRows.reduce((acc, r) => ({
     grossSales:           acc.grossSales + r.grossSales,
+    netSales:             acc.netSales + (r.grossSales - (r.totalExpenses || 0) - (r.totalPayables || 0)),
     targetDailyQuota:     acc.targetDailyQuota + r.targetDailyQuota,
     totalCohCfd:          acc.totalCohCfd + r.totalCohCfd,
     totalCashCollection:  acc.totalCashCollection + r.totalCashCollection,
@@ -515,7 +517,7 @@ export default function DailyAuditReport() {
     totalForPurchase:     acc.totalForPurchase + (r.totalForPurchase || 0),
     forCollection:        acc.forCollection + r.forCollection,
     rebatesForCollection: acc.rebatesForCollection + r.rebatesForCollection,
-  }), { grossSales:0, targetDailyQuota:0, totalCohCfd:0, totalCashCollection:0, totalOnlineCollection:0, totalExpenses:0, totalForPurchase:0, forCollection:0, rebatesForCollection:0 })
+  }), { grossSales:0, netSales:0, targetDailyQuota:0, totalCohCfd:0, totalCashCollection:0, totalOnlineCollection:0, totalExpenses:0, totalForPurchase:0, forCollection:0, rebatesForCollection:0 })
 
   const handleExportExcel = () => {
     if (visibleRows.length === 0) {
@@ -533,6 +535,7 @@ export default function DailyAuditReport() {
       Time: formatLocalTime(row.createdAt, row.timeUploaded) || '',
       Status: row.status,
       'Gross Sales': row.grossSales,
+      'Net Sales': row.grossSales - (row.totalExpenses || 0) - (row.totalPayables || 0),
       'Target Quota': row.targetDailyQuota,
       Difference: row.difference,
       Remarks: row.remarks,
@@ -564,6 +567,7 @@ export default function DailyAuditReport() {
   const columns = [
     { key: 'branch',      label: 'Branch',                 short: 'Branch' },
     { key: 'grossSales',  label: 'Gross Sales',            short: 'Sales' },
+    { key: 'netSales',    label: 'Net Sales',              short: 'Net' },
     { key: 'target',      label: 'Target Quota',           short: 'Quota' },
     { key: 'difference',  label: 'Diff / Remarks',         short: 'Diff/Rem.' },
     { key: 'totalCohCfd', label: 'Total COH/CFD',          short: 'CFD' },
@@ -577,7 +581,8 @@ export default function DailyAuditReport() {
   const mobileSortOptions = [
     { key: 'remarks', label: 'Remarks' },
     { key: 'difference', label: 'Difference' },
-    { key: 'grossSales', label: 'Sales' },
+    { key: 'grossSales', label: 'Gross Sales' },
+    { key: 'netSales', label: 'Net Sales' },
   ]
 
 
@@ -752,6 +757,7 @@ export default function DailyAuditReport() {
           <div className="flex overflow-x-auto gap-2 no-scrollbar pb-1">
             {[
               { label: 'Gross',     value: `₱${peso(totals.grossSales)}`,             color: '#3B82F6', border: 'border-blue-200 dark:border-blue-900/40' },
+              { label: 'Net',       value: `₱${peso(totals.netSales)}`,               color: '#2563EB', border: 'border-blue-300 dark:border-blue-800/40' },
               { label: 'Cash',      value: `₱${peso(totals.totalCashCollection)}`,    color: '#10B981', border: 'border-emerald-200 dark:border-emerald-900/40' },
               { label: 'Online',    value: `₱${peso(totals.totalOnlineCollection)}`,  color: '#6366F1', border: 'border-indigo-200 dark:border-indigo-900/40' },
               { label: 'Expenses',  value: `₱${peso(totals.totalExpenses)}`,          color: '#EF4444', border: 'border-red-200 dark:border-red-900/40' },
@@ -971,6 +977,7 @@ export default function DailyAuditReport() {
         <div className="hidden md:flex flex-wrap lg:flex-nowrap items-center gap-3 px-4 py-3 border-b" style={{ borderColor: border }}>
           {[
             { label: 'Gross Sales',      value: peso(totals.grossSales),             color: '#3B82F6', icon: BarChart2 },
+            { label: 'Net Sales',        value: peso(totals.netSales),               color: '#2563EB', icon: BarChart2 },
             { label: 'Cash Collected',   value: peso(totals.totalCashCollection),    color: '#10B981', icon: TrendingUp },
             { label: 'Online Collected', value: peso(totals.totalOnlineCollection),  color: '#8B5CF6', icon: TrendingUp },
             { label: 'Total Expenses',         value: peso(totals.totalExpenses),          color: '#EF4444', icon: TrendingDown },
@@ -1182,6 +1189,9 @@ export default function DailyAuditReport() {
                       {/* ④ Gross Sales */}
                       <td className="font-semibold text-sm tabular-nums" style={{ color: textPrimary, padding: p, whiteSpace: 'nowrap' }}>{peso(row.grossSales)}</td>
 
+                      {/* Net Sales */}
+                      <td className="font-semibold text-sm tabular-nums" style={{ color: textPrimary, padding: p, whiteSpace: 'nowrap' }}>{peso(row.grossSales - (row.totalExpenses || 0) - (row.totalPayables || 0))}</td>
+
                       {/* ⑤ Target Quota */}
                       <td className="font-semibold text-sm tabular-nums" style={{ color: textMuted, padding: p, whiteSpace: 'nowrap' }} >
                         <>{peso(row.targetDailyQuota)}</>
@@ -1270,6 +1280,10 @@ export default function DailyAuditReport() {
                   {/* Gross Sales */}
                   <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px' }}>
                     {peso(totals.grossSales)}
+                  </td>
+                  {/* Net Sales */}
+                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px' }}>
+                    {peso(totals.netSales)}
                   </td>
                   {/* Target Quota */}
                   <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px' }}>
@@ -1393,10 +1407,11 @@ export default function DailyAuditReport() {
                     </span>
                   </div>
 
-                  {/* Card Row 3: Sales / Quota / Diff */}
-                  <div className="grid grid-cols-3 pt-2 mt-1 border-t" style={{ borderColor: border }}>
+                  {/* Card Row 3: Sales / Net / Quota / Diff */}
+                  <div className="grid grid-cols-4 pt-2 mt-1 border-t" style={{ borderColor: border }}>
                     {[
                       { label: 'Sales', value: `₱${peso(row.grossSales)}`, color: '#3B82F6' },
+                      { label: 'Net', value: `₱${peso(row.grossSales - (row.totalExpenses || 0) - (row.totalPayables || 0))}`, color: textPrimary },
                       { label: 'Quota', value: `₱${peso(row.targetDailyQuota)}`, color: textMuted },
                       { label: 'Diff', value: noRecord ? '—' : `${isAbove ? '+' : ''}₱${peso(row.difference)}`, color: diffColor },
                     ].map(m => (
@@ -1513,12 +1528,12 @@ export default function DailyAuditReport() {
       {/* ── Row Details Modal ───────────────────────────────────────── */}
       {selectedRow && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 cursor-pointer backdrop-blur-sm"
+          className="fixed inset-0 z-[9999] flex items-start justify-center p-4 pt-8 sm:pt-12 cursor-pointer backdrop-blur-sm"
           style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', cursor: 'pointer' }}
           onClick={() => setSelectedRow(null)}
         >
           <div
-            className="rounded-2xl overflow-hidden shadow-2xl w-full max-w-4xl flex flex-col cursor-default"
+            className="rounded-2xl overflow-hidden shadow-2xl w-full max-w-6xl flex flex-col cursor-default"
             style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh', cursor: 'default' }}
             onClick={e => e.stopPropagation()}
           >
@@ -1683,84 +1698,80 @@ export default function DailyAuditReport() {
                       )}
                     </div>
 
-                    {/* Main metrics — 3 flat columns, no icon headers, no inner boxes */}
-                    <div className="grid grid-cols-1 md:grid-cols-3" style={{ borderBottom: `1px solid ${border}` }}>
+                    {/* Main metrics — 4 clean separated columns */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4" style={{ borderBottom: `1px solid ${border}` }}>
 
-                      {/* Sales Summary */}
-                      <div className="px-6 py-5" style={{ borderRight: `1px solid ${border}` }}>
-                        <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: textMuted }}>Sales Summary</p>
+                      {/* 1. Sales & Target */}
+                      <div className="px-5 py-5" style={{ borderRight: `1px solid ${border}` }}>
+                        <p className="text-[10px] font-black uppercase tracking-widest mb-3 text-blue-600 dark:text-blue-400">Sales &amp; Target</p>
                         <div className="flex flex-col gap-2.5">
                           {[
-                            { label: 'Gross Sales', value: `₱${peso(selectedRow.grossSales)}`, color: textPrimary },
+                            { label: 'Gross Sales', value: `₱${peso(selectedRow.grossSales)}`, color: textPrimary, bold: true },
+                            { label: 'Net Sales', value: `₱${peso(selectedRow.grossSales - (selectedRow.totalExpenses || 0) - (selectedRow.totalPayables || 0))}`, color: '#2563EB', bold: true },
                             { label: 'Target Quota', value: `₱${peso(selectedRow.targetDailyQuota)}`, color: textMuted },
-                            { label: 'Difference', value: `${selectedRow.remarks === 'ABOVE QUOTA' ? '+' : ''}₱${peso(selectedRow.difference)}`, color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : '#EF4444' },
-                            { label: 'Remarks', value: formatRemarksLabel(selectedRow.remarks, false), color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : selectedRow.remarks === 'PENDING' ? '#F59E0B' : isNoTransactionRemarks(selectedRow.remarks) ? textMuted : '#EF4444' },
+                            { label: 'Difference', value: `${selectedRow.remarks === 'ABOVE QUOTA' ? '+' : ''}₱${peso(selectedRow.difference)}`, color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : '#EF4444', bold: true },
+                            { label: 'Remarks', value: formatRemarksLabel(selectedRow.remarks, false), color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : selectedRow.remarks === 'PENDING' ? '#F59E0B' : isNoTransactionRemarks(selectedRow.remarks) ? textMuted : '#EF4444', bold: true },
                           ].map(r => (
-                            <div key={r.label} className="flex items-center justify-between gap-3">
-                              <span className="text-xs" style={{ color: textMuted }}>{r.label}</span>
-                              <span className="text-xs font-bold tabular-nums" style={{ color: r.color }}>{r.value}</span>
+                            <div key={r.label} className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-medium" style={{ color: textMuted }}>{r.label}</span>
+                              <span className={`text-xs tabular-nums ${r.bold ? 'font-bold' : 'font-medium'}`} style={{ color: r.color }}>{r.value}</span>
                             </div>
                           ))}
                         </div>
                       </div>
 
-                      {/* Cash Flow */}
-                      <div className="px-6 py-5" style={{ borderRight: `1px solid ${border}` }}>
-                        <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: textMuted }}>Cash Flow</p>
+                      {/* 2. Expenses & Deductions */}
+                      <div className="px-5 py-5" style={{ borderRight: `1px solid ${border}` }}>
+                        <p className="text-[10px] font-black uppercase tracking-widest mb-3 text-rose-600 dark:text-rose-400">Expenses &amp; Payables</p>
+                        <div className="flex flex-col gap-2.5">
+                          {[
+                            { label: 'Total Expenses', value: `₱${peso(selectedRow.totalExpenses)}`, color: '#EF4444', bold: true },
+                            { label: 'Total Payables', value: `₱${peso(selectedRow.totalPayables || 0)}`, color: '#D946EF', bold: true },
+                            { label: 'Total Purchases', value: `₱${peso(selectedRow.totalForPurchase || 0)}`, color: '#F59E0B', bold: false },
+                            { label: 'Incentives', value: `₱${peso(totalIncentives)}`, color: '#EF4444', bold: false },
+                          ].map(r => (
+                            <div key={r.label} className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-medium" style={{ color: textMuted }}>{r.label}</span>
+                              <span className={`text-xs tabular-nums ${r.bold ? 'font-bold' : 'font-medium'}`} style={{ color: r.color }}>{r.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 3. Cash Flow */}
+                      <div className="px-5 py-5" style={{ borderRight: `1px solid ${border}` }}>
+                        <p className="text-[10px] font-black uppercase tracking-widest mb-3 text-emerald-600 dark:text-emerald-400">Cash Flow (COH/CFD)</p>
                         <div className="flex flex-col gap-2.5">
                           {[
                             { label: 'COH Prev Day', value: `₱${peso(selectedRow.cohPreviousDay)}`, bold: false },
-
+                            { label: 'Fund from HO', value: `₱${peso(selectedRow.fundFromHo || 0)}`, bold: false },
                             { label: 'Cash Returns', value: `₱${peso(selectedRow.cashReturns)}`, bold: false },
                             { label: 'Total COH/CFD', value: `₱${peso(selectedRow.totalCohCfd)}`, bold: true },
                           ].map(r => (
-                            <div key={r.label} className="flex items-center justify-between gap-3">
-                              <span className="text-xs" style={{ color: textMuted }}>{r.label}</span>
-                              <span className={`text-xs tabular-nums ${r.bold ? 'font-black' : 'font-semibold'}`} style={{ color: textPrimary }}>{r.value}</span>
+                            <div key={r.label} className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-medium" style={{ color: textMuted }}>{r.label}</span>
+                              <span className={`text-xs tabular-nums ${r.bold ? 'font-bold' : 'font-medium'}`} style={{ color: textPrimary }}>{r.value}</span>
                             </div>
                           ))}
                         </div>
                       </div>
 
-                      {/* Collections */}
-                      <div className="px-6 py-5">
-                        <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: textMuted }}>Collections</p>
+                      {/* 4. Collections */}
+                      <div className="px-5 py-5">
+                        <p className="text-[10px] font-black uppercase tracking-widest mb-3 text-indigo-600 dark:text-indigo-400">Collections &amp; Rebates</p>
                         <div className="flex flex-col gap-2.5">
                           {[
-                            { label: 'Cash Collection', value: `₱${peso(selectedRow.totalCashCollection)}`, color: '#10B981' },
-                            { label: 'Online Collection', value: `₱${peso(selectedRow.totalOnlineCollection)}`, color: '#3B82F6' },
-                            { label: 'For Collection', value: `₱${peso(selectedRow.forCollection)}`, color: '#F59E0B' },
-                            { label: 'Rebates', value: `₱${peso(selectedRow.rebatesForCollection)}`, color: textMuted },
-                            { label: 'Incentives', value: `₱${peso(totalIncentives)}`, color: '#EF4444' },
+                            { label: 'Cash Collection', value: `₱${peso(selectedRow.totalCashCollection)}`, color: '#10B981', bold: true },
+                            { label: 'Online Collection', value: `₱${peso(selectedRow.totalOnlineCollection)}`, color: '#3B82F6', bold: true },
+                            { label: 'For Collection', value: `₱${peso(selectedRow.forCollection)}`, color: '#F59E0B', bold: false },
+                            { label: 'Rebates', value: `₱${peso(selectedRow.rebatesForCollection)}`, color: '#10B981', bold: false },
                           ].map(r => (
-                            <div key={r.label} className="flex items-center justify-between gap-3">
-                              <span className="text-xs" style={{ color: textMuted }}>{r.label}</span>
-                              <span className="text-xs font-bold tabular-nums" style={{ color: r.color }}>{r.value}</span>
+                            <div key={r.label} className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-medium" style={{ color: textMuted }}>{r.label}</span>
+                              <span className={`text-xs tabular-nums ${r.bold ? 'font-bold' : 'font-medium'}`} style={{ color: r.color }}>{r.value}</span>
                             </div>
                           ))}
                         </div>
-                      </div>
-                    </div>
-
-                    {/* Purchases & Payables stats grid */}
-                    <div className="px-6 py-5 flex flex-col gap-3" style={{ borderBottom: `1px solid ${border}` }}>
-                      <span className="text-[10px] font-black uppercase tracking-widest pb-2 border-b" style={{ color: textPrimary, borderColor: border }}>Purchases &amp; Payables</span>
-                      <div className="grid grid-cols-2 gap-2">
-                        {[
-                          { label: 'Total Purchases', value: `₱${peso(selectedRow.totalForPurchase || 0)}`, color: '#F59E0B' },
-                          { label: 'Total Payables', value: `₱${peso(selectedRow.totalPayables || 0)}`, color: '#D946EF' },
-                        ].map((item) => (
-                          <button
-                            key={item.label}
-                            type="button"
-                            onClick={() => { setSelectedRow(selectedRow); setRowExpenses(null); fetchRowExpenses(selectedRow) }}
-                            className="rounded-lg px-3 py-2 text-left hover:opacity-80 transition-opacity"
-                            style={{ border: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}
-                          >
-                            <div className="text-[9px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>{item.label}</div>
-                            <div className="mt-0.5 text-xs font-black tabular-nums" style={{ color: item.color }}>{item.value}</div>
-                          </button>
-                        ))}
                       </div>
                     </div>
 
