@@ -999,7 +999,9 @@ export default function DashboardLayout() {
             ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-[2px]"
             : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search')
               ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
-              : "flex-1 overflow-y-auto p-5 md:p-8 relative"
+              : currentPage === 'Operations Forms'
+                ? "flex-1 overflow-y-auto px-6 py-6 relative"
+                : "flex-1 overflow-y-auto p-5 md:p-8 relative"
         }>
           {/* Subtle ambient gradient */}
           {!isLight && (

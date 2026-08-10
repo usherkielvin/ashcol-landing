@@ -5791,7 +5791,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
   // ─────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col flex-1 w-full min-h-0 h-full" onClick={() => {
+    <div className="flex flex-col flex-1 min-h-0 h-full w-auto" onClick={() => {
       setContextMenu(null)
       if (!saving && !editModalOpen && !addModalOpen) commitCellEdit()
       setHoveredCell(null)
@@ -6346,7 +6346,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       )}
 
       {/* Ã¢â€â‚¬Ã¢â€â‚¬ Table card Ã¢â€â‚¬Ã¢â€â‚¬ */}
-      <div className="flex flex-col flex-1 w-full min-h-0 overflow-hidden md:mx-4 md:mt-4 md:mb-4 md:rounded-xl md:border shadow-sm"
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden md:mx-4 md:mt-4 md:mb-4 md:rounded-xl md:border shadow-sm"
         style={{ backgroundColor: cardBg, borderColor: border }}
         onClick={e => e.stopPropagation()}>
         {activeTab === 'schedules' ? (
@@ -6478,7 +6478,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                               fontWeight: 700, whiteSpace: 'nowrap',
                               borderBottom: isMyTickets ? `2px solid ${myTicketsTheadBorder}` : `2px solid ${schedTheadBorder}`,
                               fontSize: '10px', letterSpacing: '0.08em',
-                              width: col.w, minWidth: 0, maxWidth: col.w,
+                              width: col.w, minWidth: 0,
                               overflow: 'hidden', textOverflow: 'ellipsis',
                               backgroundColor: isMyTickets ? myTicketsTheadBg : schedTheadBg,
                               cursor: 'pointer',
@@ -6712,7 +6712,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                     borderBottom: `1px solid ${tableBorder}`,
                                     width: col.w,
                                     minWidth: 0,
-                                    maxWidth: col.w,
                                     height: isEditingCell ? 'auto' : TABLE_ROW_HEIGHT,
                                     maxHeight: isEditingCell ? undefined : TABLE_ROW_HEIGHT,
                                     overflow: 'visible',
@@ -6851,10 +6850,10 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   })()}
                 </table>
                 {/* Mobile Card View — important fields only (no branch; header already shows it) */}
-                <div className="flex flex-col md:hidden p-3 gap-2.5">
+                <div className="flex flex-col md:hidden px-4 py-4 gap-3 w-full">
                   {visible.length === 0 ? (
                     <div
-                      className="flex flex-col items-center justify-center gap-3 p-10 m-2 rounded-2xl border-2 border-dashed bg-slate-50/50 dark:bg-[#0F1A2E]/30"
+                      className="flex flex-col items-center justify-center gap-3 p-10 mx-2 my-10 min-h-[50vh] rounded-2xl border-2 border-dashed bg-slate-50/50 dark:bg-[#0F1A2E]/30"
                       style={{ borderColor: isLight ? '#cbd5e1' : '#334155' }}
                     >
                       <CalendarDays className="w-8 h-8 opacity-25" style={{ color: textMuted }} />
@@ -7131,8 +7130,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 </div>
               </div>
             </div>
-          )
-        ) : (
+          )) : (
           /* Render Overview Search Panel */
           <div className="flex-1 flex flex-col min-h-0 w-full h-full overflow-hidden relative" style={{ backgroundColor: isLight ? '#f1f5f9' : '#060B18' }}>
             {/* Top Header Row */}
