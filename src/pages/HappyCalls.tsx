@@ -109,6 +109,7 @@ export default function HappyCalls() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'NOT_CONTACTED' | 'CONTACTED' | 'BOOKED'>('ALL')
   const [dueFilter, setDueFilter] = useState<'3M' | '6M'>('6M')
+  const [monthFilter, setMonthFilter] = useState('') // "YYYY-MM", overrides dueFilter when set
   const [editLead, setEditLead] = useState<HappyCallLead | null>(null)
   const [bookLead, setBookLead] = useState<HappyCallLead | null>(null)
   const [addOpen, setAddOpen] = useState(false)
@@ -170,16 +171,20 @@ export default function HappyCalls() {
       if (statusFilter === 'BOOKED' && !booked) return false
       if (statusFilter === 'CONTACTED' && (!contacted || booked)) return false
       if (statusFilter === 'NOT_CONTACTED' && (contacted || booked)) return false
-      const months = l.monthsSinceInstall
-      const dueThreshold = dueFilter === '3M' ? 3 : 6
-      if (months == null || months < dueThreshold) return false
+      if (monthFilter) {
+        if (!(l.installedDate || '').startsWith(monthFilter)) return false
+      } else {
+        const months = l.monthsSinceInstall
+        const dueThreshold = dueFilter === '3M' ? 3 : 6
+        if (months == null || months < dueThreshold) return false
+      }
       if (!q) return true
       const bLabel = getBranchLabel(l.branchId)
       const blob = [l.customerName, l.ticketNumber, bLabel, l.address, l.contactPhone, l.brandCapacity, l.bookingStatus]
         .filter(Boolean).join(' ').toLowerCase()
       return blob.includes(q)
     })
-  }, [leads, search, statusFilter, dueFilter, activeBranchId, getBranchLabel])
+  }, [leads, search, statusFilter, dueFilter, monthFilter, activeBranchId, getBranchLabel])
 
   const patchLead = useCallback(async (id: string, body: Record<string, unknown>) => {
     const res = await fetch(`${API_BASE_URL}/happy-calls/${id}`, {
@@ -246,12 +251,29 @@ export default function HappyCalls() {
           <select
             value={dueFilter}
             onChange={e => setDueFilter(e.target.value as typeof dueFilter)}
-            className="rounded-lg px-2.5 py-1 text-xs font-bold uppercase border outline-none shrink-0 h-8 cursor-pointer"
+            disabled={!!monthFilter}
+            className="rounded-lg px-2.5 py-1 text-xs font-bold uppercase border outline-none shrink-0 h-8 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
           >
             <option value="3M">3+ MONTHS SINCE INSTALL</option>
             <option value="6M">6+ MONTHS SINCE INSTALL</option>
           </select>
+
+          <div className="flex items-center gap-1 rounded-lg px-2.5 py-1 border shrink-0 h-8" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            <input
+              type="month"
+              value={monthFilter}
+              onChange={e => setMonthFilter(e.target.value)}
+              title="Filter to a specific installed-date month (e.g. December 2025), overrides the months-since-install filter above"
+              className="bg-transparent text-xs font-bold uppercase outline-none cursor-pointer"
+              style={{ color: monthFilter ? textPrimary : textMuted, colorScheme: isLight ? 'light' : 'dark' }}
+            />
+            {monthFilter && (
+              <button type="button" onClick={() => setMonthFilter('')} style={{ color: textMuted }} title="Clear month filter">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
         <button
@@ -454,7 +476,6 @@ function EditLeadModal({ lead, isLight, onClose, onSave }: {
   const [lastContactDate, setLastContactDate] = useState(lead.lastContactDate || todayIso())
   const [bookingStatus, setBookingStatus] = useState(lead.bookingStatus || '')
   const [unitStatus, setUnitStatus] = useState(lead.unitStatus || '')
-  const [priority, setPriority] = useState(lead.priority || '')
   const [assignedTech, setAssignedTech] = useState(lead.assignedTech || '')
   const [notes, setNotes] = useState(lead.notes || '')
   const [saving, setSaving] = useState(false)
@@ -470,7 +491,6 @@ function EditLeadModal({ lead, isLight, onClose, onSave }: {
         lastContactDate: lastContactDate || null,
         bookingStatus: bookingStatus.trim() || null,
         unitStatus: unitStatus || null,
-        priority: priority.trim() || null,
         assignedTech: assignedTech.trim() || null,
         notes: notes.trim() || null,
       })
@@ -510,9 +530,6 @@ function EditLeadModal({ lead, isLight, onClose, onSave }: {
               <option value="FREE">FREE</option>
               <option value="WITH_CHARGE">WITH CHARGE</option>
             </select>
-          </Field>
-          <Field label="Priority" isLight={isLight}>
-            <input type="text" value={priority} onChange={e => setPriority(e.target.value)} className={inputCls} style={inputStyle} />
           </Field>
           <Field label="Assigned Tech" isLight={isLight}>
             <input type="text" value={assignedTech} onChange={e => setAssignedTech(e.target.value)} className={inputCls} style={inputStyle} />
@@ -632,9 +649,9 @@ function AddLeadModal({ isLight, branches, defaultBranchId, onClose, onCreate }:
   const [contactPhone, setContactPhone] = useState('')
   const [brandCapacity, setBrandCapacity] = useState('')
   const [unitStatus, setUnitStatus] = useState('')
-  const [installedDate, setInstalledDate] = useState('')
+  const [commitAmount, setCommitAmount] = useState('')
+  const [installedDate, setInstalledDate] = useState(todayIso())
   const [branchId, setBranchId] = useState(defaultBranchId)
-  const [priority, setPriority] = useState('')
   const [assignedTech, setAssignedTech] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
@@ -643,6 +660,10 @@ function AddLeadModal({ isLight, branches, defaultBranchId, onClose, onCreate }:
   const submit = async () => {
     if (!customerName.trim() || !branchId) {
       setErr('Customer name and branch are required')
+      return
+    }
+    if (!installedDate) {
+      setErr('Installed date is required — Happy Call follow-ups are scheduled off this date, a lead without one will never show as due')
       return
     }
     setSaving(true)
@@ -654,9 +675,9 @@ function AddLeadModal({ isLight, branches, defaultBranchId, onClose, onCreate }:
         contactPhone: contactPhone.trim() || null,
         brandCapacity: brandCapacity.trim() || null,
         unitStatus: unitStatus || null,
-        installedDate: installedDate || null,
+        commitAmount: commitAmount ? Number(commitAmount) : null,
+        installedDate,
         branchId,
-        priority: priority.trim() || null,
         assignedTech: assignedTech.trim() || null,
         notes: notes.trim() || null,
       })
@@ -707,17 +728,15 @@ function AddLeadModal({ isLight, branches, defaultBranchId, onClose, onCreate }:
               <option value="WITH_CHARGE">WITH CHARGE</option>
             </select>
           </Field>
-          <Field label="Installed Date" isLight={isLight}>
-            <input type="date" value={installedDate} onChange={e => setInstalledDate(e.target.value)} className={inputCls} style={inputStyle} />
+          <Field label="Installed Date *" isLight={isLight}>
+            <input type="date" value={installedDate} onChange={e => setInstalledDate(e.target.value)} required className={inputCls} style={inputStyle} />
           </Field>
-          <Field label="Priority" isLight={isLight}>
-            <input type="text" value={priority} onChange={e => setPriority(e.target.value)} className={inputCls} style={inputStyle} />
+          <Field label="Commit Amount" isLight={isLight}>
+            <input type="number" min={0} step="0.01" value={commitAmount} onChange={e => setCommitAmount(e.target.value)} placeholder="0.00" className={inputCls} style={inputStyle} />
           </Field>
-          <div className="col-span-2">
-            <Field label="Assigned Tech" isLight={isLight}>
-              <input type="text" value={assignedTech} onChange={e => setAssignedTech(e.target.value)} className={inputCls} style={inputStyle} />
-            </Field>
-          </div>
+          <Field label="Assigned Tech" isLight={isLight}>
+            <input type="text" value={assignedTech} onChange={e => setAssignedTech(e.target.value)} className={inputCls} style={inputStyle} />
+          </Field>
           <div className="col-span-2">
             <Field label="Notes" isLight={isLight}>
               <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} className={`${inputCls} resize-none`} style={inputStyle} />

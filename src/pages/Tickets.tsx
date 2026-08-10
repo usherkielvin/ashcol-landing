@@ -2825,8 +2825,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
   // ─────────────────────────────────────────────────────────────
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
-  const [tableScale, setTableScale] = useState(1)
-  const TABLE_NATURAL_PX = 1400
   const [editingCell, setEditingCell] = useState<{ ticketId: string; rowIndex: number; colLabel: string; value: string } | null>(null)
   const [statusPicker, setStatusPicker] = useState<{
     ticket: Ticket
@@ -2906,20 +2904,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     }
   }, [])
 
-  // Auto-scale: shrink the table proportionally when the container is narrower than its natural width
-  useEffect(() => {
-    const el = tableScrollRef.current
-    if (!el) return
-    const measure = () => {
-      const w = el.clientWidth
-      const scale = w >= TABLE_NATURAL_PX ? 1 : Math.max(0.45, w / TABLE_NATURAL_PX)
-      setTableScale(parseFloat(scale.toFixed(4)))
-    }
-    measure()
-    const obs = new ResizeObserver(measure)
-    obs.observe(el)
-    return () => obs.disconnect()
-  }, [])
+
 
   const activeCellOverlay = Boolean(editingCell || expandedCell)
 
@@ -6573,47 +6558,20 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
               )}
               <div
                 ref={tableScrollRef}
-                className="flex-1 min-h-0 overflow-y-auto overflow-x-auto relative"
+                className="flex-1 min-h-0 overflow-y-auto overflow-x-auto"
                 data-ticket-table-scroll
                 style={{
                   paddingBottom: activeCellOverlay ? 72 : 12,
                 }}
               >
-                {/* Creative auto-scale badge — shown only when table is zoomed out */}
-                {tableScale < 0.98 && (
-                  <div
-                    className="pointer-events-none sticky top-2 z-30 flex justify-end px-3"
-                    aria-hidden
-                  >
-                    <div
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest shadow-md"
-                      style={{
-                        background: isLight
-                          ? 'rgba(15,23,42,0.72)'
-                          : 'rgba(248,250,252,0.14)',
-                        backdropFilter: 'blur(8px)',
-                        border: `1px solid ${isLight ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.12)'}`,
-                        color: isLight ? '#e2e8f0' : '#94a3b8',
-                        letterSpacing: '0.12em',
-                      }}
-                    >
-                      <svg width="8" height="8" viewBox="0 0 10 10" fill="none" style={{ opacity: 0.8 }}>
-                        <path d="M1 1h3M1 1v3M9 9H6M9 9V6M9 1H6M9 1V4M1 9h3M1 9V6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-                      </svg>
-                      {Math.round(tableScale * 100)}%
-                    </div>
-                  </div>
-                )}
                 <table
                   key={dateFilter || 'all'}
                   className="text-xs hidden md:table"
                   style={{
-                    width: tableScale < 1 ? `${(100 / tableScale).toFixed(2)}%` : '100%',
-                    minWidth: tableScale >= 1 ? `${TABLE_NATURAL_PX}px` : undefined,
+                    width: '100%',
+                    minWidth: '1400px',
                     tableLayout: 'fixed',
                     borderCollapse: 'collapse',
-                    transformOrigin: 'top left',
-                    zoom: tableScale < 1 ? tableScale : undefined,
                   }}
                 >
                   <colgroup>
