@@ -1,12 +1,14 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import ReactDOM from 'react-dom'
-import { AlertTriangle, FileText, X, Store, UserRound, Wind, Users, CalendarDays, MessageSquare, Info, Truck } from 'lucide-react'
+import { AlertTriangle, FileText, X, Store, UserRound, Wind, Users, CalendarDays, MessageSquare, Info, Truck, ClipboardList } from 'lucide-react'
+import { ConfirmationChecklistModal, isChecklistFilled } from '../tickets/ConfirmationChecklistModal'
 import { API_BASE_URL, formatBranchName } from '../../utils/api'
 import { resolveScheduleStatusFields } from '../../constants/ticketCategories'
 import { buildRelayEditDraft, type RelayEditDraft } from './relayEditForm'
 import type { TicketEditSurface } from '../../utils/ticketEditBridge'
 import { DealerSelect, type DealerOption } from '../DealerSelect'
 import { ROBINSON_APPLIANCES_RE } from '../../utils/dealer'
+import { isInstalledWorkflowStatus } from '../../utils/ticketHelpers'
 
 
 
@@ -135,6 +137,9 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
     buildRelayEditDraft(ticket, parseStoreVendor, resolveBranch, draftExtensions),
   )
   const [showHistory, setShowHistory] = useState(false)
+  const [show15QChecklist, setShow15QChecklist] = useState(false)
+  const rawChecklist = (ticket as any).confirmationChecklist || (ticket as any).confirmation_checklist
+  const has15QChecklist = isChecklistFilled(rawChecklist)
   const [confirmModal, setConfirmModal] = useState<{
     type: 'status' | 'discard'
     targetStatus?: { value: string; label: string }
@@ -161,6 +166,12 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
   }
 
   const isReschedStatus = (draft.scheduleStatus || '').toUpperCase() === 'RESCHED'
+  const currentStatus = ((isFieldSurface ? draft.scheduleStatus : draft.updateStatus) || draft.serviceType || 'PENDING').toUpperCase()
+  // draft.scheduleStatus on the field surface holds the UI-facing schedule outcome (e.g.
+  // "DONE_INSTALLED"/"DONE_CLEANING" from getScheduleStatusValue), not the raw backend enum — so
+  // both forms need checking here, unlike isInstalledWorkflowStatus's other (raw-status) callers.
+  const showInstalledDate = isInstalledWorkflowStatus(currentStatus)
+    || currentStatus === 'DONE_INSTALLED' || currentStatus === 'DONE_CLEANING'
 
   const isSaving = saving || actionSaving
 
@@ -239,9 +250,25 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
               })()}
             </div>
           </div>
-          <button type="button" onClick={requestClose} className="p-2 shrink-0 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-            <X className="w-5 h-5" style={{ color: textMuted }} />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShow15QChecklist(true)}
+              className="px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all hover:bg-emerald-500/10 hover:border-emerald-500/30 shrink-0"
+              style={{ borderColor: inputBorder, backgroundColor: inputBg, color: textPrimary }}
+              title="View & Fill 15Q Confirmation Checklist"
+            >
+              <ClipboardList className="w-4 h-4 text-emerald-500 shrink-0" />
+              <span className="hidden sm:inline">15Q CHECKLIST</span>
+              <span className="sm:hidden">15Q</span>
+              {has15QChecklist && (
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              )}
+            </button>
+            <button type="button" onClick={requestClose} className="p-2 shrink-0 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+              <X className="w-5 h-5" style={{ color: textMuted }} />
+            </button>
+          </div>
         </div>
 
         {showHistory && isOverview && (() => {
@@ -594,6 +621,28 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                   />
                 </button>
               </EField>
+              {showInstalledDate && (
+                <EField label="Installed Date">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      const input = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
+                      if (input && input.showPicker) input.showPicker();
+                    }}
+                    className={`${relayInput} font-bold text-center relative flex flex-col items-center justify-center`}
+                    style={inputStyle}
+                  >
+                    {draft.actualCompletion ? new Date(draft.actualCompletion).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase() : 'ADD DATE'}
+                    <input
+                      type="date"
+                      value={draft.actualCompletion}
+                      onChange={(e) => patch({ actualCompletion: e.target.value })}
+                      className="absolute opacity-0 pointer-events-none w-0 h-0"
+                      style={{ pointerEvents: 'none' }}
+                    />
+                  </button>
+                </EField>
+              )}
               {isFieldSurface && isReschedStatus && (
                 <label className={`flex items-center gap-2 text-xs font-semibold cursor-pointer ${isOverview ? 'sm:col-span-2' : 'md:col-span-2'}`} style={{ color: textPrimary }}>
                   <input
@@ -659,6 +708,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                     <option value="BANK TRANSFER">BANK TRANSFER</option>
                     <option value="GCASH">GCASH</option>
                     <option value="CHEQUE">CHEQUE</option>
+                    <option value="FOR COLLECTION">FOR COLLECTION</option>
                     <option value="FREE INSTALL">FREE INSTALL</option>
                   </select>
                 </EField>
@@ -830,6 +880,16 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
     </div>,
     document.body,
   )}
+      {show15QChecklist && (
+        <ConfirmationChecklistModal
+          ticket={ticket as any}
+          isLight={isLight}
+          onClose={() => setShow15QChecklist(false)}
+          onSaved={(updatedTicket) => {
+            onSave?.(updatedTicket as any)
+          }}
+        />
+      )}
     </>
   )
 }

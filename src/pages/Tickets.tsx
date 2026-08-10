@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
-import { useOutletContext, useSearchParams } from 'react-router-dom'
+import { useOutletContext, useSearchParams, useNavigate } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, X, Edit3, AlertTriangle, CalendarDays,
   Eye, Loader2, Pencil, Moon, Sun, Trash2,
   ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Maximize2,
   UsersRound, ChevronDown, SlidersHorizontal, CalendarRange,
+  TrendingUp, Receipt, Radio,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -76,7 +77,7 @@ import {
   getScheduleUpdateDisplay, getTicketCommitDisplay, getTicketDriverDisplay, getTicketDriverName,
   getTicketNegotiatorName, getTicketNumberDisplay, getTicketVehicleDisplay, importRowMatchesTicket,
   isCancelledScheduleGhost, isCancelledTicket, isCompletedGhostOnDate, isInstalledRemarks, isInstalledWorkflowStatus,
-  isMovedToRescheduleRemark, isNoPaymentMode, isReschedulePending, isScheduleGhostOnDate, isTempTicketId,
+  isMovedToRescheduleRemark, isNoPaymentMode, isOverduePendingScheduleTicket, isReschedulePending, isScheduleGhostOnDate, isTempTicketId,
   isTicketNotFoundError, isUnmatchedImportComplete, lookupTicketByNumberOnServer, mergeAcMeta, mergePatchBodies, mergeServerListWithLocalEdits,
   mergeTicketPatch, namesMatchLoosely, normalizeCustomerKey, normalizeImportPaymentMode, parseAcMeta, parseBrand,
   parseDistrict, parseImportMoney, parseNameSiteToken, parseServiceDriverValue,
@@ -114,6 +115,7 @@ export {
 export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const { theme, toggleTheme } = useTheme()
   const { user } = useAuth()
+  const navigate = useNavigate()
   const pathname = pathnameForSurface(surface)
   const { setSidebarOpen } = useOutletContext<{ setSidebarOpen: (v: boolean) => void }>() || {}
   const isMyTickets = surface === 'my-tickets'
@@ -308,6 +310,14 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const rowHover = isLight ? '#f8fafc' : '#0F1A2E'
   const green = '#16A34A'
   const textGreen = isLight ? '#16A34A' : '#4ade80'
+
+  // Overview/search landing quick links — hidden once a search is in progress.
+  const overviewQuickLinks = [
+    { label: 'Schedules', to: '/schedules', icon: CalendarDays },
+    { label: 'Daily Transaction', to: '/audit-report', icon: TrendingUp },
+    { label: 'Expenses', to: '/audit-expenses', icon: Receipt },
+    { label: 'Relays', to: '/relays', icon: Radio, adminOnly: true },
+  ].filter(link => !link.adminOnly || isPortalAdmin(user?.role))
 
   // ─────────────────────────────────────────────────────────────
   const initialSchedulesRef = useRef<ReturnType<typeof getInitialSchedulesFromCache> | null>(null)
@@ -1915,6 +1925,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         preferredDate: isReschedStatus && activeForm.reschedulePending
           ? (oldDateKey || activeForm.preferredDate?.split('T')[0]?.trim() || undefined)
           : newDateKey,
+        actualCompletion: activeForm.actualCompletion?.trim() || undefined,
         dealer: activeForm.dealer?.trim() || 'Direct',
         district: activeForm.district?.trim() || undefined,
         commitType: activeForm.commitTerms?.trim() || undefined,
@@ -2852,6 +2863,55 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const toggleCol = useCallback((label: string) =>
     setExpandedCols(p => ({ ...p, [label]: !p[label] })), [])
 
+  // Drag-to-scroll: click-and-drag horizontally on the table for easy mouse access
+  useEffect(() => {
+    const el = tableScrollRef.current
+    if (!el) return
+    let isDown = false
+    let startX = 0
+    let scrollLeft = 0
+    const onMouseDown = (e: MouseEvent) => {
+      // Only activate on the scroll wrapper itself or its table/thead/tbody — not on interactive cells
+      const target = e.target as HTMLElement
+      if (target.closest('button, a, input, select, textarea, [data-no-drag-scroll]')) return
+      isDown = true
+      startX = e.pageX - el.offsetLeft
+      scrollLeft = el.scrollLeft
+      el.style.cursor = 'grabbing'
+      el.style.userSelect = 'none'
+    }
+    const onMouseUp = () => {
+      isDown = false
+      el.style.cursor = ''
+      el.style.userSelect = ''
+    }
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDown) return
+      e.preventDefault()
+      const x = e.pageX - el.offsetLeft
+      const walk = (x - startX) * 1.4
+      el.scrollLeft = scrollLeft - walk
+    }
+    const onMouseLeave = () => {
+      if (!isDown) return
+      isDown = false
+      el.style.cursor = ''
+      el.style.userSelect = ''
+    }
+    el.addEventListener('mousedown', onMouseDown)
+    window.addEventListener('mouseup', onMouseUp)
+    el.addEventListener('mousemove', onMouseMove)
+    el.addEventListener('mouseleave', onMouseLeave)
+    return () => {
+      el.removeEventListener('mousedown', onMouseDown)
+      window.removeEventListener('mouseup', onMouseUp)
+      el.removeEventListener('mousemove', onMouseMove)
+      el.removeEventListener('mouseleave', onMouseLeave)
+    }
+  }, [])
+
+
+
   const activeCellOverlay = Boolean(editingCell || expandedCell)
 
   useEffect(() => {
@@ -2962,7 +3022,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       { label: 'DLR', display: isTaguigServices ? 'ENDORSED BY' : 'DEALER', weight: 9, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'COMMIT', display: 'COMMIT', weight: 11, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const },
       { label: 'NEGOTIATOR', display: 'NEGOTIATOR', weight: 8, expMul: 1.35, sticky: false, freeze: false, align: 'center' as const, sortable: true },
-      { label: 'SERVICE', display: 'TYPE', weight: 8, editHint: true, expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
       { label: 'STATUS', display: 'STATUS', weight: 12, expMul: 1.25, sticky: false, freeze: false, align: 'center' as const },
       { label: 'UPDATE', display: 'REMARKS', weight: 13, expMul: 1.5, sticky: false, freeze: false, align: 'right' as const },
       { label: 'FINAL DATE', display: 'FINAL DATE', weight: 10, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
@@ -3550,7 +3609,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         || getContinuationDates(t).length > 0
       const isScheduledOrActive = [
         'SCHEDULED', 'RESCHED', 'IN_PROGRESS', 'ON_THE_WAY', 'FOR_APPROVAL', 'SURVEY', 'CONTINUATION',
-        'SYSTEM_REPROCESS', 'DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE',
+        'SYSTEM_REPROCESS', 'DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE', 'PENDING_APPROVAL',
+        'FOR_NEGOTIATION', 'DONE_NEGOTIATION', 'FOR_COLLECTION',
       ].includes(stat)
       if (!hasScheduleDate && !isScheduledOrActive) return false
 
@@ -3558,6 +3618,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       const isResched = stat === 'RESCHED' || scheduleValue === 'RESCHED'
       const isContinuation = stat === 'CONTINUATION' || scheduleValue === 'CONTINUATION'
       const isForApproval = stat === 'FOR APPROVAL' || stat === 'FOR_APPROVAL' || stat === 'FOR QUOTATION' || stat === 'FOR_QUOTATION' || stat.includes('QUOTATION') || scheduleValue === 'FOR_APPROVAL'
+      const isForNegotiation = stat === 'FOR_NEGOTIATION' || stat === 'FOR NEGOTIATION' || stat === 'DONE_NEGOTIATION' || scheduleValue === 'FOR_NEGOTIATION' || scheduleValue === 'DONE_NEGOTIATION'
+      const isForCollection = stat === 'FOR_COLLECTION' || stat === 'FOR COLLECTION' || scheduleValue === 'FOR_COLLECTION'
       const isSurvey = scheduleValue === 'SURVEY' || scheduleValue === 'DONE_SURVEY'
       const isCleaning = scheduleValue === 'CLEANING' || scheduleValue === 'DONE_CLEANING'
       const isSystemReprocess = scheduleValue === 'SYSTEM_REPROCESS' || scheduleValue === 'DONE_SYSTEM_REPROCESS'
@@ -3565,7 +3627,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       const isInstallation = scheduleValue === 'INSTALLATION' || scheduleValue === 'SERVICES' || scheduleValue === 'DONE_INSTALLED' || scheduleValue === 'DONE_CHECKUP' || scheduleValue === 'DONE_BACKJOB'
       const isActiveSchedule = ['SCHEDULED', 'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'ON_THE_WAY'].includes(stat) || hasScheduleDate
 
-      return isInstallation || isCleaning || isSystemReprocess || isDismantle || isResched || isContinuation || isForApproval || isSurvey || isActiveSchedule
+      return isInstallation || isCleaning || isSystemReprocess || isDismantle || isResched || isContinuation || isForApproval || isForNegotiation || isForCollection || isSurvey || isActiveSchedule
     })
     if (!isMyTickets) {
       if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
@@ -5090,12 +5152,15 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
     // ─────────────────────────────────────────────────────────────
     const val = getCellDisplay(ticket, label)
-    const ghostMuted = rowGhost
-      ? (ghostKind === 'completed' ? (isLight ? '#166534' : '#86efac')
-        : ghostKind === 'resched' ? (isLight ? '#a16207' : '#fbbf24')
-          : ghostKind === 'cancelled' ? (isLight ? '#dc2626' : '#f87171')
-            : textMuted)
-      : textPrimary
+    const isPendingRow = isOverduePendingScheduleTicket(ticket, rowGhost ? 'ghost' : null, dateFilter)
+    const ghostMuted = isPendingRow
+      ? '#ffffff'
+      : (rowGhost
+        ? (ghostKind === 'completed' ? (isLight ? '#166534' : '#86efac')
+          : ghostKind === 'resched' ? (isLight ? '#a16207' : '#fbbf24')
+            : ghostKind === 'cancelled' ? (isLight ? '#dc2626' : '#f87171')
+              : textMuted)
+        : textPrimary)
     const showExpanded = cellExpanded
     const truncStyle: React.CSSProperties = showExpanded
       ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.45, display: 'block', paddingRight: '4px', color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: label !== 'UPDATE' ? 'uppercase' : undefined }
@@ -5206,7 +5271,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         )
       }
       const statusVal = getScheduleStatusValue(ticket)
-      const statusColor = getScheduleStatusBadgeStyle(statusVal, isLight).color
+      const statusColor = getScheduleStatusBadgeStyle(statusVal, isLight, isPendingRow).color
       const display = getScheduleStatusDisplay(ticket) || EMPTY_CELL
       let displayLabel = display === 'INSTALLATION' ? 'INSTALL' : ((display === 'FOR APPROVAL' || display === 'FOR QUOTATION') ? 'QUOTATION' : display)
       if (display === 'CONTINUATION') {
@@ -5242,20 +5307,22 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     if (label === 'TICKET NO') {
       const rawVal = val || EMPTY_CELL
       const isRowSaving = savingTicketIds.has(ticket.id)
+      const ticketNoColor = isPendingRow ? '#ffffff' : (rowGhost ? ghostMuted : textPrimary)
+      const indexColor = isPendingRow ? '#ffffff' : (isLight ? '#94a3b8' : '#64748b')
       return (
         <div style={{ display: 'flex', alignItems: 'center', width: '100%', minWidth: 0 }} title={rawVal}>
           {idx !== undefined && (
-            <span style={{ color: isLight ? '#94a3b8' : '#64748b', marginRight: 6, flexShrink: 0, fontWeight: 600, fontSize: '0.7rem' }}>
+            <span style={{ color: indexColor, marginRight: 6, flexShrink: 0, fontWeight: 700, fontSize: '0.7rem' }}>
               {idx + 1}.
             </span>
           )}
-          <span style={{ ...truncStyle, fontWeight: 900, letterSpacing: '0.05em', color: textPrimary }}>
+          <span style={{ ...truncStyle, fontWeight: 900, letterSpacing: '0.05em', color: ticketNoColor }}>
             {rawVal}
           </span>
           {isRowSaving && (
             <Loader2
               className="w-3 h-3 shrink-0 animate-spin"
-              style={{ color: green, marginLeft: 4 }}
+              style={{ color: '#ffffff', marginLeft: 4 }}
               aria-label="Saving"
             />
           )}
@@ -5271,17 +5338,18 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             type="button"
             onMouseDown={e => e.stopPropagation()}
             onClick={e => { e.stopPropagation(); startCellEdit(ticket, label, e.currentTarget as HTMLElement, rowIndex) }}
-            className="inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded-md border border-dashed text-[9.5px] font-bold uppercase tracking-wide transition-colors"
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-1 rounded-full text-[10.5px] font-extrabold uppercase tracking-wider transition-all duration-150 active:scale-95 shadow-sm"
             style={{
-              color: isLight ? '#15803D' : '#6EE7B7',
-              borderColor: isLight ? 'rgba(22,163,74,0.32)' : 'rgba(110,231,183,0.35)',
-              backgroundColor: 'transparent',
+              color: isPendingRow ? '#ffffff' : (isLight ? '#15803D' : '#6EE7B7'),
+              borderColor: isPendingRow ? 'rgba(255,255,255,0.45)' : (isLight ? 'rgba(22,163,74,0.30)' : 'rgba(110,231,183,0.30)'),
+              backgroundColor: isPendingRow ? 'rgba(255,255,255,0.18)' : (isLight ? 'rgba(22,163,74,0.10)' : 'rgba(110,231,183,0.12)'),
+              borderStyle: 'solid',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = isLight ? 'rgba(22,163,74,0.07)' : 'rgba(16,185,129,0.12)'
+              e.currentTarget.style.backgroundColor = isPendingRow ? 'rgba(255,255,255,0.30)' : (isLight ? 'rgba(22,163,74,0.18)' : 'rgba(110,231,183,0.22)')
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'transparent'
+              e.currentTarget.style.backgroundColor = isPendingRow ? 'rgba(255,255,255,0.18)' : (isLight ? 'rgba(22,163,74,0.10)' : 'rgba(110,231,183,0.12)')
             }}
           >
             <CalendarDays className="w-3 h-3 shrink-0 opacity-90" />
@@ -5289,16 +5357,17 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           </button>
         )
       }
+      const finalDateColor = isPendingRow ? '#ffffff' : (hasDate ? green : (isLight ? '#D97706' : '#FACC15'))
       return withEditPencil(
         <span
           style={{
             ...truncStyle,
-            fontWeight: hasDate ? 700 : 500,
-            color: hasDate ? green : textMuted,
+            fontWeight: hasDate ? 700 : 700,
+            color: finalDateColor,
           }}
           title={val}
         >
-          {val || EMPTY_CELL}
+          {val || 'N/A'}
         </span>,
         ticket, label, rowGhost, rowIndex,
       )
@@ -5319,34 +5388,14 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       // suffix some older tickets still carry — trip numbering now lives on VEHICLE only.
       // Use .label (not .name) so "MANNY / ROMAR - 2" keeps both names.
       const driverName = parseNameSiteToken(val).label || val
-      if (!driverName && canEdit && !isMyTickets && !rowGhost) {
-        return (
-          <button
-            type="button"
-            onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
-            onClick={e => {
-              e.stopPropagation()
-              const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
-              startCellEdit(ticket, label, cell, rowIndex)
-            }}
-            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-all hover:opacity-80"
-            style={{
-              color: isLight ? '#16a34a' : '#86efac',
-              backgroundColor: isLight ? 'rgba(22,163,74,0.08)' : 'rgba(148,163,184,0.08)',
-              border: `1px dashed ${isLight ? 'rgba(22,163,74,0.35)' : 'rgba(148,163,184,0.28)'}`,
-            }}
-          >
-            + Add
-          </button>
-        )
-      }
+      const isDriverEmpty = !driverName || driverName === EMPTY_CELL || driverName === '—'
       return withEditPencil(
         <span
           className="block w-full text-center font-bold tracking-wide uppercase leading-tight"
-          style={{ color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }}
+          style={{ color: isDriverEmpty ? (isPendingRow ? '#FDE047' : (isLight ? '#D97706' : '#FACC15')) : ghostMuted, opacity: rowGhost ? 0.72 : 1 }}
           title={driverName}
         >
-          {driverName || EMPTY_CELL}
+          {isDriverEmpty ? 'N/A' : driverName}
         </span>,
         ticket, label, rowGhost, rowIndex,
       )
@@ -5355,27 +5404,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     if (label === 'VEHICLE' && !isMyTickets) {
       // Prefer auto trip label ("STRADA - 2") so the red number always matches table ordering.
       const vehicleCode = vehicleTripLabels.get(ticket.id || '') || getTicketVehicleDisplay(ticket) || val
-      if (!vehicleCode && canEdit && !rowGhost) {
-        return (
-          <button
-            type="button"
-            onMouseDown={e => { e.preventDefault(); e.stopPropagation() }}
-            onClick={e => {
-              e.stopPropagation()
-              const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
-              startCellEdit(ticket, label, cell, rowIndex)
-            }}
-            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-all hover:opacity-80"
-            style={{
-              color: isLight ? '#2563eb' : '#93c5fd',
-              backgroundColor: isLight ? 'rgba(37,99,235,0.08)' : 'rgba(148,163,184,0.08)',
-              border: `1px dashed ${isLight ? 'rgba(37,99,235,0.35)' : 'rgba(148,163,184,0.28)'}`,
-            }}
-          >
-            + Add
-          </button>
-        )
-      }
       const canDragVehicle = canEdit && !rowGhost && Boolean(vehicleCode)
       // "MIRAGE - 2" splits into a plain name and a red trip number that live-updates as the
       // ticket's position in its vehicle group changes (drag-and-drop) — never manually typed.
@@ -5387,9 +5415,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         return (
           <span
             className="block w-full text-center font-bold tracking-wide uppercase leading-tight rounded"
-            style={{ color: ghostMuted, opacity: rowGhost ? 0.72 : 1 }}
+            style={{ color: isPendingRow ? '#FDE047' : (isLight ? '#D97706' : '#FACC15'), opacity: rowGhost ? 0.72 : 1 }}
           >
-            {EMPTY_CELL}
+            N/A
           </span>
         )
       }
@@ -5512,7 +5540,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
     if (label === 'PAYMENT') {
       if (shouldBlankReschedGhostPayment(dateFilter, ghostKind)) {
-        return <span style={{ ...truncStyle, color: textMuted }}>{EMPTY_CELL}</span>
+        return <span style={{ ...truncStyle, color: isPendingRow ? '#ffffff' : textMuted }}>{EMPTY_CELL}</span>
       }
       const combined = sanitizeDisplayText(getSchedulePaymentDisplay(ticket, dateFilter, ghostKind))
       const mode = getPaymentMode(ticket).trim().toUpperCase()
@@ -5523,30 +5551,30 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       if (cellExpanded) {
         return (
           <>
-            <div className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: textMuted }}>Payment</div>
+            <div className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: isPendingRow ? 'rgba(255,255,255,0.8)' : textMuted }}>Payment</div>
             {!combined ? (
-              <div style={{ color: textMuted }}>{EMPTY_CELL}</div>
+              <div style={{ color: isPendingRow ? 'rgba(255,255,255,0.7)' : textMuted }}>{EMPTY_CELL}</div>
             ) : mode === 'FREE' || mode === 'FREE INSTALL' ? (
-              <div style={{ fontWeight: 700, color: isLight ? '#047857' : '#6ee7b7' }}>FREE</div>
+              <div style={{ fontWeight: 700, color: '#ffffff' }}>FREE</div>
             ) : (
               <div className="flex flex-col gap-1.5">
                 {mode ? (
                   <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Mode </span>
-                    <span style={{ fontWeight: 600, color: textPrimary }}>{mode}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: isPendingRow ? 'rgba(255,255,255,0.8)' : textMuted }}>Mode </span>
+                    <span style={{ fontWeight: 600, color: '#ffffff' }}>{mode}</span>
                   </div>
                 ) : null}
                 {amountStr ? (
                   <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Amount </span>
-                    <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: textPrimary }}>{formatPesoPrefix(amountStr)}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: isPendingRow ? 'rgba(255,255,255,0.8)' : textMuted }}>Amount </span>
+                    <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: '#ffffff' }}>{formatPesoPrefix(amountStr)}</span>
                   </div>
                 ) : null}
                 {isHybrid && breakdown.length ? (
                   <div className="flex flex-col gap-0.5">
                     {breakdown.map((entry, i) => (
-                      <div key={`${entry.mode}-${i}`} className="text-[10.5px]" style={{ color: textMuted }}>
-                        {entry.mode} <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: textPrimary }}>{Math.round(entry.amount).toLocaleString('en-PH')}</span>
+                      <div key={`${entry.mode}-${i}`} className="text-[10.5px]" style={{ color: isPendingRow ? 'rgba(255,255,255,0.8)' : textMuted }}>
+                        {entry.mode} <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: '#ffffff' }}>{Math.round(entry.amount).toLocaleString('en-PH')}</span>
                       </div>
                     ))}
                   </div>
@@ -5557,11 +5585,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         )
       }
       if (!combined || combined === '0') {
-        return <span style={{ ...truncStyle, fontWeight: 700, color: textMuted }} title="0">0</span>
+        return <span style={{ ...truncStyle, fontWeight: 700, color: isPendingRow ? '#ffffff' : textMuted }} title="0">0</span>
       }
       if (mode === 'FREE' || mode === 'FREE INSTALL') {
         return (
-          <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#047857' : '#6ee7b7' }} title={combined}>
+          <span style={{ ...truncStyle, fontWeight: 700, color: '#ffffff' }} title={combined}>
             FREE
           </span>
         )
@@ -5569,16 +5597,16 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       return (
         <span style={{ ...truncStyle, fontVariantNumeric: 'tabular-nums' }} title={combined}>
           {amountStr ? (
-            <span style={{ fontWeight: 700, color: isLight ? '#0f172a' : '#f1f5f9' }}>{amountStr}</span>
+            <span style={{ fontWeight: 700, color: isPendingRow ? '#ffffff' : (isLight ? '#0f172a' : '#f1f5f9') }}>{amountStr}</span>
           ) : null}
           {mode && amountStr ? ' ' : null}
           {mode && (
-            <span style={{ fontWeight: 600, color: isLight ? '#475569' : '#94a3b8', letterSpacing: '0.03em' }}>
+            <span style={{ fontWeight: 600, color: isPendingRow ? '#ffffff' : (isLight ? '#475569' : '#94a3b8'), letterSpacing: '0.03em' }}>
               {mode}
             </span>
           )}
           {isHybrid && breakdownStr ? (
-            <span style={{ fontWeight: 500, color: textMuted, marginLeft: 4 }}>
+            <span style={{ fontWeight: 500, color: isPendingRow ? 'rgba(255,255,255,0.9)' : textMuted, marginLeft: 4 }}>
               {breakdownStr}
             </span>
           ) : null}
@@ -5639,14 +5667,21 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
               const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
               startCellEdit(ticket, label, cell, rowIndex)
             }}
-            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-all hover:opacity-80"
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-1 rounded-full text-[10.5px] font-extrabold uppercase tracking-wider transition-all duration-150 active:scale-95 shadow-sm"
             style={{
-              color: isLight ? '#16a34a' : '#86efac',
-              backgroundColor: isLight ? 'rgba(22,163,74,0.08)' : 'rgba(148,163,184,0.08)',
-              border: `1px dashed ${isLight ? 'rgba(22,163,74,0.35)' : 'rgba(148,163,184,0.28)'}`,
+              color: isPendingRow ? '#ffffff' : (isLight ? '#15803d' : '#4ade80'),
+              backgroundColor: isPendingRow ? 'rgba(255, 255, 255, 0.18)' : (isLight ? 'rgba(22, 163, 74, 0.10)' : 'rgba(74, 222, 128, 0.12)'),
+              border: `1px solid ${isPendingRow ? 'rgba(255, 255, 255, 0.45)' : (isLight ? 'rgba(22, 163, 74, 0.30)' : 'rgba(74, 222, 128, 0.30)')}`,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = isPendingRow ? 'rgba(255, 255, 255, 0.30)' : (isLight ? 'rgba(22, 163, 74, 0.18)' : 'rgba(74, 222, 128, 0.22)')
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = isPendingRow ? 'rgba(255, 255, 255, 0.18)' : (isLight ? 'rgba(22, 163, 74, 0.10)' : 'rgba(74, 222, 128, 0.12)')
             }}
           >
-            + Add
+            <Plus className="w-3 h-3 stroke-[2.5] shrink-0 opacity-90" />
+            Add
           </button>
         )
       }
@@ -5680,14 +5715,21 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
                 startCellEdit(ticket, label, cell, rowIndex)
               }}
-              className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-all hover:opacity-80"
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-1 rounded-full text-[10.5px] font-extrabold uppercase tracking-wider transition-all duration-150 active:scale-95 shadow-sm"
               style={{
-                color: isLight ? '#16a34a' : '#86efac',
-                backgroundColor: isLight ? 'rgba(22,163,74,0.08)' : 'rgba(148,163,184,0.08)',
-                border: `1px dashed ${isLight ? 'rgba(22,163,74,0.35)' : 'rgba(148,163,184,0.28)'}`,
+                color: isPendingRow ? '#ffffff' : (isLight ? '#15803d' : '#4ade80'),
+                backgroundColor: isPendingRow ? 'rgba(255, 255, 255, 0.18)' : (isLight ? 'rgba(22, 163, 74, 0.10)' : 'rgba(74, 222, 128, 0.12)'),
+                border: `1px solid ${isPendingRow ? 'rgba(255, 255, 255, 0.45)' : (isLight ? 'rgba(22, 163, 74, 0.30)' : 'rgba(74, 222, 128, 0.30)')}`,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = isPendingRow ? 'rgba(255, 255, 255, 0.30)' : (isLight ? 'rgba(22, 163, 74, 0.18)' : 'rgba(74, 222, 128, 0.22)')
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = isPendingRow ? 'rgba(255, 255, 255, 0.18)' : (isLight ? 'rgba(22, 163, 74, 0.10)' : 'rgba(74, 222, 128, 0.12)')
               }}
             >
-              + Add
+              <Plus className="w-3 h-3 stroke-[2.5] shrink-0 opacity-90" />
+              Add
             </button>
           )
         }
@@ -5720,18 +5762,29 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
     if (label === 'NEGOTIATOR') {
       const negName = getTicketNegotiatorName(ticket, branchEmployees) || EMPTY_CELL
+      const isNegEmpty = !negName || negName === EMPTY_CELL || negName === '—'
       return withEditPencil(
         <div className="flex flex-col items-center justify-center text-center">
-          <span style={{ ...truncStyle, fontWeight: 600 }} title={negName}>
-            {negName !== EMPTY_CELL ? <EmployeeNameLink nameOrId={negName} /> : negName}
+          <span style={{ ...truncStyle, fontWeight: isNegEmpty ? 700 : 600, color: isNegEmpty ? (isPendingRow ? '#FDE047' : (isLight ? '#D97706' : '#FACC15')) : undefined }} title={negName}>
+            {!isNegEmpty ? <EmployeeNameLink nameOrId={negName} /> : 'N/A'}
           </span>
         </div>,
         ticket, label, rowGhost, rowIndex,
       )
     }
 
+    const isValEmpty = !val || val === '—' || val === '\u2014' || val === EMPTY_CELL
+    if (isValEmpty) {
+      return withEditPencil(
+        <span style={{ ...truncStyle, color: isPendingRow ? '#FDE047' : (isLight ? '#D97706' : '#FACC15'), fontWeight: 700 }} title="N/A">
+          N/A
+        </span>,
+        ticket, label, rowGhost,
+      )
+    }
+
     return withEditPencil(
-      <span style={truncStyle} title={val}>{val || (label === 'UPDATE' || label === 'SERVICE' ? EMPTY_CELL : '')}</span>,
+      <span style={truncStyle} title={val}>{val}</span>,
       ticket, label, rowGhost,
     )
   }
@@ -6375,8 +6428,16 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   paddingBottom: activeCellOverlay ? 72 : 12,
                 }}
               >
-                <div className="w-full overflow-x-auto pb-4">
-                <table key={dateFilter || 'all'} className="text-xs w-full hidden md:table" style={{ width: '100%', minWidth: '1200px', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
+                <table
+                  key={dateFilter || 'all'}
+                  className="text-xs hidden md:table"
+                  style={{
+                    width: '100%',
+                    minWidth: '1400px',
+                    tableLayout: 'fixed',
+                    borderCollapse: 'collapse',
+                  }}
+                >
                   <colgroup>
                     {columns.map(col => (
                       <col key={col.label} style={{ width: col.w }} />
@@ -6516,13 +6577,15 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                         const isHovered = hoveredRow === ticket.id
                         const ghostKind = dateFilter ? getScheduleGhostKind(ticket, dateFilter) : null
                         const isGhost = Boolean(ghostKind)
+                        const isPendingRow = isOverduePendingScheduleTicket(ticket, ghostKind, dateFilter)
                         const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(getCustomerDisplayName(ticket)))
                         const rowColors = getScheduleRowColors(ticket, ghostKind, isLight, idx, rowEven, rowOdd, isDuplicateName)
                         const baseBg = rowColors.baseBg
                         const isDragSourceRow = draggedVehicleTicketId === ticket.id
                         const isDropTargetRow = vehicleDropTargetId === ticket.id && draggedVehicleTicketId !== null && !isDragSourceRow
                         const dropTargetBg = isLight ? 'rgba(16,185,129,0.22)' : 'rgba(16,185,129,0.28)'
-                        const bg = isDropTargetRow ? dropTargetBg : (isHovered && !isGhost ? rowHover : baseBg)
+                        const hoverBg = rowColors.hoverBg || rowHover
+                        const bg = isDropTargetRow ? dropTargetBg : (isHovered ? hoverBg : baseBg)
                         const rowIsActive = columns.some(col =>
                           (editingCell?.ticketId === ticket.id && editingCell?.rowIndex === idx && editingCell?.colLabel === col.label)
                           || (expandedCell?.ticketId === ticket.id && expandedCell?.colLabel === col.label),
@@ -6581,11 +6644,12 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                               const SKIP_EMPTY_HIGHLIGHT = new Set(['STATUS', 'INSTALLER', 'SERVICE', 'VEHICLE', 'COMMIT', 'NOTE', 'UPDATE', 'PAYMENT', 'TICKET NO', 'FINAL DATE'])
                               const cellVal = getCellDisplay(ticket, col.label)
                               const isCellEmpty = !SKIP_EMPTY_HIGHLIGHT.has(col.label) && !isGhost && !isEditingCell && !cellVal.trim()
+                              const isColoredRow = Boolean(rowColors.hoverBg)
                               // Quiet empty hint — no orange wash; subtle slate so dark mode stays clean.
-                              const emptyCellBg = isCellEmpty
+                              const emptyCellBg = (isCellEmpty && !isColoredRow)
                                 ? (isLight ? 'rgba(148,163,184,0.10)' : 'rgba(148,163,184,0.07)')
                                 : undefined
-                              const emptyCellInset = isCellEmpty
+                              const emptyCellInset = (isCellEmpty && !isColoredRow)
                                 ? `inset 0 0 0 1px ${isLight ? 'rgba(148,163,184,0.28)' : 'rgba(148,163,184,0.18)'}`
                                 : undefined
                               const isSelectedVehicleCell = col.label === 'VEHICLE' && selectedVehicleTicketId === ticket.id
@@ -6679,6 +6743,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                       <div className={`min-w-0 overflow-hidden ${col.align === 'center' && col.label !== 'VEHICLE' ? 'w-auto max-w-full' : 'w-full'}`}>
                                         {renderCell(ticket, col, idx, isGhost, ghostKind, false)}
                                       </div>
+                                    </div>
+                                  )}
+                                  {isPendingRow && (
+                                    <div className="pending-row-highlight-bar">
+                                      <div className="pending-row-highlight-beam" />
                                     </div>
                                   )}
                                 </td>
@@ -7166,6 +7235,24 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       </button>
                     )}
                   </div>
+
+                  {/* Quick Links — only shown before a search has been entered */}
+                  {!overviewSearchInput && overviewResults.length === 0 && overviewQuickLinks.length > 0 && (
+                    <div className="flex flex-wrap items-center justify-center gap-2 md:gap-3">
+                      {overviewQuickLinks.map(link => (
+                        <button
+                          key={link.to}
+                          type="button"
+                          onClick={() => navigate(link.to)}
+                          className="flex items-center gap-1.5 px-3.5 py-2 md:px-4 md:py-2.5 rounded-full border text-xs md:text-sm font-semibold transition-all hover:-translate-y-0.5 hover:shadow-sm active:scale-95"
+                          style={{ backgroundColor: cardBg, borderColor: border, color: textPrimary }}
+                        >
+                          <link.icon className="w-3.5 h-3.5 md:w-4 md:h-4" style={{ color: green }} />
+                          {link.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Results Section */}
@@ -7757,6 +7844,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       <option value="BANK TRANSFER">BANK TRANSFER</option>
                       <option value="GCASH">GCASH</option>
                       <option value="CHEQUE">CHEQUE</option>
+                      <option value="FOR COLLECTION">FOR COLLECTION</option>
                       <option value="FREE INSTALL">FREE INSTALL</option>
                       <option value="PENDING">PENDING</option>
                     </select>
@@ -8372,6 +8460,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       <option value="BANK TRANSFER">BANK TRANSFER</option>
                       <option value="GCASH">GCASH</option>
                       <option value="CHEQUE">CHEQUE</option>
+                      <option value="FOR COLLECTION">FOR COLLECTION</option>
                       <option value="HYBRID">HYBRID (SPLIT PAYMENT)</option>
                       <option value="FREE INSTALL">FREE INSTALL</option>
                       <option value="PENDING">PENDING</option>

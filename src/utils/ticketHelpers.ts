@@ -150,6 +150,7 @@ export const STATUS_OPTS = [
   'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR_APPROVAL', 'SURVEY',
   'INSTALLED', 'COMPLETED', 'CONTINUATION',
   'SYSTEM_REPROCESS', 'DONE_SYSTEM_REPROCESS', 'DISMANTLE', 'DONE_DISMANTLE', 'PENDING_APPROVAL',
+  'FOR_NEGOTIATION', 'DONE_NEGOTIATION', 'FOR_COLLECTION',
 ]
 export const TABLE_ROW_HEIGHT = 50
 
@@ -159,7 +160,7 @@ export function isInstalledWorkflowStatus(status?: string | null): boolean {
   return s === 'INSTALLED' || s === 'COMPLETED'
 }
 
-export type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY' | 'DONE_CHECKUP' | 'DONE_BACKJOB' | 'DONE_SERVICE' | 'DONE_SYSTEM_REPROCESS' | 'DONE_DISMANTLE' | 'DONE_QUOTATION'
+export type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY' | 'DONE_CHECKUP' | 'DONE_BACKJOB' | 'DONE_SERVICE' | 'DONE_NEGOTIATION' | 'DONE_SYSTEM_REPROCESS' | 'DONE_DISMANTLE' | 'DONE_QUOTATION'
 export type ScheduleStatusGroup = 'pending' | 'closing'
 
 export const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatusGroup }[] = [
@@ -175,6 +176,8 @@ export const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: Schedu
   { value: 'CONTINUATION', label: 'CONTINUATION', group: 'pending' },
   { value: 'FOR_APPROVAL', label: 'FOR QUOTATION', group: 'pending' },
   { value: 'PENDING_APPROVAL', label: 'PENDING APPROVAL', group: 'pending' },
+  { value: 'FOR_NEGOTIATION', label: 'FOR NEGOTIATION', group: 'pending' },
+  { value: 'FOR_COLLECTION', label: 'FOR COLLECTION', group: 'pending' },
   { value: 'SYSTEM_REPROCESS', label: 'SYSTEM REPROCESS', group: 'pending' },
   { value: 'DISMANTLE', label: 'DISMANTLE', group: 'pending' },
   // Closing
@@ -184,6 +187,7 @@ export const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: Schedu
   { value: 'DONE_CHECKUP', label: 'DONE CHECKUP', group: 'closing' },
   { value: 'DONE_BACKJOB', label: 'DONE BACKJOB', group: 'closing' },
   { value: 'DONE_SERVICE', label: 'DONE SERVICE', group: 'closing' },
+  { value: 'DONE_NEGOTIATION', label: 'DONE NEGOTIATION', group: 'closing' },
   { value: 'DONE_SYSTEM_REPROCESS', label: 'DONE SYSTEM REPROCESS', group: 'closing' },
   { value: 'DONE_DISMANTLE', label: 'DONE DISMANTLE', group: 'closing' },
   { value: 'DONE_QUOTATION', label: 'DONE QUOTATION', group: 'closing' },
@@ -194,7 +198,7 @@ export const SCHEDULE_PENDING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group ==
 export const SCHEDULE_CLOSING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group === 'closing')
 export const CLOSING_SCHEDULE_STATUSES = new Set([
   'DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB', 'DONE_SERVICE',
-  'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE', 'DONE_QUOTATION',
+  'DONE_NEGOTIATION', 'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE', 'DONE_QUOTATION',
 ])
 export const SCHEDULE_PENDING_STATUS_VALUES = new Set(SCHEDULE_PENDING_OPTS.map(o => o.value))
 export const SCHEDULE_CLOSING_STATUS_VALUES = new Set(SCHEDULE_CLOSING_OPTS.map(o => o.value))
@@ -209,7 +213,10 @@ export function getScheduleTicketKind(ticket: Ticket): string {
   return 'INSTALLATION'
 }
 
-export function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { color: string; backgroundColor: string; borderColor: string } {
+export function getScheduleStatusBadgeStyle(value: string, isLight: boolean, isOverdue = false): { color: string; backgroundColor: string; borderColor: string } {
+  if (isOverdue) {
+    return { color: '#ffffff', backgroundColor: 'rgba(0, 0, 0, 0.35)', borderColor: '#ffffff' }
+  }
   const normalized = value.toUpperCase().replace(/\s+/g, '_')
   if (normalized === 'INSTALLATION' || normalized === 'INSTALL' || normalized === 'SCHEDULED' || normalized === 'S/I' || normalized === 'S_I' || normalized === 'SI') {
     return { color: isLight ? '#1d4ed8' : '#93c5fd', backgroundColor: isLight ? '#dbeafe' : 'rgba(59,130,246,0.18)', borderColor: isLight ? '#93c5fd' : 'rgba(59,130,246,0.35)' }
@@ -232,7 +239,7 @@ export function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { 
   if (normalized === 'SURVEY') {
     return { color: isLight ? '#6d28d9' : '#c4b5fd', backgroundColor: isLight ? '#ede9fe' : 'rgba(139,92,246,0.18)', borderColor: isLight ? '#c4b5fd' : 'rgba(139,92,246,0.35)' }
   }
-  if (normalized === 'DONE_SURVEY' || normalized === 'DONE_CHECKUP' || normalized === 'DONE_BACKJOB' || normalized === 'BACKJOB') {
+  if (normalized === 'DONE_SURVEY' || normalized === 'DONE_CHECKUP' || normalized === 'DONE_BACKJOB') {
     return { color: isLight ? '#a16207' : '#fbbf24', backgroundColor: isLight ? '#fef9c3' : 'rgba(251,191,36,0.18)', borderColor: isLight ? '#fcd34d' : 'rgba(251,191,36,0.35)' }
   }
   if (normalized === 'RESCHED') {
@@ -247,23 +254,27 @@ export function getScheduleStatusBadgeStyle(value: string, isLight: boolean): { 
   if (normalized === 'PENDING_APPROVAL') {
     return { color: isLight ? '#b45309' : '#fcd34d', backgroundColor: isLight ? '#fef3c7' : 'rgba(245,158,11,0.16)', borderColor: isLight ? '#fcd34d' : 'rgba(245,158,11,0.35)' }
   }
+  if (normalized === 'FOR_NEGOTIATION') {
+    return { color: isLight ? '#7c3aed' : '#c084fc', backgroundColor: isLight ? '#f3e8ff' : 'rgba(124,58,237,0.18)', borderColor: isLight ? '#c084fc' : 'rgba(124,58,237,0.35)' }
+  }
+  if (normalized === 'FOR_COLLECTION') {
+    return { color: isLight ? '#059669' : '#34d399', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.18)', borderColor: isLight ? '#34d399' : 'rgba(16,185,129,0.35)' }
+  }
   if (
     normalized === 'DONE_INSTALLED' ||
     normalized === 'INSTALLED' ||
     normalized === 'COMPLETED' ||
     normalized === 'DONE_CLEANING' ||
     normalized === 'DONE_QUOTATION' ||
-    normalized === 'DONE_SERVICE'
+    normalized === 'DONE_SERVICE' ||
+    normalized === 'DONE_NEGOTIATION'
   ) {
     return { color: isLight ? '#15803d' : '#86efac', backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.18)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)' }
   }
   if (normalized === 'SERVICES') {
     return { color: isLight ? '#0e7490' : '#67e8f9', backgroundColor: isLight ? '#cffafe' : 'rgba(6,182,212,0.15)', borderColor: isLight ? '#67e8f9' : 'rgba(6,182,212,0.3)' }
   }
-  if (normalized === 'CANCELLED') {
-    return { color: isLight ? '#b91c1c' : '#fca5a5', backgroundColor: isLight ? '#fee2e2' : 'rgba(239,68,68,0.12)', borderColor: isLight ? '#fca5a5' : 'rgba(239,68,68,0.3)' }
-  }
-  return { color: isLight ? '#475569' : '#94a3b8', backgroundColor: isLight ? '#f1f5f9' : 'rgba(148,163,184,0.12)', borderColor: isLight ? '#cbd5e1' : 'rgba(148,163,184,0.25)' }
+  return { color: isLight ? '#475569' : '#cbd5e1', backgroundColor: isLight ? '#f1f5f9' : 'rgba(148,163,184,0.12)', borderColor: isLight ? '#cbd5e1' : 'rgba(148,163,184,0.3)' }
 }
 
 export function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | null {
@@ -276,11 +287,12 @@ export function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | n
     || explicit === 'DONE_CHECKUP'
     || explicit === 'DONE_BACKJOB'
     || explicit === 'DONE_SERVICE'
+    || explicit === 'DONE_NEGOTIATION'
     || explicit === 'DONE_SYSTEM_REPROCESS'
     || explicit === 'DONE_DISMANTLE'
     || explicit === 'DONE_QUOTATION'
   ) {
-    return explicit
+    return explicit as ScheduleOutcome
   }
   const remarks = ticketRemarksText(ticket as Ticket).toLowerCase()
   const stat = String(ticket.status || '').toUpperCase()
@@ -294,6 +306,7 @@ export function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | n
   if (stat === 'SURVEY' && /done.*survey|survey.*done|surveyed/i.test(remarks)) return 'DONE_SURVEY'
   if (stat === 'DONE_SYSTEM_REPROCESS') return 'DONE_SYSTEM_REPROCESS'
   if (stat === 'DONE_DISMANTLE') return 'DONE_DISMANTLE'
+  if (stat === 'DONE_NEGOTIATION') return 'DONE_NEGOTIATION'
   return null
 }
 
@@ -312,6 +325,9 @@ export function getScheduleStatusValue(ticket: Ticket): string {
   if (phase === 'SYSTEM_REPROCESS') return 'SYSTEM_REPROCESS'
   if (phase === 'DISMANTLE') return 'DISMANTLE'
   if (phase === 'PENDING_APPROVAL') return 'PENDING_APPROVAL'
+  if (phase === 'FOR_NEGOTIATION') return 'FOR_NEGOTIATION'
+  if (phase === 'DONE_NEGOTIATION') return 'DONE_NEGOTIATION'
+  if (phase === 'FOR_COLLECTION') return 'FOR_COLLECTION'
 
   let stat = (ticket.status || 'SCHEDULED').toUpperCase().replace(/\s+/g, '_')
   if (stat === 'S/I' || stat === 'S_I' || stat === 'SI') return 'S/I'
@@ -323,6 +339,9 @@ export function getScheduleStatusValue(ticket: Ticket): string {
   if (stat === 'SURVEY') return 'SURVEY'
   if (stat === 'FOR_APPROVAL') return 'FOR_APPROVAL'
   if (stat === 'PENDING_APPROVAL') return 'PENDING_APPROVAL'
+  if (stat === 'FOR_NEGOTIATION') return 'FOR_NEGOTIATION'
+  if (stat === 'DONE_NEGOTIATION') return 'DONE_NEGOTIATION'
+  if (stat === 'FOR_COLLECTION') return 'FOR_COLLECTION'
   if (stat === 'CONTINUATION') return 'CONTINUATION'
   if (stat === 'SYSTEM_REPROCESS') return 'SYSTEM_REPROCESS'
   if (stat === 'DONE_SYSTEM_REPROCESS') return 'DONE_SYSTEM_REPROCESS'
@@ -621,6 +640,15 @@ export function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string):
     acUpdates.scheduleOutcome = ''
   } else if (val === 'PENDING_APPROVAL') {
     body.status = 'PENDING_APPROVAL'
+    acUpdates.scheduleOutcome = ''
+  } else if (val === 'FOR_NEGOTIATION') {
+    body.status = 'FOR_NEGOTIATION'
+    acUpdates.scheduleOutcome = ''
+  } else if (val === 'DONE_NEGOTIATION') {
+    body.status = 'COMPLETED'
+    acUpdates.scheduleOutcome = 'DONE_NEGOTIATION'
+  } else if (val === 'FOR_COLLECTION') {
+    body.status = 'FOR_COLLECTION'
     acUpdates.scheduleOutcome = ''
   } else if (val === 'CONTINUATION') {
     body.status = 'CONTINUATION'
@@ -969,7 +997,7 @@ export function getScheduleRowColors(
   rowEven: string,
   rowOdd: string,
   isDuplicateName: boolean,
-): { baseBg: string; accent?: string } {
+): { baseBg: string; hoverBg?: string; accent?: string } {
   const outcome = getScheduleOutcome(ticket)
 
   // Dark mode: use higher-alpha color washes (~0.22–0.28) so closed rows clearly stand out.
@@ -977,6 +1005,7 @@ export function getScheduleRowColors(
   if (ghostKind === 'cancelled' || (ticket.status || '').toUpperCase() === 'CANCELLED') {
     return {
       baseBg: isLight ? '#fee2e2' : 'rgba(239,68,68,0.28)',
+      hoverBg: isLight ? '#fca5a5' : 'rgba(239,68,68,0.38)',
       accent: '#EF4444',
     }
   }
@@ -985,47 +1014,55 @@ export function getScheduleRowColors(
     if (outcome === 'DONE_CLEANING') {
       return {
         baseBg: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.22)',
+        hoverBg: isLight ? '#bae6fd' : 'rgba(14,165,233,0.34)',
         accent: '#0EA5E9',
       }
     }
     if (outcome === 'DONE_SURVEY') {
       return {
         baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.22)',
+        hoverBg: isLight ? '#fde68a' : 'rgba(251,191,36,0.34)',
         accent: '#fbbf24',
       }
     }
     if (outcome === 'DONE_CHECKUP') {
       return {
         baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.22)',
+        hoverBg: isLight ? '#fde68a' : 'rgba(251,191,36,0.34)',
         accent: '#fbbf24',
       }
     }
     if (outcome === 'DONE_BACKJOB') {
       return {
         baseBg: isLight ? '#dbeafe' : 'rgba(59,130,246,0.22)',
+        hoverBg: isLight ? '#bfdbfe' : 'rgba(59,130,246,0.34)',
         accent: '#3B82F6',
       }
     }
     if (outcome === 'DONE_SYSTEM_REPROCESS') {
       return {
         baseBg: isLight ? '#e0e7ff' : 'rgba(99,102,241,0.22)',
+        hoverBg: isLight ? '#c7d2fe' : 'rgba(99,102,241,0.34)',
         accent: '#6366F1',
       }
     }
     if (outcome === 'DONE_DISMANTLE') {
       return {
         baseBg: isLight ? '#ffe4e6' : 'rgba(244,63,94,0.22)',
+        hoverBg: isLight ? '#fecdd3' : 'rgba(244,63,94,0.34)',
         accent: '#F43F5E',
       }
     }
     if (outcome === 'DONE_QUOTATION' || outcome === 'DONE_SERVICE') {
       return {
         baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.28)',
+        hoverBg: isLight ? '#86efac' : 'rgba(22,163,74,0.38)',
         accent: '#16A34A',
       }
     }
     return {
       baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.28)',
+      hoverBg: isLight ? '#86efac' : 'rgba(22,163,74,0.38)',
       accent: '#16A34A',
     }
   }
@@ -1033,6 +1070,7 @@ export function getScheduleRowColors(
   if (ghostKind === 'resched') {
     return {
       baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.28)',
+      hoverBg: isLight ? '#fde68a' : 'rgba(251,191,36,0.38)',
       accent: '#fbbf24',
     }
   }
@@ -1040,6 +1078,7 @@ export function getScheduleRowColors(
   if (outcome === 'DONE_INSTALLED') {
     return {
       baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.28)',
+      hoverBg: isLight ? '#86efac' : 'rgba(22,163,74,0.38)',
       accent: '#16A34A',
     }
   }
@@ -1047,6 +1086,7 @@ export function getScheduleRowColors(
   if (outcome === 'DONE_SURVEY') {
     return {
       baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.28)',
+      hoverBg: isLight ? '#fde68a' : 'rgba(251,191,36,0.38)',
       accent: '#fbbf24',
     }
   }
@@ -1054,6 +1094,7 @@ export function getScheduleRowColors(
   if (outcome === 'DONE_CLEANING') {
     return {
       baseBg: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.28)',
+      hoverBg: isLight ? '#bae6fd' : 'rgba(14,165,233,0.38)',
       accent: '#0EA5E9',
     }
   }
@@ -1061,6 +1102,7 @@ export function getScheduleRowColors(
   if (outcome === 'DONE_CHECKUP') {
     return {
       baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.28)',
+      hoverBg: isLight ? '#fde68a' : 'rgba(251,191,36,0.38)',
       accent: '#fbbf24',
     }
   }
@@ -1068,6 +1110,7 @@ export function getScheduleRowColors(
   if (outcome === 'DONE_BACKJOB') {
     return {
       baseBg: isLight ? '#fef9c3' : 'rgba(59,130,246,0.28)',
+      hoverBg: isLight ? '#fef08a' : 'rgba(59,130,246,0.38)',
       accent: '#f59e0b',
     }
   }
@@ -1075,6 +1118,7 @@ export function getScheduleRowColors(
   if (outcome === 'DONE_SYSTEM_REPROCESS') {
     return {
       baseBg: isLight ? '#eef2ff' : 'rgba(99,102,241,0.28)',
+      hoverBg: isLight ? '#c7d2fe' : 'rgba(99,102,241,0.38)',
       accent: '#6366F1',
     }
   }
@@ -1082,6 +1126,7 @@ export function getScheduleRowColors(
   if (outcome === 'DONE_DISMANTLE') {
     return {
       baseBg: isLight ? '#fff1f2' : 'rgba(244,63,94,0.28)',
+      hoverBg: isLight ? '#fecdd3' : 'rgba(244,63,94,0.38)',
       accent: '#F43F5E',
     }
   }
@@ -1089,6 +1134,7 @@ export function getScheduleRowColors(
   if (outcome === 'DONE_QUOTATION' || outcome === 'DONE_SERVICE') {
     return {
       baseBg: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.28)',
+      hoverBg: isLight ? '#a7f3d0' : 'rgba(16,185,129,0.38)',
       accent: '#10B981',
     }
   }
@@ -1102,57 +1148,88 @@ export function getScheduleRowColors(
   if (statusVal === 'DONE_INSTALLED') {
     return {
       baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.28)',
+      hoverBg: isLight ? '#86efac' : 'rgba(22,163,74,0.38)',
       accent: '#16A34A',
     }
   }
   if (statusVal === 'RESCHED') {
     return {
       baseBg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.18)',
+      hoverBg: isLight ? '#fef3c7' : 'rgba(251,191,36,0.28)',
       accent: '#fbbf24',
     }
   }
-  if (statusVal === 'SURVEY') {
+  // Pending schedule rows (SURVEY, INSTALL, CLEANING, CHECKUP, BACKJOB, etc.)
+  // Turn red to highlight pending rows that haven't been updated yet
+  // Overdue pending schedule rows (>24h past schedule date 3pm) highlight red
+  if (isOverduePendingScheduleTicket(ticket, ghostKind)) {
     return {
-      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
-      accent: '#8B5CF6',
-    }
-  }
-  if (statusVal === 'CLEANING' || statusVal === 'CHECKUP' || statusVal === 'BACKJOB') {
-    return {
-      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
-      accent: '#0EA5E9',
-    }
-  }
-  if (statusVal === 'SYSTEM_REPROCESS') {
-    return {
-      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
-      accent: '#6366F1',
-    }
-  }
-  if (statusVal === 'DISMANTLE') {
-    return {
-      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
-      accent: '#F43F5E',
-    }
-  }
-  if (statusVal === 'INSTALLATION' || statusVal === 'SERVICES') {
-    return {
-      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
-      accent: '#10B981',
-    }
-  }
-  if (statusVal === 'FOR_APPROVAL') {
-    return {
-      baseBg: idx % 2 === 0 ? rowEven : rowOdd,
-      accent: '#10B981',
+      baseBg: isLight ? '#ef4444' : '#dc2626',
+      hoverBg: isLight ? '#dc2626' : '#b91c1c',
+      accent: '#ffffff',
     }
   }
 
   if (isDuplicateName) {
-    return { baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.12)' }
+    return {
+      baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.12)',
+      hoverBg: isLight ? '#fef08a' : 'rgba(251,191,36,0.22)',
+    }
   }
 
   return { baseBg: idx % 2 === 0 ? rowEven : rowOdd }
+}
+
+export function isOverduePendingScheduleTicket(
+  ticket: Ticket,
+  ghostKind?: string | null,
+  activeDateKey?: string,
+): boolean {
+  if (ghostKind) return false
+
+  const outcome = getScheduleOutcome(ticket)
+  if (outcome) return false
+
+  const resolvedStatus = getScheduleStatusValue(ticket)
+  if (CLOSING_SCHEDULE_STATUSES.has(resolvedStatus)) return false
+
+  const rawStat = String(ticket.status || '').toUpperCase().replace(/\s+/g, '_')
+  if (isInstalledRemarks(ticket.remarksUpdate) || isInstalledWorkflowStatus(ticket.status)) return false
+  if (rawStat.startsWith('DONE_') || rawStat.startsWith('INSTALLED') || rawStat.startsWith('COMPLETED')) return false
+
+  // EXCEPTIONS: pending continuation, pending resched, for quotation/approval, pending approval, cancelled, done
+  const EXEMPT_STATUSES = new Set([
+    'CANCELLED',
+    'RESCHED',
+    'CONTINUATION',
+    'FOR_APPROVAL',
+    'FOR_QUOTATION',
+    'PENDING_APPROVAL',
+    'DONE_INSTALLED',
+    'DONE_CLEANING',
+    'DONE_SURVEY',
+    'DONE_CHECKUP',
+    'DONE_BACKJOB',
+    'DONE_SERVICE',
+    'DONE_SYSTEM_REPROCESS',
+    'DONE_DISMANTLE',
+    'DONE_QUOTATION',
+  ])
+  if (EXEMPT_STATUSES.has(rawStat) || EXEMPT_STATUSES.has(resolvedStatus)) return false
+
+  const schedDateStr = activeDateKey
+    || getFinalDateKey(ticket)
+    || getPreferredDateKey(ticket)
+    || String(parseAcMeta(ticket).scheduledDate || '').split('T')[0].split(' ')[0].trim()
+
+  if (!schedDateStr || !/^\d{4}-\d{2}-\d{2}$/.test(schedDateStr)) return false
+
+  const parts = schedDateStr.split('-').map(Number)
+  if (parts.length !== 3 || parts.some(isNaN)) return false
+
+  // Cutoff threshold: 24h past schedule date at 3:00 PM (e.g. Aug 7 schedule -> Aug 8 at 3:00 PM)
+  const cutoffDate = new Date(parts[0], parts[1] - 1, parts[2] + 1, 15, 0, 0, 0)
+  return Date.now() >= cutoffDate.getTime()
 }
 
 export function shouldArchiveCompletedSchedule(ticket: Ticket, body: Record<string, unknown>): boolean {

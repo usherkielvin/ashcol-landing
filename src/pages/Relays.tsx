@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } fr
 import ReactDOM from 'react-dom'
 import { ResponsiveTable, type ColumnDef as ResponsiveColumnDef } from '../components/ResponsiveTable'
 import {
-  Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2,
+  Search, FileSpreadsheet, AlertTriangle, X, FileText, Loader2, Inbox,
   Building2, Trash2, MapPin,
   ChevronDown, Plus, CheckCircle2, AlertCircle, Package, CalendarDays,
   Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3, Clock, Check,
@@ -1213,7 +1213,8 @@ export default function Relays() {
     status: 'S/I',
     branchId: '',
     relayedDate: new Date().toISOString().split('T')[0],
-    finalDate: ''
+    finalDate: '',
+    installedDate: '',
   })
 
   const setAddForm = (action: React.SetStateAction<typeof addForm>) => {
@@ -1830,6 +1831,7 @@ export default function Relays() {
       alternatePhone: cleanedPhones.slice(1).join(', '),
       relayedDate: addForm.relayedDate || new Date().toISOString().split('T')[0],
       finalDate: addForm.finalDate || '',
+      installedDate: addForm.installedDate || '',
       ...(resolvedCreateStatus.schedulePhase !== undefined ? { schedulePhase: resolvedCreateStatus.schedulePhase } : {}),
       ...(resolvedCreateStatus.scheduleOutcome !== undefined ? { scheduleOutcome: resolvedCreateStatus.scheduleOutcome } : {}),
     }
@@ -1862,6 +1864,7 @@ export default function Relays() {
       location: addForm.locationRaw?.trim() || 'No Address Provided',
       dealer: resolveRelayDealerForSubmit(addForm.dealer || 'Direct', addForm.dealerBranch || ''),
       preferredDate: addForm.preferredDate || undefined,
+      actualCompletion: addForm.installedDate || undefined,
       slaExpirationDate: addForm.slaExpirationDate ? new Date(addForm.slaExpirationDate).toISOString() : undefined,
       priorityTag: addForm.priorityTag || undefined,
       district: addForm.district || undefined,
@@ -1965,6 +1968,7 @@ export default function Relays() {
       branchId: '',
       relayedDate: new Date().toISOString().split('T')[0],
       finalDate: '',
+      installedDate: '',
     })
 
     void (async () => {
@@ -2662,9 +2666,9 @@ export default function Relays() {
           <div className="flex flex-col md:flex-row md:items-center gap-3 flex-1 min-w-0">
             
             {/* Filter chips */}
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
               {/* Branch Chip */}
-              <div>
+              <div className="relative">
                 <button
                   type="button"
                   disabled={!isAdmin}
@@ -2689,10 +2693,50 @@ export default function Relays() {
                   </span>
                   {isAdmin && <ChevronDown className="w-3 h-3 md:w-3.5 md:h-3.5 opacity-50 -mr-0.5" />}
                 </button>
+
+                {/* Branch Dropdown */}
+                {isAdmin && isBranchFilterOpen && (
+                  <div data-dropdown-id="branch-dropdown" className="absolute left-0 top-full mt-2 w-52 rounded-xl border shadow-2xl z-[100] p-1.5 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150"
+                    style={{ backgroundColor: cardBg, borderColor: border }}>
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5" style={{ color: textMuted }}>Select Branch</span>
+                    <div className="max-h-60 overflow-y-auto flex flex-col gap-0.5 pr-1">
+                      <button
+                        type="button"
+                        onClick={() => { setBranchFilter('ALL'); setIsBranchFilterOpen(false); }}
+                        className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                        style={{
+                          backgroundColor: branchFilter === 'ALL' ? hoverBg : 'transparent',
+                          color: branchFilter === 'ALL' ? textPrimary : textMuted
+                        }}
+                      >
+                        <span>All Branches</span>
+                        {branchFilter === 'ALL' && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
+                      </button>
+                      {branches.map(b => {
+                        const isSelected = branchFilter === b.id
+                        return (
+                          <button
+                            key={b.id}
+                            type="button"
+                            onClick={() => { setBranchFilter(b.id); setIsBranchFilterOpen(false); }}
+                            className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                            style={{
+                              backgroundColor: isSelected ? hoverBg : 'transparent',
+                              color: isSelected ? textPrimary : textMuted
+                            }}
+                          >
+                            <span>{formatBranchName(b.name)}</span>
+                            {isSelected && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Dealer Chip */}
-              <div>
+              <div className="relative">
                 <button
                   type="button"
                   data-dropdown-id="store-filter"
@@ -2710,10 +2754,50 @@ export default function Relays() {
                   <span>{storeFilter === 'ALL' ? 'Dealer' : storeFilter}</span>
                   <ChevronDown className="w-3 h-3 md:w-3.5 md:h-3.5 opacity-50 -mr-0.5" />
                 </button>
+
+                {/* Dealer Dropdown */}
+                {isStoreFilterOpen && (
+                  <div data-dropdown-id="store-dropdown" className="absolute left-0 top-full mt-2 w-52 rounded-xl border shadow-2xl z-[100] p-1.5 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150"
+                    style={{ backgroundColor: cardBg, borderColor: border }}>
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5" style={{ color: textMuted }}>Filter by Dealer</span>
+                    <div className="max-h-60 overflow-y-auto flex flex-col gap-0.5 pr-1">
+                      <button
+                        type="button"
+                        onClick={() => { setStoreFilter('ALL'); setIsStoreFilterOpen(false); }}
+                        className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                        style={{
+                          backgroundColor: storeFilter === 'ALL' ? hoverBg : 'transparent',
+                          color: storeFilter === 'ALL' ? textPrimary : textMuted
+                        }}
+                      >
+                        <span>All Dealers</span>
+                        {storeFilter === 'ALL' && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
+                      </button>
+                      {['ABENSONS', 'ROBINSONS APPLIANCES'].map(dealerName => {
+                        const isSelected = storeFilter === dealerName
+                        return (
+                          <button
+                            key={dealerName}
+                            type="button"
+                            onClick={() => { setStoreFilter(dealerName); setIsStoreFilterOpen(false); }}
+                            className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                            style={{
+                              backgroundColor: isSelected ? hoverBg : 'transparent',
+                              color: isSelected ? textPrimary : textMuted
+                            }}
+                          >
+                            <span>{dealerName}</span>
+                            {isSelected && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Month Chip */}
-              <div>
+              <div className="relative">
                 <button
                   type="button"
                   data-dropdown-id="month-filter"
@@ -2731,6 +2815,46 @@ export default function Relays() {
                   <span>{monthFilter === 'all' ? 'Month' : monthLabel(monthFilter)}</span>
                   <ChevronDown className="w-3 h-3 md:w-3.5 md:h-3.5 opacity-50 -mr-0.5" />
                 </button>
+
+                {/* Month Dropdown */}
+                {isMonthFilterOpen && (
+                  <div data-dropdown-id="month-dropdown" className="absolute left-0 top-full mt-2 w-52 rounded-xl border shadow-2xl z-[100] p-1.5 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150"
+                    style={{ backgroundColor: cardBg, borderColor: border }}>
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5" style={{ color: textMuted }}>Filter by Month</span>
+                    <div className="max-h-60 overflow-y-auto flex flex-col gap-0.5 pr-1">
+                      <button
+                        type="button"
+                        onClick={() => { setMonthFilter('all'); setIsMonthFilterOpen(false); }}
+                        className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                        style={{
+                          backgroundColor: monthFilter === 'all' ? hoverBg : 'transparent',
+                          color: monthFilter === 'all' ? textPrimary : textMuted
+                        }}
+                      >
+                        <span>All Months</span>
+                        {monthFilter === 'all' && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
+                      </button>
+                      {monthOptions.map(ym => {
+                        const isSelected = monthFilter === ym
+                        return (
+                          <button
+                            key={ym}
+                            type="button"
+                            onClick={() => { setMonthFilter(ym); setIsMonthFilterOpen(false); }}
+                            className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
+                            style={{
+                              backgroundColor: isSelected ? hoverBg : 'transparent',
+                              color: isSelected ? textPrimary : textMuted
+                            }}
+                          >
+                            <span>{monthLabel(ym)}</span>
+                            {isSelected && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2777,127 +2901,6 @@ export default function Relays() {
                 <Plus className="w-3.5 h-3.5 md:w-4 md:h-4" />
                 <span>New Ticket</span>
               </button>
-            </div>
-          )}
-
-          {/* ── Absolute Dropdowns (placed here to prevent scroll-clipping) ── */}
-
-          {/* Branch Dropdown */}
-          {isAdmin && isBranchFilterOpen && (
-            <div data-dropdown-id="branch-dropdown" className="absolute left-3 top-[36px] w-48 rounded-xl border shadow-lg z-[100] p-1.5 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150"
-              style={{ backgroundColor: cardBg, borderColor: border }}>
-              <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5" style={{ color: textMuted }}>Select Branch</span>
-              <div className="max-h-60 overflow-y-auto flex flex-col gap-0.5 pr-1">
-                <button
-                  type="button"
-                  onClick={() => { setBranchFilter('ALL'); setIsBranchFilterOpen(false); }}
-                  className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
-                  style={{
-                    backgroundColor: branchFilter === 'ALL' ? hoverBg : 'transparent',
-                    color: branchFilter === 'ALL' ? textPrimary : textMuted
-                  }}
-                >
-                  <span>All Branches</span>
-                  {branchFilter === 'ALL' && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
-                </button>
-                {branches.map(b => {
-                  const isSelected = branchFilter === b.id
-                  return (
-                    <button
-                      key={b.id}
-                      type="button"
-                      onClick={() => { setBranchFilter(b.id); setIsBranchFilterOpen(false); }}
-                      className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
-                      style={{
-                        backgroundColor: isSelected ? hoverBg : 'transparent',
-                        color: isSelected ? textPrimary : textMuted
-                      }}
-                    >
-                      <span>{formatBranchName(b.name)}</span>
-                      {isSelected && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Dealer Dropdown */}
-          {isStoreFilterOpen && (
-            <div data-dropdown-id="store-dropdown" className="absolute left-3 md:left-20 top-[36px] w-48 rounded-xl border shadow-lg z-[100] p-1.5 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150"
-              style={{ backgroundColor: cardBg, borderColor: border }}>
-              <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5" style={{ color: textMuted }}>Filter by Dealer</span>
-              <div className="max-h-60 overflow-y-auto flex flex-col gap-0.5 pr-1">
-                <button
-                  type="button"
-                  onClick={() => { setStoreFilter('ALL'); setIsStoreFilterOpen(false); }}
-                  className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
-                  style={{
-                    backgroundColor: storeFilter === 'ALL' ? hoverBg : 'transparent',
-                    color: storeFilter === 'ALL' ? textPrimary : textMuted
-                  }}
-                >
-                  <span>All Dealers</span>
-                  {storeFilter === 'ALL' && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
-                </button>
-                {['ABENSONS', 'ROBINSONS APPLIANCES'].map(dealerName => {
-                  const isSelected = storeFilter === dealerName
-                  return (
-                    <button
-                      key={dealerName}
-                      type="button"
-                      onClick={() => { setStoreFilter(dealerName); setIsStoreFilterOpen(false); }}
-                      className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
-                      style={{
-                        backgroundColor: isSelected ? hoverBg : 'transparent',
-                        color: isSelected ? textPrimary : textMuted
-                      }}
-                    >
-                      <span>{dealerName}</span>
-                      {isSelected && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-          {/* Month Dropdown */}
-          {isMonthFilterOpen && (
-            <div data-dropdown-id="month-dropdown" className="absolute left-3 md:left-40 top-[36px] w-48 rounded-xl border shadow-lg z-[100] p-1.5 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150"
-              style={{ backgroundColor: cardBg, borderColor: border }}>
-              <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5" style={{ color: textMuted }}>Filter by Month</span>
-              <div className="max-h-60 overflow-y-auto flex flex-col gap-0.5 pr-1">
-                <button
-                  type="button"
-                  onClick={() => { setMonthFilter('all'); setIsMonthFilterOpen(false); }}
-                  className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
-                  style={{
-                    backgroundColor: monthFilter === 'all' ? hoverBg : 'transparent',
-                    color: monthFilter === 'all' ? textPrimary : textMuted
-                  }}
-                >
-                  <span>All Months</span>
-                  {monthFilter === 'all' && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
-                </button>
-                {monthOptions.map(ym => {
-                  const isSelected = monthFilter === ym
-                  return (
-                    <button
-                      key={ym}
-                      type="button"
-                      onClick={() => { setMonthFilter(ym); setIsMonthFilterOpen(false); }}
-                      className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-left transition-all"
-                      style={{
-                        backgroundColor: isSelected ? hoverBg : 'transparent',
-                        color: isSelected ? textPrimary : textMuted
-                      }}
-                    >
-                      <span>{monthLabel(ym)}</span>
-                      {isSelected && <Check className="w-3.5 h-3.5" style={{ color: textPrimary }} />}
-                    </button>
-                  )
-                })}
-              </div>
             </div>
           )}
 
@@ -3076,9 +3079,8 @@ export default function Relays() {
               ) : filtered.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length} className="py-20 text-center">
-                    <FileText className="w-12 h-12 opacity-20 mx-auto mb-3" style={{ color: textMuted }} />
-                    <p className="text-sm font-bold" style={{ color: textPrimary }}>No client tickets found</p>
-                    <p className="text-xs mt-1" style={{ color: textMuted }}>Try adjusting filters or upload a spreadsheet.</p>
+                    <Inbox className="w-12 h-12 opacity-20 mx-auto mb-3" style={{ color: textMuted }} />
+                    <p className="text-sm font-bold" style={{ color: textPrimary }}>No new relays</p>
                   </td>
                 </tr>
               ) : (
@@ -3169,7 +3171,7 @@ export default function Relays() {
                     // BRAND
                     { value: (
                       <span className="truncate block w-full font-semibold" title={displayUpper(brandLabel)} style={{ color: textPrimary }}>
-                        {displayUpper(brandLabel) || '—'}
+                        {displayUpper(brandLabel) || <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}
                       </span>
                     ) },
                     // DEALER
@@ -3181,7 +3183,7 @@ export default function Relays() {
                     // COMMIT
                     { value: (
                       <span className="truncate block w-full font-semibold" title={displayUpper(ticket.commitType || '')} style={{ color: textMuted }}>
-                        {displayUpper(ticket.commitType || '') || '—'}
+                        {displayUpper(ticket.commitType || '') || <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}
                       </span>
                     ) },
                     // BRANCH
@@ -3214,7 +3216,7 @@ export default function Relays() {
                     // REMARKS
                     { value: (
                       <span className="truncate block w-full font-semibold" title={(ticket.remarksUpdate || lastUpdate || '').toUpperCase()}>
-                        {(ticket.remarksUpdate || lastUpdate || '—').toUpperCase()}
+                        {(ticket.remarksUpdate || lastUpdate) ? (ticket.remarksUpdate || lastUpdate).toUpperCase() : <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}
                       </span>
                     ) }
                   ] : [
@@ -3251,7 +3253,7 @@ export default function Relays() {
                     { value: <span className="truncate block w-full font-semibold" title={displayUpper(storeStyle.label)}>{displayUpper(storeStyle.label)}</span> },
                     { value: <span className="whitespace-nowrap block w-full font-semibold">{displayUpper(relayedDate)}</span> },
                     { value: <span className="truncate block w-full font-semibold" title={displayUpper(branchName)}>{displayUpper(branchName)}</span> },
-                    { value: <span className="truncate block w-full font-semibold" title={displayUpper(ticket.commitType || '')}>{displayUpper(ticket.commitType || '') || '—'}</span> },
+                    { value: <span className="truncate block w-full font-semibold" title={displayUpper(ticket.commitType || '')}>{displayUpper(ticket.commitType || '') || <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}</span> },
                     { value: (
                       <span className="truncate block w-full font-bold max-w-full" title={displayUpper(negotiator)}>
                         {displayUpper(negotiator)}
@@ -3275,7 +3277,7 @@ export default function Relays() {
                         )}
                       </button>
                     ) },
-                    { value: <span className={`${!columns[11].isExpanded ? 'truncate' : 'break-words'} block w-full font-semibold`} title={(lastUpdate || '').toUpperCase()}>{(lastUpdate || '—').toUpperCase()}</span> },
+                    { value: <span className={`${!columns[11].isExpanded ? 'truncate' : 'break-words'} block w-full font-semibold`} title={(lastUpdate || '').toUpperCase()}>{lastUpdate ? lastUpdate.toUpperCase() : <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}</span> },
                   ]
                   return (
                     <tr key={ticket.id}
@@ -3373,9 +3375,8 @@ export default function Relays() {
                 </div>
               ) : filtered.length === 0 ? (
                 <div className="py-20 text-center">
-                  <FileText className="w-12 h-12 opacity-20 mx-auto mb-3" style={{ color: textMuted }} />
-                  <p className="text-sm font-bold" style={{ color: textPrimary }}>No client tickets found</p>
-                  <p className="text-xs mt-1" style={{ color: textMuted }}>Try adjusting filters or upload a spreadsheet.</p>
+                  <Inbox className="w-12 h-12 opacity-20 mx-auto mb-3" style={{ color: textMuted }} />
+                  <p className="text-sm font-bold" style={{ color: textPrimary }}>No new relays</p>
                 </div>
               ) : (
                 filtered.map((ticket) => {
@@ -3875,7 +3876,7 @@ export default function Relays() {
 
                 {/* 5. Scheduling */}
                 <section>
-                  <RelayFormSectionHead step={5} icon={<CalendarDays className="w-3.5 h-3.5" />} title="Scheduling" subtitle="Requested date & collection details" />
+                  <RelayFormSectionHead step={5} icon={<CalendarDays className="w-3.5 h-3.5" />} title="Scheduling" subtitle="Requested, schedule & installed date details" />
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
                     {/* Requested Date */}
                     <RelayFormField label="Requested Date" compact className="md:col-span-4">
@@ -3914,6 +3915,33 @@ export default function Relays() {
                           type="date"
                           value={addForm.finalDate}
                           onChange={e => setAddForm(prev => ({ ...prev, finalDate: e.target.value }))}
+                          className="absolute opacity-0 pointer-events-none w-0 h-0"
+                          style={{ pointerEvents: 'none' }}
+                        />
+                      </button>
+                    </RelayFormField>
+                    {/* Installed Date */}
+                    <RelayFormField label="Installed Date" compact className="md:col-span-4">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          const input = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
+                          if (input && input.showPicker) input.showPicker();
+                        }}
+                        className={`${addInput} font-bold text-center relative flex flex-col items-center justify-center`}
+                        style={{
+                          backgroundColor: addForm.installedDate ? (isLight ? '#eff6ff' : 'rgba(59,130,246,0.08)') : inputBg,
+                          borderColor: addForm.installedDate ? (isLight ? '#93c5fd' : 'rgba(59,130,246,0.4)') : inputBorder,
+                          color: addForm.installedDate ? '#3B82F6' : textPrimary,
+                          colorScheme: isLight ? 'light' : 'dark',
+                          fontWeight: addForm.installedDate ? 700 : undefined,
+                        }}
+                      >
+                        {addForm.installedDate ? new Date(addForm.installedDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase() : 'ADD DATE'}
+                        <input
+                          type="date"
+                          value={addForm.installedDate}
+                          onChange={e => setAddForm(prev => ({ ...prev, installedDate: e.target.value }))}
                           className="absolute opacity-0 pointer-events-none w-0 h-0"
                           style={{ pointerEvents: 'none' }}
                         />

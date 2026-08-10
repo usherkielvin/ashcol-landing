@@ -52,6 +52,7 @@ export type RelayEditDraft = {
   serviceDriver: string
   driverName: string
   finalDate: string
+  actualCompletion: string
   scheduleStatus: string
   reschedulePending: boolean
   remarks: string
@@ -101,6 +102,8 @@ type TicketLike = {
   driver_name?: string
   finalDate?: string
   final_date?: string
+  actualCompletion?: string
+  actual_completion?: string
   remarks?: string
   reschedulePending?: boolean
   commitTerms?: string
@@ -208,6 +211,7 @@ export function buildRelayEditDraft(
     serviceDriver: ticket.serviceVehicle || ticket.serviceDriver || ticket.service_driver || '',
     driverName: ticket.driverName || ticket.driver_name || parsedDetails.driverName || '',
     finalDate: parsedDetails.finalDate || ticket.finalDate || ticket.final_date || '',
+    actualCompletion: (ticket.actualCompletion || ticket.actual_completion || '').split('T')[0] || '',
     scheduleStatus: ticket.status || 'INSTALLATION',
     reschedulePending: Boolean(parsedDetails.reschedulePending),
     remarks: ticket.remarks || ticket.remarksUpdate || '',

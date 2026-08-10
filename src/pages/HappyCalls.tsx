@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useOutletContext } from 'react-router-dom'
 import { Search, X, Loader2, PhoneCall, CheckCircle2, Plus } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, getCleanBranchName, isPortalAdmin } from '../utils/api'
-import { monthsSince } from '../utils/ticketHelpers'
+import { API_BASE_URL, getCleanBranchName, isPortalAdmin, getActivePortalBranchId, resolveScopedBranchId, isSameBaseBranch } from '../utils/api'
+
 
 export interface HappyCallLead {
   id: string
@@ -24,6 +25,7 @@ export interface HappyCallLead {
   notes?: string
   installedDate?: string
   sourceTicketId?: string | null
+  ticketNumber?: string | null
   scheduledTicketId?: string | null
   monthsSinceInstall?: number
 }
@@ -50,11 +52,45 @@ async function fetchLeads(token: string, branchId: string): Promise<HappyCallLea
   return res.json()
 }
 
+function formatLastContactDate(dateStr?: string): string {
+  if (!dateStr || !dateStr.trim()) return ''
+  const clean = dateStr.split('T')[0].trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(clean)) return dateStr.toUpperCase()
+  const [yearStr, monthStr, dayStr] = clean.split('-')
+  const monthNum = parseInt(monthStr, 10) - 1
+  const MONTH_NAMES = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+  const monthName = MONTH_NAMES[monthNum] || 'JAN'
+  const yy = yearStr.slice(-2)
+  return `${monthName}-${dayStr.padStart(2, '0')}-${yy}`
+}
+
 export default function HappyCalls() {
   const { theme } = useTheme()
   const { user } = useAuth()
+  const outletContext = useOutletContext<{ globalBranchId?: string }>() || {}
+  const globalBranchId = outletContext.globalBranchId
   const isLight = theme === 'light'
   const isAdmin = isPortalAdmin(user?.role || '')
+
+  const [activeBranchId, setActiveBranchId] = useState<string>(() => {
+    if (!isAdmin) {
+      return resolveScopedBranchId(user?.branchId) || user?.branchId || ''
+    }
+    const g = globalBranchId || getActivePortalBranchId(user) || ''
+    return resolveScopedBranchId(g) || g
+  })
+
+  useEffect(() => {
+    if (!isAdmin) return
+    const syncBranch = () => {
+      const g = localStorage.getItem('ashcol-global-branch-id') || getActivePortalBranchId(user) || ''
+      const resolved = resolveScopedBranchId(g) || g
+      setActiveBranchId(resolved)
+    }
+    syncBranch()
+    window.addEventListener('ashcol-global-branch-change', syncBranch)
+    return () => window.removeEventListener('ashcol-global-branch-change', syncBranch)
+  }, [isAdmin, user])
 
   const cardBg = isLight ? '#ffffff' : '#0A1120'
   const border = isLight ? '#e2e8f0' : '#1E2D48'
@@ -71,8 +107,9 @@ export default function HappyCalls() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
-  const [branchFilter, setBranchFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'NOT_CONTACTED' | 'CONTACTED' | 'BOOKED'>('ALL')
+  const [dueFilter, setDueFilter] = useState<'3M' | '6M'>('6M')
+  const [monthFilter, setMonthFilter] = useState('') // "YYYY-MM", overrides dueFilter when set
   const [editLead, setEditLead] = useState<HappyCallLead | null>(null)
   const [bookLead, setBookLead] = useState<HappyCallLead | null>(null)
   const [addOpen, setAddOpen] = useState(false)
@@ -98,31 +135,56 @@ export default function HappyCalls() {
     setLoading(true)
     setError('')
     try {
-      const rows = await fetchLeads(authToken(), branchFilter)
+      const rows = await fetchLeads(authToken(), activeBranchId)
       setLeads(rows)
     } catch (err) {
       setError(errMsg(err, 'Failed to load happy call leads'))
     } finally {
       setLoading(false)
     }
-  }, [branchFilter])
+  }, [activeBranchId])
 
   useEffect(() => { void loadLeads() }, [loadLeads])
+
+  const branchMap = useMemo(() => {
+    const map = new Map<string, string>()
+    branches.forEach(b => map.set(b.id, b.name))
+    return map
+  }, [branches])
+
+  const getBranchLabel = useCallback((bId?: string) => {
+    if (!bId) return 'NA'
+    const found = branchMap.get(bId)
+    if (found) return found.toUpperCase()
+    const cleaned = getCleanBranchName(bId)
+    return cleaned ? cleaned.toUpperCase() : bId.toUpperCase()
+  }, [branchMap])
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
     return leads.filter(l => {
+      if (activeBranchId && activeBranchId !== 'ALL_BRANCHES') {
+        if (!isSameBaseBranch(l.branchId, activeBranchId)) return false
+      }
       const booked = !!l.scheduledTicketId
       const contacted = (l.contactAttempts || 0) > 0
       if (statusFilter === 'BOOKED' && !booked) return false
       if (statusFilter === 'CONTACTED' && (!contacted || booked)) return false
       if (statusFilter === 'NOT_CONTACTED' && (contacted || booked)) return false
+      if (monthFilter) {
+        if (!(l.installedDate || '').startsWith(monthFilter)) return false
+      } else {
+        const months = l.monthsSinceInstall
+        const dueThreshold = dueFilter === '3M' ? 3 : 6
+        if (months == null || months < dueThreshold) return false
+      }
       if (!q) return true
-      const blob = [l.customerName, l.address, l.contactPhone, l.brandCapacity, l.assignedTech, l.bookingStatus]
+      const bLabel = getBranchLabel(l.branchId)
+      const blob = [l.customerName, l.ticketNumber, bLabel, l.address, l.contactPhone, l.brandCapacity, l.bookingStatus]
         .filter(Boolean).join(' ').toLowerCase()
       return blob.includes(q)
     })
-  }, [leads, search, statusFilter])
+  }, [leads, search, statusFilter, dueFilter, monthFilter, activeBranchId, getBranchLabel])
 
   const patchLead = useCallback(async (id: string, body: Record<string, unknown>) => {
     const res = await fetch(`${API_BASE_URL}/happy-calls/${id}`, {
@@ -158,174 +220,190 @@ export default function HappyCalls() {
   }, [])
 
   return (
-    <div className="p-[5px] flex flex-col gap-2 h-full min-h-0">
-      <div className="flex flex-nowrap items-center justify-between gap-2 px-1 py-1 overflow-x-auto no-scrollbar select-none">
+    <div className="p-[5px] flex flex-col gap-2.5 h-full min-h-0 flex-1 overflow-hidden">
+      <div className="flex flex-nowrap items-center justify-between gap-2 px-1 py-0.5 overflow-x-auto no-scrollbar select-none shrink-0">
         <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
-          <div className="flex items-center gap-2 w-48 sm:w-56 rounded-lg px-2.5 py-1.5 border shrink-0 h-8" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+          <div className="flex items-center gap-2 w-48 sm:w-64 rounded-lg px-2.5 py-1.5 border shrink-0 h-8" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
             <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
             <input
               type="text"
-              placeholder="Search…"
+              placeholder="SEARCH CUSTOMER, BRANCH, PHONE…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="bg-transparent text-xs outline-none w-full min-w-0"
+              className="bg-transparent text-xs font-semibold uppercase outline-none w-full min-w-0 placeholder:uppercase"
               style={{ color: textPrimary }}
             />
             {search && <button onClick={() => setSearch('')} style={{ color: textMuted }}><X className="w-3.5 h-3.5" /></button>}
           </div>
 
-          {isAdmin && (
-            <select
-              value={branchFilter}
-              onChange={e => setBranchFilter(e.target.value)}
-              className="rounded-lg px-2.5 py-1 text-xs font-semibold uppercase border outline-none shrink-0 h-8 cursor-pointer max-w-[150px]"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-            >
-              <option value="">All Branches</option>
-              {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
-            </select>
-          )}
-
           <select
             value={statusFilter}
             onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
-            className="rounded-lg px-2.5 py-1 text-xs font-semibold uppercase border outline-none shrink-0 h-8 cursor-pointer"
+            className="rounded-lg px-2.5 py-1 text-xs font-bold uppercase border outline-none shrink-0 h-8 cursor-pointer"
             style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
           >
-            <option value="ALL">All</option>
-            <option value="NOT_CONTACTED">Not Contacted</option>
-            <option value="CONTACTED">Contacted</option>
-            <option value="BOOKED">Booked</option>
+            <option value="ALL">ALL STATUS</option>
+            <option value="NOT_CONTACTED">NOT CONTACTED</option>
+            <option value="CONTACTED">CONTACTED</option>
+            <option value="BOOKED">BOOKED</option>
           </select>
+
+          <select
+            value={dueFilter}
+            onChange={e => setDueFilter(e.target.value as typeof dueFilter)}
+            disabled={!!monthFilter}
+            className="rounded-lg px-2.5 py-1 text-xs font-bold uppercase border outline-none shrink-0 h-8 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+          >
+            <option value="3M">3+ MONTHS SINCE INSTALL</option>
+            <option value="6M">6+ MONTHS SINCE INSTALL</option>
+          </select>
+
+          <div className="flex items-center gap-1 rounded-lg px-2.5 py-1 border shrink-0 h-8" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            <input
+              type="month"
+              value={monthFilter}
+              onChange={e => setMonthFilter(e.target.value)}
+              title="Filter to a specific installed-date month (e.g. December 2025), overrides the months-since-install filter above"
+              className="bg-transparent text-xs font-bold uppercase outline-none cursor-pointer"
+              style={{ color: monthFilter ? textPrimary : textMuted, colorScheme: isLight ? 'light' : 'dark' }}
+            />
+            {monthFilter && (
+              <button type="button" onClick={() => setMonthFilter('')} style={{ color: textMuted }} title="Clear month filter">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
         <button
           type="button"
           onClick={() => setAddOpen(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-opacity hover:opacity-90 shrink-0 h-8"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider text-white transition-opacity hover:opacity-90 shrink-0 h-8"
           style={{ backgroundColor: green }}
         >
-          <Plus className="w-3.5 h-3.5" /> Add Customer
+          <Plus className="w-3.5 h-3.5" /> ADD CUSTOMER
         </button>
       </div>
 
       {error && (
-        <div className="px-4 py-2.5 rounded-lg text-sm font-medium" style={{ backgroundColor: 'rgba(239,68,68,0.08)', color: '#EF4444' }}>
+        <div className="px-4 py-2 rounded-lg text-xs font-bold uppercase shrink-0" style={{ backgroundColor: 'rgba(239,68,68,0.08)', color: '#EF4444' }}>
           {error}
         </div>
       )}
 
-      <div style={{ backgroundColor: cardBg, borderColor: border }} className="flex-1 min-h-[70vh] border rounded-xl overflow-auto shadow-sm">
-        <table className="w-full text-left table-fixed min-w-[1180px]">
+      <div style={{ backgroundColor: cardBg, borderColor: border }} className="flex-1 min-h-0 border rounded-xl overflow-auto shadow-sm flex flex-col">
+        <table className="w-full text-left table-fixed min-w-[1240px] border-collapse">
           <colgroup>
-            <col className="w-[17%]" />
-            <col className="w-[16%]" />
+            <col className="w-[9%]" />
             <col className="w-[14%]" />
-            <col className="w-[7%]" />
-            <col className="w-[9%]" />
-            <col className="w-[7%]" />
             <col className="w-[11%]" />
-            <col className="w-[9%]" />
             <col className="w-[10%]" />
+            <col className="w-[15%]" />
+            <col className="w-[11%]" />
+            <col className="w-[10%]" />
+            <col className="w-[11%]" />
+            <col className="w-[8%]" />
           </colgroup>
           <thead className="sticky top-0 z-10">
             <tr style={{ backgroundColor: theadBg, color: textMuted, borderBottom: `1px solid ${border}` }} className="text-xs uppercase tracking-wider font-bold select-none">
-              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Customer</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Address</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Unit</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Priority</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Progress</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Due</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Last Contact</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>Tech</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase tracking-[0.06em] text-right" style={{ color: textMuted }}>Actions</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>TICKET NO.</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>CUSTOMER</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>CONTACT</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>BRANCH</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>ADDRESS</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>UNIT</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>INSTALLED</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>LAST CONTACT</th>
+              <th className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.06em] text-right" style={{ color: textMuted }}>ACTIONS</th>
             </tr>
           </thead>
-          <tbody className="text-sm">
+          <tbody className="text-xs">
             {loading ? (
-              <tr><td colSpan={9} className="px-6 py-16 text-center" style={{ color: textMuted }}>
+              <tr><td colSpan={9} className="px-6 py-16 text-center font-bold uppercase" style={{ color: textMuted }}>
                 <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
-                Loading happy call leads…
+                LOADING HAPPY CALL LEADS…
               </td></tr>
             ) : visible.length === 0 ? (
-              <tr><td colSpan={9} className="px-6 py-16 text-center" style={{ color: textMuted }}>
+              <tr><td colSpan={9} className="px-6 py-16 text-center font-bold uppercase" style={{ color: textMuted }}>
                 <PhoneCall className="w-7 h-7 mx-auto mb-2 opacity-40" />
-                No happy call leads found.
+                NO HAPPY CALL LEADS FOUND.
               </td></tr>
             ) : visible.map(l => {
-              const months = l.monthsSinceInstall ?? monthsSince(l.installedDate || '')
               const booked = !!l.scheduledTicketId
-              const due = months >= 6
+              const lastContactDateStr = formatLastContactDate(l.lastContactDate)
+              const contactParts = [
+                l.lastContactMethod ? l.lastContactMethod.trim().toUpperCase() : null,
+                lastContactDateStr || null,
+                l.bookingStatus ? l.bookingStatus.trim().toUpperCase() : null,
+              ].filter(Boolean)
+
+              const unitParts = [
+                l.brandCapacity ? l.brandCapacity.trim() : null,
+                l.unitStatus ? l.unitStatus.replace('_', ' ').trim() : null,
+                l.commitAmount ? `₱${l.commitAmount.toLocaleString('en-PH')}` : null,
+              ].filter(Boolean).map(s => String(s).toUpperCase())
+
+              const installedDateStr = formatLastContactDate(l.installedDate)
+
               return (
                 <tr
                   key={l.id}
                   style={{ backgroundColor: cardBg, borderBottom: `1px solid ${border}`, cursor: 'context-menu' }}
-                  className="transition-colors align-top"
+                  className="transition-colors align-middle"
                   onMouseEnter={el => (el.currentTarget.style.backgroundColor = rowHover)}
                   onMouseLeave={el => (el.currentTarget.style.backgroundColor = cardBg)}
                   onContextMenu={(e) => { e.preventDefault(); setEditLead(l) }}
                 >
-                  <td className="px-4 py-3 overflow-hidden">
-                    <div className="text-xs font-bold truncate" style={{ color: textPrimary }} title={l.customerName}>{l.customerName || '—'}</div>
-                    {l.contactPhone && <div className="text-[11px] truncate mt-0.5" style={{ color: textMuted }}>{l.contactPhone}</div>}
+                  <td className="px-3 py-2.5 overflow-hidden">
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.ticketNumber || ''}>{l.ticketNumber ? l.ticketNumber.toUpperCase() : <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}</div>
                   </td>
-                  <td className="px-4 py-3 text-xs truncate" style={{ color: textPrimary }} title={l.address}>{l.address || '—'}</td>
-                  <td className="px-4 py-3 overflow-hidden">
-                    <div className="text-xs font-semibold truncate" style={{ color: textPrimary }} title={l.brandCapacity}>{l.brandCapacity || '—'}</div>
-                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      {l.unitStatus && (
-                        <Pill isLight={isLight} tone={l.unitStatus === 'FREE' ? 'green' : 'amber'}>
-                          {l.unitStatus.replace('_', ' ')}
-                        </Pill>
-                      )}
-                      {!!l.commitAmount && (
-                        <span className="text-[11px] font-semibold" style={{ color: textMuted }}>₱{l.commitAmount.toLocaleString('en-PH')}</span>
-                      )}
+                  <td className="px-3 py-2.5 overflow-hidden">
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.customerName}>{l.customerName ? l.customerName.toUpperCase() : <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}</div>
+                  </td>
+                  <td className="px-3 py-2.5 overflow-hidden">
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={l.contactPhone || ''}>{l.contactPhone ? l.contactPhone : <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}</div>
+                  </td>
+                  <td className="px-3 py-2.5 overflow-hidden">
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={getBranchLabel(l.branchId)}>{getBranchLabel(l.branchId)}</div>
+                  </td>
+                  <td className="px-3 py-2.5 text-xs font-semibold uppercase truncate" style={{ color: textPrimary }} title={l.address}>{l.address ? l.address.toUpperCase() : <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}</td>
+                  <td className="px-3 py-2.5 overflow-hidden">
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }} title={unitParts.join(' ')}>{unitParts.length > 0 ? unitParts.join(' ') : <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}</div>
+                  </td>
+                  <td className="px-3 py-2.5 overflow-hidden">
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }}>
+                      {installedDateStr ? `${installedDateStr}${l.monthsSinceInstall != null ? ` (${l.monthsSinceInstall}MO)` : ''}` : <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}
                     </div>
                   </td>
-                  <td className="px-4 py-3">
-                    {l.priority ? <Pill isLight={isLight} tone="slate">{l.priority}</Pill> : <span className="text-xs" style={{ color: textMuted }}>—</span>}
-                  </td>
-                  <td className="px-4 py-3 text-xs" style={{ color: textPrimary }}>
-                    <div className="flex flex-col gap-0.5">
-                      <span><span className="font-bold">{l.cleaningsCompleted ?? 0}</span> <span style={{ color: textMuted }}>cleaned</span></span>
-                      <span><span className="font-bold">{l.contactAttempts ?? 0}</span> <span style={{ color: textMuted }}>attempts</span></span>
+                  <td className="px-3 py-2.5 overflow-hidden">
+                    <div className="text-xs font-bold uppercase truncate" style={{ color: textPrimary }}>
+                      {contactParts.length > 0 ? contactParts.join(' - ') : <span className="font-extrabold text-amber-500 dark:text-yellow-400">N/A</span>}
                     </div>
                   </td>
-                  <td className="px-4 py-3">
-                    <Pill isLight={isLight} tone={due ? 'red' : 'slate'}>{months}mo</Pill>
-                  </td>
-                  <td className="px-4 py-3 overflow-hidden">
-                    <div className="text-xs font-semibold truncate" style={{ color: textPrimary }}>{l.lastContactMethod || '—'}</div>
-                    {l.lastContactDate && <div className="text-[11px] truncate mt-0.5" style={{ color: textMuted }}>{l.lastContactDate}</div>}
-                    {l.bookingStatus && (
-                      <div className="text-[11px] truncate mt-1 font-semibold" style={{ color: green }} title={l.bookingStatus}>{l.bookingStatus}</div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-xs truncate" style={{ color: textPrimary }}>{l.assignedTech || '—'}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                       {booked ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold whitespace-nowrap" style={{ color: green }}>
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Booked
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase whitespace-nowrap" style={{ color: green }}>
+                          <CheckCircle2 className="w-3.5 h-3.5" /> BOOKED
                         </span>
                       ) : (
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); setBookLead(l) }}
-                          className="px-2.5 py-1 rounded-md text-[11px] font-bold text-white transition-opacity hover:opacity-90 whitespace-nowrap"
+                          className="px-2.5 py-1 rounded-md text-[11px] font-bold uppercase text-white transition-opacity hover:opacity-90 whitespace-nowrap"
                           style={{ backgroundColor: green }}
                         >
-                          Book
+                          BOOK
                         </button>
                       )}
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); setEditLead(l) }}
-                        className="px-2.5 py-1 rounded-md text-[11px] font-bold border transition-opacity hover:opacity-90 whitespace-nowrap"
+                        className="px-2.5 py-1 rounded-md text-[11px] font-bold uppercase border transition-opacity hover:opacity-90 whitespace-nowrap"
                         style={{ borderColor: inputBorder, color: textPrimary }}
                       >
-                        Log
+                        LOG
                       </button>
                     </div>
                   </td>
@@ -358,7 +436,7 @@ export default function HappyCalls() {
         <AddLeadModal
           isLight={isLight}
           branches={branches}
-          defaultBranchId={user?.branchId || ''}
+          defaultBranchId={activeBranchId || user?.branchId || ''}
           onClose={() => setAddOpen(false)}
           onCreate={async (body) => { await createLead(body); setAddOpen(false) }}
         />
@@ -367,24 +445,6 @@ export default function HappyCalls() {
   )
 }
 
-const PILL_TONES = {
-  green: { light: { bg: '#ecfdf5', fg: '#059669' }, dark: { bg: 'rgba(16,185,129,0.15)', fg: '#34D399' } },
-  amber: { light: { bg: '#fffbeb', fg: '#b45309' }, dark: { bg: 'rgba(245,158,11,0.15)', fg: '#FBBF24' } },
-  red: { light: { bg: '#fef2f2', fg: '#dc2626' }, dark: { bg: 'rgba(239,68,68,0.15)', fg: '#F87171' } },
-  slate: { light: { bg: '#f1f5f9', fg: '#475569' }, dark: { bg: 'rgba(148,163,184,0.15)', fg: '#94A3B8' } },
-} as const
-
-function Pill({ isLight, tone, children }: { isLight: boolean; tone: keyof typeof PILL_TONES; children: React.ReactNode }) {
-  const { bg, fg } = PILL_TONES[tone][isLight ? 'light' : 'dark']
-  return (
-    <span
-      className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide whitespace-nowrap"
-      style={{ backgroundColor: bg, color: fg }}
-    >
-      {children}
-    </span>
-  )
-}
 
 function Field({ label, isLight, children }: { label: string; isLight: boolean; children: React.ReactNode }) {
   const textMuted = isLight ? '#64748b' : '#7A95B8'
@@ -416,7 +476,6 @@ function EditLeadModal({ lead, isLight, onClose, onSave }: {
   const [lastContactDate, setLastContactDate] = useState(lead.lastContactDate || todayIso())
   const [bookingStatus, setBookingStatus] = useState(lead.bookingStatus || '')
   const [unitStatus, setUnitStatus] = useState(lead.unitStatus || '')
-  const [priority, setPriority] = useState(lead.priority || '')
   const [assignedTech, setAssignedTech] = useState(lead.assignedTech || '')
   const [notes, setNotes] = useState(lead.notes || '')
   const [saving, setSaving] = useState(false)
@@ -432,7 +491,6 @@ function EditLeadModal({ lead, isLight, onClose, onSave }: {
         lastContactDate: lastContactDate || null,
         bookingStatus: bookingStatus.trim() || null,
         unitStatus: unitStatus || null,
-        priority: priority.trim() || null,
         assignedTech: assignedTech.trim() || null,
         notes: notes.trim() || null,
       })
@@ -472,9 +530,6 @@ function EditLeadModal({ lead, isLight, onClose, onSave }: {
               <option value="FREE">FREE</option>
               <option value="WITH_CHARGE">WITH CHARGE</option>
             </select>
-          </Field>
-          <Field label="Priority" isLight={isLight}>
-            <input type="text" value={priority} onChange={e => setPriority(e.target.value)} className={inputCls} style={inputStyle} />
           </Field>
           <Field label="Assigned Tech" isLight={isLight}>
             <input type="text" value={assignedTech} onChange={e => setAssignedTech(e.target.value)} className={inputCls} style={inputStyle} />
@@ -594,9 +649,9 @@ function AddLeadModal({ isLight, branches, defaultBranchId, onClose, onCreate }:
   const [contactPhone, setContactPhone] = useState('')
   const [brandCapacity, setBrandCapacity] = useState('')
   const [unitStatus, setUnitStatus] = useState('')
-  const [installedDate, setInstalledDate] = useState('')
+  const [commitAmount, setCommitAmount] = useState('')
+  const [installedDate, setInstalledDate] = useState(todayIso())
   const [branchId, setBranchId] = useState(defaultBranchId)
-  const [priority, setPriority] = useState('')
   const [assignedTech, setAssignedTech] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
@@ -605,6 +660,10 @@ function AddLeadModal({ isLight, branches, defaultBranchId, onClose, onCreate }:
   const submit = async () => {
     if (!customerName.trim() || !branchId) {
       setErr('Customer name and branch are required')
+      return
+    }
+    if (!installedDate) {
+      setErr('Installed date is required — Happy Call follow-ups are scheduled off this date, a lead without one will never show as due')
       return
     }
     setSaving(true)
@@ -616,9 +675,9 @@ function AddLeadModal({ isLight, branches, defaultBranchId, onClose, onCreate }:
         contactPhone: contactPhone.trim() || null,
         brandCapacity: brandCapacity.trim() || null,
         unitStatus: unitStatus || null,
-        installedDate: installedDate || null,
+        commitAmount: commitAmount ? Number(commitAmount) : null,
+        installedDate,
         branchId,
-        priority: priority.trim() || null,
         assignedTech: assignedTech.trim() || null,
         notes: notes.trim() || null,
       })
@@ -669,17 +728,15 @@ function AddLeadModal({ isLight, branches, defaultBranchId, onClose, onCreate }:
               <option value="WITH_CHARGE">WITH CHARGE</option>
             </select>
           </Field>
-          <Field label="Installed Date" isLight={isLight}>
-            <input type="date" value={installedDate} onChange={e => setInstalledDate(e.target.value)} className={inputCls} style={inputStyle} />
+          <Field label="Installed Date *" isLight={isLight}>
+            <input type="date" value={installedDate} onChange={e => setInstalledDate(e.target.value)} required className={inputCls} style={inputStyle} />
           </Field>
-          <Field label="Priority" isLight={isLight}>
-            <input type="text" value={priority} onChange={e => setPriority(e.target.value)} className={inputCls} style={inputStyle} />
+          <Field label="Commit Amount" isLight={isLight}>
+            <input type="number" min={0} step="0.01" value={commitAmount} onChange={e => setCommitAmount(e.target.value)} placeholder="0.00" className={inputCls} style={inputStyle} />
           </Field>
-          <div className="col-span-2">
-            <Field label="Assigned Tech" isLight={isLight}>
-              <input type="text" value={assignedTech} onChange={e => setAssignedTech(e.target.value)} className={inputCls} style={inputStyle} />
-            </Field>
-          </div>
+          <Field label="Assigned Tech" isLight={isLight}>
+            <input type="text" value={assignedTech} onChange={e => setAssignedTech(e.target.value)} className={inputCls} style={inputStyle} />
+          </Field>
           <div className="col-span-2">
             <Field label="Notes" isLight={isLight}>
               <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} className={`${inputCls} resize-none`} style={inputStyle} />

@@ -290,17 +290,17 @@ interface DetailFieldProps {
 }
 
 const DetailField = ({ label, value, icon, emptyLabel = 'Not set' }: DetailFieldProps) => (
-  <div className="p-4 rounded-xl border flex items-start gap-3" style={{ borderColor: 'var(--detail-border)', backgroundColor: 'var(--detail-bg)' }}>
-    {icon && (
-      <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border" style={{ borderColor: 'var(--detail-border)', backgroundColor: 'var(--detail-icon-bg)', color: 'var(--detail-muted)' }}>
-        {icon}
-      </div>
-    )}
-    <div className="min-w-0 flex-1">
-      <div className="text-xs font-medium mb-1" style={{ color: 'var(--detail-muted)' }}>{label}</div>
-      <div className="text-sm leading-relaxed break-words" style={{ color: value ? 'var(--detail-text)' : 'var(--detail-muted)', fontWeight: value ? 400 : 400 }}>
-        {value || emptyLabel}
-      </div>
+  <div className="min-w-0 flex flex-col gap-1">
+    <div className="flex items-center gap-1.5" style={{ color: 'var(--detail-muted)' }}>
+      {icon && <span className="shrink-0 opacity-70 [&>svg]:w-3.5 [&>svg]:h-3.5">{icon}</span>}
+      <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
+    </div>
+    <div
+      className="text-sm font-semibold truncate"
+      style={{ color: value ? 'var(--detail-text)' : 'var(--detail-muted)' }}
+      title={value || undefined}
+    >
+      {value || emptyLabel}
     </div>
   </div>
 )
@@ -1110,14 +1110,14 @@ export default function Employees() {
             </div>
           </div>
 
-          {/* Add Employee Button */}
+          {/* Add Member Button */}
           {(isAdmin || isManager) && (
             <button
               onClick={openCreateFlow}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-sm"
               style={{ backgroundColor: '#10B981' }}
             >
-              <Plus className="w-4 h-4" /> ADD EMPLOYEE
+              <Plus className="w-4 h-4" /> ADD MEMBER
             </button>
           )}
         </div>
@@ -1127,7 +1127,7 @@ export default function Employees() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#080f1c', borderBottom: `1px solid ${border}` }}>
-                {['Employee', 'Role', 'Branch', 'Contact', 'Status'].map((h, idx, arr) => (
+                {['Member', 'Role', 'Branch', 'Contact', 'Status'].map((h, idx, arr) => (
                   <th
                     key={h}
                     className={`px-6 py-3.5 text-xs font-semibold uppercase tracking-wider whitespace-nowrap border-r ${idx === 0 ? 'text-left' : 'text-center'}`}
@@ -1165,7 +1165,7 @@ export default function Employees() {
               ) : filtered.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-6 py-16 text-center">
-                    <p className="text-sm font-medium" style={{ color: textMuted }}>No accounts found</p>
+                    <p className="text-sm font-medium" style={{ color: textMuted }}>No members found</p>
                     <p className="text-xs mt-1" style={{ color: textMuted }}>Try a different search or filter.</p>
                   </td>
                 </tr>
@@ -1371,81 +1371,70 @@ export default function Employees() {
             </div>
 
             {/* Tab Body */}
-            <div className="flex-1 overflow-y-auto" style={detailTokens}>
+            <div className="flex-1 min-h-0 flex flex-col" style={detailTokens}>
 
               {/* ── Overview Tab ── */}
               {activeDrawerTab === 'overview' && (
-                <div className="p-6 flex flex-col gap-6">
+                <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
 
-                  {/* Contact Info */}
-                  <div>
-                    <div className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: textMuted }}>Contact Information</div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <DetailField label="Work email" value={selectedEmployee.email} icon={<Mail className="w-4 h-4" />} emptyLabel="—" />
-                      <DetailField label="Personal email" value={selectedEmployee.personalEmail || ''} icon={<Mail className="w-4 h-4" />} emptyLabel="—" />
-                      <DetailField label="Phone number" value={selectedEmployee.phone} icon={<Phone className="w-4 h-4" />} emptyLabel="—" />
-                    </div>
-                  </div>
-
-                  {/* Role & Position */}
-                  <div className="border-t pt-5" style={{ borderColor: border }}>
-                    <div className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: textMuted }}>Role & Position</div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                      <DetailField label="System role" value={formatRoleLabel(selectedEmployee.role)} icon={<ShieldCheck className="w-4 h-4" />} />
-                      <DetailField label="Job title" value={selectedEmployee.jobTitle ? formatJobTitleLabel(selectedEmployee.jobTitle) : ''} icon={<Wrench className="w-4 h-4" />} emptyLabel="—" />
-                      <DetailField label="Date Hired" value={formatDisplayDate(selectedEmployee.dateHired)} icon={<Calendar className="w-4 h-4" />} />
-                      <DetailField label="Birthdate" value={formatDisplayDate(selectedEmployee.birthDate)} icon={<Calendar className="w-4 h-4" />} />
-                    </div>
-                  </div>
-
-                  {/* Account Meta */}
-                  <div className="border-t pt-5" style={{ borderColor: border }}>
-                    <div className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: textMuted }}>Account</div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <DetailField label="Employee ID" value={selectedEmployee.id.slice(0, 16) + '…'} icon={<User className="w-4 h-4" />} />
+                  {/* Profile Details — contact, role, and account fields in one dense sheet */}
+                  <div className="rounded-2xl border p-5" style={{ borderColor: 'var(--detail-border)', backgroundColor: 'var(--detail-bg)' }}>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-5">
+                      <DetailField label="Work email" value={selectedEmployee.email} icon={<Mail />} emptyLabel="—" />
+                      <DetailField label="Personal email" value={selectedEmployee.personalEmail || ''} icon={<Mail />} emptyLabel="—" />
+                      <DetailField label="Phone number" value={selectedEmployee.phone} icon={<Phone />} emptyLabel="—" />
+                      <DetailField label="System role" value={formatRoleLabel(selectedEmployee.role)} icon={<ShieldCheck />} />
+                      <DetailField label="Job title" value={selectedEmployee.jobTitle ? formatJobTitleLabel(selectedEmployee.jobTitle) : ''} icon={<Wrench />} emptyLabel="—" />
+                      <DetailField label="Date hired" value={formatDisplayDate(selectedEmployee.dateHired)} icon={<Calendar />} />
+                      <DetailField label="Birthdate" value={formatDisplayDate(selectedEmployee.birthDate)} icon={<Calendar />} />
+                      <DetailField label="Employee ID" value={selectedEmployee.id.slice(0, 16) + '…'} icon={<User />} />
                       <DetailField
                         label="Registered"
                         value={selectedEmployee.createdAt ? new Date(selectedEmployee.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' }) : ''}
-                        icon={<Calendar className="w-4 h-4" />}
+                        icon={<Calendar />}
                         emptyLabel="Unknown"
                       />
                     </div>
                   </div>
 
-                  {/* Status toggle */}
-                  <div className="border-t pt-5" style={{ borderColor: border }}>
-                    <div className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: textMuted }}>Membership Status</div>
+                  {/* Account Controls — membership toggle + danger zone, one compact row */}
+                  <div className="rounded-2xl border p-3.5 flex items-center justify-between gap-3 flex-wrap" style={{ borderColor: 'var(--detail-border)', backgroundColor: 'var(--detail-bg)' }}>
                     <button
                       onClick={() => requestToggleActive(selectedEmployee)}
-                      className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-semibold border transition-all hover:opacity-90"
-                      style={selectedEmployee.isActive
-                        ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.06)', borderColor: 'rgba(16,185,129,0.2)' }
-                        : { color: textMuted, backgroundColor: inputBg, borderColor: border }}
+                      className="flex items-center gap-2.5 pl-1.5 pr-3 py-1.5 rounded-full text-xs font-bold transition-all hover:opacity-80"
+                      style={{ color: selectedEmployee.isActive ? '#10B981' : textMuted }}
+                      title={selectedEmployee.isActive ? 'Click to deactivate' : 'Click to reactivate'}
                     >
-                      {selectedEmployee.isActive ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-                      {selectedEmployee.isActive ? 'Active Member — click to deactivate' : 'Deactivated — click to reactivate'}
+                      <span
+                        className="relative inline-flex h-4 w-7 items-center rounded-full transition-colors shrink-0"
+                        style={{ backgroundColor: selectedEmployee.isActive ? '#10B981' : border }}
+                      >
+                        <span
+                          className="inline-block h-3 w-3 rounded-full bg-white shadow-sm transition-transform"
+                          style={{ transform: selectedEmployee.isActive ? 'translateX(13px)' : 'translateX(1px)' }}
+                        />
+                      </span>
+                      {selectedEmployee.isActive ? 'Active member' : 'Deactivated'}
                     </button>
-                  </div>
 
-                  {/* Delete Account */}
-                  {isAdmin && !isProtectedFromDelete(selectedEmployee.role) && (
-                    <div className="border-t pt-5" style={{ borderColor: border }}>
-                      <div className="text-[10px] font-black uppercase tracking-widest mb-3 text-red-500">Danger Zone</div>
+                    {isAdmin && !isProtectedFromDelete(selectedEmployee.role) && (
                       <button
                         onClick={() => requestDelete(selectedEmployee)}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-bold text-white bg-red-500 hover:bg-red-600 transition-all shadow-sm"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:bg-red-500/10"
+                        style={{ color: '#EF4444' }}
                       >
-                        Delete Account
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete account
                       </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
                 </div>
               )}
 
               {/* ── History Tab ── */}
               {activeDrawerTab === 'history' && (
-                <div className="p-6">
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                   <TicketHistoryTable
                     person={{
                       id: selectedEmployee.id,

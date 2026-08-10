@@ -188,41 +188,6 @@ const formatDateTime = (isoStr: string | null | undefined) => {
   }
 }
 
-const blankRow = (date: string, branchId?: string | null): Partial<ServiceRow> => ({
-  reportDate: date,
-  branchId: branchId ?? null,
-  customerName: '',
-  customerAddress: '',
-  customerPhone: '',
-  district: '',
-  serviceType: 'INSTALLATION',
-  statusCode: 'I',
-  commitTerms: '',
-  dealer: '',
-  unitBrandModel: '',
-  unitSerial: '',
-  quantity: 1,
-  technicianName: '',
-  negotiator: '',
-  scheduleTime: '',
-  scheduleStatus: '',
-  timeStarted: '',
-  timeEnded: '',
-  amountCharged: 0,
-  paymentStatus: 'CASH',
-  jobStatus: 'SCHEDULED',
-  remarks: '',
-  note: '',
-  controlNumber: '',
-  serviceColumn: '',
-  papers: '',
-  costing: '',
-  relayStatus: '',
-  fifteenQuestions: '',
-  freeInstallation: false,
-  scheduledDate: null,
-  installedDate: null,
-})
 
 const FormatPhone = ({ raw }: { raw: string | null | undefined }): React.ReactNode => {
   if (!raw) return null
@@ -262,7 +227,144 @@ const FormatPhone = ({ raw }: { raw: string | null | undefined }): React.ReactNo
 
 
 
+// ── Custom Select Component ──────────────────────────────────────────────────
+
+interface CustomSelectOption {
+  value: string
+  label: string
+}
+
+interface CustomSelectProps {
+  icon: React.ReactNode
+  value: string
+  options: CustomSelectOption[]
+  onChange: (value: string) => void
+  placeholder?: string
+  title?: string
+  minWidth?: string
+  inputBg: string
+  inputBorder: string
+  textPrimary: string
+  textMuted: string
+  isLight: boolean
+}
+
+function CustomSelect({
+  icon,
+  value,
+  options,
+  onChange,
+  placeholder = 'Select...',
+  title,
+  minWidth = 'min-w-[210px]',
+  inputBg,
+  inputBorder,
+  textPrimary,
+  textMuted,
+  isLight,
+}: CustomSelectProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isOpen])
+
+  const selectedOption = options.find(opt => opt.value === value)
+  const displayLabel = selectedOption ? selectedOption.label : (options[0]?.label || placeholder)
+
+  const popoverBg = isLight ? '#ffffff' : '#0B132B'
+  const popoverBorder = isLight ? '#cbd5e1' : '#1e293b'
+  const itemHoverBg = isLight ? '#f1f5f9' : '#172642'
+  const activeBg = isLight ? '#e0f2fe' : '#1e3a8a'
+  const activeText = isLight ? '#0284c7' : '#60a5fa'
+
+  return (
+    <div ref={dropdownRef} className="relative shrink-0 select-none">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border text-xs font-bold shrink-0 shadow-sm transition-all hover:border-slate-400 focus:outline-none cursor-pointer"
+        style={{
+          backgroundColor: inputBg,
+          borderColor: isOpen ? (isLight ? '#3b82f6' : '#60a5fa') : inputBorder,
+          color: textPrimary
+        }}
+      >
+        <span className="shrink-0" style={{ color: textMuted }}>{icon}</span>
+        <span className="truncate max-w-[160px] font-bold text-left tracking-tight uppercase">{displayLabel}</span>
+        <ChevronDown
+          className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          style={{ color: textMuted }}
+        />
+      </button>
+
+      {isOpen && (
+        <div
+          className={`absolute left-0 top-full mt-1.5 ${minWidth} rounded-xl border shadow-2xl z-[100] p-1.5 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150`}
+          style={{
+            backgroundColor: popoverBg,
+            borderColor: popoverBorder,
+          }}
+        >
+          {title && (
+            <div className="text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 border-b border-slate-200/10 mb-0.5" style={{ color: textMuted }}>
+              {title}
+            </div>
+          )}
+          <div className="max-h-64 overflow-y-auto flex flex-col gap-1 p-0.5 custom-scrollbar">
+            {options.map(opt => {
+              const isSelected = opt.value === value
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    onChange(opt.value)
+                    setIsOpen(false)
+                  }}
+                  className="flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold text-left transition-all cursor-pointer"
+                  style={{
+                    backgroundColor: isSelected ? activeBg : 'transparent',
+                    color: isSelected ? activeText : textPrimary
+                  }}
+                  onMouseEnter={e => {
+                    if (!isSelected) {
+                      e.currentTarget.style.backgroundColor = itemHoverBg
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (!isSelected) {
+                      e.currentTarget.style.backgroundColor = 'transparent'
+                    }
+                  }}
+                >
+                  <span className="truncate pr-2 uppercase">{opt.label}</span>
+                  {isSelected && (
+                    <Check className="w-4 h-4 shrink-0" style={{ color: activeText }} />
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
+
 
 export default function DailyServiceReport() {
   const { theme } = useTheme()
@@ -378,19 +480,7 @@ export default function DailyServiceReport() {
   const [cellValue, setCellValue] = useState<string>('')
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null>(null)
 
-  const handleAddRow = () => {
-    if (!canEdit) return
-    let realBranchId = resolveScopedBranchId(
-      resolveArchivesBranchFilter(branchFilter, branches, user),
-    ) || null
-    if (!realBranchId) {
-      realBranchId = resolveScopedBranchId(branches[0]?.id) || null
-    }
-    const tempId = `temp-${Date.now()}`
-    const newRow = blankRow(todayLocal(), isBranchScoped ? (user?.branchId ?? null) : realBranchId) as ServiceRow
-    newRow.id = tempId
-    setRows(prev => [newRow, ...prev])
-  }
+
 
   // Escape hatch for the trailing "X" column on both the desktop table and
   // mobile cards. An unsaved blank row (id still `temp-...`, same convention
@@ -1391,7 +1481,7 @@ export default function DailyServiceReport() {
 
     if (label === 'TICKET NO.') {
       return (
-        <span style={{ ...truncStyle, ...editHint, fontSize: '11px', fontWeight: 700 }} title={val}>
+        <span style={{ ...truncStyle, ...editHint, fontSize: '13px', fontWeight: 800 }} title={val}>
           {idx + 1}. {val || '—'}
         </span>
       )
@@ -1399,7 +1489,7 @@ export default function DailyServiceReport() {
 
     if (label === 'DATE INSTALLED') {
       return (
-        <span style={{ ...truncStyle, ...editHint, fontSize: '11px', fontWeight: 500 }} title={val} className="block text-center">
+        <span style={{ ...truncStyle, ...editHint, fontSize: '12.5px', fontWeight: 600 }} title={val} className="block text-center">
           {val || '—'}
         </span>
       )
@@ -1407,7 +1497,7 @@ export default function DailyServiceReport() {
 
     if (label === "CUSTOMER'S NAME") {
       return (
-        <span style={{ ...truncStyle, ...editHint, fontSize: '11px', fontWeight: 600 }} title={val} className="block">
+        <span style={{ ...truncStyle, ...editHint, fontSize: '13px', fontWeight: 700 }} title={val} className="block">
           {val || '—'}
         </span>
       )
@@ -1416,19 +1506,23 @@ export default function DailyServiceReport() {
     if (label === 'DESTINATION') {
       const showExpanded = col.isExpanded || isCellExpanded
       return (
-        <span className={showExpanded ? "leading-relaxed break-words block" : "line-clamp-2 leading-relaxed block"} title={val}>
+        <span className={showExpanded ? "leading-relaxed break-words block text-[12.5px]" : "line-clamp-2 leading-relaxed block text-[12.5px]"} title={val}>
           {val}
         </span>
       )
     }
 
     if (label === 'CONTACT NO.') {
-      return <FormatPhone raw={val} />
+      return (
+        <span style={{ ...truncStyle, ...editHint, fontSize: '12.5px', fontWeight: 600 }} title={val}>
+          <FormatPhone raw={val} />
+        </span>
+      )
     }
 
     if (label === 'SERVICE') {
       return (
-        <span style={{ fontSize: '11px', fontWeight: 500, textTransform: 'uppercase', display: 'block', textAlign: 'center', color: textPrimary }}>
+        <span style={{ fontSize: '12.5px', fontWeight: 600, textTransform: 'uppercase', display: 'block', textAlign: 'center', color: textPrimary }}>
           {val || '—'}
         </span>
       )
@@ -1436,14 +1530,14 @@ export default function DailyServiceReport() {
 
     if (label === 'MODE OF PAYMENT') {
       return (
-        <span style={{ fontSize: '11px', fontWeight: 500, textTransform: 'uppercase', display: 'block', textAlign: 'center', color: textPrimary }}>
+        <span style={{ fontSize: '12.5px', fontWeight: 600, textTransform: 'uppercase', display: 'block', textAlign: 'center', color: textPrimary }}>
           {val || ''}
         </span>
       )
     }
 
     if (label === 'INSTALLATION CHARGES') {
-      return <span style={{ ...truncStyle, fontSize: '11px', fontWeight: 600 }}>{val || ''}</span>
+      return <span style={{ ...truncStyle, fontSize: '13px', fontWeight: 700 }}>{val || ''}</span>
     }
 
     if (label === 'INSTALLER') {
@@ -1624,42 +1718,6 @@ export default function DailyServiceReport() {
     }
   }
 
-  const handleClearAll = async () => {
-    if (!isAdmin) {
-      alert('Access denied: Only administrator accounts can clear all records.')
-      return
-    }
-    const targetDate = prompt("Enter specific date to clear (YYYY-MM-DD):", todayLocal())
-    if (!targetDate || !targetDate.trim()) return
-
-    // Strip the -sales/-services virtual suffix to get the real branch UUID
-    const realBranchId = resolveScopedBranchId(branchFilter)
-    if (!realBranchId) { alert('No branch selected'); return }
-    const branchLabel = branches.find(b => b.id === branchFilter)?.name || realBranchId
-    const prettyDate = new Date(targetDate + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-    const confirmed = window.confirm(
-      `⚠️ DANGER ZONE\n\nPermanently delete all service records for ${branchLabel} on ${prettyDate}?\n\nThis CANNOT be undone.`
-    )
-    if (!confirmed) return
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const params = new URLSearchParams({ branchId: branchFilter, date: targetDate })
-      const res = await fetch(`${API_BASE_URL}/v1/service-reports?${params}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        alert(err.error || err.message || `Clear failed (HTTP ${res.status})`)
-        return
-      }
-      const result = await res.json()
-      alert(`Deleted ${result.deleted} service record${result.deleted !== 1 ? 's' : ''} for ${branchLabel}.`)
-      fetchRows({ soft: true, force: true })
-    } catch (e) {
-      console.error(e); alert('Network error while clearing records')
-    }
-  }
 
   // ── Derived data ──────────────────────────────────────────────────────────
   const rowSearchBlob = (r: ServiceRow) => {
@@ -1694,6 +1752,21 @@ export default function DailyServiceReport() {
     return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
   }
 
+  const branchSelectOptions = useMemo(() => [
+    { value: 'ALL_BRANCHES', label: 'All Branches' },
+    ...branches.map(b => ({ value: b.id, label: formatBranchName(b.name) }))
+  ], [branches])
+
+  const negoSelectOptions = useMemo(() => [
+    { value: '', label: 'All Negotiators' },
+    ...negotiatorOptions.map(n => ({ value: n, label: n }))
+  ], [negotiatorOptions])
+
+  const monthSelectOptions = useMemo(() => [
+    { value: '', label: 'All Months' },
+    ...monthOptions.map(ym => ({ value: ym, label: monthLabel(ym) }))
+  ], [monthOptions])
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col flex-1 w-full min-h-0 h-full" onClick={() => { setContextMenu(null); }}>
@@ -1706,177 +1779,59 @@ export default function DailyServiceReport() {
       {/* ── Portal: Toolbar into header slot ────────────────── */}
       {ReactDOM.createPortal(
         <div className="flex flex-col gap-2 w-full px-3 md:px-4 py-2 select-none">
-          <div className="flex flex-col md:flex-row md:items-center gap-3 w-full">
+          <div className="flex flex-wrap items-center gap-2.5 w-full">
+            {/* Branch Filter */}
+            <CustomSelect
+              icon={<Building2 className="w-4 h-4 shrink-0" />}
+              title="Select Branch"
+              value={branchFilter}
+              options={branchSelectOptions}
+              onChange={val => {
+                handleBranchFilterChange(val)
+                localStorage.setItem('ashcol-global-branch-id', val)
+                window.dispatchEvent(new Event('ashcol-global-branch-change'))
+              }}
+              minWidth="min-w-[210px]"
+              inputBg={inputBg}
+              inputBorder={inputBorder}
+              textPrimary={textPrimary}
+              textMuted={textMuted}
+              isLight={isLight}
+            />
 
-            {/* Filter ribbon — Branch / Negotiator / Month, horizontally scrollable
-                so they never stack into a vertical tower on mobile. */}
-            <div className="flex flex-nowrap items-center gap-2.5 overflow-x-auto no-scrollbar order-2 md:order-1 pb-1 md:pb-0">
-              {/* Branch Filter */}
-              <div className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border text-xs font-bold shrink-0 shadow-sm transition-all"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                <Building2 className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
-                <select
-                  value={branchFilter}
-                  onChange={e => {
-                    const val = e.target.value
-                    handleBranchFilterChange(val)
-                    localStorage.setItem('ashcol-global-branch-id', val)
-                    window.dispatchEvent(new Event('ashcol-global-branch-change'))
-                  }}
-                  className="bg-transparent outline-none cursor-pointer font-bold pr-1"
-                  style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
-                >
-                  <option value="ALL_BRANCHES" style={{ backgroundColor: inputBg, color: textPrimary }}>All Branches</option>
-                  {branches.map(b => (
-                    <option key={b.id} value={b.id} style={{ backgroundColor: inputBg, color: textPrimary }}>{formatBranchName(b.name)}</option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3.5 h-3.5 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
-              </div>
+            {/* Nego (Negotiator) Filter */}
+            <CustomSelect
+              icon={<User className="w-4 h-4 shrink-0" />}
+              title="Select Negotiator"
+              value={negoFilter}
+              options={negoSelectOptions}
+              onChange={val => setNegoFilter(val)}
+              minWidth="min-w-[220px]"
+              inputBg={inputBg}
+              inputBorder={inputBorder}
+              textPrimary={textPrimary}
+              textMuted={textMuted}
+              isLight={isLight}
+            />
 
-              {/* Nego (Negotiator) Filter */}
-              <div className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border text-xs font-bold shrink-0 shadow-sm transition-all"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-                <User className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
-                <select
-                  value={negoFilter}
-                  onChange={e => setNegoFilter(e.target.value)}
-                  className="bg-transparent outline-none cursor-pointer font-bold pr-1 uppercase"
-                  style={{ color: textPrimary, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', paddingRight: 18 }}
-                >
-                  <option value="" style={{ backgroundColor: inputBg, color: textPrimary }}>All Negotiators</option>
-                  {negotiatorOptions.map(n => (
-                    <option key={n} value={n} style={{ backgroundColor: inputBg, color: textPrimary }}>{n}</option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3.5 h-3.5 shrink-0 -ml-4 pointer-events-none" style={{ color: textMuted }} />
-              </div>
+            {/* Month Picker */}
+            <CustomSelect
+              icon={<CalendarDays className="w-4 h-4 shrink-0" />}
+              title="Select Month"
+              value={monthFilter}
+              options={monthSelectOptions}
+              onChange={val => handleMonthFilterChange(val)}
+              minWidth="min-w-[200px]"
+              inputBg={inputBg}
+              inputBorder={inputBorder}
+              textPrimary={textPrimary}
+              textMuted={textMuted}
+              isLight={isLight}
+            />
 
-              {/* Month Picker — custom popover (a native <select> here overflowed the
-                  viewport on mobile since the option list can't be positioned/clamped). */}
-              <div className="relative shrink-0">
-                <button
-                  ref={monthPickerRef}
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    if (monthPickerOpen) { setMonthPickerOpen(false); return }
-                    setMonthPickerYear(monthFilter ? Number(monthFilter.split('-')[0]) : new Date().getFullYear())
-                    const rect = e.currentTarget.getBoundingClientRect()
-                    const popWidth = 240
-                    setMonthPickerPos({
-                      top: rect.bottom + 6,
-                      left: Math.max(10, Math.min(rect.left, window.innerWidth - popWidth - 10)),
-                      width: popWidth,
-                    })
-                    setMonthPickerOpen(true)
-                  }}
-                  className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border text-xs font-bold shadow-sm transition-all"
-                  style={{ backgroundColor: inputBg, borderColor: monthPickerOpen ? '#16A34A' : inputBorder, color: textPrimary }}
-                >
-                  <CalendarDays className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
-                  <span className="whitespace-nowrap">{monthFilter ? monthLabel(monthFilter) : 'All Months'}</span>
-                  <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${monthPickerOpen ? 'rotate-180' : ''}`} style={{ color: textMuted }} />
-                </button>
-
-                {monthPickerOpen && monthPickerPos && ReactDOM.createPortal(
-                  <div
-                    ref={monthPickerPopRef}
-                    className="fixed z-[99999] rounded-xl border shadow-2xl p-3 animate-in fade-in duration-100 select-none"
-                    style={{
-                      top: monthPickerPos.top,
-                      left: monthPickerPos.left,
-                      width: monthPickerPos.width,
-                      backgroundColor: isLight ? '#ffffff' : '#0a1120',
-                      borderColor: isLight ? '#cbd5e1' : '#334155',
-                      boxShadow: '0 12px 28px rgba(0, 0, 0, 0.5)',
-                    }}
-                    onMouseDown={e => e.stopPropagation()}
-                    onClick={e => e.stopPropagation()}
-                  >
-                    {/* Year nav */}
-                    <div className="flex items-center justify-between mb-2">
-                      <button
-                        type="button"
-                        onClick={() => setMonthPickerYear(y => y - 1)}
-                        className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
-                        style={{ color: textMuted }}
-                      >
-                        {'<'}
-                      </button>
-                      <span className="text-sm font-bold" style={{ color: textPrimary }}>
-                        {monthPickerYear}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setMonthPickerYear(y => y + 1)}
-                        className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
-                        style={{ color: textMuted }}
-                      >
-                        {'>'}
-                      </button>
-                    </div>
-
-                    {/* Month grid */}
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((label, idx) => {
-                        const key = `${monthPickerYear}-${String(idx + 1).padStart(2, '0')}`
-                        const isSelected = monthFilter === key
-                        const isCurrentMonth = key === todayLocal().slice(0, 7)
-                        return (
-                          <button
-                            key={key}
-                            type="button"
-                            onClick={() => {
-                              handleMonthFilterChange(key)
-                              setMonthPickerOpen(false)
-                            }}
-                            className="h-9 rounded-lg text-xs font-bold transition-all"
-                            style={{
-                              color: isSelected ? '#ffffff' : isCurrentMonth ? '#16A34A' : textPrimary,
-                              backgroundColor: isSelected ? '#16A34A' : 'transparent',
-                              border: `1px solid ${isSelected ? '#16A34A' : isCurrentMonth ? '#16A34A' : inputBorder}`,
-                            }}
-                          >
-                            {label}
-                          </button>
-                        )
-                      })}
-                    </div>
-
-                    {/* Footer — quick actions */}
-                    <div className="flex items-center gap-2 pt-3 mt-2 border-t" style={{ borderColor: inputBorder }}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const key = todayLocal().slice(0, 7)
-                          handleMonthFilterChange(key)
-                          setMonthPickerYear(Number(key.split('-')[0]))
-                          setMonthPickerOpen(false)
-                        }}
-                        className="flex-1 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:opacity-90"
-                        style={{ backgroundColor: 'rgba(22,163,74,0.13)', color: '#16A34A' }}
-                      >
-                        This month
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { handleMonthFilterChange(''); setMonthPickerOpen(false) }}
-                        className="flex-1 py-1.5 rounded-lg text-[11px] font-bold border transition-all hover:opacity-90"
-                        style={{ borderColor: inputBorder, color: textMuted, backgroundColor: 'transparent' }}
-                      >
-                        All months
-                      </button>
-                    </div>
-                  </div>,
-                  document.body,
-                )}
-              </div>
-            </div>
-
-            {/* Search bar — full width on mobile (top row), right-aligned on desktop */}
-            <div className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border w-full md:w-auto md:flex-1 md:min-w-[200px] md:max-w-md shadow-sm transition-all order-1 md:order-2 md:ml-auto bg-slate-100 dark:bg-[#0F1A2E]"
-              style={{ borderColor: inputBorder }}>
+            {/* Search bar */}
+            <div className="flex items-center gap-2 h-9 px-3 py-1.5 rounded-lg border flex-1 min-w-[200px] max-w-md shadow-sm transition-all"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
               <Search className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
               <input
                 type="text"
@@ -1933,11 +1888,11 @@ export default function DailyServiceReport() {
                     return (
                       <th key={col.label}
                         style={{
-                          padding: '8px 10px',
+                          padding: '11px 12px',
                           textAlign: (col.align as any) || 'left',
                           color: textMuted,
-                          fontWeight: 700,
-                          fontSize: '10px',
+                          fontWeight: 800,
+                          fontSize: '11.5px',
                           letterSpacing: '0.08em',
                           textTransform: 'uppercase',
                           whiteSpace: 'nowrap',
@@ -1980,12 +1935,9 @@ export default function DailyServiceReport() {
                             ? `No records match “${searchQuery.trim()}”${rows.length > 0 ? ` (${rows.length} loaded)` : ''}`
                             : `No service records for ${viewMode === 'weekly' ? weekRange.label : 'this month'}`}
                         </p>
-                        {searchQuery.trim() ? (
+                        {searchQuery.trim() && (
                           <button type="button" onClick={() => setSearchQuery('')}
                             className="text-xs font-bold hover:underline" style={{ color: textPrimary }}>Clear search</button>
-                        ) : canEdit && (
-                          <button onClick={handleAddRow}
-                            className="text-xs font-bold hover:underline" style={{ color: textPrimary }}>+ Add the first one</button>
                         )}
                       </div>
                     </td>
@@ -2031,10 +1983,10 @@ export default function DailyServiceReport() {
                                 if (isEditable && !isThisEditing) startEdit(r, col.label)
                               }}
                               style={{
-                                padding: isThisEditing ? '4px 6px' : '7px 10px',
+                                padding: isThisEditing ? '6px 8px' : '10px 12px',
                                 color: textPrimary,
-                                fontSize: '11px',
-                                fontWeight: 500,
+                                fontSize: '12.5px',
+                                fontWeight: 600,
                                 lineHeight: '1.4',
                                 backgroundColor: isThisEditing ? inputBg : rowSelectedBg,
                                 textAlign: (col.align as any) || 'left',
@@ -2187,28 +2139,7 @@ export default function DailyServiceReport() {
           </div>
         )}
 
-        {/* ── Clear records footer ── */}
-        {isAdmin && visible.length > 0 && (
-          <div className="flex items-center justify-between px-5 py-3"
-            style={{ borderTop: `1px solid ${border}`, backgroundColor: inputBg }}>
-            <div className="flex flex-col">
-              <span className="text-xs font-bold uppercase tracking-wider" style={{ color: textPrimary }}>Clear Records</span>
-              <span className="text-xs" style={{ color: textMuted }}>
-                Permanently delete all service records for a specific date under{' '}
-                <strong style={{ color: textPrimary }}>
-                  {branchFilter === 'ALL_BRANCHES' ? 'All Branches' : (branches.find(b => b.id === branchFilter)?.name || 'this branch')}
-                </strong>. This cannot be undone.
-              </span>
-            </div>
-            <button type="button" onClick={handleClearAll}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 shrink-0 ml-4"
-              style={{ backgroundColor: cardBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = inputBg }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = cardBg }}>
-              <Trash2 className="w-3.5 h-3.5" /> Clear All Records
-            </button>
-          </div>
-        )}
+
       </div>
 
       {/* ── Right-click context menu ─────────────────────────────────── */}

@@ -119,7 +119,7 @@ function buildNavGroups(navLinks: NavLinkDef[]) {
       title: 'Directory',
       Icon: MdMenuBook,
       subItems: [
-        { name: 'Employees', icon: <MdOutlinePerson size={16} />, path: findPath('Employees') },
+        { name: 'Members', icon: <MdOutlinePerson size={16} />, path: findPath('Members') },
         { name: 'Vehicles', icon: <Truck size={16} />, path: findPath('Vehicles') },
         { name: 'Branches', icon: <MdOutlineStorefront size={16} />, path: findPath('Directory') },
       ].filter(s => navLinks.some(l => l.path === s.path)),
@@ -181,6 +181,7 @@ export default function DashboardLayout() {
   const lastPathname = useRef<string | null>(null)
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const navVisibleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hoverDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
@@ -189,31 +190,34 @@ export default function DashboardLayout() {
   const [branchLabel, setBranchLabel] = useState<string | null>(null)
 
   const handleMouseEnter = () => {
-    if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
-    if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
-    if (sidebarCollapsed || (isHoverExpanded && !navVisible)) {
-      // Hide collapsed icons immediately, expand width, show text right away.
-      // Also covers re-entering mid-collapse (before the leave timeout flips
-      // sidebarCollapsed back to true) — otherwise navVisible stays stuck
-      // false while the sidebar width stays expanded, leaving a blank rail.
-      setShowCollapsedIcons(false)
-      setSidebarCollapsed(false)
-      setIsHoverExpanded(true)
-      setNavVisible(true)
-    }
+    // Debounce: cancel any pending leave, schedule enter with small delay to ignore rapid oscillations
+    if (hoverDebounce.current) clearTimeout(hoverDebounce.current)
+    hoverDebounce.current = setTimeout(() => {
+      if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
+      if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
+      if (sidebarCollapsed || (isHoverExpanded && !navVisible)) {
+        setShowCollapsedIcons(false)
+        setSidebarCollapsed(false)
+        setIsHoverExpanded(true)
+        setNavVisible(true)
+      }
+    }, 60)
   }
 
   const handleMouseLeave = () => {
-    if (isHoverExpanded) {
-      // Hide text immediately on leave, then collapse width
-      setNavVisible(false)
-      if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
-      hoverTimeout.current = setTimeout(() => {
-        setSidebarCollapsed(true)
-        setIsHoverExpanded(false)
-        setShowCollapsedIcons(true)
-      }, 160)
-    }
+    // Debounce: cancel any pending enter, schedule leave after debounce window
+    if (hoverDebounce.current) clearTimeout(hoverDebounce.current)
+    hoverDebounce.current = setTimeout(() => {
+      if (isHoverExpanded) {
+        setNavVisible(false)
+        if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
+        hoverTimeout.current = setTimeout(() => {
+          setSidebarCollapsed(true)
+          setIsHoverExpanded(false)
+          setShowCollapsedIcons(true)
+        }, 160)
+      }
+    }, 60)
   }
 
   const isPortalAdminUser = isPortalAdmin(user?.role)
@@ -380,7 +384,7 @@ export default function DashboardLayout() {
     { name: 'Happy Calls',    path: '/happy-calls',     icon: PhoneCall,      roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Office tasks',    path: '/office-tasks',     icon: Building2,       roles: ['admin', 'management'] },
     { name: 'Lineup',          path: '/lineup',           icon: ListOrdered,     roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
-    { name: 'Employees',       path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
+    { name: 'Members',         path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
     { name: 'Vehicles',        path: '/vehicles',         icon: Truck,           roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Expense Records', path: '/audit-expenses',  icon: ClipboardList,  roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'For Collections',  path: '/collections',     icon: CircleDollarSign, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
@@ -914,7 +918,7 @@ export default function DashboardLayout() {
         {/* ── Global Header (Mobile/Tablet/Desktop) ──────────────── */}
         {currentPage !== 'DDRM' && currentPage !== 'Search' && (
           <header 
-            className="flex-none z-20 backdrop-blur-md w-full min-w-0 max-w-full overflow-hidden"
+            className="flex-none z-30 backdrop-blur-md w-full min-w-0 max-w-full relative"
             style={{ 
               backgroundColor: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(10,17,32,0.8)'
             }}
@@ -931,7 +935,11 @@ export default function DashboardLayout() {
               </button>
 
               <div className="flex flex-col justify-center min-w-0 shrink-0">
-                {currentPage === 'Relays' || currentPage === 'Employees' || currentPage === 'Registration' ? (
+                {location.pathname === '/profile' ? (
+                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
+                    Profile
+                  </h1>
+                ) : currentPage === 'Relays' || currentPage === 'Employees' || currentPage === 'Members' || currentPage === 'Registration' ? (
                   <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
                     {currentPage}
                   </h1>
@@ -1004,7 +1012,7 @@ export default function DashboardLayout() {
           )}
           <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'DDRM') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
             {/* Do not key Outlet by pathname — that remounts Schedules on every nav and forces a reload spinner. */}
-            <Outlet context={{ setSidebarOpen }} />
+            <Outlet context={{ setSidebarOpen, globalBranchId }} />
           </div>
         </main>
       </div>

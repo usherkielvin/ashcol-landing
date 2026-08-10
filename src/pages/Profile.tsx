@@ -333,12 +333,13 @@ export default function Profile() {
   ]
 
   return (
-    <div className={tab === 'history' ? 'w-full pb-16' : 'w-full max-w-5xl mx-auto pb-16'} style={{ backgroundColor: pageBg }}>
-      <div className="flex flex-col md:flex-row gap-0 md:gap-6">
+    <div className="w-full pb-16" style={{ backgroundColor: pageBg }}>
+      <div className={`flex flex-col md:flex-row gap-0 ${tab !== 'history' ? 'md:gap-6 max-w-5xl mx-auto' : 'md:gap-0'}`}>
 
         {/* ══════════════════════════════════════════════════════════════════
-            LEFT SIDEBAR
+            LEFT SIDEBAR — hidden when Ticket History is active
         ══════════════════════════════════════════════════════════════════ */}
+        {tab !== 'history' && (
         <aside className="w-full md:w-56 shrink-0">
           {/* User avatar + name */}
           <div className="flex md:flex-col items-center gap-3 md:gap-2 px-4 py-5 md:pt-6 md:pb-5"
@@ -377,6 +378,7 @@ export default function Profile() {
             })}
           </nav>
         </aside>
+        )}
 
         {/* ══════════════════════════════════════════════════════════════════
             RIGHT CONTENT AREA
@@ -833,20 +835,33 @@ export default function Profile() {
           {/* ── Tab: Ticket History ─────────────────────────────── */}
           {tab === 'history' && isStaffUser && user?.id && (
             <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-              <div className="px-6 pt-6 pb-4" style={{ borderBottom: `1px solid ${border}` }}>
-                <h2 className="text-lg font-black" style={{ color: textPrimary }}>Ticket History</h2>
-                <p className="text-sm mt-0.5" style={{ color: textMuted }}>Tickets you created, negotiated, or worked on</p>
-              </div>
-              <div className="px-6 py-5">
-                <TicketHistoryTable
-                  person={{
-                    id: user.id,
-                    name: user.name || '',
-                    email: user.email || '',
-                    personalEmail: user.personalEmail || undefined,
-                  }}
-                />
-              </div>
+              <TicketHistoryTable
+                person={{
+                  id: user.id,
+                  name: user.name || '',
+                  email: user.email || '',
+                  personalEmail: user.personalEmail || undefined,
+                }}
+                headerLeft={
+                  <div className="flex items-center gap-0 overflow-x-auto -mb-px">
+                    {sidebarLinks.map(({ key, label, icon: Icon }) => (
+                      <button
+                        key={key}
+                        onClick={() => setTab(key)}
+                        className="flex items-center gap-2 px-4 py-3 text-sm font-medium transition-all border-b-2 whitespace-nowrap"
+                        style={{
+                          color: tab === key ? '#10B981' : textMuted,
+                          borderColor: tab === key ? '#10B981' : 'transparent',
+                          backgroundColor: 'transparent',
+                        }}
+                      >
+                        <Icon className="w-4 h-4 shrink-0" />
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                }
+              />
             </div>
           )}
 
