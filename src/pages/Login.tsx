@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth, getInitials } from '../contexts/AuthContext'
-import { Eye, EyeOff, Lock, Mail } from 'lucide-react'
 import logoImg from '../assets/ash-logo.jpg'
 import { getPortalHomePath, resolveImageUrl, formatPersonName, API_BASE_URL } from '../utils/api'
 import { PUBLIC_BRANCHES } from '../data/branches'
@@ -9,10 +8,8 @@ import { PUBLIC_BRANCHES } from '../data/branches'
 const WEBSITE = 'www.ashcol.com.ph'
 const SUPPORT_EMAIL = 'centralsupport@ashcol.com.ph'
 
-/** Ashcol brand — dark theme, no yellow/lime */
+/** Ashcol brand */
 const GREEN = '#10B981'
-const LOGO_GREEN = '#006B3F'
-const PAGE_BG = '#060E1A'
 
 function branchDisplayName(branch: (typeof PUBLIC_BRANCHES)[number]): string {
   if (branch.isHQ) return 'ASHCOL Taguig'
@@ -22,6 +19,25 @@ function branchDisplayName(branch: (typeof PUBLIC_BRANCHES)[number]): string {
 const SORTED_PUBLIC_BRANCHES = [...PUBLIC_BRANCHES].sort((a, b) =>
   branchDisplayName(a).localeCompare(branchDisplayName(b))
 )
+
+/** Duplicated for the seamless marquee loop */
+const MARQUEE_ITEMS = [...SORTED_PUBLIC_BRANCHES, ...SORTED_PUBLIC_BRANCHES]
+
+/** Feature showcase — auto-rotates every 5 s */
+const SLIDER_CONTENT = [
+  {
+    title: 'One Platform to Streamline',
+    text: 'Easily track scheduled, installed, cancelled, and pending clients in one place, ensuring your team never misses a task and your operations stay organized.',
+  },
+  {
+    title: 'Stay Updated in Real Time',
+    text: 'Technician progress and service reports are delivered instantly, giving you clear visibility into ongoing jobs and helping you respond faster to client needs.',
+  },
+  {
+    title: 'Monitor Branch Activity',
+    text: 'Keep an eye on branch assignments and daily activity across multiple locations, so you can manage resources effectively and maintain smooth coordination.',
+  },
+]
 
 export default function Login() {
   const prefillEmail = (import.meta.env.VITE_LOGIN_PREFILL_EMAIL || '').trim()
@@ -34,6 +50,15 @@ export default function Login() {
   const [error, setError] = useState('')
   const { user, setUser } = useAuth()
   const navigate = useNavigate()
+  const [activeSlide, setActiveSlide] = useState(0)
+
+  // Auto-rotate the feature slider
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setActiveSlide((prev) => (prev + 1) % SLIDER_CONTENT.length)
+    }, 5000)
+    return () => clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     const saved = localStorage.getItem('ashcol-remembered-email')
@@ -58,13 +83,12 @@ export default function Login() {
     }
   }, [user, navigate])
 
-  // Lock scroll on login only (class removed on unmount so portal pages stay normal)
+  // Lock scroll on login only
   useEffect(() => {
     const html = document.documentElement
     html.classList.add('login-shell')
     return () => {
       html.classList.remove('login-shell')
-      // Clear any leftover inline locks from earlier experiments
       html.style.removeProperty('overflow')
       document.body.style.removeProperty('overflow')
       document.body.style.removeProperty('touch-action')
@@ -138,324 +162,244 @@ export default function Login() {
 
   return (
     <div
-      className="fixed inset-0 z-[100] overflow-hidden overscroll-none touch-none font-['Segoe_UI',ui-sans-serif,system-ui,sans-serif] text-white"
-      style={{ height: '100svh', width: '100%' }}
+      className="fixed inset-0 z-[100] flex flex-col overflow-hidden font-['Inter',sans-serif]"
+      style={{ background: 'radial-gradient(circle at 15% 50%, rgba(16,185,129,0.08) 0%, #060B18 50%)' }}
     >
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div
-          className="absolute inset-0"
-          style={{
-            background: `radial-gradient(ellipse 90% 70% at 50% 40%, #0C1F18 0%, ${PAGE_BG} 55%, #03070C 100%)`,
-          }}
-        />
-        <div
-          className="absolute -top-32 -left-24 w-[520px] h-[520px] rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(16,185,129,0.14) 0%, transparent 68%)' }}
-        />
-        <div
-          className="absolute top-[12%] right-[-10%] w-[460px] h-[460px] rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(0,107,63,0.22) 0%, transparent 70%)' }}
-        />
-        <div
-          className="absolute bottom-[-16%] left-[20%] w-[600px] h-[600px] rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(6,14,26,0.9) 0%, transparent 68%)' }}
-        />
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              'radial-gradient(ellipse 75% 65% at 50% 45%, transparent 40%, rgba(3,7,12,0.65) 100%)',
-          }}
-        />
-      </div>
+      {/* ── Marquee keyframes ── */}
+      <style>{`
+        @keyframes ashcol-scroll {
+          0%   { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+        .ashcol-marquee {
+          display: flex;
+          width: max-content;
+          animation: ashcol-scroll 60s linear infinite;
+        }
+        .ashcol-marquee:hover {
+          animation-play-state: paused;
+        }
+      `}</style>
 
-      {/* Desktop — absolute locked X/Y positions */}
-      <div className="hidden lg:block absolute inset-0 pointer-events-none">
-        <div className="absolute left-[6%] xl:left-[8%] top-1/2 -translate-y-1/2 flex flex-col items-center text-center select-none pointer-events-auto">
-          <img
-            src={logoImg}
-            alt="ASHCOL"
-            className="w-36 h-36 xl:w-44 xl:h-44 object-contain mb-4 drop-shadow-[0_14px_32px_rgba(0,0,0,0.35)] rounded-2xl"
-          />
-          <h1 className="text-[2.25rem] xl:text-[2.75rem] font-black tracking-tight leading-none text-white">
-            ASHCOL
-          </h1>
-          <p
-            className="text-lg xl:text-xl font-semibold tracking-[0.42em] mt-2.5 pr-[0.42em]"
-            style={{ color: GREEN }}
-          >
-            PORTAL
-          </p>
-          <div
-            className="w-[180px] h-px my-5"
-            style={{ background: `linear-gradient(90deg, transparent, ${GREEN}, transparent)` }}
-          />
-          <p className="text-lg xl:text-xl italic tracking-wide font-medium text-white/75">
-            keeping you cool.
-          </p>
-        </div>
-
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[420px] pointer-events-auto">
-          <LoginCard
-            email={email}
-            setEmail={setEmail}
-            password={password}
-            setPassword={setPassword}
-            showPassword={showPassword}
-            setShowPassword={setShowPassword}
-            rememberMe={rememberMe}
-            setRememberMe={setRememberMe}
-            loading={loading}
-            error={error}
-            handleLogin={handleLogin}
-          />
-        </div>
-
-        <div className="absolute right-[5%] xl:right-[7%] top-1/2 -translate-y-1/2 w-[280px] xl:w-[320px] pointer-events-auto">
-          <p className="text-[10px] font-bold uppercase tracking-[0.3em] mb-4" style={{ color: GREEN }}>
-            Our branches
-          </p>
-          <ul className="flex flex-col gap-2.5 mb-6">
-            {SORTED_PUBLIC_BRANCHES.map((b) => (
-              <li
-                key={b.name}
-                className="text-xl xl:text-2xl font-bold tracking-tight leading-none text-white"
-              >
+      {/* ── Top Marquee ── */}
+      <div className="w-full bg-white/[0.02] border-b border-white/[0.05] py-3.5 backdrop-blur-md z-30 flex-shrink-0">
+        <div className="ashcol-marquee items-center space-x-12 px-6">
+          {MARQUEE_ITEMS.map((b, i) => (
+            <div key={i} className="flex items-center space-x-4 flex-shrink-0">
+              <span
+                className="h-1.5 w-1.5 rounded-full bg-[#10B981] flex-shrink-0"
+                style={{ boxShadow: '0 0 8px rgba(16,185,129,0.8)' }}
+              />
+              <span className="text-emerald-100/70 font-bold tracking-[0.15em] text-xs uppercase whitespace-nowrap">
                 {branchDisplayName(b)}
-              </li>
-            ))}
-          </ul>
-          <div
-            className="w-full h-px mb-5"
-            style={{ background: `linear-gradient(90deg, ${GREEN}88, transparent)` }}
-          />
-          <div className="space-y-2.5 text-sm text-white/70">
-            <a
-              href={`https://${WEBSITE}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block font-semibold text-white/90 hover:text-white transition-colors"
-            >
-              {WEBSITE}
-            </a>
-            <a
-              href={`mailto:${SUPPORT_EMAIL}`}
-              className="flex items-center gap-2 hover:text-white transition-colors break-all"
-            >
-              <Mail className="w-4 h-4 shrink-0" style={{ color: GREEN }} />
-              {SUPPORT_EMAIL}
-            </a>
-          </div>
+              </span>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Mobile — branding top, login box dead-center, footer bottom */}
-      <div className="lg:hidden absolute inset-0 pointer-events-none">
-        <div className="absolute top-[max(1rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 flex flex-col items-center text-center select-none pointer-events-auto">
-          <img src={logoImg} alt="ASHCOL" className="w-24 h-24 object-contain mb-2 rounded-2xl drop-shadow-lg" />
-          <h1 className="text-lg font-black tracking-tight leading-none text-white">ASHCOL</h1>
-          <p className="text-[11px] font-semibold tracking-[0.38em] mt-1 pr-[0.38em]" style={{ color: GREEN }}>
-            PORTAL
-          </p>
-          <p className="text-xs italic font-medium text-white/70 mt-1.5">keeping you cool.</p>
-        </div>
+      {/* ── Main Unified Layout ── */}
+      <div className="flex-1 flex items-center justify-center relative z-20 w-full max-w-[1300px] mx-auto px-6 py-10">
+        <div className="w-full flex flex-col lg:flex-row items-center justify-between gap-12 lg:gap-24">
 
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(100vw-2rem,360px)] pointer-events-auto">
-          <LoginCard
-            email={email}
-            setEmail={setEmail}
-            password={password}
-            setPassword={setPassword}
-            showPassword={showPassword}
-            setShowPassword={setShowPassword}
-            rememberMe={rememberMe}
-            setRememberMe={setRememberMe}
-            loading={loading}
-            error={error}
-            handleLogin={handleLogin}
-            compact
-          />
-        </div>
+          {/* LEFT PANEL: Branding & Feature Slider */}
+          <div className="w-full lg:w-1/2 flex flex-col items-center lg:items-start text-center lg:text-left order-2 lg:order-1 mt-10 lg:mt-0">
+            {/* Logo & Header */}
+            <div className="flex items-center gap-4 mb-10 lg:mb-14">
+              <div className="p-1 bg-white/5 border border-white/10 rounded-xl shadow-lg">
+                <img src={logoImg} alt="ASHCOL" className="h-10 w-10 object-contain rounded-lg" />
+              </div>
+              <div>
+                <h1 className="text-3xl lg:text-4xl font-black text-white tracking-wide leading-none font-['Big_Shoulders_Display',sans-serif]">ASHCOL</h1>
+                <h2 className="text-xs font-bold tracking-[0.3em] uppercase mt-1 text-[#10B981]">Portal</h2>
+              </div>
+            </div>
 
-        <div className="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 text-center space-y-1 pointer-events-auto">
-          <a
-            href={`https://${WEBSITE}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block text-xs font-semibold text-white/90"
-          >
-            {WEBSITE}
-          </a>
-          <a href={`mailto:${SUPPORT_EMAIL}`} className="block text-[11px] text-white/75 break-all">
-            {SUPPORT_EMAIL}
-          </a>
+            {/* Feature Slider */}
+            <div className="relative w-full max-w-md h-32">
+              {SLIDER_CONTENT.map((slide, index) => (
+                <div
+                  key={index}
+                  className={`absolute inset-0 w-full transition-opacity duration-700 ease-in-out ${
+                    index === activeSlide ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+                  }`}
+                >
+                  <h3 className="text-white font-bold text-xl mb-3 flex items-center justify-center lg:justify-start">
+                    <span className="mr-3 bg-[#10B981]/10 border border-[#10B981]/20 p-2 rounded-lg flex-shrink-0">
+                      <svg className="w-4 h-4 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                    </span>
+                    {slide.title}
+                  </h3>
+                  <p className="text-slate-400 text-sm leading-relaxed lg:pr-6">
+                    {slide.text}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {/* Slider Dots */}
+            <div className="flex items-center gap-2 mt-8 lg:mt-6">
+              {SLIDER_CONTENT.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={() => setActiveSlide(index)}
+                  aria-label={`Go to slide ${index + 1}`}
+                  className={`transition-all duration-300 rounded-full ${
+                    index === activeSlide
+                      ? 'bg-[#10B981] w-8 h-1.5'
+                      : 'bg-white/10 hover:bg-white/30 w-1.5 h-1.5'
+                  }`}
+                />
+              ))}
+            </div>
+
+            {/* Footer Links */}
+            <div className="mt-16 lg:mt-24 flex flex-col gap-1 text-[11px] text-slate-500 font-semibold tracking-wider">
+              <a href={`https://${WEBSITE}`} target="_blank" rel="noopener noreferrer" className="hover:text-[#10B981] transition-colors uppercase">
+                {WEBSITE}
+              </a>
+              <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-[#10B981] transition-colors uppercase">
+                {SUPPORT_EMAIL}
+              </a>
+            </div>
+          </div>
+
+          {/* RIGHT PANEL: Clean Glassmorphism Login Card */}
+          <div className="w-full max-w-[440px] lg:w-[480px] order-1 lg:order-2">
+            <div className="bg-[#0F172A]/80 backdrop-blur-xl border border-slate-800 rounded-3xl p-8 lg:p-10 shadow-[0_8px_32px_rgba(0,0,0,0.4)] relative overflow-hidden">
+
+              <div className="mb-8">
+                <h2 className="font-['Big_Shoulders_Display',sans-serif] font-black text-4xl text-white leading-none mb-2">Log In.</h2>
+                <p className="text-sm text-slate-400 font-medium">Access your ASHCOL Portal account</p>
+              </div>
+
+              <form onSubmit={handleLogin} className="space-y-5">
+
+                {/* Email */}
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Your Email</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <svg className="h-5 w-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <input
+                      type="email"
+                      name="email"
+                      autoComplete="username"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-slate-800 bg-[#060B18] focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all outline-none text-white text-sm font-semibold placeholder:text-slate-600 placeholder:font-normal"
+                      placeholder="name@ashcol.com.ph"
+                    />
+                  </div>
+                </div>
+
+                {/* Password */}
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Your Password</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <svg className="h-5 w-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                      </svg>
+                    </div>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      name="password"
+                      autoComplete="current-password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      className="w-full pl-11 pr-12 py-3.5 rounded-xl border border-slate-800 bg-[#060B18] focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] transition-all outline-none text-white text-sm font-semibold placeholder:text-slate-600 placeholder:font-normal"
+                      placeholder="Enter your password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-[#10B981] transition-colors"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? (
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                        </svg>
+                      ) : (
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Remember me + Forgot password */}
+                <div className="flex items-center justify-between pt-2 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setRememberMe((r) => !r)}
+                      className="relative flex-shrink-0 w-4 h-4 rounded-[4px] border border-slate-700 transition-all flex items-center justify-center focus:outline-none"
+                      style={{
+                        backgroundColor: rememberMe ? GREEN : '#060B18',
+                        borderColor: rememberMe ? GREEN : '#334155',
+                      }}
+                      aria-label="Remember me"
+                    >
+                      {rememberMe && (
+                        <svg viewBox="0 0 12 10" className="w-2.5 h-2.5" fill="none">
+                          <path d="M1 5l3.5 3.5L11 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </button>
+                    <span
+                      className="text-[11px] font-semibold text-slate-400 cursor-pointer select-none"
+                      onClick={() => setRememberMe((r) => !r)}
+                    >
+                      Remember me
+                    </span>
+                  </div>
+                  <Link
+                    to={`/forgot-password?email=${encodeURIComponent(email.trim())}`}
+                    className="text-[11px] font-semibold transition-colors hover:text-white"
+                    style={{ color: GREEN }}
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
+
+                {/* Error */}
+                {error && (
+                  <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 text-center">
+                    <p className="text-[13px] text-red-400 font-medium">
+                      {error}
+                    </p>
+                  </div>
+                )}
+
+                {/* Submit */}
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-[#10B981] hover:bg-[#059669] text-white rounded-xl py-3.5 font-bold tracking-wide transition-all shadow-lg disabled:opacity-60 disabled:cursor-not-allowed mt-2"
+                >
+                  {loading ? 'Signing in…' : 'Continue'}
+                </button>
+
+                <p className="text-[10px] text-slate-500 text-center pt-4 font-semibold uppercase tracking-widest">
+                  For account access, contact your administrator.
+                </p>
+              </form>
+            </div>
+          </div>
+
         </div>
       </div>
-    </div>
-  )
-}
-
-type LoginCardProps = {
-  email: string
-  setEmail: (v: string) => void
-  password: string
-  setPassword: (v: string) => void
-  showPassword: boolean
-  setShowPassword: (v: boolean | ((p: boolean) => boolean)) => void
-  rememberMe: boolean
-  setRememberMe: (v: boolean | ((p: boolean) => boolean)) => void
-  loading: boolean
-  error: string
-  handleLogin: (e: React.FormEvent) => void
-  compact?: boolean
-}
-
-function LoginCard({
-  email,
-  setEmail,
-  password,
-  setPassword,
-  showPassword,
-  setShowPassword,
-  rememberMe,
-  setRememberMe,
-  loading,
-  error,
-  handleLogin,
-  compact = false,
-}: LoginCardProps) {
-  return (
-    <div
-      className={`w-full mx-auto rounded-[28px] ${
-        compact ? 'max-w-[360px] px-5 py-6' : 'max-w-[420px] px-8 py-8 sm:px-9 sm:py-9'
-      }`}
-      style={{
-        background: 'linear-gradient(165deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.78) 100%)',
-        backdropFilter: 'blur(32px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(32px) saturate(180%)',
-        border: '1px solid rgba(255,255,255,0.85)',
-        boxShadow:
-          '0 30px 80px -20px rgba(0,0,0,0.45), 0 0 0 1px rgba(16,185,129,0.12), inset 0 1px 0 rgba(255,255,255,0.95)',
-      }}
-    >
-      <div className={compact ? 'mb-5' : 'mb-7'}>
-        <h2
-          className={`font-bold tracking-tight text-slate-900 ${compact ? 'text-2xl' : 'text-3xl'}`}
-        >
-          Welcome back
-        </h2>
-        <p className="text-sm text-slate-800 mt-1.5">
-          Sign in to continue
-        </p>
-      </div>
-
-      <form onSubmit={handleLogin} className={`flex flex-col ${compact ? 'gap-3.5' : 'gap-[18px]'}`}>
-        <div>
-          <label className="block text-sm font-semibold text-slate-900 mb-1.5">Email</label>
-          <div className="relative">
-            <Mail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-[17px] h-[17px] text-slate-400" />
-            <input
-              type="email"
-              name="email"
-              autoComplete="username"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className={`w-full rounded-xl pl-10 pr-3 text-sm text-slate-900 placeholder:text-slate-400 bg-white border border-slate-200 focus:outline-none focus:ring-4 focus:ring-emerald-500/15 focus:border-emerald-500 transition-all ${
-                compact ? 'min-h-[46px]' : 'min-h-[50px]'
-              }`}
-              placeholder="name@ashcol.com.ph"
-            />
-          </div>
-        </div>
-
-        <div>
-          <div className="flex justify-between items-center mb-1.5">
-            <label className="block text-sm font-semibold text-slate-900">Password</label>
-            <Link
-              to={`/forgot-password?email=${encodeURIComponent(email.trim())}`}
-              className="text-xs font-semibold hover:opacity-90 transition-opacity"
-              style={{ color: GREEN }}
-            >
-              Forgot password?
-            </Link>
-          </div>
-          <div className="relative">
-            <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-[17px] h-[17px] text-slate-400" />
-            <input
-              type={showPassword ? 'text' : 'password'}
-              name="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className={`w-full rounded-xl pl-10 pr-11 text-sm text-slate-900 placeholder:text-slate-400 bg-white border border-slate-200 focus:outline-none focus:ring-4 focus:ring-emerald-500/15 focus:border-emerald-500 transition-all ${
-                compact ? 'min-h-[46px]' : 'min-h-[50px]'
-              }`}
-              placeholder="Enter your password"
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword((v) => !v)}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-emerald-600 transition-colors"
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
-            >
-              {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
-            </button>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => setRememberMe((r) => !r)}
-            className="relative flex-shrink-0 w-[18px] h-[18px] rounded-md border-2 transition-all flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-emerald-500/35"
-            style={{
-              backgroundColor: rememberMe ? GREEN : 'transparent',
-              borderColor: rememberMe ? GREEN : '#cbd5e1',
-            }}
-            aria-label="Remember me"
-          >
-            {rememberMe && (
-              <svg viewBox="0 0 12 10" className="w-2.5 h-2.5" fill="none">
-                <path d="M1 5l3.5 3.5L11 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            )}
-          </button>
-          <span
-            className="text-sm font-medium text-slate-900 select-none cursor-pointer"
-            onClick={() => setRememberMe((r) => !r)}
-          >
-            Remember me
-          </span>
-        </div>
-
-        <p className="text-xs text-slate-500 text-center -mt-1 leading-relaxed">
-          For account access, please contact your administrator.
-        </p>
-
-        <div className="min-h-[40px]">
-          {error ? (
-            <p className="text-sm text-red-700 text-center bg-red-50 border border-red-200 rounded-xl px-3 py-2">
-              {error}
-            </p>
-          ) : null}
-        </div>
-
-        <button
-          type="submit"
-          disabled={loading}
-          className={`w-full rounded-xl font-semibold text-sm text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
-            compact ? 'min-h-[46px]' : 'min-h-[50px]'
-          }`}
-          style={{
-            background: `linear-gradient(180deg, ${GREEN} 0%, ${LOGO_GREEN} 100%)`,
-            boxShadow: '0 12px 24px -10px rgba(16, 185, 129, 0.45)',
-          }}
-        >
-          {loading ? 'Signing in…' : 'Continue'}
-        </button>
-      </form>
     </div>
   )
 }

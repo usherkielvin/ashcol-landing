@@ -195,7 +195,7 @@ export default function DashboardLayout() {
     hoverDebounce.current = setTimeout(() => {
       if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
       if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
-      if (sidebarCollapsed) {
+      if (sidebarCollapsed || (isHoverExpanded && !navVisible)) {
         setShowCollapsedIcons(false)
         setSidebarCollapsed(false)
         setIsHoverExpanded(true)

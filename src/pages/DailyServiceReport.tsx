@@ -363,8 +363,38 @@ function CustomSelect({
   )
 }
 
-// ── Component ────────────────────────────────────────────────────────────────
-
+const blankRow = (date: string, branchId?: string | null): Partial<ServiceRow> => ({
+  reportDate: date,
+  branchId: branchId ?? null,
+  customerName: '',
+  customerAddress: '',
+  customerPhone: '',
+  district: '',
+  serviceType: 'INSTALLATION',
+  statusCode: 'I',
+  commitTerms: '',
+  dealer: '',
+  unitBrandModel: '',
+  unitSerial: '',
+  quantity: 1,
+  technicianName: '',
+  negotiator: '',
+  scheduleTime: '',
+  scheduleStatus: '',
+  timeStarted: '',
+  timeEnded: '',
+  amountCharged: 0,
+  paymentStatus: 'CASH',
+  jobStatus: 'SCHEDULED',
+  remarks: '',
+  note: '',
+  controlNumber: '',
+  serviceColumn: '',
+  papers: '',
+  costing: '',
+  relayStatus: '',
+  fifteenQuestions: '',
+})
 
 export default function DailyServiceReport() {
   const { theme } = useTheme()
@@ -407,6 +437,28 @@ export default function DailyServiceReport() {
   const [branchFilter, setBranchFilter] = useState<string>(() => storedArchivesBranchId())
   const [negoFilter, setNegoFilter] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState('')
+
+  // ── Month popover (custom, replaces the native <select> that overflowed on mobile) ──
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false)
+  const monthPickerRef = useRef<HTMLButtonElement>(null)
+  const monthPickerPopRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!monthPickerOpen) return
+    const closeIfOutside = (target: EventTarget | null) => {
+      if (monthPickerPopRef.current && monthPickerPopRef.current.contains(target as Node)) return
+      if (monthPickerRef.current && monthPickerRef.current.contains(target as Node)) return
+      setMonthPickerOpen(false)
+    }
+    const handleMouseDown = (e: MouseEvent) => closeIfOutside(e.target)
+    const handleScroll = () => setMonthPickerOpen(false)
+    document.addEventListener('mousedown', handleMouseDown)
+    window.addEventListener('scroll', handleScroll, true)
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown)
+      window.removeEventListener('scroll', handleScroll, true)
+    }
+  }, [monthPickerOpen])
 
   const negotiatorOptions = useMemo(() => {
     const set = new Set<string>()
@@ -457,6 +509,33 @@ export default function DailyServiceReport() {
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null>(null)
 
 
+  const handleAddRow = () => {
+    if (!canEdit) return
+    let realBranchId = resolveScopedBranchId(
+      resolveArchivesBranchFilter(branchFilter, branches, user),
+    ) || null
+    if (!realBranchId) {
+      realBranchId = resolveScopedBranchId(branches[0]?.id) || null
+    }
+    const tempId = `temp-${Date.now()}`
+    const newRow = blankRow(todayLocal(), isBranchScoped ? (user?.branchId ?? null) : realBranchId) as ServiceRow
+    newRow.id = tempId
+    setRows(prev => [newRow, ...prev])
+  }
+
+  // Escape hatch for the trailing "X" column on both the desktop table and
+  // mobile cards. An unsaved blank row (id still `temp-...`, same convention
+  // saveCell already uses to detect an in-progress add) is just dropped from
+  // local state — it was never persisted, so there's nothing to delete on the
+  // server. A real, saved row goes through the existing confirm+DELETE flow.
+  const handleRemoveRow = (id: string) => {
+    if (id.startsWith('temp-')) {
+      setRows(prev => prev.filter(r => r.id !== id))
+      return
+    }
+    const row = rows.find(r => r.id === id)
+    if (row) handleDelete(row)
+  }
 
   // Pending Excel import waiting for an all-branch user to choose a target branch
   const [pendingImport, setPendingImport] = useState<{ file: File; branchId: string; detectedDate: string | null } | null>(null)
@@ -1849,16 +1928,18 @@ export default function DailyServiceReport() {
             )}
             <table
               key={`${branchFilter}|${monthFilter}`}
-              className="text-xs w-full" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
+              className="hidden md:table text-xs w-full" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
               <colgroup>
                 {columns.map(col => (
                   <col key={col.label} style={{ width: col.w }} />
                 ))}
+                {/* Trailing action column — row cancel/delete "X", fixed width so it
+                    never eats into the percentage-weighted data columns above. */}
+                <col style={{ width: '34px' }} />
               </colgroup>
               <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
-                <tr style={{ backgroundColor: inputBg }}>
-                  {columns.map((col, colIdx) => {
-                    const isLast = colIdx === columns.length - 1
+                <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#060B18' }}>
+                  {columns.map((col) => {
                     return (
                       <th key={col.label}
                         style={{
@@ -1872,12 +1953,11 @@ export default function DailyServiceReport() {
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
-                          borderRight: isLast ? 'none' : `1px solid ${border}`,
-                          borderBottom: `2px solid ${isLight ? '#94a3b8' : '#3a537a'}`,
+                          borderBottom: `2px solid ${isLight ? '#e2e8f0' : '#1e293b'}`,
                           width: col.w,
                           minWidth: 0,
                           maxWidth: col.w,
-                          backgroundColor: inputBg,
+                          backgroundColor: isLight ? '#f8fafc' : '#060B18',
                           userSelect: 'none',
                           ...(col.sticky ? {
                             position: 'sticky' as const,
@@ -1889,12 +1969,20 @@ export default function DailyServiceReport() {
                       </th>
                     )
                   })}
+                  <th style={{
+                    padding: '8px 10px',
+                    borderBottom: `2px solid ${isLight ? '#e2e8f0' : '#1e293b'}`,
+                    width: '34px',
+                    minWidth: 0,
+                    maxWidth: '34px',
+                    backgroundColor: isLight ? '#f8fafc' : '#060B18',
+                  }} />
                 </tr>
               </thead>
               <tbody>
                 {visible.length === 0 ? (
                   <tr>
-                    <td colSpan={columns.length} style={{ padding: '40px 10px', textAlign: 'center' }}>
+                    <td colSpan={columns.length + 1} style={{ padding: '40px 10px', textAlign: 'center' }}>
                       <div className="flex flex-col items-center justify-center gap-3 py-6">
                         <AlertTriangle className="w-10 h-10 opacity-20" style={{ color: textMuted }} />
                         <p className="text-sm font-semibold" style={{ color: textMuted }}>
@@ -1911,10 +1999,12 @@ export default function DailyServiceReport() {
                   </tr>
                 ) : (
                   visible.map((r, idx) => {
-                  const rowBaseBg = contextMenu?.row.id === r.id
+                  // Flat row background — no zebra striping; the context-menu-selected
+                  // row is the only row that carries its own background, everything
+                  // else is transparent so the tr's hover class shows through cleanly.
+                  const rowSelectedBg = contextMenu?.row.id === r.id
                     ? (isLight ? '#f1f5f9' : '#111827')
-                    : (idx % 2 === 0 ? (isLight ? '#ffffff' : '#0A1120') : (isLight ? '#fafafa' : '#0d1626'))
-                  const rowHoverBg = isLight ? '#f1f5f9' : '#0f1e36'
+                    : undefined
 
                   return (
                     <tr key={r.id}
@@ -1925,17 +2015,14 @@ export default function DailyServiceReport() {
                       onDoubleClick={() => handleViewDetailsPopup(r)}
                       style={{
                         borderBottom: `1px solid ${border}`,
-                        backgroundColor: rowBaseBg,
+                        backgroundColor: rowSelectedBg,
                         cursor: 'pointer',
                       }}
-                      onMouseEnter={e => { e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => { td.style.backgroundColor = rowHoverBg }) }}
-                      onMouseLeave={e => { e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => { td.style.backgroundColor = rowBaseBg }) }}
-                      className="transition-colors">
+                      className="transition-colors hover:bg-slate-50 dark:hover:bg-[#0F1A2E]">
 
-                      {columns.map((col, colIdx) => {
+                      {columns.map((col) => {
                         const isThisEditing = editingCell?.rowId === r.id && editingCell?.col === col.label
                         const isEditable    = EDITABLE_COLS.includes(col.label) && canEdit
-                        const isLastCol = colIdx === columns.length - 1
                         return (
                           <td key={col.label}
                               onClick={e => {
@@ -1956,9 +2043,8 @@ export default function DailyServiceReport() {
                                 fontSize: '12.5px',
                                 fontWeight: 600,
                                 lineHeight: '1.4',
-                                backgroundColor: isThisEditing ? inputBg : rowBaseBg,
+                                backgroundColor: isThisEditing ? inputBg : rowSelectedBg,
                                 textAlign: (col.align as any) || 'left',
-                                borderRight: isLastCol ? 'none' : `1px solid ${border}`,
                                 borderBottom: `1px solid ${border}`,
                                 width: col.w, minWidth: 0, maxWidth: col.w,
                                 overflow: isThisEditing ? 'visible' : 'hidden',
@@ -1970,18 +2056,141 @@ export default function DailyServiceReport() {
                                   position: 'sticky' as const,
                                   left: `${col.left}%`,
                                   zIndex: 5,
-                                  backgroundColor: isThisEditing ? inputBg : rowBaseBg,
+                                  backgroundColor: isThisEditing ? inputBg : (rowSelectedBg ?? cardBg),
                                 } : {}),
                               }}>
                             {renderCell(r, col, idx)}
                           </td>
                         )
                       })}
+                      <td style={{
+                        padding: '7px 6px',
+                        borderBottom: `1px solid ${border}`,
+                        width: '34px', minWidth: 0, maxWidth: '34px',
+                        textAlign: 'center',
+                        verticalAlign: 'middle',
+                        backgroundColor: rowSelectedBg,
+                      }}>
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); handleRemoveRow(r.id) }}
+                          title={r.id.startsWith('temp-') ? 'Cancel this row' : 'Delete this record'}
+                          className="text-slate-400 hover:text-red-500 transition-colors p-1 rounded"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
                     </tr>
                   )
                 }))}
               </tbody>
             </table>
+
+            {/* ── Mobile SaaS cards — table is desktop-only (hidden md:table above) ── */}
+            <div className="flex flex-col md:hidden p-3 gap-3">
+              {visible.length === 0 ? (
+                <div className="border-2 border-dashed rounded-xl p-10 text-center flex flex-col items-center gap-3"
+                  style={{ borderColor: isLight ? '#cbd5e1' : '#334155' }}>
+                  <AlertTriangle className="w-8 h-8 opacity-30" style={{ color: textMuted }} />
+                  <p className="text-sm font-semibold" style={{ color: textMuted }}>
+                    {searchQuery.trim()
+                      ? `No records match “${searchQuery.trim()}”${rows.length > 0 ? ` (${rows.length} loaded)` : ''}`
+                      : `No service records for ${viewMode === 'weekly' ? weekRange.label : 'this month'}`}
+                  </p>
+                  {searchQuery.trim() ? (
+                    <button type="button" onClick={() => setSearchQuery('')}
+                      className="text-xs font-bold hover:underline" style={{ color: textPrimary }}>Clear search</button>
+                  ) : canEdit && (
+                    <button onClick={handleAddRow}
+                      className="text-xs font-bold hover:underline" style={{ color: textPrimary }}>+ Add the first one</button>
+                  )}
+                </div>
+              ) : (
+                visible.map(r => {
+                  const chargesDisplay = getCellDisplay(r, 'INSTALLATION CHARGES')
+                  const negotiatorName = formatNegotiatorFirstName(r.negotiator)
+                  const installerName = formatCleanName(r.technicianName)
+                  const completedLabel = formatDateKeyLabel(getInstalledDateKey(r))
+                  return (
+                    <div
+                      key={r.id}
+                      onClick={() => handleViewDetailsPopup(r)}
+                      onContextMenu={e => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, row: r }) }}
+                      className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#0A1120] shadow-sm overflow-hidden active:scale-[0.985] transition-transform cursor-pointer"
+                    >
+                      {/* Header: ticket no (left) / completed date + cancel-delete "X" (right) */}
+                      <div className="px-3 py-2 flex justify-between items-center border-b" style={{ borderColor: border, backgroundColor: isLight ? 'rgba(248,250,252,0.7)' : 'rgba(15,26,46,0.5)' }}>
+                        <span className="text-[10.5px] font-bold tabular-nums" style={{ color: textMuted }}>
+                          {r.ticketNumber || '—'}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          {completedLabel ? (
+                            <span className="flex items-center gap-1 text-[10.5px] font-bold" style={{ color: textPrimary }}>
+                              <CalendarDays className="w-3 h-3 shrink-0" style={{ color: textMuted }} />
+                              {completedLabel}
+                            </span>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={e => { e.stopPropagation(); handleRemoveRow(r.id) }}
+                            title={r.id.startsWith('temp-') ? 'Cancel this row' : 'Delete this record'}
+                            className="text-slate-400 hover:text-red-500 transition-colors p-0.5 rounded shrink-0"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Body: customer name / brand · dealer / district */}
+                      <div className="p-3">
+                        <span className="text-sm font-black uppercase tracking-wide leading-tight truncate block" style={{ color: textPrimary }}>
+                          {r.customerName || '—'}
+                        </span>
+                        {(r.unitBrandModel || r.dealer) ? (
+                          <div className="text-[10.5px] font-semibold truncate mt-1" style={{ color: textMuted }}>
+                            {[r.unitBrandModel, r.dealer].filter(Boolean).join(' · ')}
+                          </div>
+                        ) : null}
+                        {r.district ? (
+                          <div className="flex items-center gap-1 mt-0.5" style={{ color: textMuted }}>
+                            <Building2 className="w-2.5 h-2.5 shrink-0" />
+                            <span className="text-[10.5px] font-medium truncate">{r.district}</span>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      {/* Crew: 2-col grid — Negotiator / Installer */}
+                      <div className="grid grid-cols-2 gap-2 px-3 py-2.5 bg-slate-50/50 dark:bg-[#0F1A2E]/30 border-y" style={{ borderColor: border }}>
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Negotiator</span>
+                          <span className="text-[11px] font-semibold truncate" style={{ color: negotiatorName ? textPrimary : textMuted }}>
+                            {negotiatorName || '—'}
+                          </span>
+                        </div>
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Installer</span>
+                          <span className="text-[11px] font-semibold truncate" style={{ color: installerName ? textPrimary : textMuted }}>
+                            {installerName || '—'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Footer: remarks (left, clamped) / charges (right) */}
+                      <div className="px-3 py-2 flex justify-between items-start gap-2">
+                        <p className="text-[10.5px] font-medium min-w-0 flex-1" style={{ color: textMuted, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                          {r.remarks || '—'}
+                        </p>
+                        {chargesDisplay ? (
+                          <span className="text-[11px] font-black tabular-nums shrink-0" style={{ color: textPrimary }}>
+                            {chargesDisplay}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
           </div>
         )}
 

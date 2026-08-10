@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import ReactDOM from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   BarChart2, CalendarDays, TrendingUp, TrendingDown,
@@ -103,6 +104,11 @@ const formatDateTriggerLabel = (value: string) => {
   return year && month && day ? `${month}/${day}/${year}` : value
 }
 
+const todayLocalKey = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 
@@ -155,7 +161,6 @@ export default function DailyAuditReport() {
   const textMuted   = isLight ? '#64748b'  : '#7A95B8'
   const inputBg     = isLight ? '#f8fafc'  : '#0F1A2E'
   const inputBorder = isLight ? '#cbd5e1'  : '#243452'
-  const rowHover    = isLight ? '#f1f5f9'  : '#0f1e36'
 
   const [rows, setRows]           = useState<AuditRow[]>([])
   const [loading, setLoading]     = useState(true)
@@ -229,13 +234,66 @@ export default function DailyAuditReport() {
     onConfirm: () => void
   }
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null)
-  const desktopDateRef = useRef<HTMLInputElement>(null)
-  const desktopRangeFromRef = useRef<HTMLInputElement>(null)
-  const desktopRangeToRef = useRef<HTMLInputElement>(null)
 
   const openDatePicker = (input: HTMLInputElement | null) => {
     if (!input) return
     input.showPicker?.()
+  }
+
+  // ── Custom Date Picker State (desktop command bar — replaces native <input type="date">) ──
+  const [datePickerState, setDatePickerState] = useState<{
+    isOpen: boolean;
+    target: 'single' | 'rangeFrom' | 'rangeTo' | null;
+    pos: { top: number; left: number } | null;
+    calYear: number;
+    calMonth: number;
+  }>({
+    isOpen: false, target: null, pos: null,
+    calYear: new Date().getFullYear(), calMonth: new Date().getMonth()
+  })
+
+  const datePickerPopRef = useRef<HTMLDivElement>(null)
+
+  // Close custom picker on outside click or scroll
+  useEffect(() => {
+    if (!datePickerState.isOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (datePickerPopRef.current && !datePickerPopRef.current.contains(e.target as Node)) {
+        setDatePickerState(prev => ({ ...prev, isOpen: false }))
+      }
+    }
+    const handleScroll = () => setDatePickerState(prev => ({ ...prev, isOpen: false }))
+
+    window.addEventListener('mousedown', handleClickOutside)
+    window.addEventListener('scroll', handleScroll, true)
+    return () => {
+      window.removeEventListener('mousedown', handleClickOutside)
+      window.removeEventListener('scroll', handleScroll, true)
+    }
+  }, [datePickerState.isOpen])
+
+  const openCustomDatePicker = (target: 'single' | 'rangeFrom' | 'rangeTo', e: React.MouseEvent<HTMLElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const seed = target === 'single' ? date : target === 'rangeFrom' ? rangeFrom : rangeTo
+    const seedDate = seed ? new Date(seed + 'T00:00:00') : new Date()
+    setDatePickerState({
+      isOpen: true,
+      target,
+      pos: { top: rect.bottom + 6, left: Math.max(10, Math.min(rect.left, window.innerWidth - 300)) },
+      calYear: seedDate.getFullYear(),
+      calMonth: seedDate.getMonth(),
+    })
+  }
+
+  const toDateKey = (y: number, m: number, d: number) =>
+    `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+
+  const handleCalendarDayClick = (day: number) => {
+    const key = toDateKey(datePickerState.calYear, datePickerState.calMonth, day)
+    if (datePickerState.target === 'single') setDate(key)
+    else if (datePickerState.target === 'rangeFrom') setRangeFrom(key)
+    else if (datePickerState.target === 'rangeTo') setRangeTo(key)
+    setDatePickerState(prev => ({ ...prev, isOpen: false }))
   }
 
   const handleClearRow = (row: AuditRow) => {
@@ -546,20 +604,6 @@ export default function DailyAuditReport() {
 
   const isCustomAuditDate = viewMode === 'single' && date !== '' && !weeklyDayTabs.some(t => t.key === date)
 
-  const renderMobileMetric = (label: string, value: string, color = textPrimary) => (
-    <div className="flex flex-col gap-0.5 min-w-0">
-      <span className="text-[10px] font-medium truncate" style={{ color: textMuted }}>{label}</span>
-      <span className="text-xs font-semibold tabular-nums truncate" style={{ color }}>{value}</span>
-    </div>
-  )
-
-  const mobileKpiChip = (label: string, value: string, color: string) => (
-    <div className="mobile-kpi-chip" style={{ borderColor: `${color}40`, backgroundColor: `${color}12` }}>
-      <span className="text-[10px] font-medium" style={{ color: textMuted }}>{label}</span>
-      <span className="text-sm font-semibold tabular-nums" style={{ color }}>{value}</span>
-    </div>
-  )
-
   return (
     <div className="flex flex-col gap-4 pb-8 md:pb-8">
 
@@ -582,10 +626,11 @@ export default function DailyAuditReport() {
       {/* ── Summary Tab ─────────────────────────────────────────────────────── */}
       {activeTab === 'summary' && <>
 
-      {/* ── Mobile header ──────────────────────────────────────────────────── */}
-      <div className="md:hidden rounded-xl no-print" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+      {/* ── Mobile header "Command Card" ─────────────────────────────────────── */}
+      <div className="md:hidden bg-white dark:bg-[#0A1120] rounded-b-2xl border-b shadow-sm p-4 flex flex-col gap-4 no-print" style={{ borderColor: border }}>
 
-        <div className="px-4 pt-4 pb-3 flex items-start justify-between gap-3">
+        {/* Row 1: Title & Actions */}
+        <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-base font-semibold flex items-center gap-2" style={{ color: textPrimary }}>
               <BarChart2 className="w-4 h-4" style={{ color: '#10B981' }} />
@@ -603,8 +648,8 @@ export default function DailyAuditReport() {
             </button>
             <div className="relative shrink-0">
               <button type="button" onClick={() => setMobileMenuOpen(o => !o)}
-                className="w-8 h-8 flex items-center justify-center rounded-lg"
-                style={{ border: `1px solid ${inputBorder}`, color: textMuted }}>
+                className="w-8 h-8 flex items-center justify-center rounded-lg border transition-colors focus:outline-none"
+                style={{ borderColor: inputBorder, color: textMuted }}>
                 <MoreVertical className="w-4 h-4" />
               </button>
               {mobileMenuOpen && (
@@ -636,10 +681,11 @@ export default function DailyAuditReport() {
             )}
           </div>
         </div>
-      </div>
+        </div>
 
-        <div className="px-4 pb-3 flex flex-wrap items-center gap-2">
-          <div className="flex items-center rounded-lg text-xs font-medium overflow-hidden"
+        {/* Row 2: View & Dates */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center rounded-lg text-xs font-medium overflow-hidden shrink-0"
             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
             {(['single', 'range'] as const).map(m => (
               <button key={m} type="button" onClick={() => setViewMode(m)} className="px-3 py-1.5"
@@ -649,84 +695,89 @@ export default function DailyAuditReport() {
             ))}
           </div>
           {viewMode === 'single' ? (
-            <>
-              {/* Weekly day tabs (mobile) */}
-              <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar py-0.5">
-                {weeklyDayTabs.map(tab => {
-                  const isActive = date === tab.key
-                  return (
-                    <button key={tab.key} type="button"
-                      onClick={() => setDate(tab.key)}
-                      className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
-                      style={{
-                        backgroundColor: isActive ? '#10B981' : 'transparent',
-                        borderColor: isActive ? '#10B981' : inputBorder,
-                        color: isActive ? '#ffffff' : textMuted,
-                      }}
-                    >
-                      {tab.dayName} {tab.dateLabel}
-                    </button>
-                  )
-                })}
-
-                {isCustomAuditDate && (
-                  <button type="button"
-                    onClick={() => openDatePicker(mobileDateRef.current)}
-                    className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0"
-                    style={{ backgroundColor: '#10B981', borderColor: '#10B981', color: '#ffffff' }}
+            <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar py-0.5">
+              {weeklyDayTabs.map(tab => {
+                const isActive = date === tab.key
+                return (
+                  <button key={tab.key} type="button"
+                    onClick={() => setDate(tab.key)}
+                    className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
+                    style={{
+                      backgroundColor: isActive ? '#10B981' : 'transparent',
+                      borderColor: isActive ? '#10B981' : inputBorder,
+                      color: isActive ? '#ffffff' : textMuted,
+                    }}
                   >
-                    {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+                    {tab.dayName} {tab.dateLabel}
                   </button>
-                )}
+                )
+              })}
 
+              {isCustomAuditDate && (
                 <button type="button"
                   onClick={() => openDatePicker(mobileDateRef.current)}
-                  className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0"
-                  style={{ borderColor: inputBorder, color: textMuted }}
-                  title="Pick a custom date"
+                  className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0"
+                  style={{ backgroundColor: '#10B981', borderColor: '#10B981', color: '#ffffff' }}
                 >
-                  <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
-                  Custom
+                  {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
                 </button>
+              )}
 
-                <input ref={mobileDateRef} type="date" value={date} onChange={e => setDate(e.target.value)}
-                  tabIndex={-1}
-                  className="date-input-no-indicator absolute opacity-0 pointer-events-none w-0 h-0" aria-label="Audit date" />
-              </div>
-            </>
+              <button type="button"
+                onClick={() => openDatePicker(mobileDateRef.current)}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0"
+                style={{ borderColor: inputBorder, color: textMuted }}
+                title="Pick a custom date"
+              >
+                <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
+                Custom
+              </button>
+
+              <input ref={mobileDateRef} type="date" value={date} onChange={e => setDate(e.target.value)}
+                tabIndex={-1}
+                className="date-input-no-indicator absolute opacity-0 pointer-events-none w-0 h-0" aria-label="Audit date" />
+            </div>
           ) : (
-            <>
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
               <input type="date" value={rangeFrom} onChange={e => setRangeFrom(e.target.value)}
                 className="date-input-no-indicator px-2 py-1.5 rounded-lg text-xs flex-1 min-w-0 cursor-pointer" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
               <input type="date" value={rangeTo} onChange={e => setRangeTo(e.target.value)}
                 className="date-input-no-indicator px-2 py-1.5 rounded-lg text-xs flex-1 min-w-0 cursor-pointer" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-            </>
+            </div>
           )}
         </div>
 
+        {/* Row 3: Mobile KPIs — horizontally scrolling, accent-colored borders */}
         {!loading && rows.length > 0 && (
-          <div className="mobile-scroll-snap px-4 py-3" style={{ borderTop: `1px solid ${border}` }}>
-            {mobileKpiChip('Gross', `₱${peso(totals.grossSales)}`, '#3B82F6')}
-            {mobileKpiChip('Cash', `₱${peso(totals.totalCashCollection)}`, '#10B981')}
-            {mobileKpiChip('Online', `₱${peso(totals.totalOnlineCollection)}`, '#6366F1')}
-            {mobileKpiChip('Expenses', `₱${peso(totals.totalExpenses)}`, '#EF4444')}
-            {mobileKpiChip('Purchases', `₱${peso(totals.totalForPurchase)}`, '#F59E0B')}
-            {mobileKpiChip('For coll.', `₱${peso(totals.forCollection)}`, '#F59E0B')}
-            {mobileKpiChip('Rebates', `₱${peso(totals.rebatesForCollection)}`, '#10B981')}
+          <div className="flex overflow-x-auto gap-2 no-scrollbar pb-1">
+            {[
+              { label: 'Gross',     value: `₱${peso(totals.grossSales)}`,             color: '#3B82F6', border: 'border-blue-200 dark:border-blue-900/40' },
+              { label: 'Cash',      value: `₱${peso(totals.totalCashCollection)}`,    color: '#10B981', border: 'border-emerald-200 dark:border-emerald-900/40' },
+              { label: 'Online',    value: `₱${peso(totals.totalOnlineCollection)}`,  color: '#6366F1', border: 'border-indigo-200 dark:border-indigo-900/40' },
+              { label: 'Expenses',  value: `₱${peso(totals.totalExpenses)}`,          color: '#EF4444', border: 'border-red-200 dark:border-red-900/40' },
+              { label: 'Purchases', value: `₱${peso(totals.totalForPurchase)}`,       color: '#F59E0B', border: 'border-amber-200 dark:border-amber-900/40' },
+              { label: 'For coll.', value: `₱${peso(totals.forCollection)}`,          color: '#F59E0B', border: 'border-amber-200 dark:border-amber-900/40' },
+              { label: 'Rebates',   value: `₱${peso(totals.rebatesForCollection)}`,   color: '#10B981', border: 'border-emerald-200 dark:border-emerald-900/40' },
+            ].map(k => (
+              <div key={k.label} className={`min-w-[100px] p-2.5 border rounded-xl shrink-0 flex flex-col gap-0.5 ${k.border}`}>
+                <span className="text-[10px] font-medium" style={{ color: textMuted }}>{k.label}</span>
+                <span className="text-sm font-semibold tabular-nums" style={{ color: k.color }}>{k.value}</span>
+              </div>
+            ))}
           </div>
         )}
 
       </div>
 
-      {/* ── Desktop toolbar ─────────────────────────────────────────────────── */}
-      <div className="hidden md:flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0 py-1 no-print">
+      {/* ── Desktop unified command bar ──────────────────────────────────────── */}
+      <div className="hidden md:flex w-full px-4 py-3 border-b flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-[#0A1120] no-print"
+        style={{ borderColor: border }}>
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
           {canSubmitForm && (
             <button
               type="button"
               onClick={() => setActiveTab('submit')}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm text-white transition-colors hover:opacity-90 focus:outline-none"
-              style={{ backgroundColor: '#10B981' }}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm text-white shadow-md transition-colors hover:opacity-90 focus:outline-none bg-[#10B981]"
             >
               <FileEdit className="w-4 h-4" /> Submit Daily Report
             </button>
@@ -740,9 +791,10 @@ export default function DailyAuditReport() {
           )}
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        {/* Daily/Range toggle + date ribbon — one scrolling track so nothing wraps */}
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
           {/* View mode toggle */}
-          <div id="audit-view-toggle" className="flex items-center rounded-lg text-sm font-semibold overflow-hidden"
+          <div id="audit-view-toggle" className="flex items-center rounded-lg text-sm font-semibold overflow-hidden shrink-0"
             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
             {(['single','range'] as const).map(m => (
               <button key={m} type="button" onClick={() => setViewMode(m)} className="px-4 py-2 transition-colors"
@@ -754,86 +806,169 @@ export default function DailyAuditReport() {
 
           {/* Date picker(s) - desktop */}
           {viewMode === 'single' ? (
-            <>
-              {/* Weekly day tabs (desktop) */}
-              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
-                {weeklyDayTabs.map(tab => {
-                  const isActive = date === tab.key
-                  return (
-                    <button key={tab.key} type="button"
-                      onClick={() => setDate(tab.key)}
-                      className="px-3 py-2 rounded-lg text-xs font-semibold border whitespace-nowrap shrink-0 transition-colors"
-                      style={{
-                        backgroundColor: isActive ? '#10B981' : 'transparent',
-                        borderColor: isActive ? '#10B981' : inputBorder,
-                        color: isActive ? '#ffffff' : textMuted,
-                      }}
-                    >
-                      {tab.dayName} {tab.dateLabel}
-                    </button>
-                  )
-                })}
-
-                {isCustomAuditDate && (
-                  <button type="button"
-                    onClick={() => openDatePicker(desktopDateRef.current)}
-                    className="px-3 py-2 rounded-lg text-xs font-semibold border whitespace-nowrap shrink-0"
-                    style={{ backgroundColor: '#10B981', borderColor: '#10B981', color: '#ffffff' }}
+            <div className="flex items-center gap-1 shrink-0">
+              {weeklyDayTabs.map(tab => {
+                const isActive = date === tab.key
+                return (
+                  <button key={tab.key} type="button"
+                    onClick={() => setDate(tab.key)}
+                    className="px-3 py-2 rounded-lg text-xs font-semibold border whitespace-nowrap shrink-0 transition-colors"
+                    style={{
+                      backgroundColor: isActive ? '#10B981' : 'transparent',
+                      borderColor: isActive ? '#10B981' : inputBorder,
+                      color: isActive ? '#ffffff' : textMuted,
+                    }}
                   >
-                    {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+                    {tab.dayName} {tab.dateLabel}
                   </button>
-                )}
+                )
+              })}
 
+              {isCustomAuditDate && (
                 <button type="button"
-                  onClick={() => openDatePicker(desktopDateRef.current)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border whitespace-nowrap shrink-0 transition-colors"
-                  style={{ borderColor: inputBorder, color: textMuted }}
-                  title="Pick a custom date"
+                  onClick={(e) => openCustomDatePicker('single', e)}
+                  className="px-3 py-2 rounded-lg text-xs font-semibold border whitespace-nowrap shrink-0"
+                  style={{ backgroundColor: '#10B981', borderColor: '#10B981', color: '#ffffff' }}
+                >
+                  {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+                </button>
+              )}
+
+              <button type="button"
+                onClick={(e) => openCustomDatePicker('single', e)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border whitespace-nowrap shrink-0 transition-colors"
+                style={{ borderColor: datePickerState.isOpen && datePickerState.target === 'single' ? '#10B981' : inputBorder, color: textMuted }}
+                title="Pick a custom date"
+              >
+                <CalendarDays className="w-4 h-4" style={{ color: '#10B981' }} />
+                Custom Date
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 shrink-0">
+              {([
+                { target: 'rangeFrom' as const, val: rangeFrom, label: 'Audit range from date' },
+                { target: 'rangeTo' as const, val: rangeTo, label: 'Audit range to date' },
+              ]).map((p) => (
+                <button
+                  key={p.target}
+                  type="button"
+                  onClick={(e) => openCustomDatePicker(p.target, e)}
+                  className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm cursor-pointer transition-colors"
+                  style={{
+                    backgroundColor: inputBg,
+                    border: `1px solid ${datePickerState.isOpen && datePickerState.target === p.target ? '#10B981' : inputBorder}`,
+                  }}
+                  aria-label={p.label}
                 >
                   <CalendarDays className="w-4 h-4" style={{ color: '#10B981' }} />
-                  Custom Date
-                </button>
-
-                <input id="audit-date-picker" ref={desktopDateRef} type="date" value={date}
-                  onChange={e => setDate(e.target.value)}
-                  tabIndex={-1}
-                  className="date-input-no-indicator absolute opacity-0 pointer-events-none w-0 h-0" aria-label="Audit date" />
-              </div>
-            </>
-          ) : (
-            <div className="flex items-center gap-2">
-              {[{ val: rangeFrom, set: setRangeFrom }, { val: rangeTo, set: setRangeTo }].map((p, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm cursor-pointer transition-colors"
-                  onClick={() => openDatePicker(i === 0 ? desktopRangeFromRef.current : desktopRangeToRef.current)}
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
-                  <CalendarDays className="w-4 h-4" style={{ color: '#10B981' }} />
-                  <input
-                    ref={i === 0 ? desktopRangeFromRef : desktopRangeToRef}
-                    type="date"
-                    value={p.val}
-                    onChange={e => p.set(e.target.value)}
-                    tabIndex={-1}
-                    className="date-input-no-indicator absolute opacity-0 pointer-events-none w-0 h-0"
-                    aria-label={i === 0 ? 'Audit range from date' : 'Audit range to date'} />
                   <span className="text-sm font-semibold select-none" style={{ color: textPrimary }}>
                     {formatDateTriggerLabel(p.val)}
                   </span>
-                </div>
+                </button>
               ))}
             </div>
           )}
         </div>
+
+        {/* ── SaaS Calendar Popover — portal, replaces native <input type="date"> ── */}
+        {datePickerState.isOpen && datePickerState.pos && ReactDOM.createPortal(
+          <div
+            ref={datePickerPopRef}
+            className="fixed z-[99999] rounded-2xl border shadow-2xl p-4 bg-white dark:bg-[#0a1120]"
+            style={{
+              top: datePickerState.pos.top,
+              left: datePickerState.pos.left,
+              width: 280,
+              borderColor: isLight ? '#cbd5e1' : '#334155',
+            }}
+            onMouseDown={e => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header — month navigation */}
+            <div className="flex items-center justify-between mb-3">
+              <button
+                type="button"
+                onClick={() => setDatePickerState(prev => {
+                  const m = prev.calMonth - 1
+                  return m < 0 ? { ...prev, calMonth: 11, calYear: prev.calYear - 1 } : { ...prev, calMonth: m }
+                })}
+                className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
+                style={{ color: textMuted }}
+              >
+                {'<'}
+              </button>
+              <span className="text-sm font-bold" style={{ color: textPrimary }}>
+                {new Date(datePickerState.calYear, datePickerState.calMonth, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              </span>
+              <button
+                type="button"
+                onClick={() => setDatePickerState(prev => {
+                  const m = prev.calMonth + 1
+                  return m > 11 ? { ...prev, calMonth: 0, calYear: prev.calYear + 1 } : { ...prev, calMonth: m }
+                })}
+                className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
+                style={{ color: textMuted }}
+              >
+                {'>'}
+              </button>
+            </div>
+
+            {/* Day-of-week header */}
+            <div className="grid grid-cols-7 gap-1 mb-1">
+              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+                <span key={d} className="text-[10px] font-bold text-center uppercase" style={{ color: textMuted }}>{d}</span>
+              ))}
+            </div>
+
+            {/* Day grid */}
+            <div className="grid grid-cols-7 gap-1">
+              {(() => {
+                const firstOfMonth = new Date(datePickerState.calYear, datePickerState.calMonth, 1)
+                const offset = firstOfMonth.getDay()
+                const daysInMonth = new Date(datePickerState.calYear, datePickerState.calMonth + 1, 0).getDate()
+                const todayKey = todayLocalKey()
+                const selectedKey = datePickerState.target === 'single' ? date
+                  : datePickerState.target === 'rangeFrom' ? rangeFrom
+                  : rangeTo
+                const cells: React.ReactNode[] = []
+                for (let i = 0; i < offset; i++) cells.push(<span key={`empty-${i}`} />)
+                for (let day = 1; day <= daysInMonth; day++) {
+                  const key = toDateKey(datePickerState.calYear, datePickerState.calMonth, day)
+                  const isSelected = key === selectedKey
+                  const isToday = key === todayKey
+                  cells.push(
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => handleCalendarDayClick(day)}
+                      className="h-8 rounded-lg text-xs font-bold transition-all relative"
+                      style={{
+                        color: isSelected ? '#ffffff' : isToday ? '#10B981' : textPrimary,
+                        backgroundColor: isSelected ? '#10B981' : 'transparent',
+                      }}
+                    >
+                      {day}
+                      {isToday && !isSelected && (
+                        <span className="absolute left-1/2 -translate-x-1/2 bottom-0.5 w-1 h-1 rounded-full" style={{ backgroundColor: '#10B981' }} />
+                      )}
+                    </button>
+                  )
+                }
+                return cells
+              })()}
+            </div>
+          </div>,
+          document.body,
+        )}
       </div>
 
       {/* ── Print area enclosing KPI Counters and Table ─────────────────────────── */}
       <div className="print-area flex flex-col gap-5">
 
-      {/* ── Smaller Cleaner KPI Counters Bar (desktop) ─────────────────────── */}
+      {/* ── Compact KPI strip (desktop) ─────────────────────────────────────── */}
       {!loading && rows.length > 0 && (
-        <div className="hidden md:flex flex-wrap items-center gap-y-2 gap-x-6 px-4 py-2.5 rounded-xl border text-xs"
-          style={{ backgroundColor: cardBg, borderColor: border }}>
+        <div className="hidden md:flex flex-wrap lg:flex-nowrap items-center gap-3 px-4 py-3 border-b" style={{ borderColor: border }}>
           {[
             { label: 'Gross Sales',      value: peso(totals.grossSales),             color: '#3B82F6', icon: BarChart2 },
             { label: 'Cash Collected',   value: peso(totals.totalCashCollection),    color: '#10B981', icon: TrendingUp },
@@ -842,14 +977,17 @@ export default function DailyAuditReport() {
             { label: 'Total Purchases',        value: peso(totals.totalForPurchase),       color: '#F59E0B', icon: TrendingDown },
             { label: 'For Collection',         value: peso(totals.forCollection),          color: '#F59E0B', icon: ClipboardList },
             { label: 'Rebates',                value: peso(totals.rebatesForCollection),   color: '#10B981', icon: TrendingUp },
-          ].map((k, i, arr) => {
+          ].map((k, i) => {
             const Icon = k.icon
             return (
-              <div key={i} className="flex items-center gap-2">
-                <Icon className="w-3.5 h-3.5" style={{ color: k.color }} />
-                <span style={{ color: textMuted }}>{k.label}:</span>
-                <strong className="font-semibold" style={{ color: k.color }}>₱{k.value}</strong>
-                {i < arr.length - 1 && <span className="ml-4 opacity-25" style={{ color: textMuted }}>|</span>}
+              <div key={i}
+                className="flex flex-col px-3 py-1.5 rounded-lg border bg-white dark:bg-[#0A1120] min-w-[120px]"
+                style={{ borderColor: border }}>
+                <div className="flex items-center gap-1.5">
+                  <Icon className="w-3 h-3 shrink-0" style={{ color: k.color }} />
+                  <span className="text-[10px] font-semibold truncate" style={{ color: textMuted }}>{k.label}</span>
+                </div>
+                <strong className="text-xs font-black tabular-nums truncate" style={{ color: k.color }}>₱{k.value}</strong>
               </div>
             )
           })}
@@ -881,11 +1019,11 @@ export default function DailyAuditReport() {
         )
       })()}
 
-      {/* ── Audit Table (desktop) ──────────────────────────────────────────── */}
-      <div className="hidden md:block rounded-2xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+      {/* ── Audit Table (desktop) — borderless, no outer card wrapper ───────── */}
+      <div className="hidden md:flex flex-col">
 
-        {/* Table toolbar */}
-        <div className="px-5 py-3.5 flex items-center gap-2 flex-wrap" style={{ borderBottom: `1px solid ${border}` }}>
+        {/* Transparent title row — no longer a bordered "toolbar" box */}
+        <div className="px-4 py-2 flex items-center gap-2 flex-wrap">
           <BarChart2 className="w-4 h-4" style={{ color: '#10B981' }} />
           <h3 className="font-black text-sm" style={{ color: textPrimary }}>
             Daily Transaction Summary —{' '}
@@ -931,7 +1069,7 @@ export default function DailyAuditReport() {
               >
                 {/* ── Table Head ── */}
                 <thead>
-                  <tr style={{ backgroundColor: inputBg, borderBottom: `1px solid ${border}` }}>
+                  <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#060B18' }}>
                     {columns.map(col => {
                       const sorted = sortConfig?.key === col.key
                       return (
@@ -949,8 +1087,8 @@ export default function DailyAuditReport() {
                             top: 0,
                             left: col.key === 'branch' ? 0 : undefined,
                             zIndex: col.key === 'branch' ? 25 : 20,
-                            backgroundColor: inputBg,
-                            borderRight: `1px solid ${border}`,
+                            backgroundColor: isLight ? '#f8fafc' : '#060B18',
+                            borderBottom: `2px solid ${isLight ? '#e2e8f0' : '#1e293b'}`,
                           }}
                         >
                           <div className="flex items-center gap-0.5">
@@ -999,20 +1137,7 @@ export default function DailyAuditReport() {
                           : 'transparent',
                         cursor: 'pointer'
                       }}
-                      className="transition-colors group"
-                      onMouseEnter={e => {
-                        e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => {
-                          td.style.backgroundColor = rowHover
-                        })
-                      }}
-                      onMouseLeave={e => {
-                        const isSel = selectedRow && `${selectedRow.branchId}:${selectedRow.auditLine || ''}` === `${row.branchId}:${row.auditLine || ''}`
-                        e.currentTarget.querySelectorAll('td').forEach((td: HTMLTableCellElement) => {
-                          td.style.backgroundColor = td.classList.contains('sticky')
-                            ? (isSel ? (isLight ? '#E0F2FE' : '#1E293B') : cardBg)
-                            : (isSel ? (isLight ? '#E0F2FE' : '#1E293B') : 'transparent')
-                        })
-                      }}
+                      className="transition-colors group hover:bg-slate-50 dark:hover:bg-[#0F1A2E]"
                     >
                       {/* ① Branch (with combined status & time upload inline) */}
                       <td className="font-semibold sticky left-0"
@@ -1023,7 +1148,6 @@ export default function DailyAuditReport() {
                             : cardBg,
                           padding: p,
                           whiteSpace: 'nowrap',
-                          borderRight: `1px solid ${border}`,
                           transition: 'background-color 0.15s ease-in-out'
                         }}>
                           <div className="flex flex-col">
@@ -1056,15 +1180,15 @@ export default function DailyAuditReport() {
                       </td>
 
                       {/* ④ Gross Sales */}
-                      <td className="font-semibold text-sm tabular-nums" style={{ color: textPrimary, padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }}>{peso(row.grossSales)}</td>
+                      <td className="font-semibold text-sm tabular-nums" style={{ color: textPrimary, padding: p, whiteSpace: 'nowrap' }}>{peso(row.grossSales)}</td>
 
                       {/* ⑤ Target Quota */}
-                      <td className="font-semibold text-sm tabular-nums" style={{ color: textMuted, padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }} >
+                      <td className="font-semibold text-sm tabular-nums" style={{ color: textMuted, padding: p, whiteSpace: 'nowrap' }} >
                         <>{peso(row.targetDailyQuota)}</>
                       </td>
 
                       {/* ⑥ Difference & Remarks */}
-                      <td style={{ padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }}>
+                      <td style={{ padding: p, whiteSpace: 'nowrap' }}>
                         <div className="flex flex-col gap-0.5">
                           <span style={{
                             display: 'inline-block',
@@ -1089,20 +1213,20 @@ export default function DailyAuditReport() {
                       </td>
 
                       {/* ⑪ Total COH/CFD */}
-                      <td className="font-semibold text-sm tabular-nums" style={{ color: textPrimary, padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }}>{peso(row.totalCohCfd)}</td>
+                      <td className="font-semibold text-sm tabular-nums" style={{ color: textPrimary, padding: p, whiteSpace: 'nowrap' }}>{peso(row.totalCohCfd)}</td>
 
                       {/* ⑫ Cash Collection */}
-                      <td className="font-semibold text-sm tabular-nums" style={{ color: '#10B981', padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }} >
+                      <td className="font-semibold text-sm tabular-nums" style={{ color: '#10B981', padding: p, whiteSpace: 'nowrap' }} >
                         <>{peso(row.totalCashCollection)}</>
                       </td>
 
                       {/* ⑬ Online Collection */}
-                      <td className="font-semibold text-sm tabular-nums" style={{ color: '#3B82F6', padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }} >
+                      <td className="font-semibold text-sm tabular-nums" style={{ color: '#3B82F6', padding: p, whiteSpace: 'nowrap' }} >
                         <>{peso(row.totalOnlineCollection)}</>
                       </td>
 
                       {/* ⑭ Total Expenses — clickable drilldown */}
-                      <td className="font-semibold text-sm tabular-nums" style={{ padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }}>
+                      <td className="font-semibold text-sm tabular-nums" style={{ padding: p, whiteSpace: 'nowrap' }}>
                         <button
                           id={`expense-drilldown-${idx}`}
                           onClick={e => {
@@ -1119,12 +1243,12 @@ export default function DailyAuditReport() {
                       </td>
 
                       {/* ⑱ For Collection */}
-                      <td className="font-semibold text-sm tabular-nums" style={{ color: '#F59E0B', padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }} >
+                      <td className="font-semibold text-sm tabular-nums" style={{ color: '#F59E0B', padding: p, whiteSpace: 'nowrap' }} >
                         <>{peso(row.forCollection)}</>
                       </td>
 
                       {/* ⑲ Rebates */}
-                      <td className="font-medium text-sm tabular-nums" style={{ color: textMuted, padding: p, whiteSpace: 'nowrap', borderRight: `1px solid ${border}` }}>
+                      <td className="font-medium text-sm tabular-nums" style={{ color: textMuted, padding: p, whiteSpace: 'nowrap' }}>
                         <>{peso(row.rebatesForCollection)}</>
                       </td>
 
@@ -1144,33 +1268,33 @@ export default function DailyAuditReport() {
                     Total
                   </td>
                   {/* Gross Sales */}
-                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px', borderRight: `1px solid ${border}` }}>
+                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px' }}>
                     {peso(totals.grossSales)}
                   </td>
                   {/* Target Quota */}
-                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px', borderRight: `1px solid ${border}` }}>
+                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px' }}>
                     {peso(totals.targetDailyQuota)}
                   </td>
                   {/* Difference + Remarks + CFD */}
                   <td colSpan={2} />
                   {/* Cash Collection */}
-                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px', borderRight: `1px solid ${border}` }}>
+                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px' }}>
                     {peso(totals.totalCashCollection)}
                   </td>
                   {/* Online Collection */}
-                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px', borderRight: `1px solid ${border}` }}>
+                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px' }}>
                     {peso(totals.totalOnlineCollection)}
                   </td>
                   {/* Total Expenses */}
-                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px', borderRight: `1px solid ${border}` }}>
+                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px' }}>
                     {peso(totals.totalExpenses)}
                   </td>
                   {/* For Collection */}
-                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px', borderRight: `1px solid ${border}` }}>
+                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px' }}>
                     {peso(totals.forCollection)}
                   </td>
                   {/* Rebates */}
-                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px', borderRight: `1px solid ${border}` }}>
+                  <td className="font-semibold whitespace-nowrap tabular-nums" style={{ color: textPrimary, fontSize: compactView ? 11 : 12, padding: compactView ? '6px 10px' : '9px 16px' }}>
                     {peso(totals.rebatesForCollection)}
                   </td>
 
@@ -1212,8 +1336,8 @@ export default function DailyAuditReport() {
         </div>
       )}
 
-      {/* ── Mobile branch cards ────────────────────────────────────────────── */}
-      <div className="md:hidden flex flex-col gap-3 no-print">
+      {/* ── Mobile branch DTR cards ──────────────────────────────────────────── */}
+      <div className="md:hidden flex flex-col gap-3 px-3 pb-6 no-print">
         {loading ? (
           <div className="flex flex-col gap-2">
             {[1, 2, 3, 4].map(i => (
@@ -1237,40 +1361,50 @@ export default function DailyAuditReport() {
             const diffColor = noRecord ? textMuted : isAbove ? '#10B981' : '#EF4444'
 
             return (
-              <div key={idx} className="relative rounded-xl overflow-hidden"
-                style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-                <button type="button" className="w-full text-left px-4 py-3"
+              <div key={idx} className="relative bg-white dark:bg-[#0A1120] rounded-xl border p-3 flex flex-col gap-2"
+                style={{ borderColor: border }}>
+                <button type="button" className="w-full text-left flex flex-col gap-2"
                   onClick={() => {
                     setSelectedRow(row)
                     setRowExpenses(null)
                     fetchRowExpenses(row)
                   }}>
-                  <div className="flex items-start gap-3">
-                    <span className="text-xs font-medium tabular-nums shrink-0 pt-0.5" style={{ color: textMuted }}>{idx + 1}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-semibold truncate" style={{ color: textPrimary }}>{formatBranchName(row.branchName)}</span>
-                        <ChevronRight className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
-                      </div>
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        <span className="mobile-status-dot" style={{ backgroundColor: statusColor }} />
-                        <span className="text-xs font-medium" style={{ color: statusColor }}>
-                          {isPending ? 'Pending' : noTransaction ? 'No transaction' : 'Checked'}
-                        </span>
-                        {!noRecord && (row.createdAt || row.timeUploaded) && (
-                          <span className="text-xs" style={{ color: textMuted }}>{formatLocalTime(row.createdAt, row.timeUploaded)}</span>
-                        )}
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase"
-                          style={remarksBadgeStyle(row.remarks, noRecord, isAbove)}>
-                          {formatRemarksLabel(row.remarks, false)}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-3 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${border}` }}>
-                        {renderMobileMetric('Sales', `₱${peso(row.grossSales)}`, '#3B82F6')}
-                        {renderMobileMetric('Quota', `₱${peso(row.targetDailyQuota)}`, textMuted)}
-                        {renderMobileMetric('Diff', noRecord ? '—' : `${isAbove ? '+' : ''}₱${peso(row.difference)}`, diffColor)}
-                      </div>
+                  {/* Card Row 1: index, branch name, chevron */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-xs font-medium tabular-nums shrink-0" style={{ color: textMuted }}>{idx + 1}</span>
+                      <span className="text-sm font-semibold truncate" style={{ color: textPrimary }}>{formatBranchName(row.branchName)}</span>
                     </div>
+                    <ChevronRight className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
+                  </div>
+
+                  {/* Card Row 2: status dot + status text + remarks badge */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="mobile-status-dot" style={{ backgroundColor: statusColor }} />
+                    <span className="text-xs font-medium" style={{ color: statusColor }}>
+                      {isPending ? 'Pending' : noTransaction ? 'No transaction' : 'Checked'}
+                    </span>
+                    {!noRecord && (row.createdAt || row.timeUploaded) && (
+                      <span className="text-xs" style={{ color: textMuted }}>{formatLocalTime(row.createdAt, row.timeUploaded)}</span>
+                    )}
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase"
+                      style={remarksBadgeStyle(row.remarks, noRecord, isAbove)}>
+                      {formatRemarksLabel(row.remarks, false)}
+                    </span>
+                  </div>
+
+                  {/* Card Row 3: Sales / Quota / Diff */}
+                  <div className="grid grid-cols-3 pt-2 mt-1 border-t" style={{ borderColor: border }}>
+                    {[
+                      { label: 'Sales', value: `₱${peso(row.grossSales)}`, color: '#3B82F6' },
+                      { label: 'Quota', value: `₱${peso(row.targetDailyQuota)}`, color: textMuted },
+                      { label: 'Diff', value: noRecord ? '—' : `${isAbove ? '+' : ''}₱${peso(row.difference)}`, color: diffColor },
+                    ].map(m => (
+                      <div key={m.label} className="flex flex-col gap-0.5 min-w-0">
+                        <span className="text-[10px] font-medium truncate" style={{ color: textMuted }}>{m.label}</span>
+                        <span className="text-xs font-bold tabular-nums truncate" style={{ color: m.color }}>{m.value}</span>
+                      </div>
+                    ))}
                   </div>
                 </button>
 
