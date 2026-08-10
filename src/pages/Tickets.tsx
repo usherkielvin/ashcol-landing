@@ -5517,7 +5517,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             e.preventDefault()
             e.stopPropagation()
           }}
-          className="w-full h-full min-h-[28px] px-3 py-2 rounded-md text-xs font-semibold transition-all hover:opacity-80 cursor-pointer flex items-center justify-center text-center"
+          className="w-full max-w-full h-full min-h-[28px] px-3 py-2 rounded-md text-xs font-semibold transition-all hover:opacity-80 cursor-pointer flex items-center justify-center text-center"
           style={{
             backgroundColor: hasRemarks 
               ? (isLight ? '#dcfce7' : 'rgba(34, 197, 94, 0.15)')
@@ -5531,7 +5531,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           }}
           title={hasRemarks ? `Click to view history: ${remarksText}` : 'Click to view history'}
         >
-          <span className="truncate">
+          <span className="block min-w-0 w-full truncate">
             {hasRemarks ? remarksText : 'View History'}
           </span>
         </button>
@@ -6849,7 +6849,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     );
                   })()}
                 </table>
-                </div>
                 {/* Mobile Card View — important fields only (no branch; header already shows it) */}
                 <div className="flex flex-col md:hidden px-4 py-4 gap-3 w-full">
                   {visible.length === 0 ? (
@@ -7130,6 +7129,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   })()}
                 </div>
               </div>
+            </div>
           )) : (
           /* Render Overview Search Panel */
           <div className="flex-1 flex flex-col min-h-0 w-full h-full overflow-hidden relative" style={{ backgroundColor: isLight ? '#f1f5f9' : '#060B18' }}>
@@ -8886,6 +8886,18 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           ticket={historyGraphModal.ticket}
           isOpen={historyGraphModal.isOpen}
           onClose={() => setHistoryGraphModal(null)}
+          onRemarkSubmitted={(ticketId, remark) => {
+            setTickets(currentTickets => currentTickets.map(currentTicket => (
+              currentTicket.id === ticketId
+                ? { ...currentTicket, remarksUpdate: remark, remarks: remark }
+                : currentTicket
+            )))
+            setHistoryGraphModal(currentModal => (
+              currentModal?.ticket.id === ticketId
+                ? { ...currentModal, ticket: { ...currentModal.ticket, remarksUpdate: remark, remarks: remark } }
+                : currentModal
+            ))
+          }}
         />
       )}
     </div>

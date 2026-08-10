@@ -363,8 +363,38 @@ function CustomSelect({
   )
 }
 
-// ── Component ────────────────────────────────────────────────────────────────
-
+const blankRow = (date: string, branchId?: string | null): Partial<ServiceRow> => ({
+  reportDate: date,
+  branchId: branchId ?? null,
+  customerName: '',
+  customerAddress: '',
+  customerPhone: '',
+  district: '',
+  serviceType: 'INSTALLATION',
+  statusCode: 'I',
+  commitTerms: '',
+  dealer: '',
+  unitBrandModel: '',
+  unitSerial: '',
+  quantity: 1,
+  technicianName: '',
+  negotiator: '',
+  scheduleTime: '',
+  scheduleStatus: '',
+  timeStarted: '',
+  timeEnded: '',
+  amountCharged: 0,
+  paymentStatus: 'CASH',
+  jobStatus: 'SCHEDULED',
+  remarks: '',
+  note: '',
+  controlNumber: '',
+  serviceColumn: '',
+  papers: '',
+  costing: '',
+  relayStatus: '',
+  fifteenQuestions: '',
+})
 
 export default function DailyServiceReport() {
   const { theme } = useTheme()
@@ -479,6 +509,19 @@ export default function DailyServiceReport() {
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null>(null)
 
 
+  const handleAddRow = () => {
+    if (!canEdit) return
+    let realBranchId = resolveScopedBranchId(
+      resolveArchivesBranchFilter(branchFilter, branches, user),
+    ) || null
+    if (!realBranchId) {
+      realBranchId = resolveScopedBranchId(branches[0]?.id) || null
+    }
+    const tempId = `temp-${Date.now()}`
+    const newRow = blankRow(todayLocal(), isBranchScoped ? (user?.branchId ?? null) : realBranchId) as ServiceRow
+    newRow.id = tempId
+    setRows(prev => [newRow, ...prev])
+  }
 
   // Escape hatch for the trailing "X" column on both the desktop table and
   // mobile cards. An unsaved blank row (id still `temp-...`, same convention
@@ -1790,6 +1833,20 @@ export default function DailyServiceReport() {
     if (!q) return filtered
     return filtered.filter(r => rowSearchBlob(r).includes(q))
   }, [rows, searchQuery, negoFilter])
+
+  // Build month options from current items (+ last 12 months always available)
+  const monthOptions = useMemo(() => {
+    const seen = new Set<string>()
+    rows.forEach(item => {
+      if (item.reportDate) seen.add(item.reportDate.slice(0, 7))
+    })
+    const now = new Date()
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      seen.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+    }
+    return Array.from(seen).sort((a, b) => b.localeCompare(a))
+  }, [rows])
 
   const monthLabel = (ym: string) => {
     const [y, m] = ym.split('-')
