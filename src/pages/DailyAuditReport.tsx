@@ -15,6 +15,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatDisplayUserLabel, formatBranchName, isSameBaseBranch, resolveScopedBranchId, isDtrMayEditOpenForView, isEmployeePortalRole, isPortalAdmin } from '../utils/api'
 import DTR_Form from './DTR_Form'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
+import { exportDtrReportToPdf } from '../utils/pdfExport'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -46,8 +47,10 @@ interface AuditRow {
   totalUnitsSurveyOnly?: number
   totalRescheduled?: number
   totalUnitsInstalledServiced: number
+  totalUnitsInstalled?: number
   totalUnitsServiced: number
   totalCancelled: number
+  totalUnitsCancelled?: number
   totalUnitsFreeInstall: number
   forCollection: number
   rebatesForCollection: number
@@ -234,6 +237,39 @@ export default function DailyAuditReport() {
     onConfirm: () => void
   }
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null)
+
+  const [isExportingPdf, setIsExportingPdf] = useState(false)
+
+  const handleExportPdf = async () => {
+    if (isExportingPdf || !selectedRow) return
+    setIsExportingPdf(true)
+    try {
+      const reportDateDisplay = viewMode === 'single'
+        ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
+        : `${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })} – ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}`
+
+      const submittedByStr = rowExpenses?.receivedBy
+        ? formatDisplayUserLabel(rowExpenses.receivedBy)
+        : selectedRow.timeUploaded || undefined
+
+      const updatedByStr = rowExpenses?.updatedBy
+        ? formatDisplayUserLabel(rowExpenses.updatedBy)
+        : undefined
+
+      await exportDtrReportToPdf('dtr-report-modal-content', {
+        branchName: formatBranchName(selectedRow.branchName),
+        dateDisplay: reportDateDisplay,
+        submittedBy: submittedByStr,
+        updatedBy: updatedByStr,
+        updatedAt: rowExpenses?.updatedAt ? formatDateTime(rowExpenses.updatedAt) : undefined,
+        status: selectedRow.remarks === 'PENDING' ? 'PENDING' : selectedRow.status,
+      }, 'DTR_Report')
+    } catch (err) {
+      console.error('PDF Export Error:', err)
+    } finally {
+      setIsExportingPdf(false)
+    }
+  }
 
   const openDatePicker = (input: HTMLInputElement | null) => {
     if (!input) return
@@ -1685,62 +1721,104 @@ export default function DailyAuditReport() {
       `}</style>
 
       {/* ── Row Details Modal ───────────────────────────────────────── */}
-      {selectedRow && (
+      {selectedRow && ReactDOM.createPortal(
         <div
-          className="fixed inset-0 z-[9999] flex items-start justify-center p-4 pt-8 sm:pt-12 cursor-pointer backdrop-blur-sm"
-          style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', cursor: 'pointer' }}
-          onClick={() => setSelectedRow(null)}
+          className="fixed inset-0 left-0 md:left-[220px] lg:left-[240px] z-[9999] flex items-center justify-center p-2 sm:p-3 backdrop-blur-md safe-area-top safe-area-bottom"
+          style={{ backgroundColor: 'rgba(15,23,42,0.65)', backdropFilter: 'blur(6px)' }}
         >
           <div
-            className="rounded-2xl overflow-hidden shadow-2xl w-full max-w-6xl flex flex-col cursor-default"
-            style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh', cursor: 'default' }}
+            className="rounded-2xl overflow-hidden shadow-2xl w-full max-w-6xl xl:max-w-7xl h-[96vh] flex flex-col animate-in fade-in zoom-in-95 duration-150"
+            style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '96vh' }}
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-6 py-4" style={{ borderBottom: `1px solid ${border}` }}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-6 py-4 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
               <div className="flex items-start justify-between w-full sm:w-auto">
                 <div>
                   <h4 className="font-black text-base" style={{ color: textPrimary }}>{formatBranchName(selectedRow.branchName)}</h4>
-                  <p className="text-[11px] mt-0.5" style={{ color: textMuted }}>
-                    {viewMode === 'single'
-                      ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-                      : `${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} – ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs">
+                    <span className="text-[11px]" style={{ color: textMuted }}>
+                      {viewMode === 'single'
+                        ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+                        : `${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} – ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
+                    </span>
+                    <span className="text-slate-300 dark:text-slate-700">•</span>
+                    <span className="flex items-center gap-1.5 font-bold">
+                      <span style={{
+                        display: 'inline-block', width: '7px', height: '7px', borderRadius: '50%',
+                        backgroundColor: selectedRow.remarks === 'PENDING' ? '#F59E0B'
+                          : (selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT' || selectedRow.status === 'NO SCHED' ? '#EF4444' : '#10B981')
+                      }} />
+                      <span style={{ color: selectedRow.remarks === 'PENDING' ? '#F59E0B' : (selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT' || selectedRow.status === 'NO SCHED' ? '#EF4444' : '#10B981') }}>
+                        {selectedRow.remarks === 'PENDING' ? 'PENDING'
+                          : isNoTransactionRemarks(selectedRow.remarks) || selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT'
+                            ? 'NO TRANSACTION' : selectedRow.status}
+                      </span>
+                    </span>
+                    {rowExpenses?.createdAt ? (
+                      <span style={{ color: textMuted }}>
+                        Submitted: <span style={{ color: textPrimary, fontWeight: 600 }}>{formatDateTime(rowExpenses.createdAt)}</span>
+                        {rowExpenses.receivedBy && <> by <span style={{ color: textPrimary, fontWeight: 600 }}><EmployeeNameLink nameOrId={formatDisplayUserLabel(rowExpenses.receivedBy)} /></span></>}
+                      </span>
+                    ) : (
+                      <>
+                        {selectedRow.timeUploaded && (
+                          <span style={{ color: textMuted }}>Time: <span style={{ color: textPrimary, fontWeight: 600 }}>{selectedRow.timeUploaded}</span></span>
+                        )}
+                        {rowExpenses?.receivedBy && (
+                          <span style={{ color: textMuted }}>Submitted by: <span style={{ color: textPrimary, fontWeight: 600 }}><EmployeeNameLink nameOrId={formatDisplayUserLabel(rowExpenses.receivedBy)} /></span></span>
+                        )}
+                      </>
+                    )}
+                    {rowExpenses?.updatedAt && rowExpenses.updatedAt !== rowExpenses.createdAt && (
+                      <span style={{ color: '#F59E0B' }}>
+                        Last Edited: <span style={{ fontWeight: 600 }}>{formatDateTime(rowExpenses.updatedAt)}</span>
+                        {rowExpenses.updatedBy && <> by <span style={{ fontWeight: 600 }}><EmployeeNameLink nameOrId={formatDisplayUserLabel(rowExpenses.updatedBy)} /></span></>}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <button onClick={() => setSelectedRow(null)}
                   className="sm:hidden p-1.5 rounded-lg transition-colors hover:bg-slate-500/10" style={{ color: textMuted }} aria-label="Close details dialog">
                   <X size={22} />
                 </button>
               </div>
-              <div className="flex items-center gap-2 w-full sm:w-auto justify-end sm:justify-start">
-                {isAdmin && selectedRow.id && showEditButton && (
-                  <button type="button" onClick={() => handleClearRow(selectedRow)}
-                    className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors text-center"
-                    style={{ border: 'none' }}>
-                    Clear Report
-                  </button>
-                )}
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end sm:justify-start flex-wrap sm:flex-nowrap">
+                <button
+                  type="button"
+                  onClick={handleExportPdf}
+                  disabled={isExportingPdf}
+                  className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition-all flex items-center justify-center gap-1.5 shadow-sm border-none disabled:opacity-50"
+                >
+                  {isExportingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                  Export PDF
+                </button>
+
                 {showEditButton && (
                   <a
                     href={selectedRow.id
                       ? `/audit-report?tab=submit&id=${selectedRow.id}`
                       : `/audit-report?tab=submit&branchId=${selectedRow.branchId}&date=${date}&auditLine=${selectedRow.auditLine || ''}`
                     }
-                    className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity text-center flex items-center justify-center"
-                    style={{ color: '#fff', backgroundColor: '#10B981', border: 'none' }}
+                    className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 transition-all flex items-center justify-center gap-1.5 shadow-sm border-none"
                   >
+                    <FileEdit className="w-3.5 h-3.5" />
                     {selectedRow.id ? 'Edit Report' : 'Create Report'}
                   </a>
                 )}
-                <button onClick={() => setSelectedRow(null)}
-                  className="hidden sm:block p-1.5 rounded-lg transition-colors hover:bg-slate-500/10" style={{ color: textMuted }} aria-label="Close details dialog">
-                  <X size={22} />
+
+                <button
+                  onClick={() => setSelectedRow(null)}
+                  className="hidden sm:flex items-center justify-center p-2 rounded-xl transition-colors hover:bg-slate-500/10 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  aria-label="Close details dialog"
+                >
+                  <X size={20} />
                 </button>
               </div>
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto">
+            <div id="dtr-report-modal-content" className="flex-1 overflow-y-auto">
               {(() => {
                 const items = rowExpenses?.items || []
                 
@@ -1768,28 +1846,37 @@ export default function DailyAuditReport() {
                 const incentiveItems = items.filter(it => it.type === 'INCENTIVE')
                 const totalIncentives = incentiveItems.reduce((sum, it) => sum + (it.amount || 0), 0)
 
-                const renderItemTable = (title: string, itemsList: any[], columns: { label: string; render: (item: any) => React.ReactNode; align?: 'left' | 'right' | 'center' }[], customTotal?: number) => {
+                const formatHpDisplay = (raw?: any) => {
+                  if (!raw || raw === '—') return '—'
+                  const s = String(raw).trim()
+                  if (!s) return '—'
+                  if (/hp$/i.test(s)) return s.toUpperCase()
+                  return `${s}HP`
+                }
+
+                const renderItemTable = (title: string, itemsList: any[], columns: { label: string; render: (item: any) => React.ReactNode; align?: 'left' | 'right' | 'center' }[], customTotal?: number, noBorderBottom?: boolean) => {
                   if (itemsList.length === 0) return null
                   const sumValue = customTotal !== undefined ? customTotal : itemsList.reduce((acc, it) => acc + (it.amount || 0), 0)
                   const isExpenseType = title.includes('Expense') || title.includes('Purchase') || title.includes('Order')
                   
                   return (
-                    <div className="px-6 py-5 border-b" style={{ borderColor: border }}>
+                    <div className={`px-6 py-5 ${noBorderBottom ? '' : 'border-b'}`} style={{ borderColor: border }}>
                       <div className="flex items-center justify-between mb-4">
-                        <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>{title}</p>
+                        <p className={`text-xs font-extrabold uppercase tracking-wider ${isExpenseType ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                          {title}
+                        </p>
                         <div className="flex items-center gap-3">
-                          <span className="text-xs font-black tabular-nums" style={{ color: itemsList.length === 0 ? textMuted : isExpenseType ? '#EF4444' : '#10B981' }}>
+                          <span className="text-sm font-bold tabular-nums" style={{ color: isExpenseType ? '#EF4444' : '#10B981' }}>
                             ₱{peso(sumValue)}
                           </span>
-                          <span className="text-[10px] font-medium" style={{ color: textMuted }}>({itemsList.length} {itemsList.length === 1 ? 'item' : 'items'})</span>
                         </div>
                       </div>
                       <div className="overflow-x-auto rounded-xl border" style={{ borderColor: border }}>
                         <table className="w-full text-xs text-left border-collapse">
                           <thead>
-                            <tr className="bg-slate-50/50 dark:bg-slate-900/30 font-bold uppercase tracking-wider" style={{ borderBottom: `1px solid ${border}`, color: textMuted, fontSize: '9px' }}>
+                            <tr className="bg-slate-50/50 dark:bg-slate-900/30 text-[11px] font-bold uppercase tracking-wider" style={{ borderBottom: `1px solid ${border}`, color: textMuted }}>
                               {columns.map((col, idx) => (
-                                <th key={idx} className={`px-4 py-2.5 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
+                                <th key={idx} className={`px-4 py-3 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
                                   {col.label}
                                 </th>
                               ))}
@@ -1798,15 +1885,22 @@ export default function DailyAuditReport() {
                           <tbody>
                             {itemsList.length === 0 ? (
                               <tr>
-                                <td colSpan={columns.length} className="px-4 py-3 text-center text-[11px]" style={{ color: textMuted }}>
+                                <td colSpan={columns.length} className="px-4 py-3 text-center text-xs" style={{ color: textMuted }}>
                                   — No entries —
                                 </td>
                               </tr>
                             ) : itemsList.map((item, i) => (
                               <tr key={i} className="hover:bg-slate-50/20 dark:hover:bg-slate-900/20 transition-colors" style={{ borderBottom: i < itemsList.length - 1 ? `1px solid ${border}` : 'none' }}>
                                 {columns.map((col, idx) => (
-                                  <td key={idx} className={`px-4 py-2.5 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
-                                    {col.render(item)}
+                                  <td key={idx} className={`px-4 py-3 text-xs sm:text-sm ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
+                                    {idx === 0 ? (
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs font-normal tabular-nums shrink-0" style={{ color: textPrimary }}>{i + 1}.</span>
+                                        <span>{col.render(item)}</span>
+                                      </div>
+                                    ) : (
+                                      col.render(item)
+                                    )}
                                   </td>
                                 ))}
                               </tr>
@@ -1820,49 +1914,13 @@ export default function DailyAuditReport() {
 
                 return (
                   <>
-                    {/* Status strip */}
-                    <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 px-6 py-3 text-xs" style={{ borderBottom: `1px solid ${border}`, backgroundColor: inputBg }}>
-                      <span className="flex items-center gap-1.5 font-bold">
-                        <span style={{
-                          display: 'inline-block', width: '7px', height: '7px', borderRadius: '50%',
-                          backgroundColor: selectedRow.remarks === 'PENDING' ? '#F59E0B'
-                            : (selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT' || selectedRow.status === 'NO SCHED' ? '#EF4444' : '#10B981')
-                        }} />
-                        <span style={{ color: selectedRow.remarks === 'PENDING' ? '#F59E0B' : (selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT' || selectedRow.status === 'NO SCHED' ? '#EF4444' : '#10B981') }}>
-                          {selectedRow.remarks === 'PENDING' ? 'PENDING'
-                            : isNoTransactionRemarks(selectedRow.remarks) || selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT'
-                              ? 'NO TRANSACTION' : selectedRow.status}
-                        </span>
-                      </span>
-                      {rowExpenses?.createdAt ? (
-                        <span style={{ color: textMuted }}>
-                          Submitted: <span style={{ color: textPrimary, fontWeight: 600 }}>{formatDateTime(rowExpenses.createdAt)}</span>
-                          {rowExpenses.receivedBy && <> by <span style={{ color: textPrimary, fontWeight: 600 }}><EmployeeNameLink nameOrId={formatDisplayUserLabel(rowExpenses.receivedBy)} /></span></>}
-                        </span>
-                      ) : (
-                        <>
-                          {selectedRow.timeUploaded && (
-                            <span style={{ color: textMuted }}>Time: <span style={{ color: textPrimary, fontWeight: 600 }}>{selectedRow.timeUploaded}</span></span>
-                          )}
-                          {rowExpenses?.receivedBy && (
-                            <span style={{ color: textMuted }}>Submitted by: <span style={{ color: textPrimary, fontWeight: 600 }}><EmployeeNameLink nameOrId={formatDisplayUserLabel(rowExpenses.receivedBy)} /></span></span>
-                          )}
-                        </>
-                      )}
-                      {rowExpenses?.updatedAt && rowExpenses.updatedAt !== rowExpenses.createdAt && (
-                        <span style={{ color: '#F59E0B' }}>
-                          Last Edited: <span style={{ fontWeight: 600 }}>{formatDateTime(rowExpenses.updatedAt)}</span>
-                          {rowExpenses.updatedBy && <> by <span style={{ fontWeight: 600 }}><EmployeeNameLink nameOrId={formatDisplayUserLabel(rowExpenses.updatedBy)} /></span></>}
-                        </span>
-                      )}
-                    </div>
 
                     {/* Main metrics — 4 clean separated columns */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4" style={{ borderBottom: `1px solid ${border}` }}>
 
                       {/* 1. Sales & Target */}
                       <div className="px-5 py-5" style={{ borderRight: `1px solid ${border}` }}>
-                        <p className="text-[10px] font-black uppercase tracking-widest mb-3 text-blue-600 dark:text-blue-400">Sales &amp; Target</p>
+                        <p className="text-xs font-black uppercase tracking-wider mb-3.5 text-blue-600 dark:text-blue-400">Sales &amp; Target</p>
                         <div className="flex flex-col gap-2.5">
                           {[
                             { label: 'Gross Sales', value: `₱${peso(selectedRow.grossSales)}`, color: textPrimary, bold: true },
@@ -1872,8 +1930,8 @@ export default function DailyAuditReport() {
                             { label: 'Remarks', value: formatRemarksLabel(selectedRow.remarks, false), color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : selectedRow.remarks === 'PENDING' ? '#F59E0B' : isNoTransactionRemarks(selectedRow.remarks) ? textMuted : '#EF4444', bold: true },
                           ].map(r => (
                             <div key={r.label} className="flex items-center justify-between gap-2">
-                              <span className="text-xs font-medium" style={{ color: textMuted }}>{r.label}</span>
-                              <span className={`text-xs tabular-nums ${r.bold ? 'font-bold' : 'font-medium'}`} style={{ color: r.color }}>{r.value}</span>
+                              <span className="text-xs sm:text-sm font-medium" style={{ color: textMuted }}>{r.label}</span>
+                              <span className={`text-xs sm:text-sm tabular-nums ${r.bold ? 'font-bold' : 'font-semibold'}`} style={{ color: r.color }}>{r.value}</span>
                             </div>
                           ))}
                         </div>
@@ -1881,17 +1939,17 @@ export default function DailyAuditReport() {
 
                       {/* 2. Expenses & Deductions */}
                       <div className="px-5 py-5" style={{ borderRight: `1px solid ${border}` }}>
-                        <p className="text-[10px] font-black uppercase tracking-widest mb-3 text-rose-600 dark:text-rose-400">Expenses &amp; Payables</p>
+                        <p className="text-xs font-black uppercase tracking-wider mb-3.5 text-rose-600 dark:text-rose-400">Expenses &amp; Payables</p>
                         <div className="flex flex-col gap-2.5">
                           {[
-                            { label: 'Total Expenses', value: `₱${peso(selectedRow.totalExpenses)}`, color: '#EF4444', bold: true },
-                            { label: 'Total Payables', value: `₱${peso(selectedRow.totalPayables || 0)}`, color: '#D946EF', bold: true },
-                            { label: 'Total Purchases', value: `₱${peso(selectedRow.totalForPurchase || 0)}`, color: '#F59E0B', bold: false },
-                            { label: 'Incentives', value: `₱${peso(totalIncentives)}`, color: '#EF4444', bold: false },
+                            { label: 'Total Expenses', value: `₱${peso(selectedRow.totalExpenses)}`, bold: true },
+                            { label: 'Total Payables', value: `₱${peso(selectedRow.totalPayables || 0)}`, bold: true },
+                            { label: 'Total Purchases', value: `₱${peso(selectedRow.totalForPurchase || 0)}`, bold: false },
+                            { label: 'Incentives', value: `₱${peso(totalIncentives)}`, bold: false },
                           ].map(r => (
                             <div key={r.label} className="flex items-center justify-between gap-2">
-                              <span className="text-xs font-medium" style={{ color: textMuted }}>{r.label}</span>
-                              <span className={`text-xs tabular-nums ${r.bold ? 'font-bold' : 'font-medium'}`} style={{ color: r.color }}>{r.value}</span>
+                              <span className="text-xs sm:text-sm font-medium" style={{ color: textMuted }}>{r.label}</span>
+                              <span className={`text-xs sm:text-sm tabular-nums ${r.bold ? 'font-bold' : 'font-semibold'}`} style={{ color: textPrimary }}>{r.value}</span>
                             </div>
                           ))}
                         </div>
@@ -1899,7 +1957,7 @@ export default function DailyAuditReport() {
 
                       {/* 3. Cash Flow */}
                       <div className="px-5 py-5" style={{ borderRight: `1px solid ${border}` }}>
-                        <p className="text-[10px] font-black uppercase tracking-widest mb-3 text-emerald-600 dark:text-emerald-400">Cash Flow (COH/CFD)</p>
+                        <p className="text-xs font-black uppercase tracking-wider mb-3.5 text-emerald-600 dark:text-emerald-400">Cash Flow (COH/CFD)</p>
                         <div className="flex flex-col gap-2.5">
                           {[
                             { label: 'COH Prev Day', value: `₱${peso(selectedRow.cohPreviousDay)}`, bold: false },
@@ -1908,8 +1966,8 @@ export default function DailyAuditReport() {
                             { label: 'Total COH/CFD', value: `₱${peso(selectedRow.totalCohCfd)}`, bold: true },
                           ].map(r => (
                             <div key={r.label} className="flex items-center justify-between gap-2">
-                              <span className="text-xs font-medium" style={{ color: textMuted }}>{r.label}</span>
-                              <span className={`text-xs tabular-nums ${r.bold ? 'font-bold' : 'font-medium'}`} style={{ color: textPrimary }}>{r.value}</span>
+                              <span className="text-xs sm:text-sm font-medium" style={{ color: textMuted }}>{r.label}</span>
+                              <span className={`text-xs sm:text-sm tabular-nums ${r.bold ? 'font-bold' : 'font-semibold'}`} style={{ color: textPrimary }}>{r.value}</span>
                             </div>
                           ))}
                         </div>
@@ -1917,55 +1975,24 @@ export default function DailyAuditReport() {
 
                       {/* 4. Collections */}
                       <div className="px-5 py-5">
-                        <p className="text-[10px] font-black uppercase tracking-widest mb-3 text-indigo-600 dark:text-indigo-400">Collections &amp; Rebates</p>
+                        <p className="text-xs font-black uppercase tracking-wider mb-3.5 text-indigo-600 dark:text-indigo-400">Collections &amp; Rebates</p>
                         <div className="flex flex-col gap-2.5">
                           {[
-                            { label: 'Cash Collection', value: `₱${peso(selectedRow.totalCashCollection)}`, color: '#10B981', bold: true },
-                            { label: 'Online Collection', value: `₱${peso(selectedRow.totalOnlineCollection)}`, color: '#3B82F6', bold: true },
-                            { label: 'For Collection', value: `₱${peso(selectedRow.forCollection)}`, color: '#F59E0B', bold: false },
-                            { label: 'Rebates', value: `₱${peso(selectedRow.rebatesForCollection)}`, color: '#10B981', bold: false },
+                            { label: 'Cash Collection', value: `₱${peso(selectedRow.totalCashCollection)}`, bold: true },
+                            { label: 'Online Collection', value: `₱${peso(selectedRow.totalOnlineCollection)}`, bold: true },
+                            { label: 'For Collection', value: `₱${peso(selectedRow.forCollection)}`, bold: false },
+                            { label: 'Rebates', value: `₱${peso(selectedRow.rebatesForCollection)}`, bold: false },
                           ].map(r => (
                             <div key={r.label} className="flex items-center justify-between gap-2">
-                              <span className="text-xs font-medium" style={{ color: textMuted }}>{r.label}</span>
-                              <span className={`text-xs tabular-nums ${r.bold ? 'font-bold' : 'font-medium'}`} style={{ color: r.color }}>{r.value}</span>
+                              <span className="text-xs sm:text-sm font-medium" style={{ color: textMuted }}>{r.label}</span>
+                              <span className={`text-xs sm:text-sm tabular-nums ${r.bold ? 'font-bold' : 'font-semibold'}`} style={{ color: textPrimary }}>{r.value}</span>
                             </div>
                           ))}
                         </div>
                       </div>
                     </div>
 
-                    {/* Rebate Summary stats grid */}
-                    <div className="px-6 py-5 flex flex-col gap-3" style={{ borderBottom: `1px solid ${border}` }}>
-                      <div className="flex items-center justify-between gap-3 pb-2 border-b" style={{ borderColor: border }}>
-                        <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: textPrimary }}>Rebate Summary</span>
-                        <span className="text-[11px] font-black tabular-nums" style={{ color: '#10B981' }}>₱{peso(selectedRow.rebatesForCollection)}</span>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2">
-                        {[
-                          { label: 'Total', value: `₱${peso(selectedRow.rebatesForCollection)}`, color: '#10B981' },
-                          { label: 'Scheduled', value: String(selectedRow.totalUnitsScheduled || 0), color: textPrimary },
-                          { label: 'Rescheduled', value: String(selectedRow.totalRescheduled || 0), color: textPrimary },
-
-                          { label: 'Survey Only', value: String(selectedRow.totalUnitsSurveyOnly || 0), color: textPrimary },
-                        ].map((item) => (
-                          <div key={item.label} className="rounded-lg px-3 py-2" style={{ border: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
-                            <div className="text-[9px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>{item.label}</div>
-                            <div className="mt-0.5 text-xs font-black tabular-nums" style={{ color: item.color }}>{item.value}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Incentives Summary stats grid */}
-                    {totalIncentives > 0 && (
-                      <div className="px-6 py-5 flex flex-col gap-3" style={{ borderBottom: `1px solid ${border}` }}>
-                        <div className="flex items-center justify-between gap-3 pb-2 border-b" style={{ borderColor: border }}>
-                          <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: textPrimary }}>Incentives Summary</span>
-                          <span className="text-[11px] font-black tabular-nums" style={{ color: '#EF4444' }}>₱{peso(totalIncentives)}</span>
-                        </div>
-                      </div>
-                    )}
+                    {/* Detailed Lists */}
 
                     {/* Detailed Lists */}
                     {rowExpensesLoading ? (
@@ -1975,144 +2002,149 @@ export default function DailyAuditReport() {
                       </div>
                     ) : (
                       <>
-                        {/* Cash Transactions */}
-                        {renderItemTable('Cash Transactions', cashTxItems, [
-                          { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
-                          { label: 'Installer', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description)}</span> },
-                          { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: '#10B981' }}>₱{peso(item.amount)}</span> }
-                        ])}
+                        {/* 2-Column Grid: Left (Cash Transactions + Check Remits) | Right (Online Transactions + Cash Returns) */}
+                        {(cashTxItems.length > 0 || onlineTxItems.length > 0 || cashRetItems.length > 0 || checkItems.length > 0) && (
+                          <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x border-b" style={{ borderColor: border }}>
+                            {/* Left Column: Cash Transactions & Check Remits */}
+                            <div className="flex flex-col divide-y" style={{ borderColor: border }}>
+                              {renderItemTable('Cash Transactions', cashTxItems, [
+                                { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
+                                { label: 'Installer', render: (item) => <span style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description)}</span> },
+                                { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
+                              ], undefined, true)}
+                              {renderItemTable('Check Remits', checkItems, [
+                                { label: 'Installer', render: (item) => <span style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description.replace('CHECK|', ''))}</span> },
+                                { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
+                                { label: 'Bank', render: (item) => <span style={{ color: textPrimary }}>{item.bank || '—'}</span> },
+                                { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
+                              ], undefined, true)}
+                            </div>
 
-                        {/* Online Transactions */}
-                        {renderItemTable('Online Transactions', onlineTxItems, [
-                          { label: 'Installer', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description)}</span> },
-                          { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
-                          { label: 'Bank', render: (item) => <span style={{ color: textPrimary }}>{item.bank || '—'}</span> },
-                          { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: '#3B82F6' }}>₱{peso(item.amount)}</span> }
-                        ])}
-
-                        {/* Check Remits */}
-                        {renderItemTable('Check Remits', checkItems, [
-                          { label: 'Installer', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description.replace('CHECK|', ''))}</span> },
-                          { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
-                          { label: 'Bank', render: (item) => <span style={{ color: textPrimary }}>{item.bank || '—'}</span> },
-                          { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: '#3B82F6' }}>₱{peso(item.amount)}</span> }
-                        ])}
-
-                        {/* Cash Returns */}
-                        {renderItemTable('Cash Returns', cashRetItems, [
-                          { label: 'Returned By (Installer/Technician/Driver)', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description.replace('RETURN|', ''))}</span> },
-                          { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: '#10B981' }}>₱{peso(item.amount)}</span> }
-                        ])}
+                            {/* Right Column: Vertical stack of Online Transactions and Cash Returns */}
+                            <div className="flex flex-col">
+                              {renderItemTable('Online Transactions', onlineTxItems, [
+                                { label: 'Installer', render: (item) => <span style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description)}</span> },
+                                { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
+                                { label: 'Bank', render: (item) => <span style={{ color: textPrimary }}>{item.bank || '—'}</span> },
+                                { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
+                              ], undefined, true)}
+                              {renderItemTable('Cash Returns', cashRetItems, [
+                                { label: 'Returned By (Installer/Technician/Driver)', render: (item) => <span style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description.replace('RETURN|', ''))}</span> },
+                                { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
+                              ], undefined, true)}
+                            </div>
+                          </div>
+                        )}
 
                         {/* Parts Sales / Unit Sales */}
                         {renderItemTable('Parts Sales / Unit Sales', partsSaleItems, [
-                          { label: 'Customer', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
+                          { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
                           { label: 'Description', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[2] || '—'}</span> },
-                          { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
+                          { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
                         ])}
 
-                        {/* Expenses with Receipts */}
-                        {renderItemTable('Expenses with Receipts', expenseItems, [
-                          { label: 'Name', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description.split('|')[0] ? formatDisplayUserLabel(item.description.split('|')[0]) : '—'}</span> },
-                          { label: 'Description', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
-                          {
-                            label: 'Receipt',
-                            render: (item) => (
-                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
-                                backgroundColor: item.receiptReturned ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)',
-                                color: item.receiptReturned ? '#10B981' : '#EF4444'
-                              }}>
-                                {item.receiptReturned ? 'UPLOADED' : 'PENDING'}
-                              </span>
-                            )
-                          },
-                          { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: '#EF4444' }}>₱{peso(item.amount)}</span> }
-                        ])}
-
-                        {/* Expenses for Purchase */}
-                        {renderItemTable('Expenses for Purchase', purchaseItems, [
-                          { label: 'Name', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description.split('|')[0] ? formatDisplayUserLabel(item.description.split('|')[0]) : '—'}</span> },
-                          { label: 'Description', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
-                          {
-                            label: 'Receipt',
-                            render: (item) => (
-                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
-                                backgroundColor: item.receiptReturned ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
-                                color: item.receiptReturned ? '#10B981' : '#F59E0B'
-                              }}>
-                                {item.receiptStatus || (item.receiptReturned ? 'UPLOADED' : 'PENDING')}
-                              </span>
-                            )
-                          },
-                          { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: '#F59E0B' }}>₱{peso(item.amount)}</span> }
-                        ])}
+                        {/* Expenses Grid: Expenses with Receipts (left) | Expenses for Purchase (right) */}
+                        {(expenseItems.length > 0 || purchaseItems.length > 0) && (
+                          <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x border-b" style={{ borderColor: border }}>
+                            <div>
+                              {renderItemTable('Expenses with Receipts', expenseItems, [
+                                { label: 'Name', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[0] ? formatDisplayUserLabel(item.description.split('|')[0]) : '—'}</span> },
+                                { label: 'Description', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
+                                { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
+                              ], undefined, true)}
+                            </div>
+                            <div>
+                              {renderItemTable('Expenses for Purchase', purchaseItems, [
+                                { label: 'Name', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[0] ? formatDisplayUserLabel(item.description.split('|')[0]) : '—'}</span> },
+                                { label: 'Description', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
+                                { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
+                              ], undefined, true)}
+                            </div>
+                          </div>
+                        )}
 
                         {/* Parts Order / Units Order */}
                         {renderItemTable('Parts Order / Units Order', orderItems, [
-                          { label: 'Customer', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
+                          { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
                           { label: 'Description', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[2] || '—'}</span> },
-                          { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: '#F59E0B' }}>₱{peso(item.amount)}</span> }
-                        ])}
-
-                        {/* Rebates Breakdown */}
-                        {renderItemTable('Rebates Breakdown', rebateItems, [
-                          { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
-                          { label: 'Company', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
-                          { label: 'Brand', render: (item) => <span style={{ color: textPrimary }}>{item.company || '—'}</span> },
-                          {
-                            label: 'HP',
-                            render: (item) => (
-                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-50/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
-                                {item.description.split('|')[2] || '—'}
-                              </span>
-                            )
-                          },
-                          { label: 'Rate', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> },
-                          { label: 'Unit', align: 'center', render: (item) => <span className="font-bold tabular-nums" style={{ color: textPrimary }}>{item.units || 1}</span> },
-                          { label: 'Total', align: 'right', render: (item) => <span className="font-black tabular-nums text-emerald-600 dark:text-emerald-400">₱{peso(item.amount * (item.units || 1))}</span> }
+                          { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
                         ])}
 
                         {/* For Collection Breakdown */}
                         {renderItemTable('For Collection Breakdown', forCollItems, [
-                          { label: 'Installer/Negotiator', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description)}</span> },
+                          { label: 'Installer/Negotiator', render: (item) => <span style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description)}</span> },
                           { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
-                          { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums text-amber-500">₱{peso(item.amount)}</span> },
+                          { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> },
                           {
                             label: 'Status',
                             align: 'center',
                             render: (item) => (
-                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
-                                backgroundColor: item.collectionResolved ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
-                                color: item.collectionResolved ? '#10B981' : '#F59E0B'
-                              }}>
+                              <span className="text-xs sm:text-sm font-normal uppercase" style={{ color: textPrimary }}>
                                 {item.collectionResolved ? 'RESOLVED' : 'PENDING'}
                               </span>
                             )
                           }
                         ])}
 
+                        {/* Rebates Breakdown */}
+                        {renderItemTable('Rebates Breakdown', rebateItems, [
+                          { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
+                          { label: 'Company', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
+                          { label: 'Brand', render: (item) => <span style={{ color: textPrimary }}>{item.company || '—'}</span> },
+                          {
+                            label: 'HP',
+                            render: (item) => (
+                              <span className="text-xs sm:text-sm font-normal" style={{ color: textPrimary }}>
+                                {formatHpDisplay(item.description.split('|')[2])}
+                              </span>
+                            )
+                          },
+                          { label: 'Rate', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
+                        ])}
+
+                        {/* Unit Summary stats grid */}
+                        <div className="px-6 py-5 flex flex-col gap-3" style={{ borderBottom: `1px solid ${border}` }}>
+                          <div className="flex items-center justify-between gap-3 pb-2 border-b" style={{ borderColor: border }}>
+                            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: textMuted }}>Unit Summary</span>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+                            {[
+                              { label: 'Scheduled', value: String(selectedRow.totalUnitsScheduled || 0) },
+                              { label: 'Rescheduled', value: String(selectedRow.totalRescheduled || 0) },
+                              { label: 'Installed', value: String(selectedRow.totalUnitsInstalled || 0) },
+                              { label: 'Serviced', value: String(selectedRow.totalUnitsServiced || 0) },
+                              { label: 'Cancelled', value: String(selectedRow.totalUnitsCancelled || 0) },
+                              { label: 'Free Install', value: String(selectedRow.totalUnitsFreeInstall || 0) },
+                              { label: 'Survey Only', value: String(selectedRow.totalUnitsSurveyOnly || 0) },
+                            ].map((item) => (
+                              <div key={item.label} className="rounded-lg px-3 py-2.5 flex flex-col justify-between" style={{ border: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
+                                <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{item.label}</div>
+                                <div className="mt-1 text-sm font-normal tabular-nums" style={{ color: textPrimary }}>{item.value}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
                         {/* Incentives Breakdown */}
                         {renderItemTable('Incentives Breakdown', incentiveItems, [
                           { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
                           { label: 'Brand', render: (item) => <span style={{ color: textPrimary }}>{item.company || '—'}</span> },
-                          { label: 'Promodiser', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.promodiser || item.description?.split('|')[1] || '—'}</span> },
+                          { label: 'Promodiser', render: (item) => <span style={{ color: textPrimary }}>{item.promodiser || item.description?.split('|')[1] || '—'}</span> },
                           {
                             label: 'HP',
                             render: (item) => (
-                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-50/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
-                                {item.hp || item.description?.split('|')[2] || '—'}
+                              <span className="text-xs sm:text-sm font-normal" style={{ color: textPrimary }}>
+                                {formatHpDisplay(item.hp || item.description?.split('|')[2])}
                               </span>
                             )
                           },
-                          { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums text-red-500">₱{peso(item.amount)}</span> },
+                          { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> },
                           {
                             label: 'Status',
                             align: 'center',
                             render: (item) => (
-                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
-                                backgroundColor: item.collectionResolved ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
-                                color: item.collectionResolved ? '#10B981' : '#F59E0B'
-                              }}>
+                              <span className="text-xs sm:text-sm font-normal uppercase" style={{ color: textPrimary }}>
                                 {item.collectionResolved ? 'RESOLVED' : 'PENDING'}
                               </span>
                             )
@@ -2128,9 +2160,21 @@ export default function DailyAuditReport() {
               {/* Footer */}
               <div className="px-6 py-4 border-t flex items-center justify-between shrink-0"
                 style={{ borderColor: border, backgroundColor: isLight ? 'rgba(248,250,252,0.8)' : 'rgba(6,11,24,0.5)' }}>
-                <span className="text-[11px]" style={{ color: textMuted }}>
-                  {user?.name && <>Viewing as <strong style={{ color: textPrimary }}>{user.name}</strong></>}
-                </span>
+                <div className="flex items-center gap-3">
+                  {isAdmin && selectedRow.id && showEditButton && (
+                    <button
+                      type="button"
+                      onClick={() => handleClearRow(selectedRow)}
+                      className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-500 hover:bg-rose-600 transition-all flex items-center gap-1.5 shadow-sm border-none active:scale-95"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Clear Report
+                    </button>
+                  )}
+                  <span className="text-[11px]" style={{ color: textMuted }}>
+                    {user?.name && <>Viewing as <strong style={{ color: textPrimary }}>{user.name}</strong></>}
+                  </span>
+                </div>
                 <button
                   type="button"
                   onClick={() => setSelectedRow(null)}
@@ -2142,7 +2186,8 @@ export default function DailyAuditReport() {
               </div>
 
             </div>
-          </div>
+          </div>,
+          document.body
       )}
 
       {/* ── Confirm Modal ── */}

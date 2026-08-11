@@ -804,3 +804,105 @@ export function deduplicateAndMergeRebates(existing: RebateRow[], incoming: Reba
 
   return [...nonEmpty, ...deduped]
 }
+
+// ── Unit Summary Counters Prefill ────────────────────────────────────────────
+
+export interface UnitSummaryCounts {
+  scheduledUnits: number
+  rescheduledUnits: number
+  installedUnits: number
+  servicedUnits: number
+  cancelledUnits: number
+  freeInstallUnits: number
+  surveyOnlyUnits: number
+}
+
+export type UnitSummaryPrefillResult =
+  | { ok: true; counts: UnitSummaryCounts }
+  | { ok: false; error: PrefillError }
+
+/**
+ * Compute Unit Summary category counts based on schedule ticket statuses & commit types.
+ */
+export function computeUnitSummaryFromTickets(tickets: Ticket[]): UnitSummaryCounts {
+  let scheduled = 0
+  let rescheduled = 0
+  let installed = 0
+  let serviced = 0
+  let cancelled = 0
+  let freeInstall = 0
+  let surveyOnly = 0
+
+  for (const t of tickets) {
+    const statusVal = getScheduleStatusValue(t)
+    const rawStatus = (t.status || '').toUpperCase()
+    const commitText = getTicketCommitDisplay(t).toUpperCase()
+    const serviceType = (t.serviceType || t.service_type || '').toUpperCase()
+
+    scheduled++
+
+    if (statusVal === 'RESCHED' || rawStatus === 'RESCHED' || rawStatus === 'RESCHEDULED') {
+      rescheduled++
+    } else if (statusVal === 'CANCELLED' || rawStatus === 'CANCELLED' || statusVal === 'DONE_CANCELLED') {
+      cancelled++
+    } else if (statusVal === 'DONE_SURVEY' || rawStatus === 'SURVEY' || serviceType === 'SURVEY') {
+      surveyOnly++
+    } else if (
+      statusVal === 'DONE_INSTALLED' ||
+      statusVal === 'DONE_INSTALLATION' ||
+      rawStatus === 'INSTALLED' ||
+      rawStatus === 'DONE_INSTALLED' ||
+      serviceType.includes('INSTALL') ||
+      statusVal === 'S/I'
+    ) {
+      installed++
+      if (commitText.includes('FREE')) {
+        freeInstall++
+      }
+    } else if (
+      statusVal === 'DONE_CLEANING' ||
+      statusVal === 'DONE_CHECKUP' ||
+      statusVal === 'DONE_SERVICES' ||
+      statusVal === 'DONE_SERVICE' ||
+      statusVal === 'DONE_REPAIR' ||
+      serviceType.includes('SERVICE') ||
+      serviceType.includes('CLEAN') ||
+      serviceType.includes('REPAIR')
+    ) {
+      serviced++
+      if (commitText.includes('FREE')) {
+        freeInstall++
+      }
+    } else if (commitText.includes('FREE')) {
+      freeInstall++
+    }
+  }
+
+  return {
+    scheduledUnits: scheduled,
+    rescheduledUnits: rescheduled,
+    installedUnits: installed,
+    servicedUnits: serviced,
+    cancelledUnits: cancelled,
+    freeInstallUnits: freeInstall,
+    surveyOnlyUnits: surveyOnly,
+  }
+}
+
+/**
+ * Fetch schedule tickets for the previous date and compute Unit Summary category counts.
+ */
+export async function fetchAndCountUnitSummary(options: PrefillOptions): Promise<UnitSummaryPrefillResult> {
+  try {
+    const scheduleDateKey = getPreviousDayKey(options.dateKey)
+    const tickets = await fetchScheduleTickets(options.branchId, scheduleDateKey, options.signal)
+    const counts = computeUnitSummaryFromTickets(tickets)
+    return { ok: true, counts }
+  } catch (err: any) {
+    if (err?.name === 'AbortError') return { ok: false, error: 'timeout' }
+    const msg = err?.message || ''
+    if (msg === 'auth_missing') return { ok: false, error: 'auth_missing' }
+    if (msg === 'http_error') return { ok: false, error: 'http_error' }
+    return { ok: false, error: 'network_error' }
+  }
+}

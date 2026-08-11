@@ -81,17 +81,15 @@ export default function ConfirmDialog({ dialog, onClose }: ConfirmDialogProps) {
     <div
       className="fixed inset-0 z-[12000] flex items-center justify-center p-4 safe-area-top safe-area-bottom"
       style={{ backgroundColor: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(6px)' }}
-      onClick={onClose}
     >
       <div
         className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150"
-        style={{ backgroundColor: cardBg, border: `1px solid ${styles.border}` }}
+        style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
       >
-        <div style={{ height: 3, background: styles.bar }} />
 
         <div className="px-5 py-4 flex items-start justify-between gap-3"
              style={{ borderBottom: `1px solid ${border}` }}>

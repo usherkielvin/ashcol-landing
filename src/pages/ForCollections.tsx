@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { 
   ClipboardList, Search, CheckCircle2, 
-  Loader2, Building2, Eye, X, ChevronDown, Pencil, Calendar
+  Loader2, Building2, Eye, X, ChevronDown, Pencil, Calendar, Download, FileEdit
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatDisplayUserLabel, formatBranchName, isPortalAdmin } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import CollectionMarkPaidModal from '../components/collections/CollectionMarkPaidModal'
+import { exportDtrReportToPdf } from '../utils/pdfExport'
 
 interface CollectionItem {
   id: string
@@ -247,6 +248,39 @@ export default function ForCollections() {
   const [initialLoading, setInitialLoading] = useState(true)
   const [fetching, setFetching] = useState(false)
   const hasFetchedOnce = useRef(false)
+
+  const [isExportingPdf, setIsExportingPdf] = useState(false)
+
+  const handleExportPdf = async () => {
+    if (isExportingPdf || !selectedRow) return
+    setIsExportingPdf(true)
+    try {
+      const reportDateDisplay = selectedRow.reportDate
+        ? new Date(selectedRow.reportDate + 'T00:00:00').toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
+        : '—'
+
+      const submittedByStr = selectedRow.receivedBy
+        ? formatDisplayUserLabel(selectedRow.receivedBy)
+        : undefined
+
+      const updatedByStr = selectedRow.collectionUpdatedBy
+        ? formatDisplayUserLabel(selectedRow.collectionUpdatedBy)
+        : undefined
+
+      await exportDtrReportToPdf('for-collections-modal-content', {
+        branchName: formatBranchName(selectedRow.branchName || 'BRANCH'),
+        dateDisplay: reportDateDisplay,
+        submittedBy: submittedByStr,
+        updatedBy: updatedByStr,
+        updatedAt: selectedRow.collectionUpdatedAt ? formatDateTime(selectedRow.collectionUpdatedAt) : undefined,
+        status: selectedRow.collectionResolved ? 'RESOLVED' : 'PENDING',
+      }, 'Collection_Report')
+    } catch (err) {
+      console.error('PDF Export Error:', err)
+    } finally {
+      setIsExportingPdf(false)
+    }
+  }
 
   // Filters
   const [rawSearch, setRawSearch] = useState('')
@@ -1045,28 +1079,37 @@ export default function ForCollections() {
         const cashReturns = cashRetItems.reduce((sum, it) => sum + (it.amount || 0), 0)
         const totalCohCfd = (rowExpenses?.cohPreviousDay || 0) + (rowExpenses?.fundFromHo || 0) + cashReturns + totalCashCollection
 
-        const renderItemTable = (title: string, itemsList: any[], columns: { label: string; render: (item: any) => React.ReactNode; align?: 'left' | 'right' | 'center' }[], customTotal?: number) => {
+        const formatHpDisplay = (raw?: any) => {
+          if (!raw || raw === '—') return '—'
+          const s = String(raw).trim()
+          if (!s) return '—'
+          if (/hp$/i.test(s)) return s.toUpperCase()
+          return `${s}HP`
+        }
+
+        const renderItemTable = (title: string, itemsList: any[], columns: { label: string; render: (item: any) => React.ReactNode; align?: 'left' | 'right' | 'center' }[], customTotal?: number, noBorderBottom?: boolean) => {
           if (itemsList.length === 0) return null
           const sumValue = customTotal !== undefined ? customTotal : itemsList.reduce((acc, it) => acc + (it.amount || 0), 0)
           const isExpenseType = title.includes('Expense') || title.includes('Purchase') || title.includes('Order')
           
           return (
-            <div className="px-6 py-5 border-b" style={{ borderColor: border }}>
+            <div className={`px-6 py-5 ${noBorderBottom ? '' : 'border-b'}`} style={{ borderColor: border }}>
               <div className="flex items-center justify-between mb-4">
-                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>{title}</p>
+                <p className={`text-xs font-extrabold uppercase tracking-wider ${isExpenseType ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                  {title}
+                </p>
                 <div className="flex items-center gap-3">
-                  <span className="text-xs font-black tabular-nums" style={{ color: itemsList.length === 0 ? textMuted : isExpenseType ? '#EF4444' : '#10B981' }}>
+                  <span className="text-sm font-bold tabular-nums" style={{ color: isExpenseType ? '#EF4444' : '#10B981' }}>
                     ₱{peso(sumValue)}
                   </span>
-                  <span className="text-[10px] font-medium" style={{ color: textMuted }}>({itemsList.length} {itemsList.length === 1 ? 'item' : 'items'})</span>
                 </div>
               </div>
               <div className="overflow-x-auto rounded-xl border" style={{ borderColor: border }}>
                 <table className="w-full text-xs text-left border-collapse">
                   <thead>
-                    <tr className="bg-slate-50/50 dark:bg-slate-900/30 font-bold uppercase tracking-wider" style={{ borderBottom: `1px solid ${border}`, color: textMuted, fontSize: '9px' }}>
+                    <tr className="bg-slate-50/50 dark:bg-slate-900/30 text-[11px] font-bold uppercase tracking-wider" style={{ borderBottom: `1px solid ${border}`, color: textMuted }}>
                       {columns.map((col, idx) => (
-                        <th key={idx} className={`px-4 py-2.5 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
+                        <th key={idx} className={`px-4 py-3 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
                           {col.label}
                         </th>
                       ))}
@@ -1076,8 +1119,15 @@ export default function ForCollections() {
                     {itemsList.map((item, i) => (
                       <tr key={i} className="hover:bg-slate-50/20 dark:hover:bg-slate-900/20 transition-colors" style={{ borderBottom: i < itemsList.length - 1 ? `1px solid ${border}` : 'none' }}>
                         {columns.map((col, idx) => (
-                          <td key={idx} className={`px-4 py-2.5 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
-                            {col.render(item)}
+                          <td key={idx} className={`px-4 py-3 text-xs sm:text-sm ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
+                            {idx === 0 ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-normal tabular-nums shrink-0" style={{ color: textPrimary }}>{i + 1}.</span>
+                                <span>{col.render(item)}</span>
+                              </div>
+                            ) : (
+                              col.render(item)
+                            )}
                           </td>
                         ))}
                       </tr>
@@ -1091,13 +1141,12 @@ export default function ForCollections() {
 
         return (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 cursor-pointer backdrop-blur-sm"
-            style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', cursor: 'pointer' }}
-            onClick={() => setSelectedRow(null)}
+            className="fixed inset-0 left-0 md:left-[220px] lg:left-[240px] z-[9999] flex items-center justify-center p-2 sm:p-3 backdrop-blur-md safe-area-top safe-area-bottom"
+            style={{ backgroundColor: 'rgba(15,23,42,0.65)', backdropFilter: 'blur(6px)' }}
           >
             <div
-              className="rounded-2xl overflow-hidden shadow-2xl w-full max-w-4xl flex flex-col cursor-default"
-              style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh', cursor: 'default' }}
+              className="rounded-2xl overflow-hidden shadow-2xl w-full max-w-6xl xl:max-w-7xl h-[96vh] flex flex-col animate-in fade-in zoom-in-95 duration-150"
+              style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '96vh' }}
               onClick={e => e.stopPropagation()}
             >
               {/* Header */}
@@ -1105,43 +1154,11 @@ export default function ForCollections() {
                 <div className="flex items-start justify-between w-full sm:w-auto">
                   <div>
                     <h4 className="font-black text-base" style={{ color: textPrimary }}>{selectedRow.branchName || 'DTR Report Details'}</h4>
-                    <p className="text-[11px] mt-0.5" style={{ color: textMuted }}>
-                      {selectedRow.reportDate ? new Date(selectedRow.reportDate + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : ''}
-                    </p>
-                  </div>
-                  <button onClick={() => setSelectedRow(null)}
-                    className="sm:hidden p-1.5 rounded-lg transition-colors hover:bg-slate-500/10" style={{ color: textMuted }} aria-label="Close details dialog">
-                    <X size={22} />
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto justify-end sm:justify-start">
-                  {canResolve && selectedRow.reportId && (
-                    <a
-                      href={`/audit-report?tab=submit&id=${selectedRow.reportId}`}
-                      className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity text-center flex items-center justify-center text-white bg-emerald-500"
-                      style={{ border: 'none' }}
-                    >
-                      Edit Report
-                    </a>
-                  )}
-                  <button onClick={() => setSelectedRow(null)}
-                    className="hidden sm:block p-1.5 rounded-lg transition-colors hover:bg-slate-500/10" style={{ color: textMuted }} aria-label="Close details dialog">
-                    <X size={22} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Content */}
-              <div className="flex-1 overflow-y-auto">
-                {rowExpensesLoading ? (
-                  <div className="px-6 py-10 flex flex-col gap-3 justify-center items-center">
-                    <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
-                    <span className="text-xs font-semibold text-slate-400">Loading transaction details...</span>
-                  </div>
-                ) : (
-                  <>
-                    {/* Status strip */}
-                    <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 px-6 py-3 text-xs" style={{ borderBottom: `1px solid ${border}`, backgroundColor: inputBg }}>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs">
+                      <span className="text-[11px]" style={{ color: textMuted }}>
+                        {selectedRow.reportDate ? new Date(selectedRow.reportDate + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : ''}
+                      </span>
+                      <span className="text-slate-300 dark:text-slate-700">•</span>
                       <span className="flex items-center gap-1.5 font-bold">
                         <span style={{
                           display: 'inline-block', width: '7px', height: '7px', borderRadius: '50%',
@@ -1164,13 +1181,59 @@ export default function ForCollections() {
                         </span>
                       )}
                     </div>
+                  </div>
+                  <button onClick={() => setSelectedRow(null)}
+                    className="sm:hidden p-1.5 rounded-lg transition-colors hover:bg-slate-500/10" style={{ color: textMuted }} aria-label="Close details dialog">
+                    <X size={22} />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end sm:justify-start flex-wrap sm:flex-nowrap">
+                  <button
+                    type="button"
+                    onClick={handleExportPdf}
+                    disabled={isExportingPdf}
+                    className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition-all flex items-center justify-center gap-1.5 shadow-sm border-none disabled:opacity-50"
+                  >
+                    {isExportingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                    Export PDF
+                  </button>
+
+                  {canResolve && selectedRow.reportId && (
+                    <a
+                      href={`/audit-report?tab=submit&id=${selectedRow.reportId}`}
+                      className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 transition-all flex items-center justify-center gap-1.5 shadow-sm border-none"
+                    >
+                      <FileEdit className="w-3.5 h-3.5" />
+                      Edit Report
+                    </a>
+                  )}
+
+                  <button
+                    onClick={() => setSelectedRow(null)}
+                    className="hidden sm:flex items-center justify-center p-2 rounded-xl transition-colors hover:bg-slate-500/10 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    aria-label="Close details dialog"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Content */}
+              <div id="for-collections-modal-content" className="flex-1 overflow-y-auto">
+                {rowExpensesLoading ? (
+                  <div className="px-6 py-10 flex flex-col gap-3 justify-center items-center">
+                    <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
+                    <span className="text-xs font-semibold text-slate-400">Loading transaction details...</span>
+                  </div>
+                ) : (
+                  <>
 
                     {/* Main metrics — 3 flat columns */}
                     <div className="grid grid-cols-1 md:grid-cols-3" style={{ borderBottom: `1px solid ${border}` }}>
 
                       {/* Sales Summary */}
                       <div className="px-6 py-5" style={{ borderRight: `1px solid ${border}` }}>
-                        <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: textMuted }}>Sales Summary</p>
+                        <p className="text-xs font-black uppercase tracking-wider mb-3.5 text-blue-600 dark:text-blue-400">Sales Summary</p>
                         <div className="flex flex-col gap-2.5">
                           {[
                             { label: 'Gross Sales', value: `₱${peso(rowExpenses?.grossSales)}`, color: textPrimary },
@@ -1179,8 +1242,8 @@ export default function ForCollections() {
                             { label: 'Remarks', value: formatRemarksLabel(rowExpenses?.remarks || '', false), color: rowExpenses?.remarks === 'ABOVE QUOTA' ? '#10B981' : rowExpenses?.remarks === 'PENDING' ? '#F59E0B' : '#EF4444' },
                           ].map(r => (
                             <div key={r.label} className="flex items-center justify-between gap-3">
-                              <span className="text-xs" style={{ color: textMuted }}>{r.label}</span>
-                              <span className="text-xs font-bold tabular-nums" style={{ color: r.color }}>{r.value}</span>
+                              <span className="text-xs sm:text-sm font-medium" style={{ color: textMuted }}>{r.label}</span>
+                              <span className="text-xs sm:text-sm font-bold tabular-nums" style={{ color: r.color }}>{r.value}</span>
                             </div>
                           ))}
                         </div>
@@ -1188,7 +1251,7 @@ export default function ForCollections() {
 
                       {/* Cash Flow */}
                       <div className="px-6 py-5" style={{ borderRight: `1px solid ${border}` }}>
-                        <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: textMuted }}>Cash Flow</p>
+                        <p className="text-xs font-black uppercase tracking-wider mb-3.5 text-emerald-600 dark:text-emerald-400">Cash Flow</p>
                         <div className="flex flex-col gap-2.5">
                           {[
                             { label: 'COH Prev Day', value: `₱${peso(rowExpenses?.cohPreviousDay)}`, bold: false },
@@ -1197,8 +1260,8 @@ export default function ForCollections() {
                             { label: 'Total COH/CFD', value: `₱${peso(totalCohCfd)}`, bold: true },
                           ].map(r => (
                             <div key={r.label} className="flex items-center justify-between gap-3">
-                              <span className="text-xs" style={{ color: textMuted }}>{r.label}</span>
-                              <span className={`text-xs tabular-nums ${r.bold ? 'font-black' : 'font-semibold'}`} style={{ color: textPrimary }}>{r.value}</span>
+                              <span className="text-xs sm:text-sm font-medium" style={{ color: textMuted }}>{r.label}</span>
+                              <span className={`text-xs sm:text-sm tabular-nums ${r.bold ? 'font-black' : 'font-semibold'}`} style={{ color: textPrimary }}>{r.value}</span>
                             </div>
                           ))}
                         </div>
@@ -1206,18 +1269,18 @@ export default function ForCollections() {
 
                       {/* Collections */}
                       <div className="px-6 py-5">
-                        <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: textMuted }}>Collections</p>
+                        <p className="text-xs font-black uppercase tracking-wider mb-3.5 text-indigo-600 dark:text-indigo-400">Collections</p>
                         <div className="flex flex-col gap-2.5">
                           {[
-                            { label: 'Cash Collection', value: `₱${peso(totalCashCollection)}`, color: '#10B981' },
-                            { label: 'Online Collection', value: `₱${peso(totalOnlineCollection)}`, color: '#3B82F6' },
-                            { label: 'For Collection', value: `₱${peso(rowExpenses?.forCollection)}`, color: '#F59E0B' },
-                            { label: 'Rebates', value: `₱${peso(rowExpenses?.rebatesForCollection)}`, color: textMuted },
-                            { label: 'Incentives', value: `₱${peso(totalIncentives)}`, color: '#EF4444' },
+                            { label: 'Cash Collection', value: `₱${peso(totalCashCollection)}` },
+                            { label: 'Online Collection', value: `₱${peso(totalOnlineCollection)}` },
+                            { label: 'For Collection', value: `₱${peso(rowExpenses?.forCollection)}` },
+                            { label: 'Rebates', value: `₱${peso(rowExpenses?.rebatesForCollection)}` },
+                            { label: 'Incentives', value: `₱${peso(totalIncentives)}` },
                           ].map(r => (
                             <div key={r.label} className="flex items-center justify-between gap-3">
-                              <span className="text-xs" style={{ color: textMuted }}>{r.label}</span>
-                              <span className="text-xs font-bold tabular-nums" style={{ color: r.color }}>{r.value}</span>
+                              <span className="text-xs sm:text-sm font-medium" style={{ color: textMuted }}>{r.label}</span>
+                              <span className="text-xs sm:text-sm font-bold tabular-nums" style={{ color: textPrimary }}>{r.value}</span>
                             </div>
                           ))}
                         </div>
@@ -1300,175 +1363,150 @@ export default function ForCollections() {
                       </div>
                     </div>
 
-                    {/* Rebate/Incentive Summary stats grid */}
-                    <div className="px-6 py-5 flex flex-col gap-3" style={{ borderBottom: `1px solid ${border}` }}>
-                      <div className="flex items-center justify-between gap-3 pb-2 border-b" style={{ borderColor: border }}>
-                        <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: textPrimary }}>
-                          {activeTab === 'incentives' ? 'Incentive Summary' : 'Rebate Summary'}
-                        </span>
-                        <span className="text-[11px] font-black tabular-nums" style={{ color: activeTab === 'incentives' ? '#EF4444' : '#10B981' }}>
-                          ₱{peso(activeTab === 'incentives' ? totalIncentives : rowExpenses?.rebatesForCollection)}
-                        </span>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2">
-                        {[
-                          { label: 'Total', value: `₱${peso(activeTab === 'incentives' ? totalIncentives : rowExpenses?.rebatesForCollection)}`, color: activeTab === 'incentives' ? '#EF4444' : '#10B981' },
-                          { label: 'Scheduled', value: String(rowExpenses?.totalUnitsScheduled || 0), color: textPrimary },
-                          { label: 'Rescheduled', value: String(rowExpenses?.totalRescheduled || 0), color: textPrimary },
-                          { label: 'Installed', value: String(rowExpenses?.totalUnitsInstalled || 0), color: textPrimary },
-                          { label: 'Serviced', value: String(rowExpenses?.totalUnitsServiced || 0), color: textPrimary },
-                          { label: 'Cancelled', value: String(rowExpenses?.totalUnitsCancelled || 0), color: textPrimary },
-                          { label: 'Free Install', value: String(rowExpenses?.totalUnitsFreeInstall || 0), color: textPrimary },
-                          { label: 'Survey Only', value: String(rowExpenses?.totalUnitsSurveyOnly || 0), color: textPrimary },
-                        ].map((item) => (
-                          <div key={item.label} className="rounded-lg px-3 py-2" style={{ border: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
-                            <div className="text-[9px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>{item.label}</div>
-                            <div className="mt-0.5 text-xs font-black tabular-nums" style={{ color: item.color }}>{item.value}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
                     {/* Detailed Lists */}
-                    {/* Cash Transactions */}
-                    {renderItemTable('Cash Transactions', cashTxItems, [
-                      { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
-                      { label: 'Installer', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description)}</span> },
-                      { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: '#10B981' }}>₱{peso(item.amount)}</span> }
-                    ])}
+                    {/* 2-Column Grid: Left (Cash Transactions + Check Remits) | Right (Online Transactions + Cash Returns) */}
+                    {(cashTxItems.length > 0 || onlineTxItems.length > 0 || cashRetItems.length > 0 || checkItems.length > 0) && (
+                      <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x border-b" style={{ borderColor: border }}>
+                        {/* Left Column: Cash Transactions & Check Remits */}
+                        <div className="flex flex-col divide-y" style={{ borderColor: border }}>
+                          {renderItemTable('Cash Transactions', cashTxItems, [
+                            { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
+                            { label: 'Installer', render: (item) => <span style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description)}</span> },
+                            { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
+                          ], undefined, true)}
+                          {renderItemTable('Check Remits', checkItems, [
+                            { label: 'Installer', render: (item) => <span style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description.replace('CHECK|', ''))}</span> },
+                            { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
+                            { label: 'Bank', render: (item) => <span style={{ color: textPrimary }}>{item.bank || '—'}</span> },
+                            { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
+                          ], undefined, true)}
+                        </div>
 
-                    {/* Online Transactions */}
-                    {renderItemTable('Online Transactions', onlineTxItems, [
-                      { label: 'Installer', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description)}</span> },
-                      { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
-                      { label: 'Bank', render: (item) => <span style={{ color: textPrimary }}>{item.bank || '—'}</span> },
-                      { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: '#3B82F6' }}>₱{peso(item.amount)}</span> }
-                    ])}
-
-                    {/* Check Remits */}
-                    {renderItemTable('Check Remits', checkItems, [
-                      { label: 'Installer', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description.replace('CHECK|', ''))}</span> },
-                      { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
-                      { label: 'Bank', render: (item) => <span style={{ color: textPrimary }}>{item.bank || '—'}</span> },
-                      { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: '#3B82F6' }}>₱{peso(item.amount)}</span> }
-                    ])}
-
-                    {/* Cash Returns */}
-                    {renderItemTable('Cash Returns', cashRetItems, [
-                      { label: 'Returned By (Installer/Technician/Driver)', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description.replace('RETURN|', ''))}</span> },
-                      { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: '#10B981' }}>₱{peso(item.amount)}</span> }
-                    ])}
+                        {/* Right Column: Vertical stack of Online Transactions and Cash Returns */}
+                        <div className="flex flex-col">
+                          {renderItemTable('Online Transactions', onlineTxItems, [
+                            { label: 'Installer', render: (item) => <span style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description)}</span> },
+                            { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
+                            { label: 'Bank', render: (item) => <span style={{ color: textPrimary }}>{item.bank || '—'}</span> },
+                            { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
+                          ], undefined, true)}
+                          {renderItemTable('Cash Returns', cashRetItems, [
+                            { label: 'Returned By (Installer/Technician/Driver)', render: (item) => <span style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description.replace('RETURN|', ''))}</span> },
+                            { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
+                          ], undefined, true)}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Parts Sales / Unit Sales */}
                     {renderItemTable('Parts Sales / Unit Sales', partsSaleItems, [
-                      { label: 'Customer', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
+                      { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
                       { label: 'Description', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[2] || '—'}</span> },
-                      { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
+                      { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
                     ])}
 
-                    {/* Expenses with Receipts */}
-                    {renderItemTable('Expenses with Receipts', expenseItems, [
-                      { label: 'Name', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description.split('|')[0] ? formatDisplayUserLabel(item.description.split('|')[0]) : '—'}</span> },
-                      { label: 'Description', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
-                      {
-                        label: 'Receipt',
-                        render: (item) => (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
-                            backgroundColor: item.receiptReturned ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)',
-                            color: item.receiptReturned ? '#10B981' : '#EF4444'
-                          }}>
-                            {item.receiptReturned ? 'UPLOADED' : 'PENDING'}
-                          </span>
-                        )
-                      },
-                      { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: '#EF4444' }}>₱{peso(item.amount)}</span> }
-                    ])}
-
-                    {/* Expenses for Purchase */}
-                    {renderItemTable('Expenses for Purchase', purchaseItems, [
-                      { label: 'Name', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description.split('|')[0] ? formatDisplayUserLabel(item.description.split('|')[0]) : '—'}</span> },
-                      { label: 'Description', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
-                      {
-                        label: 'Receipt',
-                        render: (item) => (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
-                            backgroundColor: item.receiptReturned ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
-                            color: item.receiptReturned ? '#10B981' : '#F59E0B'
-                          }}>
-                            {item.receiptStatus || (item.receiptReturned ? 'UPLOADED' : 'PENDING')}
-                          </span>
-                        )
-                      },
-                      { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: '#F59E0B' }}>₱{peso(item.amount)}</span> }
-                    ])}
+                    {/* Expenses Grid: Expenses with Receipts (left) | Expenses for Purchase (right) */}
+                    {(expenseItems.length > 0 || purchaseItems.length > 0) && (
+                      <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x border-b" style={{ borderColor: border }}>
+                        <div>
+                          {renderItemTable('Expenses with Receipts', expenseItems, [
+                            { label: 'Name', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[0] ? formatDisplayUserLabel(item.description.split('|')[0]) : '—'}</span> },
+                            { label: 'Description', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
+                            { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
+                          ], undefined, true)}
+                        </div>
+                        <div>
+                          {renderItemTable('Expenses for Purchase', purchaseItems, [
+                            { label: 'Name', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[0] ? formatDisplayUserLabel(item.description.split('|')[0]) : '—'}</span> },
+                            { label: 'Description', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
+                            { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
+                          ], undefined, true)}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Parts Order / Units Order */}
                     {renderItemTable('Parts Order / Units Order', orderItems, [
-                      { label: 'Customer', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
+                      { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
                       { label: 'Description', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[2] || '—'}</span> },
-                      { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums" style={{ color: '#F59E0B' }}>₱{peso(item.amount)}</span> }
-                    ])}
-
-                    {/* Rebates Breakdown */}
-                    {renderItemTable('Rebates Breakdown', rebateItems, [
-                      { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
-                      { label: 'Company', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
-                      { label: 'Brand', render: (item) => <span style={{ color: textPrimary }}>{item.company || '—'}</span> },
-                      {
-                        label: 'HP',
-                        render: (item) => (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-50/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
-                            {item.description.split('|')[2] || '—'}
-                          </span>
-                        )
-                      },
-                      { label: 'Rate', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> },
-                      { label: 'Unit', align: 'center', render: (item) => <span className="font-bold tabular-nums" style={{ color: textPrimary }}>{item.units || 1}</span> },
-                      { label: 'Total', align: 'right', render: (item) => <span className="font-black tabular-nums text-emerald-600 dark:text-emerald-400">₱{peso(item.amount * (item.units || 1))}</span> }
+                      { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
                     ])}
 
                     {/* For Collection Breakdown */}
                     {renderItemTable('For Collection Breakdown', forCollItems, [
-                      { label: 'Installer/Negotiator', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description)}</span> },
+                      { label: 'Installer/Negotiator', render: (item) => <span style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description)}</span> },
                       { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
-                      { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums text-amber-500">₱{peso(item.amount)}</span> },
+                      { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> },
                       {
                         label: 'Status',
                         align: 'center',
                         render: (item) => (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
-                            backgroundColor: item.collectionResolved ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
-                            color: item.collectionResolved ? '#10B981' : '#F59E0B'
-                          }}>
+                          <span className="text-xs sm:text-sm font-normal uppercase" style={{ color: textPrimary }}>
                             {item.collectionResolved ? 'RESOLVED' : 'PENDING'}
                           </span>
                         )
                       }
                     ])}
 
+                    {/* Rebates Breakdown */}
+                    {renderItemTable('Rebates Breakdown', rebateItems, [
+                      { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
+                      { label: 'Company', render: (item) => <span style={{ color: textPrimary }}>{item.description.split('|')[1] || '—'}</span> },
+                      { label: 'Brand', render: (item) => <span style={{ color: textPrimary }}>{item.company || '—'}</span> },
+                      {
+                        label: 'HP',
+                        render: (item) => (
+                          <span className="text-xs sm:text-sm font-normal" style={{ color: textPrimary }}>
+                            {formatHpDisplay(item.description.split('|')[2])}
+                          </span>
+                        )
+                      },
+                      { label: 'Rate', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
+                    ])}
+
+                    {/* Unit Summary stats grid */}
+                    <div className="px-6 py-5 flex flex-col gap-3" style={{ borderBottom: `1px solid ${border}` }}>
+                      <div className="flex items-center justify-between gap-3 pb-2 border-b" style={{ borderColor: border }}>
+                        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: textMuted }}>Unit Summary</span>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+                        {[
+                          { label: 'Scheduled', value: String(rowExpenses?.totalUnitsScheduled || 0) },
+                          { label: 'Rescheduled', value: String(rowExpenses?.totalRescheduled || 0) },
+                          { label: 'Installed', value: String(rowExpenses?.totalUnitsInstalled || 0) },
+                          { label: 'Serviced', value: String(rowExpenses?.totalUnitsServiced || 0) },
+                          { label: 'Cancelled', value: String(rowExpenses?.totalUnitsCancelled || 0) },
+                          { label: 'Free Install', value: String(rowExpenses?.totalUnitsFreeInstall || 0) },
+                          { label: 'Survey Only', value: String(rowExpenses?.totalUnitsSurveyOnly || 0) },
+                        ].map((item) => (
+                          <div key={item.label} className="rounded-lg px-3 py-2.5 flex flex-col justify-between" style={{ border: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
+                            <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{item.label}</div>
+                            <div className="mt-1 text-sm font-normal tabular-nums" style={{ color: textPrimary }}>{item.value}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
                     {/* Incentives Breakdown */}
                     {renderItemTable('Incentives Breakdown', incentiveItems, [
                       { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
                       { label: 'Brand', render: (item) => <span style={{ color: textPrimary }}>{item.company || '—'}</span> },
-                      { label: 'Promodiser', render: (item) => <span className="font-bold" style={{ color: textPrimary }}>{item.description?.split('|')[1] || '—'}</span> },
+                      { label: 'Promodiser', render: (item) => <span style={{ color: textPrimary }}>{item.promodiser || item.description?.split('|')[1] || '—'}</span> },
                       {
                         label: 'HP',
                         render: (item) => (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-50/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
-                            {item.description?.split('|')[2] || '—'}
+                          <span className="text-xs sm:text-sm font-normal" style={{ color: textPrimary }}>
+                            {formatHpDisplay(item.hp || item.description?.split('|')[2])}
                           </span>
                         )
                       },
-                      { label: 'Amount', align: 'right', render: (item) => <span className="font-black tabular-nums text-red-500">₱{peso(item.amount)}</span> },
+                      { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> },
                       {
                         label: 'Status',
                         align: 'center',
                         render: (item) => (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase" style={{
-                            backgroundColor: item.collectionResolved ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
-                            color: item.collectionResolved ? '#10B981' : '#F59E0B'
-                          }}>
+                          <span className="text-xs sm:text-sm font-normal uppercase" style={{ color: textPrimary }}>
                             {item.collectionResolved ? 'RESOLVED' : 'PENDING'}
                           </span>
                         )

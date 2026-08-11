@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import { NumericFormat } from 'react-number-format'
-import { Plus, Trash2, Check, Receipt, Send, Edit, AlertTriangle } from 'lucide-react'
+import { Plus, Trash2, Check, Receipt, Send, Edit, CalendarDays, ChevronDown } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -19,7 +19,7 @@ import {
 } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
-import { fetchAndMapTickets, fetchAndMapOnlineTickets, fetchAndMapCheckTickets, fetchAndMapForCollTickets, fetchAndMapRebateTickets, deduplicateAndMerge, deduplicateAndMergeOnline, deduplicateAndMergeCheck, deduplicateAndMergeForColl, deduplicateAndMergeRebates, lookupRebateRate } from '../utils/schedulePrefill'
+import { fetchAndMapTickets, fetchAndMapOnlineTickets, fetchAndMapCheckTickets, fetchAndMapForCollTickets, fetchAndMapRebateTickets, fetchAndCountUnitSummary, lookupRebateRate } from '../utils/schedulePrefill'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,6 +54,17 @@ const formatReviewDateTime = (date: Date) =>
     minute: '2-digit',
     hour12: true,
   }).replace(/, (?=\d{1,2}:)/, ' ').replace(/\s(AM|PM)$/i, (_, meridiem) => meridiem.toUpperCase()).toUpperCase()
+
+const formatReportDateDisplay = (dateStr: string) => {
+  if (!dateStr) return 'SELECT DATE'
+  const [y, m, d] = dateStr.split('-')
+  if (!y || !m || !d) return dateStr
+  const dateObj = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10))
+  const monthAbbr = dateObj.toLocaleString('en-US', { month: 'short' }).toUpperCase()
+  const dayPadded = String(d).padStart(2, '0')
+  const yearTwoDigits = y.slice(-2)
+  return `${monthAbbr}-${dayPadded}-${yearTwoDigits}`
+}
 
 const getIsoDateParts = (iso: string) => {
   const [year, month, day] = iso.split('-').map(Number)
@@ -326,10 +337,10 @@ const SectionHeader = ({ label, total, variant = 'neutral' }: { label: string; t
   }[variant]
 
   return (
-    <div className={`px-3 py-2 flex items-center justify-between gap-2 ${styles.wrap}`}>
-      <span className={`text-xs font-bold uppercase tracking-wider ${styles.label}`}>{label}</span>
+    <div className={`px-4 py-3 flex items-center justify-between gap-2 ${styles.wrap}`}>
+      <span className={`text-xs md:text-sm font-extrabold uppercase tracking-wider ${styles.label}`}>{label}</span>
       {total !== undefined && (
-        <span className="text-xs font-black tabular-nums" style={{ color: styles.total }}>
+        <span className="text-sm md:text-base font-black tabular-nums" style={{ color: styles.total }}>
           ₱{total.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </span>
       )}
@@ -338,14 +349,14 @@ const SectionHeader = ({ label, total, variant = 'neutral' }: { label: string; t
 }
 
 const AddRowBtn = ({ onClick, label }: { onClick: () => void; label: string }) => (
-  <button onClick={onClick} className="flex items-center gap-1 text-[11px] font-bold mt-1.5 mb-1 text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 transition-colors self-start ml-2">
-    <Plus className="w-3 h-3" /> {label}
+  <button onClick={onClick} className="flex items-center gap-1.5 text-xs md:text-sm font-bold my-2 px-3 py-1 rounded-lg text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-500 dark:hover:text-emerald-300 transition-all self-start ml-2">
+    <Plus className="w-4 h-4" /> {label}
   </button>
 )
 
 const DelBtn = ({ onClick }: { onClick: () => void }) => (
-  <button onClick={onClick} className="p-1 rounded hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors shrink-0">
-    <Trash2 className="w-3 h-3" />
+  <button onClick={onClick} className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors shrink-0">
+    <Trash2 className="w-4 h-4" />
   </button>
 )
 
@@ -388,7 +399,6 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess]       = useState(false)
   const [error, setError]           = useState<string | null>(null)
-  const [submitAttempted, setSubmitAttempted] = useState(false)
   const [reviewMode, setReviewMode] = useState(false)
   const [isEditingExisting, setIsEditingExisting] = useState(false)
   const [reviewStartedAt, setReviewStartedAt] = useState<Date | null>(null)
@@ -640,8 +650,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   // Cash Returns
   const [cashRet, setCashRet]   = useState<CashRetRow[]>([mkRet()])
   // Fund Transfer from HO
-  const [cashOnHand, setCashOnHand]     = useState('0')
-  const [fundFromHo, setFundFromHo]     = useState('0')
+  const [cashOnHand, setCashOnHand]     = useState('')
+  const [fundFromHo, setFundFromHo]     = useState('')
   // Online Transactions
   const [onlineTx, setOnlineTx]         = useState<OnlineTxRow[]>([mkOnl()])
   // Check Remits
@@ -753,7 +763,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
             void loadExistingReportById(existing.id, reportDate)
             return
           }
-          setCashOnHand('0')
+          setCashOnHand('')
         }
 
         const lineupQueryBranchId = selectedAuditLine
@@ -809,9 +819,9 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   useEffect(() => {
     // Only auto-prefill when creating a new report (no reportId) and branch/date are set
     if (reportId || !selectedBranchId || !reportDate) return
-    // Don't prefill if cashTx already has user data (more than one empty row)
-    const hasUserData = cashTx.some(r => r.customer || r.installer || r.amount)
-    if (hasUserData) return
+    const hasCashData = cashTx.some(r => r.customer || r.installer || r.amount)
+    const hasRebateData = rebates.some(r => r.ticketNumber || r.customer || r.company || r.amount)
+    if (hasCashData && hasRebateData) return
 
     const scheduleBranchId = selectedAuditLine
       ? `${selectedBranchId.replace(/-(sales|services)$/i, '')}-${selectedAuditLine === 'TAGUIG_SERVICE' ? 'services' : 'sales'}`
@@ -831,19 +841,27 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       fetchAndMapOnlineTickets(prefillOptions),
       fetchAndMapCheckTickets(prefillOptions),
       fetchAndMapForCollTickets(prefillOptions),
-    ]).then(([cashResult, onlineResult, checkResult, forCollResult]) => {
+      fetchAndCountUnitSummary(prefillOptions),
+      fetchAndMapRebateTickets(prefillOptions),
+    ]).then(([cashResult, onlineResult, checkResult, forCollResult, unitSummaryResult, rebateResult]) => {
       clearTimeout(timeout)
-      if (cashResult.ok && cashResult.rows.length > 0) {
-        setCashTx(cashResult.rows)
+      if (!hasCashData) {
+        if (cashResult.ok && cashResult.rows.length > 0) setCashTx(cashResult.rows)
+        if (onlineResult.ok && onlineResult.rows.length > 0) setOnlineTx(onlineResult.rows)
+        if (checkResult.ok && checkResult.rows.length > 0) setCheckRem(checkResult.rows)
+        if (forCollResult.ok && forCollResult.rows.length > 0) setForColl(forCollResult.rows)
+        if (unitSummaryResult.ok) {
+          setScheduledUnits(String(unitSummaryResult.counts.scheduledUnits))
+          setRescheduledUnits(String(unitSummaryResult.counts.rescheduledUnits))
+          setInstalledUnits(String(unitSummaryResult.counts.installedUnits))
+          setServicedUnits(String(unitSummaryResult.counts.servicedUnits))
+          setCancelledUnits(String(unitSummaryResult.counts.cancelledUnits))
+          setFreeInstallUnits(String(unitSummaryResult.counts.freeInstallUnits))
+          setSurveyOnlyUnits(String(unitSummaryResult.counts.surveyOnlyUnits))
+        }
       }
-      if (onlineResult.ok && onlineResult.rows.length > 0) {
-        setOnlineTx(onlineResult.rows)
-      }
-      if (checkResult.ok && checkResult.rows.length > 0) {
-        setCheckRem(checkResult.rows)
-      }
-      if (forCollResult.ok && forCollResult.rows.length > 0) {
-        setForColl(forCollResult.rows)
+      if (!hasRebateData && rebateResult.ok && rebateResult.rows.length > 0) {
+        setRebates(rebateResult.rows)
       }
     }).catch(() => {
       clearTimeout(timeout)
@@ -889,8 +907,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       const rawReceivedBy = (data.receivedBy || '').trim()
       setReceivedBy(rawReceivedBy ? formatDisplayUserLabel(rawReceivedBy) : (user?.name || ''))
       setTrNo(data.trNo || '')
-      setCashOnHand(data.cohPreviousDay != null ? String(data.cohPreviousDay) : '0')
-      setFundFromHo(data.fundFromHo != null ? String(data.fundFromHo) : '0')
+      setCashOnHand(data.cohPreviousDay != null && data.cohPreviousDay !== 0 ? String(data.cohPreviousDay) : '')
+      setFundFromHo(data.fundFromHo != null && data.fundFromHo !== 0 ? String(data.fundFromHo) : '')
       // Submission metadata
       setSubmittedAt(data.createdAt || null)
       setLastUpdatedAt(data.updatedAt || null)
@@ -1220,13 +1238,12 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const clearForm = (clearTrNo = true) => {
     setError(null)
     setSuccess(false)
-    setSubmitAttempted(false)
     setReportId(null)
     setIsEditingExisting(false)
     ignoreNextCohFetch.current = false
     if (clearTrNo) setTrNo('')
-    setCashOnHand('0')
-    setFundFromHo('0')
+    setCashOnHand('')
+    setFundFromHo('')
     setCashTx([mkCash()])
     setCashRet([mkRet()])
     setOnlineTx([mkOnl()])
@@ -1416,9 +1433,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
 
   // (DTR Image upload and paste scanner functions removed)
 
-  const handleSyncFromSchedule = async () => {
+  const executeSyncFromSchedule = async () => {
     if (!selectedBranchId || !reportDate || syncLoading) return
-    // Use the base branchId (strip -sales/-services suffix for the tickets API)
     const scheduleBranchId = selectedAuditLine
       ? `${selectedBranchId.replace(/-(sales|services)$/i, '')}-${selectedAuditLine === 'TAGUIG_SERVICE' ? 'services' : 'sales'}`
       : selectedBranchId.replace(/-(sales|services)$/i, '')
@@ -1431,55 +1447,64 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         branchName: branchName,
       }
 
-      // Fetch cash, online, check, and for-collection transactions in parallel
-      const [cashResult, onlineResult, checkResult, forCollResult] = await Promise.all([
+      // Fetch cash, online, check, for-collection transactions, and unit summary counters in parallel
+      const [cashResult, onlineResult, checkResult, forCollResult, unitSummaryResult] = await Promise.all([
         fetchAndMapTickets(prefillOptions),
         fetchAndMapOnlineTickets(prefillOptions),
         fetchAndMapCheckTickets(prefillOptions),
         fetchAndMapForCollTickets(prefillOptions),
+        fetchAndCountUnitSummary(prefillOptions),
       ])
 
       console.log('[Sync from Schedule] Cash result:', cashResult)
       console.log('[Sync from Schedule] Online result:', onlineResult)
       console.log('[Sync from Schedule] Check result:', checkResult)
       console.log('[Sync from Schedule] ForColl result:', forCollResult)
+      console.log('[Sync from Schedule] UnitSummary result:', unitSummaryResult)
 
       let hasData = false
 
-      // Merge cash transactions
+      if (unitSummaryResult.ok) {
+        setScheduledUnits(String(unitSummaryResult.counts.scheduledUnits))
+        setRescheduledUnits(String(unitSummaryResult.counts.rescheduledUnits))
+        setInstalledUnits(String(unitSummaryResult.counts.installedUnits))
+        setServicedUnits(String(unitSummaryResult.counts.servicedUnits))
+        setCancelledUnits(String(unitSummaryResult.counts.cancelledUnits))
+        setFreeInstallUnits(String(unitSummaryResult.counts.freeInstallUnits))
+        setSurveyOnlyUnits(String(unitSummaryResult.counts.surveyOnlyUnits))
+        hasData = true
+      }
+
+      // Overwrite/replace cash transactions
       if (cashResult.ok && cashResult.rows.length > 0) {
-        setCashTx(prev => {
-          const merged = deduplicateAndMerge(prev, cashResult.rows)
-          return merged.length > 0 ? merged : [mkCash()]
-        })
+        setCashTx(cashResult.rows)
         hasData = true
+      } else {
+        setCashTx([mkCash()])
       }
 
-      // Merge online transactions (BANK TRANSFER, GCASH)
+      // Overwrite/replace online transactions (BANK TRANSFER, GCASH)
       if (onlineResult.ok && onlineResult.rows.length > 0) {
-        setOnlineTx(prev => {
-          const merged = deduplicateAndMergeOnline(prev, onlineResult.rows)
-          return merged.length > 0 ? merged : [mkOnl()]
-        })
+        setOnlineTx(onlineResult.rows)
         hasData = true
+      } else {
+        setOnlineTx([mkOnl()])
       }
 
-      // Merge check remits (CHEQUE)
+      // Overwrite/replace check remits (CHEQUE)
       if (checkResult.ok && checkResult.rows.length > 0) {
-        setCheckRem(prev => {
-          const merged = deduplicateAndMergeCheck(prev, checkResult.rows)
-          return merged.length > 0 ? merged : [mkChk()]
-        })
+        setCheckRem(checkResult.rows)
         hasData = true
+      } else {
+        setCheckRem([mkChk()])
       }
 
-      // Merge for-collection
+      // Overwrite/replace for-collection
       if (forCollResult.ok && forCollResult.rows.length > 0) {
-        setForColl(prev => {
-          const merged = deduplicateAndMergeForColl(prev, forCollResult.rows)
-          return merged.length > 0 ? merged : [mkColl()]
-        })
+        setForColl(forCollResult.rows)
         hasData = true
+      } else {
+        setForColl([mkColl()])
       }
 
       if (!hasData) {
@@ -1496,9 +1521,33 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     }
   }
 
-  // Fetches all DONE INSTALL tickets from the schedule with a "FREE" commit tag and
-  // aligns them into Rebates for Collection (ticket no., customer, brand, HP separated).
-  const handleSyncRebatesFromSchedule = async () => {
+  const handleSyncFromSchedule = () => {
+    if (!selectedBranchId || !reportDate || syncLoading) return
+    const hasExistingTxData =
+      cashTx.some(r => r.customer.trim() || r.installer.trim() || r.amount.trim() || r.ticketNumber?.trim()) ||
+      onlineTx.some(r => r.customer.trim() || r.installer.trim() || r.bank.trim() || r.amount.trim() || r.ticketNumber?.trim()) ||
+      checkRem.some(r => r.customer.trim() || r.installer.trim() || r.bank.trim() || r.amount.trim() || r.ticketNumber?.trim()) ||
+      forColl.some(r => r.customer.trim() || r.installer.trim() || r.amount.trim() || r.ticketNumber?.trim())
+
+    if (hasExistingTxData) {
+      setConfirmDialog({
+        title: 'Overwrite Current Transactions?',
+        message: 'You have existing entries in transaction tables. Syncing from schedule will clear current entries and replace them with fetched schedule data.',
+        detail: 'Click OK to clear and overwrite with schedule data, or Cancel to keep current entries.',
+        confirmText: 'OK',
+        cancelText: 'Cancel',
+        variant: 'discard',
+        onConfirm: () => {
+          setConfirmDialog(null)
+          void executeSyncFromSchedule()
+        },
+      })
+    } else {
+      void executeSyncFromSchedule()
+    }
+  }
+
+  const executeSyncRebatesFromSchedule = async () => {
     if (!selectedBranchId || !reportDate || rebateSyncLoading) return
     const scheduleBranchId = selectedAuditLine
       ? `${selectedBranchId.replace(/-(sales|services)$/i, '')}-${selectedAuditLine === 'TAGUIG_SERVICE' ? 'services' : 'sales'}`
@@ -1518,20 +1567,42 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         return
       }
       if (result.rows.length === 0) {
+        setRebates([mkReb()])
         setError('No FREE-commit installed tickets found for this date.')
         setTimeout(() => setError(null), 4000)
         return
       }
-      setRebates(prev => {
-        const merged = deduplicateAndMergeRebates(prev, result.rows)
-        return merged.length > 0 ? merged : [mkReb()]
-      })
+      setRebates(result.rows)
     } catch (err) {
       console.error('[Sync Rebates] Error:', err)
       setError('Failed to sync rebates from schedule.')
       setTimeout(() => setError(null), 4000)
     } finally {
       setRebateSyncLoading(false)
+    }
+  }
+
+  const handleSyncRebatesFromSchedule = () => {
+    if (!selectedBranchId || !reportDate || rebateSyncLoading) return
+    const hasExistingRebateData = rebates.some(
+      r => r.ticketNumber.trim() || r.customer.trim() || r.company.trim() || r.amount.trim() || r.raNumber.trim()
+    )
+
+    if (hasExistingRebateData) {
+      setConfirmDialog({
+        title: 'Overwrite Current Rebates?',
+        message: 'You have existing entries in Rebates for Collection. Syncing from schedule will clear current entries and replace them with fetched schedule data.',
+        detail: 'Click OK to clear and overwrite with schedule data, or Cancel to keep current entries.',
+        confirmText: 'OK',
+        cancelText: 'Cancel',
+        variant: 'discard',
+        onConfirm: () => {
+          setConfirmDialog(null)
+          void executeSyncRebatesFromSchedule()
+        },
+      })
+    } else {
+      void executeSyncRebatesFromSchedule()
     }
   }
 
@@ -1556,50 +1627,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const totalCashOnHand      = totalFundReceived - grandTotalExpenses
 
   // ── Submit handler ───────────────────────────────────────────────
-  const handleDtrSubmit = async () => {
-    if (!canEditOrSubmit) {
-      setError(reportStatus === 'AUDITED'
-        ? (isMayDtrEditWindow(reportDate)
-          ? 'You do not have permission to edit this audited May report for this branch.'
-          : 'This report has been audited. Only admin accounts can edit audited reports.')
-        : 'You do not have permission to edit this report.')
-      return
-    }
-    setSubmitAttempted(true)
-    setError(null)
-    const checkEmpty = (val: any) => {
-      if (val === null || val === undefined) return true
-      return String(val).trim() === ''
-    }
-    if (
-      checkEmpty(cashOnHand) ||
-      checkEmpty(fundFromHo) ||
-      checkEmpty(scheduledUnits) ||
-      checkEmpty(surveyOnlyUnits) ||
-      checkEmpty(rescheduledUnits) ||
-      checkEmpty(installedUnits) ||
-      checkEmpty(servicedUnits) ||
-      checkEmpty(cancelledUnits) ||
-      checkEmpty(freeInstallUnits)
-    ) {
-      setError('All numeric input fields (HO Transfers & Cash on Hand, and Unit Summary) require a value. Please enter 0 if there is no amount/count.')
-      return
-    }
-    if (!reviewMode && !reportId) {
-      setReviewStartedAt(new Date())
-      setReviewMode(true)
-      
-      // Scroll to top immediately when user enters checking/review mode
-      const mainEl = document.querySelector('main')
-      if (mainEl) {
-        mainEl.scrollTo({ top: 0, behavior: 'auto' })
-      }
-      window.scrollTo({ top: 0, behavior: 'auto' })
-      document.documentElement.scrollTo({ top: 0, behavior: 'auto' })
-      document.body.scrollTo({ top: 0, behavior: 'auto' })
-      
-      return
-    }
+  // ── Submit & Action Handlers ─────────────────────────────────────
+  const executeDtrSubmit = async () => {
     setSubmitting(true); setError(null)
     const wasEdit = Boolean(reportId)
     try {
@@ -1683,8 +1712,6 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           customer: r.customer,
           company: r.company,
           amount: parseFloat(r.amount) || 0,
-          // Kept for backward-compat display on older backend builds — hp/promodiser below are
-          // the source of truth once the backend has the dedicated columns (V100 migration).
           description: `INCENTIVE|${r.promodiser}|${r.hp}`,
           hp: r.hp,
           promodiser: r.promodiser,
@@ -1748,22 +1775,128 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     } finally { setSubmitting(false) }
   }
 
+  const handleDtrSubmit = () => {
+    if (!canEditOrSubmit) {
+      setError(reportStatus === 'AUDITED'
+        ? (isMayDtrEditWindow(reportDate)
+          ? 'You do not have permission to edit this audited May report for this branch.'
+          : 'This report has been audited. Only admin accounts can edit audited reports.')
+        : 'You do not have permission to edit this report.')
+      return
+    }
+    setError(null)
+
+    if (!reviewMode && !reportId) {
+      setReviewStartedAt(new Date())
+      setReviewMode(true)
+      
+      const mainEl = document.querySelector('main')
+      if (mainEl) {
+        mainEl.scrollTo({ top: 0, behavior: 'auto' })
+      }
+      window.scrollTo({ top: 0, behavior: 'auto' })
+      document.documentElement.scrollTo({ top: 0, behavior: 'auto' })
+      document.body.scrollTo({ top: 0, behavior: 'auto' })
+      
+      return
+    }
+
+    setConfirmDialog({
+      title: reportId ? 'Confirm Report Update?' : 'Confirm Report Submission?',
+      message: reportId
+        ? 'Are you sure you want to update this Daily Transaction Report?'
+        : 'Are you sure you want to submit this Daily Transaction Report?',
+      detail: 'Please verify that all transaction totals, cash on hand, and unit summary counts are accurate before confirming.',
+      confirmText: reportId ? 'Update Report' : 'Submit Report',
+      cancelText: 'Cancel',
+      variant: 'save',
+      onConfirm: () => {
+        setConfirmDialog(null)
+        void executeDtrSubmit()
+      },
+    })
+  }
+
+  const hasFormChanges = useMemo(() => {
+    const hasCash = cashTx.some(r => r.customer.trim() || r.installer.trim() || r.amount.trim() || r.ticketNumber?.trim())
+    const hasCashRet = cashRet.some(r => r.name.trim() || r.amount.trim())
+    const hasOnline = onlineTx.some(r => r.customer.trim() || r.installer.trim() || r.bank.trim() || r.amount.trim() || r.ticketNumber?.trim())
+    const hasCheck = checkRem.some(r => r.customer.trim() || r.installer.trim() || r.bank.trim() || r.amount.trim() || r.ticketNumber?.trim())
+    const hasParts = partsSales.some(r => r.customer.trim() || r.description.trim() || r.salePrice.trim())
+    const hasForColl = forColl.some(r => r.customer.trim() || r.installer.trim() || r.amount.trim() || r.ticketNumber?.trim())
+    const hasRebates = rebates.some(r => r.ticketNumber.trim() || r.customer.trim() || r.company.trim() || r.amount.trim() || r.raNumber?.trim())
+    const hasOrders = orders.some(r => r.customer.trim() || r.description.trim() || r.amount.trim())
+    const hasExpReceipt = expReceipt.some(r => r.name.trim() || r.description.trim() || r.amount.trim())
+    const hasExpPurch = expPurch.some(r => r.name.trim() || r.description.trim() || r.amount.trim())
+    const hasCoh = Boolean(cashOnHand && cashOnHand.trim() !== '')
+    const hasFund = Boolean(fundFromHo && fundFromHo.trim() !== '')
+
+    return (
+      hasCash || hasCashRet || hasOnline || hasCheck || hasParts ||
+      hasForColl || hasRebates || hasOrders || hasExpReceipt || hasExpPurch ||
+      hasCoh || hasFund
+    )
+  }, [
+    cashTx, cashRet, onlineTx, checkRem, partsSales, forColl, rebates,
+    orders, expReceipt, expPurch, cashOnHand, fundFromHo
+  ])
+
   const handleClearForm = () => {
     if (!canEditOrSubmit) return
-    const ok = window.confirm('Clear all entered transaction form details for this branch and date?')
-    if (!ok) return
-    clearForm(true)
+    if (hasFormChanges) {
+      setConfirmDialog({
+        title: 'Clear Entire Form?',
+        message: 'Are you sure you want to clear all entered data in this form? This action cannot be undone.',
+        confirmText: 'Clear Form',
+        cancelText: 'Cancel',
+        variant: 'danger',
+        onConfirm: () => {
+          setConfirmDialog(null)
+          clearForm(true)
+        },
+      })
+    } else {
+      clearForm(true)
+    }
+  }
+
+  const handleCancelForm = () => {
+    const doCancel = () => {
+      if (isEditingExisting) {
+        setIsEditingExisting(false)
+      } else if (onSwitchToSummary) {
+        onSwitchToSummary()
+      } else {
+        window.location.href = '/audit-report'
+      }
+    }
+
+    if (hasFormChanges) {
+      setConfirmDialog({
+        title: 'Discard Unsaved Changes?',
+        message: 'You have entered data in this form. Are you sure you want to cancel and discard your changes?',
+        confirmText: 'Discard Changes',
+        cancelText: 'Cancel',
+        variant: 'discard',
+        onConfirm: () => {
+          setConfirmDialog(null)
+          doCancel()
+        },
+      })
+    } else {
+      doCancel()
+    }
   }
 
   // ── Style helper tokens ──────────────────────────────────────────
 
-  const tableTh = 'px-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider'
-  const tableTd = 'px-2 py-1 border-b border-slate-100 dark:border-slate-800/40'
+  const tableTh = 'px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 text-xs font-extrabold text-slate-600 dark:text-slate-300 uppercase tracking-wider'
+  const tableTd = 'px-3 py-2 border-b border-slate-100 dark:border-slate-800/40'
   const readOnlyFieldClass = reviewMode || isViewOnlyReport
     ? 'opacity-70 cursor-not-allowed bg-slate-100/30 dark:bg-slate-800/20'
     : ''
-  const flushInput = `w-full bg-transparent border-0 outline-none text-xs py-1 px-1.5 transition-all focus:bg-slate-100/60 dark:focus:bg-slate-800/40 focus:ring-1 focus:ring-emerald-500/20 rounded text-slate-800 dark:text-slate-200 placeholder-slate-400 ${readOnlyFieldClass}`
-  const flushInputNumber = `w-full bg-transparent border-0 outline-none text-xs py-1 px-1.5 text-right transition-all focus:bg-slate-100/60 dark:focus:bg-slate-800/40 focus:ring-1 focus:ring-emerald-500/20 rounded font-semibold text-slate-800 dark:text-slate-200 placeholder-slate-400 ${readOnlyFieldClass}`
+  const flushInput = `w-full bg-transparent border-0 outline-none text-sm py-1.5 px-2 transition-all focus:bg-slate-100/60 dark:focus:bg-slate-800/40 focus:ring-1 focus:ring-emerald-500/20 rounded font-medium text-slate-800 dark:text-slate-200 placeholder-slate-400 ${readOnlyFieldClass}`
+  const flushInputNumber = `w-full bg-transparent border-0 outline-none text-sm py-1.5 px-2 text-right transition-all focus:bg-slate-100/60 dark:focus:bg-slate-800/40 focus:ring-1 focus:ring-emerald-500/20 rounded font-bold text-slate-800 dark:text-slate-200 placeholder-slate-400 ${readOnlyFieldClass}`
 
   // (Helper subcomponents extracted outside the component)
 
@@ -1811,7 +1944,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
 
   // ── Main Render ──────────────────────────────────────────────────
   return (
-    <div className="flex flex-col gap-4 pb-10 max-w-6xl mx-auto">
+    <div className="flex flex-col gap-5 pb-10 w-full max-w-[1600px] mx-auto px-2 md:px-4">
 
       {reportId && !isEditingExisting && canEditExistingReport && (
         <div className="rounded-xl p-4 flex items-center gap-3 bg-blue-500/5 border border-blue-500/20">
@@ -1832,23 +1965,19 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       )}
 
       {!canSubmit && (
-        <div className="rounded-xl p-4 flex items-center gap-3 bg-red-500/5 border border-red-500/20">
-          <Receipt className="w-5 h-5 shrink-0 text-red-500" />
-          <p className="text-sm text-red-600 dark:text-red-400">
-            <strong>Read Only:</strong> Only Managers and Staff can submit daily branch reports.
+        <div className="rounded-xl px-4 py-2.5 bg-slate-500/5 border border-slate-500/20">
+          <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+            Read Only Mode: Only Managers and Staff can submit daily branch reports.
           </p>
         </div>
       )}
 
       {!!reportId && !canEditOrSubmit && (
-        <div className="rounded-xl p-4 flex items-center gap-3 bg-amber-500/5 border border-amber-500/20">
-          <Receipt className="w-5 h-5 shrink-0 text-amber-500" />
-          <p className="text-sm text-amber-600 dark:text-amber-400">
-            <strong>Read Only:</strong> {reportStatus === 'AUDITED'
-              ? (isMayDtrEditWindow(reportDate)
-                ? 'You do not have permission to edit this audited May report for this branch.'
-                : 'This report has been audited. Only admin accounts can edit audited reports.')
-              : 'You do not have permission to edit this report.'}
+        <div className="rounded-xl px-4 py-2.5 bg-slate-500/5 border border-slate-500/20">
+          <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+            Read Only Mode: {reportStatus === 'AUDITED'
+              ? 'This report has been audited. Only admin accounts can edit audited reports.'
+              : 'You are viewing this report in read-only mode.'}
           </p>
         </div>
       )}
@@ -1859,89 +1988,113 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       <div className={`rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-4 transition-opacity ${isViewOnlyReport ? 'opacity-80' : ''}`}>
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex items-end gap-4 flex-wrap">
-            <div className="flex flex-col gap-1 w-36">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+            <div className="flex flex-col gap-1 w-52">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                 Report Date
                 {checkingExistingReport && (
                   <span className="normal-case font-medium text-emerald-600 dark:text-emerald-400">Checking…</span>
                 )}
               </label>
-              <input
-                ref={dateInputRef}
-                id="report-date-input"
-                type="date"
-                defaultValue={reportDate}
-                onFocus={() => {
-                  datePickerLastValue.current = reportDate
-                  clearDatePickerCommitTimer()
-                }}
-                onKeyDown={e => {
-                  isTypingReportDate.current = true
-                  if (e.key === 'Enter') {
-                    isTypingReportDate.current = false
+              <div className="relative group">
+                <div
+                  className={`w-full flex items-center justify-between px-3.5 py-2 rounded-xl border text-sm font-extrabold transition-all shadow-sm ${
+                    reviewMode
+                      ? 'bg-slate-100 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-400 cursor-not-allowed'
+                      : 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 group-hover:border-emerald-500/50 cursor-pointer'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <CalendarDays className="w-4.5 h-4.5 text-emerald-500 shrink-0" />
+                    <span className="tracking-wider font-extrabold text-sm">
+                      {formatReportDateDisplay(reportDate)}
+                    </span>
+                  </div>
+                  <ChevronDown className="w-4 h-4 opacity-60 shrink-0 ml-1" />
+                </div>
+                <input
+                  ref={dateInputRef}
+                  id="report-date-input"
+                  type="date"
+                  value={reportDate}
+                  onFocus={() => {
+                    datePickerLastValue.current = reportDate
                     clearDatePickerCommitTimer()
-                    finalizeReportDateSelection((e.target as HTMLInputElement).value)
-                  }
-                }}
-                onChange={e => {
-                  if (isTypingReportDate.current) return
-                  queueDatePickerCommit(e.target.value)
-                }}
-                onBlur={e => {
-                  if (isTypingReportDate.current) {
-                    isTypingReportDate.current = false
-                    clearDatePickerCommitTimer()
-                    finalizeReportDateSelection(e.target.value)
-                    return
-                  }
+                  }}
+                  onKeyDown={e => {
+                    isTypingReportDate.current = true
+                    if (e.key === 'Enter') {
+                      isTypingReportDate.current = false
+                      clearDatePickerCommitTimer()
+                      finalizeReportDateSelection((e.target as HTMLInputElement).value)
+                    }
+                  }}
+                  onChange={e => {
+                    if (isTypingReportDate.current) return
+                    queueDatePickerCommit(e.target.value)
+                  }}
+                  onBlur={e => {
+                    if (isTypingReportDate.current) {
+                      isTypingReportDate.current = false
+                      clearDatePickerCommitTimer()
+                      finalizeReportDateSelection(e.target.value)
+                      return
+                    }
 
-                  const pending = e.target.value
-                  if (pending && pending !== reportDate && datePickerCommitTimer.current) {
-                    clearDatePickerCommitTimer()
-                    finalizeReportDateSelection(pending)
-                  }
-                }}
-                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 disabled:opacity-60"
-                disabled={reviewMode}
-              />
+                    const pending = e.target.value
+                    if (pending && pending !== reportDate && datePickerCommitTimer.current) {
+                      clearDatePickerCommitTimer()
+                      finalizeReportDateSelection(pending)
+                    }
+                  }}
+                  disabled={reviewMode}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10"
+                  onClick={(e) => {
+                    try {
+                      if ('showPicker' in e.currentTarget) {
+                        (e.currentTarget as any).showPicker()
+                      }
+                    } catch (_) {}
+                  }}
+                />
+              </div>
             </div>
-            <div className="flex flex-col gap-1 w-36">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">TR No.</label>
+            <div className="flex flex-col gap-1 w-44">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-400">TR No.</label>
               <input
                 id="tr-no-input"
                 type="text"
                 placeholder={`e.g. ${trNoExample}`}
                 value={trNo}
                 readOnly={true}
-                className="w-full bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 focus:outline-none cursor-not-allowed"
+                className="w-full bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-500 dark:text-slate-400 focus:outline-none cursor-not-allowed font-semibold"
               />
             </div>
-            <div className="flex flex-col gap-1 w-36">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Prepared By</label>
+            <div className="flex flex-col gap-1 w-44">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Prepared By</label>
               <input
                 id="received-by-input"
                 type="text"
                 placeholder="Name"
                 value={receivedBy || user?.name || ''}
                 readOnly={true}
-                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none cursor-default"
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-none cursor-default font-semibold"
               />
             </div>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
+
+            {/* Sync Buttons aligned to the left */}
             {canSubmit && !reviewMode && (
               <>
                 <button
                   type="button"
                   onClick={handleSyncFromSchedule}
                   disabled={syncLoading || isFormDisabled}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 shrink-0"
-                  style={{ backgroundColor: '#10B981', border: '1px solid #059669', color: '#FFFFFF', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)' }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 shrink-0"
+                  style={{ backgroundColor: '#10B981', border: '1px solid #059669', color: '#FFFFFF', boxShadow: '0 4px 14px rgba(16, 185, 129, 0.25)' }}
                 >
                   {syncLoading ? (
-                    <span className="animate-spin inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full" />
+                    <span className="animate-spin inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full" />
                   ) : (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9 9 0 0 0-7.5 4"/><path d="M3 12a9 9 0 0 0 9 9 9 9 0 0 0 7.5-4"/><polyline points="3 4 3 8 7 8"/><polyline points="21 20 21 16 17 16"/></svg>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9 9 0 0 0-7.5 4"/><path d="M3 12a9 9 0 0 0 9 9 9 9 0 0 0 7.5-4"/><polyline points="3 4 3 8 7 8"/><polyline points="21 20 21 16 17 16"/></svg>
                   )}
                   Sync Transactions from Sched
                 </button>
@@ -1949,24 +2102,27 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                   type="button"
                   onClick={handleSyncRebatesFromSchedule}
                   disabled={rebateSyncLoading || isFormDisabled}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 shrink-0"
-                  style={{ backgroundColor: '#10B981', border: '1px solid #059669', color: '#FFFFFF', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)' }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 shrink-0"
+                  style={{ backgroundColor: '#10B981', border: '1px solid #059669', color: '#FFFFFF', boxShadow: '0 4px 14px rgba(16, 185, 129, 0.25)' }}
                 >
                   {rebateSyncLoading ? (
-                    <span className="animate-spin inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full" />
+                    <span className="animate-spin inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full" />
                   ) : (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9 9 0 0 0-7.5 4"/><path d="M3 12a9 9 0 0 0 9 9 9 9 0 0 0 7.5-4"/><polyline points="3 4 3 8 7 8"/><polyline points="21 20 21 16 17 16"/></svg>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9 9 0 0 0-7.5 4"/><path d="M3 12a9 9 0 0 0 9 9 9 9 0 0 0 7.5-4"/><polyline points="3 4 3 8 7 8"/><polyline points="21 20 21 16 17 16"/></svg>
                   )}
                   Sync Rebates from Sched
                 </button>
               </>
             )}
+          </div>
 
+          {/* Back button aligned to the right */}
+          <div className="flex items-center gap-2 shrink-0">
             {onSwitchToSummary && !reviewMode && (
               <button
                 type="button"
                 onClick={onSwitchToSummary}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-slate-900/50 focus:outline-none shrink-0"
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-bold transition-all hover:bg-slate-50 dark:hover:bg-slate-900/50 focus:outline-none shrink-0 shadow-sm"
                 style={{ borderColor: border, color: textMuted }}
               >
                 ← Back to Summary
@@ -1989,19 +2145,6 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                 </span>
               </div>
             )}
-            {submittedAt && (
-              <div className="flex items-center gap-1.5">
-                {Date.now() - new Date(submittedAt).getTime() > 24 * 60 * 60 * 1000 ? (
-                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                    24h Edit Window Closed (Read-Only for Members/OIC)
-                  </span>
-                ) : (
-                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                    ✦ Edit Mode Active (24h Window)
-                  </span>
-                )}
-              </div>
-            )}
             {lastUpdatedAt && lastUpdatedAt !== submittedAt && (
               <div className="flex items-center gap-1.5">
                 <span className="text-[9px] font-bold uppercase tracking-wider text-amber-500">Last Edited:</span>
@@ -2021,15 +2164,6 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                 </span>
               </div>
             )}
-          </div>
-        )}
-
-        {!!reportId && !!submittedAt && (Date.now() - new Date(submittedAt).getTime() > 24 * 60 * 60 * 1000) && !isAdmin && (
-          <div className="mt-4 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3 text-amber-700 dark:text-amber-300">
-            <AlertTriangle className="w-5 h-5 shrink-0 text-amber-500" />
-            <div className="text-xs font-medium">
-              <strong className="font-bold">Read-Only View:</strong> This report was submitted over 24 hours ago. Members and Officers in Charge have view-only access after 24 hours. Editing is restricted to System Administrators.
-            </div>
           </div>
         )}
       </div>
@@ -2175,7 +2309,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                         placeholder="0.00"
                         value={fundFromHo}
                         onValueChange={(values) => setFundFromHo(values.value)}
-                        className={`${flushInputNumber} ${submitAttempted && fundFromHo.trim() === '' ? 'ring-2 ring-red-500 focus:ring-red-500' : ''}`}
+                        className={flushInputNumber}
                         disabled={isFormDisabled}
                         autoComplete="off"
                       />
@@ -2192,7 +2326,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                         placeholder="0.00"
                         value={cashOnHand}
                         onValueChange={(values) => setCashOnHand(values.value)}
-                        className={`${flushInputNumber} ${submitAttempted && cashOnHand.trim() === '' ? 'ring-2 ring-red-500 focus:ring-red-500' : ''}`}
+                        className={flushInputNumber}
                         disabled={isFormDisabled}
                         autoComplete="off"
                       />
@@ -2807,7 +2941,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                           placeholder="0"
                           value={value}
                           onValueChange={(values) => setter(values.value || '')}
-                          className={`w-20 bg-slate-50 dark:bg-slate-900 border text-center text-xs font-bold rounded focus:outline-none py-0.5 px-2 text-slate-800 dark:text-slate-200 ${submitAttempted && (!value || value.trim() === '') ? 'border-red-500 ring-2 ring-red-500/20' : 'border-slate-200 dark:border-slate-800 focus:ring-1 focus:ring-emerald-500/30'}`}
+                          className="w-20 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center text-xs font-bold rounded focus:outline-none focus:ring-1 focus:ring-emerald-500/30 py-0.5 px-2 text-slate-800 dark:text-slate-200"
                           disabled={isFormDisabled}
                           autoComplete="off"
                         />
@@ -2865,123 +2999,97 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         </div>
       )}
 
-      {/* Submit Button */}
+      {/* Footer Action Buttons */}
       {canEditOrSubmit && (
         reviewMode ? (
-          <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-2 mt-2">
-            <button
-              type="button"
-              onClick={() => {
-                setReviewMode(false)
-                setReviewStartedAt(null)
-              }}
-              disabled={submitting}
-              className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] disabled:opacity-60"
-              style={{ border: '1px solid rgba(100,116,139,0.3)', color: textMuted, backgroundColor: isLight ? '#f8fafc' : '#0f172a' }}
-            >
-              Go Back & Edit
-            </button>
-            <button
-              id="confirm-submit-dtr-btn"
-              onClick={handleDtrSubmit}
-              disabled={submitting}
-              className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm text-white transition-all hover:scale-[1.01] hover:shadow-lg disabled:opacity-60"
-              style={{ backgroundColor: '#10B981', boxShadow: '0 4px 14px rgba(16,185,129,0.2)' }}
-            >
-              {submitting ? (reportId ? <>Updating...</> : <>Submitting...</>) : <><Check className="w-4 h-4" /> {reportId ? 'Confirm & Update' : 'Confirm & Submit'}</>}
-            </button>
-          </div>
-        ) : (
-          reportId ? (
-            !isEditingExisting ? (
-              <div className="flex gap-2.5 mt-2 flex-wrap">
-                {canEditExistingReport && (
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingExisting(true)}
-                    className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm text-white transition-all hover:scale-[1.01] hover:shadow-lg"
-                    style={{ backgroundColor: '#10B981', boxShadow: '0 4px 14px rgba(16,185,129,0.2)' }}
-                  >
-                    <Edit className="w-4 h-4" /> Edit Report
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (onSwitchToSummary) onSwitchToSummary()
-                    else window.location.href = '/audit-report'
-                  }}
-                  className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01]"
-                  style={{ border: '1px solid rgba(100,116,139,0.3)', color: textMuted, backgroundColor: isLight ? '#f8fafc' : '#0f172a' }}
-                >
-                  Back to Summary
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr_auto] gap-2 mt-2">
-                <button
-                  type="button"
-                  onClick={handleClearForm}
-                  disabled={submitting}
-                  className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] disabled:opacity-60"
-                  style={{ border: '1px solid rgba(239,68,68,0.28)', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.06)' }}
-                >
-                  <Trash2 className="w-4 h-4" /> Clear Form
-                </button>
-                <button
-                  id="submit-dtr-btn"
-                  onClick={handleDtrSubmit}
-                  disabled={submitting}
-                  className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm text-white transition-all hover:scale-[1.01] hover:shadow-lg disabled:opacity-60"
-                  style={{ backgroundColor: '#10B981', boxShadow: '0 4px 14px rgba(16,185,129,0.2)' }}
-                >
-                  {submitting ? <>Updating...</> : <><Send className="w-4 h-4" /> Update Report</>}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsEditingExisting(false)
-                  }}
-                  disabled={submitting}
-                  className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] disabled:opacity-60"
-                  style={{ border: '1px solid rgba(100,116,139,0.3)', color: textMuted, backgroundColor: isLight ? '#f8fafc' : '#0f172a' }}
-                >
-                  Cancel
-                </button>
-              </div>
-            )
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr_auto] gap-2 mt-2">
+          <div className="flex items-center justify-between gap-3 mt-4 flex-wrap">
+            <div>
               <button
                 type="button"
-                onClick={handleClearForm}
+                onClick={() => {
+                  setReviewMode(false)
+                  setReviewStartedAt(null)
+                }}
                 disabled={submitting}
-                className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] disabled:opacity-60"
-                style={{ border: '1px solid rgba(239,68,68,0.28)', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.06)' }}
+                className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-all hover:scale-105 disabled:opacity-50 border shadow-sm"
+                style={{ borderColor: border, color: textMuted, backgroundColor: isLight ? '#f8fafc' : '#0f172a' }}
               >
-                <Trash2 className="w-4 h-4" /> Clear Form
+                ← Go Back & Edit
               </button>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
               <button
-                id="submit-dtr-btn"
+                id="confirm-submit-dtr-btn"
                 onClick={handleDtrSubmit}
                 disabled={submitting}
-                className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm text-white transition-all hover:scale-[1.01] hover:shadow-lg disabled:opacity-60"
-                style={{ backgroundColor: '#10B981', boxShadow: '0 4px 14px rgba(16,185,129,0.2)' }}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm text-white transition-all hover:scale-105 hover:shadow-lg disabled:opacity-50"
+                style={{ backgroundColor: '#10B981', border: '1px solid #059669', color: '#FFFFFF', boxShadow: '0 4px 14px rgba(16,185,129,0.25)' }}
               >
-                {submitting ? <>Submitting...</> : <><Send className="w-4 h-4" /> Submit Daily Report</>}
+                {submitting ? (reportId ? <>Updating...</> : <>Submitting...</>) : <><Check className="w-4 h-4" /> {reportId ? 'Confirm & Update' : 'Confirm & Submit'}</>}
               </button>
+            </div>
+          </div>
+        ) : (
+          reportId && !isEditingExisting ? (
+            <div className="flex items-center justify-end gap-3 mt-4 flex-wrap">
+              {canEditExistingReport && (
+                <button
+                  type="button"
+                  onClick={() => setIsEditingExisting(true)}
+                  className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm text-white transition-all hover:scale-105 hover:shadow-lg"
+                  style={{ backgroundColor: '#10B981', border: '1px solid #059669', color: '#FFFFFF', boxShadow: '0 4px 14px rgba(16,185,129,0.25)' }}
+                >
+                  <Edit className="w-4 h-4" /> Edit Report
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
                   if (onSwitchToSummary) onSwitchToSummary()
                   else window.location.href = '/audit-report'
                 }}
-                disabled={submitting}
-                className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-bold text-sm transition-all hover:scale-[1.01] disabled:opacity-60"
-                style={{ border: '1px solid rgba(100,116,139,0.3)', color: textMuted, backgroundColor: isLight ? '#f8fafc' : '#0f172a' }}
+                className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-all hover:scale-105 border shadow-sm"
+                style={{ borderColor: border, color: textMuted, backgroundColor: isLight ? '#f8fafc' : '#0f172a' }}
               >
-                Cancel
+                Back to Summary
               </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-3 mt-4 flex-wrap">
+              <div>
+                <button
+                  type="button"
+                  onClick={handleClearForm}
+                  disabled={submitting}
+                  className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-all hover:scale-105 hover:bg-red-500/10 text-red-500 border border-red-500/30 disabled:opacity-50"
+                >
+                  <Trash2 className="w-4 h-4" /> Clear Form
+                </button>
+              </div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleCancelForm}
+                  disabled={submitting}
+                  className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-all hover:scale-105 disabled:opacity-50 border shadow-sm"
+                  style={{ borderColor: border, color: textMuted, backgroundColor: isLight ? '#f8fafc' : '#0f172a' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  id="submit-dtr-btn"
+                  onClick={handleDtrSubmit}
+                  disabled={submitting}
+                  className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm text-white transition-all hover:scale-105 hover:shadow-lg disabled:opacity-50"
+                  style={{ backgroundColor: '#10B981', border: '1px solid #059669', color: '#FFFFFF', boxShadow: '0 4px 14px rgba(16,185,129,0.25)' }}
+                >
+                  {submitting ? (
+                    reportId ? <>Updating...</> : <>Submitting...</>
+                  ) : (
+                    <><Send className="w-4 h-4" /> {reportId ? 'Update Report' : 'Submit Daily Report'}</>
+                  )}
+                </button>
+              </div>
             </div>
           )
         )
