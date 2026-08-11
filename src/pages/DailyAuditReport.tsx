@@ -2,14 +2,13 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ReactDOM from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
-  BarChart2, CalendarDays, TrendingUp, TrendingDown,
+  CalendarDays,
   AlertTriangle, X, ChevronRight, Eye, Download,
   ArrowUp, ArrowDown,
   MoreVertical,
   Loader2,
   Trash2, ClipboardList, Upload, Check, FileEdit
 } from 'lucide-react'
-import * as XLSX from 'xlsx'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatDisplayUserLabel, formatBranchName, isSameBaseBranch, resolveScopedBranchId, isDtrMayEditOpenForView, isEmployeePortalRole, isPortalAdmin } from '../utils/api'
@@ -496,10 +495,7 @@ export default function DailyAuditReport() {
 
   let visibleRows = rows.filter(r => !hiddenBranches.includes(r.branchName) && canViewPerformanceRow(r))
 
-  const logicalBranchCount = useMemo(
-    () => new Set(rows.map(r => (r.logicalBranchName ?? r.branchName).trim())).size,
-    [rows]
-  )
+
 
   if (sortConfig !== null) {
     const keyMap: Record<string, keyof AuditRow | string> = {
@@ -555,49 +551,7 @@ export default function DailyAuditReport() {
     rebatesForCollection: acc.rebatesForCollection + r.rebatesForCollection,
   }), { grossSales:0, netSales:0, targetDailyQuota:0, totalCohCfd:0, totalCashCollection:0, totalOnlineCollection:0, totalExpenses:0, totalForPurchase:0, forCollection:0, rebatesForCollection:0 })
 
-  const handleExportExcel = () => {
-    if (visibleRows.length === 0) {
-      alert('No performance data to export.')
-      return
-    }
 
-    const exportLabel = viewMode === 'single'
-      ? `Daily_${date}`
-      : `Range_${rangeFrom}_to_${rangeTo}`
-
-    const wsData = visibleRows.map((row, index) => ({
-      '#': index + 1,
-      Branch: row.branchName,
-      Time: formatLocalTime(row.createdAt, row.timeUploaded) || '',
-      Status: row.status,
-      'Gross Sales': row.grossSales,
-      'Net Sales': row.grossSales - (row.totalExpenses || 0) - (row.totalPayables || 0) - (row.totalForPurchase || 0),
-      'Target Quota': row.targetDailyQuota,
-      Difference: row.difference,
-      Remarks: row.remarks,
-      'COH Prev Day': row.cohPreviousDay,
-      'Fund from HO': row.fundFromHo,
-      'Cash Returns': row.cashReturns,
-      'Total COH/CFD': row.totalCohCfd,
-      'Cash Collection': row.totalCashCollection,
-      'Online Collection': row.totalOnlineCollection,
-      'Total Expenses': row.totalExpenses,
-      'Total Purchases': row.totalForPurchase || 0,
-      'For Collection': row.forCollection,
-      Rebates: row.rebatesForCollection,
-      'Units Scheduled': row.totalUnitsScheduled || 0,
-      'Units Installed': row.totalUnitsInstalledServiced,
-      'Units Serviced': row.totalUnitsServiced,
-      Cancelled: row.totalCancelled,
-      'Free Install': row.totalUnitsFreeInstall,
-      'Survey Only': row.totalUnitsSurveyOnly || 0,
-    }))
-
-    const ws = XLSX.utils.json_to_sheet(wsData)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Performance')
-    XLSX.writeFile(wb, `ASHCOL_Performance_${exportLabel}.xlsx`)
-  }
 
 
 
@@ -1058,7 +1012,7 @@ export default function DailyAuditReport() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto overflow-y-auto rounded-xl" style={{ maxHeight: 'calc(100vh - 210px)', border: `2px solid ${isLight ? '#047857' : '#064e3b'}` }}>
+          <div className="overflow-x-auto overflow-y-auto rounded-lg" style={{ maxHeight: 'calc(100vh - 210px)' }}>
               <table
                 style={{ minWidth: '1500px', fontSize: compactView ? '11px' : '13px', width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}
               >
