@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import { NumericFormat } from 'react-number-format'
-import { Plus, Trash2, Check, Receipt, Send, Scan, ClipboardPaste, Loader2, Edit } from 'lucide-react'
+import { Plus, Trash2, Check, Receipt, Send, Edit } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -441,12 +441,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   const isFormDisabled = !canEditOrSubmit || reviewMode || (!!reportId && !isEditingExisting)
   const isViewOnlyReport = !!reportId && !isEditingExisting && !reviewMode
 
-  const [scanning, setScanning]     = useState(false)
-  const [scanError, setScanError]   = useState<string | null>(null)
-  const fileRef = useRef<HTMLInputElement>(null)
   const ignoreNextCohFetch = useRef(false)
-  const hasScannedTrNo = useRef(false)
-  const isApplyingScannedData = useRef(false)
   const loadedReportDate = useRef<string | null>(null)
   const isTypingReportDate = useRef(false)
   const dateInputRef = useRef<HTMLInputElement>(null)
@@ -808,7 +803,9 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     const hasUserData = cashTx.some(r => r.customer || r.installer || r.amount)
     if (hasUserData) return
 
-    const scheduleBranchId = selectedBranchId.replace(/-(sales|services)$/i, '')
+    const scheduleBranchId = selectedAuditLine
+      ? `${selectedBranchId.replace(/-(sales|services)$/i, '')}-${selectedAuditLine === 'TAGUIG_SERVICE' ? 'services' : 'sales'}`
+      : selectedBranchId.replace(/-(sales|services)$/i, '')
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 30_000)
 
@@ -1204,10 +1201,6 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   // Generate TR No suggestion based on branch initials and date
   useEffect(() => {
     if (reportId) return
-    if (hasScannedTrNo.current) {
-      hasScannedTrNo.current = false
-      return
-    }
     if (branchName && reportDate) {
       const prefix = getTrNoPrefix(branchName, selectedAuditLine)
       setTrNo(`${prefix}-${getTrNoDateCode(reportDate)}`)
@@ -1216,7 +1209,6 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
   const clearForm = (clearTrNo = true) => {
     setError(null)
-    setScanError(null)
     setSuccess(false)
     setSubmitAttempted(false)
     setReportId(null)
@@ -1412,232 +1404,14 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     }
   }, [location.search])
 
-  // ── DTR Scanner Logic ────────────────────────────────────────────
-  // Pasting/uploading another DTR photo (a second page, a different table) must add to what's
-  // already on the form, not wipe it — clearForm() used to run on every scan, which meant the
-  // 2nd/3rd pasted image silently erased everything the 1st image had already filled in.
-  const processImage = async (file: File) => {
-    setScanning(true)
-    setScanError(null)
-
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const formData = new FormData()
-      formData.append('image', file)
-      if (selectedBranchId) formData.append('branchId', selectedBranchId)
-
-      const res = await fetch(`${API_BASE_URL}/v1/reports/scan-dtr`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      })
-
-      if (!res.ok) throw new Error('Scan endpoint unavailable')
-
-      const data = await res.json()
-      if (data.error) { setScanError(`Scan failed: ${data.error}`); return }
-      applyScannedData(data)
-    } catch (err) {
-      console.warn('Scan error/fallback', err)
-      // Simulate realistic scan result
-      setTimeout(() => {
-        applyScannedData({
-          date: '2026-06-01',
-          trNo: 'ASHDAS-00019',
-          totalCashCollection: 27049,
-          cashReturns: 3040,
-          fundFromHo: 111286,
-          cohPreviousDay: 50000,
-          totalOnlineCollection: 0,
-          totalUnitsInstalledServiced: 4,
-          forCollection: 10500,
-          rebatesForCollection: 52950,
-          totalExpenses: 122086,
-        })
-        setScanError('Simulated scan results loaded (AI backend not fully connected).')
-        setScanning(false)
-      }, 1500)
-    } finally {
-      setScanning(false)
-      if (fileRef.current) fileRef.current.value = ''
-    }
-  }
-
-  // A row created by mkCash()/mkRet()/etc is "blank" (every field empty/false besides its id) —
-  // safe to drop when merging in newly scanned rows, but real data must never be dropped this way.
-  const isRowBlank = (row: Record<string, any>): boolean =>
-    Object.entries(row).every(([key, value]) => key === 'id' || value === '' || value === false || value == null)
-
-  // Merge newly scanned rows into whatever's already on the form instead of replacing it —
-  // pasting a 2nd/3rd DTR image (a different page/table) must add to the batch, not erase it.
-  function mergeScannedRows<T extends { id: string }>(
-    setter: React.Dispatch<React.SetStateAction<T[]>>,
-    newRows: T[],
-    fallback: () => T,
-  ) {
-    setter(prev => {
-      const kept = prev.filter(r => !isRowBlank(r))
-      if (newRows.length > 0) return [...kept, ...newRows]
-      return kept.length > 0 ? kept : [fallback()]
-    })
-  }
-
-  const applyScannedData = (data: Record<string, any>) => {
-    isApplyingScannedData.current = true
-    const activeBranchName = branchName
-
-    // Only overwrite COH/Fund-from-HO when this image actually reports them — otherwise a 2nd
-    // image that only shows (say) rebates would silently reset these back to 0.
-    if (data.cohPreviousDay != null) {
-      ignoreNextCohFetch.current = true
-      setCashOnHand(String(data.cohPreviousDay))
-    }
-    if (data.fundFromHo != null) {
-      ignoreNextCohFetch.current = true
-      setFundFromHo(String(data.fundFromHo))
-    }
-
-    if (data.cashTransactions && Array.isArray(data.cashTransactions) && data.cashTransactions.length > 0) {
-      mergeScannedRows(setCashTx, data.cashTransactions.map((scanned: any) => ({
-        id: uid(),
-        customer: scanned.customer || '',
-        installer: cleanInstallerName(scanned.name || scanned.installer || '', activeBranchName),
-        amount: scanned.amount != null ? String(scanned.amount) : ''
-      })), mkCash)
-    } else if (data.totalCashCollection) {
-      mergeScannedRows(setCashTx, [{ id: uid(), customer: '', installer: '', amount: String(data.totalCashCollection) }], mkCash)
-    }
-
-    if (data.cashReturnsList && Array.isArray(data.cashReturnsList) && data.cashReturnsList.length > 0) {
-      mergeScannedRows(setCashRet, data.cashReturnsList.map((scanned: any) => ({
-        id: uid(),
-        name: cleanInstallerName(scanned.name || '', activeBranchName),
-        amount: scanned.amount != null ? String(scanned.amount) : ''
-      })), mkRet)
-    } else if (data.cashReturns != null) {
-      mergeScannedRows(setCashRet, [{ id: uid(), name: '', amount: String(data.cashReturns) }], mkRet)
-    }
-
-    if (data.onlineTransactions && Array.isArray(data.onlineTransactions) && data.onlineTransactions.length > 0) {
-      mergeScannedRows(setOnlineTx, data.onlineTransactions.map((scanned: any) => ({
-        id: uid(),
-        installer: cleanInstallerName(scanned.installer || '', activeBranchName),
-        customer: (scanned.customer || '').trim(),
-        bank: (scanned.bank || '').trim(),
-        amount: scanned.amount != null ? String(scanned.amount) : ''
-      })), mkOnl)
-    } else if (data.totalOnlineCollection) {
-      mergeScannedRows(setOnlineTx, [{ id: uid(), installer: '', customer: '', bank: '', amount: String(data.totalOnlineCollection) }], mkOnl)
-    }
-
-    if (data.checkRemits && Array.isArray(data.checkRemits) && data.checkRemits.length > 0) {
-      mergeScannedRows(setCheckRem, data.checkRemits.map((scanned: any) => ({
-        id: uid(),
-        installer: cleanInstallerName(scanned.installer || '', activeBranchName),
-        customer: (scanned.customer || '').trim(),
-        bank: (scanned.bank || '').trim(),
-        amount: scanned.amount != null ? String(scanned.amount) : ''
-      })), mkChk)
-    }
-
-    if (data.partsSales && Array.isArray(data.partsSales) && data.partsSales.length > 0) {
-      mergeScannedRows(setPartsSales, data.partsSales.map((scanned: any) => ({
-        id: uid(),
-        customer: (scanned.customer || '').trim(),
-        description: (scanned.description || '').trim(),
-        capital: scanned.capital != null ? String(scanned.capital) : '',
-        salePrice: scanned.salePrice != null ? String(scanned.salePrice) : ''
-      })), mkPart)
-    }
-
-    if (data.partsOrders && Array.isArray(data.partsOrders) && data.partsOrders.length > 0) {
-      mergeScannedRows(setOrders, data.partsOrders.map((scanned: any) => ({
-        id: uid(),
-        customer: (scanned.customer || '').trim(),
-        description: (scanned.description || '').trim(),
-        amount: scanned.amount != null ? String(scanned.amount) : ''
-      })), mkOrd)
-    }
-
-    if (data.forCollectionList && Array.isArray(data.forCollectionList) && data.forCollectionList.length > 0) {
-      mergeScannedRows(setForColl, data.forCollectionList.map((scanned: any) => ({
-        id: uid(),
-        installer: cleanInstallerName(scanned.installer || '', activeBranchName),
-        customer: (scanned.customer || '').trim(),
-        amount: scanned.amount != null ? String(scanned.amount) : '',
-        collectionResolved: false
-      })), mkColl)
-    } else if (data.forCollection) {
-      mergeScannedRows(setForColl, [{ id: uid(), installer: '', customer: '', amount: String(data.forCollection), collectionResolved: false }], mkColl)
-    }
-
-    if (data.rebates && Array.isArray(data.rebates) && data.rebates.length > 0) {
-      mergeScannedRows(setRebates, data.rebates.map((scanned: any) => {
-        const sAmount = scanned.amount != null ? String(scanned.amount) : ''
-        return {
-          id: uid(),
-          ticketNumber: scanned.ticketNumber || scanned.ticket_number || '',
-          customer: (scanned.customer || '').trim(),
-          company: (scanned.company || '').trim(),
-          raNumber: '',
-          hp: '',
-          amount: sAmount
-        }
-      }), mkReb)
-    } else if (data.rebatesForCollection) {
-      mergeScannedRows(setRebates, [{ id: uid(), ticketNumber: '', customer: '', company: 'Scanned Rebates', raNumber: '', hp: '', amount: String(data.rebatesForCollection) }], mkReb)
-    }
-
-    if (data.expReceipt && Array.isArray(data.expReceipt) && data.expReceipt.length > 0) {
-      mergeScannedRows(setExpReceipt, data.expReceipt.map((scanned: any) => ({
-        id: uid(),
-        name: (scanned.name || '').trim(),
-        description: (scanned.description || '').trim(),
-        amount: scanned.amount != null ? String(scanned.amount) : ''
-      })), mkExp)
-    } else if (data.totalExpenses != null && Number(data.totalExpenses) > 0) {
-      mergeScannedRows(setExpReceipt, [{ id: uid(), name: 'Scanned Expenses', description: '', amount: String(data.totalExpenses) }], mkExp)
-    }
-
-    if (data.expPurch && Array.isArray(data.expPurch) && data.expPurch.length > 0) {
-      mergeScannedRows(setExpPurch, data.expPurch.map((scanned: any) => ({
-        id: uid(),
-        name: (scanned.name || '').trim(),
-        description: (scanned.description || '').trim(),
-        amount: scanned.amount != null ? String(scanned.amount) : ''
-      })), mkExp)
-    } else if (data.totalForPurchase != null && Number(data.totalForPurchase) > 0) {
-      mergeScannedRows(setExpPurch, [{ id: uid(), name: 'Scanned Purchases', description: '', amount: String(data.totalForPurchase) }], mkExp)
-    }
-
-    if (data.incentives && Array.isArray(data.incentives) && data.incentives.length > 0) {
-      mergeScannedRows(setIncentives, data.incentives.map((scanned: any) => ({
-        id: uid(),
-        customer: (scanned.customer || '').trim(),
-        company: (scanned.company || '').trim(),
-        hp: (scanned.hp || '').trim(),
-        promodiser: (scanned.promodiser || '').trim(),
-        amount: scanned.amount != null ? String(scanned.amount) : '',
-        collectionResolved: false
-      })), mkInc)
-    }
-
-    // Unit summary from scan — each count only applied when this image actually reports it,
-    // so an image showing just one section doesn't zero out counts another image already filled.
-    if (data.totalUnitsScheduled != null) setScheduledUnits(String(data.totalUnitsScheduled))
-    if (data.totalUnitsRescheduled != null) setRescheduledUnits(String(data.totalUnitsRescheduled))
-    if (data.totalUnitsInstalled != null) setInstalledUnits(String(data.totalUnitsInstalled))
-    else if (data.totalUnitsInstalledServiced != null) setInstalledUnits(String(data.totalUnitsInstalledServiced))
-    if (data.totalUnitsServiced != null) setServicedUnits(String(data.totalUnitsServiced))
-    if (data.totalUnitsCancelled != null) setCancelledUnits(String(data.totalUnitsCancelled))
-    if (data.totalFreeInstallUnits != null) setFreeInstallUnits(String(data.totalFreeInstallUnits))
-    if (data.totalUnitsSurveyOnly != null) setSurveyOnlyUnits(String(data.totalUnitsSurveyOnly))
-  }
+  // (DTR Image upload and paste scanner functions removed)
 
   const handleSyncFromSchedule = async () => {
     if (!selectedBranchId || !reportDate || syncLoading) return
     // Use the base branchId (strip -sales/-services suffix for the tickets API)
-    const scheduleBranchId = selectedBranchId.replace(/-(sales|services)$/i, '')
+    const scheduleBranchId = selectedAuditLine
+      ? `${selectedBranchId.replace(/-(sales|services)$/i, '')}-${selectedAuditLine === 'TAGUIG_SERVICE' ? 'services' : 'sales'}`
+      : selectedBranchId.replace(/-(sales|services)$/i, '')
     console.log('[Sync from Schedule] Triggered. branchId:', scheduleBranchId, '(raw:', selectedBranchId, ') reportDate:', reportDate, 'branchName:', branchName)
     setSyncLoading(true)
     try {
@@ -1716,7 +1490,9 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
   // aligns them into Rebates for Collection (ticket no., customer, brand, HP separated).
   const handleSyncRebatesFromSchedule = async () => {
     if (!selectedBranchId || !reportDate || rebateSyncLoading) return
-    const scheduleBranchId = selectedBranchId.replace(/-(sales|services)$/i, '')
+    const scheduleBranchId = selectedAuditLine
+      ? `${selectedBranchId.replace(/-(sales|services)$/i, '')}-${selectedAuditLine === 'TAGUIG_SERVICE' ? 'services' : 'sales'}`
+      : selectedBranchId.replace(/-(sales|services)$/i, '')
     console.log('[Sync Rebates] Triggered. branchId:', scheduleBranchId, 'reportDate:', reportDate)
     setRebateSyncLoading(true)
     try {
@@ -1749,59 +1525,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     }
   }
 
-  const handleScanImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    await processImage(file)
-  }
-
-  const processImageRef = useRef(processImage)
-  useEffect(() => {
-    processImageRef.current = processImage
-  })
-
-  useEffect(() => {
-    const handleGlobalPaste = (e: ClipboardEvent) => {
-      if (scanning) return
-      const items = e.clipboardData?.items
-      if (!items) return
-      for (const item of items) {
-        if (item.type.startsWith('image/')) {
-          const blob = item.getAsFile()
-          if (blob) {
-            const file = new File([blob], 'pasted-dtr.png', { type: item.type })
-            void processImageRef.current(file)
-            return
-          }
-        }
-      }
-    }
-    window.addEventListener('paste', handleGlobalPaste)
-    return () => window.removeEventListener('paste', handleGlobalPaste)
-  }, [scanning])
-  const handlePasteClick = async (e: React.MouseEvent) => {
-    e.preventDefault()
-    if (scanning) return
-    if (!navigator.clipboard || !navigator.clipboard.read) {
-      setScanError('Clipboard button disabled on HTTP. Press Ctrl+V anywhere on the page.')
-      return
-    }
-    try {
-      const items = await navigator.clipboard.read()
-      for (const item of items) {
-        const imageTypes = item.types.filter(t => t.startsWith('image/'))
-        if (imageTypes.length > 0) {
-          const blob = await item.getType(imageTypes[0])
-          const file = new File([blob], 'pasted-dtr.png', { type: imageTypes[0] })
-          await processImage(file)
-          return
-        }
-      }
-      setScanError('No image found in clipboard.')
-    } catch {
-      setScanError('Could not read clipboard. Please check permissions.')
-    }
-  }
+  // (DTR Image paste and upload handlers removed)
 
   // ── DTR Calculations ─────────────────────────────────────────────
   const totalCashCollection  = sumArr(cashTx.map(r => r.amount))
@@ -2195,26 +1919,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {canEditOrSubmit && !reviewMode && !isViewOnlyReport && (
-              <>
-                <button
-                  disabled={scanning}
-                  onClick={handlePasteClick}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50 disabled:opacity-50"
-                >
-                  <ClipboardPaste size={14} /> Paste
-                </button>
-                <button
-                  disabled={scanning}
-                  onClick={() => fileRef.current?.click()}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 text-white bg-blue-500 disabled:opacity-50"
-                >
-                  {scanning ? <Loader2 size={14} className="animate-spin" /> : <Scan size={14} />}
-                  {scanning ? 'Scanning...' : 'Upload Image'}
-                </button>
-                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleScanImage} />
-              </>
-            )}
+
             {onSwitchToSummary && !reviewMode && (
               <button
                 type="button"
@@ -2265,11 +1970,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         )}
       </div>
 
-      {scanError && (
-        <div className="rounded-xl p-3 flex items-start gap-2 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30">
-          <p className="text-xs text-red-600 dark:text-red-400">{scanError}</p>
-        </div>
-      )}
+
 
       {/* ── Sections ───────────────────────────────────────────────── */}
       <div className={isViewOnlyReport ? 'opacity-80 pointer-events-none select-none' : undefined}>

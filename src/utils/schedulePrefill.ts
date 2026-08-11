@@ -1,5 +1,5 @@
 import { API_BASE_URL } from './api'
-import { getScheduleStatusValue, resolveTicketPayment, parseAcMeta, parseBrand, getTicketCommitDisplay, getTicketNumberDisplay, getF, type Ticket } from './ticketHelpers'
+import { getScheduleStatusValue, resolveTicketPayment, parseAcMeta, parseBrand, getTicketCommitDisplay, getTicketNumberDisplay, getF, CLOSING_SCHEDULE_STATUSES, type Ticket } from './ticketHelpers'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -124,21 +124,33 @@ export async function fetchScheduleTickets(
 }
 
 /**
+ * Helper to check if a schedule ticket is closed/completed (DONE_INSTALLED, DONE_CLEANING, DONE_CHECKUP, etc.).
+ */
+export function isCompletedScheduleTicket(ticket: Ticket): boolean {
+  const status = getScheduleStatusValue(ticket)
+  const rawStatus = (ticket.status || '').toUpperCase()
+
+  if (status === 'CANCELLED' || rawStatus === 'CANCELLED') return false
+
+  return (
+    CLOSING_SCHEDULE_STATUSES.has(status) ||
+    rawStatus === 'INSTALLED' ||
+    rawStatus === 'COMPLETED' ||
+    rawStatus.startsWith('DONE_')
+  )
+}
+
+/**
  * Filter tickets to only those qualifying for cash prefill:
- * - Status = DONE_INSTALLED or INSTALLED or COMPLETED
+ * - Status = Any completed outcome (DONE_INSTALLED, DONE_CLEANING, DONE_CHECKUP, etc.) or raw INSTALLED/COMPLETED
  * - Payment mode = CASH
  * - Amount > 0
  */
 export function filterQualifyingTickets(tickets: Ticket[]): Ticket[] {
   return tickets.filter((ticket) => {
-    // 1. Status check — accept both resolved DONE_INSTALLED and raw INSTALLED/COMPLETED
     const status = getScheduleStatusValue(ticket)
     const rawStatus = (ticket.status || '').toUpperCase()
-    const isInstalled = status === 'DONE_INSTALLED'
-      || rawStatus === 'INSTALLED'
-      || rawStatus === 'COMPLETED'
-      || rawStatus === 'DONE_INSTALLED'
-    if (!isInstalled) return false
+    if (status === 'CANCELLED' || rawStatus === 'CANCELLED') return false
 
     // 2. Payment mode check
     const payment = resolveTicketPayment(ticket)
@@ -296,7 +308,7 @@ const ONLINE_PAYMENT_MODES = new Set([
 
 /**
  * Filter tickets to those qualifying for online transactions prefill:
- * - Status = INSTALLED/COMPLETED/DONE_INSTALLED
+ * - Status = Any completed outcome (DONE_INSTALLED, DONE_CLEANING, DONE_CHECKUP, etc.)
  * - Payment mode = BANK TRANSFER, GCASH, ONLINE, or CHEQUE
  * - Amount > 0
  */
@@ -304,11 +316,7 @@ export function filterOnlineTickets(tickets: Ticket[]): Ticket[] {
   return tickets.filter((ticket) => {
     const status = getScheduleStatusValue(ticket)
     const rawStatus = (ticket.status || '').toUpperCase()
-    const isInstalled = status === 'DONE_INSTALLED'
-      || rawStatus === 'INSTALLED'
-      || rawStatus === 'COMPLETED'
-      || rawStatus === 'DONE_INSTALLED'
-    if (!isInstalled) return false
+    if (status === 'CANCELLED' || rawStatus === 'CANCELLED') return false
 
     const payment = resolveTicketPayment(ticket)
     if (!ONLINE_PAYMENT_MODES.has(payment.mode)) return false
@@ -411,7 +419,7 @@ export type CheckPrefillResult =
 
 /**
  * Filter tickets for cheque/check payments:
- * - Status = INSTALLED/COMPLETED/DONE_INSTALLED
+ * - Status = Any completed outcome (DONE_INSTALLED, DONE_CLEANING, DONE_CHECKUP, etc.)
  * - Payment mode = CHEQUE or CHECK
  * - Amount > 0
  */
@@ -419,11 +427,7 @@ export function filterCheckTickets(tickets: Ticket[]): Ticket[] {
   return tickets.filter((ticket) => {
     const status = getScheduleStatusValue(ticket)
     const rawStatus = (ticket.status || '').toUpperCase()
-    const isInstalled = status === 'DONE_INSTALLED'
-      || rawStatus === 'INSTALLED'
-      || rawStatus === 'COMPLETED'
-      || rawStatus === 'DONE_INSTALLED'
-    if (!isInstalled) return false
+    if (status === 'CANCELLED' || rawStatus === 'CANCELLED') return false
 
     const payment = resolveTicketPayment(ticket)
     const mode = payment.mode.toUpperCase()
@@ -515,7 +519,7 @@ export type ForCollPrefillResult =
 
 /**
  * Filter tickets for "For Collection" payments:
- * - Status = INSTALLED/COMPLETED/DONE_INSTALLED
+ * - Status = Any completed outcome (DONE_INSTALLED, DONE_CLEANING, DONE_CHECKUP, etc.)
  * - Payment mode = FOR COLLECTION
  * - Amount > 0
  */
@@ -523,11 +527,7 @@ export function filterForCollectionTickets(tickets: Ticket[]): Ticket[] {
   return tickets.filter((ticket) => {
     const status = getScheduleStatusValue(ticket)
     const rawStatus = (ticket.status || '').toUpperCase()
-    const isInstalled = status === 'DONE_INSTALLED'
-      || rawStatus === 'INSTALLED'
-      || rawStatus === 'COMPLETED'
-      || rawStatus === 'DONE_INSTALLED'
-    if (!isInstalled) return false
+    if (status === 'CANCELLED' || rawStatus === 'CANCELLED') return false
 
     const payment = resolveTicketPayment(ticket)
     const mode = payment.mode.toUpperCase()
@@ -624,8 +624,6 @@ export type RebatePrefillResult =
 export const REBATE_RATE_TABLE: Record<string, Record<string, number>> = {
   RA:          { '1': 7200, '1.5': 7500, '2': 7500, '2.5': 8500 },
   MIDEA:       { '1': 8000, '1.5': 8500, '2': 8500, '2.5': 9000 },
-  LG:          { '1': 0,    '1.5': 0,    '2': 0,    '2.5': 0 },
-  'SMILE SERVE': { '1': 7250, '1.5': 7250, '2': 7750, '2.5': 7750 },
 }
 
 /** Normalize an HP value like "1.0", "1.0HP", "1.5 hp", "2H" to a rate-table key ("1", "1.5", "2", "2.5"). */
@@ -640,17 +638,23 @@ export const normalizeHpKey = (raw: string): string => {
 
 /** Look up the rebate rate for a dealer/brand + HP capacity. Returns null if not found. */
 export const lookupRebateRate = (company: string, hp: string): number | null => {
-  if (!company) return null
-  const cleanedCompany = company.trim().toUpperCase()
+  const hpKey = normalizeHpKey(hp)
+  if (!hpKey) return null
 
-  const dealerKey = Object.keys(REBATE_RATE_TABLE).find(k => {
+  const cleanedCompany = (company || '').trim().toUpperCase()
+
+  // 1. Check for specific rate overrides (MIDEA)
+  let dealerKey = Object.keys(REBATE_RATE_TABLE).find(k => {
+    if (k === 'RA') return false
     const keyUpper = k.toUpperCase()
     return cleanedCompany === keyUpper || cleanedCompany.includes(keyUpper) || keyUpper.includes(cleanedCompany)
   })
 
-  if (!dealerKey) return null
-  const hpKey = normalizeHpKey(hp)
-  if (!hpKey) return null
+  // 2. All non-Midea brands fall back to RA rate table
+  if (!dealerKey) {
+    dealerKey = 'RA'
+  }
+
   const rate = REBATE_RATE_TABLE[dealerKey]?.[hpKey]
   return rate != null ? rate : null
 }
@@ -694,18 +698,12 @@ export function splitBrandAndHp(combined: string): { brand: string; hp: string }
 
 /**
  * Filter tickets qualifying for Rebates for Collection prefill:
- * - Status = INSTALLED/COMPLETED/DONE_INSTALLED
+ * - Status = Any completed outcome (DONE_INSTALLED, DONE_CLEANING, DONE_CHECKUP, etc.)
  * - Commit / commit type contains "FREE" (e.g. "FREE", "FREE INSTALL")
  */
 export function filterFreeCommitTickets(tickets: Ticket[]): Ticket[] {
   return tickets.filter((ticket) => {
-    const status = getScheduleStatusValue(ticket)
-    const rawStatus = (ticket.status || '').toUpperCase()
-    const isInstalled = status === 'DONE_INSTALLED'
-      || rawStatus === 'INSTALLED'
-      || rawStatus === 'COMPLETED'
-      || rawStatus === 'DONE_INSTALLED'
-    if (!isInstalled) return false
+    if (!isCompletedScheduleTicket(ticket)) return false
 
     const commit = getTicketCommitDisplay(ticket).toUpperCase()
     if (!commit.includes('FREE')) return false
