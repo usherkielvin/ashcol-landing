@@ -132,7 +132,7 @@ export default function TicketHistoryGraphModal({
 
   const submitRemark = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const trimmedRemark = remark.trim()
+    const trimmedRemark = remark.trim().toUpperCase()
     if (!trimmedRemark || submittingRemark) return
     setSubmittingRemark(true)
     setRemarkError(null)
@@ -146,13 +146,21 @@ export default function TicketHistoryGraphModal({
       if (!response.ok) throw new Error('Failed to save remark')
       onRemarkSubmitted?.(ticket.id, trimmedRemark)
       setRemark('')
-      await loadHistory(false)
-      remarkInputRef.current?.focus()
+      onClose()
     } catch (err) {
       console.error('Error saving ticket remark:', err)
       setRemarkError('Unable to save the update. Please try again.')
     } finally {
       setSubmittingRemark(false)
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      if (remark.trim() && !submittingRemark) {
+        submitRemark(e as unknown as FormEvent<HTMLFormElement>)
+      }
     }
   }
 
@@ -451,15 +459,17 @@ export default function TicketHistoryGraphModal({
                 ref={remarkInputRef}
                 id="ticket-history-remark"
                 value={remark}
-                onChange={(e) => setRemark(e.target.value)}
-                placeholder="Add an update or remark..."
+                onChange={(e) => setRemark(e.target.value.toUpperCase())}
+                onKeyDown={handleKeyDown}
+                placeholder="ADD AN UPDATE OR REMARK..."
                 rows={2}
                 disabled={submittingRemark}
-                className="w-full resize-none rounded-lg border px-3.5 py-2.5 outline-none transition-colors focus:ring-2 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full resize-none rounded-lg border px-3.5 py-2.5 outline-none transition-colors focus:ring-2 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60 uppercase"
                 style={{
                   fontSize: '0.95rem',
                   backgroundColor: isLight ? '#ffffff' : '#111827',
                   borderColor: border, color: textPrimary, fontFamily: 'inherit',
+                  textTransform: 'uppercase',
                 }}
               />
               {remarkError && (

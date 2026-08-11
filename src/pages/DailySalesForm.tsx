@@ -19,6 +19,7 @@ import {
 } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
+import { fetchAndMapTickets, fetchAndMapOnlineTickets, fetchAndMapCheckTickets, fetchAndMapForCollTickets, fetchAndMapRebateTickets, deduplicateAndMerge, deduplicateAndMergeOnline, deduplicateAndMergeCheck, deduplicateAndMergeForColl, deduplicateAndMergeRebates, lookupRebateRate } from '../utils/schedulePrefill'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,7 +31,7 @@ interface OnlineTxRow  { id: string; installer: string; customer: string; bank: 
 interface CheckRow     { id: string; installer: string; customer: string; bank: string; amount: string }
 interface PartsSaleRow { id: string; customer: string; description: string; capital: string; salePrice: string }
 interface ForCollRow   { id: string; installer: string; customer: string; amount: string; collectionResolved?: boolean }
-interface RebateRow    { id: string; customer: string; company: string; raNumber: string; hp: string; amount: string }
+interface RebateRow    { id: string; ticketNumber: string; customer: string; company: string; raNumber: string; hp: string; amount: string }
 interface OrderRow     { id: string; customer: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 interface ExpenseRow   { id: string; name: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 interface IncentiveRow { id: string; customer: string; company: string; hp: string; promodiser: string; amount: string; collectionResolved?: boolean }
@@ -216,7 +217,8 @@ const mkOnl  = (): OnlineTxRow => ({ id: uid(), installer: '', customer: '', ban
 const mkChk  = (): CheckRow    => ({ id: uid(), installer: '', customer: '', bank: '', amount: '' })
 const mkPart = (): PartsSaleRow => ({ id: uid(), customer: '', description: '', capital: '', salePrice: '' })
 const mkColl = (): ForCollRow  => ({ id: uid(), installer: '', customer: '', amount: '', collectionResolved: false })
-const mkReb  = (): RebateRow   => ({ id: uid(), customer: '', company: '', raNumber: '', hp: '', amount: '' })
+const mkReb  = (): RebateRow   => ({ id: uid(), ticketNumber: '', customer: '', company: '', raNumber: '', hp: '', amount: '' })
+
 const mkOrd  = (): OrderRow    => ({ id: uid(), customer: '', description: '', amount: '', receiptReturned: false })
 const mkPay  = (): OrderRow    => ({ id: uid(), customer: '', description: '', amount: '', receiptReturned: false })
 const mkExp  = (): ExpenseRow  => ({ id: uid(), name: '', description: '', amount: '', receiptReturned: false })
@@ -628,6 +630,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
   // Cash Transactions
   const [cashTx, setCashTx]     = useState<CashTxRow[]>([mkCash()])
+  const [syncLoading, setSyncLoading] = useState(false)
+  const [rebateSyncLoading, setRebateSyncLoading] = useState(false)
   // Cash Returns
   const [cashRet, setCashRet]   = useState<CashRetRow[]>([mkRet()])
   // Fund Transfer from HO
@@ -796,6 +800,51 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     loadDateData()
   }, [reportDate, selectedBranchId, selectedAuditLine, isAdmin, reportId])
 
+  // ── Auto-prefill Cash & Online Transactions from schedule ──
+  useEffect(() => {
+    // Only auto-prefill when creating a new report (no reportId) and branch/date are set
+    if (reportId || !selectedBranchId || !reportDate) return
+    // Don't prefill if cashTx already has user data (more than one empty row)
+    const hasUserData = cashTx.some(r => r.customer || r.installer || r.amount)
+    if (hasUserData) return
+
+    const scheduleBranchId = selectedBranchId.replace(/-(sales|services)$/i, '')
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 30_000)
+
+    const prefillOptions = {
+      branchId: scheduleBranchId,
+      dateKey: reportDate,
+      branchName: branchName,
+      signal: controller.signal,
+    }
+
+    Promise.all([
+      fetchAndMapTickets(prefillOptions),
+      fetchAndMapOnlineTickets(prefillOptions),
+      fetchAndMapCheckTickets(prefillOptions),
+      fetchAndMapForCollTickets(prefillOptions),
+    ]).then(([cashResult, onlineResult, checkResult, forCollResult]) => {
+      clearTimeout(timeout)
+      if (cashResult.ok && cashResult.rows.length > 0) {
+        setCashTx(cashResult.rows)
+      }
+      if (onlineResult.ok && onlineResult.rows.length > 0) {
+        setOnlineTx(onlineResult.rows)
+      }
+      if (checkResult.ok && checkResult.rows.length > 0) {
+        setCheckRem(checkResult.rows)
+      }
+      if (forCollResult.ok && forCollResult.rows.length > 0) {
+        setForColl(forCollResult.rows)
+      }
+    }).catch(() => {
+      clearTimeout(timeout)
+    })
+
+    return () => { controller.abort(); clearTimeout(timeout) }
+  }, [reportDate, selectedBranchId, reportId])
+
   const fetchReportDetails = async (id: string, options?: { enterEditMode?: boolean }) => {
     console.log('[fetchReportDetails] Requested ID:', id)
     try {
@@ -854,6 +903,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
             const amt = item.amount != null ? String(item.amount) : ''
             rebatesList.push({
               id: uid(),
+              ticketNumber: item.ticketNumber || item.ticket_number || '',
               customer: item.customer || '',
               company: item.company || '',
               raNumber,
@@ -866,6 +916,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
       if (rebatesList.length === 0 && data.rebatesForCollection != null && data.rebatesForCollection > 0) {
         rebatesList.push({
           id: uid(),
+          ticketNumber: '',
           customer: '',
           company: 'Rebates',
           raNumber: '',
@@ -1525,6 +1576,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         const sAmount = scanned.amount != null ? String(scanned.amount) : ''
         return {
           id: uid(),
+          ticketNumber: scanned.ticketNumber || scanned.ticket_number || '',
           customer: (scanned.customer || '').trim(),
           company: (scanned.company || '').trim(),
           raNumber: '',
@@ -1533,7 +1585,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         }
       }), mkReb)
     } else if (data.rebatesForCollection) {
-      mergeScannedRows(setRebates, [{ id: uid(), customer: '', company: 'Scanned Rebates', raNumber: '', hp: '', amount: String(data.rebatesForCollection) }], mkReb)
+      mergeScannedRows(setRebates, [{ id: uid(), ticketNumber: '', customer: '', company: 'Scanned Rebates', raNumber: '', hp: '', amount: String(data.rebatesForCollection) }], mkReb)
     }
 
     if (data.expReceipt && Array.isArray(data.expReceipt) && data.expReceipt.length > 0) {
@@ -1580,6 +1632,121 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
     if (data.totalUnitsCancelled != null) setCancelledUnits(String(data.totalUnitsCancelled))
     if (data.totalFreeInstallUnits != null) setFreeInstallUnits(String(data.totalFreeInstallUnits))
     if (data.totalUnitsSurveyOnly != null) setSurveyOnlyUnits(String(data.totalUnitsSurveyOnly))
+  }
+
+  const handleSyncFromSchedule = async () => {
+    if (!selectedBranchId || !reportDate || syncLoading) return
+    // Use the base branchId (strip -sales/-services suffix for the tickets API)
+    const scheduleBranchId = selectedBranchId.replace(/-(sales|services)$/i, '')
+    console.log('[Sync from Schedule] Triggered. branchId:', scheduleBranchId, '(raw:', selectedBranchId, ') reportDate:', reportDate, 'branchName:', branchName)
+    setSyncLoading(true)
+    try {
+      const prefillOptions = {
+        branchId: scheduleBranchId,
+        dateKey: reportDate,
+        branchName: branchName,
+      }
+
+      // Fetch cash, online, check, and for-collection transactions in parallel
+      const [cashResult, onlineResult, checkResult, forCollResult] = await Promise.all([
+        fetchAndMapTickets(prefillOptions),
+        fetchAndMapOnlineTickets(prefillOptions),
+        fetchAndMapCheckTickets(prefillOptions),
+        fetchAndMapForCollTickets(prefillOptions),
+      ])
+
+      console.log('[Sync from Schedule] Cash result:', cashResult)
+      console.log('[Sync from Schedule] Online result:', onlineResult)
+      console.log('[Sync from Schedule] Check result:', checkResult)
+      console.log('[Sync from Schedule] ForColl result:', forCollResult)
+
+      let hasData = false
+
+      // Merge cash transactions
+      if (cashResult.ok && cashResult.rows.length > 0) {
+        setCashTx(prev => {
+          const merged = deduplicateAndMerge(prev, cashResult.rows)
+          return merged.length > 0 ? merged : [mkCash()]
+        })
+        hasData = true
+      }
+
+      // Merge online transactions (BANK TRANSFER, GCASH)
+      if (onlineResult.ok && onlineResult.rows.length > 0) {
+        setOnlineTx(prev => {
+          const merged = deduplicateAndMergeOnline(prev, onlineResult.rows)
+          return merged.length > 0 ? merged : [mkOnl()]
+        })
+        hasData = true
+      }
+
+      // Merge check remits (CHEQUE)
+      if (checkResult.ok && checkResult.rows.length > 0) {
+        setCheckRem(prev => {
+          const merged = deduplicateAndMergeCheck(prev, checkResult.rows)
+          return merged.length > 0 ? merged : [mkChk()]
+        })
+        hasData = true
+      }
+
+      // Merge for-collection
+      if (forCollResult.ok && forCollResult.rows.length > 0) {
+        setForColl(prev => {
+          const merged = deduplicateAndMergeForColl(prev, forCollResult.rows)
+          return merged.length > 0 ? merged : [mkColl()]
+        })
+        hasData = true
+      }
+
+      if (!hasData) {
+        const errMsg = !cashResult.ok ? `Cash sync failed: ${cashResult.error}` : 'No qualifying tickets found for this date.'
+        setError(errMsg)
+        setTimeout(() => setError(null), 4000)
+      }
+    } catch (err) {
+      console.error('[Sync from Schedule] Error:', err)
+      setError('Failed to sync from schedule.')
+      setTimeout(() => setError(null), 4000)
+    } finally {
+      setSyncLoading(false)
+    }
+  }
+
+  // Fetches all DONE INSTALL tickets from the schedule with a "FREE" commit tag and
+  // aligns them into Rebates for Collection (ticket no., customer, brand, HP separated).
+  const handleSyncRebatesFromSchedule = async () => {
+    if (!selectedBranchId || !reportDate || rebateSyncLoading) return
+    const scheduleBranchId = selectedBranchId.replace(/-(sales|services)$/i, '')
+    console.log('[Sync Rebates] Triggered. branchId:', scheduleBranchId, 'reportDate:', reportDate)
+    setRebateSyncLoading(true)
+    try {
+      const result = await fetchAndMapRebateTickets({
+        branchId: scheduleBranchId,
+        dateKey: reportDate,
+        branchName: branchName,
+      })
+      console.log('[Sync Rebates] Result:', result)
+      if (!result.ok) {
+        setError(`Rebates sync failed: ${result.error}`)
+        setTimeout(() => setError(null), 4000)
+        return
+      }
+      if (result.rows.length === 0) {
+        setError('No FREE-commit installed tickets found for this date.')
+        setTimeout(() => setError(null), 4000)
+        return
+      }
+      setRebates(prev => {
+        const merged = deduplicateAndMergeRebates(prev, result.rows)
+        return merged.length > 0 ? merged : [mkReb()]
+      })
+    } catch (err) {
+      console.error('[Sync Rebates] Error:', err)
+      setError('Failed to sync rebates from schedule.')
+      setTimeout(() => setError(null), 4000)
+    } finally {
+      setRebateSyncLoading(false)
+    }
   }
 
   const handleScanImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1767,7 +1934,8 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
           company: r.company,
           units: 1,
           amount: parseFloat(r.amount) || 0,
-          description: `REBATE|${r.raNumber}|${r.hp}`
+          description: `REBATE|${r.raNumber}|${r.hp}`,
+          ticketNumber: r.ticketNumber || '',
         })),
         ...forColl.filter(r => r.installer || r.amount).map(r => ({
           type: 'COLLECTION',
@@ -2115,7 +2283,27 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
           {/* Cash Transactions */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="Cash Transactions" total={totalCashCollection} variant="income" />
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <SectionHeader label="Cash Transactions" total={totalCashCollection} variant="income" />
+              </div>
+              {canSubmit && !reviewMode && (
+                <button
+                  type="button"
+                  onClick={handleSyncFromSchedule}
+                  disabled={syncLoading || isFormDisabled}
+                  className="flex items-center gap-1.5 px-3 py-1.5 mr-2 rounded-lg text-xs font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100"
+                  style={{ backgroundColor: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10B981' }}
+                >
+                  {syncLoading ? (
+                    <span className="animate-spin inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full" />
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9 9 0 0 0-7.5 4"/><path d="M3 12a9 9 0 0 0 9 9 9 9 0 0 0 7.5-4"/><polyline points="3 4 3 8 7 8"/><polyline points="21 20 21 16 17 16"/></svg>
+                  )}
+                  Sync from Schedule
+                </button>
+              )}
+            </div>
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -2745,11 +2933,32 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
         {/* Rebates for Collection */}
         <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 mt-4">
-          <SectionHeader label="Rebates for Collection" total={totalRebates} variant="income" />
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <SectionHeader label="Rebates for Collection" total={totalRebates} variant="income" />
+            </div>
+            {canSubmit && !reviewMode && (
+              <button
+                type="button"
+                onClick={handleSyncRebatesFromSchedule}
+                disabled={rebateSyncLoading || isFormDisabled}
+                className="flex items-center gap-1.5 px-3 py-1.5 mr-2 rounded-lg text-xs font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100"
+                style={{ backgroundColor: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10B981' }}
+              >
+                {rebateSyncLoading ? (
+                  <span className="animate-spin inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full" />
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9 9 0 0 0-7.5 4"/><path d="M3 12a9 9 0 0 0 9 9 9 9 0 0 0 7.5-4"/><polyline points="3 4 3 8 7 8"/><polyline points="21 20 21 16 17 16"/></svg>
+                )}
+                Sync from Schedule
+              </button>
+            )}
+          </div>
           <div className="p-2">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr>
+                  <th className={tableTh}>Ticket No.</th>
                   <th className={tableTh}>Customer</th>
                   <th className={tableTh}>Company / RA No.</th>
                   <th className={tableTh}>Brand</th>
@@ -2762,6 +2971,11 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                 {rebates.map(row => (
                   <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
                     <td className={tableTd}>
+                      <input type="text" placeholder="Ticket No." value={row.ticketNumber}
+                        onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, ticketNumber: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
                       <input type="text" placeholder="Customer name" value={row.customer}
                         onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
                         className={flushInput} disabled={isFormDisabled} />
@@ -2773,12 +2987,22 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                     </td>
                     <td className={tableTd}>
                       <input type="text" placeholder="e.g. MIDEA" value={row.company}
-                        onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, company: e.target.value } : r))}
+                        onChange={e => setRebates(p => p.map(r => {
+                          if (r.id !== row.id) return r
+                          const nextCompany = e.target.value
+                          const rate = lookupRebateRate(nextCompany, r.hp)
+                          return { ...r, company: nextCompany, amount: rate != null ? String(rate) : r.amount }
+                        }))}
                         className={flushInput} disabled={isFormDisabled} />
                     </td>
                     <td className={tableTd}>
                       <input type="text" placeholder="1.5" value={row.hp}
-                        onChange={e => setRebates(p => p.map(r => r.id === row.id ? { ...r, hp: e.target.value } : r))}
+                        onChange={e => setRebates(p => p.map(r => {
+                          if (r.id !== row.id) return r
+                          const nextHp = e.target.value
+                          const rate = lookupRebateRate(r.company, nextHp)
+                          return { ...r, hp: nextHp, amount: rate != null ? String(rate) : r.amount }
+                        }))}
                         className={`${flushInput} text-center`} disabled={isFormDisabled} />
                     </td>
                     <td className={tableTd}>

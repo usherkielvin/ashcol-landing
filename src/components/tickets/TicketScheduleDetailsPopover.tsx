@@ -45,6 +45,7 @@ export function TicketScheduleDetailsPopover({
   onOpenStatusPicker,
   onOpenChecklist,
   onUpdateTicket,
+  onOpenPaymentPrompt,
 }: {
   popup: { ticket: Ticket; x: number; y: number; ghostKind?: 'completed' | 'resched' | 'cancelled' | null }
   isLight: boolean
@@ -54,6 +55,7 @@ export function TicketScheduleDetailsPopover({
   onOpenStatusPicker: (ticket: Ticket, mode?: 'inline' | 'edit-form', anchorEl?: HTMLElement | null) => void
   onOpenChecklist?: (ticket: Ticket) => void
   onUpdateTicket?: (updatedTicket: Ticket) => void
+  onOpenPaymentPrompt?: (ticket: Ticket) => void
 }) {
   const [currentTicket, setCurrentTicket] = useState<Ticket>(popup.ticket)
   const [showChecklist, setShowChecklist] = useState(false)
@@ -179,7 +181,7 @@ export function TicketScheduleDetailsPopover({
               const paymentCombined = formatCombinedPayment(detailTicket)
               const paymentMode = getPaymentMode(detailTicket).trim().toUpperCase()
               const paymentAmount = formatPaymentAmount(detailTicket)
-              if (!paymentCombined) {
+              if (!paymentCombined && !paymentMode) {
                 return <p className="text-[12px]" style={{ color: textMuted }}>{EMPTY_CELL}</p>
               }
               if (paymentMode === 'FREE' || paymentMode === 'FREE INSTALL') {
@@ -187,18 +189,14 @@ export function TicketScheduleDetailsPopover({
               }
               return (
                 <div className="flex flex-col gap-1">
-                  {paymentMode ? (
-                    <p className="text-[12px]">
-                      <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Mode </span>
-                      <span className="font-semibold" style={{ color: textPrimary }}>{paymentMode}</span>
-                    </p>
-                  ) : null}
-                  {paymentAmount ? (
-                    <p className="text-[12px]">
-                      <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Amount </span>
-                      <span className="font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: textPrimary }}>{formatPesoPrefix(paymentAmount)}</span>
-                    </p>
-                  ) : null}
+                  <p className="text-[12px]">
+                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Mode </span>
+                    <span className="font-semibold" style={{ color: textPrimary }}>{paymentMode || 'NO PAYMENT'}</span>
+                  </p>
+                  <p className="text-[12px]">
+                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Amount </span>
+                    <span className="font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: textPrimary }}>{paymentAmount ? formatPesoPrefix(paymentAmount) : '₱0'}</span>
+                  </p>
                 </div>
               )
             })()}
@@ -245,9 +243,33 @@ export function TicketScheduleDetailsPopover({
         {/* Footer actions */}
         {canEdit && !isGhost ? (
           <div
-            className="px-3 py-2.5 shrink-0"
+            className="px-3 py-2.5 shrink-0 flex flex-col gap-2"
             style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}
           >
+            {onOpenPaymentPrompt ? (
+              <button
+                type="button"
+                onClick={() => {
+                  const t = detailTicket
+                  onClose()
+                  onOpenPaymentPrompt(t)
+                }}
+                className="w-full py-2.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-[0.97]"
+                style={{
+                  background: 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)',
+                  color: '#ffffff',
+                  boxShadow: '0 4px 14px rgba(37, 99, 235, 0.35)',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)')}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="5" width="20" height="14" rx="2" />
+                  <line x1="2" y1="10" x2="22" y2="10" />
+                </svg>
+                Update Payment
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => {

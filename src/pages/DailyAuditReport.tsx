@@ -490,8 +490,8 @@ export default function DailyAuditReport() {
         }
         return a.branchName.localeCompare(b.branchName)
       }
-      const av = k === 'netSales' ? (a.grossSales - (a.totalExpenses || 0) - (a.totalPayables || 0)) : (a as any)[k]
-      const bv = k === 'netSales' ? (b.grossSales - (b.totalExpenses || 0) - (b.totalPayables || 0)) : (b as any)[k]
+      const av = k === 'netSales' ? (a.grossSales - (a.totalExpenses || 0) - (a.totalPayables || 0) - (a.totalForPurchase || 0)) : (a as any)[k]
+      const bv = k === 'netSales' ? (b.grossSales - (b.totalExpenses || 0) - (b.totalPayables || 0) - (b.totalForPurchase || 0)) : (b as any)[k]
       if (av === bv) return 0
       if (av == null) return 1; if (bv == null) return -1
       if (typeof av === 'string' && typeof bv === 'string')
@@ -508,7 +508,7 @@ export default function DailyAuditReport() {
 
   const totals = visibleRows.reduce((acc, r) => ({
     grossSales:           acc.grossSales + r.grossSales,
-    netSales:             acc.netSales + (r.grossSales - (r.totalExpenses || 0) - (r.totalPayables || 0)),
+    netSales:             acc.netSales + (r.grossSales - (r.totalExpenses || 0) - (r.totalPayables || 0) - (r.totalForPurchase || 0)),
     targetDailyQuota:     acc.targetDailyQuota + r.targetDailyQuota,
     totalCohCfd:          acc.totalCohCfd + r.totalCohCfd,
     totalCashCollection:  acc.totalCashCollection + r.totalCashCollection,
@@ -535,7 +535,7 @@ export default function DailyAuditReport() {
       Time: formatLocalTime(row.createdAt, row.timeUploaded) || '',
       Status: row.status,
       'Gross Sales': row.grossSales,
-      'Net Sales': row.grossSales - (row.totalExpenses || 0) - (row.totalPayables || 0),
+      'Net Sales': row.grossSales - (row.totalExpenses || 0) - (row.totalPayables || 0) - (row.totalForPurchase || 0),
       'Target Quota': row.targetDailyQuota,
       Difference: row.difference,
       Remarks: row.remarks,
@@ -1334,7 +1334,7 @@ export default function DailyAuditReport() {
 
                       {/* Net Sales */}
                       <td className="text-right tabular-nums font-bold" style={{ color: isLight ? '#4338ca' : '#a5b4fc', padding: p, whiteSpace: 'nowrap', borderRight: colBorder, borderBottom: colBorder }}>
-                        {peso(row.grossSales - (row.totalExpenses || 0) - (row.totalPayables || 0))}
+                        {peso(row.grossSales - (row.totalExpenses || 0) - (row.totalPayables || 0) - (row.totalForPurchase || 0))}
                       </td>
 
                       {/* Target Quota */}
@@ -1570,7 +1570,7 @@ export default function DailyAuditReport() {
                   <div className="grid grid-cols-4 pt-2 mt-1 border-t" style={{ borderColor: border }}>
                     {[
                       { label: 'Sales', value: `₱${peso(row.grossSales)}`, color: '#3B82F6' },
-                      { label: 'Net', value: `₱${peso(row.grossSales - (row.totalExpenses || 0) - (row.totalPayables || 0))}`, color: textPrimary },
+                      { label: 'Net', value: `₱${peso(row.grossSales - (row.totalExpenses || 0) - (row.totalPayables || 0) - (row.totalForPurchase || 0))}`, color: textPrimary },
                       { label: 'Quota', value: `₱${peso(row.targetDailyQuota)}`, color: textMuted },
                       { label: 'Diff', value: noRecord ? '—' : `${isAbove ? '+' : ''}₱${peso(row.difference)}`, color: diffColor },
                     ].map(m => (
@@ -1866,7 +1866,7 @@ export default function DailyAuditReport() {
                         <div className="flex flex-col gap-2.5">
                           {[
                             { label: 'Gross Sales', value: `₱${peso(selectedRow.grossSales)}`, color: textPrimary, bold: true },
-                            { label: 'Net Sales', value: `₱${peso(selectedRow.grossSales - (selectedRow.totalExpenses || 0) - (selectedRow.totalPayables || 0))}`, color: '#2563EB', bold: true },
+                            { label: 'Net Sales', value: `₱${peso(selectedRow.grossSales - (selectedRow.totalExpenses || 0) - (selectedRow.totalPayables || 0) - (selectedRow.totalForPurchase || 0))}`, color: '#2563EB', bold: true },
                             { label: 'Target Quota', value: `₱${peso(selectedRow.targetDailyQuota)}`, color: textMuted },
                             { label: 'Difference', value: `${selectedRow.remarks === 'ABOVE QUOTA' ? '+' : ''}₱${peso(selectedRow.difference)}`, color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : '#EF4444', bold: true },
                             { label: 'Remarks', value: formatRemarksLabel(selectedRow.remarks, false), color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : selectedRow.remarks === 'PENDING' ? '#F59E0B' : isNoTransactionRemarks(selectedRow.remarks) ? textMuted : '#EF4444', bold: true },

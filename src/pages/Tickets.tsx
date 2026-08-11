@@ -617,7 +617,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
   const [saving] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
-  const [paymentPrompt, setPaymentPrompt] = useState<{ ticket: Ticket; nextStatus: string } | null>(null)
+  const [paymentPrompt, setPaymentPrompt] = useState<{ ticket: Ticket; nextStatus: string; updateOnly?: boolean } | null>(null)
   const [promptAmount, setPromptAmount] = useState<string>('')
   const [promptMode, setPromptMode] = useState<string>('CASH')
   const [promptHybridCash, setPromptHybridCash] = useState<string>('')
@@ -5555,31 +5555,48 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             {!combined ? (
               <div style={{ color: isPendingRow ? 'rgba(255,255,255,0.7)' : textMuted }}>{EMPTY_CELL}</div>
             ) : mode === 'FREE' || mode === 'FREE INSTALL' ? (
-              <div style={{ fontWeight: 700, color: '#ffffff' }}>FREE</div>
+              <div style={{ fontWeight: 700, color: isPendingRow ? '#ffffff' : textPrimary }}>FREE</div>
             ) : (
               <div className="flex flex-col gap-1.5">
                 {mode ? (
                   <div>
                     <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: isPendingRow ? 'rgba(255,255,255,0.8)' : textMuted }}>Mode </span>
-                    <span style={{ fontWeight: 600, color: '#ffffff' }}>{mode}</span>
+                    <span style={{ fontWeight: 600, color: isPendingRow ? '#ffffff' : textPrimary }}>{mode}</span>
                   </div>
                 ) : null}
                 {amountStr ? (
                   <div>
                     <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: isPendingRow ? 'rgba(255,255,255,0.8)' : textMuted }}>Amount </span>
-                    <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: '#ffffff' }}>{formatPesoPrefix(amountStr)}</span>
+                    <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: isPendingRow ? '#ffffff' : textPrimary }}>{formatPesoPrefix(amountStr)}</span>
                   </div>
                 ) : null}
                 {isHybrid && breakdown.length ? (
                   <div className="flex flex-col gap-0.5">
                     {breakdown.map((entry, i) => (
                       <div key={`${entry.mode}-${i}`} className="text-[10.5px]" style={{ color: isPendingRow ? 'rgba(255,255,255,0.8)' : textMuted }}>
-                        {entry.mode} <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: '#ffffff' }}>{Math.round(entry.amount).toLocaleString('en-PH')}</span>
+                        {entry.mode} <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: isPendingRow ? '#ffffff' : textPrimary }}>{Math.round(entry.amount).toLocaleString('en-PH')}</span>
                       </div>
                     ))}
                   </div>
                 ) : null}
               </div>
+            )}
+            {canEdit && !rowGhost && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setExpandedCell(null)
+                  const payment = resolveTicketPayment(ticket)
+                  setPaymentPrompt({ ticket, nextStatus: getScheduleStatusValue(ticket) || 'DONE_INSTALLED', updateOnly: true })
+                  setPromptMode(payment.mode || 'CASH')
+                  setPromptAmount(payment.amount > 0 ? String(payment.amount) : '')
+                }}
+                className="mt-2 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:scale-105"
+                style={{ backgroundColor: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', color: '#10B981' }}
+              >
+                Update Payment
+              </button>
             )}
           </>
         )
@@ -7591,6 +7608,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             setTickets(prev => prev.map(t => (t.id === updated.id ? { ...t, ...updated } : t)))
             setScheduleDetailsPopup(prev => prev ? { ...prev, ticket: updated } : null)
           }}
+          onOpenPaymentPrompt={(ticket) => {
+            setScheduleDetailsPopup(null)
+            setPaymentPrompt({ ticket, nextStatus: getScheduleStatusValue(ticket) || 'DONE_INSTALLED', updateOnly: true })
+            const payment = resolveTicketPayment(ticket)
+            setPromptMode(payment.mode || 'CASH')
+            setPromptAmount(payment.amount > 0 ? String(payment.amount) : '')
+          }}
         />
       )}
 
@@ -8381,7 +8405,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       })()}
 
       {paymentPrompt && (() => {
-        const { ticket, nextStatus } = paymentPrompt
+        const { ticket, nextStatus, updateOnly } = paymentPrompt
         const isFreeOrPending = promptMode === 'FREE' || promptMode === 'FREE INSTALL' || promptMode === 'PENDING'
         const isHybrid = promptMode === 'HYBRID'
         const hybridCashNum = parseFloat(promptHybridCash) || 0
@@ -8389,18 +8413,36 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         const hybridTotal = hybridCashNum + hybridGcashNum
         const isDoneCleaning = nextStatus === 'DONE_CLEANING'
         const isDoneDismantle = nextStatus === 'DONE_DISMANTLE'
-        const paymentPromptHint = isDoneCleaning
+        const paymentPromptHint = updateOnly
+          ? 'Update the payment mode and amount for this ticket'
+          : isDoneCleaning
           ? 'Set payment to mark this cleaning ticket done'
           : isDoneDismantle
             ? 'Set payment to mark this dismantle ticket done'
             : 'Set payment to complete and archive this ticket'
-        const paymentSubmitLabel = isDoneCleaning
+        const paymentSubmitLabel = updateOnly
+          ? 'Update Payment'
+          : isDoneCleaning
           ? 'Complete Cleaning'
           : isDoneDismantle
             ? 'Complete Dismantle'
             : 'Complete & Archive'
         const handleSubmit = (e: React.FormEvent) => {
           e.preventDefault()
+          if (updateOnly) {
+            // Just update payment fields without changing status
+            const amt = isFreeOrPending ? 0 : (isHybrid ? hybridTotal : (parseFloat(promptAmount) || 0))
+            const mop = promptMode
+            let breakdown: PaymentBreakdownEntry[] | undefined
+            if (isHybrid) {
+              breakdown = []
+              if (hybridCashNum > 0) breakdown.push({ mode: 'CASH', amount: hybridCashNum })
+              if (hybridGcashNum > 0) breakdown.push({ mode: 'GCASH', amount: hybridGcashNum })
+            }
+            void saveCellEdit(ticket, 'PAYMENT', '', { amount: amt, modeOfPayment: mop, breakdown })
+            setPaymentPrompt(null)
+            return
+          }
           if (isHybrid) {
             if (hybridTotal <= 0) return
             const breakdown: PaymentBreakdownEntry[] = []
