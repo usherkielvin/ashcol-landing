@@ -660,20 +660,12 @@ export default function DailyAuditReport() {
         {/* Row 1: Title & Actions */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="text-base font-semibold flex items-center gap-2" style={{ color: textPrimary }}>
-              <BarChart2 className="w-4 h-4" style={{ color: '#10B981' }} />
-              Daily Transaction Summary
+            <h2 className="text-base font-extrabold uppercase tracking-wider" style={{ color: textPrimary }}>
+              DAILY TRANSACTION SUMMARY
             </h2>
             <p className="text-xs mt-0.5 truncate" style={{ color: textMuted }}>{mobileDateLabel}</p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            <button type="button" onClick={handleExportExcel}
-              disabled={visibleRows.length === 0}
-              title="Export Excel"
-              className="w-8 h-8 flex items-center justify-center rounded-lg disabled:opacity-40 disabled:cursor-not-allowed border transition-colors focus:outline-none"
-              style={{ backgroundColor: isLight ? '#ffffff' : '#0B1528', borderColor: 'rgba(16,185,129,0.3)', color: '#10B981' }}>
-              <Download className="w-4 h-4 text-emerald-500" />
-            </button>
             <div className="relative shrink-0">
               <button type="button" onClick={() => setMobileMenuOpen(o => !o)}
                 className="w-8 h-8 flex items-center justify-center rounded-lg border transition-colors focus:outline-none"
@@ -692,11 +684,7 @@ export default function DailyAuditReport() {
                           <FileEdit className="w-3.5 h-3.5 text-emerald-500" /> Submit Daily Report
                         </button>
                       )}
-                      <button type="button" onClick={() => { handleExportExcel(); setMobileMenuOpen(false) }}
-                        disabled={visibleRows.length === 0}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed" style={{ color: textPrimary }}>
-                        <Download className="w-3.5 h-3.5 text-emerald-500" /> Export Excel
-                      </button>
+
                     {hiddenBranches.length > 0 && (
                       <button type="button" onClick={() => { setHiddenBranches([]); setMobileMenuOpen(false) }}
                         className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium" style={{ color: textPrimary }}>
@@ -779,18 +767,18 @@ export default function DailyAuditReport() {
         {!loading && rows.length > 0 && (
           <div className="flex overflow-x-auto gap-2 no-scrollbar pb-1">
             {[
-              { label: 'Gross',     value: `₱${peso(totals.grossSales)}`,             color: '#3B82F6', border: 'border-blue-200 dark:border-blue-900/40' },
-              { label: 'Net',       value: `₱${peso(totals.netSales)}`,               color: '#2563EB', border: 'border-blue-300 dark:border-blue-800/40' },
-              { label: 'Cash',      value: `₱${peso(totals.totalCashCollection)}`,    color: '#10B981', border: 'border-emerald-200 dark:border-emerald-900/40' },
-              { label: 'Online',    value: `₱${peso(totals.totalOnlineCollection)}`,  color: '#6366F1', border: 'border-indigo-200 dark:border-indigo-900/40' },
-              { label: 'Expenses',  value: `₱${peso(totals.totalExpenses)}`,          color: '#EF4444', border: 'border-red-200 dark:border-red-900/40' },
-              { label: 'Purchases', value: `₱${peso(totals.totalForPurchase)}`,       color: '#F59E0B', border: 'border-amber-200 dark:border-amber-900/40' },
-              { label: 'For coll.', value: `₱${peso(totals.forCollection)}`,          color: '#F59E0B', border: 'border-amber-200 dark:border-amber-900/40' },
-              { label: 'Rebates',   value: `₱${peso(totals.rebatesForCollection)}`,   color: '#10B981', border: 'border-emerald-200 dark:border-emerald-900/40' },
+              { label: 'Gross',     value: `₱${peso(totals.grossSales)}`,           color: '#10B981' },
+              { label: 'Net',       value: `₱${peso(totals.netSales)}`,             color: totals.netSales >= 0 ? '#10B981' : '#EF4444' },
+              { label: 'Cash',      value: `₱${peso(totals.totalCashCollection)}`,  color: '#10B981' },
+              { label: 'Online',    value: `₱${peso(totals.totalOnlineCollection)}`,color: '#10B981' },
+              { label: 'Expenses',  value: `₱${peso(totals.totalExpenses)}`,        color: '#EF4444' },
+              { label: 'Purchases', value: `₱${peso(totals.totalForPurchase)}`,     color: textPrimary },
+              { label: 'For Coll.', value: `₱${peso(totals.forCollection)}`,        color: textPrimary },
+              { label: 'Rebates',   value: `₱${peso(totals.rebatesForCollection)}`, color: '#10B981' },
             ].map(k => (
-              <div key={k.label} className={`min-w-[100px] p-2.5 border rounded-xl shrink-0 flex flex-col gap-0.5 ${k.border}`}>
-                <span className="text-[10px] font-medium" style={{ color: textMuted }}>{k.label}</span>
-                <span className="text-sm font-semibold tabular-nums" style={{ color: k.color }}>{k.value}</span>
+              <div key={k.label} className="min-w-[110px] p-3 border rounded-xl shrink-0 flex flex-col gap-1 bg-white dark:bg-[#0A1120]" style={{ borderColor: border }}>
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{k.label}</span>
+                <span className="text-base font-extrabold tabular-nums" style={{ color: k.color }}>{k.value}</span>
               </div>
             ))}
           </div>
@@ -995,32 +983,26 @@ export default function DailyAuditReport() {
       {/* ── Print area enclosing KPI Counters and Table ─────────────────────────── */}
       <div className="print-area flex flex-col gap-5">
 
-      {/* ── Compact KPI strip (desktop) ─────────────────────────────────────── */}
+      {/* ── Prominent KPI strip (desktop) — bigger, icon-free, clean ── */}
       {!loading && rows.length > 0 && (
-        <div className="hidden md:flex flex-wrap lg:flex-nowrap items-center gap-3 px-4 py-3 border-b" style={{ borderColor: border }}>
+        <div className="hidden md:grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 px-4 py-3 border-b" style={{ borderColor: border }}>
           {[
-            { label: 'Gross Sales',      value: peso(totals.grossSales),             color: '#3B82F6', icon: BarChart2 },
-            { label: 'Net Sales',        value: peso(totals.netSales),               color: '#2563EB', icon: BarChart2 },
-            { label: 'Cash Collected',   value: peso(totals.totalCashCollection),    color: '#10B981', icon: TrendingUp },
-            { label: 'Online Collected', value: peso(totals.totalOnlineCollection),  color: '#8B5CF6', icon: TrendingUp },
-            { label: 'Total Expenses',         value: peso(totals.totalExpenses),          color: '#EF4444', icon: TrendingDown },
-            { label: 'Total Purchases',        value: peso(totals.totalForPurchase),       color: '#F59E0B', icon: TrendingDown },
-            { label: 'For Collection',         value: peso(totals.forCollection),          color: '#F59E0B', icon: ClipboardList },
-            { label: 'Rebates',                value: peso(totals.rebatesForCollection),   color: '#10B981', icon: TrendingUp },
-          ].map((k, i) => {
-            const Icon = k.icon
-            return (
-              <div key={i}
-                className="flex flex-col px-3 py-1.5 rounded-lg border bg-white dark:bg-[#0A1120] min-w-[120px]"
-                style={{ borderColor: border }}>
-                <div className="flex items-center gap-1.5">
-                  <Icon className="w-3 h-3 shrink-0" style={{ color: k.color }} />
-                  <span className="text-[10px] font-semibold truncate" style={{ color: textMuted }}>{k.label}</span>
-                </div>
-                <strong className="text-xs font-black tabular-nums truncate" style={{ color: k.color }}>₱{k.value}</strong>
-              </div>
-            )
-          })}
+            { label: 'Gross Sales',      value: peso(totals.grossSales),           color: '#10B981' },
+            { label: 'Net Sales',        value: peso(totals.netSales),             color: totals.netSales >= 0 ? '#10B981' : '#EF4444' },
+            { label: 'Cash Collected',   value: peso(totals.totalCashCollection),  color: '#10B981' },
+            { label: 'Online Collected', value: peso(totals.totalOnlineCollection),color: '#10B981' },
+            { label: 'Total Expenses',   value: peso(totals.totalExpenses),        color: '#EF4444' },
+            { label: 'Total Purchases',  value: peso(totals.totalForPurchase),     color: textPrimary },
+            { label: 'For Collection',   value: peso(totals.forCollection),        color: textPrimary },
+            { label: 'Rebates',          value: peso(totals.rebatesForCollection), color: '#10B981' },
+          ].map((k, i) => (
+            <div key={i}
+              className="flex flex-col p-3.5 rounded-xl border bg-white dark:bg-[#0A1120] shadow-sm transition-all hover:border-emerald-500/40"
+              style={{ borderColor: border }}>
+              <span className="text-[11px] font-bold uppercase tracking-wider truncate mb-1" style={{ color: textMuted }}>{k.label}</span>
+              <strong className="text-base font-extrabold tabular-nums truncate" style={{ color: k.color }}>₱{k.value}</strong>
+            </div>
+          ))}
         </div>
       )}
 
@@ -1054,26 +1036,12 @@ export default function DailyAuditReport() {
 
         {/* Transparent title row — no longer a bordered "toolbar" box */}
         <div className="px-4 py-2 flex items-center gap-2 flex-wrap">
-          <BarChart2 className="w-4 h-4" style={{ color: '#10B981' }} />
-          <h3 className="font-black text-sm" style={{ color: textPrimary }}>
-            Daily Transaction Summary —{' '}
+          <h3 className="font-extrabold text-sm uppercase tracking-wider" style={{ color: textPrimary }}>
+            DAILY TRANSACTION SUMMARY —{' '}
             {viewMode === 'single'
               ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
               : `${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} – ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
           </h3>
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider"
-            style={{ color: '#10B981', backgroundColor: 'rgba(16,185,129,0.12)' }}>
-            {logicalBranchCount} Branches
-          </span>
-          <button
-            type="button"
-            onClick={handleExportExcel}
-            disabled={visibleRows.length === 0}
-            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs border transition-all hover:scale-105 no-print disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none"
-            style={{ backgroundColor: isLight ? '#ffffff' : '#0B1528', borderColor: 'rgba(16,185,129,0.3)', color: '#10B981' }}
-          >
-            <Download className="w-3.5 h-3.5 text-emerald-500" /> Export Excel
-          </button>
         </div>
 
         {loading ? (
@@ -1090,7 +1058,7 @@ export default function DailyAuditReport() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 'calc(100vh - 210px)' }}>
+          <div className="overflow-x-auto overflow-y-auto rounded-xl" style={{ maxHeight: 'calc(100vh - 210px)', border: `2px solid ${isLight ? '#047857' : '#064e3b'}` }}>
               <table
                 style={{ minWidth: '1500px', fontSize: compactView ? '11px' : '13px', width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}
               >
