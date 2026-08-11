@@ -5,6 +5,7 @@ import { getScheduleStatusValue, resolveTicketPayment, parseAcMeta, parseBrand, 
 
 export interface CashTxRow {
   id: string
+  ticketNumber?: string
   customer: string
   installer: string
   amount: string
@@ -29,7 +30,7 @@ const uid = () => Math.random().toString(36).slice(2)
 
 /**
  * Strip branch/company prefixes from an installer name.
- * Re-implements the logic from DailySalesForm.tsx `cleanInstallerName`.
+ * Re-implements the logic from DTR_Form.tsx `cleanInstallerName`.
  */
 function cleanInstallerName(name: string, currentBranchName?: string): string {
   let cleaned = name.trim()
@@ -192,8 +193,11 @@ export function mapTicketToCashRow(ticket: Ticket, branchName: string): CashTxRo
   const installer = stripInstallerCounter(cleanInstallerName(rawInstaller, branchName)).toUpperCase()
   const amount = String(resolveTicketPayment(ticket).amount)
 
+  const ticketNumber = getTicketNumberDisplay(ticket)
+
   return {
     id: uid(),
+    ticketNumber,
     customer,
     installer,
     amount,
@@ -291,6 +295,7 @@ export function deduplicateAndMerge(existing: CashTxRow[], incoming: CashTxRow[]
 
 export interface OnlineTxRow {
   id: string
+  ticketNumber?: string
   installer: string
   customer: string
   bank: string
@@ -342,8 +347,11 @@ export function mapTicketToOnlineRow(ticket: Ticket, branchName: string): Online
   const amount = String(payment.amount)
   const bank = payment.mode || ''
 
+  const ticketNumber = getTicketNumberDisplay(ticket)
+
   return {
     id: uid(),
+    ticketNumber,
     installer,
     customer,
     bank,
@@ -407,6 +415,7 @@ export function deduplicateAndMergeOnline(existing: OnlineTxRow[], incoming: Onl
 
 export interface CheckRow {
   id: string
+  ticketNumber?: string
   installer: string
   customer: string
   bank: string
@@ -452,8 +461,11 @@ export function mapTicketToCheckRow(ticket: Ticket, branchName: string): CheckRo
   const installer = stripInstallerCounter(cleanInstallerName(rawInstaller, branchName)).toUpperCase()
   const payment = resolveTicketPayment(ticket)
 
+  const ticketNumber = getTicketNumberDisplay(ticket)
+
   return {
     id: uid(),
+    ticketNumber,
     installer,
     customer,
     bank: 'CHEQUE',
@@ -507,6 +519,7 @@ export function deduplicateAndMergeCheck(existing: CheckRow[], incoming: CheckRo
 
 export interface ForCollRow {
   id: string
+  ticketNumber?: string
   installer: string
   customer: string
   amount: string
@@ -552,8 +565,11 @@ export function mapTicketToForCollRow(ticket: Ticket, branchName: string): ForCo
   const installer = stripInstallerCounter(cleanInstallerName(rawInstaller, branchName)).toUpperCase()
   const payment = resolveTicketPayment(ticket)
 
+  const ticketNumber = getTicketNumberDisplay(ticket)
+
   return {
     id: uid(),
+    ticketNumber,
     installer,
     customer,
     amount: String(payment.amount),

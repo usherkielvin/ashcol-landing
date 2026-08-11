@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import { NumericFormat } from 'react-number-format'
-import { Plus, Trash2, Check, Receipt, Send, Edit } from 'lucide-react'
+import { Plus, Trash2, Check, Receipt, Send, Edit, AlertTriangle } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -25,12 +25,12 @@ import { fetchAndMapTickets, fetchAndMapOnlineTickets, fetchAndMapCheckTickets, 
 
 
 // DTR-specific row types
-interface CashTxRow    { id: string; customer: string; installer: string; amount: string }
+interface CashTxRow    { id: string; ticketNumber?: string; customer: string; installer: string; amount: string }
 interface CashRetRow   { id: string; name: string; amount: string }
-interface OnlineTxRow  { id: string; installer: string; customer: string; bank: string; amount: string }
-interface CheckRow     { id: string; installer: string; customer: string; bank: string; amount: string }
+interface OnlineTxRow  { id: string; ticketNumber?: string; installer: string; customer: string; bank: string; amount: string }
+interface CheckRow     { id: string; ticketNumber?: string; installer: string; customer: string; bank: string; amount: string }
 interface PartsSaleRow { id: string; customer: string; description: string; capital: string; salePrice: string }
-interface ForCollRow   { id: string; installer: string; customer: string; amount: string; collectionResolved?: boolean }
+interface ForCollRow   { id: string; ticketNumber?: string; installer: string; customer: string; amount: string; collectionResolved?: boolean }
 interface RebateRow    { id: string; ticketNumber: string; customer: string; company: string; raNumber: string; hp: string; amount: string }
 interface OrderRow     { id: string; customer: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 interface ExpenseRow   { id: string; name: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
@@ -89,6 +89,7 @@ const resolveCanEditExistingReport = (
     status?: string | null
     branchId?: string | null
     auditLine?: string | null
+    submittedAt?: string | null
   },
 ) => {
   if (ctx.isAdmin) {
@@ -97,6 +98,14 @@ const resolveCanEditExistingReport = (
       { id: report.branchId || '', auditLine: report.auditLine },
       ctx.globalBranchId,
     )
+  }
+
+  // 24-hour edit window enforcement for non-admin users (members / OIC)
+  if (report.submittedAt) {
+    const submittedMs = new Date(report.submittedAt).getTime()
+    if (!isNaN(submittedMs) && Date.now() - submittedMs > 24 * 60 * 60 * 1000) {
+      return false
+    }
   }
 
   const role = ctx.role
@@ -211,12 +220,12 @@ const syncAdminBranchFromGlobal = (
   return null
 }
 
-const mkCash = (): CashTxRow   => ({ id: uid(), customer: '', installer: '', amount: '' })
+const mkCash = (): CashTxRow   => ({ id: uid(), ticketNumber: '', customer: '', installer: '', amount: '' })
 const mkRet  = (): CashRetRow  => ({ id: uid(), name: '', amount: '' })
-const mkOnl  = (): OnlineTxRow => ({ id: uid(), installer: '', customer: '', bank: '', amount: '' })
-const mkChk  = (): CheckRow    => ({ id: uid(), installer: '', customer: '', bank: '', amount: '' })
+const mkOnl  = (): OnlineTxRow => ({ id: uid(), ticketNumber: '', installer: '', customer: '', bank: '', amount: '' })
+const mkChk  = (): CheckRow    => ({ id: uid(), ticketNumber: '', installer: '', customer: '', bank: '', amount: '' })
 const mkPart = (): PartsSaleRow => ({ id: uid(), customer: '', description: '', capital: '', salePrice: '' })
-const mkColl = (): ForCollRow  => ({ id: uid(), installer: '', customer: '', amount: '', collectionResolved: false })
+const mkColl = (): ForCollRow  => ({ id: uid(), ticketNumber: '', installer: '', customer: '', amount: '', collectionResolved: false })
 const mkReb  = (): RebateRow   => ({ id: uid(), ticketNumber: '', customer: '', company: '', raNumber: '', hp: '', amount: '' })
 
 const mkOrd  = (): OrderRow    => ({ id: uid(), customer: '', description: '', amount: '', receiptReturned: false })
@@ -342,7 +351,7 @@ const DelBtn = ({ onClick }: { onClick: () => void }) => (
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummary?: () => void } = {}) {
+export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: () => void } = {}) {
   const { theme } = useTheme()
   const { user } = useAuth()
   const location = useLocation()
@@ -411,9 +420,10 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
         status: reportStatus,
         branchId: selectedBranchId,
         auditLine: selectedAuditLine,
+        submittedAt,
       },
     )
-  }, [reportId, reportStatus, isAdmin, isManager, role, reportDate, user, selectedBranchId, selectedAuditLine, globalBranchId])
+  }, [reportId, reportStatus, isAdmin, isManager, role, reportDate, user, selectedBranchId, selectedAuditLine, globalBranchId, submittedAt])
 
   const canEditOrSubmit = useMemo(() => {
     if (!canSubmit) return false
@@ -1919,6 +1929,38 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            {canSubmit && !reviewMode && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleSyncFromSchedule}
+                  disabled={syncLoading || isFormDisabled}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 shrink-0"
+                  style={{ backgroundColor: '#10B981', border: '1px solid #059669', color: '#FFFFFF', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)' }}
+                >
+                  {syncLoading ? (
+                    <span className="animate-spin inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full" />
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9 9 0 0 0-7.5 4"/><path d="M3 12a9 9 0 0 0 9 9 9 9 0 0 0 7.5-4"/><polyline points="3 4 3 8 7 8"/><polyline points="21 20 21 16 17 16"/></svg>
+                  )}
+                  Sync Transactions from Sched
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSyncRebatesFromSchedule}
+                  disabled={rebateSyncLoading || isFormDisabled}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 shrink-0"
+                  style={{ backgroundColor: '#10B981', border: '1px solid #059669', color: '#FFFFFF', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)' }}
+                >
+                  {rebateSyncLoading ? (
+                    <span className="animate-spin inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full" />
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9 9 0 0 0-7.5 4"/><path d="M3 12a9 9 0 0 0 9 9 9 9 0 0 0 7.5-4"/><polyline points="3 4 3 8 7 8"/><polyline points="21 20 21 16 17 16"/></svg>
+                  )}
+                  Sync Rebates from Sched
+                </button>
+              </>
+            )}
 
             {onSwitchToSummary && !reviewMode && (
               <button
@@ -1935,7 +1977,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
         {/* Submission info — only visible when viewing an existing report */}
         {!!reportId && (submittedAt || lastUpdatedAt || lastUpdatedBy) && (
-          <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-x-6 gap-y-2">
+          <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-x-6 gap-y-2 items-center">
             {submittedAt && (
               <div className="flex items-center gap-1.5">
                 <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Submitted:</span>
@@ -1945,6 +1987,19 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                     hour: '2-digit', minute: '2-digit', hour12: true,
                   }).toUpperCase()}
                 </span>
+              </div>
+            )}
+            {submittedAt && (
+              <div className="flex items-center gap-1.5">
+                {Date.now() - new Date(submittedAt).getTime() > 24 * 60 * 60 * 1000 ? (
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                    24h Edit Window Closed (Read-Only for Members/OIC)
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                    ✦ Edit Mode Active (24h Window)
+                  </span>
+                )}
               </div>
             )}
             {lastUpdatedAt && lastUpdatedAt !== submittedAt && (
@@ -1968,6 +2023,15 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
             )}
           </div>
         )}
+
+        {!!reportId && !!submittedAt && (Date.now() - new Date(submittedAt).getTime() > 24 * 60 * 60 * 1000) && !isAdmin && (
+          <div className="mt-4 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3 text-amber-700 dark:text-amber-300">
+            <AlertTriangle className="w-5 h-5 shrink-0 text-amber-500" />
+            <div className="text-xs font-medium">
+              <strong className="font-bold">Read-Only View:</strong> This report was submitted over 24 hours ago. Members and Officers in Charge have view-only access after 24 hours. Editing is restricted to System Administrators.
+            </div>
+          </div>
+        )}
       </div>
 
 
@@ -1984,31 +2048,12 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
           {/* Cash Transactions */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <SectionHeader label="Cash Transactions" total={totalCashCollection} variant="income" />
-              </div>
-              {canSubmit && !reviewMode && (
-                <button
-                  type="button"
-                  onClick={handleSyncFromSchedule}
-                  disabled={syncLoading || isFormDisabled}
-                  className="flex items-center gap-1.5 px-3 py-1.5 mr-2 rounded-lg text-xs font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100"
-                  style={{ backgroundColor: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10B981' }}
-                >
-                  {syncLoading ? (
-                    <span className="animate-spin inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full" />
-                  ) : (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9 9 0 0 0-7.5 4"/><path d="M3 12a9 9 0 0 0 9 9 9 9 0 0 0 7.5-4"/><polyline points="3 4 3 8 7 8"/><polyline points="21 20 21 16 17 16"/></svg>
-                  )}
-                  Sync from Schedule
-                </button>
-              )}
-            </div>
+            <SectionHeader label="Cash Transactions" total={totalCashCollection} variant="income" />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr>
+                    <th className={tableTh}>Ticket No.</th>
                     <th className={tableTh}>Customer Name</th>
                     <th className={tableTh}>Installer</th>
                     <th className={tableTh + ' text-right w-32'}>Amount</th>
@@ -2018,6 +2063,11 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                 <tbody>
                   {cashTx.map(row => (
                     <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Ticket No." value={row.ticketNumber || ''}
+                          onChange={e => setCashTx(p => p.map(r => r.id === row.id ? { ...r, ticketNumber: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
                       <td className={tableTd}>
                         <input type="text" placeholder="Customer" value={row.customer}
                           onChange={e => setCashTx(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
@@ -2166,6 +2216,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr>
+                    <th className={tableTh}>Ticket No.</th>
                     <th className={tableTh}>Customer Name</th>
                     <th className={tableTh}>Installer</th>
                     <th className={tableTh + ' w-24'}>Bank</th>
@@ -2176,6 +2227,11 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                 <tbody>
                   {onlineTx.map(row => (
                     <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Ticket No." value={row.ticketNumber || ''}
+                          onChange={e => setOnlineTx(p => p.map(r => r.id === row.id ? { ...r, ticketNumber: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
                       <td className={tableTd}>
                         <input type="text" placeholder="Customer" value={row.customer}
                           onChange={e => setOnlineTx(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
@@ -2222,6 +2278,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr>
+                    <th className={tableTh}>Ticket No.</th>
                     <th className={tableTh}>Customer Name</th>
                     <th className={tableTh}>Installer</th>
                     <th className={tableTh + ' w-24'}>Bank</th>
@@ -2232,6 +2289,11 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
                 <tbody>
                   {checkRem.map(row => (
                     <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Ticket No." value={row.ticketNumber || ''}
+                          onChange={e => setCheckRem(p => p.map(r => r.id === row.id ? { ...r, ticketNumber: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
                       <td className={tableTd}>
                         <input type="text" placeholder="Customer" value={row.customer}
                           onChange={e => setCheckRem(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
@@ -2589,6 +2651,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr>
+                  <th className={tableTh}>Ticket No.</th>
                   <th className={tableTh}>Customer</th>
                   <th className={tableTh}>Installer</th>
                   <th className={tableTh + ' text-right w-28'}>Amount</th>
@@ -2598,6 +2661,11 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
               <tbody>
                 {forColl.map(row => (
                   <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                    <td className={tableTd}>
+                      <input type="text" placeholder="Ticket No." value={row.ticketNumber || ''}
+                        onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, ticketNumber: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
                     <td className={tableTd}>
                       <input type="text" placeholder="Customer" value={row.customer}
                         onChange={e => setForColl(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
@@ -2634,27 +2702,7 @@ export default function DailySalesForm({ onSwitchToSummary }: { onSwitchToSummar
 
         {/* Rebates for Collection */}
         <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 mt-4">
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <SectionHeader label="Rebates for Collection" total={totalRebates} variant="income" />
-            </div>
-            {canSubmit && !reviewMode && (
-              <button
-                type="button"
-                onClick={handleSyncRebatesFromSchedule}
-                disabled={rebateSyncLoading || isFormDisabled}
-                className="flex items-center gap-1.5 px-3 py-1.5 mr-2 rounded-lg text-xs font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100"
-                style={{ backgroundColor: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10B981' }}
-              >
-                {rebateSyncLoading ? (
-                  <span className="animate-spin inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full" />
-                ) : (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9 9 0 0 0-7.5 4"/><path d="M3 12a9 9 0 0 0 9 9 9 9 0 0 0 7.5-4"/><polyline points="3 4 3 8 7 8"/><polyline points="21 20 21 16 17 16"/></svg>
-                )}
-                Sync from Schedule
-              </button>
-            )}
-          </div>
+          <SectionHeader label="Rebates for Collection" total={totalRebates} variant="income" />
           <div className="p-2">
             <table className="w-full text-left border-collapse">
               <thead>

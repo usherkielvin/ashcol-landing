@@ -169,7 +169,7 @@ export default function Login() {
         />
       </div>
 
-      {/* Desktop ΓÇö absolute locked X/Y positions */}
+      {/* Desktop - absolute locked X/Y positions */}
       <div className="hidden lg:block absolute inset-0 pointer-events-none">
         <div className="absolute left-[6%] xl:left-[8%] top-1/2 -translate-y-1/2 flex flex-col items-center text-center select-none pointer-events-auto">
           <img
@@ -249,7 +249,7 @@ export default function Login() {
         </div>
       </div>
 
-      {/* Mobile ΓÇö branding top, login box dead-center, footer bottom */}
+      {/* Mobile - branding top, login box dead-center, footer bottom */}
       <div className="lg:hidden absolute inset-0 pointer-events-none">
         <div className="absolute top-[max(1rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 flex flex-col items-center text-center select-none pointer-events-auto">
           <img src={logoImg} alt="ASHCOL" className="w-24 h-24 object-contain mb-2 rounded-2xl drop-shadow-lg" />
@@ -453,7 +453,7 @@ function LoginCard({
             boxShadow: '0 12px 24px -10px rgba(16, 185, 129, 0.45)',
           }}
         >
-          {loading ? 'Signing inΓÇª' : 'Continue'}
+          {loading ? 'Signing in...' : 'Continue'}
         </button>
       </form>
     </div>

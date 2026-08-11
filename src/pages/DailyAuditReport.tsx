@@ -13,7 +13,7 @@ import * as XLSX from 'xlsx'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatDisplayUserLabel, formatBranchName, isSameBaseBranch, resolveScopedBranchId, isDtrMayEditOpenForView, isEmployeePortalRole, isPortalAdmin } from '../utils/api'
-import DailySalesForm from './DailySalesForm'
+import DTR_Form from './DTR_Form'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -603,7 +603,7 @@ export default function DailyAuditReport() {
 
       {/* ── Submit Tab ──────────────────────────────────────────────────────── */}
       {activeTab === 'submit' && (
-        <DailySalesForm onSwitchToSummary={() => {
+        <DTR_Form onSwitchToSummary={() => {
           const params = new URLSearchParams(location.search)
           params.delete('tab')
           params.delete('id')

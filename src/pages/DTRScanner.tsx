@@ -111,6 +111,41 @@ export default function DTRScanner() {
   const [success,       setSuccess]       = useState(false)
   const [form,          setForm]          = useState<FormState>(() => loadDraftForm() || emptyForm())
   const [focusedField,  setFocusedField]  = useState<string | null>(null)
+  const [existingReport, setExistingReport] = useState<{ id?: string; createdAt?: string; isExpired24h?: boolean } | null>(null)
+
+  const isAdmin = role === 'admin'
+  const isReadOnlyDtr = !!(
+    existingReport?.createdAt &&
+    !isAdmin &&
+    (existingReport.isExpired24h || (Date.now() - new Date(existingReport.createdAt).getTime() > 24 * 60 * 60 * 1000))
+  )
+
+  // Lookup existing report for branch and date to determine 24-hour edit window status
+  useEffect(() => {
+    if (!form.branchId || !form.date) {
+      setExistingReport(null)
+      return
+    }
+    const checkExisting = async () => {
+      try {
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const res = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/lookup?branchId=${form.branchId}&date=${form.date}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        if (res.ok) {
+          const data = await res.json()
+          if (data?.found) {
+            setExistingReport(data)
+          } else {
+            setExistingReport(null)
+          }
+        }
+      } catch (e) {
+        console.error(e)
+      }
+    }
+    checkExisting()
+  }, [form.branchId, form.date])
 
   // Persist the in-progress draft so a page reload (e.g. to pick up a frontend update) or a
   // failed submit doesn't wipe out data the user already scanned/typed — cleared on successful
@@ -308,6 +343,10 @@ export default function DTRScanner() {
   const handleSubmit = async () => {
     if (!form.branchId) {
       alert('Branch could not be detected. Please scan a valid DTR image or select a branch manually.')
+      return
+    }
+    if (isReadOnlyDtr) {
+      alert('This DTR report was submitted over 24 hours ago. Editing is restricted to System Administrators. Members and Officers in Charge have viewing access only.')
       return
     }
     setSubmitting(true)
@@ -618,6 +657,15 @@ export default function DTRScanner() {
         <div className="lg:w-2/3 flex flex-col gap-4">
           <div className="rounded-2xl p-5" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
 
+            {isReadOnlyDtr && (
+              <div className="mb-5 p-4 rounded-xl flex items-start gap-3 border" style={{ backgroundColor: 'rgba(245,158,11,0.08)', borderColor: 'rgba(245,158,11,0.3)', color: '#F59E0B' }}>
+                <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+                <div className="text-xs font-medium">
+                  <strong className="font-bold">Read-Only Mode:</strong> A DTR report for this branch and date was submitted over 24 hours ago. Members and Officers in Charge have viewing access only after 24 hours. Editing is restricted to System Administrators.
+                </div>
+              </div>
+            )}
+
             {/* Date row */}
             <div className="mb-5 pb-5" style={{ borderBottom: `1px solid ${border}` }}>
               <label className="text-xs font-semibold tracking-wide uppercase mb-1.5 flex justify-between" style={{ color: textMuted }}>
@@ -629,8 +677,9 @@ export default function DTRScanner() {
                 <input
                   type="date"
                   value={form.date}
+                  disabled={isReadOnlyDtr}
                   onChange={e => updateField('date', e.target.value)}
-                  className="w-full rounded-xl pl-8 pr-3 py-2 text-sm outline-none"
+                  className="w-full rounded-xl pl-8 pr-3 py-2 text-sm outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, ...scannedStyle('date') }}
                 />
               </div>
@@ -653,12 +702,13 @@ export default function DTRScanner() {
                     <input
                       type="text"
                       inputMode="decimal"
+                      disabled={isReadOnlyDtr}
                       value={focusedField === key ? form[key] : formatNumber(form[key])}
                       onFocus={() => setFocusedField(key)}
                       onBlur={() => setFocusedField(null)}
                       onChange={e => updateNumericField(key, e.target.value)}
                       placeholder="0"
-                      className="w-full rounded-xl py-2 text-sm outline-none transition-all focus:ring-2 focus:ring-emerald-500/30"
+                      className="w-full rounded-xl py-2 text-sm outline-none transition-all focus:ring-2 focus:ring-emerald-500/30 disabled:opacity-60 disabled:cursor-not-allowed"
                       style={{
                         backgroundColor: inputBg,
                         border: `1px solid ${inputBorder}`,
@@ -691,12 +741,12 @@ export default function DTRScanner() {
               )}
               <button
                 onClick={handleSubmit}
-                disabled={submitting || scanning}
-                className="ml-auto flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-black text-white transition-all hover:scale-105 hover:shadow-lg disabled:opacity-50"
-                style={{ backgroundColor: accent }}
+                disabled={submitting || scanning || isReadOnlyDtr}
+                className="ml-auto flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-black text-white transition-all hover:scale-105 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ backgroundColor: isReadOnlyDtr ? '#94A3B8' : accent }}
               >
                 {submitting ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                Save to Audit Table
+                {isReadOnlyDtr ? 'Read-Only (24h Expired)' : 'Save to Audit Table'}
               </button>
             </div>
           </div>
