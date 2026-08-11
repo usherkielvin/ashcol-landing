@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   Search, Wrench, Mail, Phone, Building2,
   CheckCircle, XCircle, Trash2, X, Plus, Copy,
-  Check, Eye, EyeOff, ShieldCheck,
+  Check, Eye, EyeOff,
   Camera, Calendar, User, ArrowLeft,
-  Loader2, ChevronDown
+  Loader2, ChevronDown, Filter
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -70,7 +70,7 @@ const ROLE_META: Record<AssignableRole, {
   canDelete: boolean
 }> = {
   EMPLOYEE: {
-    label: 'Employee',
+    label: 'Member',
     hint: 'Field or office staff with a job title. Branch-scoped portal access.',
     requiresBranch: false,
     requiresJobTitle: true,
@@ -91,9 +91,6 @@ const ROLE_META: Record<AssignableRole, {
     canDelete: false,
   },
 }
-
-const ROLE_FILTER_OPTS = ['all', 'EMPLOYEE', 'MANAGER', 'MANAGEMENT'] as const
-type RoleFilter = typeof ROLE_FILTER_OPTS[number]
 
 const isProtectedFromDelete = (role: string) => {
   const r = role.toUpperCase()
@@ -343,15 +340,20 @@ export default function Employees() {
   // UI Filters
   const [search,    setSearch]    = useState('')
   const [tabFilter] = useState<'all' | 'active' | 'inactive'>('all')
-  const [roleFilter] = useState<RoleFilter>('all')
+  const [roleFilter, setRoleFilter] = useState<string>('all')
   const [selectedBranchId, setSelectedBranchId] = useState<string>('')
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false)
+  const [roleDropdownOpen, setRoleDropdownOpen] = useState(false)
   const branchDropdownRef = useRef<HTMLDivElement>(null)
+  const roleDropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (branchDropdownRef.current && !branchDropdownRef.current.contains(e.target as Node)) {
         setBranchDropdownOpen(false)
+      }
+      if (roleDropdownRef.current && !roleDropdownRef.current.contains(e.target as Node)) {
+        setRoleDropdownOpen(false)
       }
     }
     document.addEventListener('mousedown', handler)
@@ -973,11 +975,26 @@ export default function Employees() {
     try { await navigator.clipboard.writeText(text); setCopiedField(field); setTimeout(() => setCopiedField(null), 2000) } catch { /* ignore */ }
   }
 
+  // Build dynamic job roles list from active employees
+  const availableJobRoles = useMemo(() => {
+    const rolesSet = new Set<string>()
+    employees.forEach(e => {
+      const label = resolveLabel(e.role, e.jobTitle).toUpperCase()
+      if (label) rolesSet.add(label)
+    })
+    const list = Array.from(rolesSet).sort()
+    return ['all', ...list]
+  }, [employees])
+
   // ── Filtered List ───────────────────────────────────────────────────────────
   const filtered = employees.filter(e => {
     if (tabFilter === 'active'   && !e.isActive) return false
     if (tabFilter === 'inactive' && e.isActive)  return false
-    if (roleFilter !== 'all' && e.role.toUpperCase() !== roleFilter) return false
+    if (roleFilter !== 'all') {
+      const displayLabel = resolveLabel(e.role, e.jobTitle).toUpperCase()
+      const jobTitles = parseJobTitles(e.jobTitle || '').map(t => t.toUpperCase())
+      if (displayLabel !== roleFilter && !jobTitles.includes(roleFilter)) return false
+    }
     if (selectedBranchId && e.branchId !== selectedBranchId) return false
     if (!search.trim()) return true
     const q = search.toLowerCase()
@@ -1100,6 +1117,55 @@ export default function Employees() {
                           }}
                         >
                           <span className="truncate pr-2">{b.name.toUpperCase()}</span>
+                          {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-emerald-500" />}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Custom Role Filter Dropdown */}
+            <div className="relative" ref={roleDropdownRef}>
+              <button
+                onClick={() => setRoleDropdownOpen(prev => !prev)}
+                className="flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-wider border transition-all hover:bg-slate-500/5 focus:outline-none"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+              >
+                <Filter className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
+                <span>
+                  {roleFilter === 'all'
+                    ? 'ALL ROLES'
+                    : roleFilter}
+                </span>
+                <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${roleDropdownOpen ? 'rotate-180' : ''}`} style={{ color: textMuted }} />
+              </button>
+
+              {roleDropdownOpen && (
+                <div
+                  className="absolute left-0 mt-2 w-[240px] rounded-2xl shadow-2xl overflow-hidden z-40 border p-4 animate-[fadeIn_0.15s_ease-out]"
+                  style={{ backgroundColor: cardBg, borderColor: border }}
+                >
+                  <div className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-3 pb-2 border-b" style={{ borderColor: border }}>
+                    Select Role
+                  </div>
+                  <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto">
+                    {availableJobRoles.map((rKey: string) => {
+                      const isSelected = roleFilter === rKey
+                      const label = rKey === 'all' ? 'ALL ROLES' : rKey
+                      return (
+                        <button
+                          key={rKey}
+                          onClick={() => { setRoleFilter(rKey); setRoleDropdownOpen(false) }}
+                          className="flex items-center justify-between px-4 py-2.5 rounded-xl text-xs font-semibold transition-all text-left uppercase border hover:bg-slate-500/5"
+                          style={{
+                            backgroundColor: isSelected ? 'rgba(16,185,129,0.06)' : 'transparent',
+                            borderColor: isSelected ? '#10B981' : border,
+                            color: isSelected ? '#10B981' : textPrimary
+                          }}
+                        >
+                          <span>{label}</span>
                           {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-emerald-500" />}
                         </button>
                       )
@@ -1383,8 +1449,7 @@ export default function Employees() {
                       <DetailField label="Work email" value={selectedEmployee.email} icon={<Mail />} emptyLabel="—" />
                       <DetailField label="Personal email" value={selectedEmployee.personalEmail || ''} icon={<Mail />} emptyLabel="—" />
                       <DetailField label="Phone number" value={selectedEmployee.phone} icon={<Phone />} emptyLabel="—" />
-                      <DetailField label="System role" value={formatRoleLabel(selectedEmployee.role)} icon={<ShieldCheck />} />
-                      <DetailField label="Job title" value={selectedEmployee.jobTitle ? formatJobTitleLabel(selectedEmployee.jobTitle) : ''} icon={<Wrench />} emptyLabel="—" />
+                      <DetailField label="Job title" value={selectedEmployee.jobTitle ? formatJobTitleLabel(selectedEmployee.jobTitle) : (selectedEmployee.role === 'MANAGER' ? 'Officer In Charge' : formatRoleLabel(selectedEmployee.role))} icon={<Wrench />} emptyLabel="—" />
                       <DetailField label="Date hired" value={formatDisplayDate(selectedEmployee.dateHired)} icon={<Calendar />} />
                       <DetailField label="Birthdate" value={formatDisplayDate(selectedEmployee.birthDate)} icon={<Calendar />} />
                       <DetailField label="Employee ID" value={selectedEmployee.id.slice(0, 16) + '…'} icon={<User />} />
@@ -1582,7 +1647,7 @@ export default function Employees() {
                     </div>
                   )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Field label="System Role" labelColor={textMuted}>
+                    <Field label="Role" labelColor={textMuted}>
                       <select className={inputCls} style={inputStyle}
                         value={editForm.role}
                         onChange={e => setEditForm(p => ({ ...p, ...adaptEditFormForRole(p, e.target.value) }))}
@@ -1785,7 +1850,7 @@ export default function Employees() {
 
               {createStep === 2 && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Field label="System role" labelColor={textMuted}>
+                  <Field label="Role" labelColor={textMuted}>
                     <select className={inputCls} style={inputStyle} value={createForm.role}
                       onChange={e => setCreateForm(p => ({ ...p, ...adaptEditFormForRole(p, e.target.value) }))}>
                       <option value="EMPLOYEE">{ROLE_META.EMPLOYEE.label}</option>

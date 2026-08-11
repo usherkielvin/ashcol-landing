@@ -711,7 +711,7 @@ export function formatRole(role?: string): string {
     management: 'Management',
     manager: 'Officer In Charge',
     oic: 'Officer In Charge',
-    employee: 'Employee',
+    employee: 'Member',
     staff: 'Staff',
     customer: 'Customer',
   }
