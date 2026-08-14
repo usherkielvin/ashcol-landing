@@ -150,6 +150,45 @@ export default function WarrantyRegistrationHistoryTable({ person, headerLeft }:
       : d.toLocaleString(undefined, { month: 'short', day: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit' })
   }
 
+  /** acDetails is a JSON string (single unit object, or an array of units for multi-unit tickets)
+   *  holding { brand, capacity, ... }. Mirrors the backend's resolveUnitBrandDisplay fallback shape. */
+  const parseUnit = (raw?: string): { brand?: string; capacity?: string } => {
+    if (!raw) return {}
+    try {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        for (const unit of parsed) {
+          if (unit && typeof unit === 'object') {
+            if (unit.brand || unit.capacity) return { brand: unit.brand, capacity: unit.capacity }
+            if (Array.isArray(unit.details)) {
+              for (const d of unit.details) {
+                if (d?.brand) return { brand: d.brand, capacity: unit.capacity }
+              }
+            }
+          }
+        }
+        return {}
+      }
+      if (parsed && typeof parsed === 'object') {
+        return { brand: parsed.brand, capacity: parsed.capacity }
+      }
+    } catch {
+      // malformed/legacy acDetails — fall through to unitBrandDisplay
+    }
+    return {}
+  }
+
+  const unitBrand = (t: any) => {
+    const { brand } = parseUnit(t.acDetails)
+    if (brand && String(brand).trim()) return String(brand).trim()
+    return t.unitBrandDisplay || '—'
+  }
+
+  const unitHp = (t: any) => {
+    const { capacity } = parseUnit(t.acDetails)
+    return capacity && String(capacity).trim() ? String(capacity).trim() : '—'
+  }
+
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* ── Combined Header / Filter Bar ──────────────────────────────────── */}
@@ -231,7 +270,7 @@ export default function WarrantyRegistrationHistoryTable({ person, headerLeft }:
             <table className="w-full border-collapse" style={{ minWidth: 960 }}>
               <thead className="sticky top-0 z-10">
                 <tr style={{ backgroundColor: theadBg, borderBottom: `1px solid ${border}` }}>
-                  {['Date Registered', 'Ticket No.', 'Warranty Reg. No.', 'Customer', 'District', 'Branch', 'Status'].map((h, i, arr) => (
+                  {['Date Registered', 'Ticket No.', 'Warranty Reg. No.', 'Registered', 'Brand', 'HP', 'Customer', 'District', 'Branch', 'Status'].map((h, i, arr) => (
                     <th
                       key={h}
                       className={`px-5 py-3.5 text-xs font-black uppercase tracking-wider whitespace-nowrap border-r ${i === 0 ? 'text-left' : 'text-center'}`}
@@ -252,6 +291,7 @@ export default function WarrantyRegistrationHistoryTable({ person, headerLeft }:
                   const isInstalled = status === 'INSTALLED' || status === 'COMPLETED'
                   const isActive = status === 'PENDING' || status === 'ASSIGNED' || status === 'SCHEDULED'
                   const statusColor = isInstalled ? '#10B981' : isActive ? '#3B82F6' : status === 'CANCELLED' ? '#EF4444' : textMuted
+                  const isRegistered = Boolean(t.warrantyRegistrationCompleted)
                   return (
                     <tr
                       key={t.id || idx}
@@ -260,6 +300,9 @@ export default function WarrantyRegistrationHistoryTable({ person, headerLeft }:
                       <td className="px-5 py-3 text-sm font-semibold border-r whitespace-nowrap" style={{ color: textPrimary, borderColor: border }}>{registeredDateTime(t)}</td>
                       <td className="px-5 py-3 text-sm font-bold text-center border-r" style={{ color: textPrimary, borderColor: border }}>{tNum}</td>
                       <td className="px-5 py-3 text-sm font-bold text-center border-r" style={{ color: textPrimary, borderColor: border }}>{regNum}</td>
+                      <td className="px-5 py-3 text-xs font-black uppercase tracking-wider text-center border-r" style={{ color: isRegistered ? '#10B981' : '#EF4444', borderColor: border }}>{isRegistered ? 'Registered' : 'Not Registered'}</td>
+                      <td className="px-5 py-3 text-sm font-semibold text-center border-r" style={{ color: textPrimary, borderColor: border }}>{unitBrand(t)}</td>
+                      <td className="px-5 py-3 text-sm font-semibold text-center border-r" style={{ color: textPrimary, borderColor: border }}>{unitHp(t)}</td>
                       <td className="px-5 py-3 text-sm font-semibold text-center border-r" style={{ color: textPrimary, borderColor: border }}>{custName}</td>
                       <td className="px-5 py-3 text-sm text-center border-r" style={{ color: textMuted, borderColor: border }}>{district}</td>
                       <td className="px-5 py-3 text-sm text-center border-r" style={{ color: textMuted, borderColor: border }}>{branchName(t)}</td>
