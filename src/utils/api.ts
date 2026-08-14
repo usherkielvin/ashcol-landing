@@ -426,7 +426,9 @@ export type BranchStaffOption = {
   phone?: string | null
 }
 
-/** Staff who may appear as negotiator — any branch employee (incl. field crew and OIC/management). */
+const FIELD_CREW_TITLE_PATTERN = /\b(TECHNICIAN|INSTALLER)\b/
+
+/** Staff who may appear as negotiator — any branch employee (incl. OIC/management), excluding field crew. */
 export function isNegotiatorCandidate(user: {
   role?: string | null
   jobTitle?: string | null
@@ -435,6 +437,12 @@ export function isNegotiatorCandidate(user: {
   if (roleLower === 'customer') return false
   // Only exclude system-wide admin accounts — they aren't tied to a single branch.
   if (roleLower === 'admin' || roleLower === 'administrator') return false
+
+  // Installers/technicians are assigned to tickets via the Schedules lineup roster, not picked
+  // as the office negotiator — keep them out of negotiator dropdowns. A mixed title (e.g.
+  // "COORDINATOR, TECHNICIAN") still qualifies since the person also holds an office title.
+  const titles = (user.jobTitle || '').split(',').map(t => t.trim().toUpperCase()).filter(Boolean)
+  if (titles.length > 0 && titles.every(t => FIELD_CREW_TITLE_PATTERN.test(t))) return false
 
   return roleLower !== ''
 }

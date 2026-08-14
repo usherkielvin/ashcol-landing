@@ -6,11 +6,12 @@ import {
   Building2, Trash2, MapPin,
   ChevronDown, Plus, CheckCircle2, AlertCircle, Package, CalendarDays,
   Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3, Clock, Check,
-  Store, UserRound, Wind, MessageSquare, Users, Settings
+  Store, UserRound, Wind, MessageSquare, Users, Settings, Truck, Wallet
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage, parseCreatedTicketResponse, formatFetchError, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, isTaguigServiceTicket, DEALERS_UPDATED_EVENT, notifyDealersUpdated } from '../utils/api'
+import { deriveRosterFromEmployees } from '../utils/branchRoster'
 import { readTabCache, readTabCacheEntry, relaysCacheKey, writeTabCache, isTabCacheFresh, type RelaysTabCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
 import {
   hasRelayLeftQueue,
@@ -111,6 +112,7 @@ interface Ticket {
   district?: string
   commitType?: string
   installerName?: string
+  driverName?: string
   serviceVehicle?: string
   remarksUpdate?: string
   installationCharges?: number
@@ -1196,6 +1198,7 @@ export default function Relays() {
     district: '',
     commitType: '',
     installerName: '',
+    driverName: '',
     serviceVehicle: '',
     remarksUpdate: '',
     installationCharges: 0,
@@ -1326,6 +1329,12 @@ export default function Relays() {
   const addModalNegotiators = useMemo(
     () => negotiatorsForBranch(addForm.branchId || resolveRelayDefaultBranchId()),
     [negotiatorsForBranch, addForm.branchId, resolveRelayDefaultBranchId],
+  )
+
+  /** Driver/installer name suggestions for the add-ticket Dispatch section — same roster derivation as Schedules. */
+  const addModalRoster = useMemo(
+    () => deriveRosterFromEmployees(employees, addForm.branchId || resolveRelayDefaultBranchId() || ''),
+    [employees, addForm.branchId, resolveRelayDefaultBranchId],
   )
 
 
@@ -1835,7 +1844,6 @@ export default function Relays() {
       ...(resolvedCreateStatus.schedulePhase !== undefined ? { schedulePhase: resolvedCreateStatus.schedulePhase } : {}),
       ...(resolvedCreateStatus.scheduleOutcome !== undefined ? { scheduleOutcome: resolvedCreateStatus.scheduleOutcome } : {}),
     }
-    const isCollectionTicket = /collect/i.test(`${addForm.serviceType} ${addForm.title}`)
     const writeBranchId = resolvePortalWriteBranchId(
       addForm.branchId || resolveRelayDefaultBranchId(),
       user?.email,
@@ -1870,12 +1878,13 @@ export default function Relays() {
       district: addForm.district || undefined,
       commitType: addForm.commitType || undefined,
       installerName: addForm.installerName || undefined,
+      driverName: addForm.driverName || undefined,
       assignedTo: addForm.assignedTo || undefined,
       negotiatorId: addForm.assignedTo || undefined,
       serviceVehicle: addForm.serviceVehicle || undefined,
       remarksUpdate: addForm.remarksUpdate || undefined,
-      installationCharges: isCollectionTicket ? (Number(addForm.installationCharges) || 0) : 0,
-      modeOfPayment: isCollectionTicket ? (addForm.modeOfPayment || undefined) : undefined,
+      installationCharges: Number(addForm.installationCharges) || 0,
+      modeOfPayment: addForm.modeOfPayment || undefined,
       controlNumber: addForm.controlNumber || undefined,
       ticketNumber: syncTicketNumber,
       acDetails: JSON.stringify(acDetailsObj),
@@ -1901,6 +1910,7 @@ export default function Relays() {
       district: createPayload.district,
       commitType: createPayload.commitType,
       installerName: undefined,
+      driverName: undefined,
       assignedTo: createPayload.assignedTo,
       negotiatorId: createPayload.negotiatorId,
       serviceVehicle: createPayload.serviceVehicle,
@@ -1950,6 +1960,7 @@ export default function Relays() {
       district: '',
       commitType: '',
       installerName: '',
+      driverName: '',
       serviceVehicle: '',
       remarksUpdate: '',
       installationCharges: 0,
@@ -3874,9 +3885,54 @@ export default function Relays() {
                   </div>
                 </section>
 
-                {/* 5. Scheduling */}
+                {/* 5. Dispatch — optional, can also be set later on Schedules */}
                 <section>
-                  <RelayFormSectionHead step={5} icon={<CalendarDays className="w-3.5 h-3.5" />} title="Scheduling" subtitle="Requested, schedule & installed date details" />
+                  <RelayFormSectionHead step={5} icon={<Truck className="w-3.5 h-3.5" />} title="Dispatch" subtitle="Optional — driver, vehicle & installer, if already known" />
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
+                    <RelayFormField label="Driver" compact className="md:col-span-4">
+                      <input
+                        type="text"
+                        value={addForm.driverName || ''}
+                        list="add-ticket-driver-roster"
+                        placeholder={addModalRoster.drivers.length ? 'Select or type driver…' : 'Driver name'}
+                        onChange={e => setAddForm(prev => ({ ...prev, driverName: e.target.value }))}
+                        className={addInput}
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                      />
+                      <datalist id="add-ticket-driver-roster">
+                        {addModalRoster.drivers.map(name => <option key={name} value={name} />)}
+                      </datalist>
+                    </RelayFormField>
+                    <RelayFormField label="Vehicle" compact className="md:col-span-4">
+                      <input
+                        type="text"
+                        value={addForm.serviceVehicle || ''}
+                        placeholder="e.g. T2"
+                        onChange={e => setAddForm(prev => ({ ...prev, serviceVehicle: e.target.value }))}
+                        className={addInput}
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                      />
+                    </RelayFormField>
+                    <RelayFormField label="Installer / Technician" compact className="md:col-span-4">
+                      <input
+                        type="text"
+                        value={addForm.installerName || ''}
+                        list="add-ticket-installer-roster"
+                        placeholder={addModalRoster.installers.length ? 'Select or type installer…' : 'Installer name'}
+                        onChange={e => setAddForm(prev => ({ ...prev, installerName: e.target.value }))}
+                        className={addInput}
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                      />
+                      <datalist id="add-ticket-installer-roster">
+                        {addModalRoster.installers.map(name => <option key={name} value={name} />)}
+                      </datalist>
+                    </RelayFormField>
+                  </div>
+                </section>
+
+                {/* 6. Scheduling */}
+                <section>
+                  <RelayFormSectionHead step={6} icon={<CalendarDays className="w-3.5 h-3.5" />} title="Scheduling" subtitle="Requested, schedule & installed date details" />
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
                     {/* Requested Date */}
                     <RelayFormField label="Requested Date" compact className="md:col-span-4">
@@ -3952,7 +4008,7 @@ export default function Relays() {
 
                 {/* 6. Comment / remarks */}
                 <section>
-                  <RelayFormSectionHead step={6} icon={<MessageSquare className="w-3.5 h-3.5" />} title="Comment / Remarks" subtitle="Latest notes or dispatch update" />
+                  <RelayFormSectionHead step={7} icon={<MessageSquare className="w-3.5 h-3.5" />} title="Comment / Remarks" subtitle="Latest notes or dispatch update" />
                   <div className="grid grid-cols-1 gap-3.5">
                     <RelayFormField label="Remarks" compact>
                       <textarea
@@ -3962,6 +4018,48 @@ export default function Relays() {
                         rows={3}
                         className={`${addInput} resize-none`}
                         style={fieldStyle(addForm.description)}
+                      />
+                    </RelayFormField>
+                  </div>
+                </section>
+
+                {/* 8. Payment — optional, if already collected at intake */}
+                <section>
+                  <RelayFormSectionHead step={8} icon={<Wallet className="w-3.5 h-3.5" />} title="Payment" subtitle="Optional — if collected already at intake" />
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
+                    <RelayFormField label="Mode of Payment" compact className="md:col-span-6">
+                      <select
+                        value={addForm.modeOfPayment || 'NO_PAYMENT'}
+                        onChange={e => {
+                          const v = e.target.value
+                          setAddForm(prev => ({
+                            ...prev,
+                            modeOfPayment: v,
+                            installationCharges: (v === 'NO_PAYMENT' || v === 'FREE' || v === 'FREE INSTALL') ? 0 : prev.installationCharges,
+                          }))
+                        }}
+                        className={addInput}
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                      >
+                        <option value="NO_PAYMENT">NO PAYMENT</option>
+                        <option value="CASH">CASH</option>
+                        <option value="BANK TRANSFER">BANK TRANSFER</option>
+                        <option value="GCASH">GCASH</option>
+                        <option value="CHEQUE">CHEQUE</option>
+                        <option value="FOR COLLECTION">FOR COLLECTION</option>
+                        <option value="FREE INSTALL">FREE INSTALL</option>
+                      </select>
+                    </RelayFormField>
+                    <RelayFormField label="Payment Amount (₱)" compact className="md:col-span-6">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={addForm.modeOfPayment === 'NO_PAYMENT' || !addForm.modeOfPayment ? '' : (addForm.installationCharges ?? '')}
+                        disabled={!addForm.modeOfPayment || addForm.modeOfPayment === 'NO_PAYMENT' || addForm.modeOfPayment === 'FREE' || addForm.modeOfPayment === 'FREE INSTALL'}
+                        onChange={e => setAddForm(prev => ({ ...prev, installationCharges: e.target.value ? Number(e.target.value) : 0 }))}
+                        className={addInput}
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                       />
                     </RelayFormField>
                   </div>
