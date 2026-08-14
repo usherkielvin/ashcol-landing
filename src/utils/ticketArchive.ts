@@ -71,6 +71,7 @@ export function shouldBackfillTicketArchive(ticket: TicketLike): boolean {
     || outcome === 'DONE_CHECKUP'
     || outcome === 'DONE_BACKJOB'
     || outcome === 'DONE_SERVICE'
+    || outcome === 'DONE_MOUNTING'
   ) return false
   if (outcome === 'DONE_INSTALLED') return true
   if (isInstalledRemarks(remarks)) return true

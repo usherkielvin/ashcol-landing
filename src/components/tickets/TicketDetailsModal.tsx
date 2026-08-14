@@ -163,6 +163,7 @@ export function TicketDetailsModal({
   const updateColor = scheduleStatusValue === 'DONE_CLEANING'
     || scheduleStatusValue === 'DONE_CHECKUP'
     || scheduleStatusValue === 'DONE_BACKJOB'
+    || scheduleStatusValue === 'DONE_MOUNTING'
     || scheduleStatusValue === 'DONE_SYSTEM_REPROCESS'
     || scheduleStatusValue === 'DONE_DISMANTLE'
     ? (isLight ? '#1d4ed8' : '#93c5fd')

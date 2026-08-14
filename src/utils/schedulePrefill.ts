@@ -864,6 +864,7 @@ export function computeUnitSummaryFromTickets(tickets: Ticket[]): UnitSummaryCou
       statusVal === 'DONE_CHECKUP' ||
       statusVal === 'DONE_SERVICES' ||
       statusVal === 'DONE_SERVICE' ||
+      statusVal === 'DONE_MOUNTING' ||
       statusVal === 'DONE_REPAIR' ||
       serviceType.includes('SERVICE') ||
       serviceType.includes('CLEAN') ||

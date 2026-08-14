@@ -352,6 +352,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                           { value: 'CHECKUP', label: 'CHECKUP' },
                           { value: 'BACKJOB', label: 'BACKJOB' },
                           { value: 'SERVICE', label: 'SERVICE' },
+                          { value: 'MOUNTING', label: 'MOUNTING' },
                           { value: 'RESCHED', label: 'RESCHED' },
                           { value: 'CONTINUATION', label: 'CONTINUATION' },
                           { value: 'FOR APPROVAL', label: 'FOR QUOTATION' },
@@ -370,6 +371,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                           { value: 'DONE_CHECKUP', label: 'DONE CHECKUP' },
                           { value: 'DONE_BACKJOB', label: 'DONE BACKJOB' },
                           { value: 'DONE_SERVICE', label: 'DONE SERVICE' },
+                          { value: 'DONE_MOUNTING', label: 'DONE MOUNTING' },
                           { value: 'DONE_SYSTEM_REPROCESS', label: 'DONE SYSTEM REPROCESS' },
                           { value: 'DONE_DISMANTLE', label: 'DONE DISMANTLE' },
                           { value: 'DONE_QUOTATION', label: 'DONE QUOTATION' },
@@ -646,9 +648,9 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
             </div>
           </div>
 
-          {/* 6. Comment / remarks */}
+          {/* 6. Remarks */}
           <div>
-            <ESHead step={6} icon={<MessageSquare className="w-3.5 h-3.5" />} title="Comment / Remarks" subtitle="Latest notes or dispatch update" border={border} />
+            <ESHead step={6} icon={<MessageSquare className="w-3.5 h-3.5" />} title="Remarks" subtitle="Notes or special instructions" border={border} />
             {isFieldSurface && (
               <EField label="Remarks / Update" className="mb-3">
                 <textarea

@@ -89,7 +89,9 @@ window.fetch = async (...args) => {
 
   const response = await originalFetch(...args)
   if (response.status === 401) {
-    if (!url.includes('/auth/')) {
+    const isApiUrl = typeof url === 'string' && (url.includes(':8080') || url.includes('/api/'))
+    const hasToken = Boolean(localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token'))
+    if (isApiUrl && hasToken && !url.includes('/auth/')) {
       localStorage.removeItem('ashcol-token')
       sessionStorage.removeItem('ashcol-token')
       localStorage.removeItem('ashcol-user')

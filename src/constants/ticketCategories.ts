@@ -105,6 +105,8 @@ export function resolveScheduleStatusFields(rawValue: string): ResolvedScheduleS
       return { status: 'COMPLETED', ticketCategory: 'SERVICES', scheduleOutcome: 'DONE_CHECKUP', schedulePhase: '' }
     case 'DONE_BACKJOB':
       return { status: 'COMPLETED', ticketCategory: 'SERVICES', scheduleOutcome: 'DONE_BACKJOB', schedulePhase: '' }
+    case 'DONE_MOUNTING':
+      return { status: 'COMPLETED', ticketCategory: 'SERVICES', scheduleOutcome: 'DONE_MOUNTING', schedulePhase: '' }
     case 'DONE_SERVICE':
       return { status: 'COMPLETED', ticketCategory: 'SERVICES', scheduleOutcome: 'DONE_SERVICE', schedulePhase: '' }
     case 'DONE_SURVEY':
@@ -129,6 +131,8 @@ export function resolveScheduleStatusFields(rawValue: string): ResolvedScheduleS
       return { status: 'SCHEDULED', ticketCategory: 'SERVICES', serviceType: categoryDefaultServiceType('SERVICES'), scheduleOutcome: '', schedulePhase: 'CHECKUP' }
     case 'BACKJOB':
       return { status: 'SCHEDULED', ticketCategory: 'SERVICES', serviceType: categoryDefaultServiceType('SERVICES'), scheduleOutcome: '', schedulePhase: 'BACKJOB' }
+    case 'MOUNTING':
+      return { status: 'SCHEDULED', ticketCategory: 'SERVICES', serviceType: categoryDefaultServiceType('SERVICES'), scheduleOutcome: '', schedulePhase: 'MOUNTING' }
     case 'INSTALLATION':
     case 'S/I':
     case 'S_I':

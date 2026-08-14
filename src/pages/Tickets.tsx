@@ -3635,7 +3635,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       const isCleaning = scheduleValue === 'CLEANING' || scheduleValue === 'DONE_CLEANING'
       const isSystemReprocess = scheduleValue === 'SYSTEM_REPROCESS' || scheduleValue === 'DONE_SYSTEM_REPROCESS'
       const isDismantle = scheduleValue === 'DISMANTLE' || scheduleValue === 'DONE_DISMANTLE'
-      const isInstallation = scheduleValue === 'INSTALLATION' || scheduleValue === 'SERVICES' || scheduleValue === 'DONE_INSTALLED' || scheduleValue === 'DONE_CHECKUP' || scheduleValue === 'DONE_BACKJOB'
+      const isInstallation = scheduleValue === 'INSTALLATION' || scheduleValue === 'SERVICES' || scheduleValue === 'DONE_INSTALLED' || scheduleValue === 'DONE_CHECKUP' || scheduleValue === 'DONE_BACKJOB' || scheduleValue === 'DONE_MOUNTING'
       const isActiveSchedule = ['SCHEDULED', 'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'ON_THE_WAY'].includes(stat) || hasScheduleDate
 
       return isInstallation || isCleaning || isSystemReprocess || isDismantle || isResched || isContinuation || isForApproval || isForNegotiation || isForCollection || isSurvey || isActiveSchedule
@@ -5245,6 +5245,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             return (
               <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#c2410c' : '#fdba74' }} title="Done Backjob">
                 DONE BACKJOB
+              </span>
+            )
+          }
+          if (outcome === 'DONE_MOUNTING') {
+            return (
+              <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#0f766e' : '#5eead4' }} title="Done Mounting">
+                DONE MOUNTING
               </span>
             )
           }

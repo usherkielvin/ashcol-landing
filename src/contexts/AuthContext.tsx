@@ -58,15 +58,14 @@ function readStoredToken(): string | null {
 function isJwtExpired(token: string): boolean {
   try {
     const parts = token.split('.')
-    if (parts.length !== 3) return true
+    if (parts.length !== 3) return false
     const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
     if (payload && typeof payload.exp === 'number') {
       return payload.exp < Math.floor(Date.now() / 1000)
     }
-    // No exp claim — treat as usable (legacy tokens)
     return false
   } catch {
-    return true
+    return false
   }
 }
 

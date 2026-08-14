@@ -95,28 +95,7 @@ export default function Login() {
       const appUser = data.data.user
       const displayName = formatPersonName(appUser.name || appUser.email) || appUser.email
 
-      if (rememberMe) {
-        localStorage.setItem('ashcol-token', appToken)
-        localStorage.setItem('ashcol-user', JSON.stringify({
-          id: appUser.id,
-          name: displayName,
-          email: appUser.email,
-          personalEmail: appUser.personalEmail ?? null,
-          picture: resolveImageUrl(appUser.profileImage) || '',
-          role: (appUser.role || 'customer').toLowerCase(),
-          initials: getInitials(displayName),
-          branchId: appUser.branchId ?? null,
-          jobTitle: appUser.jobTitle ?? null,
-        }))
-        localStorage.setItem('ashcol-remembered-email', appUser.email)
-      } else {
-        sessionStorage.setItem('ashcol-token', appToken)
-        localStorage.removeItem('ashcol-token')
-        localStorage.removeItem('ashcol-user')
-        localStorage.removeItem('ashcol-remembered-email')
-      }
-
-      setUser({
+      const userPayload = {
         id: appUser.id,
         name: displayName,
         email: appUser.email,
@@ -126,7 +105,23 @@ export default function Login() {
         initials: getInitials(displayName),
         branchId: appUser.branchId ?? null,
         jobTitle: appUser.jobTitle ?? null,
-      })
+      }
+
+      if (rememberMe) {
+        localStorage.setItem('ashcol-token', appToken)
+        localStorage.setItem('ashcol-user', JSON.stringify(userPayload))
+        localStorage.setItem('ashcol-remembered-email', appUser.email)
+        sessionStorage.setItem('ashcol-token', appToken)
+        sessionStorage.setItem('ashcol-user', JSON.stringify(userPayload))
+      } else {
+        sessionStorage.setItem('ashcol-token', appToken)
+        sessionStorage.setItem('ashcol-user', JSON.stringify(userPayload))
+        localStorage.removeItem('ashcol-token')
+        localStorage.removeItem('ashcol-user')
+        localStorage.removeItem('ashcol-remembered-email')
+      }
+
+      setUser(userPayload)
       navigate(getPortalHomePath(appUser))
     } catch (err: unknown) {
       console.error('Login Error:', err)

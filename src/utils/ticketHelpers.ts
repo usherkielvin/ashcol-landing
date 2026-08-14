@@ -160,7 +160,7 @@ export function isInstalledWorkflowStatus(status?: string | null): boolean {
   return s === 'INSTALLED' || s === 'COMPLETED'
 }
 
-export type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY' | 'DONE_CHECKUP' | 'DONE_BACKJOB' | 'DONE_SERVICE' | 'DONE_NEGOTIATION' | 'DONE_SYSTEM_REPROCESS' | 'DONE_DISMANTLE' | 'DONE_QUOTATION'
+export type ScheduleOutcome = 'DONE_INSTALLED' | 'DONE_CLEANING' | 'DONE_SURVEY' | 'DONE_CHECKUP' | 'DONE_BACKJOB' | 'DONE_SERVICE' | 'DONE_MOUNTING' | 'DONE_NEGOTIATION' | 'DONE_SYSTEM_REPROCESS' | 'DONE_DISMANTLE' | 'DONE_QUOTATION'
 export type ScheduleStatusGroup = 'pending' | 'closing'
 
 export const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatusGroup }[] = [
@@ -172,6 +172,7 @@ export const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: Schedu
   { value: 'CHECKUP', label: 'CHECKUP', group: 'pending' },
   { value: 'BACKJOB', label: 'BACKJOB', group: 'pending' },
   { value: 'SERVICE', label: 'SERVICE', group: 'pending' },
+  { value: 'MOUNTING', label: 'MOUNTING', group: 'pending' },
   { value: 'RESCHED', label: 'RESCHED', group: 'pending' },
   { value: 'CONTINUATION', label: 'CONTINUATION', group: 'pending' },
   { value: 'FOR_APPROVAL', label: 'FOR QUOTATION', group: 'pending' },
@@ -187,6 +188,7 @@ export const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: Schedu
   { value: 'DONE_CHECKUP', label: 'DONE CHECKUP', group: 'closing' },
   { value: 'DONE_BACKJOB', label: 'DONE BACKJOB', group: 'closing' },
   { value: 'DONE_SERVICE', label: 'DONE SERVICE', group: 'closing' },
+  { value: 'DONE_MOUNTING', label: 'DONE MOUNTING', group: 'closing' },
   { value: 'DONE_NEGOTIATION', label: 'DONE NEGOTIATION', group: 'closing' },
   { value: 'DONE_SYSTEM_REPROCESS', label: 'DONE SYSTEM REPROCESS', group: 'closing' },
   { value: 'DONE_DISMANTLE', label: 'DONE DISMANTLE', group: 'closing' },
@@ -197,7 +199,7 @@ export const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: Schedu
 export const SCHEDULE_PENDING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group === 'pending')
 export const SCHEDULE_CLOSING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group === 'closing')
 export const CLOSING_SCHEDULE_STATUSES = new Set([
-  'DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB', 'DONE_SERVICE',
+  'DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB', 'DONE_SERVICE', 'DONE_MOUNTING',
   'DONE_NEGOTIATION', 'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE', 'DONE_QUOTATION',
 ])
 export const SCHEDULE_PENDING_STATUS_VALUES = new Set(SCHEDULE_PENDING_OPTS.map(o => o.value))
@@ -230,6 +232,9 @@ export function getScheduleStatusBadgeStyle(value: string, isLight: boolean, isO
   if (normalized === 'BACKJOB') {
     return { color: isLight ? '#c2410c' : '#fdba74', backgroundColor: isLight ? '#ffedd5' : 'rgba(234,88,12,0.16)', borderColor: isLight ? '#fdba74' : 'rgba(234,88,12,0.35)' }
   }
+  if (normalized === 'MOUNTING') {
+    return { color: isLight ? '#0f766e' : '#5eead4', backgroundColor: isLight ? '#ccfbf1' : 'rgba(20,184,166,0.16)', borderColor: isLight ? '#5eead4' : 'rgba(20,184,166,0.35)' }
+  }
   if (normalized === 'SYSTEM_REPROCESS' || normalized === 'DONE_SYSTEM_REPROCESS') {
     return { color: isLight ? '#4338ca' : '#a5b4fc', backgroundColor: isLight ? '#e0e7ff' : 'rgba(99,102,241,0.18)', borderColor: isLight ? '#a5b4fc' : 'rgba(99,102,241,0.35)' }
   }
@@ -239,7 +244,7 @@ export function getScheduleStatusBadgeStyle(value: string, isLight: boolean, isO
   if (normalized === 'SURVEY') {
     return { color: isLight ? '#6d28d9' : '#c4b5fd', backgroundColor: isLight ? '#ede9fe' : 'rgba(139,92,246,0.18)', borderColor: isLight ? '#c4b5fd' : 'rgba(139,92,246,0.35)' }
   }
-  if (normalized === 'DONE_SURVEY' || normalized === 'DONE_CHECKUP' || normalized === 'DONE_BACKJOB') {
+  if (normalized === 'DONE_SURVEY' || normalized === 'DONE_CHECKUP' || normalized === 'DONE_BACKJOB' || normalized === 'DONE_MOUNTING') {
     return { color: isLight ? '#a16207' : '#fbbf24', backgroundColor: isLight ? '#fef9c3' : 'rgba(251,191,36,0.18)', borderColor: isLight ? '#fcd34d' : 'rgba(251,191,36,0.35)' }
   }
   if (normalized === 'RESCHED') {
@@ -287,6 +292,7 @@ export function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | n
     || explicit === 'DONE_CHECKUP'
     || explicit === 'DONE_BACKJOB'
     || explicit === 'DONE_SERVICE'
+    || explicit === 'DONE_MOUNTING'
     || explicit === 'DONE_NEGOTIATION'
     || explicit === 'DONE_SYSTEM_REPROCESS'
     || explicit === 'DONE_DISMANTLE'
@@ -322,6 +328,7 @@ export function getScheduleStatusValue(ticket: Ticket): string {
   if (phase === 'SERVICES' || phase === 'SERVICE') return 'SERVICES'
   if (phase === 'CHECKUP') return 'CHECKUP'
   if (phase === 'BACKJOB') return 'BACKJOB'
+  if (phase === 'MOUNTING') return 'MOUNTING'
   if (phase === 'SYSTEM_REPROCESS') return 'SYSTEM_REPROCESS'
   if (phase === 'DISMANTLE') return 'DISMANTLE'
   if (phase === 'PENDING_APPROVAL') return 'PENDING_APPROVAL'
@@ -562,6 +569,8 @@ export function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string):
     setClosing('DONE_BACKJOB')
   } else if (val === 'DONE_SERVICE') {
     setClosing('DONE_SERVICE')
+  } else if (val === 'DONE_MOUNTING') {
+    setClosing('DONE_MOUNTING')
   } else if (val === 'DONE_INSTALLED') {
     body.status = 'INSTALLED'
     body.scheduleOutcome = 'DONE_INSTALLED'
@@ -614,6 +623,12 @@ export function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string):
     body.serviceType = categoryDefaultServiceType('SERVICES')
     acUpdates.scheduleOutcome = ''
     acUpdates.schedulePhase = 'BACKJOB'
+  } else if (val === 'MOUNTING') {
+    body.status = 'SCHEDULED'
+    body.ticketCategory = 'SERVICES'
+    body.serviceType = categoryDefaultServiceType('SERVICES')
+    acUpdates.scheduleOutcome = ''
+    acUpdates.schedulePhase = 'MOUNTING'
   } else if (val === 'INSTALLATION' || val === 'S/I' || val === 'S_I' || val === 'SI' || val === 'INSTALL') {
     body.status = 'SCHEDULED'
     body.ticketCategory = 'INSTALLATION'
@@ -2310,6 +2325,7 @@ export function formatRelayTicketTypeShort(ticket: Ticket): string {
   const phase = String(parseAcMeta(ticket).schedulePhase || '').toUpperCase().replace(/\s+/g, '_')
   if (phase === 'CHECKUP') return 'CHECKUP'
   if (phase === 'BACKJOB') return 'BACKJOB'
+  if (phase === 'MOUNTING') return 'MOUNTING'
 
   const raw = `${ticket.serviceType || ticket.service_type || ''} ${ticket.title || ''}`.toLowerCase()
   if (/collect/.test(raw)) return 'COLLECTION'

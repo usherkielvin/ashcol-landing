@@ -97,36 +97,71 @@ export function TicketStatusPickerPopover({
     onSaveCellEdit(livePickerTicket, 'STATUS', value)
   }
 
+  const custName = pickerTicket.customerName || pickerTicket.customer_name || 'Customer'
+  const ticketNum = (pickerTicket as any).ticketNumber || (pickerTicket as any).ticket_number || (pickerTicket as any).controlNumber || ''
+  const phone = pickerTicket.contactPhone || pickerTicket.customerPhone || pickerTicket.phone || ''
+
   return ReactDOM.createPortal(
-    <div className="fixed inset-0 z-[12000]" onClick={onClose}>
+    <div className="fixed inset-0 z-[12000] select-none" onClick={onClose}>
       <div
-        className="fixed w-[230px] rounded-xl shadow-2xl overflow-hidden flex flex-col"
+        className="fixed w-[245px] rounded-xl shadow-2xl overflow-hidden flex flex-col select-none"
         style={{
           left: picker.x,
           top: picker.y,
           backgroundColor: cardBg,
           border: `1px solid ${border}`,
-          maxHeight: 'min(450px, 70vh)',
+          maxHeight: 'min(480px, 75vh)',
           boxShadow: isLight
-            ? '0 10px 25px -5px rgba(15,23,42,0.1), 0 8px 10px -6px rgba(15,23,42,0.1)'
-            : '0 10px 25px -5px rgba(0,0,0,0.5)',
+            ? '0 10px 25px -5px rgba(15,23,42,0.15), 0 8px 10px -6px rgba(15,23,42,0.1)'
+            : '0 10px 25px -5px rgba(0,0,0,0.6)',
         }}
         onClick={e => e.stopPropagation()}
       >
+        {/* Customer Details Header on Top of Status Buttons */}
         <div
-          className="px-3 py-2 flex items-center justify-between gap-2 shrink-0"
-          style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}
+          className="px-3.5 py-2.5 flex items-start justify-between gap-2 shrink-0 border-b select-none"
+          style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}
         >
-          <div className="min-w-0">
-            <p className="text-[9px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>STATUS</p>
-            <p className="text-[11px] font-black uppercase truncate mt-0.5" style={{ color: currentStyle.color }}>
-              {currentLabel}
-            </p>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 min-w-0">
+              {ticketNum && (
+                <span className="text-[10px] font-black text-emerald-600 shrink-0">
+                  {ticketNum}
+                </span>
+              )}
+              {ticketNum && <span className="text-[10px] opacity-40" style={{ color: textMuted }}>•</span>}
+              <p
+                className="text-xs font-black uppercase truncate leading-tight"
+                style={{ color: textPrimary }}
+                title={custName}
+              >
+                {custName}
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 mt-1.5">
+              <span
+                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider truncate max-w-[130px]"
+                style={{
+                  color: currentStyle.color,
+                  backgroundColor: isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)',
+                  border: `1px solid ${currentStyle.borderColor || currentStyle.color}40`,
+                }}
+              >
+                {currentLabel}
+              </span>
+              {phone && (
+                <span className="text-[10px] font-semibold truncate" style={{ color: textMuted }}>
+                  {phone}
+                </span>
+              )}
+            </div>
           </div>
+
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-md hover:bg-slate-500/10 shrink-0"
+            className="p-1 rounded-md hover:bg-slate-500/10 shrink-0 transition-colors"
             style={{ color: textMuted }}
             aria-label="Close"
           >
