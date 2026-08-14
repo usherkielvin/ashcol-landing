@@ -7950,7 +7950,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             ticketNumber: editForm.ticketNumber || editTicket.ticketNumber || editTicket.ticket_number || '',
             ticketCategory: editForm.ticketCategory || inferCategoryFromTicket(editTicket),
             scheduleStatus: editForm.status || getScheduleStatusValue(editTicket),
-            finalDate: editForm.finalDate || getFinalDateKey(editTicket) || getPreferredDateKey(editTicket) || '',
+            // Search/overview shows Preferred Date and Schedule Date as separate fields — don't
+            // silently borrow the preferred date into Schedule Date here (unlike the Schedules
+            // surface below, where that fallback is a useful suggestion). Otherwise both fields
+            // display the same value before a real schedule date has been set, which reads as a bug.
+            finalDate: editForm.finalDate || getFinalDateKey(editTicket) || '',
             serviceDriver: editForm.serviceDriver || getTicketVehicleDisplay(editTicket),
             driverName: editForm.driverName || getTicketDriverDisplay(editTicket),
             installerName: editForm.installerName || getInstallerDisplay(editTicket, branchEmployees, activeBranchId),

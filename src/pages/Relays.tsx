@@ -3932,7 +3932,12 @@ export default function Relays() {
 
                 {/* 6. Scheduling */}
                 <section>
-                  <RelayFormSectionHead step={6} icon={<CalendarDays className="w-3.5 h-3.5" />} title="Scheduling" subtitle="Requested, schedule & installed date details" />
+                  <RelayFormSectionHead
+                    step={6}
+                    icon={<CalendarDays className="w-3.5 h-3.5" />}
+                    title="Scheduling"
+                    subtitle="Requested, schedule & installed date details"
+                  />
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
                     {/* Requested Date */}
                     <RelayFormField label="Requested Date" compact className="md:col-span-4">
