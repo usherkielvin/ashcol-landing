@@ -233,7 +233,7 @@ export function getScheduleStatusBadgeStyle(value: string, isLight: boolean, isO
     return { color: isLight ? '#c2410c' : '#fdba74', backgroundColor: isLight ? '#ffedd5' : 'rgba(234,88,12,0.16)', borderColor: isLight ? '#fdba74' : 'rgba(234,88,12,0.35)' }
   }
   if (normalized === 'MOUNTING' || normalized === 'DONE_MOUNTING') {
-    return { color: isLight ? '#0f766e' : '#5eead4', backgroundColor: isLight ? '#ccfbf1' : 'rgba(20,184,166,0.16)', borderColor: isLight ? '#5eead4' : 'rgba(20,184,166,0.35)' }
+    return { color: isLight ? '#0284c7' : '#38bdf8', backgroundColor: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.16)', borderColor: isLight ? '#7dd3fc' : 'rgba(14,165,233,0.35)' }
   }
   if (normalized === 'SYSTEM_REPROCESS' || normalized === 'DONE_SYSTEM_REPROCESS') {
     return { color: isLight ? '#4338ca' : '#a5b4fc', backgroundColor: isLight ? '#e0e7ff' : 'rgba(99,102,241,0.18)', borderColor: isLight ? '#a5b4fc' : 'rgba(99,102,241,0.35)' }
@@ -1068,6 +1068,13 @@ export function getScheduleRowColors(
         accent: '#F43F5E',
       }
     }
+    if (outcome === 'DONE_MOUNTING') {
+      return {
+        baseBg: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.22)',
+        hoverBg: isLight ? '#bae6fd' : 'rgba(14,165,233,0.34)',
+        accent: '#0284C7',
+      }
+    }
     if (outcome === 'DONE_QUOTATION' || outcome === 'DONE_SERVICE') {
       return {
         baseBg: isLight ? '#bbf7d0' : 'rgba(22,163,74,0.28)',
@@ -1143,6 +1150,14 @@ export function getScheduleRowColors(
       baseBg: isLight ? '#fff1f2' : 'rgba(244,63,94,0.28)',
       hoverBg: isLight ? '#fecdd3' : 'rgba(244,63,94,0.38)',
       accent: '#F43F5E',
+    }
+  }
+
+  if (outcome === 'DONE_MOUNTING') {
+    return {
+      baseBg: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.22)',
+      hoverBg: isLight ? '#bae6fd' : 'rgba(14,165,233,0.34)',
+      accent: '#0284C7',
     }
   }
 

@@ -56,7 +56,7 @@ function getRowBgColor(status: string): string | undefined {
   if (s.includes('SURVEY')) return '#f0fdf4'
   if (s.includes('BACKJOB')) return '#fef2f2'
   if (s.includes('CLEANING')) return '#eff6ff'
-  if (s.includes('MOUNTING')) return '#f0fdfa'
+  if (s.includes('MOUNTING')) return '#e0f2fe'
   return undefined
 }
 
@@ -65,7 +65,7 @@ function getRowPdfBgColor(status: string): [number, number, number] | undefined 
   if (s.includes('SURVEY')) return [240, 253, 244]
   if (s.includes('BACKJOB')) return [254, 242, 242]
   if (s.includes('CLEANING')) return [239, 246, 255]
-  if (s.includes('MOUNTING')) return [240, 253, 250]
+  if (s.includes('MOUNTING')) return [224, 242, 254]
   return undefined
 }
 

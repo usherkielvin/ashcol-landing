@@ -5254,7 +5254,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           }
           if (outcome === 'DONE_MOUNTING') {
             return (
-              <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#0f766e' : '#5eead4' }} title="Done Mounting">
+              <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#0284c7' : '#38bdf8' }} title="Done Mounting">
                 DONE MOUNTING
               </span>
             )
