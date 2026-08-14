@@ -232,7 +232,7 @@ export function getScheduleStatusBadgeStyle(value: string, isLight: boolean, isO
   if (normalized === 'BACKJOB') {
     return { color: isLight ? '#c2410c' : '#fdba74', backgroundColor: isLight ? '#ffedd5' : 'rgba(234,88,12,0.16)', borderColor: isLight ? '#fdba74' : 'rgba(234,88,12,0.35)' }
   }
-  if (normalized === 'MOUNTING') {
+  if (normalized === 'MOUNTING' || normalized === 'DONE_MOUNTING') {
     return { color: isLight ? '#0f766e' : '#5eead4', backgroundColor: isLight ? '#ccfbf1' : 'rgba(20,184,166,0.16)', borderColor: isLight ? '#5eead4' : 'rgba(20,184,166,0.35)' }
   }
   if (normalized === 'SYSTEM_REPROCESS' || normalized === 'DONE_SYSTEM_REPROCESS') {
@@ -244,7 +244,7 @@ export function getScheduleStatusBadgeStyle(value: string, isLight: boolean, isO
   if (normalized === 'SURVEY') {
     return { color: isLight ? '#6d28d9' : '#c4b5fd', backgroundColor: isLight ? '#ede9fe' : 'rgba(139,92,246,0.18)', borderColor: isLight ? '#c4b5fd' : 'rgba(139,92,246,0.35)' }
   }
-  if (normalized === 'DONE_SURVEY' || normalized === 'DONE_CHECKUP' || normalized === 'DONE_BACKJOB' || normalized === 'DONE_MOUNTING') {
+  if (normalized === 'DONE_SURVEY' || normalized === 'DONE_CHECKUP' || normalized === 'DONE_BACKJOB') {
     return { color: isLight ? '#a16207' : '#fbbf24', backgroundColor: isLight ? '#fef9c3' : 'rgba(251,191,36,0.18)', borderColor: isLight ? '#fcd34d' : 'rgba(251,191,36,0.35)' }
   }
   if (normalized === 'RESCHED') {
@@ -2796,6 +2796,9 @@ export function statusColor(s: string, light: boolean) {
     case 'DISMANTLE':
     case 'DONE_DISMANTLE':
       return { text: '#F43F5E', bg: light ? '#fff1f2' : 'rgba(244,63,94,0.15)', b: 'rgba(244,63,94,0.4)' }
+    case 'MOUNTING':
+    case 'DONE_MOUNTING':
+      return { text: '#0D9488', bg: light ? '#f0fdfa' : 'rgba(13,148,136,0.15)', b: 'rgba(13,148,136,0.4)' }
     default: return { text: '#94A3B8', bg: 'transparent', b: 'rgba(148,163,184,0.3)' }
   }
 }

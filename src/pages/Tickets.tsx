@@ -2210,11 +2210,12 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           : {}),
       })
 
-      if (['COMPLETED', 'DONE_DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'INSTALLED'].includes(String(body.status || '').toUpperCase())) {
+      if (['COMPLETED', 'DONE_DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'DONE_MOUNTING', 'INSTALLED'].includes(String(body.status || '').toUpperCase())) {
         const outcome = (statusOutcome || String(statusAcMeta.scheduleOutcome || '') || (
           String(body.status || '').toUpperCase() === 'DONE_DISMANTLE' ? 'DONE_DISMANTLE'
             : String(body.status || '').toUpperCase() === 'DONE_SYSTEM_REPROCESS' ? 'DONE_SYSTEM_REPROCESS'
-              : 'DONE_INSTALLED'
+              : String(body.status || '').toUpperCase() === 'DONE_MOUNTING' ? 'DONE_MOUNTING'
+                : 'DONE_INSTALLED'
         )) as ScheduleOutcome
         body.scheduleOutcome = outcome
         body.acDetails = mergeAcMeta({ ...activeForm, acDetails: body.acDetails } as Ticket, {
@@ -2223,7 +2224,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         })
       }
 
-      const alreadyClosed = ['COMPLETED', 'INSTALLED', 'DONE_DISMANTLE', 'DONE_SYSTEM_REPROCESS']
+      const alreadyClosed = ['COMPLETED', 'INSTALLED', 'DONE_DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'DONE_MOUNTING']
         .includes((originalTicket?.status || '').toUpperCase())
       const shouldComplete = Boolean(
         originalTicket
@@ -4579,6 +4580,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       || (body.status as string | undefined)?.toUpperCase() === 'INSTALLED'
       || (body.status as string | undefined)?.toUpperCase() === 'DONE_DISMANTLE'
       || (body.status as string | undefined)?.toUpperCase() === 'DONE_SYSTEM_REPROCESS'
+      || (body.status as string | undefined)?.toUpperCase() === 'DONE_MOUNTING'
     ) {
       finalBody = enrichCompletePatchBody(body, liveTicket, schedKey)
     }
