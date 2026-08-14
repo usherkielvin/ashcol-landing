@@ -56,8 +56,8 @@ import { TicketScheduleDetailsPopover } from '../components/tickets/TicketSchedu
 import { TicketFinalDatePickerPopover } from '../components/tickets/TicketFinalDatePickerPopover'
 import { AssignDriversModal } from '../components/tickets/AssignDriversModal'
 import { ExcelImportResultsModal } from '../components/tickets/ExcelImportResultsModal'
-import { CustomDatePickerModal } from '../components/tickets/CustomDatePickerModal'
 import { ConfirmationChecklistModal } from '../components/tickets/ConfirmationChecklistModal'
+import { CustomDatePickerModal } from '../components/tickets/CustomDatePickerModal'
 import TicketHistoryGraphModal from '../components/TicketHistoryGraphModal'
 import { guessDistrict } from '../utils/districtGuesser'
 import {
@@ -1021,6 +1021,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const [reschedRemarks, setReschedRemarks] = useState('')
   const [customDatePickerOpen, setCustomDatePickerOpen] = useState(false)
   const [customDateCalMonth, setCustomDateCalMonth] = useState<{ year: number; month: number } | null>(null)
+
 
   const [continuationDialog, setContinuationDialog] = useState<{ ticket: Ticket } | null>(null)
   const [continuationSelectedDates, setContinuationSelectedDates] = useState<string[]>([])
@@ -3988,8 +3989,10 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       ? Math.min(below, window.innerHeight - 120)
       : Math.max(8, above)
 
-    const calSeed = initDate ? new Date(`${initDate}T00:00:00`) : new Date()
-    setFinalDateCalMonth({ year: calSeed.getFullYear(), month: calSeed.getMonth() })
+    const calSeedKey = initDate || dateFilter || todayDateKey()
+    const calSeed = calSeedKey ? new Date(`${calSeedKey}T00:00:00`) : new Date()
+    const calViewDate = !isNaN(calSeed.getTime()) ? calSeed : new Date()
+    setFinalDateCalMonth({ year: calViewDate.getFullYear(), month: calViewDate.getMonth() })
     setFinalDatePicker({ ticket, x: left, y: top, value: initDate, preferredDate })
   }, [])
 
@@ -4739,11 +4742,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     setReschedToDate(initDate)
     setReschedPending(isReschedulePending(ticket))
     setReschedRemarks('')
-    const startKey = initDate || todayDateKey()
-    const startDate = new Date(`${startKey}T00:00:00`)
-    const todayDate = new Date(`${todayDateKey()}T00:00:00`)
-    // Always open on today's month (or the selected date's month if it's in the future)
-    const calViewDate = startDate >= todayDate ? startDate : todayDate
+    const targetKey = dateFilter || existingTarget || preferred || todayDateKey()
+    const startDate = new Date(`${targetKey}T00:00:00`)
+    const calViewDate = !isNaN(startDate.getTime()) ? startDate : new Date()
     setReschedCalMonth({ year: calViewDate.getFullYear(), month: calViewDate.getMonth() })
   }
 
@@ -4788,10 +4789,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     setContinuationDialog({ ticket })
     setContinuationSelectedDates(existingDates)
 
-    const todayKey = todayDateKey()
-    const startKey = existingDates[0] || todayKey
+    const preferred = getPreferredDateKey(ticket)
+    const startKey = existingDates[0] || preferred || dateFilter || todayDateKey()
     const startDate = new Date(`${startKey}T00:00:00`)
-    setContinuationCalMonth({ year: startDate.getFullYear(), month: startDate.getMonth() })
+    const calViewDate = !isNaN(startDate.getTime()) ? startDate : new Date()
+    setContinuationCalMonth({ year: calViewDate.getFullYear(), month: calViewDate.getMonth() })
   }
 
   const closeContinuationDialog = () => {
@@ -6180,8 +6182,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     onClick={(e) => {
                       e.stopPropagation()
                       const now = dateFilter ? new Date(dateFilter + 'T00:00:00') : new Date()
-                      setCustomDateCalMonth({ year: now.getFullYear(), month: now.getMonth() })
-                      setCustomDatePickerOpen(o => !o)
+                      const validDate = !isNaN(now.getTime()) ? now : new Date()
+                      setCustomDateCalMonth({ year: validDate.getFullYear(), month: validDate.getMonth() })
+                      setCustomDatePickerOpen(true)
                     }}
                     className="relative flex items-center gap-2 h-10 min-w-[10.5rem] px-3 lg:px-4 rounded-full border shrink-0 cursor-pointer transition-all hover:opacity-90 active:scale-[0.98] select-none"
                     style={{
@@ -6512,6 +6515,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                 : (isMyTickets ? myTicketsTheadText : schedTheadText),
                               fontWeight: 700, whiteSpace: 'nowrap',
                               borderBottom: isMyTickets ? `2px solid ${myTicketsTheadBorder}` : `2px solid ${schedTheadBorder}`,
+                              borderRight: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`,
                               fontSize: '10px', letterSpacing: '0.08em',
                               width: col.w, minWidth: 0,
                               overflow: 'hidden', textOverflow: 'ellipsis',
@@ -6745,6 +6749,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                     fontSize: '12.5px', fontWeight: isGhost ? 500 : 600,
                                     backgroundColor: isSelectedVehicleCell ? `${green}22` : (emptyCellBg ?? bg),
                                     borderBottom: `1px solid ${tableBorder}`,
+                                     borderRight: `1px solid ${tableBorder}`,
                                     width: col.w,
                                     minWidth: 0,
                                     height: isEditingCell ? 'auto' : TABLE_ROW_HEIGHT,
@@ -8082,113 +8087,222 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
       {reschedDialog && (() => {
         const todayKey = todayDateKey()
-        const fallback = new Date(`${todayKey}T00:00:00`)
-        const calYear = reschedCalMonth?.year ?? fallback.getFullYear()
-        const calMonth = reschedCalMonth?.month ?? fallback.getMonth()
+        const currentSchedDate = getPreferredDateKey(reschedDialog.ticket) || dateFilter || todayKey
+        const fallback = new Date(`${currentSchedDate}T00:00:00`)
+        const validFallback = !isNaN(fallback.getTime()) ? fallback : new Date()
+        const calYear = reschedCalMonth?.year ?? validFallback.getFullYear()
+        const calMonth = reschedCalMonth?.month ?? validFallback.getMonth()
         const calKey = `resched-cal-${reschedDialog.ticket.id}`
         const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate()
         const firstDow = new Date(calYear, calMonth, 1).getDay()
-        const monthLabel = new Date(calYear, calMonth, 1).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
         const selLabel = reschedToDate ? formatDateKeyLabel(reschedToDate) : ''
-        const goMonth = (delta: number) => {
-          const cur = new Date(calYear, calMonth, 1)
-          cur.setMonth(cur.getMonth() + delta)
-          setReschedCalMonth({ year: cur.getFullYear(), month: cur.getMonth() })
-        }
-        const atTodayMonth = false
+        const currentSchedLabel = currentSchedDate ? formatDateKeyLabel(currentSchedDate) : ''
+        const ticketNo = reschedDialog.ticket.ticketNumber || reschedDialog.ticket.controlNumber || ''
+
+        const MONTH_NAMES_RESCHED = [
+          'January', 'February', 'March', 'April', 'May', 'June',
+          'July', 'August', 'September', 'October', 'November', 'December',
+        ]
+        const yearsList = Array.from({ length: 7 }, (_, i) => 2024 + i)
+
         return (
           <div
             key={calKey}
-            className="fixed inset-0 z-[80] flex items-center justify-center p-4"
-            style={{ backgroundColor: 'rgba(0,0,0,0.60)', backdropFilter: 'blur(6px)' }}
+            className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4"
+            style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)' }}
             onClick={closeReschedDialog}
           >
             <div
-              className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden"
+              className="w-full max-w-[440px] rounded-2xl shadow-2xl overflow-visible flex flex-col"
               style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
               onClick={e => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="px-5 py-4 border-b" style={{ borderColor: border }}>
-                <h3 className="text-sm font-black" style={{ color: textPrimary }}>Reschedule appointment</h3>
-                <p className="text-xs mt-1" style={{ color: textMuted }}>
-                  {getCustomerDisplayName(reschedDialog.ticket)}
-                  {getPreferredDateKey(reschedDialog.ticket)
-                    ? ` Ã‚Â· currently ${formatDateKeyLabel(getPreferredDateKey(reschedDialog.ticket))}`
-                    : ''}
-                </p>
+              <div className="px-5 py-3.5 border-b flex items-center justify-between" style={{ borderColor: border }}>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-black tracking-tight" style={{ color: textPrimary }}>
+                      Reschedule Appointment
+                    </h3>
+                    {ticketNo && (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-500/10 text-slate-400">
+                        {ticketNo}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs font-semibold mt-0.5 truncate max-w-[300px]" style={{ color: textMuted }}>
+                    {getCustomerDisplayName(reschedDialog.ticket)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeReschedDialog}
+                  className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-slate-500/10 text-slate-400 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Status Bar */}
+              <div className="px-5 py-2.5 border-b flex items-center justify-between gap-2" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0a1120' }}>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-[11px] font-semibold" style={{ color: textMuted }}>Currently:</span>
+                  <span className="font-bold text-[11px] px-2 py-0.5 rounded bg-slate-500/10 truncate" style={{ color: textPrimary }}>
+                    {currentSchedLabel || 'Unscheduled'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-[11px] font-semibold" style={{ color: textMuted }}>New:</span>
+                  {reschedPending ? (
+                    <span className="font-bold text-[11px] px-2 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                      Pending (No Slot)
+                    </span>
+                  ) : reschedToDate ? (
+                    <span className="font-black text-[11px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                      {selLabel}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] italic" style={{ color: textMuted }}>Select a date →</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Month & Year Dropdowns — no arrows, full-width */}
+              <div
+                className="px-5 py-3 border-b grid grid-cols-2 gap-3 relative"
+                style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0a1120' }}
+              >
+                {/* Month Custom Dropdown */}
+                <div className="relative" id={`resched-month-dd-${calKey}`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const el = document.getElementById(`resched-month-menu-${calKey}`)
+                      if (el) el.style.display = el.style.display === 'none' ? 'flex' : 'none'
+                      const yr = document.getElementById(`resched-year-menu-${calKey}`)
+                      if (yr) yr.style.display = 'none'
+                    }}
+                    className="w-full flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl border text-sm font-bold transition-all hover:opacity-90 cursor-pointer"
+                    style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
+                  >
+                    <span>{MONTH_NAMES_RESCHED[calMonth]}</span>
+                    <ChevronDown className="w-4 h-4 opacity-50 shrink-0" />
+                  </button>
+                  <div
+                    id={`resched-month-menu-${calKey}`}
+                    className="absolute left-0 top-full mt-2 w-full max-h-56 overflow-y-auto rounded-xl border shadow-2xl z-[200] p-1.5 flex-col gap-0.5"
+                    style={{ display: 'none', backgroundColor: cardBg, borderColor: border }}
+                  >
+                    {MONTH_NAMES_RESCHED.map((m, idx) => {
+                      const isSel = idx === calMonth
+                      return (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => {
+                            setReschedCalMonth({ year: calYear, month: idx })
+                            const el = document.getElementById(`resched-month-menu-${calKey}`)
+                            if (el) el.style.display = 'none'
+                          }}
+                          className="flex items-center justify-between w-full px-3 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer text-left"
+                          style={{
+                            backgroundColor: isSel ? (isLight ? '#dcfce7' : 'rgba(16,185,129,0.18)') : 'transparent',
+                            color: isSel ? green : textPrimary,
+                          }}
+                        >
+                          <span>{m}</span>
+                          {isSel && <span className="text-emerald-500 text-sm leading-none">✓</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Year Custom Dropdown */}
+                <div className="relative" id={`resched-year-dd-${calKey}`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const el = document.getElementById(`resched-year-menu-${calKey}`)
+                      if (el) el.style.display = el.style.display === 'none' ? 'flex' : 'none'
+                      const mo = document.getElementById(`resched-month-menu-${calKey}`)
+                      if (mo) mo.style.display = 'none'
+                    }}
+                    className="w-full flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl border text-sm font-bold transition-all hover:opacity-90 cursor-pointer"
+                    style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
+                  >
+                    <span>{calYear}</span>
+                    <ChevronDown className="w-4 h-4 opacity-50 shrink-0" />
+                  </button>
+                  <div
+                    id={`resched-year-menu-${calKey}`}
+                    className="absolute left-0 top-full mt-2 w-full max-h-56 overflow-y-auto rounded-xl border shadow-2xl z-[200] p-1.5 flex-col gap-0.5"
+                    style={{ display: 'none', backgroundColor: cardBg, borderColor: border }}
+                  >
+                    {yearsList.map(y => {
+                      const isSel = y === calYear
+                      return (
+                        <button
+                          key={y}
+                          type="button"
+                          onClick={() => {
+                            setReschedCalMonth({ year: y, month: calMonth })
+                            const el = document.getElementById(`resched-year-menu-${calKey}`)
+                            if (el) el.style.display = 'none'
+                          }}
+                          className="flex items-center justify-between w-full px-3 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer text-left"
+                          style={{
+                            backgroundColor: isSel ? (isLight ? '#dcfce7' : 'rgba(16,185,129,0.18)') : 'transparent',
+                            color: isSel ? green : textPrimary,
+                          }}
+                        >
+                          <span>{y}</span>
+                          {isSel && <span className="text-emerald-500 text-sm leading-none">✓</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
               </div>
 
               {/* Calendar */}
-              <div className="px-4 pt-4 pb-1" style={{ opacity: reschedPending ? 0.4 : 1, pointerEvents: reschedPending ? 'none' : 'auto' }}>
-                {/* Selected date display */}
-                <div className="mb-3 text-center">
-                  <span
-                    className="text-base font-extrabold tracking-tight"
-                    style={{ color: reschedToDate ? green : textMuted }}
-                  >
-                    {reschedToDate ? selLabel : 'No date selected'}
-                  </span>
-                </div>
-
-                {/* Month nav */}
-                <div className="flex items-center justify-between mb-2 px-1">
-                  <button
-                    type="button"
-                    onClick={() => !atTodayMonth && goMonth(-1)}
-                    disabled={atTodayMonth}
-                    className="w-7 h-7 rounded-full flex items-center justify-center transition-colors text-sm font-bold"
-                    style={{ color: atTodayMonth ? (isLight ? '#cbd5e1' : '#2d3f5a') : textMuted, backgroundColor: 'transparent', cursor: atTodayMonth ? 'not-allowed' : 'pointer' }}
-                  >
-                    &lt;
-                  </button>
-                  <span className="text-xs font-bold" style={{ color: textPrimary }}>{monthLabel}</span>
-                  <button
-                    type="button"
-                    onClick={() => goMonth(1)}
-                    className="w-7 h-7 rounded-full flex items-center justify-center transition-colors hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-bold"
-                    style={{ color: textMuted, backgroundColor: 'transparent' }}
-                  >
-                    &gt;
-                  </button>
-                </div>
-
+              <div className="px-5 pt-3.5 pb-2" style={{ opacity: reschedPending ? 0.35 : 1, pointerEvents: reschedPending ? 'none' : 'auto' }}>
                 {/* Day-of-week header */}
-                <div className="grid grid-cols-7 mb-1">
-                  {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
-                    <div key={d} className="text-center text-[10px] font-bold py-1" style={{ color: textMuted }}>{d}</div>
+                <div className="grid grid-cols-7 mb-1.5 text-center">
+                  {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d, i) => (
+                    <div key={d} className="text-xs font-black py-0.5 select-none uppercase tracking-wider" style={{ color: i === 0 || i === 6 ? `${green}cc` : textMuted }}>
+                      {d}
+                    </div>
                   ))}
                 </div>
 
                 {/* Days grid */}
-                <div className="grid grid-cols-7 gap-y-0.5 mb-1">
+                <div className="grid grid-cols-7 gap-1.5 mb-2">
                   {Array.from({ length: firstDow }).map((_, i) => <div key={`empty-${i}`} />)}
                   {Array.from({ length: daysInMonth }).map((_, i) => {
                     const day = i + 1
                     const dKey = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-                    // Past dates are selectable — rescheduling to an earlier date (e.g.
-                    // correcting a record) is allowed, same as the Final Date picker.
-                    const past = false
                     const isToday = dKey === todayKey
                     const isSel = dKey === reschedToDate
+                    const isCurrent = dKey === currentSchedDate
                     return (
                       <button
                         key={dKey}
                         type="button"
-                        disabled={past}
                         onClick={() => { setReschedToDate(dKey); setReschedPending(false) }}
-                        className="relative w-full aspect-square flex items-center justify-center text-xs font-semibold rounded-full transition-all"
+                        className="relative w-full aspect-square flex items-center justify-center text-sm font-bold rounded-xl transition-all hover:scale-105 active:scale-95 cursor-pointer"
                         style={{
-                          color: isSel ? '#fff' : past ? (isLight ? '#cbd5e1' : '#2d3f5a') : isToday ? green : textPrimary,
-                          backgroundColor: isSel ? green : 'transparent',
-                          cursor: past ? 'not-allowed' : 'pointer',
-                          fontWeight: isToday && !isSel ? 800 : 600,
+                          color: isSel ? '#fff' : isCurrent ? green : isToday ? green : textPrimary,
+                          backgroundColor: isSel ? green : isCurrent ? (isLight ? 'rgba(16,185,129,0.1)' : 'rgba(16,185,129,0.15)') : isToday ? (isLight ? '#f0fdf4' : 'rgba(16,185,129,0.08)') : 'transparent',
+                          border: (isCurrent || isToday) && !isSel ? `1.5px solid ${green}` : '1.5px solid transparent',
+                          boxShadow: isSel ? '0 4px 12px rgba(16,185,129,0.4)' : undefined,
+                          fontWeight: isSel || isCurrent || isToday ? 900 : 700,
                         }}
                       >
                         {day}
                         {isToday && !isSel && (
                           <span
-                            className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
+                            className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full"
                             style={{ backgroundColor: green }}
                           />
                         )}
@@ -8198,9 +8312,15 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 </div>
               </div>
 
-              {/* Pending checkbox */}
-              <div className="px-5 pb-4">
-                <label className="flex items-start gap-2.5 text-xs font-semibold cursor-pointer" style={{ color: textPrimary }}>
+              {/* Pending Slot Toggle */}
+              <div className="px-5 pb-2">
+                <label
+                  className="flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors"
+                  style={{
+                    backgroundColor: reschedPending ? (isLight ? '#fef3c7' : 'rgba(245,158,11,0.10)') : inputBg,
+                    borderColor: reschedPending ? '#f59e0b' : inputBorder,
+                  }}
+                >
                   <input
                     type="checkbox"
                     checked={reschedPending}
@@ -8208,38 +8328,40 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       setReschedPending(e.target.checked)
                       if (e.target.checked) setReschedToDate('')
                     }}
-                    className="mt-0.5 rounded border-slate-300"
+                    className="mt-0.5 rounded"
                   />
-                  <span>
-                    Pending {EMPTY_CELL} no date slot available yet
-                    <span className="block text-[11px] font-medium mt-0.5 opacity-70" style={{ color: textMuted }}>
-                      Ticket stays on the current schedule date until a new slot is confirmed.
+                  <div>
+                    <span className="text-xs font-bold block" style={{ color: textPrimary }}>
+                      No date slot available yet — Mark as Pending
                     </span>
-                  </span>
+                    <span className="text-[11px] block mt-0.5 leading-snug" style={{ color: textMuted }}>
+                      Ticket stays in queue until a new slot is confirmed.
+                    </span>
+                  </div>
                 </label>
               </div>
 
-              {/* Remarks / Reason Input */}
-              <div className="px-5 pb-4">
+              {/* Remarks / Reason with Quick Chips */}
+              <div className="px-5 pb-3 pt-1">
                 <label className="block text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>
-                  Remarks / Reason <span className="text-amber-500">*</span>
+                  Reason for Reschedule <span className="text-amber-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={reschedRemarks}
                   onChange={e => setReschedRemarks(e.target.value.toUpperCase())}
-                  placeholder="e.g. HINDI MATAWAGAN / CLIENT REQUEST"
-                  className="w-full px-3 py-2 text-xs font-semibold rounded-xl border outline-none uppercase"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
+                  placeholder="E.G. CLIENT REQUEST / HINDI MATAWAGAN"
+                  className="w-full px-3 py-2 text-xs font-bold rounded-xl border outline-none uppercase placeholder:normal-case placeholder:font-normal"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                 />
               </div>
 
               {/* Footer */}
-              <div className="px-5 py-3 flex items-center justify-end gap-2 border-t" style={{ borderColor: border }}>
+              <div className="px-5 py-3 flex items-center justify-end gap-2.5 border-t" style={{ borderColor: border }}>
                 <button
                   type="button"
                   onClick={closeReschedDialog}
-                  className="px-4 py-2 rounded-xl text-xs font-bold border transition-colors"
+                  className="px-4 py-2 rounded-xl text-xs font-bold border transition-colors hover:bg-slate-500/10 cursor-pointer"
                   style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}
                 >
                   Cancel
@@ -8248,10 +8370,10 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   type="button"
                   onClick={() => void commitInlineReschedule()}
                   disabled={!reschedPending && !reschedToDate.trim()}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-40"
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-40 shadow-sm cursor-pointer"
                   style={{ backgroundColor: green }}
                 >
-                  {reschedPending ? 'Mark Pending' : 'Reschedule'}
+                  {reschedPending ? 'Mark as Pending' : 'Confirm Reschedule'}
                 </button>
               </div>
             </div>
@@ -8261,9 +8383,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
       {continuationDialog && (() => {
         const todayKey = todayDateKey()
-        const fallback = new Date(`${todayKey}T00:00:00`)
-        const calYear = continuationCalMonth?.year ?? fallback.getFullYear()
-        const calMonth = continuationCalMonth?.month ?? fallback.getMonth()
+        const preferredKey = getPreferredDateKey(continuationDialog.ticket) || dateFilter || todayKey
+        const fallback = new Date(`${preferredKey}T00:00:00`)
+        const validFallback = !isNaN(fallback.getTime()) ? fallback : new Date()
+        const calYear = continuationCalMonth?.year ?? validFallback.getFullYear()
+        const calMonth = continuationCalMonth?.month ?? validFallback.getMonth()
         const calKey = `continuation-cal-${continuationDialog.ticket.id}`
         const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate()
         const firstDow = new Date(calYear, calMonth, 1).getDay()
@@ -8919,19 +9043,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       )}
 
 
-      {customDatePickerOpen && (
-        <CustomDatePickerModal
-          isLight={isLight}
-          calMonth={customDateCalMonth}
-          dateFilter={dateFilter}
-          onSetCalMonth={setCustomDateCalMonth}
-          onSelectDate={(dateKey) => {
-            handleDateFilterChange(dateKey)
-            setCustomDatePickerOpen(false)
-          }}
-          onClose={() => setCustomDatePickerOpen(false)}
-        />
-      )}
+
 
       {!isMyTickets && (
         <SchedulesShowcase
@@ -8964,6 +9076,20 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 : currentModal
             ))
           }}
+        />
+      )}
+
+      {customDatePickerOpen && (
+        <CustomDatePickerModal
+          isLight={isLight}
+          calMonth={customDateCalMonth}
+          dateFilter={dateFilter}
+          onSetCalMonth={setCustomDateCalMonth}
+          onSelectDate={(dateKey) => {
+            handleDateFilterChange(dateKey)
+            setCustomDatePickerOpen(false)
+          }}
+          onClose={() => setCustomDatePickerOpen(false)}
         />
       )}
     </div>

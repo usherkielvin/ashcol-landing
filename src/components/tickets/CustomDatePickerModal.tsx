@@ -1,12 +1,7 @@
-import { useMemo, useCallback, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import ReactDOM from 'react-dom'
-import {
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
-} from 'lucide-react'
-import { todayDateKey } from '../../utils/ticketHelpers'
+import { ChevronDown, X, Calendar as CalendarIcon, Check } from 'lucide-react'
+import { todayDateKey, formatDateKeyLabel } from '../../utils/ticketHelpers'
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -39,37 +34,40 @@ export function CustomDatePickerModal({
   const currentYear = calMonth?.year ?? (dateFilter ? new Date(dateFilter + 'T00:00:00').getFullYear() : new Date().getFullYear())
   const currentMonth = calMonth?.month ?? (dateFilter ? new Date(dateFilter + 'T00:00:00').getMonth() : new Date().getMonth())
 
+  // Custom Dropdown Open States
+  const [monthMenuOpen, setMonthMenuOpen] = useState(false)
+  const [yearMenuOpen, setYearMenuOpen] = useState(false)
+  const menuContainerRef = useRef<HTMLDivElement>(null)
+
   // Keyboard shortcut: Escape to close
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose()
+        if (monthMenuOpen || yearMenuOpen) {
+          setMonthMenuOpen(false)
+          setYearMenuOpen(false)
+        } else {
+          onClose()
+        }
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
+  }, [monthMenuOpen, yearMenuOpen, onClose])
 
-  // Month & Year navigation
-  const handlePrevMonth = useCallback(() => {
-    const cur = new Date(currentYear, currentMonth, 1)
-    cur.setMonth(cur.getMonth() - 1)
-    onSetCalMonth({ year: cur.getFullYear(), month: cur.getMonth() })
-  }, [currentYear, currentMonth, onSetCalMonth])
-
-  const handleNextMonth = useCallback(() => {
-    const cur = new Date(currentYear, currentMonth, 1)
-    cur.setMonth(cur.getMonth() + 1)
-    onSetCalMonth({ year: cur.getFullYear(), month: cur.getMonth() })
-  }, [currentYear, currentMonth, onSetCalMonth])
-
-  const handlePrevYear = useCallback(() => {
-    onSetCalMonth({ year: currentYear - 1, month: currentMonth })
-  }, [currentYear, currentMonth, onSetCalMonth])
-
-  const handleNextYear = useCallback(() => {
-    onSetCalMonth({ year: currentYear + 1, month: currentMonth })
-  }, [currentYear, currentMonth, onSetCalMonth])
+  // Close menus on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuContainerRef.current && !menuContainerRef.current.contains(e.target as Node)) {
+        setMonthMenuOpen(false)
+        setYearMenuOpen(false)
+      }
+    }
+    if (monthMenuOpen || yearMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [monthMenuOpen, yearMenuOpen])
 
   // Generate calendar grid cells (including overflow padding days)
   const calendarCells = useMemo(() => {
@@ -114,7 +112,7 @@ export function CustomDatePickerModal({
 
   const todayKey = todayDateKey()
 
-  // Year options for dropdown
+  // Year options for custom dropdown
   const yearOptions = useMemo(() => {
     const yCenter = new Date().getFullYear()
     const list: number[] = []
@@ -127,103 +125,173 @@ export function CustomDatePickerModal({
   return ReactDOM.createPortal(
     <div
       className="fixed inset-0 z-[9995] flex items-center justify-center p-4 select-none"
-      style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
+      style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)' }}
       onClick={onClose}
       role="dialog"
       aria-modal="true"
     >
       <div
-        className="relative rounded-2xl shadow-2xl overflow-hidden w-full max-w-[320px] border flex flex-col transition-all select-none"
+        className="relative rounded-2xl shadow-2xl overflow-hidden w-full max-w-[420px] border flex flex-col transition-all select-none animate-in fade-in zoom-in-95 duration-150"
         style={{
           backgroundColor: cardBg,
           borderColor: border,
         }}
         onClick={e => e.stopPropagation()}
       >
-        {/* ── Header: Month & Year Selector with Navigation ── */}
+        {/* ── Top Header ── */}
         <div
-          className="px-3 py-3 border-b flex items-center justify-between select-none"
+          className="px-5 py-3.5 border-b flex items-center justify-between select-none"
           style={{ borderColor: border }}
         >
-          <div className="flex items-center gap-0.5 select-none">
+          <div className="flex items-center gap-2">
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center"
+              style={{ backgroundColor: isLight ? '#dcfce7' : 'rgba(16,185,129,0.15)', color: green }}
+            >
+              <CalendarIcon className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-black tracking-tight" style={{ color: textPrimary }}>
+                Select Custom Date
+              </h3>
+              <p className="text-xs font-semibold" style={{ color: textMuted }}>
+                {dateFilter ? formatDateKeyLabel(dateFilter) : 'No date selected'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-slate-500/10 text-slate-400 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* ── Month & Year Custom Dropdown Selectors ── */}
+        <div
+          ref={menuContainerRef}
+          className="px-5 py-3 border-b flex items-center justify-center gap-3 relative select-none"
+          style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0a1120' }}
+        >
+          {/* Month Selector Button */}
+          <div className="relative">
             <button
               type="button"
-              onClick={handlePrevYear}
-              className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-slate-500/10 active:scale-90 select-none cursor-pointer"
-              style={{ color: textMuted }}
-              title="Previous year"
+              onClick={() => {
+                setYearMenuOpen(false)
+                setMonthMenuOpen(o => !o)
+              }}
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl border text-sm font-bold transition-all hover:opacity-90 active:scale-95 cursor-pointer shadow-sm"
+              style={{
+                backgroundColor: cardBg,
+                borderColor: monthMenuOpen ? green : inputBorder,
+                color: textPrimary,
+              }}
             >
-              <ChevronsLeft className="w-4 h-4 pointer-events-none select-none" />
+              <span>{MONTH_NAMES[currentMonth]}</span>
+              <ChevronDown
+                className={`w-4 h-4 transition-transform duration-200 opacity-60 ${monthMenuOpen ? 'rotate-180' : ''}`}
+              />
             </button>
-            <button
-              type="button"
-              onClick={handlePrevMonth}
-              className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-slate-500/10 active:scale-90 select-none cursor-pointer"
-              style={{ color: textMuted }}
-              title="Previous month"
-            >
-              <ChevronLeft className="w-4 h-4 pointer-events-none select-none" />
-            </button>
+
+            {/* Custom Month Dropdown Menu */}
+            {monthMenuOpen && (
+              <div
+                className="absolute left-0 top-full mt-2 w-48 max-h-60 overflow-y-auto rounded-xl border shadow-xl z-50 p-1.5 flex flex-col gap-0.5 animate-in fade-in duration-100"
+                style={{
+                  backgroundColor: cardBg,
+                  borderColor: border,
+                }}
+              >
+                {MONTH_NAMES.map((m, idx) => {
+                  const isSel = idx === currentMonth
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        onSetCalMonth({ year: currentYear, month: idx })
+                        setMonthMenuOpen(false)
+                      }}
+                      className="flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer text-left"
+                      style={{
+                        backgroundColor: isSel ? (isLight ? '#dcfce7' : 'rgba(16,185,129,0.18)') : 'transparent',
+                        color: isSel ? green : textPrimary,
+                      }}
+                    >
+                      <span>{m}</span>
+                      {isSel && <Check className="w-3.5 h-3.5 shrink-0 text-emerald-500" />}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
-          {/* Month & Year Selectors */}
-          <div className="flex items-center gap-1 select-none">
-            <select
-              value={currentMonth}
-              onChange={(e) => onSetCalMonth({ year: currentYear, month: parseInt(e.target.value, 10) })}
-              className="text-xs sm:text-sm font-bold bg-transparent outline-none cursor-pointer select-none rounded px-1 py-0.5 hover:bg-slate-500/10"
-              style={{ color: textPrimary }}
-            >
-              {MONTH_NAMES.map((m, idx) => (
-                <option key={m} value={idx} style={{ backgroundColor: cardBg, color: textPrimary }}>
-                  {m}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={currentYear}
-              onChange={(e) => onSetCalMonth({ year: parseInt(e.target.value, 10), month: currentMonth })}
-              className="text-xs sm:text-sm font-bold bg-transparent outline-none cursor-pointer select-none rounded px-1 py-0.5 hover:bg-slate-500/10"
-              style={{ color: textPrimary }}
-            >
-              {yearOptions.map(y => (
-                <option key={y} value={y} style={{ backgroundColor: cardBg, color: textPrimary }}>
-                  {y}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-0.5 select-none">
+          {/* Year Selector Button */}
+          <div className="relative">
             <button
               type="button"
-              onClick={handleNextMonth}
-              className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-slate-500/10 active:scale-90 select-none cursor-pointer"
-              style={{ color: textMuted }}
-              title="Next month"
+              onClick={() => {
+                setMonthMenuOpen(false)
+                setYearMenuOpen(o => !o)
+              }}
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl border text-sm font-bold transition-all hover:opacity-90 active:scale-95 cursor-pointer shadow-sm"
+              style={{
+                backgroundColor: cardBg,
+                borderColor: yearMenuOpen ? green : inputBorder,
+                color: textPrimary,
+              }}
             >
-              <ChevronRight className="w-4 h-4 pointer-events-none select-none" />
+              <span>{currentYear}</span>
+              <ChevronDown
+                className={`w-4 h-4 transition-transform duration-200 opacity-60 ${yearMenuOpen ? 'rotate-180' : ''}`}
+              />
             </button>
-            <button
-              type="button"
-              onClick={handleNextYear}
-              className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-slate-500/10 active:scale-90 select-none cursor-pointer"
-              style={{ color: textMuted }}
-              title="Next year"
-            >
-              <ChevronsRight className="w-4 h-4 pointer-events-none select-none" />
-            </button>
+
+            {/* Custom Year Dropdown Menu */}
+            {yearMenuOpen && (
+              <div
+                className="absolute left-0 top-full mt-2 w-32 max-h-60 overflow-y-auto rounded-xl border shadow-xl z-50 p-1.5 flex flex-col gap-0.5 animate-in fade-in duration-100"
+                style={{
+                  backgroundColor: cardBg,
+                  borderColor: border,
+                }}
+              >
+                {yearOptions.map(y => {
+                  const isSel = y === currentYear
+                  return (
+                    <button
+                      key={y}
+                      type="button"
+                      onClick={() => {
+                        onSetCalMonth({ year: y, month: currentMonth })
+                        setYearMenuOpen(false)
+                      }}
+                      className="flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer text-left"
+                      style={{
+                        backgroundColor: isSel ? (isLight ? '#dcfce7' : 'rgba(16,185,129,0.18)') : 'transparent',
+                        color: isSel ? green : textPrimary,
+                      }}
+                    >
+                      <span>{y}</span>
+                      {isSel && <Check className="w-3.5 h-3.5 shrink-0 text-emerald-500" />}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </div>
 
         {/* ── Day-of-week headers ── */}
-        <div className="grid grid-cols-7 px-3 pt-2.5 pb-1 select-none">
+        <div className="grid grid-cols-7 px-5 pt-3.5 pb-1.5 select-none">
           {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d, i) => (
             <div
               key={d}
-              className="text-center text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider py-0.5 select-none"
-              style={{ color: i === 0 || i === 6 ? `${green}cc` : textMuted }}
+              className="text-center text-xs font-black uppercase tracking-wider py-1 select-none"
+              style={{ color: i === 0 || i === 6 ? `${green}ee` : textMuted }}
             >
               {d}
             </div>
@@ -231,7 +299,7 @@ export function CustomDatePickerModal({
         </div>
 
         {/* ── Days Grid ── */}
-        <div className="grid grid-cols-7 gap-1 px-3 pb-3 select-none">
+        <div className="grid grid-cols-7 gap-1.5 px-5 pb-4 select-none">
           {calendarCells.map(({ day, dateKey, isCurrentMonth }) => {
             const isToday = dateKey === todayKey
             const isSel = dateKey === dateFilter
@@ -241,7 +309,7 @@ export function CustomDatePickerModal({
                 key={dateKey}
                 type="button"
                 onClick={() => onSelectDate(dateKey)}
-                className="relative w-full aspect-square flex items-center justify-center text-xs font-bold rounded-xl transition-all select-none hover:scale-105 active:scale-95 cursor-pointer"
+                className="relative w-full aspect-square flex items-center justify-center text-sm font-bold rounded-xl transition-all select-none hover:scale-105 active:scale-95 cursor-pointer"
                 style={{
                   color: isSel
                     ? '#ffffff'
@@ -249,18 +317,18 @@ export function CustomDatePickerModal({
                       ? green
                       : isCurrentMonth
                         ? textPrimary
-                        : `${textMuted}60`,
-                  backgroundColor: isSel ? green : 'transparent',
+                        : `${textMuted}55`,
+                  backgroundColor: isSel ? green : isToday ? (isLight ? '#dcfce7' : 'rgba(16,185,129,0.15)') : 'transparent',
                   border: isToday && !isSel ? `1.5px solid ${green}` : '1.5px solid transparent',
-                  fontWeight: isSel || isToday ? 800 : isCurrentMonth ? 600 : 400,
-                  boxShadow: isSel ? '0 2px 8px rgba(16,185,129,0.35)' : undefined,
+                  fontWeight: isSel || isToday ? 900 : isCurrentMonth ? 700 : 400,
+                  boxShadow: isSel ? '0 4px 12px rgba(16,185,129,0.4)' : undefined,
                 }}
                 draggable={false}
               >
                 {day}
                 {isToday && !isSel && (
                   <span
-                    className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full select-none"
+                    className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full select-none"
                     style={{ backgroundColor: green }}
                   />
                 )}
@@ -271,13 +339,23 @@ export function CustomDatePickerModal({
 
         {/* ── Footer ── */}
         <div
-          className="flex items-center justify-end px-3 py-2.5 border-t select-none"
+          className="flex items-center justify-between px-5 py-3 border-t select-none"
           style={{ borderColor: border }}
         >
           <button
             type="button"
+            onClick={() => {
+              onSelectDate(todayKey)
+            }}
+            className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all hover:bg-slate-500/10 active:scale-95 select-none cursor-pointer"
+            style={{ color: green }}
+          >
+            Today
+          </button>
+          <button
+            type="button"
             onClick={onClose}
-            className="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all hover:bg-slate-500/10 active:scale-95 select-none cursor-pointer"
+            className="px-4 py-1.5 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/10 active:scale-95 select-none cursor-pointer"
             style={{ borderColor: inputBorder, color: textMuted }}
           >
             Close
