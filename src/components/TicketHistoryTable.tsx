@@ -98,10 +98,20 @@ export default function TicketHistoryTable({ person, headerLeft }: { person: His
           return false
         })
 
+        const getCreatedTime = (t: any) => {
+          const raw = t.createdAt || t.created_at || t.updatedAt || t.updated_at
+          if (!raw) return 0
+          const time = new Date(raw).getTime()
+          return isNaN(time) ? 0 : time
+        }
+
         relevant.sort((a: any, b: any) => {
-          const da = a.updatedAt || a.updated_at || a.createdAt || a.created_at || ''
-          const db = b.updatedAt || b.updated_at || b.createdAt || b.created_at || ''
-          return db.localeCompare(da)
+          const timeA = getCreatedTime(a)
+          const timeB = getCreatedTime(b)
+          if (timeB !== timeA) return timeB - timeA
+          const numA = String(a.ticketNumber || a.ticket_number || a.controlNumber || a.control_number || '')
+          const numB = String(b.ticketNumber || b.ticket_number || b.controlNumber || b.control_number || '')
+          return numB.localeCompare(numA, undefined, { numeric: true })
         })
         setHistory(relevant)
       } catch (err) {

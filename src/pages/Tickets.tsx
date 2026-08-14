@@ -59,6 +59,7 @@ import { ExcelImportResultsModal } from '../components/tickets/ExcelImportResult
 import { CustomDatePickerModal } from '../components/tickets/CustomDatePickerModal'
 import { ConfirmationChecklistModal } from '../components/tickets/ConfirmationChecklistModal'
 import TicketHistoryGraphModal from '../components/TicketHistoryGraphModal'
+import { guessDistrict } from '../utils/districtGuesser'
 import {
   CLOSING_SCHEDULE_STATUSES, INLINE_EDIT_COLUMNS, SCHEDULES_ACTIVE_DATE_KEY, SCHEDULE_CLOSING_OPTS,
   SCHEDULE_PENDING_OPTS, SCHEDULE_PENDING_STATUS_VALUES, TABLE_ROW_HEIGHT,
@@ -6166,7 +6167,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 </div>
 
                 {/* Custom Date Picker Trigger */}
-                <div className="relative shrink-0">
+                <div className="relative shrink-0 select-none">
                   <button
                     type="button"
                     onClick={(e) => {
@@ -6175,7 +6176,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       setCustomDateCalMonth({ year: now.getFullYear(), month: now.getMonth() })
                       setCustomDatePickerOpen(o => !o)
                     }}
-                    className="relative flex items-center gap-2 h-10 min-w-[10.5rem] px-3 lg:px-4 rounded-full border shrink-0 cursor-pointer transition-all hover:opacity-90 active:scale-[0.98]"
+                    className="relative flex items-center gap-2 h-10 min-w-[10.5rem] px-3 lg:px-4 rounded-full border shrink-0 cursor-pointer transition-all hover:opacity-90 active:scale-[0.98] select-none"
                     style={{
                       backgroundColor: isCustomSelected ? green : inputBg,
                       borderColor: isCustomSelected ? green : inputBorder,
@@ -6185,11 +6186,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     title="Pick a custom schedule date"
                   >
                     <CalendarDays
-                      className="w-[18px] h-[18px] shrink-0"
+                      className="w-[18px] h-[18px] shrink-0 pointer-events-none select-none"
                       style={{ color: isCustomSelected ? '#ffffff' : green }}
                       strokeWidth={2.2}
                     />
-                    <span className="text-[12px] lg:text-[13px] font-semibold whitespace-nowrap truncate flex-1 min-w-0 text-left">
+                    <span className="text-[12px] lg:text-[13px] font-semibold whitespace-nowrap truncate flex-1 min-w-0 text-left select-none pointer-events-none">
                       {isCustomSelected
                         ? new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', {
                           weekday: 'short',
@@ -6199,7 +6200,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                         : 'Custom date'}
                     </span>
                     <ChevronDown
-                      className="w-4 h-4 shrink-0 opacity-70"
+                      className="w-4 h-4 shrink-0 opacity-70 pointer-events-none select-none"
                       style={{ color: isCustomSelected ? '#ffffff' : textMuted }}
                     />
                   </button>
@@ -7618,13 +7619,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             setTickets(prev => prev.map(t => (t.id === updated.id ? { ...t, ...updated } : t)))
             setScheduleDetailsPopup(prev => prev ? { ...prev, ticket: updated } : null)
           }}
-          onOpenPaymentPrompt={(ticket) => {
-            setScheduleDetailsPopup(null)
-            setPaymentPrompt({ ticket, nextStatus: getScheduleStatusValue(ticket) || 'DONE_INSTALLED', updateOnly: true })
-            const payment = resolveTicketPayment(ticket)
-            setPromptMode(payment.mode || 'CASH')
-            setPromptAmount(payment.amount > 0 ? String(payment.amount) : '')
-          }}
         />
       )}
 
@@ -7736,7 +7730,15 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   </Field>
                   <Field label="Destination/Address" required full>
                     <textarea value={addForm.location || ''}
-                      onChange={e => setAddForm({ ...addForm, location: e.target.value.toUpperCase() })}
+                      onChange={e => {
+                        const loc = e.target.value.toUpperCase()
+                        const guessed = guessDistrict(loc)
+                        setAddForm(prev => ({
+                          ...prev,
+                          location: loc,
+                          district: guessed || prev.district,
+                        }))
+                      }}
                       rows={2}
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 resize-none w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />

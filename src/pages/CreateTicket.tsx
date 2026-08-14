@@ -15,6 +15,7 @@ import { ROBINSON_APPLIANCES_RE } from '../utils/dealer'
 import CalendarPicker from '../components/CalendarPicker'
 import PhAddressPicker, { type AddressValue } from '../components/PhAddressPicker'
 import { parseStoreVendor } from '../utils/parseStoreVendor'
+import { guessDistrict } from '../utils/districtGuesser'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface UnitDetail {
@@ -370,6 +371,7 @@ export default function CreateTicket() {
       const fullDesc = description.trim() || 'No additional details provided.'
       const fullLoc = [address.region, address.city, address.barangay, address.street]
         .filter(Boolean).join(', ') + (address.landmark ? ` (${address.landmark})` : '')
+      const guessedDistrict = guessDistrict(fullLoc) || (address.city ? guessDistrict(address.city) || address.city.toUpperCase() : undefined)
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
       const branchId = resolveScopedBranchId(
         localStorage.getItem('ashcol-global-branch-id') || user?.branchId
@@ -388,6 +390,7 @@ export default function CreateTicket() {
           contactPhone: contactPhone.trim(),
           preferredDate: selectedDate || undefined,
           location: fullLoc.trim().toUpperCase(),
+          district: guessedDistrict,
           dealer: selectedDealer === 'Direct'
             ? 'DIRECT'
             : ROBINSON_APPLIANCES_RE.test(selectedDealer)

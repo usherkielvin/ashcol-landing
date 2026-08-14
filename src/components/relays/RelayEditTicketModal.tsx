@@ -8,6 +8,7 @@ import { buildRelayEditDraft, type RelayEditDraft } from './relayEditForm'
 import type { TicketEditSurface } from '../../utils/ticketEditBridge'
 import { DealerSelect, type DealerOption } from '../DealerSelect'
 import { ROBINSON_APPLIANCES_RE } from '../../utils/dealer'
+import { guessDistrict } from '../../utils/districtGuesser'
 
 
 
@@ -430,7 +431,18 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                 </div>
               </EField>
               <EField label="Address" className="md:col-span-3">
-                <input type="text" value={draft.location} onChange={(e) => patch({ location: e.target.value.toUpperCase() })} className={relayInput} style={inputStyle} autoComplete="off" />
+                <input
+                  type="text"
+                  value={draft.location}
+                  onChange={(e) => {
+                    const loc = e.target.value.toUpperCase()
+                    const guessed = guessDistrict(loc)
+                    patch({ location: loc, district: guessed || draft.district })
+                  }}
+                  className={relayInput}
+                  style={inputStyle}
+                  autoComplete="off"
+                />
               </EField>
               <EField label="District Zone"><input type="text" value={draft.district} onChange={(e) => patch({ district: e.target.value })} className={relayInput} style={inputStyle} /></EField>
               <EField label="Additional Notes / Landmark" className="md:col-span-4">
