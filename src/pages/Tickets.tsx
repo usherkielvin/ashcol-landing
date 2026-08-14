@@ -1680,7 +1680,12 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   }, [branchEmployees, activeBranchId, isMyTickets, user?.id, resolveBranch])
 
   const openEditModal = (ticket: Ticket) => {
-    const localTicket = findTicketInListByRef(tickets, ticket, optimisticTicketsRef.current) || ticket
+    // Search results come straight from a fresh /tickets?q= call — findTicketInListByRef's
+    // fallbacks (the `tickets` array built for Schedules/My Tickets, and the cross-tab ticket
+    // store) can hold a stale snapshot of the same ticket from an earlier visit to another
+    // surface, which would silently override the just-fetched data with old dates. Only merge
+    // in that stale-aware lookup for the surfaces that actually rely on it.
+    const localTicket = surface === 'search' ? ticket : (findTicketInListByRef(tickets, ticket, optimisticTicketsRef.current) || ticket)
     setEditOriginalDate(resolveTicketScheduleDateKey(localTicket))
     setEditTicket(localTicket)
     const form = buildScheduleEditForm(localTicket)
@@ -1808,6 +1813,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const resolveEditOriginalTicket = (): Ticket | null => {
     const formId = (editForm.id || '').trim()
     if (!formId) return null
+
+    // Search results are fetched fresh via /tickets?q= (see openEditModal); editTicket already
+    // holds that fresh copy. Prefer it over `tickets` below, which can carry a stale snapshot of
+    // the same ticket left over from browsing Schedules/My Tickets earlier in the session.
+    if (surface === 'search' && editTicket?.id === formId) return editTicket
 
     const fromList = tickets.find(t => t.id === formId)
     if (fromList) return fromList
