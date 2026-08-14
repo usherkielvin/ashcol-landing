@@ -3,11 +3,13 @@ import { useEmployeeDetails } from '../contexts/EmployeeDetailsContext'
 
 interface EmployeeNameLinkProps {
   nameOrId: string | null | undefined
+  displayText?: string
   className?: string
   style?: React.CSSProperties
+  children?: React.ReactNode
 }
 
-export const EmployeeNameLink: React.FC<EmployeeNameLinkProps> = ({ nameOrId, className = '', style }) => {
+export const EmployeeNameLink: React.FC<EmployeeNameLinkProps> = ({ nameOrId, displayText, className = '', style, children }) => {
   const { openEmployeeDetails } = useEmployeeDetails()
 
   if (!nameOrId || !nameOrId.trim()) return <span>—</span>
@@ -25,7 +27,7 @@ export const EmployeeNameLink: React.FC<EmployeeNameLinkProps> = ({ nameOrId, cl
     upper === '-' ||
     upper.includes('REFUND') // e.g. "STAFF (REFUND - ...)"
   ) {
-    return <span className={className} style={style}>{trimmed}</span>
+    return <span className={className} style={style}>{children || displayText || trimmed}</span>
   }
 
   const handleClick = (e: React.MouseEvent) => {
@@ -49,9 +51,9 @@ export const EmployeeNameLink: React.FC<EmployeeNameLinkProps> = ({ nameOrId, cl
         verticalAlign: 'inherit',
         ...style
       }}
-      title={`Click to view details for ${trimmed}`}
+      title={`Click to view details for ${displayText || trimmed}`}
     >
-      {trimmed}
+      {children || displayText || trimmed}
     </button>
   )
 }

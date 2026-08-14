@@ -2239,10 +2239,13 @@ export function namesMatchLoosely(a: string, b: string): boolean {
   const nb = b.trim().toLowerCase()
   if (!na || !nb) return false
   if (na === nb) return true
-  if (na.includes(nb) || nb.includes(na)) return true
   const fa = na.split(/\s+/)[0]
   const fb = nb.split(/\s+/)[0]
-  return fa.length >= 2 && fb.length >= 2 && fa === fb
+  if (fa.length >= 2 && fb.length >= 2 && fa === fb) return true
+  const wordsA = na.split(/\s+/)
+  const wordsB = nb.split(/\s+/)
+  if (wordsA.some(wa => wa.length >= 2 && wordsB.includes(wa))) return true
+  return false
 }
 
 /** Exact (whitespace/case-normalized) match only — deliberately not `namesMatchLoosely`'s

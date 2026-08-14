@@ -247,6 +247,20 @@ function formatPhilippinePhoneInput(raw: string): string {
   return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`
 }
 
+/** Splits a pasted blob like "0917 869 4260   0946 735 5566" (or comma/newline separated) into
+ *  separate phone numbers. Only tokens with >=10 digits count as a distinct number, so pasting a
+ *  single already-spaced number ("0917 869 4260") still yields one token, not three. */
+function extractPhoneNumbers(raw: string): string[] {
+  const tokens = raw.split(/[,;\n/]+|\s{2,}/).map(t => t.trim()).filter(Boolean)
+  const candidates = tokens.length > 1 ? tokens : raw.trim().split(/\s+/)
+  const numbers: string[] = []
+  for (const tok of candidates) {
+    const digits = tok.replace(/\D/g, '')
+    if (digits.length >= 10) numbers.push(tok)
+  }
+  return numbers
+}
+
 const parseAcDetails = (ticket: Ticket) => {
   const fallback = {
     landmarks: '',
@@ -3575,6 +3589,18 @@ export default function Relays() {
                                 setAddPhoneNumbers(prev => {
                                   const next = [...prev]
                                   next[pIdx] = formatted
+                                  return next
+                                })
+                              }}
+                              onPaste={e => {
+                                const pasted = e.clipboardData.getData('text')
+                                const numbers = extractPhoneNumbers(pasted)
+                                if (numbers.length < 2) return
+                                e.preventDefault()
+                                setAddPhoneNumbers(prev => {
+                                  const next = [...prev]
+                                  next[pIdx] = formatPhilippinePhoneInput(numbers[0])
+                                  next.splice(pIdx + 1, 0, ...numbers.slice(1).map(formatPhilippinePhoneInput))
                                   return next
                                 })
                               }}

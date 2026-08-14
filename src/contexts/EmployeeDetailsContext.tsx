@@ -178,11 +178,34 @@ export const EmployeeDetailsProvider: React.FC<{ children: React.ReactNode }> = 
     if (!found) {
       found = latestList.find(emp => cleanName(emp.name) === searchTarget || emp.name.toUpperCase() === cleanIdOrName)
     }
+    // 3. Exact word / token match in full name (e.g. "RONA GOMEZ" -> words ["RONA", "GOMEZ"] matches "RONA", but "APPLE MADRONA" does not)
     if (!found) {
-      // Fuzzy/substring match: check if searchTarget matches a part of employee name
+      found = latestList.find(emp => {
+        const words = cleanName(emp.name).split(/\s+/)
+        return words.includes(searchTarget)
+      })
+    }
+    // 4. Starts-with word match (e.g. "RONALYN" starts with "RONA")
+    if (!found) {
+      found = latestList.find(emp => {
+        const words = cleanName(emp.name).split(/\s+/)
+        return words.some(w => w.startsWith(searchTarget))
+      })
+    }
+    // 5. Whole word boundary match (e.g. \bRONA\b)
+    if (!found) {
+      try {
+        const regex = new RegExp(`\\b${searchTarget.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
+        found = latestList.find(emp => regex.test(cleanName(emp.name)))
+      } catch {
+        // ignore
+      }
+    }
+    // 6. Only as last resort if searchTarget contains the full employee name as a discrete word
+    if (!found && searchTarget.length >= 4) {
       found = latestList.find(emp => {
         const empClean = cleanName(emp.name)
-        return empClean.includes(searchTarget) || searchTarget.includes(empClean)
+        return searchTarget.split(/\s+/).includes(empClean)
       })
     }
 

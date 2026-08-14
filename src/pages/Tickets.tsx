@@ -5802,10 +5802,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     if (label === 'NEGOTIATOR') {
       const negName = getTicketNegotiatorName(ticket, branchEmployees) || EMPTY_CELL
       const isNegEmpty = !negName || negName === EMPTY_CELL || negName === '—'
+      const negTarget = ticket.negotiatorId || ticket.negotiator_id || resolveNegotiatorDisplayName(ticket, branchEmployees) || negName
       return withEditPencil(
         <div className="flex flex-col items-center justify-center text-center">
           <span style={{ ...truncStyle, fontWeight: isNegEmpty ? 700 : 600, color: isNegEmpty ? (isPendingRow ? '#FDE047' : (isLight ? '#D97706' : '#FACC15')) : (isPendingRow ? '#ffffff' : undefined) }} title={negName}>
-            {!isNegEmpty ? <EmployeeNameLink nameOrId={negName} /> : 'N/A'}
+            {!isNegEmpty ? <EmployeeNameLink nameOrId={negTarget} displayText={negName} /> : 'N/A'}
           </span>
         </div>,
         ticket, label, rowGhost, rowIndex,
