@@ -675,6 +675,11 @@ export function isPortalStaffUser(role?: string | null): boolean {
   return (role || '').toLowerCase() !== 'customer'
 }
 
+/** Matches both the "Warranty Registrar" and misspelled "Warranty Registrator" job title variants. */
+export function isWarrantyRegistrar(jobTitle?: string | null): boolean {
+  return (jobTitle || '').toLowerCase().includes('warranty registr')
+}
+
 export function notifyEmployeesDirectoryUpdated(): void {
   try {
     const keysToRemove: string[] = []

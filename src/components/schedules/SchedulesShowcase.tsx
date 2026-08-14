@@ -115,6 +115,53 @@ function resolveRowPayment(row: ScheduleShowcaseRow, paymentByRowId?: Record<str
   return (row.payment || '').trim()
 }
 
+export function computePaymentSummary(rows: ScheduleShowcaseRow[], paymentByRowId?: Record<string, string>) {
+  let totalCash = 0
+  let totalGcash = 0
+  let totalBankTransfer = 0
+  let totalOther = 0
+  let paidCount = 0
+
+  rows.forEach(r => {
+    const raw = resolveRowPayment(r, paymentByRowId).trim()
+    if (!raw) return
+    const upper = raw.toUpperCase()
+    if (upper === 'FREE' || upper === 'FREE INSTALL' || upper === 'NO_PAYMENT') {
+      return
+    }
+
+    const split = raw.match(/^(.+?)\s+([\d,]+(?:\.\d+)?)$/i)
+    if (split) {
+      const mode = split[1].trim().toUpperCase()
+      const amount = parseFloat(split[2].replace(/,/g, '')) || 0
+      if (amount > 0) {
+        paidCount++
+        if (mode === 'CASH') totalCash += amount
+        else if (mode === 'GCASH') totalGcash += amount
+        else if (mode === 'BANK TRANSFER' || mode === 'BANK_TRANSFER' || mode === 'BANK' || mode === 'ONLINE') totalBankTransfer += amount
+        else totalOther += amount
+      }
+    } else {
+      const clean = raw.replace(/,/g, '')
+      const num = parseFloat(clean)
+      if (!isNaN(num) && num > 0) {
+        paidCount++
+        totalCash += num
+      }
+    }
+  })
+
+  const grandTotal = totalCash + totalGcash + totalBankTransfer + totalOther
+  return {
+    totalCash,
+    totalGcash,
+    totalBankTransfer,
+    totalOther,
+    grandTotal,
+    paidCount,
+  }
+}
+
 function parseDateMeta(dateKey: string, dateLabel: string) {
   const datePart = (dateKey || '').split('T')[0].split(' ')[0].trim()
   if (!datePart) return { scheduleDate: (dateLabel || '').toUpperCase(), dayName: '' }
@@ -310,6 +357,49 @@ function drawPdfDateTable(
   return doc.lastAutoTable?.finalY ?? 18
 }
 
+function drawPdfPaymentSummaryTable(
+  pdf: import('jspdf').jsPDF, autoTable: typeof import('jspdf-autotable').default,
+  summary: ReturnType<typeof computePaymentSummary>,
+  pageWidth: number,
+) {
+  if (summary.grandTotal <= 0) return 18
+  const body: (string | { content: string; styles?: any })[][] = []
+  if (summary.totalCash > 0) {
+    body.push(['CASH', `PHP ${summary.totalCash.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`])
+  }
+  if (summary.totalGcash > 0) {
+    body.push(['GCASH', `PHP ${summary.totalGcash.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`])
+  }
+  if (summary.totalBankTransfer > 0) {
+    body.push(['BANK / ONLINE', `PHP ${summary.totalBankTransfer.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`])
+  }
+  if (summary.totalOther > 0) {
+    body.push(['OTHER', `PHP ${summary.totalOther.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`])
+  }
+  body.push([
+    { content: 'TOTAL COLLECTION', styles: { fontStyle: 'bold' as const, fillColor: [240, 253, 244] as [number, number, number], textColor: [0, 0, 0] as [number, number, number] } },
+    { content: `PHP ${summary.grandTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`, styles: { fontStyle: 'bold' as const, fillColor: [240, 253, 244] as [number, number, number], textColor: [0, 0, 0] as [number, number, number], halign: 'right' as const } }
+  ])
+
+  const tableWidth = 84
+  const startX = pageWidth - PDF_MARGIN_X - tableWidth
+
+  autoTable(pdf, {
+    startY: 6,
+    margin: { left: startX, right: PDF_MARGIN_X },
+    tableWidth,
+    body,
+    ...PDF_BW_TABLE,
+    styles: { ...PDF_BW_TABLE.styles, fontSize: 6.5, cellPadding: 1, minCellHeight: 4.8 },
+    columnStyles: {
+      0: { fontStyle: 'bold', cellWidth: 36 },
+      1: { cellWidth: 48, halign: 'right' }
+    },
+  })
+  const doc = pdf as import('jspdf').jsPDF & { lastAutoTable?: { finalY: number } }
+  return doc.lastAutoTable?.finalY ?? 18
+}
+
 async function exportShowcasePdfDocument(options: {
   filename: string; dateLabel: string; dateKey: string; isTaguigServices: boolean
   rows: ScheduleShowcaseRow[]; paymentByRowId?: Record<string, string>
@@ -324,22 +414,38 @@ async function exportShowcasePdfDocument(options: {
   const driverHeaders = buildDriverHeaders()
   const installerPages = chunkRows(rows, INSTALLER_ROWS_PER_PAGE)
   const driverPages = chunkRows(rows, DRIVER_ROWS_PER_PAGE)
+  const paymentSummary = computePaymentSummary(rows, paymentByRowId)
   let globalPage = 0
   const drawFooter = (pageNo: number) => {
     const footerY = pdf.internal.pageSize.getHeight() - 5
     pdf.setFont('helvetica', 'normal'); pdf.setFontSize(6); pdf.setTextColor(0, 0, 0)
     pdf.text(`Page ${pageNo}`, pageWidth / 2, footerY, { align: 'center' })
   }
-  installerPages.forEach((pageRows) => {
+  installerPages.forEach((pageRows, pageIdx) => {
     if (globalPage > 0) pdf.addPage('a4', 'landscape')
     globalPage += 1
-    const tableStartY = drawPdfDateTable(pdf, autoTable, dateKey, dateLabel, 'INSTALLER LIST') + 3
+    const dateTableEndY = drawPdfDateTable(pdf, autoTable, dateKey, dateLabel, 'INSTALLER LIST')
+    let summaryEndY = dateTableEndY
+    if (paymentSummary.grandTotal > 0) {
+      summaryEndY = drawPdfPaymentSummaryTable(pdf, autoTable, paymentSummary, pageWidth)
+    }
+    const tableStartY = Math.max(dateTableEndY, summaryEndY) + 3
     const body = pageRows.length > 0
       ? pageRows.map(r => installerRowToPdfCells(r, paymentByRowId))
       : [['No schedule tickets for this date.', '', '', '', '', '', '', '', '', '', '']]
+    
+    const isLastInstallerPage = pageIdx === installerPages.length - 1
+    const foot: any = isLastInstallerPage && paymentSummary.grandTotal > 0 ? [
+      [
+        { content: '', colSpan: 10, styles: { fillColor: [255, 255, 255] as [number, number, number], lineWidth: 0 } },
+        { content: 'TOTAL COLLECTION', colSpan: 2, styles: { halign: 'right' as const, fontStyle: 'bold' as const, fillColor: [240, 253, 244] as [number, number, number], textColor: [0, 0, 0] as [number, number, number], fontSize: 7 } },
+        { content: `PHP ${paymentSummary.grandTotal.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, styles: { halign: 'right' as const, fontStyle: 'bold' as const, fillColor: [240, 253, 244] as [number, number, number], textColor: [0, 0, 0] as [number, number, number], fontSize: 7 } }
+      ]
+    ] : undefined
+
     autoTable(pdf, {
       startY: tableStartY, margin: { left: PDF_MARGIN_X, right: PDF_MARGIN_X, top: 20, bottom: 10 },
-      tableWidth, head: [installerHeaders], body, showHead: 'everyPage', ...PDF_BW_TABLE,
+      tableWidth, head: [installerHeaders], body, foot, showHead: 'everyPage', showFoot: 'lastPage', ...PDF_BW_TABLE,
       columnStyles: INSTALLER_COLUMN_STYLES,
       didParseCell: (data) => {
         if (data.row.section === 'body') {
@@ -433,9 +539,10 @@ export function SchedulesShowcase({
 
   const installerHeaders = buildInstallerHeaders(isTaguigServices)
   const driverHeaders = buildDriverHeaders()
+  const paymentSummary = computePaymentSummary(rows, paymentByRowId)
 
   const renderDateTable = (sheetTitle: string) => (
-    <div className="p-2 md:p-3" style={{ borderBottom: `1px solid ${TABLE_BORDER}` }}>
+    <div className="p-2 md:p-3 flex items-start justify-between gap-4" style={{ borderBottom: `1px solid ${TABLE_BORDER}` }}>
       <table className="schedules-showcase-date-table" style={{ borderCollapse: 'collapse', width: '240px', maxWidth: '100%' }}>
         <tbody>
           <tr><td style={dateLabelCell}>Date</td><td style={dateValueCell}>{scheduleDate}</td></tr>
@@ -443,10 +550,57 @@ export function SchedulesShowcase({
           <tr><td style={dateLabelCell}>Sheet</td><td style={dateValueCell}>{sheetTitle}</td></tr>
         </tbody>
       </table>
+
+      {sheetTitle === 'INSTALLER LIST' && paymentSummary.grandTotal > 0 && (
+        <table className="schedules-showcase-payment-summary" style={{ borderCollapse: 'collapse', width: '280px', maxWidth: '100%', fontSize: '10px' }}>
+          <tbody>
+            {paymentSummary.totalCash > 0 && (
+              <tr>
+                <td style={{ ...dateLabelCell, padding: '2px 6px', fontWeight: 600 }}>CASH</td>
+                <td style={{ ...dateValueCell, padding: '2px 6px', textAlign: 'right', fontWeight: 700 }}>
+                  PHP {paymentSummary.totalCash.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                </td>
+              </tr>
+            )}
+            {paymentSummary.totalGcash > 0 && (
+              <tr>
+                <td style={{ ...dateLabelCell, padding: '2px 6px', fontWeight: 600 }}>GCASH</td>
+                <td style={{ ...dateValueCell, padding: '2px 6px', textAlign: 'right', fontWeight: 700 }}>
+                  PHP {paymentSummary.totalGcash.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                </td>
+              </tr>
+            )}
+            {paymentSummary.totalBankTransfer > 0 && (
+              <tr>
+                <td style={{ ...dateLabelCell, padding: '2px 6px', fontWeight: 600 }}>BANK / ONLINE</td>
+                <td style={{ ...dateValueCell, padding: '2px 6px', textAlign: 'right', fontWeight: 700 }}>
+                  PHP {paymentSummary.totalBankTransfer.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                </td>
+              </tr>
+            )}
+            {paymentSummary.totalOther > 0 && (
+              <tr>
+                <td style={{ ...dateLabelCell, padding: '2px 6px', fontWeight: 600 }}>OTHER</td>
+                <td style={{ ...dateValueCell, padding: '2px 6px', textAlign: 'right', fontWeight: 700 }}>
+                  PHP {paymentSummary.totalOther.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                </td>
+              </tr>
+            )}
+            <tr style={{ backgroundColor: '#f0fdf4', color: '#000000' }}>
+              <td style={{ ...dateLabelCell, padding: '3px 6px', fontWeight: 800, color: '#000000', backgroundColor: '#f0fdf4' }}>
+                TOTAL COLLECTION
+              </td>
+              <td style={{ ...dateValueCell, padding: '3px 6px', textAlign: 'right', fontWeight: 900, color: '#000000', backgroundColor: '#f0fdf4' }}>
+                PHP {paymentSummary.grandTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      )}
     </div>
   )
 
-  const renderInstallerTable = (pageRows: ScheduleShowcaseRow[]) => (
+  const renderInstallerTable = (pageRows: ScheduleShowcaseRow[], isLastPage: boolean = false) => (
     <div className="overflow-x-auto">
       <table className="schedules-showcase-table schedules-showcase-installer"
         style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: PAPER, tableLayout: 'fixed' }}>
@@ -494,6 +648,19 @@ export function SchedulesShowcase({
             )
           })}
         </tbody>
+        {isLastPage && paymentSummary.grandTotal > 0 && (
+          <tfoot>
+            <tr style={{ backgroundColor: '#f0fdf4', color: '#000000' }}>
+              <td colSpan={11} style={{ border: 'none', backgroundColor: 'transparent' }} />
+              <td style={{ ...thStyle, textAlign: 'right', fontWeight: 800, fontSize: '9.5px', backgroundColor: '#f0fdf4', color: '#000000', padding: '4px 6px' }}>
+                TOTAL COLLECTION
+              </td>
+              <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 900, fontSize: '10px', backgroundColor: '#f0fdf4', color: '#000000', padding: '4px 6px' }}>
+                PHP {paymentSummary.grandTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+              </td>
+            </tr>
+          </tfoot>
+        )}
       </table>
     </div>
   )
@@ -556,7 +723,7 @@ export function SchedulesShowcase({
         style={{ maxWidth: '1123px', width: '100%', backgroundColor: PAPER, border: '1px solid #dbe5ef',
           boxShadow: '0 12px 40px rgba(15,23,42,0.08)', borderRadius: 12, overflow: 'hidden', marginBottom: !isLast ? 24 : 0 }}>
         {renderDateTable(title)}
-        {kind === 'installer' ? renderInstallerTable(pageRows) : renderDriverTable(pageRows)}
+        {kind === 'installer' ? renderInstallerTable(pageRows, pageIdx === pageCount - 1) : renderDriverTable(pageRows)}
         {pageCount > 1 && (
           <div className="no-print px-3 py-1.5 text-right text-[10px] font-semibold text-slate-500"
             style={{ borderTop: `1px solid ${TABLE_BORDER}` }}>

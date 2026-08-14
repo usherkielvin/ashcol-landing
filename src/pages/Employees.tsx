@@ -11,7 +11,8 @@ import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import UserAvatar from '../components/UserAvatar'
 import TicketHistoryTable from '../components/TicketHistoryTable'
-import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName, notifyEmployeesDirectoryUpdated } from '../utils/api'
+import WarrantyRegistrationHistoryTable from '../components/WarrantyRegistrationHistoryTable'
+import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName, notifyEmployeesDirectoryUpdated, isWarrantyRegistrar } from '../utils/api'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 
 function formatDisplayDate(dateStr?: string | null): string {
@@ -333,7 +334,7 @@ export default function Employees() {
   // Detail panel state — now a full tab (routed at /employees/:id) rather than a modal overlay
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const isDrawerOpen = Boolean(routeEmployeeId)
-  const [activeDrawerTab, setActiveDrawerTab] = useState<'overview' | 'history'>('overview')
+  const [activeDrawerTab, setActiveDrawerTab] = useState<'overview' | 'history' | 'registrations'>('overview')
   const [imageUploading, setImageUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -1421,7 +1422,11 @@ export default function Employees() {
 
             {/* Tabs */}
             <div className="flex border-b shrink-0" style={{ borderColor: border }}>
-              {(['overview', 'history'] as const).map(tab => (
+              {([
+                'overview',
+                'history',
+                ...(isWarrantyRegistrar(selectedEmployee.jobTitle) ? ['registrations' as const] : []),
+              ] as const).map(tab => (
                 <button
                   key={tab}
                   onClick={() => setActiveDrawerTab(tab)}
@@ -1431,7 +1436,7 @@ export default function Employees() {
                     color: activeDrawerTab === tab ? '#10B981' : textMuted,
                   }}
                 >
-                  {tab === 'overview' ? 'Overview' : 'Ticket History'}
+                  {tab === 'overview' ? 'Overview' : tab === 'history' ? 'Ticket History' : 'Registered Tickets'}
                 </button>
               ))}
             </div>
@@ -1501,6 +1506,20 @@ export default function Employees() {
               {activeDrawerTab === 'history' && (
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                   <TicketHistoryTable
+                    person={{
+                      id: selectedEmployee.id,
+                      name: selectedEmployee.name,
+                      email: selectedEmployee.email,
+                      personalEmail: selectedEmployee.personalEmail,
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* ── Registered Tickets Tab (warranty registrars only) ── */}
+              {activeDrawerTab === 'registrations' && isWarrantyRegistrar(selectedEmployee.jobTitle) && (
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                  <WarrantyRegistrationHistoryTable
                     person={{
                       id: selectedEmployee.id,
                       name: selectedEmployee.name,

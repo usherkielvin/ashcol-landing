@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { useAuth, getInitials } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import {
-  User, Shield, History,
+  User, Shield, History, ClipboardCheck,
   KeyRound, Trash2, X, AlertTriangle, Lock, Eye, EyeOff
 } from 'lucide-react'
 import ImageCropModal from '../components/ImageCropModal'
 import TicketHistoryTable from '../components/TicketHistoryTable'
+import WarrantyRegistrationHistoryTable from '../components/WarrantyRegistrationHistoryTable'
 import type { AddressValue } from '../components/PhAddressPicker'
 import {
   API_BASE_URL,
@@ -15,6 +16,7 @@ import {
   formatPersonName,
   isSystemAdmin,
   isPortalStaffUser,
+  isWarrantyRegistrar,
   PROFILE_UPDATED_EVENT,
   notifyEmployeesDirectoryUpdated,
 } from '../utils/api'
@@ -28,7 +30,7 @@ const authHeaders = () => ({
 })
 const ic = `w-full border rounded-xl px-4 py-3 font-medium transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] outline-none text-sm`
 
-type Tab = 'profile' | 'address' | 'password' | 'privacy' | 'notifications' | 'users' | 'history'
+type Tab = 'profile' | 'address' | 'password' | 'privacy' | 'notifications' | 'users' | 'history' | 'registrations'
 
 export default function Profile() {
   const { user, setUser, logout } = useAuth()
@@ -36,6 +38,7 @@ export default function Profile() {
   const isLight = theme === 'light'
   const isManager = user?.role?.toLowerCase() === 'manager'
   const isStaffUser = isPortalStaffUser(user?.role)
+  const isRegistrar = isWarrantyRegistrar(user?.jobTitle)
   const fileRef = useRef<HTMLInputElement>(null)
   const [tab, setTab] = useState<Tab>('profile')
 
@@ -328,18 +331,19 @@ export default function Profile() {
   const sidebarLinks: { key: Tab; label: string; icon: any }[] = [
     { key: 'profile' as Tab, label: 'Profile', icon: User },
     ...(isStaffUser ? [{ key: 'history' as Tab, label: 'Ticket History', icon: History }] : []),
+    ...(isRegistrar ? [{ key: 'registrations' as Tab, label: 'Registered Tickets', icon: ClipboardCheck }] : []),
     ...(isSystemAdmin(user?.role) ? [{ key: 'users' as Tab, label: 'User Management', icon: Shield }] : []),
     { key: 'password' as Tab, label: 'Change Password', icon: Lock },
   ]
 
   return (
     <div className="w-full pb-16" style={{ backgroundColor: pageBg }}>
-      <div className={`flex flex-col md:flex-row gap-0 ${tab !== 'history' ? 'md:gap-6 max-w-5xl mx-auto' : 'md:gap-0'}`}>
+      <div className={`flex flex-col md:flex-row gap-0 ${tab !== 'history' && tab !== 'registrations' ? 'md:gap-6 max-w-5xl mx-auto' : 'md:gap-0'}`}>
 
         {/* ══════════════════════════════════════════════════════════════════
-            LEFT SIDEBAR — hidden when Ticket History is active
+            LEFT SIDEBAR — hidden when Ticket History / Registered Tickets is active
         ══════════════════════════════════════════════════════════════════ */}
-        {tab !== 'history' && (
+        {tab !== 'history' && tab !== 'registrations' && (
         <aside className="w-full md:w-56 shrink-0">
           {/* User avatar + name */}
           <div className="flex md:flex-col items-center gap-3 md:gap-2 px-4 py-5 md:pt-6 md:pb-5"
@@ -836,6 +840,39 @@ export default function Profile() {
           {tab === 'history' && isStaffUser && user?.id && (
             <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
               <TicketHistoryTable
+                person={{
+                  id: user.id,
+                  name: user.name || '',
+                  email: user.email || '',
+                  personalEmail: user.personalEmail || undefined,
+                }}
+                headerLeft={
+                  <div className="flex items-center gap-0 overflow-x-auto -mb-px">
+                    {sidebarLinks.map(({ key, label, icon: Icon }) => (
+                      <button
+                        key={key}
+                        onClick={() => setTab(key)}
+                        className="flex items-center gap-2 px-4 py-3 text-sm font-medium transition-all border-b-2 whitespace-nowrap"
+                        style={{
+                          color: tab === key ? '#10B981' : textMuted,
+                          borderColor: tab === key ? '#10B981' : 'transparent',
+                          backgroundColor: 'transparent',
+                        }}
+                      >
+                        <Icon className="w-4 h-4 shrink-0" />
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                }
+              />
+            </div>
+          )}
+
+          {/* ── Tab: Registered Tickets (warranty registrars only) ─────────────── */}
+          {tab === 'registrations' && isRegistrar && user?.id && (
+            <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+              <WarrantyRegistrationHistoryTable
                 person={{
                   id: user.id,
                   name: user.name || '',

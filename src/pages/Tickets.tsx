@@ -291,7 +291,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   // ─────────────────────────────────────────────────────────────
   const cardBg = isLight ? '#ffffff' : '#0f172a'
   const border = isLight ? '#cbd5e1' : '#1e293b'
-  const tableBorder = isLight ? '#e2e8f0' : '#1e293b'
+  const tableBorder = isLight ? '#000000' : 'rgba(255, 255, 255, 0.45)'
   const textPrimary = isLight ? '#0f172a' : '#f8fafc'
   const textMuted = isLight ? '#64748b' : '#94a3b8'
   const inputBg = isLight ? '#f8fafc' : '#0f172a'
@@ -5626,7 +5626,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       }
       if (mode === 'FREE' || mode === 'FREE INSTALL') {
         return (
-          <span style={{ ...truncStyle, fontWeight: 700, color: '#ffffff' }} title={combined}>
+          <span style={{ ...truncStyle, fontWeight: 700, color: isPendingRow ? '#ffffff' : (isLight ? '#0f172a' : '#f1f5f9') }} title={combined}>
             FREE
           </span>
         )
@@ -6385,7 +6385,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
       {/* Ã¢â€â‚¬Ã¢â€â‚¬ Table card Ã¢â€â‚¬Ã¢â€â‚¬ */}
       <div className="flex flex-col flex-1 min-h-0 overflow-hidden md:mx-4 md:mt-4 md:mb-4 md:rounded-xl md:border shadow-sm"
-        style={{ backgroundColor: cardBg, borderColor: border }}
+        style={{ backgroundColor: cardBg, borderColor: tableBorder }}
         onClick={e => e.stopPropagation()}>
         {activeTab === 'schedules' ? (
           loading && !hasHydratedOnce && !initialSchedulesReady && tickets.length === 0 ? (
@@ -6485,11 +6485,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     <tr
                       style={{
                         backgroundColor: isMyTickets ? myTicketsTheadBg : schedTheadBg,
-                        borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`,
                       }}
                     >
-                      {columns.map(rawCol => {
+                      {columns.map((rawCol, colIdx) => {
                         const col = rawCol as any
+                        const isLastCol = colIdx === columns.length - 1
                         const canSort = 'sortable' in col && col.sortable
                         const isSorted = canSort && sortConfig?.column === col.label
                         const SortIcon = isSorted
@@ -6507,15 +6507,15 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                 }, 80)
                               }
                             }}
-                            title={canSort ? 'Click to widen column Ã‚Â· Use arrow to sort' : 'Click to widen column'}
+                            title={canSort ? 'Click to widen column · Use arrow to sort' : 'Click to widen column'}
                             style={{
                               padding: '13px 12px',
                               color: (col.isExpanded || isSorted)
                                 ? (isLight ? '#16A34A' : '#4ADE80')
                                 : (isMyTickets ? myTicketsTheadText : schedTheadText),
                               fontWeight: 700, whiteSpace: 'nowrap',
-                              borderBottom: isMyTickets ? `2px solid ${myTicketsTheadBorder}` : `2px solid ${schedTheadBorder}`,
-                              borderRight: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`,
+                              borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`,
+                              borderRight: isLastCol ? 'none' : (isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`),
                               fontSize: '10px', letterSpacing: '0.08em',
                               width: col.w, minWidth: 0,
                               overflow: 'hidden', textOverflow: 'ellipsis',
@@ -6674,7 +6674,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
 
                             {/* Data cells */}
-                            {columns.map((col) => {
+                            {columns.map((col, colIdx) => {
+                              const isLastCol = colIdx === columns.length - 1
                               const isEditingCell = editingCell?.ticketId === ticket.id
                                 && editingCell?.rowIndex === idx
                                 && editingCell?.colLabel === col.label
@@ -6749,7 +6750,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                     fontSize: '12.5px', fontWeight: isGhost ? 500 : 600,
                                     backgroundColor: isSelectedVehicleCell ? `${green}22` : (emptyCellBg ?? bg),
                                     borderBottom: `1px solid ${tableBorder}`,
-                                     borderRight: `1px solid ${tableBorder}`,
+                                    borderRight: isLastCol ? 'none' : `1px solid ${tableBorder}`,
                                     width: col.w,
                                     minWidth: 0,
                                     height: isEditingCell ? 'auto' : TABLE_ROW_HEIGHT,
@@ -6950,14 +6951,14 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                           className="w-full rounded-xl overflow-hidden border transition-transform active:scale-[0.985] cursor-pointer"
                           style={{
                             backgroundColor: rowColors.baseBg,
-                            borderColor: tableBorder,
+                            borderColor: border,
                             opacity: isGhost ? 0.72 : 1,
                           }}
                         >
                           {/* ── Card Header: ticket no (left) / status badge (right) ── */}
                           <div
                             className="px-3 py-2 flex justify-between items-center border-b"
-                            style={{ backgroundColor: isLight ? 'rgba(248,250,252,0.7)' : 'rgba(15,26,46,0.5)', borderColor: tableBorder }}
+                            style={{ backgroundColor: isLight ? 'rgba(248,250,252,0.7)' : 'rgba(15,26,46,0.5)', borderColor: border }}
                           >
                             <span className="text-[10.5px] font-bold tabular-nums" style={{ color: textMuted }}>
                               {ticketNo}
@@ -7017,7 +7018,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                           {/* ── Card Crew: strict 2x2 grid — Negotiator, Installer, Vehicle, Driver ── */}
                           <div
                             className="grid grid-cols-2 gap-2 px-3 py-2.5 border-y"
-                            style={{ backgroundColor: isLight ? 'rgba(248,250,252,0.5)' : 'rgba(15,26,46,0.3)', borderColor: tableBorder }}
+                            style={{ backgroundColor: isLight ? 'rgba(248,250,252,0.5)' : 'rgba(15,26,46,0.3)', borderColor: border }}
                           >
                             <div className="flex flex-col min-w-0">
                               <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Negotiator</span>
@@ -7134,7 +7135,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     if (totalEstimated <= 0) return null;
 
                     return (
-                      <div className="mt-3 p-3 rounded-xl border flex flex-col gap-2 shadow-sm" style={{ backgroundColor: cardBg, borderColor: tableBorder }}>
+                      <div className="mt-3 p-3 rounded-xl border flex flex-col gap-2 shadow-sm" style={{ backgroundColor: cardBg, borderColor: border }}>
                         <div className="flex items-center justify-between px-3 py-2 rounded-lg font-black" style={{ backgroundColor: '#16a34a', color: '#fff' }}>
                           <span className="text-[11px] uppercase tracking-wider">TOTAL COLLECTION</span>
                           <span className="text-xs font-black tracking-wide">
