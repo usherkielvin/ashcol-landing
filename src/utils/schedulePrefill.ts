@@ -813,8 +813,8 @@ export interface CommissionRow {
   store: string
   diser: string
   customer: string
-  brand?: string
-  hp?: string
+  brand: string
+  hp: string
   dateInstalled: string
   amount: string
 }
@@ -852,8 +852,8 @@ export function mapTicketToCommissionRow(ticket: Ticket): CommissionRow {
     store,
     diser,
     customer,
-    brand,
-    hp,
+    brand: brand || '',
+    hp: hp || '',
     dateInstalled,
     amount: '',
   }

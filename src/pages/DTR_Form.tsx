@@ -19,7 +19,7 @@ import {
 } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
-import { fetchAndMapTickets, fetchAndMapOnlineTickets, fetchAndMapCheckTickets, fetchAndMapForCollTickets, fetchAndMapRebateTickets, fetchAndMapCommissionTickets, fetchAndCountUnitSummary, lookupRebateRate } from '../utils/schedulePrefill'
+import { fetchAndMapTickets, fetchAndMapOnlineTickets, fetchAndMapCheckTickets, fetchAndMapForCollTickets, fetchAndMapRebateTickets, fetchAndMapCommissionTickets, fetchAndCountUnitSummary, lookupRebateRate, type CommissionRow } from '../utils/schedulePrefill'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,7 +35,6 @@ interface RebateRow    { id: string; ticketNumber: string; customer: string; com
 interface OrderRow     { id: string; customer: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 interface ExpenseRow   { id: string; name: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 interface IncentiveRow { id: string; customer: string; company: string; hp: string; promodiser: string; amount: string; collectionResolved?: boolean }
-interface CommissionRow { id: string; ticketNumber: string; store: string; diser: string; customer: string; brand: string; hp: string; dateInstalled: string; amount: string }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
