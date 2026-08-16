@@ -12,7 +12,7 @@ import { useAuth } from '../contexts/AuthContext'
 import UserAvatar from '../components/UserAvatar'
 import TicketHistoryTable from '../components/TicketHistoryTable'
 import WarrantyRegistrationHistoryTable from '../components/WarrantyRegistrationHistoryTable'
-import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName, notifyEmployeesDirectoryUpdated, isWarrantyRegistrar, isRelayDispatcherOrTicketCreator } from '../utils/api'
+import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName, notifyEmployeesDirectoryUpdated, isWarrantyRegistrar } from '../utils/api'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 
 function formatDisplayDate(dateStr?: string | null): string {
