@@ -19,7 +19,7 @@ import {
 } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
-import { fetchAndMapTickets, fetchAndMapOnlineTickets, fetchAndMapCheckTickets, fetchAndMapForCollTickets, fetchAndMapRebateTickets, fetchAndCountUnitSummary, lookupRebateRate } from '../utils/schedulePrefill'
+import { fetchAndMapTickets, fetchAndMapOnlineTickets, fetchAndMapCheckTickets, fetchAndMapForCollTickets, fetchAndMapRebateTickets, fetchAndMapCommissionTickets, fetchAndCountUnitSummary, lookupRebateRate } from '../utils/schedulePrefill'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,6 +35,7 @@ interface RebateRow    { id: string; ticketNumber: string; customer: string; com
 interface OrderRow     { id: string; customer: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 interface ExpenseRow   { id: string; name: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 interface IncentiveRow { id: string; customer: string; company: string; hp: string; promodiser: string; amount: string; collectionResolved?: boolean }
+interface CommissionRow { id: string; ticketNumber: string; store: string; diser: string; customer: string; dateInstalled: string; amount: string }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -243,6 +244,7 @@ const mkOrd  = (): OrderRow    => ({ id: uid(), customer: '', description: '', a
 const mkPay  = (): OrderRow    => ({ id: uid(), customer: '', description: '', amount: '', receiptReturned: false })
 const mkExp  = (): ExpenseRow  => ({ id: uid(), name: '', description: '', amount: '', receiptReturned: false })
 const mkInc  = (): IncentiveRow => ({ id: uid(), customer: '', company: '', hp: '', promodiser: '', amount: '', collectionResolved: false })
+const mkComm = (): CommissionRow => ({ id: uid(), ticketNumber: '', store: '', diser: '', customer: '', dateInstalled: '', amount: '' })
 
 // Temporarily hidden: saving a report with INCENTIVE items crashes the production backend
 // (Jackson classpath mismatch — NoClassDefFoundError: JsonMappingException$Reference) until
@@ -647,6 +649,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const [cashTx, setCashTx]     = useState<CashTxRow[]>([mkCash()])
   const [syncLoading, setSyncLoading] = useState(false)
   const [rebateSyncLoading, setRebateSyncLoading] = useState(false)
+  const [commissionSyncLoading, setCommissionSyncLoading] = useState(false)
   // Cash Returns
   const [cashRet, setCashRet]   = useState<CashRetRow[]>([mkRet()])
   // Fund Transfer from HO
@@ -662,6 +665,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const [forColl, setForColl]           = useState<ForCollRow[]>([mkColl()])
   // Rebates
   const [rebates, setRebates]           = useState<RebateRow[]>([mkReb()])
+  // Commission Expenses
+  const [commissions, setCommissions]   = useState<CommissionRow[]>([mkComm()])
   // Parts Order / Units Order
   const [orders, setOrders]             = useState<OrderRow[]>([mkOrd()])
   // Payables
@@ -821,7 +826,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     if (reportId || !selectedBranchId || !reportDate) return
     const hasCashData = cashTx.some(r => r.customer || r.installer || r.amount)
     const hasRebateData = rebates.some(r => r.ticketNumber || r.customer || r.company || r.amount)
-    if (hasCashData && hasRebateData) return
+    const hasCommissionData = commissions.some(r => r.ticketNumber || r.customer || r.store || r.diser || r.amount)
+    if (hasCashData && hasRebateData && hasCommissionData) return
 
     const scheduleBranchId = selectedAuditLine
       ? `${selectedBranchId.replace(/-(sales|services)$/i, '')}-${selectedAuditLine === 'TAGUIG_SERVICE' ? 'services' : 'sales'}`
@@ -843,7 +849,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       fetchAndMapForCollTickets(prefillOptions),
       fetchAndCountUnitSummary(prefillOptions),
       fetchAndMapRebateTickets(prefillOptions),
-    ]).then(([cashResult, onlineResult, checkResult, forCollResult, unitSummaryResult, rebateResult]) => {
+      fetchAndMapCommissionTickets(prefillOptions),
+    ]).then(([cashResult, onlineResult, checkResult, forCollResult, unitSummaryResult, rebateResult, commissionResult]) => {
       clearTimeout(timeout)
       if (!hasCashData) {
         if (cashResult.ok && cashResult.rows.length > 0) setCashTx(cashResult.rows)
@@ -862,6 +869,9 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       }
       if (!hasRebateData && rebateResult.ok && rebateResult.rows.length > 0) {
         setRebates(rebateResult.rows)
+      }
+      if (!hasCommissionData && commissionResult.ok && commissionResult.rows.length > 0) {
+        setCommissions(commissionResult.rows)
       }
     }).catch(() => {
       clearTimeout(timeout)
@@ -950,6 +960,36 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         })
       }
       setRebates(rebatesList.length > 0 ? rebatesList : [mkReb()])
+
+      // Populate commission expenses
+      const commissionsList: CommissionRow[] = []
+      if (data.items && Array.isArray(data.items)) {
+        data.items.forEach((item: any) => {
+          if (item.type === 'COMMISSION') {
+            commissionsList.push({
+              id: uid(),
+              ticketNumber: item.ticketNumber || item.ticket_number || '',
+              store: item.company || '',
+              diser: item.promodiser || '',
+              customer: item.customer || '',
+              dateInstalled: item.dateInstalled || item.date_installed || '',
+              amount: item.amount != null ? String(item.amount) : '',
+            })
+          }
+        })
+      }
+      if (commissionsList.length === 0 && data.commissionExpensesTotal != null && data.commissionExpensesTotal > 0) {
+        commissionsList.push({
+          id: uid(),
+          ticketNumber: '',
+          store: '',
+          diser: '',
+          customer: '',
+          dateInstalled: '',
+          amount: String(data.commissionExpensesTotal),
+        })
+      }
+      setCommissions(commissionsList.length > 0 ? commissionsList : [mkComm()])
 
       // Populate incentives
       const incentivesList: IncentiveRow[] = []
@@ -1251,6 +1291,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     setPartsSales([mkPart()])
     setForColl([mkColl()])
     setRebates([mkReb()])
+    setCommissions([mkComm()])
     setOrders([mkOrd()])
     setExpReceipt([mkExp()])
     setExpPurch([mkExp()])
@@ -1606,6 +1647,63 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     }
   }
 
+  const executeSyncCommissionsFromSchedule = async () => {
+    if (!selectedBranchId || !reportDate || commissionSyncLoading) return
+    const scheduleBranchId = selectedAuditLine
+      ? `${selectedBranchId.replace(/-(sales|services)$/i, '')}-${selectedAuditLine === 'TAGUIG_SERVICE' ? 'services' : 'sales'}`
+      : selectedBranchId.replace(/-(sales|services)$/i, '')
+    setCommissionSyncLoading(true)
+    try {
+      const result = await fetchAndMapCommissionTickets({
+        branchId: scheduleBranchId,
+        dateKey: reportDate,
+        branchName: branchName,
+      })
+      if (!result.ok) {
+        setError(`Commission Expenses sync failed: ${result.error}`)
+        setTimeout(() => setError(null), 4000)
+        return
+      }
+      if (result.rows.length === 0) {
+        setCommissions([mkComm()])
+        setError('No installed tickets found for this date.')
+        setTimeout(() => setError(null), 4000)
+        return
+      }
+      setCommissions(result.rows)
+    } catch (err) {
+      console.error('[Sync Commissions] Error:', err)
+      setError('Failed to sync commission expenses from schedule.')
+      setTimeout(() => setError(null), 4000)
+    } finally {
+      setCommissionSyncLoading(false)
+    }
+  }
+
+  const handleSyncCommissionsFromSchedule = () => {
+    if (!selectedBranchId || !reportDate || commissionSyncLoading) return
+    const hasExistingCommissionData = commissions.some(
+      r => r.ticketNumber.trim() || r.customer.trim() || r.store.trim() || r.diser.trim() || r.amount.trim()
+    )
+
+    if (hasExistingCommissionData) {
+      setConfirmDialog({
+        title: 'Overwrite Current Commission Expenses?',
+        message: 'You have existing entries in Commission Expenses. Syncing from schedule will clear current entries and replace them with fetched schedule data.',
+        detail: 'Click OK to clear and overwrite with schedule data, or Cancel to keep current entries.',
+        confirmText: 'OK',
+        cancelText: 'Cancel',
+        variant: 'discard',
+        onConfirm: () => {
+          setConfirmDialog(null)
+          void executeSyncCommissionsFromSchedule()
+        },
+      })
+    } else {
+      void executeSyncCommissionsFromSchedule()
+    }
+  }
+
   // (DTR Image paste and upload handlers removed)
 
   // ── DTR Calculations ─────────────────────────────────────────────
@@ -1615,6 +1713,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const totalCheck           = sumArr(checkRem.map(r => r.amount))
   const totalForColl         = sumArr(forColl.map(r => r.amount))
   const totalRebates         = rebates.reduce((s, r) => s + num(r.amount), 0)
+  const totalCommissionExpenses = commissions.reduce((s, r) => s + num(r.amount), 0)
   const totalOrders          = sumArr(orders.map(r => r.amount))
   const totalPayables        = sumArr(payables.map(r => r.amount))
   const totalExpReceipt      = sumArr(expReceipt.map(r => r.amount))
@@ -1700,6 +1799,16 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           description: `REBATE|${r.raNumber}|${r.hp}`,
           ticketNumber: r.ticketNumber || '',
         })),
+        ...commissions.filter(r => r.customer || r.store || r.diser || r.amount).map(r => ({
+          type: 'COMMISSION',
+          customer: r.customer,
+          company: r.store,
+          promodiser: r.diser,
+          amount: parseFloat(r.amount) || 0,
+          description: `COMMISSION|${r.diser}`,
+          ticketNumber: r.ticketNumber || '',
+          dateInstalled: r.dateInstalled || null,
+        })),
         ...forColl.filter(r => r.installer || r.amount).map(r => ({
           type: 'COLLECTION',
           description: r.installer,
@@ -1732,6 +1841,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         cashReturns: totalCashReturns,
         forCollection: totalForColl,
         rebatesForCollection: totalRebates,
+        commissionExpensesTotal: totalCommissionExpenses,
         totalUnitsScheduled: parseInt(scheduledUnits) || 0,
         totalUnitsSurveyOnly: parseInt(surveyOnlyUnits) || 0,
         totalRescheduled: parseInt(rescheduledUnits) || 0,
@@ -2111,6 +2221,20 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9 9 0 0 0-7.5 4"/><path d="M3 12a9 9 0 0 0 9 9 9 9 0 0 0 7.5-4"/><polyline points="3 4 3 8 7 8"/><polyline points="21 20 21 16 17 16"/></svg>
                   )}
                   Sync Rebates from Sched
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSyncCommissionsFromSchedule}
+                  disabled={commissionSyncLoading || isFormDisabled}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 shrink-0"
+                  style={{ backgroundColor: '#10B981', border: '1px solid #059669', color: '#FFFFFF', boxShadow: '0 4px 14px rgba(16, 185, 129, 0.25)' }}
+                >
+                  {commissionSyncLoading ? (
+                    <span className="animate-spin inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full" />
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9 9 0 0 0-7.5 4"/><path d="M3 12a9 9 0 0 0 9 9 9 9 0 0 0 7.5-4"/><polyline points="3 4 3 8 7 8"/><polyline points="21 20 21 16 17 16"/></svg>
+                  )}
+                  Sync Commissions from Sched
                 </button>
               </>
             )}
@@ -2903,6 +3027,68 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
               </tbody>
             </table>
             {canSubmit && !reviewMode && <AddRowBtn onClick={() => setRebates(p => [...p, mkReb()])} label="Add row" />}
+          </div>
+        </div>
+
+        {/* Commission Expenses */}
+        <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 mt-4">
+          <SectionHeader label="Commission Expenses" total={totalCommissionExpenses} variant="expense" />
+          <div className="p-2">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr>
+                  <th className={tableTh}>Ticket No.</th>
+                  <th className={tableTh}>Customer Name</th>
+                  <th className={tableTh}>Store</th>
+                  <th className={tableTh}>Diser</th>
+                  <th className={tableTh + ' w-36'}>Date Installed</th>
+                  <th className={tableTh + ' text-right w-32'}>Amount</th>
+                  {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {commissions.map(row => (
+                  <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                    <td className={tableTd}>
+                      <input type="text" placeholder="Ticket No." value={row.ticketNumber}
+                        onChange={e => setCommissions(p => p.map(r => r.id === row.id ? { ...r, ticketNumber: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <input type="text" placeholder="Customer name" value={row.customer}
+                        onChange={e => setCommissions(p => p.map(r => r.id === row.id ? { ...r, customer: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <input type="text" placeholder="Store" value={row.store}
+                        onChange={e => setCommissions(p => p.map(r => r.id === row.id ? { ...r, store: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <input type="text" placeholder="Diser" value={row.diser}
+                        onChange={e => setCommissions(p => p.map(r => r.id === row.id ? { ...r, diser: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <input type="text" placeholder="YYYY-MM-DD" value={row.dateInstalled}
+                        onChange={e => setCommissions(p => p.map(r => r.id === row.id ? { ...r, dateInstalled: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
+                        onValueChange={(values) => setCommissions(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
+                        className={flushInputNumber} disabled={isFormDisabled} />
+                    </td>
+                    {canSubmit && !reviewMode && (
+                      <td className={tableTd + ' text-center'}>
+                        <DelBtn onClick={() => setCommissions(p => p.filter(r => r.id !== row.id))} />
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {canSubmit && !reviewMode && <AddRowBtn onClick={() => setCommissions(p => [...p, mkComm()])} label="Add row" />}
           </div>
         </div>
 

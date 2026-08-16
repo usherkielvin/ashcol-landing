@@ -107,6 +107,7 @@ interface Ticket {
   createdAt: string
   updatedAt: string
   dealer?: string
+  diser?: string
   sourceVendor?: string
   slaExpirationDate?: string
   priorityTag?: string
@@ -1021,6 +1022,7 @@ export default function Relays() {
     contactPhone: '',
     locationRaw: '',
     dealer: '',
+    diser: '',
     otherStoreName: '',
     dealerBranch: '',
     unitType: 'Split AC',
@@ -1703,6 +1705,7 @@ export default function Relays() {
       contactPhone: cleanedPhones[0] || undefined,
       location: addForm.locationRaw?.trim() || 'No Address Provided',
       dealer: resolveRelayDealerForSubmit(addForm.dealer || 'Direct', addForm.dealerBranch || ''),
+      diser: addForm.diser || undefined,
       preferredDate: addForm.preferredDate || undefined,
       actualCompletion: addForm.installedDate || undefined,
       slaExpirationDate: addForm.slaExpirationDate ? new Date(addForm.slaExpirationDate).toISOString() : undefined,
@@ -1783,6 +1786,7 @@ export default function Relays() {
       contactPhone: '',
       locationRaw: '',
       dealer: '',
+      diser: '',
       otherStoreName: '',
       dealerBranch: '',
       unitType: 'Split AC',
@@ -2032,6 +2036,7 @@ export default function Relays() {
     payload.images = draft.images || null
     payload.contactPhone = draft.phoneNumbers[0] || null
     payload.dealer = resolveRelayDealerForSubmit(draft.dealerName, draft.dealerBranch) || null
+    payload.diser = draft.diser || null
     const brandHpLabel = formatBrandCapacityLabel(draft.brand, draft.capacity)
     payload.unitType = brandHpLabel || draft.unitType || null
     payload.serviceType = draft.serviceType || null
@@ -2066,6 +2071,7 @@ export default function Relays() {
       images: draft.images || selectedTicket.images,
       contactPhone: draft.phoneNumbers[0] || selectedTicket.contactPhone,
       dealer: payload.dealer || selectedTicket.dealer || selectedTicket.sourceVendor,
+      diser: payload.diser || selectedTicket.diser,
       unitType: brandHpLabel || draft.unitType || selectedTicket.unitType,
       serviceType: draft.serviceType || selectedTicket.serviceType,
       updatedAt: new Date().toISOString(),
@@ -3520,6 +3526,16 @@ export default function Relays() {
                         placeholder="Branch"
                         className={`${addInput} uppercase`}
                         style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
+                      />
+                    </RelayFormField>
+                    <RelayFormField label="Diser" compact className="md:col-span-4">
+                      <input
+                        type="text"
+                        value={addForm.diser}
+                        onChange={e => setAddForm(prev => ({ ...prev, diser: e.target.value }))}
+                        placeholder="Dealer's sales rep name"
+                        className={addInput}
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                       />
                     </RelayFormField>
                     {ROBINSON_APPLIANCES_RE.test(addForm.dealer || '') && (

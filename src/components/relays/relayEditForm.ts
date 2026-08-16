@@ -8,6 +8,7 @@ export type RelayEditDraft = {
   phoneNumbers: string[]
   dealerName: string
   dealerBranch: string
+  diser: string
   location: string
   district: string
   landmarks: string
@@ -65,6 +66,7 @@ type TicketLike = {
   contactPhone?: string
   dealer?: string
   sourceVendor?: string
+  diser?: string
   location?: string
   district?: string
   serviceType?: string
@@ -161,6 +163,7 @@ export function buildRelayEditDraft(
     phoneNumbers: phonesList.length ? phonesList : [''],
     dealerName: openedDealerName,
     dealerBranch: parsedDealer.branch,
+    diser: ticket.diser || '',
     location: ticket.location || '',
     district: ticket.district || '',
     landmarks: parsedDetails.landmarks || '',

@@ -53,6 +53,7 @@ interface AuditRow {
   totalUnitsFreeInstall: number
   forCollection: number
   rebatesForCollection: number
+  paidCommissionExpenses?: number
 }
 
 interface DrilldownItem {
@@ -65,12 +66,19 @@ interface DrilldownItem {
   units?: number
   customer?: string
   collectionResolved?: boolean
+  ticketNumber?: string
+  promodiser?: string
+  dateInstalled?: string
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const peso = (v: number | null | undefined) =>
   (v ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+/** Net Sales = Gross Sales - Expenses - Payables - Purchases - paid Commission Expenses. */
+const computeNetSales = (row: Pick<AuditRow, 'grossSales' | 'totalExpenses' | 'totalPayables' | 'totalForPurchase' | 'paidCommissionExpenses'>) =>
+  row.grossSales - (row.totalExpenses || 0) - (row.totalPayables || 0) - (row.totalForPurchase || 0) - (row.paidCommissionExpenses || 0)
 
 const formatLocalTime = (utcString: string | null | undefined, fallback: string | null | undefined) => {
   if (!utcString) return fallback || ''
@@ -522,8 +530,8 @@ export default function DailyAuditReport() {
         }
         return a.branchName.localeCompare(b.branchName)
       }
-      const av = k === 'netSales' ? (a.grossSales - (a.totalExpenses || 0) - (a.totalPayables || 0) - (a.totalForPurchase || 0)) : (a as any)[k]
-      const bv = k === 'netSales' ? (b.grossSales - (b.totalExpenses || 0) - (b.totalPayables || 0) - (b.totalForPurchase || 0)) : (b as any)[k]
+      const av = k === 'netSales' ? computeNetSales(a) : (a as any)[k]
+      const bv = k === 'netSales' ? computeNetSales(b) : (b as any)[k]
       if (av === bv) return 0
       if (av == null) return 1; if (bv == null) return -1
       if (typeof av === 'string' && typeof bv === 'string')
@@ -540,7 +548,7 @@ export default function DailyAuditReport() {
 
   const totals = visibleRows.reduce((acc, r) => ({
     grossSales:           acc.grossSales + r.grossSales,
-    netSales:             acc.netSales + (r.grossSales - (r.totalExpenses || 0) - (r.totalPayables || 0) - (r.totalForPurchase || 0)),
+    netSales:             acc.netSales + computeNetSales(r),
     targetDailyQuota:     acc.targetDailyQuota + r.targetDailyQuota,
     totalCohCfd:          acc.totalCohCfd + r.totalCohCfd,
     totalCashCollection:  acc.totalCashCollection + r.totalCashCollection,
@@ -1171,7 +1179,7 @@ export default function DailyAuditReport() {
 
                       {/* Net Sales — green if positive, red if negative */}
                       {(() => {
-                        const netVal = row.grossSales - (row.totalExpenses || 0) - (row.totalPayables || 0) - (row.totalForPurchase || 0)
+                        const netVal = computeNetSales(row)
                         const netColor = netVal >= 0
                           ? (isLight ? '#059669' : '#34d399')
                           : (isLight ? '#dc2626' : '#f87171')
@@ -1411,7 +1419,7 @@ export default function DailyAuditReport() {
                   <div className="grid grid-cols-4 pt-2 mt-1 border-t" style={{ borderColor: border }}>
                     {[
                       { label: 'Sales', value: `₱${peso(row.grossSales)}`, color: '#3B82F6' },
-                      { label: 'Net', value: `₱${peso(row.grossSales - (row.totalExpenses || 0) - (row.totalPayables || 0) - (row.totalForPurchase || 0))}`, color: textPrimary },
+                      { label: 'Net', value: `₱${peso(computeNetSales(row))}`, color: textPrimary },
                       { label: 'Quota', value: `₱${peso(row.targetDailyQuota)}`, color: textMuted },
                       { label: 'Diff', value: noRecord ? '—' : `${isAbove ? '+' : ''}₱${peso(row.difference)}`, color: diffColor },
                     ].map(m => (
@@ -1650,6 +1658,10 @@ export default function DailyAuditReport() {
                 // Incentives Breakdown
                 const incentiveItems = items.filter(it => it.type === 'INCENTIVE')
                 const totalIncentives = incentiveItems.reduce((sum, it) => sum + (it.amount || 0), 0)
+                // Commission Expenses Breakdown
+                const commissionItems = items.filter(it => it.type === 'COMMISSION')
+                const paidCommissionItems = commissionItems.filter(it => it.collectionResolved)
+                const totalPaidCommissionExpenses = paidCommissionItems.reduce((sum, it) => sum + (it.amount || 0), 0)
 
                 const formatHpDisplay = (raw?: any) => {
                   if (!raw || raw === '—') return '—'
@@ -1729,7 +1741,7 @@ export default function DailyAuditReport() {
                         <div className="flex flex-col gap-2.5">
                           {[
                             { label: 'Gross Sales', value: `₱${peso(selectedRow.grossSales)}`, color: textPrimary, bold: true },
-                            { label: 'Net Sales', value: `₱${peso(selectedRow.grossSales - (selectedRow.totalExpenses || 0) - (selectedRow.totalPayables || 0) - (selectedRow.totalForPurchase || 0))}`, color: '#2563EB', bold: true },
+                            { label: 'Net Sales', value: `₱${peso(computeNetSales(selectedRow))}`, color: '#2563EB', bold: true },
                             { label: 'Target Quota', value: `₱${peso(selectedRow.targetDailyQuota)}`, color: textMuted },
                             { label: 'Difference', value: `${selectedRow.remarks === 'ABOVE QUOTA' ? '+' : ''}₱${peso(selectedRow.difference)}`, color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : '#EF4444', bold: true },
                             { label: 'Remarks', value: formatRemarksLabel(selectedRow.remarks, false), color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : selectedRow.remarks === 'PENDING' ? '#F59E0B' : isNoTransactionRemarks(selectedRow.remarks) ? textMuted : '#EF4444', bold: true },
@@ -1751,6 +1763,7 @@ export default function DailyAuditReport() {
                             { label: 'Total Payables', value: `₱${peso(selectedRow.totalPayables || 0)}`, bold: true },
                             { label: 'Total Purchases', value: `₱${peso(selectedRow.totalForPurchase || 0)}`, bold: false },
                             { label: 'Incentives', value: `₱${peso(totalIncentives)}`, bold: false },
+                            { label: 'Commission Expenses (Paid)', value: `₱${peso(selectedRow.paidCommissionExpenses ?? totalPaidCommissionExpenses)}`, bold: false },
                           ].map(r => (
                             <div key={r.label} className="flex items-center justify-between gap-2">
                               <span className="text-xs sm:text-sm font-medium" style={{ color: textMuted }}>{r.label}</span>
@@ -1905,6 +1918,25 @@ export default function DailyAuditReport() {
                             )
                           },
                           { label: 'Rate', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
+                        ])}
+
+                        {/* Commission Expenses Breakdown */}
+                        {renderItemTable('Commission Expenses', commissionItems, [
+                          { label: 'Ticket No.', render: (item) => <span style={{ color: textPrimary }}>{item.ticketNumber || '—'}</span> },
+                          { label: 'Store', render: (item) => <span style={{ color: textPrimary }}>{item.company || '—'}</span> },
+                          { label: 'Diser', render: (item) => <span style={{ color: textPrimary }}>{item.promodiser || '—'}</span> },
+                          { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
+                          { label: 'Date Installed', render: (item) => <span style={{ color: textPrimary }}>{item.dateInstalled || '—'}</span> },
+                          { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> },
+                          {
+                            label: 'Status',
+                            align: 'center',
+                            render: (item) => (
+                              <span className="text-xs sm:text-sm font-normal uppercase" style={{ color: item.collectionResolved ? '#10B981' : '#F59E0B' }}>
+                                {item.collectionResolved ? 'PAID' : 'PENDING'}
+                              </span>
+                            )
+                          }
                         ])}
 
                         {/* Unit Summary stats grid */}

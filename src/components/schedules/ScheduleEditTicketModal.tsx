@@ -13,6 +13,7 @@ export type ScheduleEditForm = {
   commitTerms?: string
   unitType?: string
   dealer?: string
+  diser?: string
   serviceDriver?: string
   driverName?: string
   installerName?: string
@@ -265,6 +266,9 @@ export function ScheduleEditTicketModal({
                   placeholder="Store or supplier"
                 />
                 <datalist id="sched-edit-dealer-list">{dealerOptions.map(d => <option key={d} value={d} />)}</datalist>
+              </Field>
+              <Field label="Diser">
+                <input type="text" value={form.diser || ''} onChange={e => onChange({ diser: e.target.value })} style={inp} placeholder="Dealer's sales rep name" />
               </Field>
             </Row>
             <Row cols={3}>

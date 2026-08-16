@@ -87,6 +87,7 @@ export interface Ticket {
   commitType?: string
   amountCharged?: number
   dealer?: string
+  diser?: string
   sourceVendor?: string
   source_vendor?: string
   district?: string

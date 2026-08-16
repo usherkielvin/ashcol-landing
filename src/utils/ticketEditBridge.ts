@@ -16,6 +16,7 @@ export type ScheduleEditFormShape = {
   commitTerms?: string
   unitType?: string
   dealer?: string
+  diser?: string
   serviceDriver?: string
   driverName?: string
   installerName?: string
@@ -71,6 +72,7 @@ export function mapRelayDraftToScheduleEditForm(
     commitTerms: draft.commitType || draft.commitTerms || base.commitTerms,
     unitType: draft.brandHp || draft.unitType || base.unitType,
     dealer: resolvedDealer || base.dealer || 'Direct',
+    diser: draft.diser !== undefined ? draft.diser : base.diser,
     serviceDriver: draft.serviceDriver !== undefined ? draft.serviceDriver : base.serviceDriver,
     driverName: draft.driverName !== undefined ? draft.driverName : base.driverName,
     installerName: draft.installerName !== undefined ? draft.installerName : base.installerName,

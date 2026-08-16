@@ -403,6 +403,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                 />
               </EField>
               <EField label="Dealer / Store Branch"><input type="text" value={draft.dealerBranch} onChange={(e) => patch({ dealerBranch: e.target.value })} className={relayInput} style={inputStyle} /></EField>
+              <EField label="Diser"><input type="text" value={draft.diser} onChange={(e) => patch({ diser: e.target.value })} placeholder="Dealer's sales rep name" className={relayInput} style={inputStyle} autoComplete="off" /></EField>
               {ROBINSON_APPLIANCES_RE.test(draft.dealerName) && (
                 <EField label="Transaction ID">
                   <input type="text" value={draft.robinsonsTransactionId} onChange={(e) => patch({ robinsonsTransactionId: e.target.value })} className={relayInput} style={inputStyle} autoComplete="off" placeholder="Robinsons Transaction ID" />

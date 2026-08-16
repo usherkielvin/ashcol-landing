@@ -154,6 +154,7 @@ export function TicketDetailsModal({
   const preferredDate = t.preferredDate || t.preferred_date
   const finalScheduleDate = getFinalDateKey(t)
   const dealer = getF(t, 'dealer')
+  const diser = getF(t, 'diser')
   const isCompleted = isInstalledWorkflowStatus(t.status)
   const paymentAmt = formatPaymentAmount(t)
   const paymentMode = getPaymentMode(t)
@@ -318,6 +319,7 @@ export function TicketDetailsModal({
                   <DField isLight={isLight} label="Service / Driver" value={serviceDriver || EMPTY_CELL} />
                   <DField isLight={isLight} label={isTaguigServices ? "Technician" : "Installer / Technician"} value={installer || EMPTY_CELL} />
                   <DField isLight={isLight} label={isTaguigServices ? "Endorsed By" : "Dealer / Store"} value={dealer || EMPTY_CELL} />
+                  <DField isLight={isLight} label="Diser" value={diser || EMPTY_CELL} />
                   <DField isLight={isLight} label="Control No. / SI" value={t.controlNumber || t.control_number || EMPTY_CELL} />
                   {ROBINSON_APPLIANCES_RE.test(dealer || '') && (
                     <DField isLight={isLight} label="Transaction ID" value={String(parseAcMeta(t).robinsonsTransactionId || '') || EMPTY_CELL} />

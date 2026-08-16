@@ -19,6 +19,8 @@ import Relays from './pages/Relays'
 import DailyAuditReport from './pages/DailyAuditReport'
 import AuditFinanceExpenses from './pages/AuditFinanceExpenses'
 import ForCollections from './pages/ForCollections'
+import Commissions from './pages/Commissions'
+import CashAdvances from './pages/CashAdvances'
 import DailyServiceReport from './pages/DailyServiceReport'
 import Registration from './pages/Registration'
 import HappyCalls from './pages/HappyCalls'
@@ -105,6 +107,8 @@ export default function App() {
           {/* Redirect legacy /daily-report to the combined tab page */}
           <Route path="/daily-report" element={<Navigate to="/audit-report?tab=submit" replace />} />
           <Route path="/collections" element={<ForCollections />} />
+          <Route path="/commissions" element={<Commissions />} />
+          <Route path="/cash-advances" element={<CashAdvances />} />
           <Route path="/lineup" element={<LineUp />} />
           <Route path="/weekly-field-schedule" element={<Navigate to="/lineup?tab=weekly" replace />} />
           <Route path="/service-report" element={<DailyServiceReport />} />

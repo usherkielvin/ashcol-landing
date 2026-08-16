@@ -1,5 +1,5 @@
 import { API_BASE_URL } from './api'
-import { getScheduleStatusValue, resolveTicketPayment, parseAcMeta, parseBrand, getTicketCommitDisplay, getTicketNumberDisplay, getF, CLOSING_SCHEDULE_STATUSES, type Ticket } from './ticketHelpers'
+import { getScheduleStatusValue, resolveTicketPayment, parseAcMeta, parseBrand, getTicketCommitDisplay, getTicketNumberDisplay, getInstalledDateKey, getF, CLOSING_SCHEDULE_STATUSES, type Ticket } from './ticketHelpers'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -797,6 +797,103 @@ export function deduplicateAndMergeRebates(existing: RebateRow[], incoming: Reba
     const key = row.ticketNumber.trim()
       ? `tn:${row.ticketNumber.trim().toLowerCase()}`
       : `cc:${row.customer.trim().toLowerCase()}|${row.company.trim().toLowerCase()}`
+    if (existingKeys.has(key)) continue
+    existingKeys.add(key)
+    deduped.push(row)
+  }
+
+  return [...nonEmpty, ...deduped]
+}
+
+// ── Commission Expenses Prefill (all installed tickets, amount keyed manually) ──
+
+export interface CommissionRow {
+  id: string
+  ticketNumber: string
+  store: string
+  diser: string
+  customer: string
+  dateInstalled: string
+  amount: string
+}
+
+export type CommissionPrefillResult =
+  | { ok: true; rows: CommissionRow[] }
+  | { ok: false; error: PrefillError }
+
+/**
+ * Filter tickets qualifying for Commission Expenses prefill:
+ * - Status = DONE_INSTALLED specifically (not other closing outcomes like DONE_CLEANING,
+ *   DONE_CHECKUP, DONE_SERVICE, etc.) — only actually-installed schedule tickets qualify.
+ */
+export function filterInstalledTickets(tickets: Ticket[]): Ticket[] {
+  return tickets.filter((ticket) => getScheduleStatusValue(ticket) === 'DONE_INSTALLED')
+}
+
+/**
+ * Map a qualifying installed ticket to a CommissionRow.
+ * Amount is intentionally left blank — branch staff key it in manually per row.
+ */
+export function mapTicketToCommissionRow(ticket: Ticket): CommissionRow {
+  const ticketNumber = getTicketNumberDisplay(ticket)
+  const customer = (ticket.customerName || ticket.customer_name || '').trim().toUpperCase()
+  const store = getF(ticket, 'dealer', 'sourceVendor', 'source_vendor') || ''
+  const diser = getF(ticket, 'diser') || ''
+  const dateInstalled = getInstalledDateKey(ticket)
+
+  return {
+    id: uid(),
+    ticketNumber,
+    store,
+    diser,
+    customer,
+    dateInstalled,
+    amount: '',
+  }
+}
+
+/**
+ * Fetch and map all installed tickets for Commission Expenses.
+ */
+export async function fetchAndMapCommissionTickets(options: PrefillOptions): Promise<CommissionPrefillResult> {
+  try {
+    const scheduleDateKey = getPreviousDayKey(options.dateKey)
+    const tickets = await fetchScheduleTickets(options.branchId, scheduleDateKey, options.signal)
+    const qualifying = filterInstalledTickets(tickets)
+    console.log('[schedulePrefill:commission] Qualifying (installed):', qualifying.length)
+    const rows = qualifying.map((t) => mapTicketToCommissionRow(t))
+    return { ok: true, rows }
+  } catch (err: any) {
+    if (err?.name === 'AbortError') return { ok: false, error: 'timeout' }
+    const msg = err?.message || ''
+    if (msg === 'auth_missing') return { ok: false, error: 'auth_missing' }
+    if (msg === 'http_error') return { ok: false, error: 'http_error' }
+    return { ok: false, error: 'network_error' }
+  }
+}
+
+/**
+ * Merge incoming commission rows with existing, skipping duplicates by ticket number
+ * (falls back to customer+store match if ticket number is blank).
+ */
+export function deduplicateAndMergeCommissions(existing: CommissionRow[], incoming: CommissionRow[]): CommissionRow[] {
+  const nonEmpty = existing.filter(
+    (row) => row.ticketNumber.trim() || row.customer.trim() || row.store.trim() || row.diser.trim() || row.amount.trim(),
+  )
+
+  const existingKeys = new Set<string>()
+  for (const row of nonEmpty) {
+    const key = row.ticketNumber.trim()
+      ? `tn:${row.ticketNumber.trim().toLowerCase()}`
+      : `cs:${row.customer.trim().toLowerCase()}|${row.store.trim().toLowerCase()}`
+    existingKeys.add(key)
+  }
+
+  const deduped: CommissionRow[] = []
+  for (const row of incoming) {
+    const key = row.ticketNumber.trim()
+      ? `tn:${row.ticketNumber.trim().toLowerCase()}`
+      : `cs:${row.customer.trim().toLowerCase()}|${row.store.trim().toLowerCase()}`
     if (existingKeys.has(key)) continue
     existingKeys.add(key)
     deduped.push(row)
