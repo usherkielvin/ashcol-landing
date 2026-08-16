@@ -58,8 +58,8 @@ interface Employee {
 
 interface BranchOption { id: string; name: string }
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-const DEFAULT_JOB_TITLES = ['TECHNICIAN', 'HELPER', 'DRIVER', 'COORDINATOR', 'TICKET CREATOR', 'RELAY DISPATCHER', 'DISPATCHER', 'SALES EXECUTIVE', 'WARRANTY REGISTRAR', 'WARRANTY REGISTRATOR', 'PAYROLL']
+const DEFAULT_JOB_TITLES = ['TECHNICIAN', 'INSTALLER', 'DRIVER', 'COORDINATOR', 'CREATE TICKETS', 'REGISTRATION', 'PAYROLL']
+const REMOVED_LEGACY_ROLES = new Set(['SALES EXECUTIVE', 'HELPER', 'WARRANTY REGISTRAR', 'WARRANTY REGISTRATOR', 'DISPATCHER', 'RELAY DISPATCHER', 'TICKET CREATOR'])
 
 
 type AssignableRole = 'EMPLOYEE' | 'MANAGER' | 'MANAGEMENT'
@@ -179,14 +179,11 @@ const formatBranchLabel = (name: string) => {
 
 const formatJobTitleLabel = (title: string) => {
   if (!title?.trim()) return ''
-  return title
-    .trim()
-    .toLowerCase()
-    .replace(/\b\w/g, char => char.toUpperCase())
+  return title.trim().toUpperCase()
 }
 
 /** jobTitle is stored as one comma-separated string so an employee can hold multiple roles
- * (e.g. "COORDINATOR, WARRANTY REGISTRAR") without a backend schema change. */
+ * (e.g. "COORDINATOR, CREATE TICKETS") without a backend schema change. */
 const parseJobTitles = (raw: string): string[] =>
   raw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
 
@@ -199,18 +196,45 @@ interface JobTitleMultiSelectProps {
   onAddCustom: (title: string) => void
   inputCls: string
   inputStyle: React.CSSProperties
-  textMuted: string
   border: string
 }
 
-const JobTitleMultiSelect = ({ value, onChange, options, onAddCustom, inputCls, inputStyle, textMuted, border }: JobTitleMultiSelectProps) => {
+const JobTitleMultiSelect = ({ value, onChange, options, onAddCustom, inputCls, inputStyle, border }: JobTitleMultiSelectProps) => {
   const selected = parseJobTitles(value)
   const [newTitle, setNewTitle] = useState('')
 
+  // Map legacy title names (e.g. TICKET CREATOR -> CREATE TICKETS, WARRANTY REGISTRAR / WARRANTY REGISTRATOR -> REGISTRATION)
+  const isSelected = (title: string) => {
+    const t = title.toUpperCase()
+    if (selected.includes(t)) return true
+    if (t === 'CREATE TICKETS' && selected.includes('TICKET CREATOR')) return true
+    if (t === 'REGISTRATION' && (selected.includes('WARRANTY REGISTRAR') || selected.includes('WARRANTY REGISTRATOR'))) return true
+    return false
+  }
+
   const toggle = (title: string) => {
-    const next = selected.includes(title)
-      ? selected.filter(t => t !== title)
-      : [...selected, title]
+    const t = title.toUpperCase()
+    let next = [...selected]
+    const currentlyActive = isSelected(t)
+
+    if (currentlyActive) {
+      next = next.filter(item => {
+        if (item === t) return false
+        if (t === 'CREATE TICKETS' && item === 'TICKET CREATOR') return false
+        if (t === 'REGISTRATION' && (item === 'WARRANTY REGISTRAR' || item === 'WARRANTY REGISTRATOR')) return false
+        return true
+      })
+    } else {
+      if (t === 'CREATE TICKETS') {
+        next = next.filter(item => item !== 'TICKET CREATOR')
+      }
+      if (t === 'REGISTRATION') {
+        next = next.filter(item => item !== 'WARRANTY REGISTRAR' && item !== 'WARRANTY REGISTRATOR')
+      }
+      if (!next.includes(t)) {
+        next.push(t)
+      }
+    }
     onChange(joinJobTitles(next))
   }
 
@@ -223,36 +247,53 @@ const JobTitleMultiSelect = ({ value, onChange, options, onAddCustom, inputCls, 
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap gap-x-4 gap-y-2 p-3 rounded-xl border" style={{ borderColor: border }}>
-        {options.map(title => (
-          <label key={title} className="flex items-center gap-1.5 text-xs cursor-pointer select-none" style={{ color: textMuted }}>
-            <input
-              type="checkbox"
-              checked={selected.includes(title)}
-              onChange={() => toggle(title)}
-              className="accent-emerald-500"
-            />
-            {formatJobTitleLabel(title)}
-          </label>
-        ))}
+    <div className="flex flex-col gap-2.5">
+      {/* Role Chips */}
+      <div className="flex flex-wrap gap-2 p-3.5 rounded-2xl border" style={{ borderColor: border, backgroundColor: 'rgba(0,0,0,0.02)' }}>
+        {options.map(title => {
+          const active = isSelected(title)
+          return (
+            <button
+              key={title}
+              type="button"
+              onClick={() => toggle(title)}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-black tracking-wider uppercase transition-all select-none cursor-pointer border ${
+                active
+                  ? 'bg-emerald-500/15 border-emerald-500 text-emerald-600 dark:text-emerald-400 shadow-sm shadow-emerald-500/15'
+                  : 'bg-white/80 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-white dark:hover:bg-slate-800'
+              }`}
+            >
+              <span className={`w-4 h-4 rounded-md flex items-center justify-center border transition-all ${
+                active
+                  ? 'bg-emerald-500 border-emerald-500 text-white'
+                  : 'border-slate-300 dark:border-slate-600 bg-transparent'
+              }`}>
+                {active && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+              </span>
+              {title.toUpperCase()}
+            </button>
+          )
+        })}
       </div>
-      <div className="flex gap-2">
+
+      {/* Add Custom Role */}
+      <div className="flex gap-2 items-center">
         <input
           type="text"
           className={inputCls}
           style={inputStyle}
-          placeholder="Add a new role (e.g. Warranty Registrar)"
+          placeholder="ADD CUSTOM ROLE (E.G. LOGISTICS)"
           value={newTitle}
-          onChange={e => setNewTitle(e.target.value)}
+          onChange={e => setNewTitle(e.target.value.toUpperCase())}
           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustom() } }}
         />
         <button
           type="button"
           onClick={addCustom}
-          className="px-3 rounded-xl text-xs font-bold shrink-0"
+          className="px-4 py-2.5 rounded-xl text-xs font-black shrink-0 uppercase tracking-wider transition-all hover:opacity-90 active:scale-95 flex items-center gap-1.5"
           style={{ backgroundColor: '#10B981', color: '#fff' }}
         >
+          <Plus className="w-3.5 h-3.5" />
           Add
         </button>
       </div>
@@ -262,9 +303,9 @@ const JobTitleMultiSelect = ({ value, onChange, options, onAddCustom, inputCls, 
 
 
 const CREATE_STEPS = [
-  { id: 1 as const, label: 'Account', hint: 'Name and login details' },
-  { id: 2 as const, label: 'Role', hint: 'Role and branch' },
-  { id: 3 as const, label: 'Details', hint: 'Optional profile info' },
+  { id: 1 as const, label: 'ACCOUNT', hint: 'Name and login details' },
+  { id: 2 as const, label: 'ROLE', hint: 'Role and branch' },
+  { id: 3 as const, label: 'DETAILS', hint: 'Optional profile info' },
 ]
 
 // ── Input helper ────────────────────────────────────────────────────────────
@@ -276,7 +317,7 @@ interface FieldProps {
 
 const Field = ({ label, children, labelColor }: FieldProps) => (
   <div className="flex flex-col gap-1.5 flex-1 min-w-[120px]">
-    <label className="text-xs font-medium" style={{ color: labelColor }}>{label}</label>
+    <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: labelColor }}>{label.toUpperCase()}</label>
     {children}
   </div>
 )
@@ -292,7 +333,7 @@ const DetailField = ({ label, value, icon, emptyLabel = 'Not set' }: DetailField
   <div className="min-w-0 flex flex-col gap-1">
     <div className="flex items-center gap-1.5" style={{ color: 'var(--detail-muted)' }}>
       {icon && <span className="shrink-0 opacity-70 [&>svg]:w-3.5 [&>svg]:h-3.5">{icon}</span>}
-      <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
+      <span className="text-[10px] font-black uppercase tracking-wider">{label.toUpperCase()}</span>
     </div>
     <div
       className="text-sm font-semibold truncate"
@@ -432,7 +473,9 @@ export default function Employees() {
     const saved = localStorage.getItem('ashcol-custom-job-titles')
     if (saved) {
       try {
-        setCustomJobTitles(JSON.parse(saved))
+        const parsed: string[] = JSON.parse(saved)
+        const filtered = parsed.filter(t => !REMOVED_LEGACY_ROLES.has(t.toUpperCase()) && !DEFAULT_JOB_TITLES.includes(t.toUpperCase()))
+        setCustomJobTitles(filtered)
       } catch {
         setCustomJobTitles([])
       }
@@ -1405,10 +1448,10 @@ export default function Employees() {
                 {(isAdmin || isManager) && !isProtectedFromEdit(selectedEmployee.role) && (
                   <button
                     onClick={() => openEdit(selectedEmployee)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all hover:bg-slate-500/10"
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider border transition-all hover:bg-slate-500/10"
                     style={{ borderColor: border, color: textPrimary }}
                   >
-                    Edit Profile
+                    EDIT PROFILE
                   </button>
                 )}
                 <button
@@ -1431,13 +1474,13 @@ export default function Employees() {
                 <button
                   key={tab}
                   onClick={() => setActiveDrawerTab(tab)}
-                  className="px-6 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all"
+                  className="px-6 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all"
                   style={{
                     borderColor: activeDrawerTab === tab ? '#10B981' : 'transparent',
                     color: activeDrawerTab === tab ? '#10B981' : textMuted,
                   }}
                 >
-                  {tab === 'overview' ? 'Overview' : tab === 'history' ? 'Ticket History' : 'Registered Tickets'}
+                  {tab === 'overview' ? 'OVERVIEW' : tab === 'history' ? 'TICKET HISTORY' : 'REGISTERED TICKETS'}
                 </button>
               ))}
             </div>
@@ -1452,18 +1495,18 @@ export default function Employees() {
                   {/* Profile Details — contact, role, and account fields in one dense sheet */}
                   <div className="rounded-2xl border p-5" style={{ borderColor: 'var(--detail-border)', backgroundColor: 'var(--detail-bg)' }}>
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-5">
-                      <DetailField label="Work email" value={selectedEmployee.email} icon={<Mail />} emptyLabel="—" />
-                      <DetailField label="Personal email" value={selectedEmployee.personalEmail || ''} icon={<Mail />} emptyLabel="—" />
-                      <DetailField label="Phone number" value={selectedEmployee.phone} icon={<Phone />} emptyLabel="—" />
-                      <DetailField label="Job title" value={selectedEmployee.jobTitle ? formatJobTitleLabel(selectedEmployee.jobTitle) : (selectedEmployee.role === 'MANAGER' ? 'Officer In Charge' : formatRoleLabel(selectedEmployee.role))} icon={<Wrench />} emptyLabel="—" />
-                      <DetailField label="Date hired" value={formatDisplayDate(selectedEmployee.dateHired)} icon={<Calendar />} />
-                      <DetailField label="Birthdate" value={formatDisplayDate(selectedEmployee.birthDate)} icon={<Calendar />} />
-                      <DetailField label="Member ID" value={selectedEmployee.id.slice(0, 16) + '…'} icon={<User />} />
+                      <DetailField label="WORK EMAIL" value={selectedEmployee.email} icon={<Mail />} emptyLabel="—" />
+                      <DetailField label="PERSONAL EMAIL" value={selectedEmployee.personalEmail || ''} icon={<Mail />} emptyLabel="—" />
+                      <DetailField label="PHONE NUMBER" value={selectedEmployee.phone} icon={<Phone />} emptyLabel="—" />
+                      <DetailField label="JOB TITLE" value={selectedEmployee.jobTitle ? formatJobTitleLabel(selectedEmployee.jobTitle) : (selectedEmployee.role === 'MANAGER' ? 'OFFICER IN CHARGE' : formatRoleLabel(selectedEmployee.role).toUpperCase())} icon={<Wrench />} emptyLabel="—" />
+                      <DetailField label="DATE HIRED" value={formatDisplayDate(selectedEmployee.dateHired)} icon={<Calendar />} />
+                      <DetailField label="BIRTHDATE" value={formatDisplayDate(selectedEmployee.birthDate)} icon={<Calendar />} />
+                      <DetailField label="MEMBER ID" value={selectedEmployee.id.slice(0, 16) + '…'} icon={<User />} />
                       <DetailField
-                        label="Registered"
+                        label="REGISTERED"
                         value={selectedEmployee.createdAt ? new Date(selectedEmployee.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' }) : ''}
                         icon={<Calendar />}
-                        emptyLabel="Unknown"
+                        emptyLabel="UNKNOWN"
                       />
                     </div>
                   </div>
@@ -1472,7 +1515,7 @@ export default function Employees() {
                   <div className="rounded-2xl border p-3.5 flex items-center justify-between gap-3 flex-wrap" style={{ borderColor: 'var(--detail-border)', backgroundColor: 'var(--detail-bg)' }}>
                     <button
                       onClick={() => requestToggleActive(selectedEmployee)}
-                      className="flex items-center gap-2.5 pl-1.5 pr-3 py-1.5 rounded-full text-xs font-bold transition-all hover:opacity-80"
+                      className="flex items-center gap-2.5 pl-1.5 pr-3 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all hover:opacity-80"
                       style={{ color: selectedEmployee.isActive ? '#10B981' : textMuted }}
                       title={selectedEmployee.isActive ? 'Click to deactivate' : 'Click to reactivate'}
                     >
@@ -1485,17 +1528,17 @@ export default function Employees() {
                           style={{ transform: selectedEmployee.isActive ? 'translateX(13px)' : 'translateX(1px)' }}
                         />
                       </span>
-                      {selectedEmployee.isActive ? 'Active member' : 'Deactivated'}
+                      {selectedEmployee.isActive ? 'ACTIVE MEMBER' : 'DEACTIVATED'}
                     </button>
 
                     {isAdmin && !isProtectedFromDelete(selectedEmployee.role) && (
                       <button
                         onClick={() => requestDelete(selectedEmployee)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:bg-red-500/10"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all hover:bg-red-500/10"
                         style={{ color: '#EF4444' }}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                        Delete account
+                        DELETE MEMBER
                       </button>
                     )}
                   </div>
@@ -1556,7 +1599,7 @@ export default function Employees() {
               <div className="flex items-center gap-3">
                 <UserAvatar name={editTarget.name} imageUrl={editForm.profileImage} size="sm" className="shrink-0" />
                 <div>
-                  <h3 className="font-black text-base" style={{ color: textPrimary }}>Edit Account</h3>
+                  <h3 className="font-black text-base uppercase tracking-tight" style={{ color: textPrimary }}>EDIT ACCOUNT</h3>
                   <p className="text-xs" style={{ color: textMuted }}>{editTarget.email}</p>
                 </div>
               </div>
@@ -1569,7 +1612,7 @@ export default function Employees() {
             <div className="flex-1 overflow-y-auto p-8 flex flex-col md:flex-row gap-8">
               {/* Left Column: Profile Pic Holder */}
               <div className="w-full md:w-72 flex flex-col items-center gap-5 text-center shrink-0 border-b md:border-b-0 md:border-r pb-8 md:pb-0 pr-0 md:pr-8" style={{ borderColor: border }}>
-                <div className="text-[10px] font-black uppercase tracking-widest self-start" style={{ color: textMuted }}>Profile Photo</div>
+                <div className="text-[10px] font-black uppercase tracking-widest self-start" style={{ color: textMuted }}>PROFILE PHOTO</div>
                 
                 <div 
                   onClick={() => document.getElementById('edit-modal-photo')?.click()}
@@ -1581,7 +1624,7 @@ export default function Employees() {
                       <img src={resolveImageUrl(editForm.profileImage)} alt="Profile Preview" className="w-full h-full object-cover" />
                       <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-1.5 transition-opacity duration-200 text-white">
                         <Camera className="w-6 h-6 text-white" />
-                        <span className="text-[10px] font-black uppercase tracking-wider text-white">Change Photo</span>
+                        <span className="text-[10px] font-black uppercase tracking-wider text-white">CHANGE PHOTO</span>
                       </div>
                     </>
                   ) : (
@@ -1589,8 +1632,8 @@ export default function Employees() {
                       <div className="w-12 h-12 rounded-full bg-slate-500/10 flex items-center justify-center">
                         <Plus className="w-6 h-6 text-slate-400" />
                       </div>
-                      <span className="text-xs font-bold" style={{ color: textMuted }}>Click to Upload</span>
-                      <span className="text-[9px]" style={{ color: textMuted }}>PNG, JPG or WEBP</span>
+                      <span className="text-xs font-bold uppercase tracking-wider" style={{ color: textMuted }}>CLICK TO UPLOAD</span>
+                      <span className="text-[9px] uppercase tracking-wider" style={{ color: textMuted }}>PNG, JPG OR WEBP</span>
                     </div>
                   )}
                 </div>
@@ -1618,18 +1661,18 @@ export default function Employees() {
                   <button 
                     type="button"
                     onClick={() => document.getElementById('edit-modal-photo')?.click()}
-                    className="px-4 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/10 w-full text-center"
+                    className="px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider border transition-all hover:bg-slate-500/10 w-full text-center"
                     style={{ borderColor: border, color: textPrimary }}
                   >
-                    Upload Photo
+                    UPLOAD PHOTO
                   </button>
                   {editForm.profileImage && (
                     <button
                       type="button"
                       onClick={() => setEditForm(p => ({ ...p, profileImage: '' }))}
-                      className="text-xs text-red-500 font-bold hover:underline"
+                      className="text-xs text-red-500 font-black uppercase tracking-wider hover:underline"
                     >
-                      Remove Photo
+                      REMOVE PHOTO
                     </button>
                   )}
                 </div>
@@ -1637,22 +1680,22 @@ export default function Employees() {
 
               {/* Right Column: Input Fields Form */}
               <div className="flex-1 flex flex-col gap-5">
-                {formErr && <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 font-semibold">{formErr}</div>}
+                {formErr && <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 font-semibold uppercase">{formErr}</div>}
 
                 {/* ── Section: General Info ── */}
                 <div>
-                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">General Information</h4>
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">GENERAL INFORMATION</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Field label="Full Name" labelColor={textMuted}>
+                    <Field label="FULL NAME" labelColor={textMuted}>
                       <input className={inputCls} style={inputStyle} value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} onBlur={e => setEditForm(p => ({ ...p, name: formatPersonName(e.target.value) }))} />
                     </Field>
-                    <Field label="Login Email" labelColor={textMuted}>
+                    <Field label="LOGIN EMAIL" labelColor={textMuted}>
                       <input className={inputCls} style={inputStyle} type="email" value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} />
                     </Field>
-                    <Field label="Phone Contact" labelColor={textMuted}>
+                    <Field label="PHONE CONTACT" labelColor={textMuted}>
                       <input className={inputCls} style={inputStyle} value={editForm.phone} onChange={e => setEditForm(p => ({ ...p, phone: e.target.value }))} placeholder="09XX XXX XXXX" />
                     </Field>
-                    <Field label="Personal Email" labelColor={textMuted}>
+                    <Field label="PERSONAL EMAIL" labelColor={textMuted}>
                       <input className={inputCls} style={inputStyle} type="email" value={editForm.personalEmail} onChange={e => setEditForm(p => ({ ...p, personalEmail: e.target.value }))} placeholder="personal@email.com" />
                     </Field>
                   </div>
@@ -1660,28 +1703,28 @@ export default function Employees() {
 
                 {/* ── Section: Job Details ── */}
                 <div className="border-t pt-4" style={{ borderColor: border }}>
-                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">System & Job Settings</h4>
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">SYSTEM & JOB SETTINGS</h4>
                   {editTarget && editForm.role !== editTarget.role && (
                     <div className="mb-3 text-xs rounded-xl px-3 py-2.5 border" style={{ borderColor: 'rgba(59,130,246,0.25)', backgroundColor: 'rgba(59,130,246,0.08)', color: '#3B82F6' }}>
                       Role will change: {describeRoleChange(editTarget.role, editForm.role)}
                     </div>
                   )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Field label="Role" labelColor={textMuted}>
+                    <Field label="ROLE" labelColor={textMuted}>
                       <select className={inputCls} style={inputStyle}
                         value={editForm.role}
                         onChange={e => setEditForm(p => ({ ...p, ...adaptEditFormForRole(p, e.target.value) }))}
                       >
-                        <option value="EMPLOYEE">{ROLE_META.EMPLOYEE.label}</option>
-                        <option value="MANAGER">{ROLE_META.MANAGER.label}</option>
-                        {isAdmin && <option value="MANAGEMENT">{ROLE_META.MANAGEMENT.label}</option>}
+                        <option value="EMPLOYEE">{ROLE_META.EMPLOYEE.label.toUpperCase()}</option>
+                        <option value="MANAGER">{ROLE_META.MANAGER.label.toUpperCase()}</option>
+                        {isAdmin && <option value="MANAGEMENT">{ROLE_META.MANAGEMENT.label.toUpperCase()}</option>}
                       </select>
                     </Field>
                     {editForm.role !== 'MANAGEMENT' && (
-                      <Field label={ROLE_META[editForm.role as AssignableRole]?.requiresBranch ? 'Branch Assignment *' : 'Branch Assignment'} labelColor={textMuted}>
+                      <Field label={ROLE_META[editForm.role as AssignableRole]?.requiresBranch ? 'BRANCH ASSIGNMENT *' : 'BRANCH ASSIGNMENT'} labelColor={textMuted}>
                         <select className={inputCls} style={inputStyle} value={editForm.branchId} onChange={e => setEditForm(p => ({ ...p, branchId: e.target.value }))}>
-                          <option value="">— Unassigned —</option>
-                          {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                          <option value="">— UNASSIGNED —</option>
+                          {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
                         </select>
                       </Field>
                     )}
@@ -1692,7 +1735,7 @@ export default function Employees() {
                     )}
                     {(editForm.role === 'EMPLOYEE' || editForm.role === 'MANAGEMENT') && (
                       <div className="col-span-1 sm:col-span-2">
-                        <Field label="Job Title (select any that apply)" labelColor={textMuted}>
+                        <Field label="JOB TITLE (SELECT ANY THAT APPLY)" labelColor={textMuted}>
                           <JobTitleMultiSelect
                             value={editForm.jobTitle}
                             onChange={next => setEditForm(p => ({ ...p, jobTitle: next }))}
@@ -1700,7 +1743,6 @@ export default function Employees() {
                             onAddCustom={addCustomJobTitle}
                             inputCls={inputCls}
                             inputStyle={inputStyle}
-                            textMuted={textMuted}
                             border={border}
                           />
                         </Field>
@@ -1711,8 +1753,8 @@ export default function Employees() {
 
                 {/* ── Section: Birthdate ── */}
                 <div className="border-t pt-4" style={{ borderColor: border }}>
-                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Birthdate</h4>
-                  <Field label="Member Birthdate" labelColor={textMuted}>
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">BIRTHDATE</h4>
+                  <Field label="MEMBER BIRTHDATE" labelColor={textMuted}>
                     <input
                       type="date"
                       className={inputCls}
@@ -1725,8 +1767,8 @@ export default function Employees() {
 
                 {/* ── Section: Date Hired ── */}
                 <div className="border-t pt-4" style={{ borderColor: border }}>
-                  <h4 className="text-[10px] font-black uppercase tracking-wider text-blue-500 mb-3">Date Hired</h4>
-                  <Field label="Member Date Hired" labelColor={textMuted}>
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-blue-500 mb-3">DATE HIRED</h4>
+                  <Field label="MEMBER DATE HIRED" labelColor={textMuted}>
                     <input
                       type="date"
                       className={inputCls}
@@ -1740,25 +1782,25 @@ export default function Employees() {
                 {/* Active Status */}
                 <div className="flex items-center gap-3 p-3 rounded-xl border mt-2" style={{ borderColor: border }}>
                   <div className="flex-1">
-                    <div className="text-sm font-bold" style={{ color: textPrimary }}>Account Status</div>
-                    <div className="text-xs" style={{ color: textMuted }}>Toggle to enable or disable login access</div>
+                    <div className="text-sm font-black uppercase tracking-wide" style={{ color: textPrimary }}>ACCOUNT STATUS</div>
+                    <div className="text-xs uppercase font-medium" style={{ color: textMuted }}>TOGGLE TO ENABLE OR DISABLE LOGIN ACCESS</div>
                   </div>
                   <button
                     type="button"
                     onClick={() => setEditForm(p => ({ ...p, isActive: !p.isActive }))}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black border transition-all"
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider border transition-all"
                     style={editForm.isActive
                       ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.3)' }
                       : { color: '#94a3b8', backgroundColor: 'rgba(148,163,184,0.08)', borderColor: 'rgba(148,163,184,0.2)' }}
                   >
                     {editForm.isActive ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
-                    {editForm.isActive ? 'Active' : 'Inactive'}
+                    {editForm.isActive ? 'ACTIVE' : 'INACTIVE'}
                   </button>
                 </div>
 
                 {/* New Password */}
                 <div className="border-t pt-4" style={{ borderColor: border }}>
-                  <Field label="New Password (leave blank to keep current)" labelColor={textMuted}>
+                  <Field label="NEW PASSWORD (LEAVE BLANK TO KEEP CURRENT)" labelColor={textMuted}>
                     <div className="relative">
                       <input
                         className={inputCls}
@@ -1766,7 +1808,7 @@ export default function Employees() {
                         type={showPass ? 'text' : 'password'}
                         value={editForm.newPassword}
                         onChange={e => setEditForm(p => ({ ...p, newPassword: e.target.value }))}
-                        placeholder="Enter new password to change…"
+                        placeholder="ENTER NEW PASSWORD TO CHANGE…"
                       />
                       <button type="button" onClick={() => setShowPass(p => !p)}
                         className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: textMuted }}>
@@ -1781,11 +1823,11 @@ export default function Employees() {
 
             {/* Footer */}
             <div className="px-6 py-4 border-t flex items-center gap-3 shrink-0" style={{ borderColor: border }}>
-              <button onClick={() => setEditTarget(null)} className="flex-1 py-2.5 rounded-xl text-sm font-bold border transition-all hover:opacity-85" style={{ borderColor: border, color: textMuted, backgroundColor: 'transparent' }}>
-                Cancel
+              <button onClick={() => setEditTarget(null)} className="flex-1 py-2.5 rounded-xl text-sm font-black uppercase tracking-wider border transition-all hover:opacity-85" style={{ borderColor: border, color: textMuted, backgroundColor: 'transparent' }}>
+                CANCEL
               </button>
-              <button onClick={handleSaveEdit} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-black text-white transition-all hover:opacity-90 disabled:opacity-50" style={{ backgroundColor: '#10B981' }}>
-                {saving ? 'Saving…' : 'Save Changes'}
+              <button onClick={handleSaveEdit} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-black uppercase tracking-wider text-white transition-all hover:opacity-90 disabled:opacity-50" style={{ backgroundColor: '#10B981' }}>
+                {saving ? 'SAVING…' : 'SAVE CHANGES'}
               </button>
             </div>
           </div>
@@ -1799,10 +1841,10 @@ export default function Employees() {
            className="w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
            style={{ backgroundColor: cardBg, border: `1px solid ${border}`, animation: 'modalFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
          >
-            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: border }}>
+             <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: border }}>
               <div>
-                <h3 className="text-lg font-semibold" style={{ color: textPrimary }}>Create account</h3>
-                <p className="text-sm mt-0.5" style={{ color: textMuted }}>{CREATE_STEPS.find(s => s.id === createStep)?.hint}</p>
+                <h3 className="text-lg font-black uppercase tracking-tight" style={{ color: textPrimary }}>CREATE ACCOUNT</h3>
+                <p className="text-xs uppercase font-medium mt-0.5" style={{ color: textMuted }}>{CREATE_STEPS.find(s => s.id === createStep)?.hint.toUpperCase()}</p>
               </div>
               <button onClick={resetCreateFlow} className="p-2 rounded-xl hover:bg-slate-500/10" style={{ color: textMuted }}><X className="w-5 h-5" /></button>
             </div>
@@ -1815,7 +1857,7 @@ export default function Employees() {
                   return (
                     <div key={step.id} className="flex items-center gap-2 flex-1 min-w-0">
                       <div
-                        className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 transition-colors"
+                        className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-black shrink-0 transition-colors"
                         style={{
                           backgroundColor: active || done ? 'rgba(16,185,129,0.15)' : inputBg,
                           color: active || done ? '#10B981' : textMuted,
@@ -1825,7 +1867,7 @@ export default function Employees() {
                         {done ? <Check className="w-3.5 h-3.5" /> : step.id}
                       </div>
                       <div className="min-w-0 hidden sm:block">
-                        <div className="text-xs font-medium truncate" style={{ color: active ? textPrimary : textMuted }}>{step.label}</div>
+                        <div className="text-xs font-black uppercase tracking-wider truncate" style={{ color: active ? textPrimary : textMuted }}>{step.label}</div>
                       </div>
                       {index < CREATE_STEPS.length - 1 && (
                         <div className="h-px flex-1 mx-1" style={{ backgroundColor: done ? 'rgba(16,185,129,0.35)' : border }} />
@@ -1838,31 +1880,31 @@ export default function Employees() {
 
             <div className="flex-1 overflow-y-auto px-6 py-5">
               {formErr && (
-                <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 mb-4">{formErr}</div>
+                <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 mb-4 font-semibold uppercase">{formErr}</div>
               )}
 
               {createStep === 1 && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="sm:col-span-2">
-                    <Field label="Full name" labelColor={textMuted}>
+                    <Field label="FULL NAME" labelColor={textMuted}>
                       <input
                         className={inputCls}
                         style={inputStyle}
                         value={createForm.name}
                         onChange={e => setCreateForm(p => ({ ...p, name: e.target.value }))}
                         onBlur={e => setCreateForm(p => ({ ...p, name: formatPersonName(e.target.value) }))}
-                        placeholder="Juan Dela Cruz"
+                        placeholder="JUAN DELA CRUZ"
                         autoFocus
                       />
                     </Field>
                   </div>
-                  <Field label="Login email" labelColor={textMuted}>
+                  <Field label="LOGIN EMAIL" labelColor={textMuted}>
                     <input className={inputCls} style={inputStyle} type="email" value={createForm.email} onChange={e => setCreateForm(p => ({ ...p, email: e.target.value.trim().toLowerCase() }))} placeholder="juan@ashcol.com.ph" />
                   </Field>
-                  <Field label="Personal email" labelColor={textMuted}>
+                  <Field label="PERSONAL EMAIL" labelColor={textMuted}>
                     <input className={inputCls} style={inputStyle} type="email" value={createForm.personalEmail} onChange={e => setCreateForm(p => ({ ...p, personalEmail: e.target.value.trim().toLowerCase() }))} placeholder="personal@email.com" />
                   </Field>
-                  <Field label="Phone" labelColor={textMuted}>
+                  <Field label="PHONE" labelColor={textMuted}>
                     <input className={inputCls} style={inputStyle} value={createForm.phone} onChange={e => setCreateForm(p => ({ ...p, phone: e.target.value }))} placeholder="09XX XXX XXXX" />
                   </Field>
                 </div>
@@ -1870,25 +1912,25 @@ export default function Employees() {
 
               {createStep === 2 && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Field label="Role" labelColor={textMuted}>
+                  <Field label="ROLE" labelColor={textMuted}>
                     <select className={inputCls} style={inputStyle} value={createForm.role}
                       onChange={e => setCreateForm(p => ({ ...p, ...adaptEditFormForRole(p, e.target.value) }))}>
-                      <option value="EMPLOYEE">{ROLE_META.EMPLOYEE.label}</option>
-                      <option value="MANAGER">{ROLE_META.MANAGER.label}</option>
-                      {isAdmin && <option value="MANAGEMENT">{ROLE_META.MANAGEMENT.label}</option>}
+                      <option value="EMPLOYEE">{ROLE_META.EMPLOYEE.label.toUpperCase()}</option>
+                      <option value="MANAGER">{ROLE_META.MANAGER.label.toUpperCase()}</option>
+                      {isAdmin && <option value="MANAGEMENT">{ROLE_META.MANAGEMENT.label.toUpperCase()}</option>}
                     </select>
                   </Field>
                   {isAdmin && createForm.role !== 'MANAGEMENT' && (
-                    <Field label="Branch" labelColor={textMuted}>
+                    <Field label="BRANCH" labelColor={textMuted}>
                       <select className={inputCls} style={inputStyle} value={createForm.branchId} onChange={e => setCreateForm(p => ({ ...p, branchId: e.target.value }))}>
-                        <option value="">Select branch</option>
-                        {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                        <option value="">SELECT BRANCH</option>
+                        {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
                       </select>
                     </Field>
                   )}
                   {(createForm.role === 'EMPLOYEE' || createForm.role === 'MANAGEMENT') && (
                     <div className="sm:col-span-2">
-                      <Field label="Job title (select any that apply)" labelColor={textMuted}>
+                      <Field label="JOB TITLE (SELECT ANY THAT APPLY)" labelColor={textMuted}>
                         <JobTitleMultiSelect
                           value={createForm.jobTitle}
                           onChange={next => setCreateForm(p => ({ ...p, jobTitle: next }))}
@@ -1896,14 +1938,13 @@ export default function Employees() {
                           onAddCustom={addCustomJobTitle}
                           inputCls={inputCls}
                           inputStyle={inputStyle}
-                          textMuted={textMuted}
                           border={border}
                         />
                       </Field>
                     </div>
                   )}
                   {ROLE_META[createForm.role as AssignableRole]?.hint && (
-                    <p className="sm:col-span-2 text-sm leading-relaxed rounded-xl px-4 py-3 border" style={{ color: textMuted, borderColor: border, backgroundColor: inputBg }}>
+                    <p className="sm:col-span-2 text-xs leading-relaxed rounded-xl px-4 py-3 border uppercase font-medium" style={{ color: textMuted, borderColor: border, backgroundColor: inputBg }}>
                       {ROLE_META[createForm.role as AssignableRole].hint}
                     </p>
                   )}
@@ -1912,7 +1953,7 @@ export default function Employees() {
 
               {createStep === 3 && (
                 <div className="flex flex-col gap-5">
-                  <Field label="Birthdate" labelColor={textMuted}>
+                  <Field label="BIRTHDATE" labelColor={textMuted}>
                     <input
                       type="date"
                       className={inputCls}
@@ -1921,7 +1962,7 @@ export default function Employees() {
                       onChange={e => setCreateForm(p => ({ ...p, birthDate: e.target.value }))}
                     />
                   </Field>
-                  <Field label="Date Hired (optional)" labelColor={textMuted}>
+                  <Field label="DATE HIRED (OPTIONAL)" labelColor={textMuted}>
                     <input
                       type="date"
                       className={inputCls}
@@ -1930,7 +1971,7 @@ export default function Employees() {
                       onChange={e => setCreateForm(p => ({ ...p, dateHired: e.target.value }))}
                     />
                   </Field>
-                  <p className="text-sm rounded-xl px-4 py-3 border" style={{ color: textMuted, borderColor: border, backgroundColor: inputBg }}>
+                  <p className="text-xs rounded-xl px-4 py-3 border uppercase font-medium" style={{ color: textMuted, borderColor: border, backgroundColor: inputBg }}>
                     A temporary password will be emailed automatically. You can copy it on the next screen right after creation.
                   </p>
                 </div>
@@ -1938,24 +1979,24 @@ export default function Employees() {
             </div>
 
             <div className="px-6 py-4 border-t flex gap-3 shrink-0" style={{ borderColor: border }}>
-              <button onClick={resetCreateFlow} className="px-4 py-2.5 rounded-xl text-sm font-medium border transition-all hover:opacity-85" style={{ borderColor: border, color: textMuted }}>Cancel</button>
+              <button onClick={resetCreateFlow} className="px-4 py-2.5 rounded-xl text-sm font-black uppercase tracking-wider border transition-all hover:opacity-85" style={{ borderColor: border, color: textMuted }}>CANCEL</button>
               {createStep > 1 && (
                 <button
                   onClick={() => { setFormErr(''); setCreateStep(prev => (prev - 1) as 1 | 2 | 3) }}
-                  className="px-4 py-2.5 rounded-xl text-sm font-medium border transition-all hover:opacity-85"
+                  className="px-4 py-2.5 rounded-xl text-sm font-black uppercase tracking-wider border transition-all hover:opacity-85"
                   style={{ borderColor: border, color: textPrimary }}
                 >
-                  Back
+                  BACK
                 </button>
               )}
               <div className="flex-1" />
               {createStep < 3 ? (
-                <button onClick={handleCreateNext} className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90" style={{ backgroundColor: '#10B981' }}>
-                  Continue
+                <button onClick={handleCreateNext} className="px-5 py-2.5 rounded-xl text-sm font-black uppercase tracking-wider text-white transition-all hover:opacity-90" style={{ backgroundColor: '#10B981' }}>
+                  CONTINUE
                 </button>
               ) : (
-                <button onClick={handleCreate} disabled={createSaving} className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50" style={{ backgroundColor: '#10B981' }}>
-                  {createSaving ? 'Creating…' : 'Create account'}
+                <button onClick={handleCreate} disabled={createSaving} className="px-5 py-2.5 rounded-xl text-sm font-black uppercase tracking-wider text-white transition-all hover:opacity-90 disabled:opacity-50" style={{ backgroundColor: '#10B981' }}>
+                  {createSaving ? 'CREATING…' : 'CREATE ACCOUNT'}
                 </button>
               )}
             </div>
@@ -1972,18 +2013,18 @@ export default function Employees() {
           >
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-semibold" style={{ color: textPrimary }}>Account created</h3>
-                <p className="text-sm mt-0.5" style={{ color: textMuted }}>Share these credentials — they won't be shown again.</p>
+                <h3 className="text-lg font-black uppercase tracking-tight" style={{ color: textPrimary }}>ACCOUNT CREATED</h3>
+                <p className="text-xs uppercase font-medium mt-0.5" style={{ color: textMuted }}>SHARE THESE CREDENTIALS — THEY WON'T BE SHOWN AGAIN.</p>
               </div>
               <button onClick={() => setNewTechCreds(null)} className="p-2 rounded-xl hover:bg-slate-500/10" style={{ color: textMuted }}><X className="w-5 h-5" /></button>
             </div>
 
             {[
-              { label: 'Login email', value: newTechCreds.email, field: 'email' as const },
-              { label: 'Temporary password', value: newTechCreds.password, field: 'password' as const },
+              { label: 'LOGIN EMAIL', value: newTechCreds.email, field: 'email' as const },
+              { label: 'TEMPORARY PASSWORD', value: newTechCreds.password, field: 'password' as const },
             ].map(row => (
               <div key={row.field}>
-                <div className="text-xs font-medium mb-1.5" style={{ color: textMuted }}>{row.label}</div>
+                <div className="text-xs font-black uppercase tracking-wider mb-1.5" style={{ color: textMuted }}>{row.label}</div>
                 <div className="flex gap-2 items-center">
                   <code className="flex-1 text-sm px-3 py-2.5 rounded-xl border break-all" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, fontFamily: 'ui-monospace, monospace' }}>{row.value}</code>
                   <button
@@ -1997,7 +2038,7 @@ export default function Employees() {
               </div>
             ))}
 
-            <button onClick={() => setNewTechCreds(null)} className="w-full py-3 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#10B981' }}>Done</button>
+            <button onClick={() => setNewTechCreds(null)} className="w-full py-3 rounded-xl text-sm font-black uppercase tracking-wider text-white transition-all hover:opacity-90" style={{ backgroundColor: '#10B981' }}>DONE</button>
           </div>
         </div>
       )}
@@ -2009,22 +2050,22 @@ export default function Employees() {
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 bg-red-500/10"><Trash2 className="w-5 h-5 text-red-500" /></div>
               <div>
-                <h3 className="font-black" style={{ color: textPrimary }}>Delete Account</h3>
+                <h3 className="font-black uppercase tracking-tight" style={{ color: textPrimary }}>DELETE ACCOUNT</h3>
                 <p className="text-sm mt-0.5" style={{ color: textMuted }}>Remove <strong>{deleteTarget.name}</strong>? This cannot be undone.</p>
               </div>
             </div>
-            <div className="rounded-xl p-3 border text-xs" style={{ borderColor: border, backgroundColor: inputBg, color: textMuted }}>
-              <strong style={{ color: textPrimary }}>Email:</strong> {deleteTarget.email}<br />
-              <strong style={{ color: textPrimary }}>Role:</strong> {resolveLabel(deleteTarget.role, deleteTarget.jobTitle)}<br />
-              <strong style={{ color: textPrimary }}>Branch:</strong> {deleteTarget.branchName || 'Unassigned'}
+            <div className="rounded-xl p-3 border text-xs uppercase" style={{ borderColor: border, backgroundColor: inputBg, color: textMuted }}>
+              <strong style={{ color: textPrimary }}>EMAIL:</strong> {deleteTarget.email}<br />
+              <strong style={{ color: textPrimary }}>ROLE:</strong> {resolveLabel(deleteTarget.role, deleteTarget.jobTitle).toUpperCase()}<br />
+              <strong style={{ color: textPrimary }}>BRANCH:</strong> {(deleteTarget.branchName || 'UNASSIGNED').toUpperCase()}
               {deleteTarget.role.toUpperCase() === 'MANAGER' && (
-                <p className="mt-2 text-amber-500 font-semibold">This user is linked as branch OIC. Deleting will unlink them from the branch.</p>
+                <p className="mt-2 text-amber-500 font-semibold uppercase">THIS USER IS LINKED AS BRANCH OIC. DELETING WILL UNLINK THEM FROM THE BRANCH.</p>
               )}
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setDeleteTarget(null)} disabled={deleteSaving} className="flex-1 py-2.5 rounded-xl text-sm font-bold border transition-all" style={{ borderColor: border, color: textMuted }}>Cancel</button>
-              <button onClick={handleDelete} disabled={deleteSaving} className="flex-1 py-2.5 rounded-xl text-sm font-black text-white bg-red-500 hover:bg-red-600 transition-all disabled:opacity-50">
-                {deleteSaving ? 'Deleting…' : 'Delete'}
+              <button onClick={() => setDeleteTarget(null)} disabled={deleteSaving} className="flex-1 py-2.5 rounded-xl text-sm font-black uppercase tracking-wider border transition-all" style={{ borderColor: border, color: textMuted }}>CANCEL</button>
+              <button onClick={handleDelete} disabled={deleteSaving} className="flex-1 py-2.5 rounded-xl text-sm font-black uppercase tracking-wider text-white bg-red-500 hover:bg-red-600 transition-all disabled:opacity-50">
+                {deleteSaving ? 'DELETING…' : 'DELETE'}
               </button>
             </div>
           </div>

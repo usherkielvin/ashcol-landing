@@ -10,6 +10,8 @@ interface CommissionItem {
   store?: string
   diser?: string
   customer?: string
+  brand?: string
+  hp?: string
   dateInstalled?: string
   amount?: number
   collectionResolved: boolean
@@ -165,6 +167,9 @@ export default function Commissions() {
     }
   }
 
+  const isItemPaid = (item: CommissionItem) =>
+    Boolean(item.collectionResolved || (item.amount != null && item.amount > 0) || item.status === 'PAID')
+
   const filteredItems = useMemo(() => {
     const term = search.toLowerCase()
     return items.filter(item => {
@@ -173,10 +178,14 @@ export default function Commissions() {
         (item.diser || '').toLowerCase().includes(term) ||
         (item.customer || '').toLowerCase().includes(term) ||
         (item.ticketNumber || '').toLowerCase().includes(term) ||
+        (item.brand || '').toLowerCase().includes(term) ||
+        (item.hp || '').toLowerCase().includes(term) ||
         (item.branchName || '').toLowerCase().includes(term)
       const monthKey = item.dateInstalled || item.reportDate || ''
       const matchMonth = !monthFilter || monthKey.startsWith(monthFilter)
-      const matchStatus = statusFilter === 'ALL' || item.status === statusFilter
+      const paid = isItemPaid(item)
+      const itemStatus = paid ? 'PAID' : 'PENDING'
+      const matchStatus = statusFilter === 'ALL' || itemStatus === statusFilter
       return matchSearch && matchMonth && matchStatus
     })
   }, [items, search, monthFilter, statusFilter])
@@ -186,7 +195,7 @@ export default function Commissions() {
     [filteredItems]
   )
   const totalPending = useMemo(
-    () => filteredItems.filter(i => !i.collectionResolved).reduce((acc, item) => acc + (item.amount || 0), 0),
+    () => filteredItems.filter(i => !isItemPaid(i)).reduce((acc, item) => acc + (item.amount || 0), 0),
     [filteredItems]
   )
 
@@ -349,6 +358,8 @@ export default function Commissions() {
                   <th className="px-3 py-3">Store</th>
                   <th className="px-3 py-3">Diser</th>
                   <th className="px-3 py-3">Customer Name</th>
+                  <th className="px-3 py-3">Brand</th>
+                  <th className="px-3 py-3" style={{ width: 80 }}>HP</th>
                   <th className="px-3 py-3" style={{ width: 110 }}>Date Installed</th>
                   <th className="px-3 py-3 text-right" style={{ width: 110 }}>Amount</th>
                   <th className="px-3 py-3 text-center" style={{ width: 130 }}>Status</th>
@@ -356,7 +367,7 @@ export default function Commissions() {
               </thead>
               <tbody>
                 {filteredItems.map((item, idx) => {
-                  const paid = item.collectionResolved
+                  const paid = isItemPaid(item)
                   return (
                     <tr
                       key={item.id}
@@ -373,6 +384,12 @@ export default function Commissions() {
                       </td>
                       <td className="px-3 py-3">
                         {item.customer || <span style={{ color: textMuted }}>—</span>}
+                      </td>
+                      <td className="px-3 py-3" style={{ fontWeight: 500 }}>
+                        {item.brand || <span style={{ color: textMuted, fontWeight: 400 }}>—</span>}
+                      </td>
+                      <td className="px-3 py-3" style={{ color: textMuted, fontSize: '11px', whiteSpace: 'nowrap' }}>
+                        {item.hp ? (item.hp.toUpperCase().endsWith('HP') ? item.hp : `${item.hp}HP`) : <span style={{ color: textMuted }}>—</span>}
                       </td>
                       <td className="px-3 py-3" style={{ color: textMuted, fontSize: '11px', whiteSpace: 'nowrap' }}>
                         {item.dateInstalled

@@ -675,16 +675,18 @@ export function isPortalStaffUser(role?: string | null): boolean {
   return (role || '').toLowerCase() !== 'customer'
 }
 
-/** Matches both the "Warranty Registrar" and misspelled "Warranty Registrator" job title variants. */
+/** Matches "Registration", "Warranty Registrar", and "Warranty Registrator" job title variants. */
 export function isWarrantyRegistrar(jobTitle?: string | null): boolean {
-  return (jobTitle || '').toLowerCase().includes('warranty registr')
+  if (!jobTitle) return false
+  const lower = jobTitle.toLowerCase()
+  return lower.includes('warranty registr') || lower.includes('registration')
 }
 
-/** Matches "Ticket Creator", "Relay Dispatcher", "Dispatcher", or "Relay Coordinator" subroles. */
+/** Matches "Create Tickets", "Ticket Creator", "Relay Dispatcher", "Dispatcher", or "Relay Coordinator" subroles. */
 export function isRelayDispatcherOrTicketCreator(jobTitle?: string | null): boolean {
   if (!jobTitle) return false
   const lower = jobTitle.toLowerCase()
-  return lower.includes('ticket creator') || lower.includes('dispatcher') || lower.includes('relay dispatcher') || lower.includes('relay coordinator')
+  return lower.includes('ticket creator') || lower.includes('create tickets') || lower.includes('create ticket') || lower.includes('dispatcher') || lower.includes('relay dispatcher') || lower.includes('relay coordinator')
 }
 
 export function canMemberAccessRelaysAndTicketCreation(user?: PortalUserLike | null): boolean {

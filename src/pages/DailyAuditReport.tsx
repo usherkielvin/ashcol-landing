@@ -1926,6 +1926,18 @@ export default function DailyAuditReport() {
                           { label: 'Store', render: (item) => <span style={{ color: textPrimary }}>{item.company || '—'}</span> },
                           { label: 'Diser', render: (item) => <span style={{ color: textPrimary }}>{item.promodiser || '—'}</span> },
                           { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
+                          { label: 'Brand', render: (item) => <span style={{ color: textPrimary }}>{item.brand || item.bank || (item.description && item.description.startsWith('COMMISSION|') ? item.description.split('|')[2] : '') || '—'}</span> },
+                          {
+                            label: 'HP',
+                            render: (item) => {
+                              const hpVal = item.hp || (item.description && item.description.startsWith('COMMISSION|') ? item.description.split('|')[3] : '')
+                              return (
+                                <span className="text-xs sm:text-sm font-normal" style={{ color: textPrimary }}>
+                                  {formatHpDisplay(hpVal)}
+                                </span>
+                              )
+                            }
+                          },
                           { label: 'Date Installed', render: (item) => <span style={{ color: textPrimary }}>{item.dateInstalled || '—'}</span> },
                           { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> },
                           {

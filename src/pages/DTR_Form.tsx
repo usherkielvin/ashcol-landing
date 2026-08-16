@@ -35,7 +35,7 @@ interface RebateRow    { id: string; ticketNumber: string; customer: string; com
 interface OrderRow     { id: string; customer: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 interface ExpenseRow   { id: string; name: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 interface IncentiveRow { id: string; customer: string; company: string; hp: string; promodiser: string; amount: string; collectionResolved?: boolean }
-interface CommissionRow { id: string; ticketNumber: string; store: string; diser: string; customer: string; dateInstalled: string; amount: string }
+interface CommissionRow { id: string; ticketNumber: string; store: string; diser: string; customer: string; brand: string; hp: string; dateInstalled: string; amount: string }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -244,7 +244,7 @@ const mkOrd  = (): OrderRow    => ({ id: uid(), customer: '', description: '', a
 const mkPay  = (): OrderRow    => ({ id: uid(), customer: '', description: '', amount: '', receiptReturned: false })
 const mkExp  = (): ExpenseRow  => ({ id: uid(), name: '', description: '', amount: '', receiptReturned: false })
 const mkInc  = (): IncentiveRow => ({ id: uid(), customer: '', company: '', hp: '', promodiser: '', amount: '', collectionResolved: false })
-const mkComm = (): CommissionRow => ({ id: uid(), ticketNumber: '', store: '', diser: '', customer: '', dateInstalled: '', amount: '' })
+const mkComm = (): CommissionRow => ({ id: uid(), ticketNumber: '', store: '', diser: '', customer: '', brand: '', hp: '', dateInstalled: '', amount: '' })
 
 // Temporarily hidden: saving a report with INCENTIVE items crashes the production backend
 // (Jackson classpath mismatch — NoClassDefFoundError: JsonMappingException$Reference) until
@@ -966,12 +966,21 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       if (data.items && Array.isArray(data.items)) {
         data.items.forEach((item: any) => {
           if (item.type === 'COMMISSION') {
+            let brandVal = item.bank || item.brand || ''
+            let hpVal = item.hp || ''
+            if (!brandVal && item.description && item.description.startsWith('COMMISSION|')) {
+              const parts = item.description.split('|')
+              if (parts.length > 2) brandVal = parts[2]
+              if (parts.length > 3 && !hpVal) hpVal = parts[3]
+            }
             commissionsList.push({
               id: uid(),
               ticketNumber: item.ticketNumber || item.ticket_number || '',
               store: item.company || '',
               diser: item.promodiser || '',
               customer: item.customer || '',
+              brand: brandVal,
+              hp: hpVal,
               dateInstalled: item.dateInstalled || item.date_installed || '',
               amount: item.amount != null ? String(item.amount) : '',
             })
@@ -985,6 +994,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           store: '',
           diser: '',
           customer: '',
+          brand: '',
+          hp: '',
           dateInstalled: '',
           amount: String(data.commissionExpensesTotal),
         })
@@ -1799,16 +1810,22 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           description: `REBATE|${r.raNumber}|${r.hp}`,
           ticketNumber: r.ticketNumber || '',
         })),
-        ...commissions.filter(r => r.customer || r.store || r.diser || r.amount).map(r => ({
-          type: 'COMMISSION',
-          customer: r.customer,
-          company: r.store,
-          promodiser: r.diser,
-          amount: parseFloat(r.amount) || 0,
-          description: `COMMISSION|${r.diser}`,
-          ticketNumber: r.ticketNumber || '',
-          dateInstalled: r.dateInstalled || null,
-        })),
+        ...commissions.filter(r => r.ticketNumber || r.customer || r.store || r.diser || r.brand || r.hp || r.amount).map(r => {
+          const amt = parseFloat(r.amount) || 0
+          return {
+            type: 'COMMISSION',
+            customer: r.customer,
+            company: r.store,
+            promodiser: r.diser,
+            bank: r.brand || '',
+            hp: r.hp || '',
+            amount: amt,
+            description: `COMMISSION|${r.diser || ''}|${r.brand || ''}|${r.hp || ''}`,
+            ticketNumber: r.ticketNumber || '',
+            dateInstalled: r.dateInstalled || null,
+            collectionResolved: amt > 0,
+          }
+        }),
         ...forColl.filter(r => r.installer || r.amount).map(r => ({
           type: 'COLLECTION',
           description: r.installer,
@@ -3041,6 +3058,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                   <th className={tableTh}>Customer Name</th>
                   <th className={tableTh}>Store</th>
                   <th className={tableTh}>Diser</th>
+                  <th className={tableTh}>Brand</th>
+                  <th className={tableTh + ' w-20'}>HP</th>
                   <th className={tableTh + ' w-36'}>Date Installed</th>
                   <th className={tableTh + ' text-right w-32'}>Amount</th>
                   {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
@@ -3067,6 +3086,16 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                     <td className={tableTd}>
                       <input type="text" placeholder="Diser" value={row.diser}
                         onChange={e => setCommissions(p => p.map(r => r.id === row.id ? { ...r, diser: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <input type="text" placeholder="Brand" value={row.brand}
+                        onChange={e => setCommissions(p => p.map(r => r.id === row.id ? { ...r, brand: e.target.value } : r))}
+                        className={flushInput} disabled={isFormDisabled} />
+                    </td>
+                    <td className={tableTd}>
+                      <input type="text" placeholder="HP" value={row.hp}
+                        onChange={e => setCommissions(p => p.map(r => r.id === row.id ? { ...r, hp: e.target.value } : r))}
                         className={flushInput} disabled={isFormDisabled} />
                     </td>
                     <td className={tableTd}>

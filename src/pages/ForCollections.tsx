@@ -1072,6 +1072,8 @@ export default function ForCollections() {
         // Incentives Breakdown
         const incentiveItems = itemsList.filter(it => it.type === 'INCENTIVE')
         const totalIncentives = incentiveItems.reduce((sum, it) => sum + (it.amount || 0), 0)
+        // Commission Expenses Breakdown
+        const commissionItems = itemsList.filter(it => it.type === 'COMMISSION')
 
         // Calculate totals from items list
         const totalCashCollection = cashTxItems.reduce((sum, it) => sum + (it.amount || 0), 0) + partsSaleItems.reduce((sum, it) => sum + (it.amount || 0), 0)
@@ -1508,6 +1510,37 @@ export default function ForCollections() {
                         render: (item) => (
                           <span className="text-xs sm:text-sm font-normal uppercase" style={{ color: textPrimary }}>
                             {item.collectionResolved ? 'RESOLVED' : 'PENDING'}
+                          </span>
+                        )
+                      }
+                    ])}
+
+                    {/* Commission Expenses Breakdown */}
+                    {renderItemTable('Commission Expenses', commissionItems, [
+                      { label: 'Ticket No.', render: (item) => <span style={{ color: textPrimary }}>{item.ticketNumber || '—'}</span> },
+                      { label: 'Store', render: (item) => <span style={{ color: textPrimary }}>{item.company || '—'}</span> },
+                      { label: 'Diser', render: (item) => <span style={{ color: textPrimary }}>{item.promodiser || '—'}</span> },
+                      { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },
+                      { label: 'Brand', render: (item) => <span style={{ color: textPrimary }}>{item.brand || item.bank || (item.description && item.description.startsWith('COMMISSION|') ? item.description.split('|')[2] : '') || '—'}</span> },
+                      {
+                        label: 'HP',
+                        render: (item) => {
+                          const hpVal = item.hp || (item.description && item.description.startsWith('COMMISSION|') ? item.description.split('|')[3] : '')
+                          return (
+                            <span className="text-xs sm:text-sm font-normal" style={{ color: textPrimary }}>
+                              {formatHpDisplay(hpVal)}
+                            </span>
+                          )
+                        }
+                      },
+                      { label: 'Date Installed', render: (item) => <span style={{ color: textPrimary }}>{item.dateInstalled || '—'}</span> },
+                      { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> },
+                      {
+                        label: 'Status',
+                        align: 'center',
+                        render: (item) => (
+                          <span className="text-xs sm:text-sm font-normal uppercase" style={{ color: item.collectionResolved ? '#10B981' : '#F59E0B' }}>
+                            {item.collectionResolved ? 'PAID' : 'PENDING'}
                           </span>
                         )
                       }

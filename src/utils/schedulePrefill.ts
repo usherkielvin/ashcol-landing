@@ -813,6 +813,8 @@ export interface CommissionRow {
   store: string
   diser: string
   customer: string
+  brand?: string
+  hp?: string
   dateInstalled: string
   amount: string
 }
@@ -832,6 +834,7 @@ export function filterInstalledTickets(tickets: Ticket[]): Ticket[] {
 
 /**
  * Map a qualifying installed ticket to a CommissionRow.
+ * Brand and HP are auto-fetched and parsed from schedule ticket.
  * Amount is intentionally left blank — branch staff key it in manually per row.
  */
 export function mapTicketToCommissionRow(ticket: Ticket): CommissionRow {
@@ -839,6 +842,8 @@ export function mapTicketToCommissionRow(ticket: Ticket): CommissionRow {
   const customer = (ticket.customerName || ticket.customer_name || '').trim().toUpperCase()
   const store = getF(ticket, 'dealer', 'sourceVendor', 'source_vendor') || ''
   const diser = getF(ticket, 'diser') || ''
+  const combinedBrand = parseBrand(ticket)
+  const { brand, hp } = splitBrandAndHp(combinedBrand)
   const dateInstalled = getInstalledDateKey(ticket)
 
   return {
@@ -847,6 +852,8 @@ export function mapTicketToCommissionRow(ticket: Ticket): CommissionRow {
     store,
     diser,
     customer,
+    brand,
+    hp,
     dateInstalled,
     amount: '',
   }
@@ -878,7 +885,14 @@ export async function fetchAndMapCommissionTickets(options: PrefillOptions): Pro
  */
 export function deduplicateAndMergeCommissions(existing: CommissionRow[], incoming: CommissionRow[]): CommissionRow[] {
   const nonEmpty = existing.filter(
-    (row) => row.ticketNumber.trim() || row.customer.trim() || row.store.trim() || row.diser.trim() || row.amount.trim(),
+    (row) =>
+      row.ticketNumber.trim() ||
+      row.customer.trim() ||
+      row.store.trim() ||
+      row.diser.trim() ||
+      (row.brand || '').trim() ||
+      (row.hp || '').trim() ||
+      row.amount.trim(),
   )
 
   const existingKeys = new Set<string>()
