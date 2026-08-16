@@ -701,7 +701,7 @@ export default function Hris() {
           <KpiCard isLight={isLight} label="Total Requests" value={leavesSummary.total} accent="#64748b" />
           <KpiCard isLight={isLight} label="Approved" value={leavesSummary.approved} accent="#34D399" valueColor="#34D399" />
           <KpiCard isLight={isLight} label="Pending" value={leavesSummary.pending} accent="#FBBF24" valueColor="#FBBF24" />
-          <KpiCard isLight={isLight} label="Employees Tracked" value={balances.length} accent="#64748b" />
+          <KpiCard isLight={isLight} label="Members Tracked" value={balances.length} accent="#64748b" />
         </div>
       )}
       {activeTab === 'advances' && (

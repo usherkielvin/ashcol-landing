@@ -12,7 +12,7 @@ import { useAuth } from '../contexts/AuthContext'
 import UserAvatar from '../components/UserAvatar'
 import TicketHistoryTable from '../components/TicketHistoryTable'
 import WarrantyRegistrationHistoryTable from '../components/WarrantyRegistrationHistoryTable'
-import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName, notifyEmployeesDirectoryUpdated, isWarrantyRegistrar } from '../utils/api'
+import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName, notifyEmployeesDirectoryUpdated, isWarrantyRegistrar, isRelayDispatcherOrTicketCreator } from '../utils/api'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 
 function formatDisplayDate(dateStr?: string | null): string {
@@ -59,7 +59,8 @@ interface Employee {
 interface BranchOption { id: string; name: string }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const DEFAULT_JOB_TITLES = ['TECHNICIAN', 'HELPER', 'DRIVER', 'COORDINATOR', 'SALES EXECUTIVE', 'WARRANTY REGISTRAR', 'WARRANTY REGISTRATOR', 'PAYROLL']
+const DEFAULT_JOB_TITLES = ['TECHNICIAN', 'HELPER', 'DRIVER', 'COORDINATOR', 'TICKET CREATOR', 'RELAY DISPATCHER', 'DISPATCHER', 'SALES EXECUTIVE', 'WARRANTY REGISTRAR', 'WARRANTY REGISTRATOR', 'PAYROLL']
+
 
 type AssignableRole = 'EMPLOYEE' | 'MANAGER' | 'MANAGEMENT'
 
@@ -1364,7 +1365,7 @@ export default function Employees() {
                   onClick={closeDetailTab}
                   className="p-2 rounded-lg transition-all hover:bg-slate-500/10 shrink-0"
                   style={{ color: textMuted }}
-                  aria-label="Back to Employees"
+                  aria-label="Back to Members"
                 >
                   <ArrowLeft className="w-4 h-4" />
                 </button>
@@ -1457,7 +1458,7 @@ export default function Employees() {
                       <DetailField label="Job title" value={selectedEmployee.jobTitle ? formatJobTitleLabel(selectedEmployee.jobTitle) : (selectedEmployee.role === 'MANAGER' ? 'Officer In Charge' : formatRoleLabel(selectedEmployee.role))} icon={<Wrench />} emptyLabel="—" />
                       <DetailField label="Date hired" value={formatDisplayDate(selectedEmployee.dateHired)} icon={<Calendar />} />
                       <DetailField label="Birthdate" value={formatDisplayDate(selectedEmployee.birthDate)} icon={<Calendar />} />
-                      <DetailField label="Employee ID" value={selectedEmployee.id.slice(0, 16) + '…'} icon={<User />} />
+                      <DetailField label="Member ID" value={selectedEmployee.id.slice(0, 16) + '…'} icon={<User />} />
                       <DetailField
                         label="Registered"
                         value={selectedEmployee.createdAt ? new Date(selectedEmployee.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' }) : ''}
@@ -1711,7 +1712,7 @@ export default function Employees() {
                 {/* ── Section: Birthdate ── */}
                 <div className="border-t pt-4" style={{ borderColor: border }}>
                   <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">Birthdate</h4>
-                  <Field label="Employee Birthdate" labelColor={textMuted}>
+                  <Field label="Member Birthdate" labelColor={textMuted}>
                     <input
                       type="date"
                       className={inputCls}
@@ -1725,7 +1726,7 @@ export default function Employees() {
                 {/* ── Section: Date Hired ── */}
                 <div className="border-t pt-4" style={{ borderColor: border }}>
                   <h4 className="text-[10px] font-black uppercase tracking-wider text-blue-500 mb-3">Date Hired</h4>
-                  <Field label="Employee Date Hired" labelColor={textMuted}>
+                  <Field label="Member Date Hired" labelColor={textMuted}>
                     <input
                       type="date"
                       className={inputCls}

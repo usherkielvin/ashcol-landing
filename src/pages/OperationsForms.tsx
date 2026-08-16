@@ -613,7 +613,7 @@ export default function OperationsForms() {
                     border={border}
                   />
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                    <FormField label="Employee Name">
+                    <FormField label="Member Name">
                       <input className={inputCls} style={istyle} value={user?.name || ''} readOnly />
                     </FormField>
                     <FormField label="Branch">
@@ -828,7 +828,7 @@ export default function OperationsForms() {
                     border={border}
                   />
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
-                    <FormField label="Employee Name" required>
+                    <FormField label="Member Name" required>
                       <input className={inputCls} style={istyle} value={otName} onChange={e => setOtName(e.target.value)} required />
                     </FormField>
                     <FormField label="Position">
@@ -896,7 +896,7 @@ export default function OperationsForms() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4" style={{ borderTop: `1px solid ${border}` }}>
                     <div className="text-center">
                       <div className="h-12 mb-2" style={{ borderBottom: `1px solid ${textPrimary}` }} />
-                      <div className="text-[10px] font-bold uppercase" style={{ color: textMuted }}>Employee Name & Signature</div>
+                      <div className="text-[10px] font-bold uppercase" style={{ color: textMuted }}>Member Name & Signature</div>
                       <div className="text-xs font-semibold mt-1">{otName}</div>
                     </div>
                     <div className="text-center">

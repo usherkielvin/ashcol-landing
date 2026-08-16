@@ -680,6 +680,21 @@ export function isWarrantyRegistrar(jobTitle?: string | null): boolean {
   return (jobTitle || '').toLowerCase().includes('warranty registr')
 }
 
+/** Matches "Ticket Creator", "Relay Dispatcher", "Dispatcher", or "Relay Coordinator" subroles. */
+export function isRelayDispatcherOrTicketCreator(jobTitle?: string | null): boolean {
+  if (!jobTitle) return false
+  const lower = jobTitle.toLowerCase()
+  return lower.includes('ticket creator') || lower.includes('dispatcher') || lower.includes('relay dispatcher') || lower.includes('relay coordinator')
+}
+
+export function canMemberAccessRelaysAndTicketCreation(user?: PortalUserLike | null): boolean {
+  if (!user) return false
+  const role = (user.role || '').toLowerCase()
+  if (role === 'admin' || role === 'management' || role === 'manager' || role === 'oic') return true
+  return isRelayDispatcherOrTicketCreator(user.jobTitle)
+}
+
+
 export function notifyEmployeesDirectoryUpdated(): void {
   try {
     const keysToRemove: string[] = []

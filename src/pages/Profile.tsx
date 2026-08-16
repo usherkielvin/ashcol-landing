@@ -702,7 +702,7 @@ export default function Profile() {
                     className={ic}
                   >
                     <option value="CUSTOMER">Customers</option>
-                    <option value="EMPLOYEE">Employees</option>
+                    <option value="EMPLOYEE">Members</option>
                     <option value="MANAGER">OIC / Officer in Charge</option>
                   </select>
                 </div>

@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, resolveScopedBranchId } from '../utils/api'
+import { API_BASE_URL, resolveScopedBranchId, canMemberAccessRelaysAndTicketCreation } from '../utils/api'
 import { ROBINSON_APPLIANCES_RE } from '../utils/dealer'
 import CalendarPicker from '../components/CalendarPicker'
 import PhAddressPicker, { type AddressValue } from '../components/PhAddressPicker'
@@ -166,7 +166,8 @@ export default function CreateTicket() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const isLight = theme === 'light'
-  const isStaffOrAdmin = ['admin', 'manager', 'staff'].includes((user?.role || '').toLowerCase())
+  const isStaffOrAdmin = ['admin', 'manager', 'staff', 'oic'].includes((user?.role || '').toLowerCase()) || canMemberAccessRelaysAndTicketCreation(user)
+
 
   // Colour tokens
   const pageBg      = isLight ? '#f1f5f9' : '#060B18'

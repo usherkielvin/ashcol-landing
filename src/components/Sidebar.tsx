@@ -80,7 +80,7 @@ const Sidebar = () => {
       title: "Directory",
       icon: <MdMenuBook size={20} />,
       subItems: [
-        { name: "Employees", icon: <MdOutlinePerson size={15} /> },
+        { name: "Members",   icon: <MdOutlinePerson size={15} /> },
         { name: "Branches",  icon: <MdOutlineStorefront size={15} /> },
       ],
     },

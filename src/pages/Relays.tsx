@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage, parseCreatedTicketResponse, formatFetchError, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, isTaguigServiceTicket, DEALERS_UPDATED_EVENT, notifyDealersUpdated } from '../utils/api'
+import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage, parseCreatedTicketResponse, formatFetchError, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, isTaguigServiceTicket, DEALERS_UPDATED_EVENT, notifyDealersUpdated, canMemberAccessRelaysAndTicketCreation } from '../utils/api'
 import { deriveRosterFromEmployees } from '../utils/branchRoster'
 import { readTabCache, readTabCacheEntry, relaysCacheKey, writeTabCache, isTabCacheFresh, type RelaysTabCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
 import {
@@ -2722,18 +2722,20 @@ export default function Relays() {
           </div>
 
           {/* Right: Action buttons */}
-          {isAdmin && (
+          {(isAdmin || canMemberAccessRelaysAndTicketCreation(user)) && (
             <div className="flex items-center gap-1.5 shrink-0 relative justify-end md:justify-end">
               {/* Settings icon */}
-              <button
-                type="button"
-                onClick={() => setIsSettingsModalOpen(true)}
-                className="w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full border transition-all hover:opacity-80 active:scale-90"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
-                title="Manage Dealer Settings"
-              >
-                <Settings className="w-4 h-4 md:w-4.5 md:h-4.5" />
-              </button>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setIsSettingsModalOpen(true)}
+                  className="w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full border transition-all hover:opacity-80 active:scale-90"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
+                  title="Manage Dealer Settings"
+                >
+                  <Settings className="w-4 h-4 md:w-4.5 md:h-4.5" />
+                </button>
+              )}
               {/* Create Ticket Button */}
               <button
                 type="button"
@@ -2746,6 +2748,7 @@ export default function Relays() {
               </button>
             </div>
           )}
+
 
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body

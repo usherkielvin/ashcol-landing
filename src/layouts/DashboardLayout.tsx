@@ -9,7 +9,7 @@ import {
   PanelLeftOpen, ClipboardList, Search,
   User, Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
   Building2, Calendar, Landmark, Wifi, CircleDollarSign, ListOrdered,
-  LayoutDashboard, Route, Truck, ClipboardCheck, PhoneCall
+  LayoutDashboard, Route, Truck, ClipboardCheck, PhoneCall, Percent
 } from 'lucide-react'
 import {
   MdOutlineConfirmationNumber,
@@ -31,14 +31,16 @@ import {
   MdOutlineAccountBalanceWallet,
   MdOutlinePhone,
   MdOutlinePhoneInTalk,
+  MdOutlinePercent,
   MdMenuBook,
   MdOutlinePerson,
   MdOutlineStorefront,
 } from 'react-icons/md'
 import { FiMinus, FiPlus } from 'react-icons/fi'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortalAdmin, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry, formatBranchName } from '../utils/api'
+import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortalAdmin, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry, formatBranchName, canMemberAccessRelaysAndTicketCreation } from '../utils/api'
 import UserAvatar from '../components/UserAvatar'
+
 
 // import AIChatBot from '../components/AIChatBot'
 import logoImg from '../assets/ash-logo.jpg'
@@ -111,6 +113,7 @@ function buildNavGroups(navLinks: NavLinkDef[]) {
         { name: 'Daily Transactions', icon: <MdOutlineBarChart size={16} />, path: findPath('Daily Transaction') },
         { name: 'Expenses', icon: <MdOutlineReceipt size={16} />, path: findPath('Expense Records') },
         { name: 'Collections', icon: <MdOutlineMonetizationOn size={16} />, path: findPath('For Collections') },
+        { name: 'Commissions', icon: <MdOutlinePercent size={16} />, path: findPath('Commissions') },
         { name: 'Bills', icon: <MdOutlineAccountBalanceWallet size={16} />, path: findPath('Bills') },
         { name: 'Telecoms', icon: <MdOutlinePhone size={16} />, path: findPath('Telecoms') },
       ].filter(s => navLinks.some(l => l.path === s.path)),
@@ -374,10 +377,12 @@ export default function DashboardLayout() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  const canAccessRelays = canMemberAccessRelaysAndTicketCreation(user)
+
   const allLinks = [
     { name: 'Schedules',       path: '/schedules',        icon: CalendarDays },
     { name: 'My Tickets',      path: '/my-tickets',       icon: ClipboardList,   roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
-    { name: 'Relays',          path: '/relays',           icon: Radio,           roles: ['admin', 'management'] },
+    { name: 'Relays',          path: '/relays',           icon: Radio,           roles: canAccessRelays ? ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] : ['admin', 'management'] },
     { name: 'Search',          path: '/search',          icon: Search },
     { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Registration',   path: '/registration',    icon: ClipboardCheck, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
@@ -388,6 +393,7 @@ export default function DashboardLayout() {
     { name: 'Vehicles',        path: '/vehicles',         icon: Truck,           roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Expense Records', path: '/audit-expenses',  icon: ClipboardList,  roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'For Collections',  path: '/collections',     icon: CircleDollarSign, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Commissions',      path: '/commissions',     icon: Percent,          roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Daily Transaction', path: '/audit-report',   icon: TrendingUp,      roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin', 'management'] },
     { name: 'HRIS',              path: '/admin-hris',       icon: Calendar,        roles: ['admin', 'management', 'manager'] },
@@ -400,8 +406,8 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'management' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms']
-  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms']
+  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms', ...(canAccessRelays ? ['Relays'] : [])]
+  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms', ...(canAccessRelays ? ['Relays'] : [])]
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 
@@ -422,8 +428,9 @@ export default function DashboardLayout() {
   useEffect(() => {
     if (!user) return
     const currentPath = location.pathname
-    const alwaysAllowed = ['/profile']
+    const alwaysAllowed = ['/profile', '/tickets/create', '/create-ticket']
     if (alwaysAllowed.includes(currentPath)) return
+
 
     const isAllowed = navLinks.some(link => currentPath === link.path || currentPath.startsWith(link.path + '/'))
     if (!isAllowed && navLinks.length > 0) {
