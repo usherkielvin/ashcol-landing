@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { 
-  Search, X, Loader2, ClipboardCheck, QrCode, ArrowRightCircle, Ban, 
-  Phone, MapPin, Calendar, Wrench, Eye, CheckCircle2, 
-  Clock, AlertCircle, Copy, Check
+import {
+  Search, X, Loader2, ClipboardCheck, QrCode, ArrowRightCircle, Ban,
+  Phone, MapPin, Calendar, Wrench, CheckCircle2,
+  Clock, AlertCircle
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { API_BASE_URL } from '../utils/api'
@@ -165,6 +165,15 @@ export default function Bookings() {
     })
   }, [])
 
+  const statusColor = (status: Booking['status']) => {
+    switch (status) {
+      case 'NEW': return '#3B82F6'
+      case 'CONTACTED': return '#F59E0B'
+      case 'CONVERTED': return green
+      case 'DISMISSED': return isLight ? '#94A3B8' : '#64748B'
+    }
+  }
+
   const statusBadge = (status: Booking['status']) => {
     switch (status) {
       case 'NEW':
@@ -302,9 +311,9 @@ export default function Bookings() {
         </div>
       )}
 
-      {/* Main Table Container */}
-      <div 
-        className="flex-1 min-h-0 border rounded-2xl overflow-hidden shadow-sm flex flex-col"
+      {/* Main Table Container — desktop/tablet */}
+      <div
+        className="hidden md:flex flex-1 min-h-0 border rounded-2xl overflow-hidden shadow-sm flex-col"
         style={{ backgroundColor: cardBg, borderColor: border }}
       >
         <div className="overflow-auto flex-1 h-full min-h-0">
@@ -315,11 +324,11 @@ export default function Bookings() {
                 style={{ backgroundColor: panelBg, borderColor: border, color: textMuted }}
               >
                 <th className="px-5 py-3.5">Customer & Contact</th>
-                <th className="px-5 py-3.5">Unit & Issue</th>
+                <th className="px-5 py-3.5">Aircon Unit</th>
+                <th className="px-5 py-3.5">Issue</th>
                 <th className="px-5 py-3.5">Location</th>
                 <th className="px-5 py-3.5">Requested Visit</th>
                 <th className="px-5 py-3.5">Status</th>
-                <th className="px-5 py-3.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y text-xs" style={{ borderColor: border }}>
@@ -365,126 +374,91 @@ export default function Bookings() {
                         <span className="font-bold text-sm group-hover:text-emerald-500 transition-colors" style={{ color: textPrimary }}>
                           {b.customerName}
                         </span>
-                        <div className="flex items-center gap-1.5 text-xs font-mono font-medium" style={{ color: textMuted }}>
-                          <Phone className="w-3 h-3 text-emerald-500 shrink-0" />
-                          <span>{b.contactPhone}</span>
-                          <button
-                            type="button"
-                            onClick={(e) => copyPhone(b.id, b.contactPhone, e)}
-                            title="Copy phone number"
-                            className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-slate-500/10"
-                          >
-                            {copiedId === b.id ? (
-                              <Check className="w-3 h-3 text-emerald-500" />
-                            ) : (
-                              <Copy className="w-3 h-3" />
-                            )}
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => copyPhone(b.id, b.contactPhone, e)}
+                          title="Click to copy"
+                          className="w-fit text-left text-sm font-semibold tracking-normal"
+                          style={{ color: copiedId === b.id ? green : textMuted }}
+                        >
+                          {copiedId === b.id ? 'COPIED' : b.contactPhone}
+                        </button>
                       </div>
                     </td>
 
-                    {/* Unit & Issue */}
-                    <td className="px-5 py-4 max-w-[240px]">
-                      <div className="flex flex-col gap-1">
-                        {unitParts ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold w-fit bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                            <Wrench className="w-3 h-3 shrink-0" />
-                            {unitParts}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-400 italic">No unit specified</span>
-                        )}
-                        <p className="text-xs line-clamp-1 font-medium" style={{ color: textPrimary }} title={b.issueDescription}>
-                          {b.issueDescription || <span className="text-slate-400 italic">No description</span>}
-                        </p>
-                      </div>
+                    {/* Aircon Unit */}
+                    <td className="px-5 py-4 whitespace-nowrap">
+                      <span className="text-xs font-bold uppercase tracking-wide" style={{ color: textPrimary }}>
+                        {unitParts || <span className="italic font-medium normal-case text-slate-400">Not specified</span>}
+                      </span>
+                    </td>
+
+                    {/* Issue */}
+                    <td className="px-5 py-4 max-w-[220px]">
+                      <p className="text-xs line-clamp-2 leading-relaxed" style={{ color: textPrimary }} title={b.issueDescription}>
+                        {b.issueDescription || <span className="text-slate-400 italic">No description</span>}
+                      </p>
                     </td>
 
                     {/* Location */}
-                    <td className="px-5 py-4 max-w-[220px]">
-                      <div className="flex items-start gap-1.5">
-                        <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-                        <span className="text-xs line-clamp-2 leading-relaxed" style={{ color: textPrimary }} title={addressStr}>
-                          {addressStr || <span className="text-slate-400 italic">Not provided</span>}
-                        </span>
-                      </div>
+                    <td className="px-5 py-4 max-w-[200px]">
+                      <span className="text-xs line-clamp-2 leading-relaxed" style={{ color: textPrimary }} title={addressStr}>
+                        {addressStr || <span className="text-slate-400 italic">Not provided</span>}
+                      </span>
                     </td>
 
                     {/* Requested Visit Date */}
                     <td className="px-5 py-4 whitespace-nowrap">
                       <div className="flex flex-col gap-0.5">
-                        <div className="flex items-center gap-1.5 font-semibold text-xs" style={{ color: textPrimary }}>
-                          <Calendar className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                          <span>{formatDate(b.requestedDate) || 'Flexible Date'}</span>
-                        </div>
+                        <span className="text-xs font-bold uppercase tracking-wide" style={{ color: textPrimary }}>
+                          {formatDate(b.requestedDate) || 'Flexible'}
+                        </span>
                         <span className="text-[11px]" style={{ color: textMuted }}>
                           Sent {formatDate(b.createdAt)}
                         </span>
                       </div>
                     </td>
 
-                    {/* Status Badge */}
+                    {/* Status — plain text label with its actions combined in the same cell */}
                     <td className="px-5 py-4 whitespace-nowrap">
-                      {statusBadge(b.status)}
-                    </td>
-
-                    {/* Actions */}
-                    <td className="px-5 py-4 whitespace-nowrap text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {isBusy ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
-                        ) : b.status === 'CONVERTED' ? (
-                          <span className="text-xs font-bold text-emerald-500 flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Ticket Created
+                      {isBusy ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
+                      ) : (
+                        <div className="flex flex-col items-start gap-1.5">
+                          <span className="text-xs font-black uppercase tracking-wide" style={{ color: statusColor(b.status) }}>
+                            {b.status}
                           </span>
-                        ) : b.status === 'DISMISSED' ? (
-                          <span className="text-xs font-medium text-slate-400">Dismissed</span>
-                        ) : (
-                          <>
-                            {b.status === 'NEW' && (
+                          {(b.status === 'NEW' || b.status === 'CONTACTED') && (
+                            <div className="flex items-center gap-3">
+                              {b.status === 'NEW' && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => markContacted(b.id, e)}
+                                  className="text-[11px] font-bold uppercase tracking-wide hover:underline"
+                                  style={{ color: textMuted }}
+                                >
+                                  Contacted
+                                </button>
+                              )}
                               <button
                                 type="button"
-                                onClick={(e) => markContacted(b.id, e)}
-                                className="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all hover:bg-amber-500/10 hover:border-amber-500/30 text-amber-500"
-                                style={{ borderColor: inputBorder }}
+                                onClick={(e) => convertToTicket(b, e)}
+                                className="text-[11px] font-bold uppercase tracking-wide hover:underline"
+                                style={{ color: green }}
                               >
-                                Contacted
+                                Convert
                               </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={(e) => convertToTicket(b, e)}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white shadow-sm transition-all hover:opacity-90 active:scale-95"
-                              style={{ backgroundColor: green }}
-                            >
-                              <ArrowRightCircle className="w-3.5 h-3.5" />
-                              Convert
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => dismissBooking(b.id, e)}
-                              title="Dismiss booking"
-                              className="p-1.5 rounded-lg border transition-all hover:bg-red-500/10 text-slate-400 hover:text-red-500"
-                              style={{ borderColor: inputBorder }}
-                            >
-                              <Ban className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setSelectedBooking(b)
-                          }}
-                          className="p-1.5 rounded-lg border transition-all hover:bg-slate-500/10"
-                          style={{ borderColor: inputBorder, color: textMuted }}
-                          title="View Full Details"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                              <button
+                                type="button"
+                                onClick={(e) => dismissBooking(b.id, e)}
+                                className="text-[11px] font-bold uppercase tracking-wide hover:underline text-red-500"
+                              >
+                                Dismiss
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 )
@@ -492,6 +466,111 @@ export default function Bookings() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Card List — mobile */}
+      <div className="md:hidden flex-1 min-h-0 overflow-y-auto flex flex-col gap-3">
+        {loading ? (
+          <div className="flex-1 flex flex-col items-center justify-center py-16" style={{ color: textMuted }}>
+            <Loader2 className="w-6 h-6 animate-spin mb-2 text-emerald-500" />
+            <p className="font-semibold text-sm">Loading bookings...</p>
+          </div>
+        ) : visible.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center py-16 text-center" style={{ color: textMuted }}>
+            <ClipboardCheck className="w-10 h-10 mb-3 opacity-30" />
+            <p className="font-bold text-sm text-slate-400">No bookings found</p>
+            <p className="text-xs mt-1">Try adjusting your status filter or search query.</p>
+          </div>
+        ) : visible.map(b => {
+          const unitParts = [b.brand, b.capacity].filter(Boolean).join(' ')
+          const addressStr = formatAddress(b)
+          const isBusy = busyId === b.id
+
+          return (
+            <div
+              key={b.id}
+              onClick={() => setSelectedBooking(b)}
+              className="border rounded-2xl p-4 flex flex-col gap-3 cursor-pointer active:opacity-80 transition-opacity"
+              style={{ backgroundColor: cardBg, borderColor: border }}
+            >
+              {/* Customer + Status */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col gap-0.5 min-w-0">
+                  <span className="font-bold text-sm" style={{ color: textPrimary }}>{b.customerName}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => copyPhone(b.id, b.contactPhone, e)}
+                    className="w-fit text-left text-xs font-mono font-medium tracking-wide"
+                    style={{ color: copiedId === b.id ? green : textMuted }}
+                  >
+                    {copiedId === b.id ? 'COPIED' : b.contactPhone}
+                  </button>
+                </div>
+                {isBusy ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-emerald-500 shrink-0" />
+                ) : (
+                  <span className="text-xs font-black uppercase tracking-wide shrink-0" style={{ color: statusColor(b.status) }}>
+                    {b.status}
+                  </span>
+                )}
+              </div>
+
+              {/* Unit + Issue */}
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-bold uppercase tracking-wide" style={{ color: textPrimary }}>
+                  {unitParts || <span className="italic font-medium normal-case text-slate-400">Not specified</span>}
+                </span>
+                <p className="text-xs leading-relaxed line-clamp-2" style={{ color: textMuted }}>
+                  {b.issueDescription || <span className="italic text-slate-400">No description</span>}
+                </p>
+              </div>
+
+              {/* Location */}
+              <span className="text-xs leading-relaxed" style={{ color: textMuted }}>
+                {addressStr || <span className="italic text-slate-400">Not provided</span>}
+              </span>
+
+              {/* Requested visit */}
+              <div className="flex items-center justify-between text-xs pt-2 border-t" style={{ borderColor: border }}>
+                <span className="font-bold uppercase tracking-wide" style={{ color: textPrimary }}>
+                  {formatDate(b.requestedDate) || 'Flexible'}
+                </span>
+                <span style={{ color: textMuted }}>Sent {formatDate(b.createdAt)}</span>
+              </div>
+
+              {/* Combined actions */}
+              {!isBusy && (b.status === 'NEW' || b.status === 'CONTACTED') && (
+                <div className="flex items-center gap-4 pt-1">
+                  {b.status === 'NEW' && (
+                    <button
+                      type="button"
+                      onClick={(e) => markContacted(b.id, e)}
+                      className="text-[11px] font-bold uppercase tracking-wide hover:underline"
+                      style={{ color: textMuted }}
+                    >
+                      Contacted
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => convertToTicket(b, e)}
+                    className="text-[11px] font-bold uppercase tracking-wide hover:underline"
+                    style={{ color: green }}
+                  >
+                    Convert
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => dismissBooking(b.id, e)}
+                    className="text-[11px] font-bold uppercase tracking-wide hover:underline text-red-500"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
 
       {/* Booking Details Side Drawer / Modal */}

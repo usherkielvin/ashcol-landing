@@ -3511,7 +3511,7 @@ export default function Relays() {
           {(isAdmin || canMemberAccessRelaysAndTicketCreation(user)) && (
             <div className="flex items-center gap-1.5 shrink-0 relative justify-end md:justify-end">
               {/* Settings icon */}
-              {isAdmin && (
+              {(isAdmin || canMemberAccessRelaysAndTicketCreation(user)) && (
                 <button
                   type="button"
                   onClick={() => setIsSettingsModalOpen(true)}
