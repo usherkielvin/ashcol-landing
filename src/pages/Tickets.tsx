@@ -4745,7 +4745,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     setReschedDialog({ ticket })
     setReschedToDate(initDate)
     setReschedPending(isReschedulePending(ticket))
-    setReschedRemarks('')
+    // Prefill remarks with current ticket remarks so user doesn't have to retype
+    const ticketWithSnakeCase = ticket as Ticket & { remarks_update?: string }
+    setReschedRemarks((ticket.remarksUpdate || ticketWithSnakeCase.remarks_update || ticket.remarks || '').trim())
     const targetKey = dateFilter || existingTarget || preferred || todayDateKey()
     const startDate = new Date(`${targetKey}T00:00:00`)
     const calViewDate = !isNaN(startDate.getTime()) ? startDate : new Date()
