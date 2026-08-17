@@ -33,7 +33,6 @@ export default function TicketHistoryTable({ person, headerLeft }: { person: His
   const [loading, setLoading] = useState(false)
   const [dateFilter, setDateFilter] = useState<string>('')
   const [branchFilter, setBranchFilter] = useState<string>('')
-  const [dateType, setDateType] = useState<'ticket' | 'created' | 'any'>('ticket')
   const dateInputRef = useRef<HTMLInputElement>(null)
 
   const openDatePicker = () => {
@@ -140,17 +139,6 @@ export default function TicketHistoryTable({ person, headerLeft }: { person: His
     return ''
   }
 
-  const getTicketScheduleDateStr = (t: any): string => {
-    if (t.acDetails) {
-      try {
-        const parsed = typeof t.acDetails === 'string' ? JSON.parse(t.acDetails) : t.acDetails
-        if (parsed?.finalDate) return normalizeToYMD(parsed.finalDate)
-      } catch {}
-    }
-    const raw = t.scheduledDate || t.scheduled_date || t.preferredDate || t.preferred_date
-    return normalizeToYMD(raw)
-  }
-
   const getCreatedDateStr = (t: any): string => {
     const raw = t.createdAt || t.created_at
     return normalizeToYMD(raw)
@@ -160,17 +148,9 @@ export default function TicketHistoryTable({ person, headerLeft }: { person: His
   const displayedHistory = history.filter(t => {
     if (branchFilter && t.branchId !== branchFilter && t.branch_id !== branchFilter) return false
     if (dateFilter) {
-      const ticketYMD = getTicketScheduleDateStr(t)
       const createdYMD = getCreatedDateStr(t)
       const targetYMD = normalizeToYMD(dateFilter)
-
-      if (dateType === 'ticket') {
-        return ticketYMD === targetYMD
-      } else if (dateType === 'created') {
-        return createdYMD === targetYMD
-      } else {
-        return ticketYMD === targetYMD || createdYMD === targetYMD
-      }
+      return createdYMD === targetYMD
     }
     return true
   })
@@ -226,18 +206,6 @@ export default function TicketHistoryTable({ person, headerLeft }: { person: His
           >
             <option value="">All Branches</option>
             {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
-          </select>
-
-          <select
-            value={dateType}
-            onChange={e => setDateType(e.target.value as typeof dateType)}
-            className="px-3 py-1.5 rounded-lg border text-xs sm:text-sm font-semibold outline-none focus:ring-1 focus:ring-emerald-500"
-            style={{ backgroundColor: cardBg, borderColor: border, color: textPrimary }}
-            title="Filter by Ticket/Schedule Date or Date Created"
-          >
-            <option value="ticket">Ticket Date</option>
-            <option value="created">Date Created</option>
-            <option value="any">Ticket or Created</option>
           </select>
 
           <div
