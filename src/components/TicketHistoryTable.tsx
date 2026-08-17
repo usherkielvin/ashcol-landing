@@ -31,11 +31,9 @@ export default function TicketHistoryTable({ person, headerLeft }: { person: His
   const [history, setHistory] = useState<any[]>([])
   const [branches, setBranches] = useState<BranchOption[]>([])
   const [loading, setLoading] = useState(false)
-  const [dateFilter, setDateFilter] = useState<string>(() => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  })
+  const [dateFilter, setDateFilter] = useState<string>('')
   const [branchFilter, setBranchFilter] = useState<string>('')
+  const [dateType, setDateType] = useState<'ticket' | 'created' | 'any'>('ticket')
   const dateInputRef = useRef<HTMLInputElement>(null)
 
   const openDatePicker = () => {
@@ -68,7 +66,7 @@ export default function TicketHistoryTable({ person, headerLeft }: { person: His
       try {
         const headers = { Authorization: `Bearer ${token()}` }
         const isAdminOrMgmt = user?.role?.toUpperCase() === 'ADMIN' || user?.role?.toUpperCase() === 'MANAGEMENT'
-        const endpoint = isAdminOrMgmt ? `${API_BASE_URL}/tickets?size=1000` : `${API_BASE_URL}/tickets/branch?size=1000`
+        const endpoint = isAdminOrMgmt ? `${API_BASE_URL}/tickets?size=2000` : `${API_BASE_URL}/tickets/branch?size=2000`
         const res = await fetch(endpoint, { headers })
         if (!res.ok) return
         const data = await res.json()
@@ -80,20 +78,25 @@ export default function TicketHistoryTable({ person, headerLeft }: { person: His
         const personPersonalEmail = (person.personalEmail || '').toLowerCase().trim()
 
         const relevant = tickets.filter((t: any) => {
-          if (t.customerId === personId) return true
+          if (t.customerId === personId || t.customer_id === personId) return true
+          if (t.createdByUserId === personId || t.created_by_user_id === personId) return true
           if (t.createdBy && t.createdBy.toLowerCase().trim() === nameNorm) return true
-          if (t.negotiatorId === personId) return true
+          if (t.createdByName && t.createdByName.toLowerCase().trim() === nameNorm) return true
+          if (t.createdByName && t.createdByName.toLowerCase().trim() === personEmail) return true
+          if (t.negotiatorId === personId || t.negotiator_id === personId) return true
           if (t.negotiatorName && t.negotiatorName.toLowerCase().trim() === nameNorm) return true
-          if (t.assignedTo === personId) return true
+          if (t.assignedTo === personId || t.assigned_to === personId) return true
           if (t.assignedEmployeeName && t.assignedEmployeeName.toLowerCase().trim() === nameNorm) return true
-          if (t.installerId === personId) return true
+          if (t.installerId === personId || t.installer_id === personId) return true
           if (t.installerName && t.installerName.toLowerCase().trim() === nameNorm) return true
-          if (t.closedBy === personId) return true
+          if (t.driverId === personId || t.driver_id === personId) return true
+          if (t.driverName && t.driverName.toLowerCase().trim() === nameNorm) return true
+          if (t.closedBy === personId || t.closed_by === personId) return true
           if (t.closedBy && t.closedBy.toLowerCase().trim() === nameNorm) return true
           if (t.closedBy && t.closedBy.toLowerCase().trim() === personEmail) return true
-          if (t.warrantyRegistrationCompletedBy === personId) return true
+          if (t.warrantyRegistrationCompletedBy === personId || t.warranty_registration_completed_by === personId) return true
           if (t.warrantyRegistrationCompletedBy && t.warrantyRegistrationCompletedBy.toLowerCase().trim() === nameNorm) return true
-          const customerEmail = (t.customerEmail || '').toLowerCase().trim()
+          const customerEmail = (t.customerEmail || t.customer_email || '').toLowerCase().trim()
           if (customerEmail && (customerEmail === personEmail || (personPersonalEmail && customerEmail === personPersonalEmail))) return true
           return false
         })
@@ -123,21 +126,51 @@ export default function TicketHistoryTable({ person, headerLeft }: { person: His
     fetchHistory()
   }, [person.id, person.name, person.email, person.personalEmail, user])
 
+  const normalizeToYMD = (val?: string | null): string => {
+    if (!val) return ''
+    const trimmed = String(val).trim()
+    const matchYMD = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+    if (matchYMD) {
+      return `${matchYMD[1]}-${matchYMD[2].padStart(2, '0')}-${matchYMD[3].padStart(2, '0')}`
+    }
+    const d = new Date(trimmed)
+    if (!isNaN(d.getTime())) {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+    return ''
+  }
 
+  const getTicketScheduleDateStr = (t: any): string => {
+    if (t.acDetails) {
+      try {
+        const parsed = typeof t.acDetails === 'string' ? JSON.parse(t.acDetails) : t.acDetails
+        if (parsed?.finalDate) return normalizeToYMD(parsed.finalDate)
+      } catch {}
+    }
+    const raw = t.scheduledDate || t.scheduled_date || t.preferredDate || t.preferred_date
+    return normalizeToYMD(raw)
+  }
+
+  const getCreatedDateStr = (t: any): string => {
+    const raw = t.createdAt || t.created_at
+    return normalizeToYMD(raw)
+  }
 
   // ── Filter logic ───────────────────────────────────────────────────────────
   const displayedHistory = history.filter(t => {
     if (branchFilter && t.branchId !== branchFilter && t.branch_id !== branchFilter) return false
     if (dateFilter) {
-      const createdStr = t.createdAt || t.created_at
-      if (!createdStr) return false
-      const cDate = new Date(createdStr)
-      const fDate = new Date(dateFilter + 'T00:00:00')
-      return (
-        cDate.getFullYear() === fDate.getFullYear() &&
-        cDate.getMonth() === fDate.getMonth() &&
-        cDate.getDate() === fDate.getDate()
-      )
+      const ticketYMD = getTicketScheduleDateStr(t)
+      const createdYMD = getCreatedDateStr(t)
+      const targetYMD = normalizeToYMD(dateFilter)
+
+      if (dateType === 'ticket') {
+        return ticketYMD === targetYMD
+      } else if (dateType === 'created') {
+        return createdYMD === targetYMD
+      } else {
+        return ticketYMD === targetYMD || createdYMD === targetYMD
+      }
     }
     return true
   })
@@ -193,6 +226,18 @@ export default function TicketHistoryTable({ person, headerLeft }: { person: His
           >
             <option value="">All Branches</option>
             {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
+          </select>
+
+          <select
+            value={dateType}
+            onChange={e => setDateType(e.target.value as typeof dateType)}
+            className="px-3 py-1.5 rounded-lg border text-xs sm:text-sm font-semibold outline-none focus:ring-1 focus:ring-emerald-500"
+            style={{ backgroundColor: cardBg, borderColor: border, color: textPrimary }}
+            title="Filter by Ticket/Schedule Date or Date Created"
+          >
+            <option value="ticket">Ticket Date</option>
+            <option value="created">Date Created</option>
+            <option value="any">Ticket or Created</option>
           </select>
 
           <div

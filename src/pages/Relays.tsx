@@ -1250,8 +1250,9 @@ export default function Relays() {
       // Preserve the imported ticket's independent branch and negotiator selection.
       branchId: ticket.branchId || prev.branchId,
       assignedTo: ticket.assignedTo || '',
-      // Relayed Date: from Excel DATE RALAYED column (when relay was received)
-      relayedDate: ticket.relayedDate || new Date().toISOString().split('T')[0],
+      // Relayed Date: from Excel DATE RALAYED column when present, otherwise the same sheet date
+      // used for schedule/requested date — not today's date, which was masking the real relay date.
+      relayedDate: ticket.relayedDate || ticket.scheduleDate || excelDate || new Date().toISOString().split('T')[0],
       // Scheduled Date (finalDate): from the sheet's header date (dispatch date)
       finalDate: ticket.scheduleDate || excelDate,
       // Requested Date: same as schedule date (requested date is also the scheduled date from import)
@@ -1349,7 +1350,10 @@ export default function Relays() {
           sku: '',
           serialNumber: '',
           alternatePhone: phones.slice(1).join(', '),
-          relayedDate: ticket.relayedDate || new Date().toISOString().split('T')[0],
+          // Same fallback as the single-ticket prefill above: default to the sheet's schedule
+          // date (not today) so relayed/requested/schedule all agree when the sheet has no
+          // dedicated "DATE RALAYED" column.
+          relayedDate: ticket.relayedDate || ticket.scheduleDate || excelDate || new Date().toISOString().split('T')[0],
           finalDate: ticket.isResched ? '' : (ticket.scheduleDate || excelDate || ''),
           installedDate: '',
           driverName: ticket.driver || '',

@@ -32,10 +32,7 @@ export default function WarrantyRegistrationHistoryTable({ person, headerLeft }:
   const [history, setHistory] = useState<any[]>([])
   const [branches, setBranches] = useState<BranchOption[]>([])
   const [loading, setLoading] = useState(false)
-  const [dateFilter, setDateFilter] = useState<string>(() => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  })
+  const [dateFilter, setDateFilter] = useState<string>('')
   const [branchFilter, setBranchFilter] = useState<string>('')
   const dateInputRef = useRef<HTMLInputElement>(null)
 
