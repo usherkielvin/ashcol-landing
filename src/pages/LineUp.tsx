@@ -6064,6 +6064,8 @@ export default function LineUp() {
 
                           }}>
 
+
+
                           {renderEditableTd(row, 'service',       finalVehicleOptions,   { textAlign: 'center', fontWeight: 950, fontSize: '13px', color: textPrimary })}
 
                           {renderEditableTd(row, 'driverName',    finalDriverOptions,    { textAlign: 'center', fontWeight: 900, fontSize: '15px', color: textPrimary })}

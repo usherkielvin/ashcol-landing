@@ -6678,6 +6678,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
 
 
+
                             {/* Data cells */}
                             {columns.map((col, colIdx) => {
                               const isLastCol = colIdx === columns.length - 1

@@ -25,6 +25,8 @@ import { fetchCachedBranches, fetchCachedEmployees } from '../utils/portalDirect
 import { formatBrandCapacityLabel, parseBrandFromAcDetails } from '../utils/warrantyTicketDisplay'
 import { resolveScheduleStatusFields } from '../constants/ticketCategories'
 import { RelayEditTicketModal } from '../components/relays/RelayEditTicketModal'
+import { extractRelayTicketsFromExcel, type ExtractedRelayTicket } from '../utils/excelRelayExtraction'
+import { matchExcelDealers, type DealerParseResult } from '../utils/excelBranchMatcher'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import type { RelayEditDraft } from '../components/relays/relayEditForm'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
@@ -687,6 +689,108 @@ const isCollectionPaid = (ticket: Ticket) => {
   return hasAmount && (hasPayment || remarks.includes('paid') || remarks.includes('collected'))
 }
 
+/** Searchable dealer dropdown for resolving unmatched Excel dealers */
+function UnmatchedDealerDropdown({ dealerName, dealers, value, onChange, isLight, inputBg, inputBorder, textPrimary, textMuted }: {
+  dealerName: string
+  dealers: { id: string; name: string }[]
+  value: string
+  onChange: (val: string) => void
+  isLight: boolean
+  inputBg: string
+  inputBorder: string
+  textPrimary: string
+  textMuted: string
+}) {
+  const [search, setSearch] = useState('')
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return dealers
+    const q = search.toUpperCase()
+    return dealers.filter(d => d.name.toUpperCase().includes(q))
+  }, [dealers, search])
+
+  const selectedDealer = dealers.find(d => d.id === value)
+  const displayValue = value === '__ADD_NEW__'
+    ? `➕ Add "${dealerName}" as new dealer`
+    : selectedDealer
+      ? `✅ ${selectedDealer.name}`
+      : ''
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full text-left rounded-lg border px-3 py-2 text-[11px] font-bold outline-none transition-all"
+        style={{
+          backgroundColor: inputBg,
+          borderColor: value ? (value === '__ADD_NEW__' ? '#f59e0b' : '#10B981') : inputBorder,
+          color: value ? textPrimary : textMuted,
+        }}
+      >
+        {displayValue || 'Select existing dealer or add new...'}
+      </button>
+      {open && (
+        <div
+          className="z-50 mt-1 w-full rounded-xl border shadow-xl overflow-hidden"
+          style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+        >
+          <div className="p-2" style={{ borderBottom: `1px solid ${inputBorder}` }}>
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search dealers..."
+              autoFocus
+              className="w-full rounded-lg border px-2.5 py-1.5 text-[11px] font-medium outline-none"
+              style={{ backgroundColor: isLight ? '#fff' : '#0A1120', borderColor: inputBorder, color: textPrimary }}
+            />
+          </div>
+          <div className="max-h-[180px] overflow-y-auto">
+            {/* Add as new option */}
+            <button
+              type="button"
+              onClick={() => { onChange('__ADD_NEW__'); setOpen(false); setSearch('') }}
+              className="w-full text-left px-3 py-2 text-[11px] font-bold hover:bg-amber-500/10 transition-colors"
+              style={{ color: '#f59e0b' }}
+            >
+              ➕ Add "{dealerName}" as new dealer
+            </button>
+            {/* Existing dealers */}
+            {filtered.length > 0 ? filtered.map(d => (
+              <button
+                key={d.id}
+                type="button"
+                onClick={() => { onChange(d.id); setOpen(false); setSearch('') }}
+                className="w-full text-left px-3 py-2 text-[11px] font-medium hover:bg-emerald-500/10 transition-colors"
+                style={{ color: textPrimary }}
+              >
+                {d.name}
+              </button>
+            )) : (
+              <p className="px-3 py-2 text-[10px] font-medium" style={{ color: textMuted }}>No dealers found</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Relays() {
   const { theme } = useTheme()
   const { user } = useAuth()
@@ -874,6 +978,580 @@ export default function Relays() {
   // Manual & Scan Add Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [dealers, setDealers] = useState<{ id: string; name: string }[]>([])
+
+  // Excel Import State. Every extracted row becomes an independent draft so changing one
+  // ticket's schedule, branch, or negotiator never changes the other imported tickets.
+  type EditableExcelRelayTicket = ExtractedRelayTicket & {
+    branchId: string
+    assignedTo: string
+  }
+  const [excelTickets, setExcelTickets] = useState<EditableExcelRelayTicket[]>([])
+  const [excelDate, setExcelDate] = useState('')
+  const [excelFileName, setExcelFileName] = useState('')
+  const [showExcelPicker, setShowExcelPicker] = useState(false)
+  const [openedFromExcel, setOpenedFromExcel] = useState(false)
+  const [excelEditingIndex, setExcelEditingIndex] = useState<number | null>(null)
+  const [excelContextMenu, setExcelContextMenu] = useState<{ idx: number; x: number; y: number } | null>(null)
+  const [excelSelectMode, setExcelSelectMode] = useState(false)
+  const [excelSelectedIdxs, setExcelSelectedIdxs] = useState<Set<number>>(new Set())
+  const [excelExistingMap, setExcelExistingMap] = useState<Map<string, Ticket>>(new Map())
+  const excelFileRef = useRef<HTMLInputElement>(null)
+  // Track which ticket indices have been individually overridden so bulk header changes
+  // don't overwrite manual per-ticket selections.
+  const [excelDateOverrides, setExcelDateOverrides] = useState<Set<number>>(new Set())
+  const [excelBranchOverrides, setExcelBranchOverrides] = useState<Set<number>>(new Set())
+  const [excelNegotiatorOverrides, setExcelNegotiatorOverrides] = useState<Set<number>>(new Set())
+  // Refs to avoid stale closures in header change handlers
+  const excelDateOverridesRef = useRef(excelDateOverrides)
+  excelDateOverridesRef.current = excelDateOverrides
+  const excelBranchOverridesRef = useRef(excelBranchOverrides)
+  excelBranchOverridesRef.current = excelBranchOverrides
+  const excelNegotiatorOverridesRef = useRef(excelNegotiatorOverrides)
+  excelNegotiatorOverridesRef.current = excelNegotiatorOverrides
+  // Header-level defaults applied to all non-overridden tickets
+  const [excelDefaultBranchId, setExcelDefaultBranchId] = useState('')
+  const [excelDefaultNegotiator, setExcelDefaultNegotiator] = useState('')
+  // Dealer matching state — auto-match Excel dealer names to existing dealers via Gemini AI
+  const [excelDealerMatches, setExcelDealerMatches] = useState<Map<string, DealerParseResult>>(new Map())
+  const [excelUnmatchedDealers, setExcelUnmatchedDealers] = useState<string[]>([])
+  const [showUnmatchedDealerPopup, setShowUnmatchedDealerPopup] = useState(false)
+  const [addingDealers, setAddingDealers] = useState(false)
+  // Map from unmatched dealer name → selected resolution (dealerId or '__ADD_NEW__')
+  const [unmatchedDealerResolutions, setUnmatchedDealerResolutions] = useState<Map<string, string>>(new Map())
+
+  const handleExcelFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const result = await extractRelayTicketsFromExcel(file)
+      const defaultBranchId = resolveRelayDefaultBranchId() || ''
+      setExcelTickets(result.tickets.map(ticket => ({
+        ...ticket,
+        branchId: defaultBranchId,
+        assignedTo: '',
+      })))
+      setExcelDate(result.scheduleDate)
+      setExcelFileName(result.fileName)
+      // Reset override tracking for fresh import
+      setExcelDateOverrides(new Set())
+      setExcelBranchOverrides(new Set())
+      setExcelNegotiatorOverrides(new Set())
+      setExcelDefaultBranchId(defaultBranchId)
+      setExcelDefaultNegotiator('')
+
+      // Fetch ALL tickets from API to detect duplicates by customer name
+      const authToken = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const existingMap = new Map<string, Ticket>()
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/tickets?size=1000`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        })
+        if (res.ok) {
+          const data = await res.json()
+          const payload = data?.data ?? data ?? {}
+          const allTickets: Ticket[] = payload?.tickets || data?.tickets || (Array.isArray(data) ? data : [])
+          for (const t of allTickets) {
+            const name = (t.customerName || (t as any).customer_name || '').replace(/\s+/g, ' ').trim().toUpperCase()
+            if (name) existingMap.set(name, t)
+          }
+        }
+      } catch {
+        // If fetch fails, fall back to local tickets
+        for (const t of tickets) {
+          const name = (t.customerName || (t as any).customer_name || '').replace(/\s+/g, ' ').trim().toUpperCase()
+          if (name) existingMap.set(name, t)
+        }
+      }
+
+      // Also merge in locally loaded tickets (already on this page) for extra coverage
+      for (const t of [...tickets, ...openFieldTickets]) {
+        const name = (t.customerName || (t as any).customer_name || '').replace(/\s+/g, ' ').trim().toUpperCase()
+        if (name && !existingMap.has(name)) existingMap.set(name, t)
+      }
+
+      setExcelExistingMap(existingMap)
+      setShowExcelPicker(true)
+
+      // ── Search for any imported names not found in initial fetch ──
+      const missingNames = result.tickets
+        .map(t => (t.customerName || '').replace(/\s+/g, ' ').trim())
+        .filter(name => name && !existingMap.has(name.toUpperCase()))
+      if (missingNames.length > 0) {
+        // Search each missing name individually (async, updates map as results come in)
+        const token2 = authToken
+        Promise.all(missingNames.map(async (name) => {
+          try {
+            const res = await fetch(`${API_BASE_URL}/tickets?search=${encodeURIComponent(name)}&size=5`, {
+              headers: { Authorization: `Bearer ${token2}` },
+            })
+            if (!res.ok) return
+            const data = await res.json()
+            const payload = data?.data ?? data ?? {}
+            const results: Ticket[] = payload?.tickets || data?.tickets || (Array.isArray(data) ? data : [])
+            const match = results.find((t: any) => {
+              const n = (t.customerName || (t as any).customer_name || '').replace(/\s+/g, ' ').trim().toUpperCase()
+              return n === name.toUpperCase()
+            })
+            if (match) {
+              existingMap.set(name.toUpperCase(), match)
+            }
+          } catch { /* skip */ }
+        })).then(() => {
+          setExcelExistingMap(new Map(existingMap))
+        })
+      }
+
+      // ── Use Gemini AI to parse raw DLR strings into proper dealer + branch ──
+      // Skip dealers already recognized by the system (RA/Robinsons, Abenson, Direct)
+      const rawDealerStrings = [...new Set(result.tickets.map(t => t.dealer).filter(Boolean))]
+        .filter(d => !ROBINSON_APPLIANCES_RE.test(d) && !/^abenson/i.test(d) && d.toLowerCase() !== 'direct')
+      if (rawDealerStrings.length > 0 && dealers.length > 0) {
+        matchExcelDealers(rawDealerStrings, dealers).then(summary => {
+          setExcelDealerMatches(summary.parsed)
+          setExcelUnmatchedDealers(summary.unmatchedDealers)
+
+          // Update ticket dealer/dealerBranch fields with AI-parsed results
+          // Skip tickets whose dealer is already recognized by the system (RA, Abenson, Direct)
+          // Only set ticket.dealer if it actually matches an existing dealer in the DB
+          setExcelTickets(prev => prev.map(ticket => {
+            if (!ticket.dealer) return ticket
+            const dlr = ticket.dealer.trim().toLowerCase()
+            // System already handles these — don't overwrite
+            if (ROBINSON_APPLIANCES_RE.test(dlr) || /^abenson/i.test(dlr) || dlr === 'direct') return ticket
+
+            const parseResult = summary.parsed.get(ticket.dealer)
+            if (parseResult?.matched && parseResult.matchedDealerName) {
+              // Matched to an existing dealer — safe to update
+              return {
+                ...ticket,
+                dealer: parseResult.matchedDealerName,
+                dealerBranch: parseResult.dealerBranch || ticket.dealerBranch,
+              }
+            } else if (parseResult?.dealerBranch) {
+              // Not matched but AI extracted a branch/location — only update dealerBranch
+              return {
+                ...ticket,
+                dealerBranch: parseResult.dealerBranch,
+              }
+            }
+            return ticket
+          }))
+        }).catch(() => { /* matching failed silently */ })
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to read Excel file')
+    }
+    // Reset file input so same file can be re-selected
+    e.target.value = ''
+  }
+
+  const updateExcelTicket = (index: number, patch: Partial<EditableExcelRelayTicket>) => {
+    setExcelTickets(prev => prev.map((ticket, ticketIndex) => (
+      ticketIndex === index ? { ...ticket, ...patch } : ticket
+    )))
+    // Mark individual overrides so bulk header changes don't overwrite them
+    if ('scheduleDate' in patch) {
+      setExcelDateOverrides(prev => new Set(prev).add(index))
+    }
+    if ('branchId' in patch) {
+      setExcelBranchOverrides(prev => new Set(prev).add(index))
+    }
+    if ('assignedTo' in patch) {
+      setExcelNegotiatorOverrides(prev => new Set(prev).add(index))
+    }
+  }
+
+  // Bulk header-level controls: update all non-overridden tickets
+  const handleExcelHeaderDateChange = (newDate: string) => {
+    setExcelDate(newDate)
+    setExcelTickets(prev => prev.map((ticket, idx) => {
+      if (excelDateOverridesRef.current.has(idx)) return ticket
+      return { ...ticket, scheduleDate: newDate }
+    }))
+  }
+
+  const handleExcelHeaderBranchChange = (newBranchId: string) => {
+    setExcelDefaultBranchId(newBranchId)
+    setExcelTickets(prev => prev.map((ticket, idx) => {
+      if (excelBranchOverridesRef.current.has(idx)) return ticket
+      const resetNegotiator = excelNegotiatorOverridesRef.current.has(idx) ? ticket.assignedTo : ''
+      return { ...ticket, branchId: newBranchId, assignedTo: resetNegotiator }
+    }))
+  }
+
+  const handleExcelHeaderNegotiatorChange = (newNegotiatorId: string) => {
+    setExcelDefaultNegotiator(newNegotiatorId)
+    setExcelTickets(prev => prev.map((ticket, idx) => {
+      if (excelNegotiatorOverridesRef.current.has(idx)) return ticket
+      return { ...ticket, assignedTo: newNegotiatorId }
+    }))
+  }
+
+  const handlePickExcelTicket = (ticket: EditableExcelRelayTicket, ticketIdx: number) => {
+    // Parse the dealer value properly — for RA/Robinsons/Abenson, use the system's parseDealer
+    // to avoid putting raw messy values like "RA SHAN MICHAEL DAGDAG" into the dealer field
+    // But if the dealer is already a clean value (exists in dealers list or is a known category),
+    // don't re-parse — it was already saved correctly from a previous edit.
+    const dealerLower = (ticket.dealer || '').trim().toLowerCase()
+    const isKnownDealer = dealers.some(d => d.name.toLowerCase() === dealerLower)
+      || ['direct', 'direct call', 'robinsons', 'robinsons appliances', 'abenson'].includes(dealerLower)
+
+    let formDealer = ticket.dealer
+    let formDealerBranch = ticket.dealerBranch
+
+    if (!isKnownDealer) {
+      const parsedDealer = parseDealer(ticket.dealer)
+      if (parsedDealer.store === 'Robinsons') {
+        formDealer = 'Robinsons Appliances'
+        formDealerBranch = parsedDealer.branch || ticket.dealerBranch || ''
+      } else if (parsedDealer.store === 'Abenson') {
+        formDealer = 'Abenson'
+        formDealerBranch = parsedDealer.branch || ticket.dealerBranch || ''
+      } else if (parsedDealer.store === 'Direct') {
+        formDealer = 'Direct'
+        formDealerBranch = ''
+      } else if (parsedDealer.store === 'Other' && parsedDealer.customStore) {
+        formDealer = parsedDealer.customStore
+        formDealerBranch = parsedDealer.branch || ticket.dealerBranch || ''
+      }
+    }
+
+    // Fill the Create Ticket form with this ticket's data
+    setAddForm((prev: any) => ({
+      ...prev,
+      customerName: ticket.customerName,
+      contactPhone: ticket.contactPhone,
+      locationRaw: ticket.address,
+      district: ticket.district,
+      dealer: formDealer,
+      dealerBranch: formDealerBranch,
+      brand: ticket.brand,
+      capacity: ticket.capacity,
+      commitType: ticket.commitType,
+      installerName: ticket.installer,
+      serviceVehicle: ticket.vehicle,
+      driverName: ticket.driver,
+      remarksUpdate: ticket.remarks,
+      description: ticket.remarks,
+      status: ticket.serviceType,
+      serviceType: ticket.serviceType,
+      modeOfPayment: ticket.modeOfPayment,
+      installationCharges: ticket.installationCharges,
+      // Preserve the imported ticket's independent branch and negotiator selection.
+      branchId: ticket.branchId || prev.branchId,
+      assignedTo: ticket.assignedTo || '',
+      // Relayed Date: from Excel DATE RALAYED column (when relay was received)
+      relayedDate: ticket.relayedDate || new Date().toISOString().split('T')[0],
+      // Scheduled Date (finalDate): from the sheet's header date (dispatch date)
+      finalDate: ticket.scheduleDate || excelDate,
+      // Preferred Date: same as schedule date unless it's a resched
+      preferredDate: ticket.isResched ? '' : (ticket.scheduleDate || excelDate),
+    }))
+    // Set phone numbers
+    const phones = ticket.contactPhone.split(/[/,]|\s{2,}/).map(p => p.trim()).filter(Boolean)
+    setAddPhoneNumbers(phones.length > 0 ? phones : [''])
+    // Close picker, open create modal
+    setShowExcelPicker(false)
+    setOpenedFromExcel(true)
+    setExcelEditingIndex(ticketIdx)
+    setIsAddModalOpen(true)
+  }
+
+  const [excelBulkCreating, setExcelBulkCreating] = useState(false)
+  const [excelBulkProgress, setExcelBulkProgress] = useState({ done: 0, total: 0, errors: 0 })
+  const [showExcelNegotiatorWarning, setShowExcelNegotiatorWarning] = useState(false)
+  const [showExcelConfirmCreate, setShowExcelConfirmCreate] = useState(false)
+  const [excelConfirmSkipBranchCheck, setExcelConfirmSkipBranchCheck] = useState(false)
+  const [excelResultModal, setExcelResultModal] = useState<{ created: number; updated: number; errors: number } | null>(null)
+
+  const handleCreateAllExcelTickets = async (options?: { skipBranchCheck?: boolean }) => {
+    if (excelTickets.length === 0) return
+
+    // Check if any tickets have unmatched dealers — show popup to resolve them first
+    if (!options?.skipBranchCheck) {
+      if (excelUnmatchedDealers.length > 0) {
+        setUnmatchedDealerResolutions(new Map())
+        setShowUnmatchedDealerPopup(true)
+        return
+      }
+    }
+
+    // Check if all tickets have a negotiator assigned
+    const ticketsWithoutNegotiator = excelTickets.filter(t => !t.assignedTo)
+    if (ticketsWithoutNegotiator.length > 0) {
+      setShowExcelNegotiatorWarning(true)
+      return
+    }
+
+    // Show custom confirmation modal
+    setExcelConfirmSkipBranchCheck(Boolean(options?.skipBranchCheck))
+    setShowExcelConfirmCreate(true)
+  }
+
+  const executeExcelBulkCreate = async () => {
+    setShowExcelConfirmCreate(false)
+
+    setExcelBulkCreating(true)
+    setExcelBulkProgress({ done: 0, total: excelTickets.length, errors: 0 })
+
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    let errors = 0
+    let created = 0
+    let updated = 0
+
+    for (let i = 0; i < excelTickets.length; i++) {
+      const ticket = excelTickets[i]
+      try {
+        const phones = ticket.contactPhone.split(/[/,]|\s{2,}/).map((p: string) => p.trim()).filter(Boolean)
+        const resolvedStatus = resolveScheduleStatusFields(ticket.serviceType)
+        const brandHp = formatBrandCapacityLabel(ticket.brand, ticket.capacity)
+
+        // Build schedule history for RESCHED tickets
+        const scheduleHistory: Array<{ date: string; newDate: string; remarks: string; timestamp: string }> = []
+        if (ticket.isResched && (ticket.scheduleDate || excelDate)) {
+          scheduleHistory.push({
+            date: ticket.scheduleDate || excelDate,
+            newDate: '',
+            remarks: ticket.remarks || 'RESCHED',
+            timestamp: new Date().toISOString(),
+          })
+        }
+
+        const acDetailsObj = {
+          landmarks: '',
+          brand: ticket.brand || '',
+          capacity: ticket.capacity || '',
+          sku: '',
+          serialNumber: '',
+          alternatePhone: phones.slice(1).join(', '),
+          relayedDate: ticket.relayedDate || new Date().toISOString().split('T')[0],
+          finalDate: ticket.isResched ? '' : (ticket.scheduleDate || excelDate || ''),
+          installedDate: '',
+          driverName: ticket.driver || '',
+          ...(scheduleHistory.length > 0 ? { scheduleHistory: JSON.stringify(scheduleHistory) } : {}),
+          ...(ticket.isResched ? { previousScheduleDates: JSON.stringify([ticket.scheduleDate || excelDate]) } : {}),
+          ...(ticket.isResched ? { reschedulePending: true } : {}),
+          ...(resolvedStatus.schedulePhase !== undefined ? { schedulePhase: resolvedStatus.schedulePhase } : {}),
+          ...(resolvedStatus.scheduleOutcome !== undefined ? { scheduleOutcome: resolvedStatus.scheduleOutcome } : {}),
+        }
+
+        const selectedNegotiator = employees.find(employee => employee.id === ticket.assignedTo)
+        const writeBranchId = resolvePortalWriteBranchId(
+          ticket.branchId || resolveRelayDefaultBranchId() || '',
+          selectedNegotiator?.email,
+          selectedNegotiator?.jobTitle,
+        )
+        const relayBranchId = writeBranchId || resolveRelayDefaultBranchId() || user?.branchId || undefined
+
+        // ─── Duplicate Detection ─────────────────────────────────────────
+        // Search API for existing ticket with same customer name
+        const customerNameNorm = (ticket.customerName || '').trim().toUpperCase()
+        let existingTicketId: string | null = null
+
+        // Check pre-built map first
+        const mapMatch = excelExistingMap.get(customerNameNorm)
+        if (mapMatch) {
+          existingTicketId = mapMatch.id
+        }
+
+        // If not found in map, do a live API search
+        if (!existingTicketId && ticket.customerName) {
+          try {
+            const searchRes = await fetch(`${API_BASE_URL}/tickets?search=${encodeURIComponent(ticket.customerName.trim())}&size=20`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+            if (searchRes.ok) {
+              const searchData = await searchRes.json()
+              const payload = searchData?.data ?? searchData ?? {}
+              const results: any[] = payload?.tickets || searchData?.tickets || (Array.isArray(searchData) ? searchData : (searchData?.results || []))
+              const match = results.find((t: any) => {
+                const n = (t.customerName || t.customer_name || '').trim().toUpperCase()
+                return n === customerNameNorm
+              })
+              if (match?.id) existingTicketId = match.id
+            }
+          } catch { /* search failed — will create new */ }
+        }
+
+        if (existingTicketId) {
+          // UPDATE existing ticket via PATCH
+          const patchPayload: Record<string, any> = {
+            customerName: ticket.customerName || undefined,
+            contactPhone: (ticket.contactPhone || '').split(/[/,]|\s{2,}/)[0]?.trim() || '',
+            location: ticket.address || undefined,
+            district: ticket.district || undefined,
+            dealer: resolveRelayDealerForSubmit(ticket.dealer || 'Direct', ticket.dealerBranch || ''),
+            serviceType: ticket.serviceType,
+            branchId: relayBranchId,
+            assignedTo: ticket.assignedTo || undefined,
+            negotiatorId: ticket.assignedTo || undefined,
+            preferredDate: ticket.isResched ? undefined : (ticket.scheduleDate || excelDate || undefined),
+            installerName: ticket.installer || undefined,
+            serviceVehicle: ticket.vehicle || undefined,
+            remarksUpdate: ticket.remarks || undefined,
+            installationCharges: ticket.installationCharges || 0,
+            modeOfPayment: ticket.modeOfPayment || undefined,
+            acDetails: JSON.stringify(acDetailsObj),
+            status: resolvedStatus.status === 'SCHEDULED' && !(ticket.scheduleDate || excelDate) ? 'PENDING' : resolvedStatus.status,
+          }
+
+          const res = await fetch(`${API_BASE_URL}/tickets/${existingTicketId}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(patchPayload),
+          })
+          if (!res.ok) {
+            errors++
+          } else {
+            updated++
+          }
+        } else {
+          // CREATE new ticket
+          const createPayload = {
+            title: `${ticket.serviceType} service`,
+            description: ticket.remarks || '',
+            customerName: ticket.customerName,
+            serviceType: ticket.serviceType,
+            ticketCategory: resolvedStatus.ticketCategory || 'INSTALLATION',
+            unitType: brandHp || 'Split AC',
+            contactPhone: phones[0] || undefined,
+            location: ticket.address || 'No Address Provided',
+            dealer: resolveRelayDealerForSubmit(ticket.dealer || 'Direct', ticket.dealerBranch || ''),
+            preferredDate: ticket.scheduleDate || excelDate || undefined,
+            district: ticket.district || undefined,
+            commitType: ticket.commitType || undefined,
+            installerName: ticket.installer || undefined,
+            serviceVehicle: ticket.vehicle || undefined,
+            remarksUpdate: ticket.remarks || undefined,
+            installationCharges: ticket.installationCharges || 0,
+            modeOfPayment: ticket.modeOfPayment || undefined,
+            acDetails: JSON.stringify(acDetailsObj),
+            status: resolvedStatus.status === 'SCHEDULED' && !(ticket.scheduleDate || excelDate) ? 'PENDING' : resolvedStatus.status,
+            branchId: relayBranchId,
+            assignedTo: ticket.assignedTo || undefined,
+            negotiatorId: ticket.assignedTo || undefined,
+          }
+
+          const res = await fetch(`${API_BASE_URL}/tickets`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(createPayload),
+          })
+          if (!res.ok) {
+            errors++
+          } else {
+            created++
+            const payload = await res.json().catch(() => null)
+            const parsed = parseCreatedTicketResponse(payload)
+            const createdTicket = (parsed || payload?.data || payload) as Ticket
+            if (createdTicket?.id) {
+              applyRelayTicketLocally(createdTicket.id, createdTicket)
+            }
+          }
+        }
+      } catch {
+        errors++
+      }
+      setExcelBulkProgress({ done: i + 1, total: excelTickets.length, errors })
+    }
+
+    setExcelBulkCreating(false)
+    setShowExcelPicker(false)
+    setExcelResultModal({ created, updated, errors })
+  }
+
+  /** Resolve unmatched dealers: map to existing dealers or add new ones */
+  const handleResolveUnmatchedDealers = async () => {
+    setAddingDealers(true)
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    const added: { name: string; id: string; originalName: string }[] = []
+    const failed: string[] = []
+
+    // Separate resolutions into "map to existing" and "add new"
+    const toAdd: string[] = []
+    const mapped: { dealerName: string; existingDealerName: string }[] = []
+
+    for (const dealerName of excelUnmatchedDealers) {
+      const resolution = unmatchedDealerResolutions.get(dealerName)
+      if (!resolution || resolution === '__ADD_NEW__') {
+        toAdd.push(dealerName)
+      } else {
+        // Mapped to an existing dealer ID — find the dealer name
+        const existingDealer = dealers.find(d => d.id === resolution)
+        if (existingDealer) {
+          mapped.push({ dealerName, existingDealerName: existingDealer.name })
+        }
+      }
+    }
+
+    // Apply mapped dealers to tickets — update the dealer field to the correct existing name
+    if (mapped.length > 0) {
+      setExcelTickets(prev => prev.map(ticket => {
+        if (!ticket.dealer) return ticket
+        const match = mapped.find(m => m.dealerName.toUpperCase() === ticket.dealer.toUpperCase())
+        if (match) {
+          return { ...ticket, dealer: match.existingDealerName }
+        }
+        return ticket
+      }))
+    }
+
+    // Create new dealers for "add new" selections
+    for (const dealerName of toAdd) {
+      try {
+        const res = await fetch(`${API_BASE_URL}/dealers`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ name: dealerName.toUpperCase() }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          const newDealer = data?.data || data
+          added.push({ name: newDealer.name || dealerName.toUpperCase(), id: newDealer.id, originalName: dealerName })
+        } else {
+          failed.push(dealerName)
+        }
+      } catch {
+        failed.push(dealerName)
+      }
+    }
+
+    // Refresh dealers list
+    if (added.length > 0) {
+      fetchDealers()
+      notifyDealersUpdated()
+    }
+
+    // Clear resolved dealers from unmatched list
+    const resolvedNames = [...mapped.map(m => m.dealerName), ...added.map(a => a.originalName)]
+    setExcelUnmatchedDealers(prev => prev.filter(d => !resolvedNames.includes(d) || failed.includes(d)))
+
+    setAddingDealers(false)
+    setShowUnmatchedDealerPopup(false)
+
+    const totalResolved = mapped.length + added.length
+    if (failed.length > 0) {
+      alert(`Resolved ${totalResolved} dealers. ${failed.length} failed to create: ${failed.join(', ')}`)
+    } else if (totalResolved > 0) {
+      alert(`Done! ${mapped.length > 0 ? `${mapped.length} matched to existing` : ''}${mapped.length > 0 && added.length > 0 ? ', ' : ''}${added.length > 0 ? `${added.length} added as new` : ''}. You can now create the tickets.`)
+    }
+  }
+
+  /** Skip adding dealers and proceed with creation anyway */
+  const handleSkipUnmatchedDealers = () => {
+    setShowUnmatchedDealerPopup(false)
+    handleCreateAllExcelTickets({ skipBranchCheck: true })
+  }
   
   const relayCustomStores = useMemo(() => {
     return dealers.map(d => d.name).sort((a, b) => a.localeCompare(b))
@@ -1179,6 +1857,7 @@ export default function Relays() {
       ...prev,
       branchId: defaultBranch || prev.branchId,
     }))
+    setOpenedFromExcel(false)
     setIsAddModalOpen(true)
   }, [resolveRelayDefaultBranchId])
 
@@ -2745,6 +3424,23 @@ export default function Relays() {
               {/* Create Ticket Button */}
               <button
                 type="button"
+                onClick={() => excelFileRef.current?.click()}
+                className="flex items-center gap-1.5 md:gap-2 h-8 md:h-10 px-3 md:px-5 rounded-full font-bold text-[12px] md:text-[14px] hover:opacity-90 active:scale-95 transition-all shrink-0 shadow-md border"
+                style={{ background: isLight ? '#f8fafc' : '#1e293b', borderColor: border, color: textPrimary }}
+                title="Import tickets from Excel"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 md:w-4 md:h-4 text-emerald-500" />
+                <span className="hidden sm:inline">Excel</span>
+              </button>
+              <input
+                ref={excelFileRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={handleExcelFileChange}
+              />
+              <button
+                type="button"
                 onClick={openAddModal}
                 className="flex items-center gap-1.5 md:gap-2 h-8 md:h-10 px-4 md:px-6 rounded-full font-bold text-[12px] md:text-[14px] text-white hover:opacity-90 active:scale-95 transition-all shrink-0 shadow-md"
                 style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
@@ -3359,6 +4055,644 @@ export default function Relays() {
           parseAcDetails={(t) => parseAcDetails(t as Ticket)}
         />
       )}
+      {/* Excel Ticket Picker Modal */}
+      {showExcelPicker && ReactDOM.createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }}
+          onClick={() => setShowExcelPicker(false)}
+        >
+          <div
+            className="flex flex-col w-full max-w-6xl rounded-2xl overflow-hidden shadow-2xl border animate-in zoom-in-95 duration-200"
+            style={{ backgroundColor: cardBg, borderColor: border, maxHeight: '92vh' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-6 py-4 shrink-0" style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h2 className="text-lg font-black uppercase tracking-wide" style={{ color: textPrimary }}>
+                    Excel Import
+                  </h2>
+                  <p className="text-[11px] font-medium" style={{ color: textMuted }}>
+                    {excelFileName} — {excelTickets.length} tickets extracted
+                  </p>
+                </div>
+                <button type="button" onClick={() => setShowExcelPicker(false)} className="p-2 rounded-lg hover:bg-slate-500/10" style={{ color: textMuted }}>
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              {/* Bulk defaults — changes apply to all non-overridden tickets */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <label className="min-w-0">
+                  <span className="block mb-1 text-[9px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Schedule Date (All)</span>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      const input = event.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null
+                      input?.showPicker?.()
+                    }}
+                    className="relative flex w-full items-center justify-center rounded-lg border px-2 py-1.5 text-[11px] font-bold"
+                    style={{ backgroundColor: excelDate ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)') : inputBg, borderColor: excelDate ? '#10B981' : inputBorder, color: excelDate ? '#10B981' : textMuted, colorScheme: isLight ? 'light' : 'dark' }}
+                  >
+                    {excelDate ? new Date(excelDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'SET DATE'}
+                    <input
+                      type="date"
+                      value={excelDate}
+                      onChange={event => handleExcelHeaderDateChange(event.target.value)}
+                      className="absolute h-0 w-0 pointer-events-none opacity-0"
+                    />
+                  </button>
+                </label>
+                <label className="min-w-0">
+                  <span className="block mb-1 text-[9px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Branch (All)</span>
+                  <select
+                    value={excelDefaultBranchId}
+                    onChange={event => handleExcelHeaderBranchChange(event.target.value)}
+                    className="w-full rounded-lg border px-2 py-1.5 text-[11px] font-bold outline-none"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  >
+                    <option value="">Select branch...</option>
+                    {branches.map(branch => <option key={branch.id} value={branch.id}>{formatBranchName(branch.name)}</option>)}
+                  </select>
+                </label>
+                <label className="min-w-0">
+                  <span className="block mb-1 text-[9px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Negotiator (All)</span>
+                  <select
+                    value={excelDefaultNegotiator}
+                    onChange={event => handleExcelHeaderNegotiatorChange(event.target.value)}
+                    className="w-full rounded-lg border px-2 py-1.5 text-[11px] font-bold outline-none"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  >
+                    <option value="">Select negotiator...</option>
+                    {negotiatorsForBranch(excelDefaultBranchId || resolveRelayDefaultBranchId()).map(employee => {
+                      const branchName = employee.branchId ? formatBranchName(resolveBranch(employee.branchId)?.name || '') : ''
+                      const firstName = (employee.name || '').split(' ')[0]
+                      return <option key={employee.id} value={employee.id}>{(branchName ? `${firstName} - ${branchName}` : firstName).toUpperCase()}</option>
+                    })}
+                  </select>
+                </label>
+              </div>
+              <p className="mt-2 text-[9px] font-medium" style={{ color: textMuted }}>
+                ↑ Changing these updates all tickets. Override individual tickets below.
+                {excelDateOverrides.size + excelBranchOverrides.size + excelNegotiatorOverrides.size > 0 && (
+                  <span className="ml-2" style={{ color: '#f59e0b' }}>
+                    ({excelDateOverrides.size + excelBranchOverrides.size + excelNegotiatorOverrides.size} individual override{excelDateOverrides.size + excelBranchOverrides.size + excelNegotiatorOverrides.size > 1 ? 's' : ''})
+                  </span>
+                )}
+              </p>
+            </div>
+
+            {/* Ticket List */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-2 min-h-0">
+              {excelTickets.map((ticket, idx) => {
+                const nameKey = (ticket.customerName || '').replace(/\s+/g, ' ').trim().toUpperCase()
+                const existingTicket = excelExistingMap.get(nameKey)
+                const isExisting = Boolean(existingTicket)
+                const hasUnmatchedDealer = Boolean(ticket.dealer && excelUnmatchedDealers.includes(ticket.dealer))
+
+                return (
+                <div
+                  key={idx}
+                  className="w-full overflow-hidden rounded-xl border transition-all hover:border-emerald-500/50"
+                  style={{ backgroundColor: inputBg, borderColor: excelSelectMode && excelSelectedIdxs.has(idx) ? '#ef4444' : (isExisting ? (isLight ? '#60a5fa' : '#3b82f6') : inputBorder) }}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    setExcelContextMenu({ idx, x: e.clientX, y: e.clientY })
+                  }}
+                >
+                  {excelSelectMode && (
+                    <label className="flex items-center gap-2 px-3 pt-2 cursor-pointer" onClick={e => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={excelSelectedIdxs.has(idx)}
+                        onChange={() => {
+                          setExcelSelectedIdxs(prev => {
+                            const next = new Set(prev)
+                            if (next.has(idx)) next.delete(idx)
+                            else next.add(idx)
+                            return next
+                          })
+                        }}
+                        className="w-4 h-4 rounded accent-red-500"
+                      />
+                      <span className="text-[10px] font-bold" style={{ color: excelSelectedIdxs.has(idx) ? '#ef4444' : textMuted }}>
+                        {excelSelectedIdxs.has(idx) ? 'Selected for removal' : 'Select'}
+                      </span>
+                    </label>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handlePickExcelTicket(ticket, idx)}
+                    className="w-full text-left p-3 transition-all hover:bg-emerald-500/5 active:scale-[0.99]"
+                  >
+                    <div className="flex items-center justify-between gap-3 mb-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-sm font-bold truncate" style={{ color: textPrimary }}>
+                          {idx + 1}. {ticket.customerName}
+                        </span>
+                        {isExisting ? (
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" style={{ backgroundColor: 'rgba(59,130,246,0.15)', color: '#3b82f6' }}>
+                            EXISTS — WILL UPDATE
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10B981' }}>
+                            NEW
+                          </span>
+                        )}
+                        {hasUnmatchedDealer && (
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
+                            ⚠️ NO DEALER
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{
+                        backgroundColor: ticket.serviceType.startsWith('DONE') ? 'rgba(16,185,129,0.1)' : 'rgba(251,191,36,0.1)',
+                        color: ticket.serviceType.startsWith('DONE') ? '#10B981' : '#f59e0b',
+                      }}>
+                        {ticket.serviceType.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-4 text-[10px] font-medium" style={{ color: textMuted }}>
+                      {ticket.address && <span className="truncate max-w-[200px]">{ticket.address}</span>}
+                      {ticket.brand && <span>{ticket.brand} {ticket.capacity}</span>}
+                      {ticket.dealerBranch && <span style={{ color: hasUnmatchedDealer ? '#ef4444' : textMuted }}>🏢 {ticket.dealerBranch}</span>}
+                      {ticket.vehicle && <span>🚗 {ticket.vehicle}{ticket.driver ? ` (${ticket.driver})` : ''}</span>}
+                    </div>
+                    {ticket.remarks && (
+                      <p className="mt-1 text-[10px] font-medium truncate max-w-full" style={{ color: textMuted, opacity: 0.8 }}>
+                        💬 {ticket.remarks}
+                      </p>
+                    )}
+                  </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 px-3 py-2.5 border-t" style={{ borderColor: inputBorder, backgroundColor: isLight ? '#f8fafc' : 'rgba(255,255,255,0.02)' }}>
+                    <label className="min-w-0">
+                      <span className="block mb-1 text-[9px] font-black uppercase tracking-wider" style={{ color: excelDateOverrides.has(idx) ? '#f59e0b' : textMuted }}>Schedule Date{excelDateOverrides.has(idx) ? ' ✦' : ''}</span>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          const input = event.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null
+                          input?.showPicker?.()
+                        }}
+                        className="relative flex w-full items-center justify-center rounded-lg border px-2 py-1.5 text-[10px] font-bold"
+                        style={{ backgroundColor: ticket.scheduleDate ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)') : inputBg, borderColor: excelDateOverrides.has(idx) ? '#f59e0b' : (ticket.scheduleDate ? '#10B981' : inputBorder), color: ticket.scheduleDate ? '#10B981' : textMuted, colorScheme: isLight ? 'light' : 'dark' }}
+                      >
+                        {ticket.scheduleDate ? new Date(ticket.scheduleDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase() : 'ADD DATE'}
+                        <input
+                          type="date"
+                          value={ticket.scheduleDate}
+                          onChange={event => updateExcelTicket(idx, { scheduleDate: event.target.value })}
+                          className="absolute h-0 w-0 pointer-events-none opacity-0"
+                        />
+                      </button>
+                    </label>
+                    <label className="min-w-0">
+                      <span className="block mb-1 text-[9px] font-black uppercase tracking-wider" style={{ color: excelBranchOverrides.has(idx) ? '#f59e0b' : textMuted }}>Branch Zone{excelBranchOverrides.has(idx) ? ' ✦' : ''}</span>
+                      <select
+                        value={ticket.branchId}
+                        onChange={event => updateExcelTicket(idx, { branchId: event.target.value, assignedTo: '' })}
+                        className="w-full rounded-lg border px-2 py-1.5 text-[10px] font-bold outline-none"
+                        style={{ backgroundColor: inputBg, borderColor: excelBranchOverrides.has(idx) ? '#f59e0b' : inputBorder, color: textPrimary }}
+                      >
+                        <option value="">Select branch...</option>
+                        {branches.map(branch => <option key={branch.id} value={branch.id}>{formatBranchName(branch.name)}</option>)}
+                      </select>
+                    </label>
+                    <label className="min-w-0">
+                      <span className="block mb-1 text-[9px] font-black uppercase tracking-wider" style={{ color: excelNegotiatorOverrides.has(idx) ? '#f59e0b' : textMuted }}>Negotiator{excelNegotiatorOverrides.has(idx) ? ' ✦' : ''}</span>
+                      <select
+                        value={ticket.assignedTo}
+                        onChange={event => {
+                          const assignedTo = event.target.value
+                          const negotiator = negotiatorsForBranch(ticket.branchId || resolveRelayDefaultBranchId()).find(employee => employee.id === assignedTo)
+                          updateExcelTicket(idx, {
+                            assignedTo,
+                            branchId: negotiator?.branchId || ticket.branchId,
+                          })
+                        }}
+                        className="w-full rounded-lg border px-2 py-1.5 text-[10px] font-bold outline-none"
+                        style={{ backgroundColor: inputBg, borderColor: excelNegotiatorOverrides.has(idx) ? '#f59e0b' : inputBorder, color: textPrimary }}
+                      >
+                        <option value="">Select negotiator...</option>
+                        {negotiatorsForBranch(ticket.branchId || resolveRelayDefaultBranchId()).map(employee => {
+                          const branchName = employee.branchId ? formatBranchName(resolveBranch(employee.branchId)?.name || '') : ''
+                          const firstName = (employee.name || '').split(' ')[0]
+                          return <option key={employee.id} value={employee.id}>{(branchName ? `${firstName} - ${branchName}` : firstName).toUpperCase()}</option>
+                        })}
+                      </select>
+                    </label>
+                  </div>
+                </div>
+                )
+              })}
+            </div>
+
+            {/* Right-click context menu */}
+            {excelContextMenu && (
+              <div
+                className="fixed z-[10001]"
+                style={{ top: excelContextMenu.y, left: excelContextMenu.x }}
+              >
+                <div
+                  className="rounded-xl border shadow-xl overflow-hidden py-1 min-w-[160px]"
+                  style={{ backgroundColor: cardBg, borderColor: border }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handlePickExcelTicket(excelTickets[excelContextMenu.idx], excelContextMenu.idx)
+                      setExcelContextMenu(null)
+                    }}
+                    className="w-full text-left px-4 py-2 text-[11px] font-medium flex items-center gap-2 hover:bg-emerald-500/10 transition-colors"
+                    style={{ color: textPrimary }}
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-emerald-500" /> Edit Ticket
+                  </button>
+                  {(excelDateOverrides.has(excelContextMenu.idx) || excelBranchOverrides.has(excelContextMenu.idx) || excelNegotiatorOverrides.has(excelContextMenu.idx)) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const idx = excelContextMenu.idx
+                        setExcelDateOverrides(prev => { const next = new Set(prev); next.delete(idx); return next })
+                        setExcelBranchOverrides(prev => { const next = new Set(prev); next.delete(idx); return next })
+                        setExcelNegotiatorOverrides(prev => { const next = new Set(prev); next.delete(idx); return next })
+                        // Reset ticket to header defaults
+                        setExcelTickets(prev => prev.map((t, i) => {
+                          if (i !== idx) return t
+                          return { ...t, scheduleDate: excelDate, branchId: excelDefaultBranchId, assignedTo: excelDefaultNegotiator }
+                        }))
+                        setExcelContextMenu(null)
+                      }}
+                      className="w-full text-left px-4 py-2 text-[11px] font-medium flex items-center gap-2 hover:bg-amber-500/10 transition-colors"
+                      style={{ color: '#f59e0b' }}
+                    >
+                      <X className="w-3.5 h-3.5" /> Reset Overrides
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const removedIdx = excelContextMenu.idx
+                      setExcelTickets(prev => prev.filter((_, i) => i !== removedIdx))
+                      // Shift override indices after removal
+                      const shiftSet = (set: Set<number>) => {
+                        const next = new Set<number>()
+                        for (const i of set) {
+                          if (i < removedIdx) next.add(i)
+                          else if (i > removedIdx) next.add(i - 1)
+                          // i === removedIdx is dropped
+                        }
+                        return next
+                      }
+                      setExcelDateOverrides(prev => shiftSet(prev))
+                      setExcelBranchOverrides(prev => shiftSet(prev))
+                      setExcelNegotiatorOverrides(prev => shiftSet(prev))
+                      setExcelContextMenu(null)
+                    }}
+                    className="w-full text-left px-4 py-2 text-[11px] font-medium flex items-center gap-2 hover:bg-red-500/10 transition-colors"
+                    style={{ color: '#ef4444' }}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Remove Ticket
+                  </button>
+                </div>
+              </div>
+            )}
+            {excelContextMenu && (
+              <div className="fixed inset-0 z-[10000]" onClick={() => setExcelContextMenu(null)} />
+            )}
+
+            {/* Footer */}
+            <div className="px-6 py-3 flex items-center justify-between shrink-0" style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
+              <div className="flex items-center gap-2">
+                {excelSelectMode ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (excelSelectedIdxs.size === excelTickets.length) {
+                          setExcelSelectedIdxs(new Set())
+                        } else {
+                          setExcelSelectedIdxs(new Set(excelTickets.map((_, i) => i)))
+                        }
+                      }}
+                      className="px-3 py-1.5 border rounded-lg text-[10px] font-bold"
+                      style={{ borderColor: inputBorder, color: textMuted }}
+                    >
+                      {excelSelectedIdxs.size === excelTickets.length ? 'Deselect All' : 'Select All'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (excelSelectedIdxs.size === 0) return
+                        const toRemove = excelSelectedIdxs
+                        setExcelTickets(prev => prev.filter((_, i) => !toRemove.has(i)))
+                        // Shift override indices
+                        const shiftSets = (set: Set<number>) => {
+                          const sorted = [...toRemove].sort((a, b) => b - a)
+                          let result = new Set(set)
+                          for (const removedIdx of sorted) {
+                            const next = new Set<number>()
+                            for (const i of result) {
+                              if (i < removedIdx) next.add(i)
+                              else if (i > removedIdx) next.add(i - 1)
+                            }
+                            result = next
+                          }
+                          return result
+                        }
+                        setExcelDateOverrides(prev => shiftSets(prev))
+                        setExcelBranchOverrides(prev => shiftSets(prev))
+                        setExcelNegotiatorOverrides(prev => shiftSets(prev))
+                        setExcelSelectedIdxs(new Set())
+                        setExcelSelectMode(false)
+                      }}
+                      disabled={excelSelectedIdxs.size === 0}
+                      className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white disabled:opacity-50"
+                      style={{ backgroundColor: '#ef4444' }}
+                    >
+                      Remove {excelSelectedIdxs.size} Selected
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setExcelSelectMode(false); setExcelSelectedIdxs(new Set()) }}
+                      className="px-3 py-1.5 text-[10px] font-bold"
+                      style={{ color: textMuted }}
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <p className="text-[10px] font-medium" style={{ color: textMuted }}>
+                    {excelBulkCreating
+                      ? `Creating... ${excelBulkProgress.done}/${excelBulkProgress.total}${excelBulkProgress.errors > 0 ? ` (${excelBulkProgress.errors} errors)` : ''}`
+                      : 'Click a ticket to fill form, or create all at once'
+                    }
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {!excelSelectMode && (
+                  <button type="button" onClick={() => setExcelSelectMode(true)} disabled={excelBulkCreating} className="px-3 py-2 border rounded-xl text-[10px] font-bold disabled:opacity-50" style={{ borderColor: inputBorder, color: '#ef4444' }}>
+                    <Trash2 className="w-3 h-3 inline mr-1" />Batch
+                  </button>
+                )}
+                <button type="button" onClick={() => setShowExcelPicker(false)} disabled={excelBulkCreating} className="px-4 py-2 border rounded-xl text-xs font-bold disabled:opacity-50" style={{ borderColor: inputBorder, color: textMuted }}>
+                  Close
+                </button>
+                {!excelSelectMode && (
+                  <button
+                    type="button"
+                    onClick={handleCreateAllExcelTickets}
+                    disabled={excelBulkCreating || excelTickets.length === 0}
+                    className="px-5 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-50 shadow-md"
+                    style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
+                  >
+                    {excelBulkCreating
+                      ? `${excelBulkProgress.done}/${excelBulkProgress.total}...`
+                      : `Update ${excelTickets.length} Tickets`
+                    }
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Unmatched Branch Popup */}
+      {showUnmatchedDealerPopup && ReactDOM.createPortal(
+        <div
+          className="fixed inset-0 z-[10000] flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}
+          onClick={() => setShowUnmatchedDealerPopup(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl border animate-in zoom-in-95 duration-200"
+            style={{ backgroundColor: cardBg, borderColor: border }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-6 py-4" style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#fef2f2' : 'rgba(239,68,68,0.05)' }}>
+              <div className="flex items-center gap-2 mb-1">
+                <AlertTriangle className="w-5 h-5 text-red-500" />
+                <h3 className="text-base font-black" style={{ color: textPrimary }}>Unmatched Dealers</h3>
+              </div>
+              <p className="text-[11px] font-medium" style={{ color: textMuted }}>
+                {excelUnmatchedDealers.length} dealer{excelUnmatchedDealers.length > 1 ? 's' : ''} from the Excel file {excelUnmatchedDealers.length > 1 ? 'don\'t' : 'doesn\'t'} exist in the system. Select an existing dealer or add as new.
+              </p>
+            </div>
+            <div className="px-6 py-4 space-y-3 max-h-[400px] overflow-y-auto">
+              {excelUnmatchedDealers.map((dealerName, i) => {
+                const resolution = unmatchedDealerResolutions.get(dealerName)
+                const isResolved = resolution && resolution !== '__ADD_NEW__'
+                const isAddNew = resolution === '__ADD_NEW__'
+                return (
+                  <div key={i} className="rounded-xl border overflow-hidden" style={{ borderColor: isResolved ? '#10B981' : (isAddNew ? '#f59e0b' : 'rgba(239,68,68,0.5)'), backgroundColor: isLight ? (isResolved ? '#f0fdf4' : '#fef2f2') : (isResolved ? 'rgba(16,185,129,0.05)' : 'rgba(239,68,68,0.05)') }}>
+                    <div className="px-3 py-2 flex items-center gap-2">
+                      <span className="text-[11px]">{isResolved ? '✅' : (isAddNew ? '➕' : '⚠️')}</span>
+                      <span className="text-[11px] font-black flex-1 truncate" style={{ color: isResolved ? '#10B981' : (isAddNew ? '#f59e0b' : '#ef4444') }}>{dealerName}</span>
+                    </div>
+                    <div className="px-3 pb-2.5">
+                      <UnmatchedDealerDropdown
+                        dealerName={dealerName}
+                        dealers={dealers}
+                        value={resolution || ''}
+                        onChange={(val) => {
+                          setUnmatchedDealerResolutions(prev => {
+                            const next = new Map(prev)
+                            next.set(dealerName, val)
+                            return next
+                          })
+                        }}
+                        isLight={isLight}
+                        inputBg={inputBg}
+                        inputBorder={inputBorder}
+                        textPrimary={textPrimary}
+                        textMuted={textMuted}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="px-6 py-4 flex flex-col gap-2" style={{ borderTop: `1px solid ${border}` }}>
+              <button
+                type="button"
+                onClick={handleResolveUnmatchedDealers}
+                disabled={addingDealers}
+                className="w-full px-4 py-2.5 rounded-xl text-xs font-bold text-white disabled:opacity-50 shadow-md"
+                style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
+              >
+                {addingDealers ? 'Applying...' : 'Apply & Continue'}
+              </button>
+              <button
+                type="button"
+                onClick={handleSkipUnmatchedDealers}
+                disabled={addingDealers}
+                className="w-full px-4 py-2 rounded-xl text-xs font-bold border disabled:opacity-50"
+                style={{ borderColor: inputBorder, color: textMuted }}
+              >
+                Skip — Create Tickets Anyway
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowUnmatchedDealerPopup(false)}
+                disabled={addingDealers}
+                className="w-full px-4 py-1.5 text-[10px] font-medium disabled:opacity-50"
+                style={{ color: textMuted }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Negotiator Required Warning */}
+      {showExcelNegotiatorWarning && ReactDOM.createPortal(
+        <div
+          className="fixed inset-0 z-[10000] flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}
+          onClick={() => setShowExcelNegotiatorWarning(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl border animate-in zoom-in-95 duration-200"
+            style={{ backgroundColor: cardBg, borderColor: border }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-6 py-5 text-center">
+              <div className="mx-auto w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: 'rgba(239,68,68,0.1)' }}>
+                <AlertTriangle className="w-6 h-6 text-red-500" />
+              </div>
+              <h3 className="text-base font-black mb-2" style={{ color: textPrimary }}>Negotiator Required</h3>
+              <p className="text-[12px] font-medium mb-1" style={{ color: textMuted }}>
+                {excelTickets.filter(t => !t.assignedTo).length} ticket{excelTickets.filter(t => !t.assignedTo).length > 1 ? 's' : ''} {excelTickets.filter(t => !t.assignedTo).length > 1 ? 'don\'t' : 'doesn\'t'} have a negotiator assigned.
+              </p>
+              <p className="text-[11px] font-medium" style={{ color: textMuted }}>
+                Please assign a negotiator to all tickets before importing.
+              </p>
+            </div>
+            <div className="px-6 pb-5">
+              <button
+                type="button"
+                onClick={() => setShowExcelNegotiatorWarning(false)}
+                className="w-full px-4 py-2.5 rounded-xl text-xs font-bold text-white shadow-md"
+                style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}
+              >
+                Go Back & Assign Negotiators
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Confirm Create All Tickets */}
+      {showExcelConfirmCreate && ReactDOM.createPortal(
+        <div
+          className="fixed inset-0 z-[10000] flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}
+          onClick={() => setShowExcelConfirmCreate(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl border animate-in zoom-in-95 duration-200"
+            style={{ backgroundColor: cardBg, borderColor: border }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-6 py-5 text-center">
+              <div className="mx-auto w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: 'rgba(16,185,129,0.1)' }}>
+                <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+              </div>
+              <h3 className="text-base font-black mb-2" style={{ color: textPrimary }}>Confirm Import</h3>
+              <p className="text-[12px] font-medium" style={{ color: textMuted }}>
+                Import {excelTickets.length} ticket{excelTickets.length > 1 ? 's' : ''} from the Excel file?
+              </p>
+              <p className="text-[11px] font-medium mt-1" style={{ color: textMuted }}>
+                {(() => {
+                  const newCount = excelTickets.filter(t => !excelExistingMap.has((t.customerName || '').trim().toUpperCase())).length
+                  const syncCount = excelTickets.length - newCount
+                  if (syncCount > 0) return `${newCount} new ticket${newCount !== 1 ? 's' : ''} will be created, ${syncCount} existing will be updated.`
+                  return 'All tickets will be created as new.'
+                })()}
+              </p>
+            </div>
+            <div className="px-6 pb-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowExcelConfirmCreate(false)}
+                className="flex-1 px-4 py-2.5 rounded-xl text-xs font-bold border"
+                style={{ borderColor: inputBorder, color: textMuted }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executeExcelBulkCreate}
+                className="flex-1 px-4 py-2.5 rounded-xl text-xs font-bold text-white shadow-md"
+                style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
+              >
+                Yes, Import All
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Import Result Modal */}
+      {excelResultModal && ReactDOM.createPortal(
+        <div
+          className="fixed inset-0 z-[10000] flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl border animate-in zoom-in-95 duration-200"
+            style={{ backgroundColor: cardBg, borderColor: border }}
+          >
+            <div className="px-6 py-5 text-center">
+              <div className="mx-auto w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: excelResultModal.errors > 0 ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)' }}>
+                {excelResultModal.errors > 0
+                  ? <AlertTriangle className="w-6 h-6 text-red-500" />
+                  : <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+                }
+              </div>
+              <h3 className="text-base font-black mb-2" style={{ color: textPrimary }}>
+                {excelResultModal.errors > 0 ? 'Import Completed with Errors' : 'Import Successful!'}
+              </h3>
+              <div className="space-y-1">
+                {excelResultModal.created > 0 && (
+                  <p className="text-[12px] font-bold" style={{ color: '#10B981' }}>
+                    {excelResultModal.created} ticket{excelResultModal.created > 1 ? 's' : ''} created
+                  </p>
+                )}
+                {excelResultModal.updated > 0 && (
+                  <p className="text-[12px] font-bold" style={{ color: '#3b82f6' }}>
+                    {excelResultModal.updated} ticket{excelResultModal.updated > 1 ? 's' : ''} updated
+                  </p>
+                )}
+                {excelResultModal.errors > 0 && (
+                  <p className="text-[12px] font-bold" style={{ color: '#ef4444' }}>
+                    {excelResultModal.errors} failed
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="px-6 pb-5">
+              <button
+                type="button"
+                onClick={() => { setExcelResultModal(null); window.location.reload() }}
+                className="w-full px-4 py-2.5 rounded-xl text-xs font-bold text-white shadow-md"
+                style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* Centered Create Ticket Modal */}
       {isAddModalOpen && ReactDOM.createPortal((() => {
 
@@ -3942,6 +5276,43 @@ export default function Relays() {
                   Required: customer name, address, negotiator
                 </p>
                 <div className="flex items-center gap-3 ml-auto">
+                  {openedFromExcel && (
+                    <button type="button" onClick={() => {
+                      // Save current form edits back to the excelTickets array
+                      if (excelEditingIndex !== null) {
+                        const form = addForm as any
+                        setExcelTickets(prev => prev.map((t, i) => {
+                          if (i !== excelEditingIndex) return t
+                          return {
+                            ...t,
+                            customerName: form.customerName,
+                            contactPhone: addPhoneNumbers.filter(Boolean).join(' / '),
+                            address: form.locationRaw,
+                            district: form.district,
+                            brand: form.brand,
+                            capacity: form.capacity,
+                            commitType: form.commitType,
+                            installer: form.installerName,
+                            vehicle: form.serviceVehicle,
+                            driver: form.driverName,
+                            remarks: form.description || form.remarksUpdate,
+                            serviceType: form.serviceType,
+                            modeOfPayment: form.modeOfPayment,
+                            installationCharges: form.installationCharges,
+                            scheduleDate: form.finalDate,
+                            branchId: form.branchId,
+                            assignedTo: form.assignedTo,
+                            dealer: form.dealer,
+                            dealerBranch: form.dealerBranch,
+                          }
+                        }))
+                      }
+                      setIsAddModalOpen(false)
+                      setShowExcelPicker(true)
+                    }} className="px-5 py-2.5 border rounded-xl text-sm font-bold transition-all hover:bg-emerald-500/10 hover:border-emerald-500/30" style={{ borderColor: inputBorder, color: '#10B981' }}>
+                      ← Save & Back to Excel
+                    </button>
+                  )}
                   <button type="button" onClick={() => setIsAddModalOpen(false)} className="px-5 py-2.5 border rounded-xl text-sm font-bold transition-all hover:bg-slate-500/10" style={{ borderColor: inputBorder, color: textMuted }}>
                     Cancel
                   </button>
