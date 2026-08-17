@@ -798,6 +798,7 @@ export default function Relays() {
   const role = (user?.role || '').toLowerCase()
   const isAdmin = isPortalAdmin(role)
   const canEdit = !!user && role !== 'customer'
+  const isAdminOrManagement = role === 'admin' || role === 'management' || role === 'administrator'
 
   // Colors
   const cardBg = isLight ? '#ffffff' : '#0A1120'
@@ -3442,24 +3443,29 @@ export default function Relays() {
                   <Settings className="w-4 h-4 md:w-4.5 md:h-4.5" />
                 </button>
               )}
+              {/* Excel Import — admin/management only */}
+              {isAdminOrManagement && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => excelFileRef.current?.click()}
+                    className="flex items-center gap-1.5 md:gap-2 h-8 md:h-10 px-3 md:px-5 rounded-full font-bold text-[12px] md:text-[14px] hover:opacity-90 active:scale-95 transition-all shrink-0 shadow-md border"
+                    style={{ background: isLight ? '#f8fafc' : '#1e293b', borderColor: border, color: textPrimary }}
+                    title="Import tickets from Excel"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 md:w-4 md:h-4 text-emerald-500" />
+                    <span className="hidden sm:inline">Excel</span>
+                  </button>
+                  <input
+                    ref={excelFileRef}
+                    type="file"
+                    accept=".xlsx,.xls"
+                    className="hidden"
+                    onChange={handleExcelFileChange}
+                  />
+                </>
+              )}
               {/* Create Ticket Button */}
-              <button
-                type="button"
-                onClick={() => excelFileRef.current?.click()}
-                className="flex items-center gap-1.5 md:gap-2 h-8 md:h-10 px-3 md:px-5 rounded-full font-bold text-[12px] md:text-[14px] hover:opacity-90 active:scale-95 transition-all shrink-0 shadow-md border"
-                style={{ background: isLight ? '#f8fafc' : '#1e293b', borderColor: border, color: textPrimary }}
-                title="Import tickets from Excel"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 md:w-4 md:h-4 text-emerald-500" />
-                <span className="hidden sm:inline">Excel</span>
-              </button>
-              <input
-                ref={excelFileRef}
-                type="file"
-                accept=".xlsx,.xls"
-                className="hidden"
-                onChange={handleExcelFileChange}
-              />
               <button
                 type="button"
                 onClick={openAddModal}
