@@ -1012,7 +1012,7 @@ export default function Relays() {
   const [excelDefaultBranchId, setExcelDefaultBranchId] = useState('')
   const [excelDefaultNegotiator, setExcelDefaultNegotiator] = useState('')
   // Dealer matching state — auto-match Excel dealer names to existing dealers via Gemini AI
-  const [excelDealerMatches, setExcelDealerMatches] = useState<Map<string, DealerParseResult>>(new Map())
+  const [, setExcelDealerMatches] = useState<Map<string, DealerParseResult>>(new Map())
   const [excelUnmatchedDealers, setExcelUnmatchedDealers] = useState<string[]>([])
   const [showUnmatchedDealerPopup, setShowUnmatchedDealerPopup] = useState(false)
   const [addingDealers, setAddingDealers] = useState(false)
@@ -1271,7 +1271,7 @@ export default function Relays() {
   const [excelBulkProgress, setExcelBulkProgress] = useState({ done: 0, total: 0, errors: 0 })
   const [showExcelNegotiatorWarning, setShowExcelNegotiatorWarning] = useState(false)
   const [showExcelConfirmCreate, setShowExcelConfirmCreate] = useState(false)
-  const [excelConfirmSkipBranchCheck, setExcelConfirmSkipBranchCheck] = useState(false)
+  const [, setExcelConfirmSkipBranchCheck] = useState(false)
   const [excelResultModal, setExcelResultModal] = useState<{ created: number; updated: number; errors: number } | null>(null)
 
   const handleCreateAllExcelTickets = async (options?: { skipBranchCheck?: boolean }) => {
@@ -1731,7 +1731,6 @@ export default function Relays() {
     installerName: '',
     driverName: '',
     serviceVehicle: '',
-    driverName: '',
     remarksUpdate: '',
     installationCharges: 0,
     modeOfPayment: '',
@@ -4464,7 +4463,7 @@ export default function Relays() {
                 {!excelSelectMode && (
                   <button
                     type="button"
-                    onClick={handleCreateAllExcelTickets}
+                    onClick={() => handleCreateAllExcelTickets()}
                     disabled={excelBulkCreating || excelTickets.length === 0}
                     className="px-5 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-50 shadow-md"
                     style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
