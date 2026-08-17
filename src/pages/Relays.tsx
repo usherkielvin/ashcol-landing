@@ -1737,6 +1737,7 @@ export default function Relays() {
     installerName: '',
     driverName: '',
     serviceVehicle: '',
+    driverName: '',
     remarksUpdate: '',
     installationCharges: 0,
     modeOfPayment: '',
@@ -2379,8 +2380,10 @@ export default function Relays() {
       relayedDate: addForm.relayedDate || new Date().toISOString().split('T')[0],
       finalDate: addForm.finalDate || '',
       installedDate: addForm.installedDate || '',
+      driverName: addForm.driverName || '',
       ...(resolvedCreateStatus.schedulePhase !== undefined ? { schedulePhase: resolvedCreateStatus.schedulePhase } : {}),
       ...(resolvedCreateStatus.scheduleOutcome !== undefined ? { scheduleOutcome: resolvedCreateStatus.scheduleOutcome } : {}),
+      ...(addPayments.length > 1 ? { paymentBreakdown: addPayments.filter(p => p.amount > 0) } : {}),
     }
     const writeBranchId = resolvePortalWriteBranchId(
       addForm.branchId || resolveRelayDefaultBranchId(),
@@ -2417,13 +2420,13 @@ export default function Relays() {
       district: addForm.district || undefined,
       commitType: addForm.commitType || undefined,
       installerName: addForm.installerName || undefined,
-      driverName: addForm.driverName || undefined,
       assignedTo: addForm.assignedTo || undefined,
       negotiatorId: addForm.assignedTo || undefined,
       serviceVehicle: addForm.serviceVehicle || undefined,
+      driverName: addForm.driverName || undefined,
       remarksUpdate: addForm.remarksUpdate || undefined,
-      installationCharges: Number(addForm.installationCharges) || 0,
-      modeOfPayment: addForm.modeOfPayment || undefined,
+      installationCharges: addPayments.reduce((sum, p) => sum + p.amount, 0) || (Number(addForm.installationCharges) || 0),
+      modeOfPayment: addPayments.length > 1 ? 'HYBRID' : (addPayments[0]?.mode || addForm.modeOfPayment || undefined),
       controlNumber: addForm.controlNumber || undefined,
       ticketNumber: syncTicketNumber,
       acDetails: JSON.stringify(acDetailsObj),
@@ -5328,7 +5331,7 @@ export default function Relays() {
                         </RelayFormField>
                         <div className="col-span-3 flex gap-1 pb-[2px]">
                           {pIdx === addPayments.length - 1 && (
-                            <button type="button" onClick={() => setAddPayments(prev => [...prev, { mode: '', amount: 0 }])} className="px-2.5 py-2 rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 font-bold text-xs">+</button>
+                            <button type="button" onClick={() => { setAddPayments(prev => [...prev, { mode: '', amount: 0 }]); setAddForm(prev => ({ ...prev, modeOfPayment: 'HYBRID' })) }} className="px-2.5 py-2 rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 font-bold text-xs">+</button>
                           )}
                           {addPayments.length > 1 && (
                             <button type="button" onClick={() => { const next = addPayments.filter((_, i) => i !== pIdx); setAddPayments(next); setAddForm(prev => ({ ...prev, modeOfPayment: next.map(p => p.mode).filter(Boolean).join(' / '), installationCharges: next.reduce((sum, p) => sum + p.amount, 0) })) }} className="px-2.5 py-2 rounded-lg text-white bg-red-600 hover:bg-red-700 font-bold text-xs">−</button>
@@ -5341,6 +5344,43 @@ export default function Relays() {
                         Total: ₱{addPayments.reduce((sum, p) => sum + p.amount, 0).toLocaleString()}
                       </p>
                     )}
+                  </div>
+                </section>
+
+                {/* 8. Dispatch */}
+                <section>
+                  <RelayFormSectionHead step={8} icon={<Truck className="w-3.5 h-3.5" />} title="Dispatch" subtitle="Vehicle, driver & installer assignment" />
+                  <div className="grid grid-cols-12 gap-3.5">
+                    <RelayFormField label="Vehicle" compact className="md:col-span-4">
+                      <input
+                        type="text"
+                        value={addForm.serviceVehicle}
+                        onChange={e => setAddForm(prev => ({ ...prev, serviceVehicle: e.target.value }))}
+                        placeholder="e.g. FB19, T2, T3"
+                        className={addInput}
+                        style={fieldStyle(addForm.serviceVehicle)}
+                      />
+                    </RelayFormField>
+                    <RelayFormField label="Driver" compact className="md:col-span-4">
+                      <input
+                        type="text"
+                        value={addForm.driverName}
+                        onChange={e => setAddForm(prev => ({ ...prev, driverName: e.target.value }))}
+                        placeholder="Driver name"
+                        className={addInput}
+                        style={fieldStyle(addForm.driverName)}
+                      />
+                    </RelayFormField>
+                    <RelayFormField label="Installer / Technician" compact className="md:col-span-4">
+                      <input
+                        type="text"
+                        value={addForm.installerName}
+                        onChange={e => setAddForm(prev => ({ ...prev, installerName: e.target.value }))}
+                        placeholder="Installer name"
+                        className={addInput}
+                        style={fieldStyle(addForm.installerName)}
+                      />
+                    </RelayFormField>
                   </div>
                 </section>
               </div>
