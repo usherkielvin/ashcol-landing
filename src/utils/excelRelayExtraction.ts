@@ -37,6 +37,8 @@ export interface ExtractedRelayTicket {
   installer: string
   modeOfPayment: string
   installationCharges: number
+  /** Individual payment lines (for multi-payment scenarios) */
+  payments: { mode: string; amount: number }[]
   /** ISO date string from the Excel header — the active schedule/dispatch date */
   scheduleDate: string
   /** ISO date string from the Excel 'DATE RALAYED' column — when relay was received */
@@ -277,24 +279,52 @@ function cleanInstaller(val: string): string {
   return val.replace(/\s*-\s*\d+\s*$/, '').trim()
 }
 
-function mapPayment(mode: string, charges: string): { modeOfPayment: string; amount: number } {
+function mapPayment(mode: string, charges: string): { modeOfPayment: string; amount: number; payments: { mode: string; amount: number }[] } {
   const mop = mode.toUpperCase().trim()
   const ch = charges.toUpperCase().trim()
 
   if (ch === '' || ch === 'FREE' || ch === 'WW' || ch === '0' || ch === '-' || ch === 'N/A') {
-    return { modeOfPayment: 'NO_PAYMENT', amount: 0 }
+    return { modeOfPayment: 'NO_PAYMENT', amount: 0, payments: [{ mode: 'NO_PAYMENT', amount: 0 }] }
   }
-  if (mop === '' || mop === 'FREE' || mop === 'WW' || mop === 'N/A') {
+
+  // Handle multiple payments in one cell (separated by newlines, multiple spaces, or /)
+  const chargeLines = charges.split(/[\n\r]|\s{2,}/).map(p => p.trim()).filter(Boolean)
+  const modeLines = mode.split(/[\n\r]|\s{2,}/).map(p => p.trim()).filter(Boolean)
+
+  const payments: { mode: string; amount: number }[] = []
+  let totalAmount = 0
+  const modes: string[] = []
+
+  for (let i = 0; i < Math.max(chargeLines.length, modeLines.length); i++) {
+    const chargeStr = chargeLines[i] || ''
+    const num = parseFloat(chargeStr.replace(/,/g, ''))
+    const amt = isNaN(num) ? 0 : num
+    totalAmount += amt
+
+    const lineMode = (modeLines[i] || modeLines[0] || mop || '').toUpperCase().trim()
+    const mapped = PAYMENT_MAP[lineMode] || lineMode
+    if (mapped && mapped !== 'NO_PAYMENT' && !modes.includes(mapped)) {
+      modes.push(mapped)
+    }
+    if (amt > 0 || mapped) {
+      payments.push({ mode: mapped || 'NO_PAYMENT', amount: amt })
+    }
+  }
+
+  // If no valid charges parsed, try single parse
+  if (totalAmount === 0) {
     const num = parseFloat(charges.replace(/,/g, ''))
-    return { modeOfPayment: 'NO_PAYMENT', amount: isNaN(num) ? 0 : num }
+    if (!isNaN(num)) totalAmount = num
   }
 
-  const mappedMode = PAYMENT_MAP[mop] || mop
-  let normalizedMode = mappedMode
-  if (normalizedMode === 'CHECKE') normalizedMode = 'CHEQUE'
+  if (payments.length === 0) {
+    const singleMode = PAYMENT_MAP[mop] || mop || 'NO_PAYMENT'
+    payments.push({ mode: singleMode, amount: totalAmount })
+  }
 
-  const num = parseFloat(charges.replace(/,/g, ''))
-  return { modeOfPayment: normalizedMode, amount: isNaN(num) ? 0 : num }
+  const finalMode = modes.length > 0 ? modes.join(' / ') : (PAYMENT_MAP[mop] || mop || 'NO_PAYMENT')
+
+  return { modeOfPayment: finalMode, amount: totalAmount, payments }
 }
 
 function splitDealer(dlr: string): { dealer: string; branch: string } {
@@ -373,7 +403,7 @@ export async function extractRelayTicketsFromExcel(file: File): Promise<ExcelExt
     const driver = explicitDriver || (vehicle ? (driverMap[vehicle] || '') : '')
     const mopField = findValue(rec, 'MODE OF PAYMENT')
     const chargesField = findValue(rec, 'INSTALLATION CHARGES')
-    const { modeOfPayment, amount } = mapPayment(mopField, chargesField)
+    const { modeOfPayment, amount, payments } = mapPayment(mopField, chargesField)
     const dlrField = findValue(rec, 'DLR')
     const { dealer, branch } = splitDealer(dlrField)
 
@@ -403,14 +433,43 @@ export async function extractRelayTicketsFromExcel(file: File): Promise<ExcelExt
       installer: cleanInstaller(findValue(rec, 'INSTALLER')),
       modeOfPayment,
       installationCharges: amount,
+      payments,
       scheduleDate,
       relayedDate,
       isResched,
     })
   }
 
+  // 7. Merge continuation rows — if a row has no customer name OR same name as previous, it's extra payment
+  const mergedTickets: ExtractedRelayTicket[] = []
+  for (const ticket of tickets) {
+    const prevTicket = mergedTickets.length > 0 ? mergedTickets[mergedTickets.length - 1] : null
+    const isContinuation = !ticket.customerName
+      || (prevTicket && ticket.customerName === prevTicket.customerName && ticket.installationCharges > 0)
+
+    if (isContinuation && prevTicket) {
+      // Continuation row — add payment to previous ticket
+      prevTicket.installationCharges += ticket.installationCharges
+      // Merge payments array
+      prevTicket.payments = [...prevTicket.payments, ...ticket.payments.filter(p => p.amount > 0)]
+      if (ticket.modeOfPayment && ticket.modeOfPayment !== 'NO_PAYMENT') {
+        if (prevTicket.modeOfPayment && prevTicket.modeOfPayment !== 'NO_PAYMENT' && prevTicket.modeOfPayment !== ticket.modeOfPayment) {
+          prevTicket.modeOfPayment = `${prevTicket.modeOfPayment} / ${ticket.modeOfPayment}`
+        } else if (!prevTicket.modeOfPayment || prevTicket.modeOfPayment === 'NO_PAYMENT') {
+          prevTicket.modeOfPayment = ticket.modeOfPayment
+        }
+      }
+      // Also merge remarks if present
+      if (ticket.remarks && ticket.remarks !== prevTicket.remarks) {
+        prevTicket.remarks = prevTicket.remarks ? `${prevTicket.remarks} | ${ticket.remarks}` : ticket.remarks
+      }
+    } else {
+      mergedTickets.push({ ...ticket })
+    }
+  }
+
   return {
-    tickets,
+    tickets: mergedTickets,
     scheduleDate,
     totalRows: records.length,
     skippedRows,

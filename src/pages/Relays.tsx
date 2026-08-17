@@ -6,7 +6,7 @@ import {
   Building2, Trash2, MapPin,
   ChevronDown, Plus, CheckCircle2, AlertCircle, Package, CalendarDays,
   Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3, Clock, Check,
-  Store, UserRound, Wind, MessageSquare, Users, Settings, Truck, Wallet
+  Store, UserRound, Wind, MessageSquare, Users, Settings, Truck, Wallet, CreditCard
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -1251,6 +1251,21 @@ export default function Relays() {
     // Set phone numbers
     const phones = ticket.contactPhone.split(/[/,]|\s{2,}/).map(p => p.trim()).filter(Boolean)
     setAddPhoneNumbers(phones.length > 0 ? phones : [''])
+    // Set payments — use the ticket's payments array directly if available
+    if (ticket.payments && ticket.payments.length > 0 && ticket.payments.some(p => p.amount > 0 || p.mode)) {
+      setAddPayments(ticket.payments.map(p => ({ mode: p.mode || '', amount: p.amount || 0 })))
+    } else {
+      const modes = (ticket.modeOfPayment || '').split(/[/,]/).map(m => m.trim()).filter(Boolean)
+      if (modes.length > 1 && ticket.installationCharges > 0) {
+        const perPayment = Math.round(ticket.installationCharges / modes.length)
+        setAddPayments(modes.map((mode, i) => ({
+          mode,
+          amount: i === modes.length - 1 ? ticket.installationCharges - perPayment * (modes.length - 1) : perPayment,
+        })))
+      } else {
+        setAddPayments([{ mode: modes[0] || ticket.modeOfPayment || '', amount: ticket.installationCharges || 0 }])
+      }
+    }
     // Close picker, open create modal
     setShowExcelPicker(false)
     setOpenedFromExcel(true)
@@ -1334,7 +1349,14 @@ export default function Relays() {
           ...(ticket.isResched ? { reschedulePending: true } : {}),
           ...(resolvedStatus.schedulePhase !== undefined ? { schedulePhase: resolvedStatus.schedulePhase } : {}),
           ...(resolvedStatus.scheduleOutcome !== undefined ? { scheduleOutcome: resolvedStatus.scheduleOutcome } : {}),
+          // Multiple payments → store breakdown
+          ...(ticket.payments && ticket.payments.length > 1 ? { paymentBreakdown: ticket.payments.filter(p => p.amount > 0) } : {}),
         }
+
+        // Resolve payment mode: HYBRID if multiple payment types
+        const hasMultiplePayments = ticket.payments && ticket.payments.filter(p => p.amount > 0).length > 1
+        const resolvedMop = hasMultiplePayments ? 'HYBRID' : (ticket.modeOfPayment || undefined)
+        const resolvedCharges = ticket.installationCharges || 0
 
         const selectedNegotiator = employees.find(employee => employee.id === ticket.assignedTo)
         const writeBranchId = resolvePortalWriteBranchId(
@@ -1389,9 +1411,10 @@ export default function Relays() {
             preferredDate: ticket.isResched ? undefined : (ticket.scheduleDate || excelDate || undefined),
             installerName: ticket.installer || undefined,
             serviceVehicle: ticket.vehicle || undefined,
+            driverName: ticket.driver || undefined,
             remarksUpdate: ticket.remarks || undefined,
-            installationCharges: ticket.installationCharges || 0,
-            modeOfPayment: ticket.modeOfPayment || undefined,
+            installationCharges: resolvedCharges,
+            modeOfPayment: resolvedMop,
             acDetails: JSON.stringify(acDetailsObj),
             status: resolvedStatus.status === 'SCHEDULED' && !(ticket.scheduleDate || excelDate) ? 'PENDING' : resolvedStatus.status,
           }
@@ -1426,9 +1449,10 @@ export default function Relays() {
             commitType: ticket.commitType || undefined,
             installerName: ticket.installer || undefined,
             serviceVehicle: ticket.vehicle || undefined,
+            driverName: ticket.driver || undefined,
             remarksUpdate: ticket.remarks || undefined,
-            installationCharges: ticket.installationCharges || 0,
-            modeOfPayment: ticket.modeOfPayment || undefined,
+            installationCharges: resolvedCharges,
+            modeOfPayment: resolvedMop,
             acDetails: JSON.stringify(acDetailsObj),
             status: resolvedStatus.status === 'SCHEDULED' && !(ticket.scheduleDate || excelDate) ? 'PENDING' : resolvedStatus.status,
             branchId: relayBranchId,
@@ -1692,6 +1716,7 @@ export default function Relays() {
   }
 
   const [addPhoneNumbers, setAddPhoneNumbers] = useState<string[]>([''])
+  const [addPayments, setAddPayments] = useState<{ mode: string; amount: number }[]>([{ mode: '', amount: 0 }])
   const [addForm, _setAddForm] = useState({
     title: 'S/I service',
     description: '',
@@ -5268,6 +5293,56 @@ export default function Relays() {
                     </RelayFormField>
                   </div>
                 </section>
+
+                {/* 7. Payment Details */}
+                <section>
+                  <RelayFormSectionHead step={7} icon={<CreditCard className="w-3.5 h-3.5" />} title="Payment Details" subtitle="Mode of payment and amount" />
+                  <div className="space-y-2">
+                    {addPayments.map((payment, pIdx) => (
+                      <div key={`pay-${pIdx}`} className="grid grid-cols-12 gap-2 items-end">
+                        <RelayFormField label={pIdx === 0 ? 'Mode of Payment' : ''} compact className="col-span-5">
+                          <select
+                            value={payment.mode}
+                            onChange={e => { const next = [...addPayments]; next[pIdx] = { ...next[pIdx], mode: e.target.value }; setAddPayments(next); setAddForm(prev => ({ ...prev, modeOfPayment: next.map(p => p.mode).filter(Boolean).join(' / ') })) }}
+                            className={addInput}
+                            style={fieldStyle(payment.mode)}
+                          >
+                            <option value="">Select...</option>
+                            <option value="CASH">CASH</option>
+                            <option value="GCASH">GCASH</option>
+                            <option value="BANK TRANSFER">BANK TRANSFER</option>
+                            <option value="CHEQUE">CHEQUE</option>
+                            <option value="FOR COLLECTION">FOR COLLECTION</option>
+                            <option value="NO_PAYMENT">NO PAYMENT / FREE</option>
+                          </select>
+                        </RelayFormField>
+                        <RelayFormField label={pIdx === 0 ? 'Amount (₱)' : ''} compact className="col-span-4">
+                          <input
+                            type="number"
+                            value={payment.amount || ''}
+                            onChange={e => { const next = [...addPayments]; next[pIdx] = { ...next[pIdx], amount: Number(e.target.value) || 0 }; setAddPayments(next); setAddForm(prev => ({ ...prev, installationCharges: next.reduce((sum, p) => sum + p.amount, 0) })) }}
+                            placeholder="0"
+                            className={addInput}
+                            style={fieldStyle(payment.amount ? String(payment.amount) : '')}
+                          />
+                        </RelayFormField>
+                        <div className="col-span-3 flex gap-1 pb-[2px]">
+                          {pIdx === addPayments.length - 1 && (
+                            <button type="button" onClick={() => setAddPayments(prev => [...prev, { mode: '', amount: 0 }])} className="px-2.5 py-2 rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 font-bold text-xs">+</button>
+                          )}
+                          {addPayments.length > 1 && (
+                            <button type="button" onClick={() => { const next = addPayments.filter((_, i) => i !== pIdx); setAddPayments(next); setAddForm(prev => ({ ...prev, modeOfPayment: next.map(p => p.mode).filter(Boolean).join(' / '), installationCharges: next.reduce((sum, p) => sum + p.amount, 0) })) }} className="px-2.5 py-2 rounded-lg text-white bg-red-600 hover:bg-red-700 font-bold text-xs">−</button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {addPayments.length > 1 && (
+                      <p className="text-[10px] font-bold mt-1" style={{ color: '#10B981' }}>
+                        Total: ₱{addPayments.reduce((sum, p) => sum + p.amount, 0).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                </section>
               </div>
 
               {/* Footer */}
@@ -5297,8 +5372,9 @@ export default function Relays() {
                             driver: form.driverName,
                             remarks: form.description || form.remarksUpdate,
                             serviceType: form.serviceType,
-                            modeOfPayment: form.modeOfPayment,
-                            installationCharges: form.installationCharges,
+                            modeOfPayment: addPayments.map(p => p.mode).filter(Boolean).join(' / ') || form.modeOfPayment,
+                            installationCharges: addPayments.reduce((sum, p) => sum + p.amount, 0) || form.installationCharges,
+                            payments: addPayments.filter(p => p.mode || p.amount > 0),
                             scheduleDate: form.finalDate,
                             branchId: form.branchId,
                             assignedTo: form.assignedTo,
