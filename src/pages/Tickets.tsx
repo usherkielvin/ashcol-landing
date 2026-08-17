@@ -1114,8 +1114,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
         const updatedFields = applyImportFieldsFromRow(row, isTaguigServices)
         const statusVal = (updatedFields.status || '').toUpperCase()
-        const updateRemarks = (row.update || '').toLowerCase()
-        const isInstalled = updateRemarks.includes('installed') || statusVal === 'COMPLETED'
+        // Only the explicit STATUS column can mark a row as installed/completed — matching
+        // isInstalledRemarks() being stubbed to false elsewhere. Guessing "installed" from remarks
+        // keywords (e.g. UPDATE cell text) was auto-completing plain schedule-sheet rows that only
+        // ever contain a Request/Scheduled date, silently stamping installedDate on import.
+        const isInstalled = isInstalledWorkflowStatus(statusVal)
 
         if (isInstalled) {
           const charges = updatedFields.installationCharges ?? match.installationCharges ?? match.amountCharged
