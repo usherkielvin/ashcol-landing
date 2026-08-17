@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { 
   Wrench, Settings as ConfigIcon, TrendingUp, PhoneCall, Smartphone, Headset, 
   Mail, Calendar, Clock, Star, MapPin, Check, MessageSquare,
@@ -915,6 +916,13 @@ export default function Landing() {
           <p className="max-w-lg text-[15px] leading-relaxed" style={{ color: t.textMuted }}>
             From residential retrofits to large-scale commercial installations — see how ASHCOL delivers across every project type.
           </p>
+          <Link
+            to="/booking"
+            className="flex items-center justify-center gap-2 px-6 py-3 text-[14px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green"
+          >
+            <Calendar className="w-4 h-4" />
+            Book a Service
+          </Link>
         </div>
 
         {/* Slider */}
