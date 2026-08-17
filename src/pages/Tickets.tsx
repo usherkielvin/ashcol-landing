@@ -6678,6 +6678,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
 
 
+
                             {/* Data cells */}
                             {columns.map((col, colIdx) => {
                               const isLastCol = colIdx === columns.length - 1
@@ -6806,6 +6807,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     let totalCash = 0;
                     let totalGcash = 0;
                     let totalBankTransfer = 0;
+                    let totalForCollection = 0;
+                    let totalCheque = 0;
                     let totalOther = 0;
 
                     visible.forEach(ticket => {
@@ -6814,25 +6817,25 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
                       const { mode: rawMode, amount } = resolveTicketPayment(ticket);
 
+                      const categorize = (mode: string, amt: number) => {
+                        const m = (mode || '').trim().toUpperCase();
+                        if (m === 'CASH') totalCash += amt;
+                        else if (m === 'GCASH') totalGcash += amt;
+                        else if (m === 'BANK TRANSFER' || m === 'BANK_TRANSFER' || m === 'BANK' || m === 'ONLINE') totalBankTransfer += amt;
+                        else if (m === 'FOR COLLECTION' || m === 'FOR_COLLECTION') totalForCollection += amt;
+                        else if (m === 'CHEQUE' || m === 'CHECK' || m === 'CHECK PAYMENT' || m === 'CHECK_PAYMENT') totalCheque += amt;
+                        else if (amt > 0) totalOther += amt;
+                      };
+
                       if (rawMode === 'HYBRID') {
                         const breakdown = getPaymentBreakdown(ticket);
-                        breakdown.forEach(entry => {
-                          const subRawMode = (entry.mode || '').trim().toUpperCase();
-                          const subAmount = entry.amount || 0;
-                          if (subRawMode === 'CASH') totalCash += subAmount;
-                          else if (subRawMode === 'GCASH') totalGcash += subAmount;
-                          else if (subRawMode === 'BANK TRANSFER' || subRawMode === 'BANK_TRANSFER' || subRawMode === 'BANK' || subRawMode === 'ONLINE') totalBankTransfer += subAmount;
-                          else if (subAmount > 0) totalOther += subAmount;
-                        });
+                        breakdown.forEach(entry => categorize(entry.mode, entry.amount || 0));
                       } else {
-                        if (rawMode === 'CASH') totalCash += amount;
-                        else if (rawMode === 'GCASH') totalGcash += amount;
-                        else if (rawMode === 'BANK TRANSFER' || rawMode === 'BANK_TRANSFER' || rawMode === 'BANK' || rawMode === 'ONLINE') totalBankTransfer += amount;
-                        else if (amount > 0) totalOther += amount;
+                        categorize(rawMode, amount);
                       }
                     });
 
-                    const totalEstimated = totalCash + totalGcash + totalBankTransfer + totalOther;
+                    const totalEstimated = totalCash + totalGcash + totalBankTransfer + totalForCollection + totalCheque + totalOther;
                     // Hide the green TOTAL COLLECTION footer when nothing has been paid yet.
                     if (totalEstimated <= 0) return null;
 
@@ -6877,6 +6880,28 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                             </td>
                             <td className="px-3 py-2 text-right font-bold tracking-wide" style={{ backgroundColor: '#f3e8ff', color: '#000', border: `1px solid ${tableBorder}` }}>
                               {totalBankTransfer.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        )}
+                        {totalForCollection > 0 && (
+                          <tr>
+                            <td colSpan={columns.length - 2} style={{ border: 'none', background: 'transparent' }}></td>
+                            <td className="px-3 py-2 text-right font-bold" style={{ backgroundColor: '#fef3c7', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              FOR COLLECTION
+                            </td>
+                            <td className="px-3 py-2 text-right font-bold tracking-wide" style={{ backgroundColor: '#fef3c7', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              {totalForCollection.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        )}
+                        {totalCheque > 0 && (
+                          <tr>
+                            <td colSpan={columns.length - 2} style={{ border: 'none', background: 'transparent' }}></td>
+                            <td className="px-3 py-2 text-right font-bold" style={{ backgroundColor: '#e0e7ff', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              CHEQUE
+                            </td>
+                            <td className="px-3 py-2 text-right font-bold tracking-wide" style={{ backgroundColor: '#e0e7ff', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              {totalCheque.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>
                           </tr>
                         )}
@@ -7110,6 +7135,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     let totalCash = 0;
                     let totalGcash = 0;
                     let totalBankTransfer = 0;
+                    let totalForCollection = 0;
+                    let totalCheque = 0;
                     let totalOther = 0;
 
                     visible.forEach(ticket => {
@@ -7118,25 +7145,25 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
                       const { mode: rawMode, amount } = resolveTicketPayment(ticket);
 
+                      const categorize = (mode: string, amt: number) => {
+                        const m = (mode || '').trim().toUpperCase();
+                        if (m === 'CASH') totalCash += amt;
+                        else if (m === 'GCASH') totalGcash += amt;
+                        else if (m === 'BANK TRANSFER' || m === 'BANK_TRANSFER' || m === 'BANK' || m === 'ONLINE') totalBankTransfer += amt;
+                        else if (m === 'FOR COLLECTION' || m === 'FOR_COLLECTION') totalForCollection += amt;
+                        else if (m === 'CHEQUE' || m === 'CHECK' || m === 'CHECK PAYMENT' || m === 'CHECK_PAYMENT') totalCheque += amt;
+                        else if (amt > 0) totalOther += amt;
+                      };
+
                       if (rawMode === 'HYBRID') {
                         const breakdown = getPaymentBreakdown(ticket);
-                        breakdown.forEach(entry => {
-                          const subRawMode = (entry.mode || '').trim().toUpperCase();
-                          const subAmount = entry.amount || 0;
-                          if (subRawMode === 'CASH') totalCash += subAmount;
-                          else if (subRawMode === 'GCASH') totalGcash += subAmount;
-                          else if (subRawMode === 'BANK TRANSFER' || subRawMode === 'BANK_TRANSFER' || subRawMode === 'BANK' || subRawMode === 'ONLINE') totalBankTransfer += subAmount;
-                          else if (subAmount > 0) totalOther += subAmount;
-                        });
+                        breakdown.forEach(entry => categorize(entry.mode, entry.amount || 0));
                       } else {
-                        if (rawMode === 'CASH') totalCash += amount;
-                        else if (rawMode === 'GCASH') totalGcash += amount;
-                        else if (rawMode === 'BANK TRANSFER' || rawMode === 'BANK_TRANSFER' || rawMode === 'BANK' || rawMode === 'ONLINE') totalBankTransfer += amount;
-                        else if (amount > 0) totalOther += amount;
+                        categorize(rawMode, amount);
                       }
                     });
 
-                    const totalEstimated = totalCash + totalGcash + totalBankTransfer + totalOther;
+                    const totalEstimated = totalCash + totalGcash + totalBankTransfer + totalForCollection + totalCheque + totalOther;
                     if (totalEstimated <= 0) return null;
 
                     return (
@@ -7164,6 +7191,28 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                             <span>BANK TRANSFER</span>
                             <span>₱{totalBankTransfer.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
+                        )}
+                        {totalForCollection > 0 && (
+                          <tr>
+                            <td colSpan={columns.length - 2} style={{ border: 'none', background: 'transparent' }}></td>
+                            <td className="px-3 py-2 text-right font-bold" style={{ backgroundColor: '#fef3c7', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              FOR COLLECTION
+                            </td>
+                            <td className="px-3 py-2 text-right font-bold tracking-wide" style={{ backgroundColor: '#fef3c7', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              {totalForCollection.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        )}
+                        {totalCheque > 0 && (
+                          <tr>
+                            <td colSpan={columns.length - 2} style={{ border: 'none', background: 'transparent' }}></td>
+                            <td className="px-3 py-2 text-right font-bold" style={{ backgroundColor: '#e0e7ff', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              CHEQUE
+                            </td>
+                            <td className="px-3 py-2 text-right font-bold tracking-wide" style={{ backgroundColor: '#e0e7ff', color: '#000', border: `1px solid ${tableBorder}` }}>
+                              {totalCheque.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
                         )}
                         {totalOther > 0 && (
                           <div className="flex items-center justify-between px-3 py-1.5 rounded-lg text-[11px] font-bold" style={{ backgroundColor: '#f3e8ff', color: '#000' }}>

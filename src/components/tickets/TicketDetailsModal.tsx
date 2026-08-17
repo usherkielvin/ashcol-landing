@@ -131,6 +131,8 @@ export function TicketDetailsModal({
   const district = parseDistrict(t.location, t.district)
   const brand = parseBrand(t)
   const phone = getF(t, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
+  const altPhone = parseAcMeta(t).alternatePhone as string || ''
+  const allPhones = [phone, ...altPhone.split(/[,/]/).map((p: string) => p.trim())].filter(Boolean)
   const installer = getInstallerDisplay(t, branchEmployees, activeBranchId)
   const serviceDriver = formatServiceDriver(t)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -304,7 +306,13 @@ export function TicketDetailsModal({
                 <SHead isLight={isLight} title="Client & Location Details" />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <DField isLight={isLight} label="Customer" value={custName} />
-                  <DField isLight={isLight} label="Contact" value={phone ? (fmtPhone(phone) || phone) : EMPTY_CELL} />
+                  <DField isLight={isLight} label="Contact" value={
+                    allPhones.length > 1 ? (
+                      <span className="flex flex-col gap-0.5">
+                        {allPhones.map((p, i) => <span key={i}>{fmtPhone(p) || p}</span>)}
+                      </span>
+                    ) : (phone ? (fmtPhone(phone) || phone) : EMPTY_CELL)
+                  } />
                   {!isMyTickets && (
                     <DField isLight={isLight} label="Address" value={addr} className="sm:col-span-2" />
                   )}
