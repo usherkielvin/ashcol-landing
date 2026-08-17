@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { 
   Search, X, Loader2, ClipboardCheck, QrCode, ArrowRightCircle, Ban, 
-  Phone, MapPin, Calendar, Wrench, ChevronRight, Eye, CheckCircle2, 
-  Clock, AlertCircle, Sparkles, Filter, Copy, Check
+  Phone, MapPin, Calendar, Wrench, Eye, CheckCircle2, 
+  Clock, AlertCircle, Copy, Check
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { API_BASE_URL } from '../utils/api'
@@ -82,7 +82,7 @@ export default function Bookings() {
   const [showQr, setShowQr] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
-  const [copiedPhone, setCopiedPhone] = useState(false)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
 
   const loadBookings = useCallback(async () => {
     setLoading(true)
@@ -157,11 +157,11 @@ export default function Bookings() {
     navigate('/relays', { state: { bookingPrefill: booking } })
   }, [navigate])
 
-  const copyPhone = useCallback((phone: string, e?: React.MouseEvent) => {
+  const copyPhone = useCallback((id: string, phone: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
     navigator.clipboard.writeText(phone).then(() => {
-      setCopiedPhone(true)
-      setTimeout(() => setCopiedPhone(false), 1500)
+      setCopiedId(id)
+      setTimeout(() => setCopiedId(null), 1500)
     })
   }, [])
 
@@ -370,11 +370,15 @@ export default function Bookings() {
                           <span>{b.contactPhone}</span>
                           <button
                             type="button"
-                            onClick={(e) => copyPhone(b.contactPhone, e)}
+                            onClick={(e) => copyPhone(b.id, b.contactPhone, e)}
                             title="Copy phone number"
                             className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-slate-500/10"
                           >
-                            <Copy className="w-3 h-3" />
+                            {copiedId === b.id ? (
+                              <Check className="w-3 h-3 text-emerald-500" />
+                            ) : (
+                              <Copy className="w-3 h-3" />
+                            )}
                           </button>
                         </div>
                       </div>
