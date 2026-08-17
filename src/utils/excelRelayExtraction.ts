@@ -175,12 +175,15 @@ function parseDateValue(val: string): string {
       return `${year}-${month}-${day}`
     }
   }
-  // Try native Date parsing — use local date parts (NOT toISOString which is UTC)
+  // Try native Date parsing — CRITICAL: parse in local time, not UTC
+  // Avoid Date constructor on string without time component to prevent timezone shift
+  // e.g., new Date('2026-01-16') may be treated as UTC, causing -2 day shift in UTC+8 timezones
   const d = new Date(val)
   if (!isNaN(d.getTime()) && d.getFullYear() > 2000) {
-    const y = d.getFullYear()
-    const m = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
+    // Use UTC getters to avoid local timezone shift when parsing ambiguous date strings
+    const y = d.getUTCFullYear()
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(d.getUTCDate()).padStart(2, '0')
     return `${y}-${m}-${day}`
   }
   return ''
@@ -453,12 +456,13 @@ export async function extractRelayTicketsFromExcel(file: File): Promise<ExcelExt
     })
   }
 
-  // 7. Merge continuation rows — if a row has no customer name OR same name as previous, it's extra payment
+  // 7. Merge continuation rows — only merge if customer name is EMPTY (accounting/extra payment row)
+  // Avoid merging legitimate separate tickets for the same customer with multiple payments
   const mergedTickets: ExtractedRelayTicket[] = []
   for (const ticket of tickets) {
     const prevTicket = mergedTickets.length > 0 ? mergedTickets[mergedTickets.length - 1] : null
-    const isContinuation = !ticket.customerName
-      || (prevTicket && ticket.customerName === prevTicket.customerName && ticket.installationCharges > 0)
+    // ONLY treat as continuation if NO customer name (empty row = extra payment line)
+    const isContinuation = !ticket.customerName && prevTicket
 
     if (isContinuation && prevTicket) {
       // Continuation row — add payment to previous ticket

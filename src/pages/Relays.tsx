@@ -1254,8 +1254,8 @@ export default function Relays() {
       relayedDate: ticket.relayedDate || new Date().toISOString().split('T')[0],
       // Scheduled Date (finalDate): from the sheet's header date (dispatch date)
       finalDate: ticket.scheduleDate || excelDate,
-      // Preferred Date: same as schedule date unless it's a resched
-      preferredDate: ticket.isResched ? '' : (ticket.scheduleDate || excelDate),
+      // Requested Date: same as schedule date (requested date is also the scheduled date from import)
+      preferredDate: ticket.scheduleDate || excelDate,
     }))
     // Set phone numbers
     const phones = ticket.contactPhone.split(/[/,]|\s{2,}/).map(p => p.trim()).filter(Boolean)
@@ -1417,7 +1417,7 @@ export default function Relays() {
             branchId: relayBranchId,
             assignedTo: ticket.assignedTo || undefined,
             negotiatorId: ticket.assignedTo || undefined,
-            preferredDate: ticket.isResched ? undefined : (ticket.scheduleDate || excelDate || undefined),
+            preferredDate: ticket.scheduleDate || excelDate || undefined,
             installerName: ticket.installer || undefined,
             serviceVehicle: ticket.vehicle || undefined,
             driverName: ticket.driver || undefined,
