@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes, Navigate } from 'react-router-dom'
 import { GoogleOAuthProvider } from '@react-oauth/google'
 import Landing from './pages/Landing'
+import PublicBooking from './pages/PublicBooking'
 import Login from './pages/Login'
 import ForgotPassword from './pages/ForgotPassword'
 import CreateAccount from './pages/CreateAccount'
@@ -15,6 +16,7 @@ import Vehicles from './pages/Vehicles'
 import Profile from './pages/Profile'
 import Branches from './pages/Branches'
 import Relays from './pages/Relays'
+import Bookings from './pages/Bookings'
 
 import DailyAuditReport from './pages/DailyAuditReport'
 import AuditFinanceExpenses from './pages/AuditFinanceExpenses'
@@ -81,6 +83,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<RootRouter />} />
+        <Route path="/booking" element={<PublicBooking />} />
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/create-account" element={<CreateAccount />} />
@@ -93,6 +96,7 @@ export default function App() {
           <Route path="/create-ticket" element={<CreateTicket />} />
           <Route path="/schedules" element={<Schedules />} />
           <Route path="/relays" element={<Relays />} />
+          <Route path="/bookings" element={<Bookings />} />
           <Route path="/my-tickets" element={<MyTickets />} />
           <Route path="/office-tasks" element={<OfficeTasks />} />
           <Route path="/branches" element={<Branches />} />

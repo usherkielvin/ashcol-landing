@@ -56,6 +56,7 @@ export function parseRelayAcDetails(ticket: RelayScheduleTicket) {
     scheduleOutcome: '',
     scheduleIntake: '',
     scheduledDate: '',
+    reschedulePending: false,
   }
   const ac = String(ticket.acDetails || ticket.ac_details || '')
   if (!ac.trim()) {
@@ -81,16 +82,22 @@ export function isRelayHasDealer(ticket: RelayScheduleTicket): boolean {
 
 /** Ticket has left relay negotiator queue and belongs on Schedules. */
 export function hasRelayLeftQueue(ticket: RelayScheduleTicket): boolean {
+  const stat = String(ticket.status || '').toUpperCase()
+  const details = parseRelayAcDetails(ticket)
+  // RESCHED with no new date decided yet stays in the negotiator's queue — stale finalDate/
+  // schedulePhase metadata left over from before the reschedule must not push it to Schedules.
+  const reschedPending = stat === 'RESCHED'
+    && (details.reschedulePending === true || String(details.reschedulePending).toLowerCase() === 'true')
+  if (reschedPending) return false
+
   if (resolveRelayFinalDate(ticket)) return true
 
-  const details = parseRelayAcDetails(ticket)
   const outcome = String(details.scheduleOutcome || '').trim().toUpperCase()
   if (outcome.startsWith('DONE_')) return true
 
   const phase = String(details.schedulePhase || '').trim().toUpperCase().replace(/\s+/g, '_')
   if (['SURVEY', 'INSTALLATION', 'CLEANING', 'SERVICES', 'SERVICE', 'CHECKUP', 'BACKJOB', 'MOUNTING'].includes(phase)) return true
 
-  const stat = String(ticket.status || '').toUpperCase()
   if (['SURVEY', 'FOR_APPROVAL', 'FOR_QUOTATION', 'RESCHED'].includes(stat)) return true
 
   if (stat === 'SCHEDULED') {
@@ -159,6 +166,12 @@ export function normalizeRelayScheduleTicket(ticket: any): any {
 
   const finalDate = resolveRelayFinalDate(next)
   const stat = String(next.status || '').toUpperCase()
+  const details = parseRelayAcDetails(next)
+  // Reschedule-pending tickets deliberately keep their old finalDate (see hasRelayLeftQueue) —
+  // aliasing it here is harmless (no status promotion applies to RESCHED), so only the backfill
+  // branch below needs to skip acting on it.
+  const reschedPending = stat === 'RESCHED'
+    && (details.reschedulePending === true || String(details.reschedulePending).toLowerCase() === 'true')
   if (finalDate) {
     next.finalDate = finalDate
     next.final_date = finalDate
@@ -174,7 +187,7 @@ export function normalizeRelayScheduleTicket(ticket: any): any {
     }
   } else {
     const preferred = String(next.preferredDate || next.preferred_date || '').trim().split('T')[0]
-    const shouldBackfill = Boolean(
+    const shouldBackfill = !reschedPending && Boolean(
       preferred && (
         ['SCHEDULED', 'RESCHED', 'SURVEY', 'FOR_APPROVAL', 'FOR_QUOTATION'].includes(stat)
         || hasRelayLeftQueue(next)

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import { ResponsiveTable, type ColumnDef as ResponsiveColumnDef } from '../components/ResponsiveTable'
 import {
@@ -275,6 +276,7 @@ const parseAcDetails = (ticket: Ticket) => {
     relayedDate: '',
     finalDate: '',
     scheduledDate: '',
+    reschedulePending: false,
     promodiserName: '',
     referralFeeRecipient: '',
     referralFeeAmount: '',
@@ -420,11 +422,18 @@ const getRelayStatusLabel = (ticket: Ticket) => {
   const negotiatorId = (ticket.negotiatorId || ticket.negotiator_id || '').trim()
   const details = parseAcDetails(ticket)
   const hasScheduledDate = Boolean(details.scheduledDate?.trim() || details.scheduleIntake || status === 'SCHEDULED')
-  
+  const isReschedPending = status === 'RESCHED'
+    && (details.reschedulePending === true || String(details.reschedulePending).toLowerCase() === 'true')
+
   if (getTicketCategory(ticket) === 'Collection' && !isCollectionPaid(ticket)) return 'Pending'
   if (status === 'CANCELLED') return 'Cancelled'
   if (status === 'COMPLETED' || status === 'INSTALLED' || !!(ticket.installationCharges && ticket.installationCharges > 0)) return 'Installed'
-  
+
+  // A reschedule with no new date decided yet stays in the negotiator's queue (Assigned) — it
+  // must not fall through to Schedules just because stale finalDate/scheduledDate metadata from
+  // before the reschedule is still on the ticket.
+  if (isReschedPending) return 'Assigned'
+
   // finalDate / schedule phase = on Schedules tab, not relay assigned queue
   if (finalDate || hasRelayLeftQueue(ticket) || hasScheduledDate) return 'Scheduled'
   
@@ -794,6 +803,11 @@ function UnmatchedDealerDropdown({ dealerName, dealers, value, onChange, isLight
 export default function Relays() {
   const { theme } = useTheme()
   const { user } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
+  // Set when the Add Ticket modal was opened from a Bookings row ("Convert to Ticket") — the
+  // originating booking gets marked CONVERTED once the ticket is actually created below.
+  const bookingPrefillIdRef = useRef('')
   const isLight = theme === 'light'
   const role = (user?.role || '').toLowerCase()
   const isAdmin = isPortalAdmin(role)
@@ -1881,6 +1895,43 @@ export default function Relays() {
     setIsAddModalOpen(true)
   }, [resolveRelayDefaultBranchId])
 
+  // Opened from the portal's Bookings page ("Convert to Ticket") — prefill and open the Add
+  // Ticket modal from the booking's fields, same as a normal manual add otherwise.
+  useEffect(() => {
+    const prefill = (location.state as { bookingPrefill?: {
+      id?: string; customerName?: string; contactPhone?: string
+      region?: string; city?: string; barangay?: string; street?: string; landmark?: string
+      brand?: string; capacity?: string; requestedDate?: string; issueDescription?: string
+    } } | null)?.bookingPrefill
+    if (!prefill) return
+
+    const defaultBranch = resolveRelayDefaultBranchId()
+    const addressLine = [prefill.street, prefill.barangay, prefill.city, prefill.region].filter(Boolean).join(', ')
+
+    setAddPhoneNumbers([prefill.contactPhone || ''])
+    setAddForm(prev => ({
+      ...prev,
+      branchId: defaultBranch || prev.branchId,
+      customerName: prefill.customerName || '',
+      contactPhone: prefill.contactPhone || '',
+      locationRaw: addressLine,
+      district: prefill.city || '',
+      landmarks: prefill.landmark || '',
+      brand: prefill.brand || '',
+      capacity: prefill.capacity || '',
+      preferredDate: prefill.requestedDate ? prefill.requestedDate.split('T')[0] : '',
+      description: prefill.issueDescription || '',
+      remarksUpdate: prefill.issueDescription || '',
+    }))
+    bookingPrefillIdRef.current = prefill.id || ''
+    setOpenedFromExcel(false)
+    setIsAddModalOpen(true)
+
+    // Consume the nav state so a refresh/back doesn't reopen this prefill.
+    navigate(location.pathname, { replace: true, state: null })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Action Drawer / Assign Modal State
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null)
   const [isActionDrawerOpen, setIsActionDrawerOpen] = useState(false)
@@ -2540,6 +2591,16 @@ export default function Relays() {
           return
         }
 
+        if (bookingPrefillIdRef.current) {
+          const bookingId = bookingPrefillIdRef.current
+          bookingPrefillIdRef.current = ''
+          fetch(`${API_BASE_URL}/bookings/${bookingId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ status: 'CONVERTED', convertedTicketId: createdTicket.id }),
+          }).catch(() => { /* best-effort — the ticket itself already saved */ })
+        }
+
         let finalTicket = createdTicket
         const pendingSave = pendingRelaySavesRef.current.get(tempId)
         if (pendingSave) {
@@ -2672,6 +2733,15 @@ export default function Relays() {
         : resolvedEditStatus.status
       if (resolvedEditStatus.ticketCategory) payload.ticketCategory = resolvedEditStatus.ticketCategory
     }
+    const isPendingResched = finalStatus === 'RESCHED' && Boolean(draft.reschedulePending)
+    // draft.finalDate is the "Schedule Date" field the negotiator actually edits to move a ticket
+    // (including a pending RESCHED being resolved to a real slot) — send it as the request's
+    // top-level finalDate so it goes through TicketService's authoritative finalDate choke point
+    // (ghost-history capture + promoteRelayToScheduled), instead of being silently dropped like
+    // before. A pending reschedule must NOT send it — that's what keeps it off Schedules.
+    if (!isPendingResched && draft.finalDate) {
+      payload.finalDate = draft.finalDate
+    }
     payload.customerName = draft.customerName || null
     payload.location = draft.location || null
     payload.preferredDate = draft.preferredDate ? new Date(draft.preferredDate).toISOString() : null
@@ -2715,7 +2785,15 @@ export default function Relays() {
       serialNumber: draft.serialNumber || '',
       alternatePhone: draft.phoneNumbers.slice(1).filter(Boolean).join(', '),
       relayedDate: draft.relayedDate || '',
-      finalDate: existingDetails.finalDate || '',
+      // Deliberately keep the old finalDate while a reschedule is pending — it's what lets the
+      // Schedules ghost row for the old date keep showing a RESCHED badge instead of vanishing
+      // (see promoteRelayToScheduled's reschedulePending guard on the backend). getRelayStatusLabel/
+      // hasRelayLeftQueue below key off reschedulePending, not finalDate, to keep this ticket in
+      // the negotiator's My Tickets queue while it's pending. Once resolved to a real date, mirror
+      // draft.finalDate here too (backend's finalDate choke point will also set this from
+      // payload.finalDate above, but keeping it in sync locally matches the optimistic update below).
+      finalDate: isPendingResched ? (existingDetails.finalDate || '') : (draft.finalDate || existingDetails.finalDate || ''),
+      reschedulePending: isPendingResched,
       promodiserName: draft.referralRecipient || '',
       referralFeeRecipient: draft.referralRecipient || '',
       referralFeeAmount: draft.referralAmount || draft.storeReferralFee || '',
@@ -2748,6 +2826,7 @@ export default function Relays() {
       // e.g. 'BACKJOB') — the raw value has no Ticket.Status enum constant and previously leaked
       // into the local ticket's status field until a hard refresh replaced it with server data.
       status: payload.status ?? finalStatus,
+      ...(payload.finalDate ? { finalDate: payload.finalDate, final_date: payload.finalDate } : {}),
       branchId: branchId || undefined,
       assignedTo: assignedTo || undefined,
       negotiatorId: draft.assignTechId || '',

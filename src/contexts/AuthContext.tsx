@@ -44,6 +44,7 @@ const AUTH_PUBLIC_PATHS = new Set([
   '/login',
   '/forgot-password',
   '/create-account',
+  '/booking',
 ])
 
 const normalizeAuthUser = (u: AuthUser | null): AuthUser | null => {

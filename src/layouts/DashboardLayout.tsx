@@ -9,7 +9,7 @@ import {
   PanelLeftOpen, ClipboardList, Search,
   User, Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
   Building2, Calendar, Landmark, Wifi, CircleDollarSign, ListOrdered,
-  LayoutDashboard, Route, Truck, ClipboardCheck, PhoneCall, Percent, Wallet
+  LayoutDashboard, Route, Truck, ClipboardCheck, PhoneCall, Percent, Wallet, CalendarPlus
 } from 'lucide-react'
 import {
   MdOutlineConfirmationNumber,
@@ -19,6 +19,7 @@ import {
   MdOutlineCalendarMonth,
   MdOutlineArchive,
   MdOutlineAssignmentTurnedIn,
+  MdOutlineEventAvailable,
   MdOutlinePeopleAlt,
   MdOutlineDescription,
   MdOutlinePlaylistAdd,
@@ -89,6 +90,7 @@ function buildNavGroups(navLinks: NavLinkDef[]) {
       Icon: MdOutlineConfirmationNumber,
       subItems: [
         { name: 'Relays', icon: <MdOutlineLocalActivity size={16} />, path: findPath('Relays') },
+        { name: 'Bookings', icon: <MdOutlineEventAvailable size={16} />, path: findPath('Bookings') },
         { name: 'My Tickets', icon: <MdOutlineAssignmentInd size={16} />, path: findPath('My Tickets') },
         { name: 'Schedules', icon: <MdOutlineCalendarMonth size={16} />, path: findPath('Schedules') },
         { name: 'Archives', icon: <MdOutlineArchive size={16} />, path: findPath('Archives') },
@@ -385,6 +387,7 @@ export default function DashboardLayout() {
     { name: 'Schedules',       path: '/schedules',        icon: CalendarDays },
     { name: 'My Tickets',      path: '/my-tickets',       icon: ClipboardList,   roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Relays',          path: '/relays',           icon: Radio,           roles: canAccessRelays ? ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] : ['admin', 'management'] },
+    { name: 'Bookings',        path: '/bookings',         icon: CalendarPlus,    roles: canAccessRelays ? ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] : ['admin', 'management'] },
     { name: 'Search',          path: '/search',          icon: Search },
     { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Registration',   path: '/registration',    icon: ClipboardCheck, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
@@ -409,8 +412,8 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'management' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms', ...(canAccessRelays ? ['Relays'] : [])]
-  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms', ...(canAccessRelays ? ['Relays'] : [])]
+  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms', ...(canAccessRelays ? ['Relays', 'Bookings'] : [])]
+  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms', ...(canAccessRelays ? ['Relays', 'Bookings'] : [])]
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 

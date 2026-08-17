@@ -17,12 +17,14 @@ interface Props {
   inputBorder: string
   inputText: string
   textMuted: string
+  /** Hide the "use my current location" geolocation button — e.g. on the public booking form. */
+  hideLocationButton?: boolean
 }
 
 const sel = `w-full border rounded-xl px-3 py-3 text-sm outline-none transition-all focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] appearance-none bg-no-repeat`
 const selBg = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237A95B8' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") right 12px center / 12px no-repeat`
 
-export default function PhAddressPicker({ value, onChange, inputBg, inputBorder, inputText, textMuted }: Props) {
+export default function PhAddressPicker({ value, onChange, inputBg, inputBorder, inputText, textMuted, hideLocationButton = false }: Props) {
   const [locLoading, setLocLoading] = useState(false)
   const [locErr, setLocErr]         = useState('')
 
@@ -104,20 +106,22 @@ export default function PhAddressPicker({ value, onChange, inputBg, inputBorder,
     <div className="flex flex-col gap-3">
 
       {/* Auto-detect — only shown on secure contexts (https or localhost) */}
-      {isSecureContext ? (
-        <button
-          type="button" onClick={detectLocation} disabled={locLoading}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all hover:border-[#10B981] hover:text-[#10B981] disabled:opacity-50 w-fit"
-          style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}
-        >
-          <Navigation className="w-4 h-4 text-[#10B981]" />
-          {locLoading ? 'Detecting...' : 'Use my current location'}
-        </button>
-      ) : (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[12px]" style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', color: '#F59E0B' }}>
-          <Navigation className="w-3.5 h-3.5 shrink-0" />
-          Auto-detect unavailable on non-secure connections. Please fill in your address below.
-        </div>
+      {!hideLocationButton && (
+        isSecureContext ? (
+          <button
+            type="button" onClick={detectLocation} disabled={locLoading}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all hover:border-[#10B981] hover:text-[#10B981] disabled:opacity-50 w-fit"
+            style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}
+          >
+            <Navigation className="w-4 h-4 text-[#10B981]" />
+            {locLoading ? 'Detecting...' : 'Use my current location'}
+          </button>
+        ) : (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[12px]" style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', color: '#F59E0B' }}>
+            <Navigation className="w-3.5 h-3.5 shrink-0" />
+            Auto-detect unavailable on non-secure connections. Please fill in your address below.
+          </div>
+        )
       )}
       {locErr && <p className="text-xs text-red-400">{locErr}</p>}
 
