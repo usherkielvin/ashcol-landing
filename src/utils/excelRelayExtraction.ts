@@ -279,6 +279,19 @@ function cleanInstaller(val: string): string {
   return val.replace(/\s*-\s*\d+\s*$/, '').trim()
 }
 
+/** Extract known payment mode from a string that may contain extra text */
+function extractKnownPaymentMode(raw: string): string {
+  const upper = raw.toUpperCase().trim()
+  // Check exact matches first
+  if (PAYMENT_MAP[upper]) return PAYMENT_MAP[upper]
+  // Check if string starts with or contains a known mode (longest first)
+  const knownModes = ['FOR COLLECTION', 'BANK TRANSFER', 'CHECK PAYMENT', 'GCASH', 'CHEQUE', 'CHECK', 'CASH']
+  for (const mode of knownModes) {
+    if (upper.includes(mode)) return PAYMENT_MAP[mode] || mode
+  }
+  return upper || 'NO_PAYMENT'
+}
+
 function mapPayment(mode: string, charges: string): { modeOfPayment: string; amount: number; payments: { mode: string; amount: number }[] } {
   const mop = mode.toUpperCase().trim()
   const ch = charges.toUpperCase().trim()
@@ -302,7 +315,7 @@ function mapPayment(mode: string, charges: string): { modeOfPayment: string; amo
     totalAmount += amt
 
     const lineMode = (modeLines[i] || modeLines[0] || mop || '').toUpperCase().trim()
-    const mapped = PAYMENT_MAP[lineMode] || lineMode
+    const mapped = extractKnownPaymentMode(lineMode)
     if (mapped && mapped !== 'NO_PAYMENT' && !modes.includes(mapped)) {
       modes.push(mapped)
     }
@@ -322,7 +335,7 @@ function mapPayment(mode: string, charges: string): { modeOfPayment: string; amo
     payments.push({ mode: singleMode, amount: totalAmount })
   }
 
-  const finalMode = modes.length > 0 ? modes.join(' / ') : (PAYMENT_MAP[mop] || mop || 'NO_PAYMENT')
+  const finalMode = modes.length > 0 ? modes.join(' / ') : extractKnownPaymentMode(mop)
 
   return { modeOfPayment: finalMode, amount: totalAmount, payments }
 }

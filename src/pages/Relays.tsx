@@ -1064,12 +1064,6 @@ export default function Relays() {
         }
       }
 
-      // Also merge in locally loaded tickets (already on this page) for extra coverage
-      for (const t of [...tickets, ...openFieldTickets]) {
-        const name = (t.customerName || (t as any).customer_name || '').replace(/\s+/g, ' ').trim().toUpperCase()
-        if (name && !existingMap.has(name)) existingMap.set(name, t)
-      }
-
       setExcelExistingMap(existingMap)
       setShowExcelPicker(true)
 
@@ -1400,7 +1394,7 @@ export default function Relays() {
           // UPDATE existing ticket via PATCH
           const patchPayload: Record<string, any> = {
             customerName: ticket.customerName || undefined,
-            contactPhone: (ticket.contactPhone || '').split(/[/,]|\s{2,}/)[0]?.trim() || '',
+            contactPhone: ticket.contactPhone || '',
             location: ticket.address || undefined,
             district: ticket.district || undefined,
             dealer: resolveRelayDealerForSubmit(ticket.dealer || 'Direct', ticket.dealerBranch || ''),
