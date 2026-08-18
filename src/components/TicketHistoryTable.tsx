@@ -15,6 +15,11 @@ interface BranchOption { id: string; name: string }
 
 const token = () => localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
 
+const todayYMD = (): string => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 /** Tickets this person created, negotiated, was assigned/installed/drove, closed, or completed
  *  warranty registration on. Shared by the admin "Employees" detail tab and a user's own Profile. */
 export default function TicketHistoryTable({ person, headerLeft }: { person: HistoryPerson; headerLeft?: React.ReactNode }) {
@@ -31,8 +36,9 @@ export default function TicketHistoryTable({ person, headerLeft }: { person: His
   const [history, setHistory] = useState<any[]>([])
   const [branches, setBranches] = useState<BranchOption[]>([])
   const [loading, setLoading] = useState(false)
-  const [dateFilter, setDateFilter] = useState<string>('')
+  const [dateFilter, setDateFilter] = useState<string>(todayYMD())
   const [branchFilter, setBranchFilter] = useState<string>('')
+  const [roleTag, setRoleTag] = useState<'' | 'created' | 'assigned'>('')
   const dateInputRef = useRef<HTMLInputElement>(null)
 
   const openDatePicker = () => {
