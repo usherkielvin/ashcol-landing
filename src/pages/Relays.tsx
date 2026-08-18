@@ -5194,27 +5194,10 @@ export default function Relays() {
                   </div>
                 </section>
 
-                {/* 5. Remarks */}
-                <section>
-                  <RelayFormSectionHead step={5} icon={<MessageSquare className="w-3.5 h-3.5" />} title="Remarks" subtitle="Notes or special instructions" />
-                  <div className="grid grid-cols-1 gap-3.5">
-                    <RelayFormField label="Remarks" compact>
-                      <textarea
-                        value={addForm.description}
-                        onChange={e => setAddForm(prev => ({ ...prev, description: e.target.value, remarksUpdate: e.target.value }))}
-                        placeholder="Notes or special instructions"
-                        rows={3}
-                        className={`${addInput} resize-none`}
-                        style={fieldStyle(addForm.description)}
-                      />
-                    </RelayFormField>
-                  </div>
-                </section>
-
-                {/* 6. Scheduling */}
+                {/* 5. Scheduling */}
                 <section>
                   <RelayFormSectionHead
-                    step={6}
+                    step={5}
                     icon={<CalendarDays className="w-3.5 h-3.5" />}
                     title="Scheduling"
                     subtitle="Requested, schedule & installed date details"
@@ -5292,96 +5275,9 @@ export default function Relays() {
                   </div>
                 </section>
 
-                {/* 7. Dispatch — optional, can also be set later on Schedules */}
+                {/* 6. Payment Details */}
                 <section>
-                  <RelayFormSectionHead step={7} icon={<Truck className="w-3.5 h-3.5" />} title="Dispatch" subtitle="Optional — driver, vehicle & installer, if already known" />
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
-                    <RelayFormField label="Driver" compact className="md:col-span-4">
-                      <input
-                        type="text"
-                        value={addForm.driverName || ''}
-                        list="add-ticket-driver-roster"
-                        placeholder={addModalRoster.drivers.length ? 'Select or type driver…' : 'Driver name'}
-                        onChange={e => setAddForm(prev => ({ ...prev, driverName: e.target.value }))}
-                        className={addInput}
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                      />
-                      <datalist id="add-ticket-driver-roster">
-                        {addModalRoster.drivers.map(name => <option key={name} value={name} />)}
-                      </datalist>
-                    </RelayFormField>
-                    <RelayFormField label="Vehicle" compact className="md:col-span-4">
-                      <input
-                        type="text"
-                        value={addForm.serviceVehicle || ''}
-                        placeholder="e.g. T2"
-                        onChange={e => setAddForm(prev => ({ ...prev, serviceVehicle: e.target.value }))}
-                        className={addInput}
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                      />
-                    </RelayFormField>
-                    <RelayFormField label="Installer / Technician" compact className="md:col-span-4">
-                      <input
-                        type="text"
-                        value={addForm.installerName || ''}
-                        list="add-ticket-installer-roster"
-                        placeholder={addModalRoster.installers.length ? 'Select or type installer…' : 'Installer name'}
-                        onChange={e => setAddForm(prev => ({ ...prev, installerName: e.target.value }))}
-                        className={addInput}
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                      />
-                      <datalist id="add-ticket-installer-roster">
-                        {addModalRoster.installers.map(name => <option key={name} value={name} />)}
-                      </datalist>
-                    </RelayFormField>
-                  </div>
-                </section>
-
-                {/* 8. Payment — optional, if already collected at intake */}
-                <section>
-                  <RelayFormSectionHead step={8} icon={<Wallet className="w-3.5 h-3.5" />} title="Payment" subtitle="Optional — if collected already at intake" />
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
-                    <RelayFormField label="Mode of Payment" compact className="md:col-span-6">
-                      <select
-                        value={addForm.modeOfPayment || 'NO_PAYMENT'}
-                        onChange={e => {
-                          const v = e.target.value
-                          setAddForm(prev => ({
-                            ...prev,
-                            modeOfPayment: v,
-                            installationCharges: (v === 'NO_PAYMENT' || v === 'FREE' || v === 'FREE INSTALL') ? 0 : prev.installationCharges,
-                          }))
-                        }}
-                        className={addInput}
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                      >
-                        <option value="NO_PAYMENT">NO PAYMENT</option>
-                        <option value="CASH">CASH</option>
-                        <option value="BANK TRANSFER">BANK TRANSFER</option>
-                        <option value="GCASH">GCASH</option>
-                        <option value="CHEQUE">CHEQUE</option>
-                        <option value="FOR COLLECTION">FOR COLLECTION</option>
-                        <option value="FREE INSTALL">FREE INSTALL</option>
-                      </select>
-                    </RelayFormField>
-                    <RelayFormField label="Payment Amount (₱)" compact className="md:col-span-6">
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={addForm.modeOfPayment === 'NO_PAYMENT' || !addForm.modeOfPayment ? '' : (addForm.installationCharges ?? '')}
-                        disabled={!addForm.modeOfPayment || addForm.modeOfPayment === 'NO_PAYMENT' || addForm.modeOfPayment === 'FREE' || addForm.modeOfPayment === 'FREE INSTALL'}
-                        onChange={e => setAddForm(prev => ({ ...prev, installationCharges: e.target.value ? Number(e.target.value) : 0 }))}
-                        className={addInput}
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                      />
-                    </RelayFormField>
-                  </div>
-                </section>
-
-                {/* 7. Payment Details */}
-                <section>
-                  <RelayFormSectionHead step={7} icon={<CreditCard className="w-3.5 h-3.5" />} title="Payment Details" subtitle="Mode of payment and amount" />
+                  <RelayFormSectionHead step={6} icon={<CreditCard className="w-3.5 h-3.5" />} title="Payment Details" subtitle="Mode of payment and amount" />
                   <div className="space-y-2">
                     {addPayments.map((payment, pIdx) => (
                       <div key={`pay-${pIdx}`} className="grid grid-cols-12 gap-2 items-end">
@@ -5429,38 +5325,63 @@ export default function Relays() {
                   </div>
                 </section>
 
-                {/* 8. Dispatch */}
+                {/* 7. Dispatch — optional, can also be set later on Schedules */}
                 <section>
-                  <RelayFormSectionHead step={8} icon={<Truck className="w-3.5 h-3.5" />} title="Dispatch" subtitle="Vehicle, driver & installer assignment" />
-                  <div className="grid grid-cols-12 gap-3.5">
-                    <RelayFormField label="Vehicle" compact className="md:col-span-4">
-                      <input
-                        type="text"
-                        value={addForm.serviceVehicle}
-                        onChange={e => setAddForm(prev => ({ ...prev, serviceVehicle: e.target.value }))}
-                        placeholder="e.g. FB19, T2, T3"
-                        className={addInput}
-                        style={fieldStyle(addForm.serviceVehicle)}
-                      />
-                    </RelayFormField>
+                  <RelayFormSectionHead step={7} icon={<Truck className="w-3.5 h-3.5" />} title="Dispatch" subtitle="Optional — vehicle, driver & installer assignment" />
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
                     <RelayFormField label="Driver" compact className="md:col-span-4">
                       <input
                         type="text"
-                        value={addForm.driverName}
+                        value={addForm.driverName || ''}
+                        list="add-ticket-driver-roster"
+                        placeholder={addModalRoster.drivers.length ? 'Select or type driver…' : 'Driver name'}
                         onChange={e => setAddForm(prev => ({ ...prev, driverName: e.target.value }))}
-                        placeholder="Driver name"
                         className={addInput}
                         style={fieldStyle(addForm.driverName)}
+                      />
+                      <datalist id="add-ticket-driver-roster">
+                        {addModalRoster.drivers.map(name => <option key={name} value={name} />)}
+                      </datalist>
+                    </RelayFormField>
+                    <RelayFormField label="Vehicle" compact className="md:col-span-4">
+                      <input
+                        type="text"
+                        value={addForm.serviceVehicle || ''}
+                        placeholder="e.g. FB19, T2, T3"
+                        onChange={e => setAddForm(prev => ({ ...prev, serviceVehicle: e.target.value }))}
+                        className={addInput}
+                        style={fieldStyle(addForm.serviceVehicle)}
                       />
                     </RelayFormField>
                     <RelayFormField label="Installer / Technician" compact className="md:col-span-4">
                       <input
                         type="text"
-                        value={addForm.installerName}
+                        value={addForm.installerName || ''}
+                        list="add-ticket-installer-roster"
+                        placeholder={addModalRoster.installers.length ? 'Select or type installer…' : 'Installer name'}
                         onChange={e => setAddForm(prev => ({ ...prev, installerName: e.target.value }))}
-                        placeholder="Installer name"
                         className={addInput}
                         style={fieldStyle(addForm.installerName)}
+                      />
+                      <datalist id="add-ticket-installer-roster">
+                        {addModalRoster.installers.map(name => <option key={name} value={name} />)}
+                      </datalist>
+                    </RelayFormField>
+                  </div>
+                </section>
+
+                {/* 8. Remarks */}
+                <section>
+                  <RelayFormSectionHead step={8} icon={<MessageSquare className="w-3.5 h-3.5" />} title="Remarks" subtitle="Notes or special instructions" />
+                  <div className="grid grid-cols-1 gap-3.5">
+                    <RelayFormField label="Remarks" compact>
+                      <textarea
+                        value={addForm.description}
+                        onChange={e => setAddForm(prev => ({ ...prev, description: e.target.value, remarksUpdate: e.target.value }))}
+                        placeholder="Notes or special instructions"
+                        rows={3}
+                        className={`${addInput} resize-none`}
+                        style={fieldStyle(addForm.description)}
                       />
                     </RelayFormField>
                   </div>

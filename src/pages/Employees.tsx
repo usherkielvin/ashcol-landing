@@ -133,7 +133,7 @@ const adaptEditFormForRole = (
   if (roleUpper === 'MANAGEMENT') {
     return {
       role: newRole,
-      jobTitle: prev.jobTitle || 'WARRANTY REGISTRAR',
+      jobTitle: prev.jobTitle ? normalizeJobTitle(prev.jobTitle) : 'REGISTRATION',
       branchId: '',
     }
   }
@@ -177,15 +177,24 @@ const formatBranchLabel = (name: string) => {
     .join(' – ')
 }
 
+const normalizeJobTitle = (title: string): string => {
+  const upper = (title || '').trim().toUpperCase()
+  if (upper === 'WARRANTY REGISTRAR' || upper === 'WARRANTY REGISTRATOR' || upper === 'REGISTRAR' || upper === 'REGISTRATOR') return 'REGISTRATION'
+  if (upper === 'TICKET CREATOR') return 'CREATE TICKETS'
+  if (upper === 'DISPATCHER' || upper === 'RELAY DISPATCHER' || upper === 'RELAY COORDINATOR') return 'COORDINATOR'
+  return upper
+}
+
 const formatJobTitleLabel = (title: string) => {
   if (!title?.trim()) return ''
-  return title.trim().toUpperCase()
+  const titles = parseJobTitles(title)
+  return titles.join(', ')
 }
 
 /** jobTitle is stored as one comma-separated string so an employee can hold multiple roles
  * (e.g. "COORDINATOR, CREATE TICKETS") without a backend schema change. */
 const parseJobTitles = (raw: string): string[] =>
-  raw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+  Array.from(new Set((raw || '').split(',').map(s => normalizeJobTitle(s)).filter(Boolean)))
 
 const joinJobTitles = (titles: string[]): string => titles.join(', ')
 
@@ -203,43 +212,24 @@ const JobTitleMultiSelect = ({ value, onChange, options, onAddCustom, inputCls, 
   const selected = parseJobTitles(value)
   const [newTitle, setNewTitle] = useState('')
 
-  // Map legacy title names (e.g. TICKET CREATOR -> CREATE TICKETS, WARRANTY REGISTRAR / WARRANTY REGISTRATOR -> REGISTRATION)
   const isSelected = (title: string) => {
-    const t = title.toUpperCase()
-    if (selected.includes(t)) return true
-    if (t === 'CREATE TICKETS' && selected.includes('TICKET CREATOR')) return true
-    if (t === 'REGISTRATION' && (selected.includes('WARRANTY REGISTRAR') || selected.includes('WARRANTY REGISTRATOR'))) return true
-    return false
+    const t = normalizeJobTitle(title)
+    return selected.includes(t)
   }
 
   const toggle = (title: string) => {
-    const t = title.toUpperCase()
+    const t = normalizeJobTitle(title)
     let next = [...selected]
-    const currentlyActive = isSelected(t)
-
-    if (currentlyActive) {
-      next = next.filter(item => {
-        if (item === t) return false
-        if (t === 'CREATE TICKETS' && item === 'TICKET CREATOR') return false
-        if (t === 'REGISTRATION' && (item === 'WARRANTY REGISTRAR' || item === 'WARRANTY REGISTRATOR')) return false
-        return true
-      })
+    if (next.includes(t)) {
+      next = next.filter(item => item !== t)
     } else {
-      if (t === 'CREATE TICKETS') {
-        next = next.filter(item => item !== 'TICKET CREATOR')
-      }
-      if (t === 'REGISTRATION') {
-        next = next.filter(item => item !== 'WARRANTY REGISTRAR' && item !== 'WARRANTY REGISTRATOR')
-      }
-      if (!next.includes(t)) {
-        next.push(t)
-      }
+      next.push(t)
     }
     onChange(joinJobTitles(next))
   }
 
   const addCustom = () => {
-    const title = newTitle.trim().toUpperCase()
+    const title = normalizeJobTitle(newTitle)
     if (!title) return
     if (!options.includes(title)) onAddCustom(title)
     if (!selected.includes(title)) onChange(joinJobTitles([...selected, title]))
@@ -565,13 +555,14 @@ export default function Employees() {
 
       setEmployees(combined.map((s: any) => {
         const isMgmtOrAdmin = s.role?.toUpperCase() === 'MANAGEMENT' || s.role?.toUpperCase() === 'ADMIN'
+        const cleanJobTitle = s.jobTitle ? parseJobTitles(s.jobTitle).join(', ') : (isMgmtOrAdmin ? 'REGISTRATION' : '')
         return {
           id:          s.id,
           name:        formatPersonName(s.name || 'Unknown'),
           email:       s.email       || '',
           phone:       s.phone       || '',
           role:        (s.role       || 'EMPLOYEE').toUpperCase(),
-          jobTitle:    isMgmtOrAdmin ? (s.jobTitle || 'WARRANTY REGISTRAR') : (s.jobTitle || ''),
+          jobTitle:    cleanJobTitle,
           branchId:    s.branchId    || '',
           branchName:  isMgmtOrAdmin ? 'ALL BRANCHES' : (s.branchId ? (branchMap[s.branchId] || s.branchId) : ''),
           isActive:    s.isActive !== false,
@@ -723,13 +714,14 @@ export default function Employees() {
 
   const mapApiUserToEmployee = (s: any, branchMap: Record<string, string>): Employee => {
     const isMgmtOrAdmin = s.role?.toUpperCase() === 'MANAGEMENT' || s.role?.toUpperCase() === 'ADMIN'
+    const cleanJobTitle = s.jobTitle ? parseJobTitles(s.jobTitle).join(', ') : (isMgmtOrAdmin ? 'REGISTRATION' : '')
     return {
       id: s.id,
       name: formatPersonName(s.name || 'Unknown'),
       email: s.email || '',
       phone: s.phone || '',
       role: (s.role || 'EMPLOYEE').toUpperCase(),
-      jobTitle: isMgmtOrAdmin ? (s.jobTitle || 'WARRANTY REGISTRAR') : (s.jobTitle || ''),
+      jobTitle: cleanJobTitle,
       branchId: s.branchId || '',
       branchName: isMgmtOrAdmin ? 'ALL BRANCHES' : (s.branchId ? (branchMap[s.branchId] || s.branchId) : ''),
       isActive: s.isActive !== false,
@@ -1020,14 +1012,35 @@ export default function Employees() {
     try { await navigator.clipboard.writeText(text); setCopiedField(field); setTimeout(() => setCopiedField(null), 2000) } catch { /* ignore */ }
   }
 
-  // Build dynamic job roles list from active employees
+  // Build dynamic job roles list: distinct individual roles/job titles only (no concatenated multi-roles)
   const availableJobRoles = useMemo(() => {
     const rolesSet = new Set<string>()
-    employees.forEach(e => {
-      const label = resolveLabel(e.role, e.jobTitle).toUpperCase()
-      if (label) rolesSet.add(label)
+
+    // Add standard roles
+    rolesSet.add('ADMIN')
+    rolesSet.add('MANAGEMENT')
+    rolesSet.add('OFFICER IN CHARGE')
+
+    // Add default job titles
+    DEFAULT_JOB_TITLES.forEach(t => {
+      if (t?.trim()) rolesSet.add(t.trim().toUpperCase())
     })
-    const list = Array.from(rolesSet).sort()
+
+    // Also include any individual job titles assigned to employees
+    employees.forEach(e => {
+      const r = (e.role || '').toUpperCase()
+      if (r === 'ADMIN') rolesSet.add('ADMIN')
+      else if (r === 'MANAGEMENT') rolesSet.add('MANAGEMENT')
+      else if (r === 'MANAGER') rolesSet.add('OFFICER IN CHARGE')
+
+      if (e.jobTitle) {
+        parseJobTitles(e.jobTitle).forEach(title => {
+          if (title?.trim()) rolesSet.add(title.trim().toUpperCase())
+        })
+      }
+    })
+
+    const list = Array.from(rolesSet).filter(Boolean).sort()
     return ['all', ...list]
   }, [employees])
 
@@ -1036,9 +1049,26 @@ export default function Employees() {
     if (tabFilter === 'active'   && !e.isActive) return false
     if (tabFilter === 'inactive' && e.isActive)  return false
     if (roleFilter !== 'all') {
-      const displayLabel = resolveLabel(e.role, e.jobTitle).toUpperCase()
-      const jobTitles = parseJobTitles(e.jobTitle || '').map(t => t.toUpperCase())
-      if (displayLabel !== roleFilter && !jobTitles.includes(roleFilter)) return false
+      const target = roleFilter.toUpperCase()
+      const empRole = (e.role || '').toUpperCase()
+
+      let matches = false
+      if (target === 'ADMIN' && empRole === 'ADMIN') {
+        matches = true
+      } else if (target === 'MANAGEMENT' && empRole === 'MANAGEMENT') {
+        matches = true
+      } else if ((target === 'OFFICER IN CHARGE' || target === 'MANAGER') && empRole === 'MANAGER') {
+        matches = true
+      } else {
+        const titles = parseJobTitles(e.jobTitle || '').map(t => t.toUpperCase())
+        if (titles.includes(target)) {
+          matches = true
+        } else if (resolveLabel(e.role, e.jobTitle).toUpperCase() === target) {
+          matches = true
+        }
+      }
+
+      if (!matches) return false
     }
     if (selectedBranchId && e.branchId !== selectedBranchId) return false
     if (!search.trim()) return true
@@ -1094,10 +1124,10 @@ export default function Employees() {
       <div className="rounded-2xl flex flex-col shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
 
         {/* Search, Filter, & Action Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-4 border-b" style={{ borderColor: border }}>
-          <div className="flex flex-wrap items-center gap-3 flex-1">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 sm:px-6 sm:py-4 border-b" style={{ borderColor: border }}>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3 flex-1">
             {/* Search Input */}
-            <div className="flex items-center gap-2.5 min-w-[260px] max-w-sm rounded-xl px-3.5 py-2 border transition-all focus-within:border-emerald-500" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            <div className="flex items-center gap-2.5 w-full sm:w-auto sm:min-w-[260px] sm:max-w-sm rounded-xl px-3.5 py-2.5 sm:py-2 border transition-all focus-within:border-emerald-500" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
               <Search className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
               <input
                 type="text"
@@ -1110,114 +1140,120 @@ export default function Employees() {
               {search && <button onClick={() => setSearch('')} style={{ color: textMuted }}><X className="w-4 h-4" /></button>}
             </div>
 
-            {/* Custom Branch Filter Dropdown (Wide Popup) */}
-            <div className="relative" ref={branchDropdownRef}>
-              <button
-                onClick={() => setBranchDropdownOpen(prev => !prev)}
-                className="flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-wider border transition-all hover:bg-slate-500/5 focus:outline-none"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-              >
-                <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
-                <span>
-                  {selectedBranchId
-                    ? branches.find(b => b.id === selectedBranchId)?.name.toUpperCase() || 'ALL BRANCHES'
-                    : 'ALL BRANCHES'}
-                </span>
-                <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${branchDropdownOpen ? 'rotate-180' : ''}`} style={{ color: textMuted }} />
-              </button>
-
-              {branchDropdownOpen && (
-                <div
-                  className="absolute left-0 mt-2 w-[480px] max-w-lg rounded-2xl shadow-2xl overflow-hidden z-40 border p-4 animate-[fadeIn_0.15s_ease-out]"
-                  style={{ backgroundColor: cardBg, borderColor: border }}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              {/* Custom Branch Filter Dropdown */}
+              <div className="relative flex-1 sm:flex-initial" ref={branchDropdownRef}>
+                <button
+                  onClick={() => setBranchDropdownOpen(prev => !prev)}
+                  className="w-full sm:w-auto flex items-center justify-between sm:justify-start gap-2 rounded-xl px-3.5 sm:px-4 py-2 text-xs font-semibold uppercase tracking-wider border transition-all hover:bg-slate-500/5 focus:outline-none"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                 >
-                  <div className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-3 pb-2 border-b" style={{ borderColor: border }}>
-                    Select Branch
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
+                    <span className="truncate">
+                      {selectedBranchId
+                        ? branches.find(b => b.id === selectedBranchId)?.name.toUpperCase() || 'ALL BRANCHES'
+                        : 'ALL BRANCHES'}
+                    </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto">
-                    <button
-                      onClick={() => { setSelectedBranchId(''); setBranchDropdownOpen(false) }}
-                      className="flex items-center justify-between px-4 py-3 rounded-xl text-xs font-semibold transition-all text-left uppercase border hover:bg-slate-500/5"
-                      style={{
-                        backgroundColor: selectedBranchId === '' ? 'rgba(16,185,129,0.06)' : 'transparent',
-                        borderColor: selectedBranchId === '' ? '#10B981' : border,
-                        color: selectedBranchId === '' ? '#10B981' : textPrimary
-                      }}
-                    >
-                      <span>ALL BRANCHES</span>
-                      {selectedBranchId === '' && <Check className="w-3.5 h-3.5 shrink-0 text-emerald-500" />}
-                    </button>
+                  <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${branchDropdownOpen ? 'rotate-180' : ''}`} style={{ color: textMuted }} />
+                </button>
 
-                    {branches.map(b => {
-                      const isSelected = selectedBranchId === b.id
-                      return (
-                        <button
-                          key={b.id}
-                          onClick={() => { setSelectedBranchId(b.id); setBranchDropdownOpen(false) }}
-                          className="flex items-center justify-between px-4 py-3 rounded-xl text-xs font-semibold transition-all text-left uppercase border hover:bg-slate-500/5"
-                          style={{
-                            backgroundColor: isSelected ? 'rgba(16,185,129,0.06)' : 'transparent',
-                            borderColor: isSelected ? '#10B981' : border,
-                            color: isSelected ? '#10B981' : textPrimary
-                          }}
-                        >
-                          <span className="truncate pr-2">{b.name.toUpperCase()}</span>
-                          {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-emerald-500" />}
-                        </button>
-                      )
-                    })}
+                {branchDropdownOpen && (
+                  <div
+                    className="absolute left-0 mt-2 w-[calc(100vw-2.5rem)] sm:w-[480px] max-w-lg rounded-2xl shadow-2xl overflow-hidden z-40 border p-4 animate-[fadeIn_0.15s_ease-out]"
+                    style={{ backgroundColor: cardBg, borderColor: border }}
+                  >
+                    <div className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-3 pb-2 border-b" style={{ borderColor: border }}>
+                      Select Branch
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto">
+                      <button
+                        onClick={() => { setSelectedBranchId(''); setBranchDropdownOpen(false) }}
+                        className="flex items-center justify-between px-4 py-3 rounded-xl text-xs font-semibold transition-all text-left uppercase border hover:bg-slate-500/5"
+                        style={{
+                          backgroundColor: selectedBranchId === '' ? 'rgba(16,185,129,0.06)' : 'transparent',
+                          borderColor: selectedBranchId === '' ? '#10B981' : border,
+                          color: selectedBranchId === '' ? '#10B981' : textPrimary
+                        }}
+                      >
+                        <span>ALL BRANCHES</span>
+                        {selectedBranchId === '' && <Check className="w-3.5 h-3.5 shrink-0 text-emerald-500" />}
+                      </button>
+
+                      {branches.map(b => {
+                        const isSelected = selectedBranchId === b.id
+                        return (
+                          <button
+                            key={b.id}
+                            onClick={() => { setSelectedBranchId(b.id); setBranchDropdownOpen(false) }}
+                            className="flex items-center justify-between px-4 py-3 rounded-xl text-xs font-semibold transition-all text-left uppercase border hover:bg-slate-500/5"
+                            style={{
+                              backgroundColor: isSelected ? 'rgba(16,185,129,0.06)' : 'transparent',
+                              borderColor: isSelected ? '#10B981' : border,
+                              color: isSelected ? '#10B981' : textPrimary
+                            }}
+                          >
+                            <span className="truncate pr-2">{b.name.toUpperCase()}</span>
+                            {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-emerald-500" />}
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
 
-            {/* Custom Role Filter Dropdown */}
-            <div className="relative" ref={roleDropdownRef}>
-              <button
-                onClick={() => setRoleDropdownOpen(prev => !prev)}
-                className="flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-wider border transition-all hover:bg-slate-500/5 focus:outline-none"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-              >
-                <Filter className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
-                <span>
-                  {roleFilter === 'all'
-                    ? 'ALL ROLES'
-                    : roleFilter}
-                </span>
-                <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${roleDropdownOpen ? 'rotate-180' : ''}`} style={{ color: textMuted }} />
-              </button>
-
-              {roleDropdownOpen && (
-                <div
-                  className="absolute left-0 mt-2 w-[240px] rounded-2xl shadow-2xl overflow-hidden z-40 border p-4 animate-[fadeIn_0.15s_ease-out]"
-                  style={{ backgroundColor: cardBg, borderColor: border }}
+              {/* Custom Role Filter Dropdown */}
+              <div className="relative flex-1 sm:flex-initial" ref={roleDropdownRef}>
+                <button
+                  onClick={() => setRoleDropdownOpen(prev => !prev)}
+                  className="w-full sm:w-auto flex items-center justify-between sm:justify-start gap-2 rounded-xl px-3.5 sm:px-4 py-2 text-xs font-semibold uppercase tracking-wider border transition-all hover:bg-slate-500/5 focus:outline-none"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                 >
-                  <div className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-3 pb-2 border-b" style={{ borderColor: border }}>
-                    Select Role
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Filter className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
+                    <span className="truncate">
+                      {roleFilter === 'all'
+                        ? 'ALL ROLES'
+                        : roleFilter}
+                    </span>
                   </div>
-                  <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto">
-                    {availableJobRoles.map((rKey: string) => {
-                      const isSelected = roleFilter === rKey
-                      const label = rKey === 'all' ? 'ALL ROLES' : rKey
-                      return (
-                        <button
-                          key={rKey}
-                          onClick={() => { setRoleFilter(rKey); setRoleDropdownOpen(false) }}
-                          className="flex items-center justify-between px-4 py-2.5 rounded-xl text-xs font-semibold transition-all text-left uppercase border hover:bg-slate-500/5"
-                          style={{
-                            backgroundColor: isSelected ? 'rgba(16,185,129,0.06)' : 'transparent',
-                            borderColor: isSelected ? '#10B981' : border,
-                            color: isSelected ? '#10B981' : textPrimary
-                          }}
-                        >
-                          <span>{label}</span>
-                          {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-emerald-500" />}
-                        </button>
-                      )
-                    })}
+                  <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${roleDropdownOpen ? 'rotate-180' : ''}`} style={{ color: textMuted }} />
+                </button>
+
+                {roleDropdownOpen && (
+                  <div
+                    className="absolute right-0 sm:left-0 mt-2 w-[calc(100vw-2.5rem)] sm:w-[240px] max-w-xs rounded-2xl shadow-2xl overflow-hidden z-40 border p-4 animate-[fadeIn_0.15s_ease-out]"
+                    style={{ backgroundColor: cardBg, borderColor: border }}
+                  >
+                    <div className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-3 pb-2 border-b" style={{ borderColor: border }}>
+                      Select Role
+                    </div>
+                    <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto">
+                      {availableJobRoles.map((rKey: string) => {
+                        const isSelected = roleFilter === rKey
+                        const label = rKey === 'all' ? 'ALL ROLES' : rKey
+                        return (
+                          <button
+                            key={rKey}
+                            onClick={() => { setRoleFilter(rKey); setRoleDropdownOpen(false) }}
+                            className="flex items-center justify-between px-4 py-2.5 rounded-xl text-xs font-semibold transition-all text-left uppercase border hover:bg-slate-500/5"
+                            style={{
+                              backgroundColor: isSelected ? 'rgba(16,185,129,0.06)' : 'transparent',
+                              borderColor: isSelected ? '#10B981' : border,
+                              color: isSelected ? '#10B981' : textPrimary
+                            }}
+                          >
+                            <span>{label}</span>
+                            {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-emerald-500" />}
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
 
@@ -1225,7 +1261,7 @@ export default function Employees() {
           {(isAdmin || isManager) && (
             <button
               onClick={openCreateFlow}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-sm"
+              className="w-full md:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-sm shrink-0"
               style={{ backgroundColor: '#10B981' }}
             >
               <Plus className="w-4 h-4" /> ADD MEMBER
@@ -1233,8 +1269,161 @@ export default function Employees() {
           )}
         </div>
 
-        {/* Table */}
-        <div className="overflow-x-auto rounded-b-2xl">
+        {/* Dynamic Card View — Mobile & Small Screens (<md) */}
+        <div className="md:hidden flex flex-col divide-y" style={{ borderColor: border }}>
+          {loading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="p-4 flex flex-col gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl animate-pulse shrink-0" style={{ backgroundColor: inputBg }} />
+                  <div className="flex flex-col gap-2 flex-1">
+                    <div className="h-4 rounded animate-pulse w-32" style={{ backgroundColor: inputBg }} />
+                    <div className="h-3 rounded animate-pulse w-44" style={{ backgroundColor: inputBg }} />
+                  </div>
+                  <div className="w-14 h-6 rounded-full animate-pulse shrink-0" style={{ backgroundColor: inputBg }} />
+                </div>
+                <div className="flex items-center gap-2 pt-2 border-t" style={{ borderColor: border }}>
+                  <div className="h-6 w-24 rounded-lg animate-pulse" style={{ backgroundColor: inputBg }} />
+                  <div className="h-6 w-28 rounded-lg animate-pulse" style={{ backgroundColor: inputBg }} />
+                </div>
+              </div>
+            ))
+          ) : filtered.length === 0 ? (
+            <div className="px-4 py-16 text-center">
+              <User className="w-10 h-10 mx-auto mb-2 opacity-25" style={{ color: textMuted }} />
+              <p className="text-sm font-semibold" style={{ color: textPrimary }}>No members found</p>
+              <p className="text-xs mt-1" style={{ color: textMuted }}>Try a different search or filter.</p>
+            </div>
+          ) : (
+            filtered.map(e => {
+              const rc = roleColor(e.role)
+              return (
+                <div
+                  key={e.id}
+                  onClick={() => handleRowClick(e)}
+                  className="p-4 flex flex-col gap-3 transition-colors cursor-pointer active:bg-slate-500/5"
+                >
+                  {/* Top: Avatar, Name, Email, Status Button */}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {/* Avatar */}
+                      <div className="shrink-0 relative w-12 h-12">
+                        {e.profileImage ? (
+                          <img
+                            src={resolveImageUrl(e.profileImage)}
+                            alt={e.name}
+                            className="w-full h-full rounded-2xl object-cover"
+                            style={{ border: `1.5px solid ${border}` }}
+                          />
+                        ) : (
+                          <div
+                            className="w-full h-full rounded-2xl flex items-center justify-center text-white font-black text-sm shrink-0"
+                            style={{
+                              background: `linear-gradient(135deg, ${
+                                ['#10B981','#3B82F6','#8B5CF6','#EC4899','#F59E0B','#14B8A6','#6366F1'][
+                                  (e.name.charCodeAt(0) || 0) % 7
+                                ]
+                              }, #059669)`,
+                              border: `1.5px solid ${border}`,
+                            }}
+                          >
+                            {e.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                        {/* Status Dot */}
+                        <div
+                          className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2"
+                          style={{
+                            backgroundColor: e.isActive ? '#10B981' : '#94a3b8',
+                            borderColor: cardBg,
+                          }}
+                        />
+                      </div>
+
+                      {/* Name & Email */}
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-bold truncate leading-tight" style={{ color: textPrimary }}>
+                          {e.name.toUpperCase()}
+                        </div>
+                        <div className="text-xs truncate mt-0.5" style={{ color: textMuted }}>
+                          {e.email.toLowerCase()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Status Toggle Button */}
+                    <button
+                      type="button"
+                      onClick={evt => {
+                        evt.stopPropagation()
+                        requestToggleActive(e)
+                      }}
+                      className="shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider transition-all border hover:opacity-80"
+                      style={{
+                        backgroundColor: e.isActive ? 'rgba(16,185,129,0.1)' : 'rgba(148,163,184,0.1)',
+                        borderColor: e.isActive ? 'rgba(16,185,129,0.3)' : 'rgba(148,163,184,0.3)',
+                        color: e.isActive ? '#10B981' : '#94a3b8',
+                      }}
+                      title="Toggle active status"
+                    >
+                      {e.isActive ? 'ACTIVE' : 'INACTIVE'}
+                    </button>
+                  </div>
+
+                  {/* Metadata Chips: Role, Branch, Contact */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    {/* Role Chip */}
+                    <span
+                      className="text-[11px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wide border inline-flex items-center"
+                      style={{
+                        backgroundColor: rc.bg,
+                        color: rc.text,
+                        borderColor: rc.border,
+                      }}
+                    >
+                      {resolveLabel(e.role, e.jobTitle).toUpperCase()}
+                    </span>
+
+                    {/* Branch Chip */}
+                    {e.branchName && (
+                      <span
+                        className="text-[11px] font-semibold px-2.5 py-1 rounded-lg flex items-center gap-1.5 border"
+                        style={{
+                          backgroundColor: inputBg,
+                          borderColor: inputBorder,
+                          color: textPrimary,
+                        }}
+                      >
+                        <Building2 className="w-3 h-3 text-emerald-500 shrink-0" />
+                        <span className="truncate max-w-[150px]">{e.branchName.toUpperCase()}</span>
+                      </span>
+                    )}
+
+                    {/* Contact Phone Chip */}
+                    {e.phone && (
+                      <a
+                        href={`tel:${e.phone}`}
+                        onClick={evt => evt.stopPropagation()}
+                        className="text-[11px] font-semibold px-2.5 py-1 rounded-lg flex items-center gap-1.5 border transition-colors hover:border-emerald-500/50"
+                        style={{
+                          backgroundColor: inputBg,
+                          borderColor: inputBorder,
+                          color: textMuted,
+                        }}
+                      >
+                        <Phone className="w-3 h-3 text-emerald-500 shrink-0" />
+                        <span>{formatPhoneNumber(e.phone)}</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )
+            })
+          )}
+        </div>
+
+        {/* Table — Desktop (md+) */}
+        <div className="hidden md:block overflow-x-auto rounded-b-2xl">
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#080f1c', borderBottom: `1px solid ${border}` }}>
@@ -1402,8 +1591,8 @@ export default function Employees() {
             }}
           >
             {/* Header */}
-            <div className="px-6 py-5 border-b flex items-center justify-between shrink-0" style={{ borderColor: border }}>
-              <div className="flex items-center gap-3">
+            <div className="p-4 sm:px-6 sm:py-5 border-b flex flex-wrap items-center justify-between gap-3 shrink-0" style={{ borderColor: border }}>
+              <div className="flex items-center gap-3 min-w-0 flex-1">
                 <button
                   onClick={closeDetailTab}
                   className="p-2 rounded-lg transition-all hover:bg-slate-500/10 shrink-0"
@@ -1426,25 +1615,25 @@ export default function Employees() {
                     </div>
                   )}
                 </div>
-                <div>
-                  <h3 className="text-base font-bold tracking-tight" style={{ color: textPrimary }}>{selectedEmployee.name}</h3>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold tracking-tight truncate" style={{ color: textPrimary }}>{selectedEmployee.name}</h3>
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: roleColor(selectedEmployee.role).bg, color: roleColor(selectedEmployee.role).text }}>
                       {resolveLabel(selectedEmployee.role, selectedEmployee.jobTitle)}
                     </span>
                     {selectedEmployee.branchName && (
                       <span className="text-[11px] flex items-center gap-1" style={{ color: textMuted }}>
-                        <Building2 className="w-3 h-3" />{selectedEmployee.branchName}
+                        <Building2 className="w-3 h-3 shrink-0" /><span className="truncate">{selectedEmployee.branchName}</span>
                       </span>
                     )}
                     <span className="text-[11px] flex items-center gap-1" style={{ color: selectedEmployee.isActive ? '#10B981' : textMuted }}>
-                      {selectedEmployee.isActive ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                      {selectedEmployee.isActive ? <CheckCircle className="w-3 h-3 shrink-0" /> : <XCircle className="w-3 h-3 shrink-0" />}
                       {selectedEmployee.isActive ? 'Active' : 'Inactive'}
                     </span>
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 {(isAdmin || isManager) && !isProtectedFromEdit(selectedEmployee.role) && (
                   <button
                     onClick={() => openEdit(selectedEmployee)}
@@ -1465,7 +1654,7 @@ export default function Employees() {
             </div>
 
             {/* Tabs */}
-            <div className="flex border-b shrink-0" style={{ borderColor: border }}>
+            <div className="flex border-b shrink-0 overflow-x-auto" style={{ borderColor: border }}>
               {([
                 'overview',
                 'history',
@@ -1474,7 +1663,7 @@ export default function Employees() {
                 <button
                   key={tab}
                   onClick={() => setActiveDrawerTab(tab)}
-                  className="px-6 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all"
+                  className="px-4 sm:px-6 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all whitespace-nowrap"
                   style={{
                     borderColor: activeDrawerTab === tab ? '#10B981' : 'transparent',
                     color: activeDrawerTab === tab ? '#10B981' : textMuted,
