@@ -5,6 +5,7 @@ import { Eye, EyeOff, Lock, Mail } from 'lucide-react'
 import logoImg from '../assets/ash-logo.jpg'
 import { getPortalHomePath, resolveImageUrl, formatPersonName, API_BASE_URL } from '../utils/api'
 import { PUBLIC_BRANCHES } from '../data/branches'
+import { BranchMarqueeHeader } from '../components/BranchMarqueeHeader'
 
 const WEBSITE = 'www.ashcol.com.ph'
 const SUPPORT_EMAIL = 'centralsupport@ashcol.com.ph'
@@ -136,6 +137,11 @@ export default function Login() {
       className="fixed inset-0 z-[100] overflow-hidden overscroll-none touch-none font-['Segoe_UI',ui-sans-serif,system-ui,sans-serif] text-white"
       style={{ height: '100svh', width: '100%' }}
     >
+      {/* ── Top Moving Branches Marquee ── */}
+      <div className="absolute top-0 left-0 right-0 z-30 pointer-events-auto">
+        <BranchMarqueeHeader />
+      </div>
+
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div
           className="absolute inset-0"

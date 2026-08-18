@@ -9,6 +9,7 @@ import {
 import logoImg from '../assets/ash-logo.jpg'
 import { PUBLIC_BRANCHES } from '../data/branches'
 import { getPortalUrl } from '../utils/portalUrl'
+import BranchMarqueeHeader from '../components/BranchMarqueeHeader'
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -479,11 +480,23 @@ export default function Landing() {
   ] as const
 
   return (
-    <div className="min-h-screen overflow-x-hidden pt-16 font-['Inter',sans-serif] transition-colors duration-300" style={{ backgroundColor: t.bg, color: t.text }}>
+    <div className="min-h-screen overflow-x-hidden pt-[105px] font-['Inter',sans-serif] transition-colors duration-300" style={{ backgroundColor: t.bg, color: t.text }}>
+
+      {/* ── Top Moving Branches Marquee ── */}
+      <div className="fixed top-0 left-0 right-0 z-50">
+        <BranchMarqueeHeader
+          variant={isDark ? 'dark' : 'light'}
+          className="py-2.5"
+          style={{
+            backgroundColor: isDark ? 'rgba(6,11,24,0.96)' : 'rgba(244,250,244,0.96)',
+            borderColor: t.borderNav,
+          }}
+        />
+      </div>
 
       {/* ── Sticky Navbar ─────────────────────────── */}
       <div
-        className="fixed top-0 left-0 right-0 z-50 transition-colors duration-300"
+        className="fixed top-[41px] left-0 right-0 z-40 transition-colors duration-300"
         style={{ backgroundColor: t.bgNav, borderBottom: `1px solid ${t.borderNav}`, backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
       >
         <nav className="flex items-center justify-between px-4 md:px-11 lg:px-20 py-3">
