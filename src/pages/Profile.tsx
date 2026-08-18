@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import ImageCropModal from '../components/ImageCropModal'
 import TicketHistoryTable from '../components/TicketHistoryTable'
+import PresenceStatus from '../components/PresenceStatus'
 import WarrantyRegistrationHistoryTable from '../components/WarrantyRegistrationHistoryTable'
 import type { AddressValue } from '../components/PhAddressPicker'
 import {
@@ -355,6 +356,9 @@ export default function Profile() {
                 <Shield className="w-3 h-3" />
                 {user?.jobTitle ? formatPersonName(user.jobTitle) : formatRole(user?.role)}
               </span>
+              <div className="mt-1 md:flex md:justify-center">
+                <PresenceStatus lastActiveAt={user?.lastActiveAt} lastLoginAt={user?.lastLoginAt} textMuted={textMuted} />
+              </div>
             </div>
           </div>
 

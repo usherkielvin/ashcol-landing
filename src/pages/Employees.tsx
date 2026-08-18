@@ -11,6 +11,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import UserAvatar from '../components/UserAvatar'
 import TicketHistoryTable from '../components/TicketHistoryTable'
+import PresenceStatus from '../components/PresenceStatus'
 import WarrantyRegistrationHistoryTable from '../components/WarrantyRegistrationHistoryTable'
 import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName, notifyEmployeesDirectoryUpdated, isWarrantyRegistrar } from '../utils/api'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
@@ -54,6 +55,8 @@ interface Employee {
   birthDate?: string
   createdAt?: string
   updatedAt?: string
+  lastLoginAt?: string
+  lastActiveAt?: string
 }
 
 interface BranchOption { id: string; name: string }
@@ -576,6 +579,8 @@ export default function Employees() {
           dateHired:   s.dateHired   || '',
           createdAt:   s.createdAt,
           updatedAt:   s.updatedAt,
+          lastLoginAt: s.lastLoginAt,
+          lastActiveAt: s.lastActiveAt,
         }
       }))
     } catch (e) { console.error(e) }
@@ -1348,6 +1353,9 @@ export default function Employees() {
                         <div className="text-xs truncate mt-0.5" style={{ color: textMuted }}>
                           {e.email.toLowerCase()}
                         </div>
+                        <div className="mt-1">
+                          <PresenceStatus lastActiveAt={e.lastActiveAt} lastLoginAt={e.lastLoginAt} textMuted={textMuted} />
+                        </div>
                       </div>
                     </div>
 
@@ -1519,6 +1527,9 @@ export default function Employees() {
                         <div className="min-w-0">
                           <div className="text-sm font-bold truncate max-w-[220px]" style={{ color: textPrimary }}>{e.name.toUpperCase()}</div>
                           <div className="text-xs truncate max-w-[220px] mt-0.5" style={{ color: textMuted }}>{e.email.toLowerCase()}</div>
+                          <div className="mt-1">
+                            <PresenceStatus lastActiveAt={e.lastActiveAt} lastLoginAt={e.lastLoginAt} textMuted={textMuted} />
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -1630,6 +1641,7 @@ export default function Employees() {
                       {selectedEmployee.isActive ? <CheckCircle className="w-3 h-3 shrink-0" /> : <XCircle className="w-3 h-3 shrink-0" />}
                       {selectedEmployee.isActive ? 'Active' : 'Inactive'}
                     </span>
+                    <PresenceStatus lastActiveAt={selectedEmployee.lastActiveAt} lastLoginAt={selectedEmployee.lastLoginAt} textMuted={textMuted} />
                   </div>
                 </div>
               </div>
@@ -1696,6 +1708,12 @@ export default function Employees() {
                         value={selectedEmployee.createdAt ? new Date(selectedEmployee.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' }) : ''}
                         icon={<Calendar />}
                         emptyLabel="UNKNOWN"
+                      />
+                      <DetailField
+                        label="LAST LOGIN"
+                        value={selectedEmployee.lastLoginAt ? new Date(selectedEmployee.lastLoginAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : ''}
+                        icon={<Calendar />}
+                        emptyLabel="NEVER"
                       />
                     </div>
                   </div>

@@ -106,6 +106,8 @@ export default function Login() {
         initials: getInitials(displayName),
         branchId: appUser.branchId ?? null,
         jobTitle: appUser.jobTitle ?? null,
+        lastLoginAt: appUser.lastLoginAt ?? null,
+        lastActiveAt: appUser.lastActiveAt ?? null,
       }
 
       if (rememberMe) {

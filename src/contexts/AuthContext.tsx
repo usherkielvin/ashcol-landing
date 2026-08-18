@@ -23,6 +23,8 @@ export interface AuthUser {
   /** User's official job title (e.g. "Sales Coordinator") */
   jobTitle?: string | null
   birthDate?: string | null
+  lastLoginAt?: string | null
+  lastActiveAt?: string | null
 }
 
 interface AuthContextType {
@@ -225,6 +227,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           street: u.street ?? u.address ?? prev.street,
           landmark: u.landmark ?? prev.landmark,
           initials: getInitials(name || prev.name),
+          lastLoginAt: u.lastLoginAt ?? prev.lastLoginAt,
+          lastActiveAt: u.lastActiveAt ?? prev.lastActiveAt,
         })
         sessionStorage.setItem(SESSION_KEY, JSON.stringify(next))
         if (localStorage.getItem(TOKEN_KEY)) {
