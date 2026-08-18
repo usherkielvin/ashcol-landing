@@ -7,7 +7,7 @@ import {
   Building2, Trash2, MapPin,
   ChevronDown, Plus, CheckCircle2, AlertCircle, Package, CalendarDays,
   Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3, Clock, Check,
-  Store, UserRound, Wind, MessageSquare, Users, Settings, Truck, Wallet, CreditCard
+  Store, UserRound, Wind, MessageSquare, Users, Settings, Truck, CreditCard
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
