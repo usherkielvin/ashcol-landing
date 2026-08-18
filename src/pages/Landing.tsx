@@ -232,7 +232,7 @@ const FAQS = [
   },
   {
     q: 'How do I book a service?',
-    a: 'Use the Book a Service button on this page, then choose the best contact channel in the contact section.',
+    a: 'Click the "Book a Service" button on this page to fill out our online booking form, or contact our customer service team directly through the contact numbers below.',
   },
   {
     q: 'What AC brands does ASHCOL service?',
@@ -620,12 +620,12 @@ export default function Landing() {
 
         {/* CTA — below steps */}
         <div className="relative w-full max-w-lg">
-          <a
-            href="#contact"
+          <Link
+            to="/booking"
             className="flex items-center justify-center gap-2 w-full py-4 text-[15px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green"
           >
             Book a Service
-          </a>
+          </Link>
         </div>
 
       </section>
@@ -1257,12 +1257,12 @@ export default function Landing() {
         </p>
         <div className="relative w-full max-w-lg mx-auto">
           <div className="flex justify-center w-full">
-            <a
-              href="#contact"
+            <Link
+              to="/booking"
               className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-3.5 text-[14px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green sm:min-w-[220px]"
             >
               Book a Service
-            </a>
+            </Link>
           </div>
         </div>
       </section>
@@ -1301,7 +1301,7 @@ export default function Landing() {
           {/* Quick Links + App */}
           <div className="flex flex-col gap-2">
             <div className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: t.textMuted }}>Quick Links</div>
-            <a href="#contact" className="text-[13px] transition-colors hover:text-[#10B981]" style={{ color: t.textFaint }}>Book a Service</a>
+            <Link to="/booking" className="text-[13px] transition-colors hover:text-[#10B981]" style={{ color: t.textFaint }}>Book a Service</Link>
           </div>
         </div>
 
