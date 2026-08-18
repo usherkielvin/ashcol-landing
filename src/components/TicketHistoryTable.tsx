@@ -150,16 +150,66 @@ export default function TicketHistoryTable({ person, headerLeft }: { person: His
     return normalizeToYMD(raw)
   }
 
+  const getScheduledDateStr = (t: any): string => {
+    const raw = t.scheduledDate || t.scheduled_date || t.preferredDate || t.preferred_date
+    return normalizeToYMD(raw)
+  }
+
+  // Split the "is this person involved at all" match (used to fetch `history`) by intent:
+  // who *created/filed* the ticket vs who it's *assigned* to for work.
+  const nameNorm = person.name.toLowerCase().trim()
+  const personEmail = person.email.toLowerCase().trim()
+  const personPersonalEmail = (person.personalEmail || '').toLowerCase().trim()
+
+  const isCreatorOf = (t: any): boolean => {
+    if (t.customerId === person.id || t.customer_id === person.id) return true
+    if (t.createdByUserId === person.id || t.created_by_user_id === person.id) return true
+    if (t.createdBy && t.createdBy.toLowerCase().trim() === nameNorm) return true
+    if (t.createdByName && t.createdByName.toLowerCase().trim() === nameNorm) return true
+    if (t.createdByName && t.createdByName.toLowerCase().trim() === personEmail) return true
+    const customerEmail = (t.customerEmail || t.customer_email || '').toLowerCase().trim()
+    if (customerEmail && (customerEmail === personEmail || (personPersonalEmail && customerEmail === personPersonalEmail))) return true
+    return false
+  }
+
+  const isAssigneeOf = (t: any): boolean => {
+    if (t.negotiatorId === person.id || t.negotiator_id === person.id) return true
+    if (t.negotiatorName && t.negotiatorName.toLowerCase().trim() === nameNorm) return true
+    if (t.assignedTo === person.id || t.assigned_to === person.id) return true
+    if (t.assignedEmployeeName && t.assignedEmployeeName.toLowerCase().trim() === nameNorm) return true
+    if (t.installerId === person.id || t.installer_id === person.id) return true
+    if (t.installerName && t.installerName.toLowerCase().trim() === nameNorm) return true
+    if (t.driverId === person.id || t.driver_id === person.id) return true
+    if (t.driverName && t.driverName.toLowerCase().trim() === nameNorm) return true
+    if (t.closedBy === person.id || t.closed_by === person.id) return true
+    if (t.closedBy && (t.closedBy.toLowerCase().trim() === nameNorm || t.closedBy.toLowerCase().trim() === personEmail)) return true
+    if (t.warrantyRegistrationCompletedBy === person.id || t.warranty_registration_completed_by === person.id) return true
+    if (t.warrantyRegistrationCompletedBy && t.warrantyRegistrationCompletedBy.toLowerCase().trim() === nameNorm) return true
+    return false
+  }
+
   // ── Filter logic ───────────────────────────────────────────────────────────
+  const targetYMD = normalizeToYMD(dateFilter)
+
   const displayedHistory = history.filter(t => {
     if (branchFilter && t.branchId !== branchFilter && t.branch_id !== branchFilter) return false
+    if (roleTag === 'created') return isCreatorOf(t) && (!dateFilter || getCreatedDateStr(t) === targetYMD)
+    if (roleTag === 'assigned') return isAssigneeOf(t) && (!dateFilter || getScheduledDateStr(t) === targetYMD)
     if (dateFilter) {
-      const createdYMD = getCreatedDateStr(t)
-      const targetYMD = normalizeToYMD(dateFilter)
-      return createdYMD === targetYMD
+      return getCreatedDateStr(t) === targetYMD || getScheduledDateStr(t) === targetYMD
     }
     return true
   })
+
+  // Counts for the currently selected date (defaults to today, or all-time if the date filter is cleared) — drive the quick-filter tags.
+  const createdOnDateCount = history.filter(t => isCreatorOf(t) && (!dateFilter || getCreatedDateStr(t) === targetYMD)).length
+  const assignedOnDateCount = history.filter(t => isAssigneeOf(t) && (!dateFilter || getScheduledDateStr(t) === targetYMD)).length
+
+  const dateFilterSuffix = !dateFilter
+    ? ''
+    : dateFilter === todayYMD()
+      ? ' Today'
+      : ` On ${new Date(dateFilter + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: '2-digit' })}`
 
   const formatBranchNameStr = (raw: string) => {
     if (!raw) return '—'
@@ -230,9 +280,35 @@ export default function TicketHistoryTable({ person, headerLeft }: { person: His
             />
           </div>
 
-          {(dateFilter || branchFilter) && (
+          <button
+            onClick={() => setRoleTag(prev => prev === 'created' ? '' : 'created')}
+            className="px-3 py-1.5 rounded-full text-xs sm:text-sm font-bold transition-all"
+            style={{
+              backgroundColor: roleTag === 'created' ? '#10B981' : 'transparent',
+              color: roleTag === 'created' ? '#ffffff' : textPrimary,
+              border: `1px solid ${roleTag === 'created' ? '#10B981' : border}`,
+            }}
+            title={`Tickets ${person.name} created${dateFilter ? ' on the selected date' : ''}`}
+          >
+            Created{dateFilterSuffix} · {createdOnDateCount}
+          </button>
+
+          <button
+            onClick={() => setRoleTag(prev => prev === 'assigned' ? '' : 'assigned')}
+            className="px-3 py-1.5 rounded-full text-xs sm:text-sm font-bold transition-all"
+            style={{
+              backgroundColor: roleTag === 'assigned' ? '#3B82F6' : 'transparent',
+              color: roleTag === 'assigned' ? '#ffffff' : textPrimary,
+              border: `1px solid ${roleTag === 'assigned' ? '#3B82F6' : border}`,
+            }}
+            title={`Tickets scheduled to ${person.name}${dateFilter ? ' on the selected date' : ''}`}
+          >
+            Assigned{dateFilterSuffix} · {assignedOnDateCount}
+          </button>
+
+          {(dateFilter || branchFilter || roleTag) && (
             <button
-              onClick={() => { setDateFilter(''); setBranchFilter('') }}
+              onClick={() => { setDateFilter(''); setBranchFilter(''); setRoleTag('') }}
               className="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold transition-all hover:bg-slate-500/10"
               style={{ color: '#EF4444', border: `1px solid ${border}` }}
             >
@@ -272,7 +348,7 @@ export default function TicketHistoryTable({ person, headerLeft }: { person: His
             <table className="w-full border-collapse" style={{ minWidth: 960 }}>
               <thead className="sticky top-0 z-10">
                 <tr style={{ backgroundColor: theadBg, borderBottom: `1px solid ${border}` }}>
-                  {['Date Created', 'Ticket No.', 'Customer', 'District', 'Branch', 'Negotiator', 'Scheduled Date', 'Status'].map((h, i, arr) => (
+                  {['Date Created', 'Role', 'Ticket No.', 'Customer', 'District', 'Branch', 'Negotiator', 'Scheduled Date', 'Status'].map((h, i, arr) => (
                     <th
                       key={h}
                       className={`px-5 py-3.5 text-xs font-black uppercase tracking-wider whitespace-nowrap border-r ${i === 0 ? 'text-left' : 'text-center'}`}
@@ -293,12 +369,25 @@ export default function TicketHistoryTable({ person, headerLeft }: { person: His
                   const isInstalled = status === 'INSTALLED' || status === 'COMPLETED'
                   const isActive = status === 'PENDING' || status === 'ASSIGNED' || status === 'SCHEDULED'
                   const statusColor = isInstalled ? '#10B981' : isActive ? '#3B82F6' : status === 'CANCELLED' ? '#EF4444' : textMuted
+                  const rowIsCreated = isCreatorOf(t)
+                  const rowIsAssigned = isAssigneeOf(t)
                   return (
                     <tr
                       key={t.id || idx}
                       style={{ borderBottom: `1px solid ${border}`, backgroundColor: idx % 2 === 0 ? inputBg : cardBg }}
                     >
                       <td className="px-5 py-3 text-sm font-semibold border-r whitespace-nowrap" style={{ color: textPrimary, borderColor: border }}>{createdDateTime(t)}</td>
+                      <td className="px-5 py-3 text-center border-r" style={{ borderColor: border }}>
+                        <div className="flex items-center justify-center gap-1 flex-wrap">
+                          {rowIsCreated && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wider" style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10B981' }}>CREATED</span>
+                          )}
+                          {rowIsAssigned && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wider" style={{ backgroundColor: 'rgba(59,130,246,0.15)', color: '#3B82F6' }}>ASSIGNED</span>
+                          )}
+                          {!rowIsCreated && !rowIsAssigned && <span style={{ color: textMuted }}>—</span>}
+                        </div>
+                      </td>
                       <td className="px-5 py-3 text-sm font-bold text-center border-r" style={{ color: textPrimary, borderColor: border }}>{tNum}</td>
                       <td className="px-5 py-3 text-sm font-semibold text-center border-r" style={{ color: textPrimary, borderColor: border }}>{custName}</td>
                       <td className="px-5 py-3 text-sm text-center border-r" style={{ color: textMuted, borderColor: border }}>{district}</td>

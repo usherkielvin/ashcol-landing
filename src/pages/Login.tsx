@@ -5,7 +5,7 @@ import { Eye, EyeOff, Lock, Mail } from 'lucide-react'
 import logoImg from '../assets/ash-logo.jpg'
 import { getPortalHomePath, resolveImageUrl, formatPersonName, API_BASE_URL } from '../utils/api'
 import { PUBLIC_BRANCHES } from '../data/branches'
-import { BranchMarqueeHeader } from '../components/BranchMarqueeHeader'
+import BranchMarqueeHeader from '../components/BranchMarqueeHeader'
 
 const WEBSITE = 'www.ashcol.com.ph'
 const SUPPORT_EMAIL = 'centralsupport@ashcol.com.ph'
