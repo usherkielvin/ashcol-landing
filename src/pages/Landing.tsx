@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { motion, AnimatePresence, animate, type Variants } from 'framer-motion'
 import gsap from 'gsap'
 import {
@@ -295,18 +296,13 @@ export default function Landing() {
                 </button>
               ))}
               <div className="h-[1px] w-full bg-white/10 my-2"></div>
-              <button
-                onClick={() => {
-                  const contactSection = document.getElementById('contact');
-                  if (contactSection) {
-                    contactSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }
-                  setMobileMenuOpen(false);
-                }}
+              <Link
+                to="/booking"
+                onClick={() => setMobileMenuOpen(false)}
                 className="w-full text-center px-6 py-3 bg-[#10B981] text-white text-[16px] font-bold rounded-full hover:bg-[#059669] transition-colors"
               >
                 Book Now
-              </button>
+              </Link>
             </motion.div>
           )}
         </AnimatePresence>
@@ -803,8 +799,8 @@ export default function Landing() {
 
               {/* Action Buttons: Call & Facebook Connection */}
               <div className="flex flex-col items-center gap-6 mt-2">
-                <button
-                  onClick={() => window.location.href = 'https://www.ashcol.com.ph/booking'}
+                <Link
+                  to="/booking"
                   className="group flex px-8 py-4 justify-center items-center gap-3 rounded-full bg-[#10B981] text-white text-[15px] font-bold no-underline transition-all hover:bg-[#059669] hover:shadow-[0_8px_28px_rgba(16,185,129,0.30)] w-full sm:w-auto"
                 >
                   Book Now
@@ -812,7 +808,7 @@ export default function Landing() {
                     <ArrowUpRight className="w-4 h-4 shrink-0 transition-transform duration-300 group-hover:-translate-y-full" />
                     <ArrowUpRight className="w-4 h-4 shrink-0 transition-transform duration-300 group-hover:-translate-y-full" />
                   </span>
-                </button>
+                </Link>
 
                 <div className="flex flex-col items-center gap-2 mt-2">
                   <span className="text-white/60 font-['IBM_Plex_Mono',monospace] text-xs font-medium uppercase tracking-[1.5px]">
@@ -844,6 +840,7 @@ export default function Landing() {
                     {["Services", "About Us", "Branches", "Clients", "FAQs"].map((link) => (
                       <li key={link}><button onClick={() => scrollTo(link === 'About Us' ? 'about' : link === 'FAQs' ? 'faq' : link.toLowerCase())} className="font-sans text-[13px] md:text-[15px] font-medium text-white/70 hover:text-[#10B981] transition-colors">{link}</button></li>
                     ))}
+                    <li><Link to="/booking" className="font-sans text-[13px] md:text-[15px] font-medium text-[#10B981] hover:underline transition-colors">Book a Service</Link></li>
                   </ul>
                 </div>
                 
