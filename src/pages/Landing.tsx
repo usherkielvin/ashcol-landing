@@ -1,1315 +1,885 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react'
-import { Link } from 'react-router-dom'
-import { 
-  Wrench, Settings as ConfigIcon, TrendingUp, PhoneCall, Smartphone, Headset, 
-  Mail, Calendar, Clock, Star, MapPin, Check, MessageSquare,
-  Users, ArrowUpRight, Menu, X, Building2, Zap, Wind, ShieldCheck, Target, Heart, Briefcase, Bell,
-  Sun, Moon, ChevronLeft, ChevronRight, Layers, Home, Factory, Phone
+import React, { useEffect, useRef, useState } from 'react'
+import { motion, AnimatePresence, animate, type Variants } from 'framer-motion'
+import gsap from 'gsap'
+import {
+  Star, MapPin, MessageSquare,
+  Users, ArrowUpRight, ArrowRight, Menu, X, Building2,
+  ShieldCheck, Heart, Bell, Plus, Phone, Briefcase, Check, Target,
+  Wrench, Settings as ConfigIcon, Wind, MousePointerClick, FileText
 } from 'lucide-react'
 import logoImg from '../assets/ash-logo.jpg'
+import qrCodeImg from '../assets/774593213_882421038029027_3452067891567596325_n.png'
 import { PUBLIC_BRANCHES } from '../data/branches'
-import { getPortalUrl } from '../utils/portalUrl'
+
+
+// ─── Motion Primitives ───────────────────────────────────────────────────────
+
+const fadeUpContainer: Variants = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1, transition: { staggerChildren: 0.1 } }
+}
+
+const fadeUpItem: Variants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] } }
+}
+
+function Reveal({ children, delay = 0, y = 24, x = 0, className, style }: {
+  children: React.ReactNode, delay?: number, y?: number, x?: number, className?: string, style?: React.CSSProperties
+}) {
+  return (
+    <motion.div
+      className={className}
+      style={style}
+      initial={{ opacity: 0, y, x }}
+      whileInView={{ opacity: 1, y: 0, x: 0 }}
+      viewport={{ once: true, margin: '-60px' }}
+      transition={{ duration: 0.8, delay: Math.min(delay, 0.4), ease: [0.22, 1, 0.36, 1] }}
+    >
+      {children}
+    </motion.div>
+  )
+}
+
+function CountUp({ from, to, duration = 2 }: { from: number; to: number; duration?: number }) {
+  const [display, setDisplay] = useState(from)
+  useEffect(() => {
+    const controls = animate(from, to, { duration, ease: 'easeOut', onUpdate: v => setDisplay(Math.round(v)) })
+    return controls.stop
+  }, [from, to, duration])
+  return <span>{display.toLocaleString()}</span>
+}
+
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
 const SERVICES = [
-  {
-    icon: <Wrench className="w-6 h-6" />,
-    title: 'Installation & Dismantling',
-    color: '#10B981',
-    colorBg: 'rgba(16,185,129,0.12)',
-    colorBorder: 'rgba(16,185,129,0.35)',
-    desc: 'Professional installation and safe dismantling of all air conditioning types for homes, offices, and commercial spaces.',
-    items: ['Residential AC Units', 'Commercial Systems', 'Ductless Mini-Splits', 'Industrial Units'],
-  },
-  {
-    icon: <ConfigIcon className="w-6 h-6" />,
-    title: 'Preventive Maintenance',
-    color: '#3B82F6',
-    colorBg: 'rgba(59,130,246,0.12)',
-    colorBorder: 'rgba(59,130,246,0.35)',
-    desc: 'Scheduled general cleaning and comprehensive check-ups to keep your unit running at peak efficiency.',
-    items: ['General Cleaning', 'Performance Check-up', 'Filter Replacement', 'Refrigerant Top-up'],
-  },
-  {
-    icon: <TrendingUp className="w-6 h-6" />,
-    title: 'Repair & Diagnostics',
-    color: '#8B5CF6',
-    colorBg: 'rgba(139,92,246,0.12)',
-    colorBorder: 'rgba(139,92,246,0.35)',
-    desc: 'Rapid system diagnostics, troubleshooting, and emergency repairs to restore your comfort without delay.',
-    items: ['Emergency Repairs', 'System Diagnostics', 'Board Troubleshooting', 'System Reprogramming'],
-  },
-  {
-    icon: <Wind className="w-6 h-6" />,
-    title: 'Ducting & Ventilation',
-    color: '#06B6D4',
-    colorBg: 'rgba(6,182,212,0.12)',
-    colorBorder: 'rgba(6,182,212,0.35)',
-    desc: 'Custom ducting works and ventilation solutions designed for residential, commercial, and industrial requirements.',
-    items: ['Duct Design & Fabrication', 'Fresh Air Ventilation', 'Exhaust Systems', 'Air Balancing'],
-  },
-  {
-    icon: <Zap className="w-6 h-6" />,
-    title: 'Electrical Works',
-    color: '#F59E0B',
-    colorBg: 'rgba(245,158,11,0.12)',
-    colorBorder: 'rgba(245,158,11,0.35)',
-    desc: 'Complete electrical wiring services for AC units across residential, commercial, and industrial settings.',
-    items: ['Wiring Installation', 'Circuit Breaker Setup', 'Load Balancing', 'Panel Upgrades'],
-  },
-  {
-    icon: <Building2 className="w-6 h-6" />,
-    title: 'Commercial & Industrial',
-    color: '#EF4444',
-    colorBg: 'rgba(239,68,68,0.12)',
-    colorBorder: 'rgba(239,68,68,0.35)',
-    desc: 'Specialized services for large-scale commercial establishments, restaurants, malls, and industrial facilities.',
-    items: ['Chiller Systems', 'VRF/VRV Systems', 'Centralized AC', 'Multi-zone Control'],
-  },
-]
+  { id: 0, title: "Installation & Dismantling", label: "Setup", description: "Professional installation and safe dismantling of all air conditioning types for homes, offices, and commercial spaces.", image: "https://images.unsplash.com/photo-1621905252507-b35492cc74b4?auto=format&fit=crop&q=80&w=1000", icon: <Wrench /> },
+  { id: 1, title: "Preventive Maintenance", label: "Care", description: "Scheduled general cleaning and comprehensive check-ups to keep your unit running at peak efficiency.", image: "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80&w=1000", icon: <ShieldCheck /> },
+  { id: 2, title: "Repair & Diagnostics", label: "Fix", description: "Rapid system diagnostics, troubleshooting, and emergency repairs to restore your comfort without delay.", image: "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&q=80&w=1000", icon: <ConfigIcon /> },
+  { id: 3, title: "Ducting & Ventilation", label: "Airflow", description: "Custom ducting works and ventilation solutions designed for residential, commercial, and industrial requirements.", image: "https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?auto=format&fit=crop&q=80&w=1000", icon: <Wind /> },
+  { id: 4, title: "Commercial & Industrial", label: "Enterprise", description: "Specialized services for large-scale commercial establishments, restaurants, malls, and industrial facilities.", image: "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&q=80&w=1000", icon: <Building2 /> }
+];
 
-const CONTACTS = [
-  { icon: <Smartphone className="w-4 h-4" />,label: 'Mobile (Globe)',       value: '+63 (917) 7143810',             href: 'tel:+639177143810' },
-  { icon: <Mail className="w-4 h-4" />,      label: 'Head Office Email',    value: 'headoffice@ashcol.com.ph',      href: 'mailto:headoffice@ashcol.com.ph' },
-]
+const VALUES = [
+  { id: "integrity", label: "Integrity", icon: <ShieldCheck className="w-6 h-6 text-white" />, title: "We do what is right — ", titleSecondary: "always honest, always transparent.", image: "https://images.unsplash.com/photo-1621905252507-b35492cc74b4?auto=format&fit=crop&q=80&w=1000" },
+  { id: "excellence", label: "Excellence", icon: <Star className="w-6 h-6 text-white" />, title: "We hold ourselves to the highest standards ", titleSecondary: "ensuring every installation and repair lasts for years.", image: "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80&w=1000" },
+  { id: "customer", label: "Customer Focus", icon: <Heart className="w-6 h-6 text-white" />, title: "Your comfort is our top priority ", titleSecondary: "delivering rapid response and care when you need it most.", image: "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&q=80&w=1000" },
+  { id: "teamwork", label: "Teamwork", icon: <Users className="w-6 h-6 text-white" />, title: "A highly collaborative field team ", titleSecondary: "that delivers consistent results across all branches.", image: "https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?auto=format&fit=crop&q=80&w=1000" },
+  { id: "commitment", label: "Commitment", icon: <Target className="w-6 h-6 text-white" />, title: "We stand behind our work ", titleSecondary: "with dedication, accountability, and full warranty support.", image: "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&q=80&w=1000" }
+];
 
-const BRANCHES = PUBLIC_BRANCHES
+const BRANCHES = PUBLIC_BRANCHES.map((b, i) => ({
+  ...b, id: i + 1, name: b.name, role: b.tag, image: [
+    'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=800',
+    'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=800',
+    'https://images.unsplash.com/photo-1416339306562-f3d12fefd36f?auto=format&fit=crop&q=80&w=800',
+    'https://images.unsplash.com/photo-1431540015161-0bf868a2d407?auto=format&fit=crop&q=80&w=800',
+    'https://images.unsplash.com/photo-1497215728101-856f4ea42174?auto=format&fit=crop&q=80&w=800'
+  ][i % 5]
+}));
+
+const STATS = [
+  { label: 'Years of Service', value: 12, suffix: '+' },
+  { label: 'Branches Nationwide', value: 11, suffix: '' },
+  { label: 'AC Brands Supported', value: 16, suffix: '+' },
+  { label: 'Clients Served', value: 5000, suffix: '+' },
+];
+
+const FAQS = [
+  { id: 1, question: "What types of air conditioning services does ASHCOL offer?", answer: "ASHCOL provides a comprehensive range of AC services including installation and dismantling, preventive maintenance, repair and diagnostics, ducting and ventilation works, electrical works for AC units, and commercial solutions." },
+  { id: 2, question: "How do I book a service?", answer: "You can book a service by filling out our online booking form, calling our hotline at +63 (917) 714 3810, messaging our Facebook Page, or emailing centralsupport@ashcol.com.ph. Our customer service team is available 7 days a week." },
+  { id: 3, question: "What AC brands does ASHCOL service?", answer: "Our certified technicians service over 16+ major AC brands, including Carrier, Daikin, Panasonic, Samsung, LG, Koppel, Mitsubishi Electric, York, Gree, Midea, and more." },
+  { id: 4, question: "Do you offer emergency or same-day repair services?", answer: "Yes. We offer rapid response repair and diagnostics for urgent situations. Our team operates 7 days a week including holidays from 8:00 AM to 7:00 PM." },
+  { id: 5, question: "Do you provide services outside Metro Manila?", answer: "Yes! ASHCOL operates 11 branches across Luzon — 8 owned branches and 3 franchise branches covering areas like Bulacan, Pampanga, Rizal, Laguna, and Cavite." },
+  { id: 6, question: "Is there a warranty on your services?", answer: "Yes. All ASHCOL services come with a workmanship warranty. Parts and equipment replacements are covered by their respective manufacturer warranties." },
+  { id: 7, question: "Can ASHCOL handle large commercial or industrial AC projects?", answer: "Absolutely. We provide specialized AC services for large-scale commercial establishments, restaurants, malls, and industrial facilities, including custom ducting works and ventilation solutions." },
+  { id: 8, question: "How much does a typical AC service cost?", answer: "Costs depend on the type of service, AC unit size, and location. We provide transparent, upfront quotes before any work begins. Please contact us with your specific concern for an accurate estimate." }
+];
 
 const CLIENTS = [
   "McDonald's", "Subway", "Mang Inasal", "The Aristocrat", "breadTalk",
   "Goldilocks", "Kumon", "Sterling Bank of Asia", "Generika Drugstore",
-  "South Star Drug", "AXA", "La Verti Residences", "Sheridan Towers", "The Grove by Rockwell",
-]
+  "South Star Drug", "AXA", "La Verti Residences", "Sheridan Towers", "The Grove by Rockwell"
+];
 
 const getBrandLogo = (name: string) => {
-  // Map clean names to filenames
-  const fileMap: Record<string, string> = {
-    'Carrier': 'carrier.png',
-    'Daikin': 'daikin.png',
-    'Panasonic': 'panasonic.png',
-    'Samsung': 'samsung.png',
-    'LG': 'lg.png',
-    'Koppel': 'koppel.png',
-    'Mitsubishi Electric': 'mitsubishi.png',
-    'York': 'york.png',
-    'Gree': 'gree.png',
-    'Midea': 'midea.png',
-    'Sharp': 'sharp.png',
-    'Haier': 'haier.png',
-    'TCL': 'tcl.png',
-    'Aux': 'auxaircon.png',
-    'Fuji-Aire': 'fuji.png',
-    'Kolin': 'kolin.png',
-  }
-  
+  const fileMap: Record<string, string> = { 'Carrier': 'carrier.png', 'Daikin': 'daikin.png', 'Panasonic': 'panasonic.png', 'Samsung': 'samsung.png', 'LG': 'lg.png', 'Koppel': 'koppel.png', 'Mitsubishi Electric': 'mitsubishi.png', 'York': 'york.png', 'Gree': 'gree.png', 'Midea': 'midea.png', 'Sharp': 'sharp.png', 'Haier': 'haier.png', 'TCL': 'tcl.png', 'Aux': 'auxaircon.png', 'Fuji-Aire': 'fuji.png', 'Kolin': 'kolin.png' }
   const filename = fileMap[name]
   if (!filename) return undefined
-  
-  // Use Vite's recommended way for dynamic assets
   return new URL(`../assets/brands/${filename}`, import.meta.url).href
 }
+const BRANDS = ['Carrier','Daikin','Panasonic','Samsung','LG','Koppel','Mitsubishi Electric','York','Gree','Midea','Sharp','Haier','TCL','Aux','Fuji-Aire','Kolin'].map(n => ({ name: n, logo: getBrandLogo(n) }))
 
-const BRANDS = [
-  { name: 'Carrier',             logo: getBrandLogo('Carrier') },
-  { name: 'Daikin',              logo: getBrandLogo('Daikin') },
-  { name: 'Panasonic',           logo: getBrandLogo('Panasonic') },
-  { name: 'Samsung',             logo: getBrandLogo('Samsung') },
-  { name: 'LG',                  logo: getBrandLogo('LG') },
-  { name: 'Koppel',              logo: getBrandLogo('Koppel') },
-  { name: 'Mitsubishi Electric', logo: getBrandLogo('Mitsubishi Electric') },
-  { name: 'York',                logo: getBrandLogo('York') },
-  { name: 'Gree',                logo: getBrandLogo('Gree') },
-  { name: 'Midea',               logo: getBrandLogo('Midea') },
-  { name: 'Sharp',               logo: getBrandLogo('Sharp') },
-  { name: 'Haier',               logo: getBrandLogo('Haier') },
-  { name: 'TCL',                 logo: getBrandLogo('TCL') },
-  { name: 'Aux',                 logo: getBrandLogo('Aux') },
-  { name: 'Fuji-Aire',           logo: getBrandLogo('Fuji-Aire') },
-  { name: 'Kolin',               logo: getBrandLogo('Kolin') },
-]
-
-const VALUES = [
-  { icon: <ShieldCheck className="w-5 h-5" />, title: 'Integrity',       desc: 'We do what is right — always honest, always transparent.',          color: '#10B981', colorBg: 'rgba(16,185,129,0.12)' },
-  { icon: <Star className="w-5 h-5" />,        title: 'Excellence',      desc: 'We hold ourselves to the highest standard in every service.',       color: '#F59E0B', colorBg: 'rgba(245,158,11,0.12)' },
-  { icon: <Users className="w-5 h-5" />,       title: 'Customer Focus',  desc: 'Your comfort is our priority, before and after every job.',         color: '#3B82F6', colorBg: 'rgba(59,130,246,0.12)' },
-  { icon: <Heart className="w-5 h-5" />,       title: 'Teamwork',        desc: 'A collaborative team that delivers consistent results.',            color: '#EF4444', colorBg: 'rgba(239,68,68,0.12)' },
-  { icon: <Target className="w-5 h-5" />,      title: 'Commitment',      desc: 'We stand behind our work with dedication and accountability.',      color: '#8B5CF6', colorBg: 'rgba(139,92,246,0.12)' },
-]
-
-const FEATURED_PROJECTS = [
-  {
-    title: 'BGC Commercial Office',
-    type: 'Commercial Centralized Setup',
-    tag: 'Commercial',
-    tagColor: '#3B82F6',
-    tagBg: 'rgba(59,130,246,0.12)',
-    location: 'Bonifacio Global City, Taguig',
-    scope: 'Centralized AC system across 4 floors, ductwork fabrication, and electrical works.',
-    stats: [
-      { label: 'Floor Area', value: '1,200 sqm' },
-      { label: 'Units Installed', value: '8 FCUs' },
-      { label: 'Project Duration', value: '3 weeks' },
-    ],
-    gradient: 'linear-gradient(135deg, #1E3A5F 0%, #0F1A2E 60%, #0A2540 100%)',
-    accentColor: '#3B82F6',
-    icon: <Building2 className="w-8 h-8" />,
-  },
-  {
-    title: 'Residential Split-Type Retrofit',
-    type: 'Home AC Overhaul',
-    tag: 'Residential',
-    tagColor: '#10B981',
-    tagBg: 'rgba(16,185,129,0.12)',
-    location: 'Paranaque City, Metro Manila',
-    scope: 'Full replacement of 5 aging window-type units with inverter split-type systems, including wiring and bracket installation.',
-    stats: [
-      { label: 'Units Replaced', value: '5 split-type' },
-      { label: 'Energy Savings', value: '~35%' },
-      { label: 'Completion', value: '2 days' },
-    ],
-    gradient: 'linear-gradient(135deg, #0E3320 0%, #0C1A10 60%, #091409 100%)',
-    accentColor: '#10B981',
-    icon: <Home className="w-8 h-8" />,
-  },
-  {
-    title: 'Mang Inasal Restaurant Branch',
-    type: 'Commercial air conditioning services Installation',
-    tag: 'Food & Beverage',
-    tagColor: '#F59E0B',
-    tagBg: 'rgba(245,158,11,0.12)',
-    location: 'SM Mall, Valenzuela City',
-    scope: 'Ceiling cassette AC units with custom ductwork for kitchen ventilation and dining area comfort across a 300 sqm restaurant space.',
-    stats: [
-      { label: 'Dining Area', value: '300 sqm' },
-      { label: 'Cassette Units', value: '6 units' },
-      { label: 'Brand', value: 'Daikin VRV' },
-    ],
-    gradient: 'linear-gradient(135deg, #3D2200 0%, #1E1000 60%, #170D00 100%)',
-    accentColor: '#F59E0B',
-    icon: <Layers className="w-8 h-8" />,
-  },
-  {
-    title: 'Industrial Cold Storage Facility',
-    type: 'Industrial air conditioning services & Refrigeration',
-    tag: 'Industrial',
-    tagColor: '#8B5CF6',
-    tagBg: 'rgba(139,92,246,0.12)',
-    location: 'Rodriguez, Rizal',
-    scope: 'Design and installation of precision-climate air conditioning services for a 2,000 sqm cold storage warehouse, including insulated ductwork, air handlers, and control panels.',
-    stats: [
-      { label: 'Facility Area', value: '2,000 sqm' },
-      { label: 'System Type', value: 'VRF Multi-zone' },
-      { label: 'Project Duration', value: '6 weeks' },
-    ],
-    gradient: 'linear-gradient(135deg, #1A0E3D 0%, #0E0720 60%, #090516 100%)',
-    accentColor: '#8B5CF6',
-    icon: <Factory className="w-8 h-8" />,
-  },
-  {
-    title: 'La Verti Residences Tower',
-    type: 'High-Rise Residential Installation',
-    tag: 'Residential',
-    tagColor: '#06B6D4',
-    tagBg: 'rgba(6,182,212,0.12)',
-    location: 'Paco, Manila',
-    scope: 'Multi-unit split-type AC installation across 30 residential condominium units, coordinated with building management for minimal disruption.',
-    stats: [
-      { label: 'Units Served', value: '30 condo units' },
-      { label: 'Brand', value: 'Carrier / LG' },
-      { label: 'Duration', value: '4 weeks' },
-    ],
-    gradient: 'linear-gradient(135deg, #003642 0%, #001E26 60%, #001219 100%)',
-    accentColor: '#06B6D4',
-    icon: <Building2 className="w-8 h-8" />,
-  },
-]
-
-const FAQS = [
-  {
-    q: 'What types of air conditioning services does ASHCOL offer?',
-    a: 'ASHCOL provides a comprehensive range of AC services including installation and dismantling, preventive maintenance (general cleaning), repair and diagnostics, ducting and ventilation works, electrical works for AC units, and commercial & industrial air conditioning services solutions.',
-  },
-  {
-    q: 'How do I book a service?',
-    a: 'Click the "Book a Service" button on this page to fill out our online booking form, or contact our customer service team directly through the contact numbers below.',
-  },
-  {
-    q: 'What AC brands does ASHCOL service?',
-    a: 'Our technicians are trained across all major residential and commercial brands including Carrier, Daikin, Panasonic, Samsung, LG, Koppel, Mitsubishi Electric, York, Gree, Midea, Sharp, Haier, TCL, Aux, Fuji-Aire, and Kolin — 16+ brands in total.',
-  },
-  {
-    q: 'Do you offer emergency or same-day repair services?',
-    a: 'Yes. We offer rapid response repair and diagnostics for urgent situations. Our team operates 7 days a week including holidays from 8:00 AM to 7:00 PM. Contact us directly for emergency scheduling.',
-  },
-  {
-    q: 'Do you provide services outside Metro Manila?',
-    a: 'Yes! ASHCOL operates 11 branches across Luzon — 8 owned branches (Taguig, Bulacan, Pampanga, Rizal, Laguna, Candelaria, Dasmariñas, and Silang) plus 3 franchise branches (Valenzuela, Batangas, and General Trias).',
-  },
-  {
-    q: 'Is there a warranty on your services?',
-    a: 'Yes. All ASHCOL services come with a workmanship warranty. Warranty terms vary by service type. Parts and equipment replacements are covered by their respective manufacturer warranties. Contact us for specific warranty details on your service.',
-  },
-  {
-    q: 'Can ASHCOL handle large commercial or industrial AC projects?',
-    a: 'Absolutely. We specialize in commercial and industrial air conditioning services installations including centralized systems, VRF/VRV multi-zone systems, chiller systems, custom ductwork fabrication, and large-scale electrical works for malls, restaurants, office buildings, hospitals, and factories.',
-  },
-  {
-    q: 'How much does a typical AC service cost?',
-    a: 'Service costs vary depending on the unit type, service required, and your location. General cleaning starts at competitive rates, while installations and repairs are quoted based on a site assessment. Create an account and submit a ticket to get a free estimate.',
-  },
-]
-
+// ─── Coming Soon Modal ────────────────────────────────────────────────────────
 function ComingSoonModal({ onClose }: { onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="relative bg-[#060E1A] border border-[#1E2D48] rounded-2xl shadow-2xl max-w-sm w-full p-7 text-center"
-        onClick={(e) => e.stopPropagation()}
+    <motion.div
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md"
+      onClick={onClose}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <motion.div
+        className="relative bg-white border border-slate-200 rounded-[24px] shadow-2xl max-w-sm w-full p-8 text-center"
+        onClick={e => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        transition={{ duration: 0.3 }}
       >
-        <button
-          onClick={onClose}
-          className="absolute top-3 right-3 text-[#3A5070] hover:text-white transition-colors"
-          aria-label="Close"
-        >
-          <X className="w-5 h-5" />
-        </button>
-        <div className="w-14 h-14 rounded-2xl bg-[#10B981]/15 border border-[#10B981]/30 flex items-center justify-center mx-auto mb-4">
-          <Bell className="w-7 h-7 text-[#10B981]" />
-        </div>
-        <h3 className="text-xl font-black text-white mb-2">Coming Soon</h3>
-        <p className="text-[#7A95B8] text-sm leading-relaxed mb-6">
-          The ASHCOL mobile app is still in development. We will launch soon on Google Play and the App Store.
-        </p>
-        <button
-          onClick={onClose}
-          className="w-full py-3 rounded-xl bg-[#10B981] hover:bg-emerald-400 text-[#060B18] font-bold text-sm transition-all"
-        >
-          Got it
-        </button>
-      </div>
-    </div>
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-800"><X className="w-5 h-5" /></button>
+        <div className="w-16 h-16 rounded-2xl bg-[#10B981]/10 flex items-center justify-center mx-auto mb-5"><Bell className="w-8 h-8 text-[#10B981]" /></div>
+        <h3 className="text-2xl font-bold text-slate-900 mb-2 font-['Big_Shoulders_Display',sans-serif] uppercase tracking-wide">Coming Soon</h3>
+        <p className="text-slate-500 text-sm leading-relaxed mb-8">The ASHCOL mobile app is still in development. We will launch soon on Google Play and the App Store.</p>
+        <button onClick={onClose} className="w-full py-3.5 rounded-xl bg-[#10B981] hover:bg-[#059669] text-white font-bold text-sm transition-all active:scale-95">Got it</button>
+      </motion.div>
+    </motion.div>
   )
 }
 
-// ─── Branch Cards ────────────────────────────────────────────────────────────
-
-type BranchType = {
-  name: string; tag: string; color: string; address: string;
-  phones: string[]; email: string; mapUrl: string;
-  landline?: string; isHQ?: boolean; region?: string; isFranchise?: boolean;
-}
-type ThemeTokens = Record<string, string>
-
-/** Owned branch card — clean, minimal, focused */
-function OwnedBranchCard({ branch, mapUrl, t }: { branch: BranchType; mapUrl: string; t: ThemeTokens }) {
-  return (
-    <div
-      className="rounded-2xl flex flex-col gap-3 p-5 relative overflow-hidden transition-all hover:translate-y-[-2px]"
-      style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}
-    >
-      {/* Left accent bar */}
-      <div className="absolute top-0 left-0 w-[3px] h-full rounded-l-2xl" style={{ backgroundColor: branch.color }} />
-
-      {/* Icon + tag row */}
-      <div className="flex items-center gap-2 pl-2">
-        <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: branch.color + '18', color: branch.color }}>
-          <Building2 className="w-4 h-4" />
-        </div>
-        <div>
-          <div className="text-[11px] font-black uppercase tracking-wider" style={{ color: branch.color }}>{branch.tag}</div>
-          {branch.isHQ && (
-            <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: '#10B981' }}>Head Office</span>
-          )}
-        </div>
-      </div>
-
-      {/* Name */}
-      <div className="pl-2">
-        <div className="font-black text-[15px] leading-tight" style={{ color: t.text }}>{branch.name}</div>
-        <div className="flex items-start gap-1.5 mt-1.5">
-          <MapPin className="w-3 h-3 flex-shrink-0 mt-0.5" style={{ color: t.textFaint }} />
-          <span className="text-[11px] leading-relaxed" style={{ color: t.textMuted }}>{branch.address}</span>
-        </div>
-      </div>
-
-      {/* Contact row */}
-      <div className="pl-2 flex items-center justify-between mt-auto pt-1" style={{ borderTop: `1px solid ${t.border}` }}>
-        <a href={`tel:${(branch.phones[0] || '').replace(/\s/g, '')}`} className="flex items-center gap-1.5 group">
-          <Phone className="w-3 h-3" style={{ color: branch.color }} />
-          <span className="text-[11px] group-hover:underline" style={{ color: t.textMuted }}>{branch.phones[0]}</span>
-        </a>
-        <a href={mapUrl} target="_blank" rel="noopener noreferrer"
-          className="flex items-center gap-0.5 text-[10px] font-semibold transition-opacity opacity-60 hover:opacity-100"
-          style={{ color: branch.color }}
-        >
-          Map <ArrowUpRight className="w-3 h-3" />
-        </a>
-      </div>
-    </div>
-  )
-}
-
-/** Franchise branch card — amber accent, distinct layout */
-function FranchiseBranchCard({ branch, mapUrl, t }: { branch: BranchType; mapUrl: string; t: ThemeTokens }) {
-  return (
-    <div
-      className="rounded-2xl flex flex-col gap-3 p-5 relative overflow-hidden flex-1 min-w-[220px] transition-all hover:translate-y-[-2px]"
-      style={{
-        backgroundColor: t.bgCard,
-        border: '1px solid rgba(245,158,11,0.3)',
-        background: t.bgCard === '#0F1A2E'
-          ? 'linear-gradient(135deg, #0F1A2E 80%, rgba(245,158,11,0.04) 100%)'
-          : 'linear-gradient(135deg, #ffffff 80%, rgba(245,158,11,0.04) 100%)'
-      }}
-    >
-      {/* Top accent */}
-      <div className="absolute top-0 left-0 right-0 h-[2px] rounded-t-2xl" style={{ background: 'linear-gradient(90deg, #F59E0B, rgba(245,158,11,0.2))' }} />
-
-      {/* Franchise badge + icon */}
-      <div className="flex items-center justify-between">
-        <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(245,158,11,0.12)', color: '#F59E0B' }}>
-          <Building2 className="w-4 h-4" />
-        </div>
-        <span className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full" style={{ backgroundColor: 'rgba(245,158,11,0.12)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.25)' }}>Franchise</span>
-      </div>
-
-      {/* Name + tag */}
-      <div>
-        <div className="font-black text-[15px] leading-tight" style={{ color: t.text }}>{branch.name}</div>
-        <div className="text-[11px] font-semibold mt-0.5" style={{ color: '#F59E0B' }}>{branch.tag}</div>
-        <div className="flex items-start gap-1.5 mt-2">
-          <MapPin className="w-3 h-3 flex-shrink-0 mt-0.5" style={{ color: 'rgba(245,158,11,0.6)' }} />
-          <span className="text-[11px] leading-relaxed" style={{ color: t.textMuted }}>{branch.address}</span>
-        </div>
-      </div>
-
-      {/* Contact row */}
-      <div className="flex items-center justify-between mt-auto pt-2" style={{ borderTop: '1px solid rgba(245,158,11,0.15)' }}>
-        <a href={`tel:${(branch.phones[0] || '').replace(/\s/g, '')}`} className="flex items-center gap-1.5 group">
-          <Phone className="w-3 h-3" style={{ color: '#F59E0B' }} />
-          <span className="text-[11px] group-hover:underline" style={{ color: t.textMuted }}>{branch.phones[0]}</span>
-        </a>
-        <a href={mapUrl} target="_blank" rel="noopener noreferrer"
-          className="flex items-center gap-0.5 text-[10px] font-semibold transition-opacity opacity-60 hover:opacity-100"
-          style={{ color: '#F59E0B' }}
-        >
-          Map <ArrowUpRight className="w-3 h-3" />
-        </a>
-      </div>
-    </div>
-  )
-}
-
-// ─── Component ───────────────────────────────────────────────────────────────
+// ─── MAIN LANDING COMPONENT ──────────────────────────────────────────────────
 
 export default function Landing() {
-  const [activeSection, setActiveSection] = useState('hero')
-  const [hoveredService, setHoveredService] = useState<number | null>(null)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [isDark, setIsDark] = useState(true)
-  const [showComingSoon, setShowComingSoon] = useState(false)
-  const [projectSlide, setProjectSlide] = useState(0)
-  const [openFaq, setOpenFaq] = useState<number | null>(null)
+  const pageRef = useRef<HTMLDivElement>(null);
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState('hero');
+  const [showComingSoon, setShowComingSoon] = useState(false);
 
-  const nextSlide = useCallback(() => setProjectSlide(s => (s + 1) % FEATURED_PROJECTS.length), [])
-  const prevSlide = useCallback(() => setProjectSlide(s => (s - 1 + FEATURED_PROJECTS.length) % FEATURED_PROJECTS.length), [])
+  // Service States
+  const [activeServiceIdx, setActiveServiceIdx] = useState(0);
+  const [hoveredServiceIdx, setHoveredServiceIdx] = useState<number | null>(null);
+  const currentServiceIdx = hoveredServiceIdx !== null ? hoveredServiceIdx : activeServiceIdx;
 
+  // Values States
+  const [activeValIdx, setActiveValIdx] = useState(0);
+  const currentVal = VALUES[activeValIdx];
+
+  // FAQ State
+  const [openFaq, setOpenFaq] = useState<number | null>(1);
+
+  // Marquee ref
+  const brandScrollRef = useRef<HTMLDivElement>(null);
+  const [isBrandHovered, setIsBrandHovered] = useState(false);
+  const brandScrollPos = useRef(0);
+
+  // Scroll & Intersection Observer
   useEffect(() => {
-    const timer = setInterval(nextSlide, 5000)
-    return () => clearInterval(timer)
-  }, [nextSlide])
+    const handleScroll = () => setIsScrolled(window.scrollY > 50);
+    window.addEventListener('scroll', handleScroll);
 
-  // Theme tokens
-  const t = {
-    bg:         isDark ? '#060B18'              : '#F4FAF4',
-    bgNav:      isDark ? 'rgba(6,11,24,0.92)'   : 'rgba(255,255,255,0.95)',
-    bgCard:     isDark ? '#0F1A2E'              : '#FFFFFF',
-    bgCardAlt:  isDark ? '#0C1426'              : '#EEF7EE',
-    border:     isDark ? '#1E2D48'              : '#C8E6C8',
-    borderNav:  isDark ? '#1a2844'              : '#D4EDD4',
-    text:       isDark ? '#E2E8F0'              : '#0D2010',
-    textMuted:  isDark ? '#7A95B8'              : '#3A6040',
-    textFaint:  isDark ? '#3A5070'              : '#7AAA7A',
-    accent:     '#10B981',
-    accentBg:   isDark ? 'rgba(16,185,129,0.12)': 'rgba(16,185,129,0.10)',
-  }
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          setActiveSection(entry.target.id);
+        }
+      });
+    }, { rootMargin: '-100px 0px -60% 0px' });
 
-  const heroRef     = useRef<HTMLElement>(null)
-  const servicesRef  = useRef<HTMLElement>(null)
-  const showcaseRef  = useRef<HTMLElement>(null)
-  const aboutRef    = useRef<HTMLElement>(null)
-  const contactRef  = useRef<HTMLElement>(null)
-  const clientsRef  = useRef<HTMLElement>(null)
-  const faqRef      = useRef<HTMLElement>(null)
+    const sections = ['hero', 'how-it-works', 'services', 'about', 'clients', 'branches', 'faq', 'contact'];
+    sections.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    });
 
-  const sectionRefs = {
-    hero: heroRef,
-    about: aboutRef,
-    services: servicesRef,
-    showcase: showcaseRef,
-    contact: contactRef,
-    faq: faqRef,
-    clients: clientsRef,
-  }
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      observer.disconnect();
+    };
+  }, []);
 
-  // Highlight nav item based on scroll position
+  // Marquee auto-scroll
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((e) => { if (e.isIntersecting) setActiveSection(e.target.id) })
-      },
-      { rootMargin: '-40% 0px -55% 0px' }
-    )
-    ;[heroRef, servicesRef, showcaseRef, aboutRef, contactRef, clientsRef, faqRef].forEach((r) => r.current && observer.observe(r.current))
-    return () => observer.disconnect()
-  }, [])
+    const el = brandScrollRef.current; if (!el) return;
+    let f: number;
+    const scroll = () => {
+      if (!isBrandHovered) {
+        brandScrollPos.current += 0.5;
+        if (brandScrollPos.current >= el.scrollWidth / 2) brandScrollPos.current = 0;
+        el.scrollLeft = brandScrollPos.current;
+      } else brandScrollPos.current = el.scrollLeft;
+      f = requestAnimationFrame(scroll);
+    };
+    f = requestAnimationFrame(scroll);
+    return () => cancelAnimationFrame(f);
+  }, [isBrandHovered]);
 
-  const scrollTo = (key: keyof typeof sectionRefs) => {
-    setMobileMenuOpen(false)
-    sectionRefs[key].current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
+  // Original AC Flap & GSAP Wind Animation
+  useEffect(() => {
+    const ctx = gsap.context(() => {
+      const tl = gsap.timeline();
+      tl.fromTo('.nav-element', { y: -20, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, stagger: 0.1, ease: 'power2.out' });
+      tl.to('.ac-flap', { scaleY: 0.2, transformOrigin: 'top', duration: 0.6, ease: 'power2.out' }, '-=0.1');
+      gsap.to('.wind-dash', { strokeDashoffset: -1000, duration: 20, ease: 'none', repeat: -1 });
+    }, pageRef);
+    return () => ctx.revert();
+  }, []);
 
-  const navLinks = [
-    { key: 'hero', label: 'Home' },
-    { key: 'about', label: 'About Us' },
-    { key: 'services', label: 'Services' },
-    { key: 'contact', label: 'Contact Us' },
-    { key: 'faq', label: 'FAQs' },
-  ] as const
+  const scrollTo = (id: string) => {
+    setMobileMenuOpen(false);
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setActiveSection(id);
+  };
 
   return (
-    <div className="min-h-screen overflow-x-hidden pt-16 font-['Inter',sans-serif] transition-colors duration-300" style={{ backgroundColor: t.bg, color: t.text }}>
-
-      {/* ── Sticky Navbar ─────────────────────────── */}
-      <div
-        className="fixed top-0 left-0 right-0 z-50 transition-colors duration-300"
-        style={{ backgroundColor: t.bgNav, borderBottom: `1px solid ${t.borderNav}`, backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
-      >
-        <nav className="flex items-center justify-between px-4 md:px-11 lg:px-20 py-3">
-
-          {/* Brand */}
-          <button onClick={() => scrollTo('hero')} className="flex items-center gap-2.5 hover:opacity-90 transition-opacity">
-            <img src={logoImg} alt="ASHCOL Logo" className="w-9 h-9 object-contain rounded-lg" />
-            <div className="text-left">
-              <div className="text-[16px] font-extrabold tracking-wide leading-none" style={{ color: t.text }}>ASHCOL</div>
-              <div className="text-[9px] font-semibold leading-none mt-0.5 hidden sm:block" style={{ color: t.textFaint }}>Airconditioning Corp.</div>
-            </div>
-          </button>
-
-          {/* Desktop nav links */}
-          <div className="hidden md:flex items-center gap-6">
-            {navLinks.map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => scrollTo(key)}
-                className="text-sm font-medium transition-colors"
-                style={{ color: activeSection === key ? t.accent : t.textMuted }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* Right side actions */}
-          <div className="flex items-center gap-3 sm:gap-4">
-
-            {/* Theme toggle */}
-            <button
-              onClick={() => setIsDark(!isDark)}
-              className="w-9 h-9 rounded-lg flex items-center justify-center transition-all border"
-              style={{ backgroundColor: t.accentBg, color: t.accent, borderColor: isDark ? 'rgba(16,185,129,0.16)' : 'rgba(16,185,129,0.24)' }}
-              aria-label="Toggle theme"
-            >
-              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
-
-
-            {/* Login Link */}
-            <a
-              href={getPortalUrl('/login')}
-              className="hidden sm:flex items-center justify-center min-w-[118px] px-7 py-2.5 text-sm font-bold text-white rounded-lg transition-all glow-green hover:opacity-95 active:scale-95"
-              style={{ backgroundColor: t.accent }}
-            >
-              Login
-            </a>
-
-            {/* Mobile hamburger */}
-            <button
-              className="md:hidden p-2 rounded-lg transition-colors"
-              style={{ color: t.textMuted }}
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            >
-              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
-          </div>
-        </nav>
-
-        {/* Mobile dropdown */}
-        {mobileMenuOpen && (
-          <div className="md:hidden px-4 py-4 flex flex-col gap-3" style={{ borderTop: `1px solid ${t.borderNav}` }}>
-            {navLinks.map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => scrollTo(key)}
-                className="text-left text-sm font-semibold transition-colors py-1"
-                style={{ color: activeSection === key ? t.accent : t.textMuted }}
-              >
-                {label}
-              </button>
-            ))}
-            <div className="flex gap-2 mt-1">
-              <a
-                href={getPortalUrl('/login')}
-                className="flex-1 flex items-center justify-center py-2.5 text-sm font-bold text-white rounded-lg transition-all glow-green"
-                style={{ backgroundColor: t.accent }}
-              >
-                Login
-              </a>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ── Hero ────────────────────────────────────────────────────────── */}
-      <section id="hero" ref={heroRef} className="relative overflow-hidden flex flex-col items-center text-center px-4 md:px-11 lg:px-20 py-12 md:py-28" style={{ backgroundColor: t.bg }}>
-        {/* Glow orbs */}
-        <div className="absolute -top-20 -left-32 w-[480px] h-[480px] orb-green pointer-events-none" />
-        <div className="absolute top-10 -right-36 w-[380px] h-[380px] orb-blue pointer-events-none" />
-
-        {/* Badge */}
-        <div className="relative flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.3)] px-3 py-1.5 rounded-full mb-6">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] glow-green-sm inline-block" />
-          <span className="text-[10px] sm:text-xs font-bold text-[#10B981] tracking-wide">ASHCOL Airconditioning · Since 2014</span>
-        </div>
-
-        {/* Headline */}
-        <h1 className="relative max-w-3xl text-[clamp(1.65rem,7vw,4rem)] font-black leading-[1.12] tracking-tight mb-3" style={{ color: t.text }}>
-          12+ Years of Expert{' '}
-          <span className="text-[#10B981]">Air Conditioning Services.</span>
-        </h1>
-
-        <p className="relative text-base italic font-medium mb-4" style={{ color: t.textMuted }}>"Keeping YOU Cool"</p>
-
-        <p className="relative max-w-xl text-[13px] sm:text-[14px] md:text-[17px] leading-relaxed mb-8" style={{ color: t.textMuted }}>
-          Your trusted partner for installation, repair, and maintenance of air conditioning systems —
-          residential and commercial, throughout Metro Manila.
-        </p>
-
-        {/* How it works — ABOVE the CTA */}
-        <div className="relative w-full max-w-lg mb-6">
-          <p className="text-[10px] font-bold uppercase tracking-[2px] mb-3" style={{ color: t.textFaint }}>How it works</p>
-          <div className="grid grid-cols-3 gap-2 sm:gap-3">
-            {[
-              { num: '1', label: 'Call or Message', sub: 'Use the contacts below' },
-              { num: '2', label: 'Book a Service',  sub: 'Tell us your AC concern' },
-              { num: '3', label: 'We Come to You',  sub: 'Our team handles the rest' },
-            ].map((step, i) => (
-              <div key={i} className="flex flex-col items-center text-center rounded-xl px-2 py-3 sm:px-4 sm:py-4 gap-2" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}>
-                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: t.accentBg, border: `1px solid ${t.accent}40` }}>
-                  <span className="font-black text-sm" style={{ color: t.accent }}>{step.num}</span>
-                </div>
-                <div>
-                  <div className="text-[12px] sm:text-[13px] font-bold mb-0.5" style={{ color: t.text }}>{step.label}</div>
-                  <div className="text-[10px] sm:text-[11px] leading-tight" style={{ color: t.textFaint }}>{step.sub}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* CTA — below steps */}
-        <div className="relative w-full max-w-lg">
-          <Link
-            to="/booking"
-            className="flex items-center justify-center gap-2 w-full py-4 text-[15px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green"
-          >
-            Book a Service
-          </Link>
-        </div>
-
-      </section>
-
-      {/* ── Branch Locations ──────────────────────────────────────────────── */}
-      <section className="py-14 md:py-20" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
-        <div className="px-4 md:px-11 lg:px-20 max-w-7xl mx-auto">
-
-          {/* Section header */}
-          <div className="mb-10">
-            <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full mb-4 w-fit">
-              <MapPin className="w-3 h-3 text-[#10B981]" />
-              <span className="text-[10px] font-bold text-[#10B981] tracking-[2px]">OUR LOCATIONS</span>
-            </div>
-            <h2 className="text-[clamp(1.4rem,3vw,2.2rem)] font-black leading-tight tracking-tight" style={{ color: t.text }}>11 Branches Across Luzon</h2>
-            <p className="text-[14px] mt-1" style={{ color: t.textMuted }}>8 company-owned branches &amp; 3 franchise partners nationwide.</p>
-          </div>
-
-          {/* ── Owned Branches ── */}
-          <div className="mb-10">
-            <div className="flex items-center gap-3 mb-5">
-              <div className="h-px flex-1" style={{ backgroundColor: t.border }} />
-              <span className="text-[10px] font-black uppercase tracking-widest px-3" style={{ color: t.textFaint }}>Company Branches</span>
-              <div className="h-px flex-1" style={{ backgroundColor: t.border }} />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {BRANCHES.filter(b => !b.isFranchise).map((branch, i) => {
-                const mapUrl = branch.mapUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('ASHCOL Airconditioning ' + branch.name + ' ' + branch.address)}`
-                return <OwnedBranchCard key={i} branch={branch} mapUrl={mapUrl} t={t} />
-              })}
-            </div>
-          </div>
-
-          {/* ── Franchise Branches ── */}
-          <div>
-            <div className="flex items-center gap-3 mb-5">
-              <div className="h-px flex-1" style={{ backgroundColor: 'rgba(245,158,11,0.2)' }} />
-              <span className="text-[10px] font-black uppercase tracking-widest px-3" style={{ color: '#F59E0B' }}>Franchise Partners</span>
-              <div className="h-px flex-1" style={{ backgroundColor: 'rgba(245,158,11,0.2)' }} />
-            </div>
-            <div className="flex flex-col sm:flex-row gap-4">
-              {BRANCHES.filter(b => b.isFranchise).map((branch, i) => {
-                const mapUrl = branch.mapUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('ASHCOL Airconditioning ' + branch.name + ' ' + branch.address)}`
-                return <FranchiseBranchCard key={i} branch={branch} mapUrl={mapUrl} t={t} />
-              })}
-            </div>
-          </div>
-
-        </div>
-      </section>
-
-
-
-
-
-
-      {/* ── About Us ────────────────────────────────────────────────────────── */}
-
-      <section id="about" ref={aboutRef} className="px-4 md:px-11 lg:px-20 py-12 md:py-24" style={{ backgroundColor: t.bg }}>
-        <div className="max-w-6xl mx-auto">
-          <div className="flex flex-col items-center text-center mb-10">
-            <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full mb-5">
-              <Users className="w-3 h-3 text-[#10B981]" />
-              <span className="text-[10px] font-bold text-[#10B981] tracking-[2px]">ABOUT US</span>
-            </div>
-            <h2 className="text-[clamp(1.6rem,3.5vw,2.5rem)] font-black leading-tight tracking-tight mb-6" style={{ color: t.text }}>
-              A family business built on trust.
-            </h2>
-          </div>
+    <div className="bg-white">
+      <div ref={pageRef} className="min-h-screen overflow-x-hidden font-['Inter',sans-serif] transition-colors duration-500 bg-white text-slate-900">
+        
+        {/* Global font injections and custom marquee animations */}
+        <style>{`
+          .no-scrollbar::-webkit-scrollbar { display: none; }
+          @import url('https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
           
-          <div className="max-w-4xl mx-auto">
-            <p className="text-[15px] leading-relaxed mb-4" style={{ color: t.textMuted }}>
-              <span className="font-semibold" style={{ color: t.text }}>ASHCOL Airconditioning Services Corporation</span> is a
-              family-run business founded in 2014. The company name "ASHCOL" was formed from the names of the two
-              lovely daughters — <span style={{ color: t.accent }}>Ashanti</span> and{' '}
-              <span style={{ color: t.accent }}>Coleene</span>.
-            </p>
-            <p className="text-[15px] leading-relaxed mb-4" style={{ color: t.textMuted }}>
-              Located at Units 2A &amp; 2B, 2/F Genesis Building, 182-A 19th Ave, East Rembo, Taguig — the team combines
-              more than a decade of technical expertise with a deeply personal customer service philosophy.
-            </p>
-            <p className="text-[15px] leading-relaxed mb-7" style={{ color: t.textMuted }}>
-              Their tagline{' '}
-              <span className="italic" style={{ color: t.accent }}>"Keeping YOU Cool"</span>{' '}
-              reflects their core belief: give people the comfort they deserve, and you will never have an unhappy customer.
-            </p>
-            <div className="flex flex-wrap justify-center gap-3">
-              {[{ icon: <MapPin className="w-4 h-4" style={{ color: t.accent }} />, label: 'Taguig, Metro Manila' },
-                { icon: <Calendar className="w-4 h-4" style={{ color: t.accent }} />, label: 'Since 2014' },
-                { icon: <ShieldCheck className="w-4 h-4" style={{ color: t.accent }} />, label: 'PCAB Licensed Contractor' }]
-                .map((badge, i) => (
-                  <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}>
-                    {badge.icon}
-                    <span className="text-[13px]" style={{ color: t.textMuted }}>{badge.label}</span>
-                  </div>
-                ))}
-            </div>
+          @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+          @keyframes marquee-reverse { 0% { transform: translateX(-50%); } 100% { transform: translateX(0); } }
+          
+          .animate-marquee { animation: marquee 40s linear infinite; }
+          .animate-marquee-reverse { animation: marquee-reverse 40s linear infinite; }
+          .animate-marquee:hover, .animate-marquee-reverse:hover { animation-play-state: paused; }
+        `}</style>
+
+        {/* ── 1. AC SPLIT TYPE NAVBAR (DARK THEME TO MATCH HERO) ── */}
+        <header className={`fixed top-0 md:top-4 left-0 right-0 mx-auto z-[100] w-full max-w-[1170px] overflow-hidden rounded-b-[2rem] md:rounded-[2rem] transition-all duration-500 ease-in-out shadow-2xl backdrop-blur-md ${isScrolled ? 'h-[70px] md:h-[80px] bg-[#0F172A]/65' : 'h-[120px] md:h-[160px] bg-[#0F172A]/85'}`}>
+          <div className="absolute top-0 left-0 w-full h-[160px] pointer-events-none">
+            <svg preserveAspectRatio="none" viewBox="0 0 1440 160" className="w-full h-full">
+              {/* Dark Theme SVG Elements */}
+              <line x1="40" y1="95" x2="1400" y2="95" stroke="#1E293B" strokeWidth="2" strokeLinecap="round" />
+              <line x1="40" y1="105" x2="1400" y2="105" stroke="#1E293B" strokeWidth="2" strokeLinecap="round" />
+              <rect x="30" y="115" width="1380" height="24" rx="4" fill="#1E293B" stroke="#334155" className="transition-colors duration-300" strokeWidth="1" />
+              <rect className="ac-flap transition-colors duration-300" x="35" y="117" width="1370" height="20" rx="3" fill="#020617" stroke="#334155" strokeWidth="1" />
+              {!isScrolled && <circle cx="1400" cy="75" r="4" fill="#10B981" />}
+            </svg>
           </div>
-        </div>
-      </section>
 
-      {/* ── Download the App Banner ────────────────────────────────────────── */}
-      <section className="relative overflow-hidden px-4 md:px-11 lg:px-20 py-12 md:py-16" style={{ backgroundColor: t.bg, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
-        {/* Glow accents — only visible in dark mode */}
-        {isDark && <>
-          <div className="absolute -left-20 top-1/2 -translate-y-1/2 w-72 h-72 rounded-full opacity-10 pointer-events-none" style={{ background: 'radial-gradient(circle, #10B981, transparent 70%)', filter: 'blur(40px)' }} />
-          <div className="absolute -right-20 top-1/2 -translate-y-1/2 w-72 h-72 rounded-full opacity-10 pointer-events-none" style={{ background: 'radial-gradient(circle, #3B82F6, transparent 70%)', filter: 'blur(40px)' }} />
-        </>}
+          <nav className={`relative z-10 w-full flex items-center justify-between px-6 md:px-10 transition-all duration-300 ${isScrolled ? 'h-[65px] md:h-[75px]' : 'h-[70px] md:h-[90px]'}`}>
+            <button onClick={() => scrollTo('hero')} className="nav-element flex items-center gap-3 hover:opacity-90 transition-opacity">
+              <img src={logoImg} alt="ASHCOL Logo" className={`w-auto object-contain transition-all duration-300 ${isScrolled ? 'h-[24px] md:h-[28px]' : 'h-[36px] md:h-[44px]'}`} />
+            </button>
 
-        <div className="relative max-w-6xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-10">
-          {/* Left: Text */}
-          <div className="w-full lg:flex-1 text-center lg:text-left">
-            <div className="inline-flex items-center gap-2 bg-[rgba(245,158,11,0.1)] border border-[rgba(245,158,11,0.3)] px-3 py-1.5 rounded-full mb-4">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#F59E0B] animate-pulse" />
-              <span className="text-[10px] font-bold text-[#F59E0B] tracking-[2px]">COMING SOON</span>
+            <div className="nav-element hidden md:flex items-center justify-center gap-8 absolute left-1/2 transform -translate-x-1/2">
+              {[{id: 'hero', l: 'Home'}, {id: 'how-it-works', l: 'How It Works'}, {id: 'services', l: 'Services'}, {id: 'about', l: 'Why Us'}, {id: 'clients', l: 'Clients'}, {id: 'branches', l: 'Branches'}].map(nav => (
+                <button key={nav.id} onClick={() => scrollTo(nav.id)} className="relative text-sm font-semibold transition-colors py-1 hover:opacity-80" style={{ color: activeSection === nav.id ? '#10B981' : '#CBD5E1' }}>
+                  {nav.l}
+                </button>
+              ))}
             </div>
-            <h2 className="text-[clamp(1.5rem,3vw,2.2rem)] font-black leading-tight tracking-tight mb-3" style={{ color: t.text }}>
-              Book AC services<br />
-              <span className="text-[#10B981]">right from the app.</span>
-            </h2>
-            <p className="text-[14px] leading-relaxed max-w-md mx-auto lg:mx-0 mb-2" style={{ color: t.textMuted }}>
-              The <span className="font-semibold" style={{ color: t.text }}>ASHCOL Service App</span> lets you submit a service request, track your ticket status in real time, and get notified when a technician is on the way — all from your phone.
-            </p>
-            <p className="text-[12px] mb-5" style={{ color: t.textFaint }}>Coming Soon</p>
 
-            {/* Store Badges */}
-            <div className="flex flex-row gap-2 sm:gap-3 items-stretch justify-center lg:justify-start">
-              <button type="button" aria-label="Get it on Google Play"
-                onClick={() => setShowComingSoon(true)}
-                className="flex-1 sm:flex-none flex items-center justify-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 rounded-xl font-bold transition-all hover:opacity-90 active:scale-95 sm:min-w-[170px]"
-                style={{ backgroundColor: isDark ? '#E2E8F0' : '#0D2010', color: isDark ? '#060B18' : '#E2E8F0' }}
-              >
-                <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0" fill="none">
-                  <path d="M3.18 23.5c.3.17.65.19.97.06l12.45-7.2-2.88-2.88L3.18 23.5z" fill="#EA4335"/>
-                  <path d="M22.26 10.6c-.44-.25-4.03-2.33-8.6-4.97L11 8.29l2.9 2.9 8.36-.59z" fill="#FBBC04"/>
-                  <path d="M3.18.5C2.86.63 2.63.96 2.63 1.41v21.18c0 .45.23.78.55.91l10.54-10.54L3.18.5z" fill="#4285F4"/>
-                  <path d="M22.26 13.4l-1.04.6-8.32-.59-2.9 2.9 2.66 2.66c4.57-2.64 8.16-4.72 8.6-4.97.72-.41.72-1.19 0-1.6z" fill="#34A853"/>
-                </svg>
-                <div className="text-left">
-                  <div className="text-[9px] font-medium leading-none opacity-70">GET IT ON</div>
-                  <div className="text-[12px] sm:text-[14px] font-black leading-tight">Google Play</div>
-                </div>
-              </button>
-
-              <button type="button" aria-label="Download on the App Store"
-                onClick={() => setShowComingSoon(true)}
-                className="flex-1 sm:flex-none flex items-center justify-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 rounded-xl font-bold transition-all hover:opacity-90 active:scale-95 sm:min-w-[170px]"
-                style={{ backgroundColor: isDark ? '#E2E8F0' : '#0D2010', color: isDark ? '#060B18' : '#E2E8F0' }}
-              >
-                <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0" fill="currentColor">
-                  <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98l-.09.06c-.22.15-2.22 1.3-2.2 3.88.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.33 2.6M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
-                </svg>
-                <div className="text-left">
-                  <div className="text-[9px] font-medium leading-none opacity-70">DOWNLOAD ON THE</div>
-                  <div className="text-[12px] sm:text-[14px] font-black leading-tight">App Store</div>
-                </div>
+            <div className="nav-element md:hidden flex items-center gap-3 sm:gap-4">
+              <button className="md:hidden p-2 rounded-lg text-white/80 hover:text-[#10B981] transition-colors" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+                {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
             </div>
-          </div>
+          </nav>
+        </header>
 
-          {/* Right: Feature pills */}
-          <div className="w-full lg:flex-1 grid grid-cols-2 gap-2.5 sm:gap-3 lg:max-w-sm">
-            {[
-              { icon: <Calendar className="w-4 h-4" />, title: 'Book a Service', desc: 'Request cleaning, repair, or installation support' },
-              { icon: <Clock className="w-4 h-4" />, title: 'Track in Real Time', desc: 'See your ticket status live as it updates' },
-              { icon: <Bell className="w-4 h-4" />, title: 'Get Notified', desc: 'Alerts when a technician is assigned or en route' },
-            ].map((feat, i) => (
-              <div key={i} className="rounded-xl p-3 sm:p-4" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}>
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-2" style={{ backgroundColor: t.accentBg, color: t.accent }}>{feat.icon}</div>
-                <div className="text-[12px] sm:text-[13px] font-bold mb-0.5" style={{ color: t.text }}>{feat.title}</div>
-                <div className="text-[11px] leading-tight" style={{ color: t.textFaint }}>{feat.desc}</div>
-              </div>
-            ))}
-            <div className="rounded-xl p-3 sm:p-4 flex flex-col justify-center" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}>
-              <div className="flex items-center gap-1.5 mb-2">
-                <span className="w-1.5 h-1.5 rounded-full animate-pulse bg-[#10B981]" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-[#10B981]">Coming Soon</span>
-              </div>
-              <div className="text-[12px] font-bold mb-0.5" style={{ color: t.text }}>Service App</div>
-              <div className="text-[11px]" style={{ color: t.textMuted }}>Launching on Android &amp; iOS</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Core Values ──────────────────────────────────────────────── */}
-      <section className="px-4 md:px-11 lg:px-20 py-10 md:py-20" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
-        <div className="flex flex-col items-center text-center gap-4 mb-10">
-          <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full">
-            <ShieldCheck className="w-3 h-3 text-[#10B981]" />
-            <span className="text-[10px] font-bold text-[#10B981] tracking-[2px]">OUR VALUES</span>
-          </div>
-          <h2 className="text-[clamp(1.5rem,3.5vw,2.4rem)] font-black leading-tight tracking-tight" style={{ color: t.text }}>
-            What drives us every day
-          </h2>
-          <p className="max-w-xl text-[15px] leading-relaxed" style={{ color: t.textMuted }}>
-            Our <span className="font-semibold" style={{ color: t.text }}>mission</span> is to deliver high-quality, cost-effective AC solutions while maintaining a safe and healthy environment. Our <span className="font-semibold" style={{ color: t.text }}>vision</span> is to be the leading AC services provider in the Philippines.
-          </p>
-        </div>
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 max-w-6xl mx-auto">
-          {VALUES.map((v, i) => (
-            <div key={i} className="rounded-2xl p-3 sm:p-5 flex flex-col gap-2 sm:gap-3 transition-all hover:shadow-lg group relative overflow-hidden"
-              style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = v.color + '60'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = t.border}
-            >
-              <div className="absolute top-0 left-0 right-0 h-[2px] opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: v.color }} />
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ backgroundColor: v.colorBg, color: v.color }}>
-                {v.icon}
-              </div>
-              <div>
-                <div className="text-[14px] font-bold mb-1.5" style={{ color: t.text }}>{v.title}</div>
-                <div className="text-[11px] sm:text-[12px] leading-relaxed" style={{ color: t.textMuted }}>{v.desc}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── Services ────────────────────────────────────────────────────────── */}
-      <section id="services" ref={servicesRef} className="px-4 md:px-11 lg:px-20 py-14 md:py-24" style={{ backgroundColor: t.bg }}>
-        {/* Header */}
-        <div className="flex flex-col items-center text-center gap-4 mb-12">
-          <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] glow-green-sm inline-block" />
-            <span className="text-[10px] font-bold text-[#10B981] tracking-[2px]">OUR SERVICES</span>
-          </div>
-          <h2 className="text-[clamp(1.5rem,3.5vw,2.4rem)] font-black leading-tight tracking-tight" style={{ color: t.text }}>
-            Comprehensive AC solutions
-          </h2>
-          <p className="max-w-lg text-[15px] leading-relaxed" style={{ color: t.textMuted }}>
-            From first-time installation to routine maintenance — we handle every aspect of your air conditioning needs.
-          </p>
-        </div>
-
-        {/* Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 max-w-6xl mx-auto">
-          {SERVICES.map((svc, i) => (
-            <div
-              key={i}
-              onMouseEnter={() => setHoveredService(i)}
-              onMouseLeave={() => setHoveredService(null)}
-              className="relative rounded-2xl p-4 sm:p-6 border overflow-hidden transition-all duration-300 cursor-default"
-              style={{
-                borderColor: hoveredService === i ? svc.colorBorder : t.border,
-                boxShadow: hoveredService === i ? `0 16px 48px rgba(0,0,0,0.15)` : 'none',
-                backgroundColor: hoveredService === i ? (isDark ? '#111E33' : '#F0FAF0') : t.bgCard,
-              }}
-            >
-              {/* Top accent line */}
-              <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: svc.color }} />
-
-              <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl mb-4"
-                style={{ background: svc.colorBg }}
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <motion.div className="fixed left-0 w-full bg-[#0F172A] border-b border-slate-800 rounded-b-[2rem] shadow-2xl p-6 pt-12 flex flex-col gap-5 z-[90] md:hidden pointer-events-auto" style={{ top: isScrolled ? 38 : 88 }} initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
+              {[{id: 'hero', l: 'Home'}, {id: 'how-it-works', l: 'How It Works'}, {id: 'services', l: 'Services'}, {id: 'about', l: 'Why Us'}, {id: 'clients', l: 'Clients'}, {id: 'branches', l: 'Branches'}].map((nav) => (
+                <button
+                  key={nav.id}
+                  onClick={() => {
+                    const section = document.getElementById(nav.id);
+                    if (section) {
+                      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    } else if (nav.id === 'hero') {
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                    setMobileMenuOpen(false);
+                  }}
+                  className="block w-full text-left text-[17px] font-semibold text-slate-200 hover:text-[#10B981] transition-colors capitalize cursor-pointer"
+                >
+                  {nav.l}
+                </button>
+              ))}
+              <div className="h-[1px] w-full bg-white/10 my-2"></div>
+              <button
+                onClick={() => {
+                  const contactSection = document.getElementById('contact');
+                  if (contactSection) {
+                    contactSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }
+                  setMobileMenuOpen(false);
+                }}
+                className="w-full text-center px-6 py-3 bg-[#10B981] text-white text-[16px] font-bold rounded-full hover:bg-[#059669] transition-colors"
               >
-                {svc.icon}
-              </div>
+                Book Now
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-              <h3 className="text-[17px] font-bold mb-2" style={{ color: t.text }}>{svc.title}</h3>
-              <p className="text-[13px] leading-relaxed mb-4" style={{ color: t.textMuted }}>{svc.desc}</p>
-              <div className="pt-4 flex flex-col gap-2" style={{ borderTop: `1px solid ${t.border}` }}>
-                {svc.items.map((item, j) => (
-                  <div key={j} className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5" style={{ color: svc.color }} />
-                    <span className="text-[13px]" style={{ color: t.textMuted }}>{item}</span>
+        <AnimatePresence>
+          {showComingSoon && <ComingSoonModal onClose={() => setShowComingSoon(false)} />}
+        </AnimatePresence>
+
+        {/* ── 2. HERO SECTION ────────────────────────────────────────────────── */}
+        <section id="hero" className="relative w-full min-h-screen overflow-hidden flex flex-col items-center bg-[#0F172A]">
+          <motion.div initial={{ scale: 1.06, opacity: 0.6 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 1.6, ease: [0.25, 0.46, 0.45, 0.94] }} className="absolute inset-0 z-0 bg-center bg-cover bg-no-repeat opacity-40 mix-blend-overlay" style={{ backgroundImage: "url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=2000')" }}>
+            <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(15,23,42,0.92), rgba(15,23,42,0.75), rgba(15,23,42,0.10))" }} />
+          </motion.div>
+
+          <div className="absolute inset-0 z-[5] pointer-events-none opacity-30 max-w-[1170px] mx-auto" style={{ maskImage: 'linear-gradient(to bottom, black 50%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to bottom, black 50%, transparent 100%)' }}>
+            <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 1400 800" fill="none">
+              <path className="wind-dash" d="M 200 -100 Q 150 200 250 400 T 200 900" stroke="#10B981" strokeWidth="4" strokeLinecap="round" strokeDasharray="15, 30" />
+              <path className="wind-dash" d="M 1000 -100 Q 950 200 1020 400 T 980 900" stroke="#10B981" strokeWidth="4" strokeLinecap="round" strokeDasharray="15, 30" />
+            </svg>
+          </div>
+
+          <div className="relative z-10 w-full max-w-[1440px] mx-auto pt-[160px] md:pt-[240px] px-6 lg:px-[135px] pb-[60px] flex flex-col items-center min-h-screen">
+            <div className="flex flex-col items-center gap-8 md:gap-12 w-full max-w-[800px] mx-auto text-center">
+              
+              <div className="flex flex-col items-center gap-6">
+
+                {/* Top Badge */}
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.75, delay: 0.25 }} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-sm">
+                  <div className="w-2 h-2 rounded-full bg-[#10B981]" />
+                  <span className="text-[12px] md:text-[14px] font-bold text-white tracking-[1px] uppercase font-['IBM_Plex_Mono',monospace]">ASHCOL Airconditioning • Since 2014</span>
+                </motion.div>
+
+                <motion.h1 initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.75, delay: 0.35 }} className="w-full text-center text-white font-['Big_Shoulders_Display',sans-serif] text-[40px] sm:text-[52px] md:text-[80px] leading-tight font-bold leading-[1.0] tracking-tight uppercase">
+                  12+ Years of Expert <br className="hidden md:block" /> <span className="text-[#10B981]">Air Conditioning Services.</span>
+                </motion.h1>
+
+                {/* Tagline */}
+                <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.75, delay: 0.40 }} className="text-center text-slate-400 italic text-xl font-semibold">
+                  Keeping YOU Cool
+                </motion.p>
+
+                <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.75, delay: 0.45 }} className="text-center text-white/80 font-sans text-lg md:text-xl max-w-lg leading-relaxed mt-2 mx-auto">
+                  Your trusted partner for installation, repair, and maintenance of air conditioning systems — residential and commercial, throughout Metro Manila and Luzon.
+                </motion.p>
+              </div>
+            </div>
+
+            <motion.div initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.55 }} className="flex flex-col sm:flex-row justify-center items-center gap-3 w-full sm:w-auto mt-12 mx-auto">
+              <button onClick={() => scrollTo('services')} className="group flex px-8 py-4 justify-center items-center gap-3 rounded-full border border-white/40 bg-white/10 backdrop-blur-[7px] text-white text-[15px] font-medium no-underline transition-all hover:bg-[#10B981]/20 hover:border-[#10B981]/50 hover:text-[#10B981] w-full sm:w-auto">
+                Explore Services
+                <ArrowRight className="w-4 h-4 shrink-0 transition-transform duration-300 group-hover:translate-x-1" />
+              </button>
+            </motion.div>
+          </div>
+        </section>
+
+        {/* ── STATS STRIP ────────────────────────────────────────────────────── */}
+        <section className="border-b border-slate-100 bg-[#FCFCFC] py-16">
+          <div className="max-w-[95rem] mx-auto px-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+              {STATS.map((s, i) => (
+                <Reveal key={i} className="text-center" delay={i * 0.1} y={20}>
+                  <div className="font-['Big_Shoulders_Display',sans-serif] text-[48px] md:text-[60px] font-bold leading-none text-[#10B981] mb-1 tracking-tight">
+                    <CountUp from={0} to={s.value} duration={2} />{s.suffix}
                   </div>
-                ))}
+                  <div className="text-slate-500 text-xs font-bold uppercase tracking-widest font-['IBM_Plex_Mono',monospace]">{s.label}</div>
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ── HOW IT WORKS ───────────────────────────────────────────────────── */}
+        <section id="how-it-works" className="w-full py-16 md:py-[120px] px-4 sm:px-6 lg:px-[135px] bg-[#0A1120]">
+          <div className="max-w-[1440px] mx-auto">
+            <Reveal className="text-center mb-16 flex flex-col items-center w-full">
+              <div className="inline-flex items-center justify-center gap-4 sm:gap-6 w-full">
+                <div className="hidden sm:block h-[2px] w-12 md:w-24 bg-gradient-to-r from-transparent to-[#10B981]/50 rounded-full" />
+                <h2 className="text-white font-['Big_Shoulders_Display',sans-serif] text-[40px] md:text-[52px] font-bold leading-none tracking-tight uppercase">
+                  HOW IT <span className="text-[#10B981]">WORKS</span>
+                </h2>
+                <div className="hidden sm:block h-[2px] w-12 md:w-24 bg-gradient-to-l from-transparent to-[#10B981]/50 rounded-full" />
+              </div>
+            </Reveal>
+            <Reveal>
+              <div className="relative w-full z-10">
+                <div className="hidden md:block absolute top-[64px] left-[15%] right-[15%] h-0 border-t-[2px] border-dashed border-white/15 -z-10" />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
+                  {[
+                    { num: '01', label: 'Book Online', sub: 'Easily schedule a service by filling out our web booking form or scanning the QR code.', icon: <MousePointerClick className="w-6 h-6"/> },
+                    { num: '02', label: 'Provide Details', sub: 'Share your AC issue and location details for a quick assessment and quote.', icon: <FileText className="w-6 h-6"/> },
+                    { num: '03', label: 'We Come to You', sub: 'Our expert technicians handle the job.', icon: <Wrench className="w-6 h-6"/> },
+                  ].map((step, i) => (
+                    <div key={i} className="relative flex flex-col gap-6 p-8 lg:p-10 rounded-[32px] bg-[#0F172A] border border-white/5 shadow-sm transition-all duration-300 hover:-translate-y-2 hover:shadow-xl hover:border-[#10B981]/30 group overflow-hidden z-10 cursor-default">
+                      {/* Faint Watermark Number */}
+                      <span className="absolute -top-4 -right-2 font-['Big_Shoulders_Display',sans-serif] text-[140px] font-bold leading-none text-white opacity-5 pointer-events-none group-hover:text-[#10B981] group-hover:opacity-[0.05] transition-colors duration-500">
+                        {step.num}
+                      </span>
+                      
+                      {/* Icon Container */}
+                      <div className="w-16 h-16 rounded-full bg-[#10B981]/10 flex items-center justify-center text-[#10B981] mb-2 relative z-10 transition-transform duration-300 group-hover:scale-110">
+                        {step.icon}
+                      </div>
+
+                      <div className="flex flex-col gap-2 relative z-10">
+                        <span className="block text-[#10B981] font-['IBM_Plex_Mono',monospace] text-[10px] font-bold tracking-[2px] uppercase mb-2">Step {step.num}</span>
+                        <h3 className="font-bold text-2xl text-white font-sans">{step.label}</h3>
+                        <p className="text-base font-medium leading-relaxed text-slate-400 font-sans">{step.sub}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Reveal>
+          </div>
+        </section>
+
+        {/* ── 3. SERVICES (Solra Cards) ─────────────────────────────────────── */}
+        <section id="services" className="w-full py-16 md:py-[120px] px-4 sm:px-6 lg:px-[135px] bg-[#FCFCFC]">
+          <div className="max-w-[1440px] mx-auto">
+            <Reveal className="mb-12">
+              <span className="inline-block text-[#10B981] font-['IBM_Plex_Mono',monospace] text-[12px] md:text-[14px] font-bold uppercase tracking-[2px] mb-3">
+                &bull; OUR SERVICES
+              </span>
+              <h2 className="text-[#093600] font-['Big_Shoulders_Display',sans-serif] text-[40px] md:text-[52px] font-bold leading-none tracking-tight uppercase">
+                COMPREHENSIVE AC SOLUTIONS
+              </h2>
+            </Reveal>
+
+            <div className="flex flex-col md:flex-row items-start gap-8 lg:gap-12">
+              <div className="w-full md:w-1/2 flex flex-col gap-6 order-2 md:order-1">
+                <div className="hidden md:block relative w-full aspect-[560/500] lg:h-[600px] rounded-[30px] overflow-hidden shadow-sm">
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={currentServiceIdx}
+                      initial={{ opacity: 0, scale: 1.05 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.05 }} transition={{ duration: 0.5, ease: "easeInOut" }}
+                      className="w-full h-full bg-[#ECFDF5] flex items-center justify-center"
+                    >
+                      <div className="w-32 h-32 rounded-full bg-[#10B981]/10 flex items-center justify-center text-[#10B981] [&>svg]:w-16 [&>svg]:h-16">
+                        {SERVICES[currentServiceIdx].icon}
+                      </div>
+                    </motion.div>
+                  </AnimatePresence>
+                </div>
+              </div>
+
+              <div className="w-full md:w-1/2 flex flex-col gap-3 order-1 md:order-2">
+                {SERVICES.map((service, index) => {
+                  const isActive = currentServiceIdx === index;
+                  return (
+                    <motion.div
+                      key={service.id}
+                      onClick={() => setActiveServiceIdx(index)}
+                      onMouseEnter={() => setHoveredServiceIdx(index)}
+                      onMouseLeave={() => setHoveredServiceIdx(null)}
+                      initial={false}
+                      animate={{ backgroundColor: isActive ? "#093600" : "#FFFFFF", color: isActive ? "#FFFFFF" : "#093600" }}
+                      transition={{ duration: 0.4, ease: "easeInOut" }}
+                      className={`group cursor-pointer flex flex-col w-full p-[16px_20px] lg:p-6 rounded-[16px] lg:rounded-[24px] border transition-all duration-300 ${isActive ? "border-transparent shadow-lg" : "border-[#E5E7EB] hover:border-[#10B981]/30"}`}
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <div className="flex flex-col gap-1 pr-4">
+                          <div className="flex items-center gap-3">
+                            <h4 className={`font-['Big_Shoulders_Display',sans-serif] text-[24px] lg:text-[32px] font-bold leading-none tracking-wide uppercase ${isActive ? "text-white" : "text-[#093600]"}`}>
+                              {service.title}
+                            </h4>
+                            <span className={`font-['IBM_Plex_Mono',monospace] text-[10px] font-bold tracking-widest uppercase px-3 py-1 rounded-full ${isActive ? "bg-white/10 text-white" : "bg-[#ECFDF5] text-[#10B981]"}`}>
+                              {service.label}
+                            </span>
+                          </div>
+                        </div>
+
+                        <motion.div
+                          animate={{ backgroundColor: isActive ? "#10B981" : "#FFFFFF", borderColor: isActive ? "#10B981" : "#E5E7EB" }}
+                          transition={{ duration: 0.4, ease: "easeInOut" }}
+                          className={`flex-shrink-0 w-[40px] h-[40px] rounded-full border flex items-center justify-center transition-all duration-300 group-hover:shadow-md ${isActive ? 'text-white' : 'text-[#093600]'}`}
+                        >
+                          {isActive ? <ArrowUpRight className="w-5 h-5" /> : <motion.div whileHover={{ x: 3 }} transition={{ type: "spring", stiffness: 400 }}><ArrowRight className="w-5 h-5" /></motion.div>}
+                        </motion.div>
+                      </div>
+
+                      <AnimatePresence initial={false}>
+                        {isActive && (
+                          <motion.div key={"expanded-" + service.id} initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3 }} className="overflow-hidden">
+                            <p className="font-sans text-[15px] lg:text-[16px] font-medium leading-[24px] opacity-90 mt-4 mb-4 lg:max-w-none text-[#ECFDF5]">
+                              {service.description}
+                            </p>
+                            <div className="md:hidden w-full aspect-[16/11] rounded-[24px] overflow-hidden mb-1 shadow-sm">
+                              <div className="w-full h-full bg-[#ECFDF5] flex items-center justify-center text-[#10B981] [&>svg]:w-12 [&>svg]:h-12">
+                                {service.icon}
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </motion.div>
+                  );
+                })}
               </div>
             </div>
-          ))}
-        </div>
-      </section>
-
-
-
-      {/* ── Featured Projects Slider ─────────────────────────────────────── */}
-      <section id="showcase" ref={showcaseRef} className="px-4 md:px-11 lg:px-20 py-14 md:py-24" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
-        {/* Section header */}
-        <div className="flex flex-col items-center text-center gap-4 mb-12">
-          <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full">
-            <Layers className="w-3 h-3 text-[#10B981]" />
-            <span className="text-[10px] font-bold text-[#10B981] tracking-[2px]">FEATURED PROJECTS</span>
           </div>
-          <h2 className="text-[clamp(1.5rem,3.5vw,2.4rem)] font-black leading-tight tracking-tight" style={{ color: t.text }}>
-            Real jobs. Real results.
-          </h2>
-          <p className="max-w-lg text-[15px] leading-relaxed" style={{ color: t.textMuted }}>
-            From residential retrofits to large-scale commercial installations — see how ASHCOL delivers across every project type.
-          </p>
-          <Link
-            to="/booking"
-            className="flex items-center justify-center gap-2 px-6 py-3 text-[14px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green"
-          >
-            <Calendar className="w-4 h-4" />
-            Book a Service
-          </Link>
-        </div>
+        </section>
 
-        {/* Slider */}
-        <div className="max-w-6xl mx-auto">
-          <div className="relative">
-            {/* Card */}
-            <div
-              className="relative rounded-3xl overflow-hidden min-h-[420px] md:min-h-[480px] flex flex-col md:flex-row"
-              style={{ border: `1px solid ${FEATURED_PROJECTS[projectSlide].accentColor}30` }}
-            >
-              {/* Left: Visual panel */}
-              <div
-                className="md:w-[42%] min-h-[200px] md:min-h-full relative flex flex-col items-center justify-center p-8 md:p-10"
-                style={{ background: FEATURED_PROJECTS[projectSlide].gradient }}
-              >
-                {/* Glow orb */}
-                <div
-                  className="absolute inset-0 opacity-20 pointer-events-none"
-                  style={{ background: `radial-gradient(circle at 50% 40%, ${FEATURED_PROJECTS[projectSlide].accentColor}, transparent 65%)` }}
-                />
-                {/* Icon circle */}
-                <div
-                  className="relative w-24 h-24 rounded-full flex items-center justify-center mb-5 border-2"
-                  style={{ backgroundColor: `${FEATURED_PROJECTS[projectSlide].accentColor}20`, borderColor: `${FEATURED_PROJECTS[projectSlide].accentColor}50`, color: FEATURED_PROJECTS[projectSlide].accentColor }}
-                >
-                  {FEATURED_PROJECTS[projectSlide].icon}
-                </div>
-                {/* Tag */}
-                <span
-                  className="relative text-[10px] font-black uppercase tracking-[2px] px-3 py-1.5 rounded-full border"
-                  style={{ color: FEATURED_PROJECTS[projectSlide].accentColor, backgroundColor: FEATURED_PROJECTS[projectSlide].tagBg, borderColor: `${FEATURED_PROJECTS[projectSlide].accentColor}40` }}
-                >
-                  {FEATURED_PROJECTS[projectSlide].tag}
-                </span>
-                {/* Slide counter */}
-                <div className="absolute bottom-5 left-0 right-0 flex justify-center gap-1.5">
-                  {FEATURED_PROJECTS.map((_, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setProjectSlide(i)}
-                      className="rounded-full transition-all duration-300"
-                      style={{
-                        width: i === projectSlide ? '20px' : '6px',
-                        height: '6px',
-                        backgroundColor: i === projectSlide ? FEATURED_PROJECTS[projectSlide].accentColor : 'rgba(255,255,255,0.25)',
-                      }}
-                      aria-label={`Go to project ${i + 1}`}
-                    />
+        {/* ── 4. WHAT DRIVES US (Restored Values Layout) ────────────────────── */}
+        <section id="about" className="flex w-full min-h-screen bg-[#ECFDF5] justify-center overflow-hidden">
+          <motion.div initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={fadeUpContainer} className="flex w-full max-w-[1440px] px-6 sm:px-12 lg:px-[135px] py-16 lg:py-[120px] flex-col items-start gap-12 lg:gap-[80px]">
+            
+            <div className="flex flex-col lg:flex-row items-start lg:items-end justify-between w-full lg:h-[124px] self-stretch">
+              <motion.h2 variants={fadeUpItem} className="text-[#093600] font-['Big_Shoulders_Display',sans-serif] text-[40px] sm:text-[52px] lg:text-[64px] font-bold leading-[0.95] tracking-tight uppercase max-w-[500px]">
+                WHAT DRIVES US EVERY DAY
+              </motion.h2>
+              <motion.p variants={fadeUpItem} className="text-[#093600] opacity-80 text-[18px] font-medium leading-[26px] lg:w-[472px] mt-6 lg:mt-0 font-sans">
+                We combine technical excellence and customer focus to create comfortable environments that go beyond temporary fixes.
+              </motion.p>
+            </div>
+
+            <motion.div variants={fadeUpItem} className="flex w-full max-w-[1170px] p-6 sm:p-8 lg:p-[48px] flex-col items-center gap-0 rounded-[32px] lg:rounded-[40px] bg-white mx-auto shadow-sm border border-slate-100">
+              
+              <div className="flex w-full overflow-x-auto no-scrollbar pb-2 lg:pb-0 mb-8 lg:mb-[48px]">
+                <div className="flex p-2 lg:p-[12px_10px] justify-start lg:justify-center items-center gap-4 lg:gap-[16px] self-stretch rounded-full bg-[#ECFDF5] min-w-max mx-auto lg:w-full">
+                  {VALUES.map((val, idx) => (
+                    <button key={val.id} onClick={() => setActiveValIdx(idx)} onMouseEnter={() => setActiveValIdx(idx)} className={`flex px-6 py-3 lg:px-8 lg:py-4 justify-center items-center gap-[10px] rounded-full transition-all duration-300 ${activeValIdx === idx ? "bg-white shadow-[0px_6px_16px_rgba(0,0,0,0.05)]" : "hover:bg-white/50"}`}>
+                      <div className={`w-2 h-2 rounded-full transition-colors duration-300 ${activeValIdx === idx ? "bg-[#10B981]" : "bg-[#10B981]/30"}`} />
+                      <span className="text-[#093600] font-sans text-[15px] lg:text-[16px] font-bold uppercase tracking-wide whitespace-nowrap font-['Big_Shoulders_Display',sans-serif]">
+                        {val.label}
+                      </span>
+                    </button>
                   ))}
                 </div>
               </div>
 
-              {/* Right: Info panel */}
-              <div
-                className="flex-1 p-6 sm:p-8 md:p-10 flex flex-col justify-between"
-                style={{ backgroundColor: t.bgCard }}
-              >
-                {/* Title + type */}
-                <div>
-                  <div className="text-[11px] font-bold uppercase tracking-[2px] mb-2" style={{ color: FEATURED_PROJECTS[projectSlide].accentColor }}>
-                    {FEATURED_PROJECTS[projectSlide].type}
-                  </div>
-                  <h3 className="text-[clamp(1.3rem,2.5vw,1.85rem)] font-black leading-tight tracking-tight mb-3" style={{ color: t.text }}>
-                    {FEATURED_PROJECTS[projectSlide].title}
-                  </h3>
-                  <div className="flex items-center gap-1.5 mb-4">
-                    <MapPin className="w-3.5 h-3.5 flex-shrink-0" style={{ color: t.textFaint }} />
-                    <span className="text-[13px]" style={{ color: t.textFaint }}>{FEATURED_PROJECTS[projectSlide].location}</span>
-                  </div>
-                  <p className="text-[14px] leading-relaxed mb-6" style={{ color: t.textMuted }}>
-                    {FEATURED_PROJECTS[projectSlide].scope}
-                  </p>
-
-                  {/* Stats row */}
-                  <div className="grid grid-cols-3 gap-2 sm:gap-3">
-                    {FEATURED_PROJECTS[projectSlide].stats.map((stat, i) => (
-                      <div
-                        key={i}
-                        className="rounded-xl p-3 sm:p-4 flex flex-col gap-0.5"
-                        style={{ backgroundColor: isDark ? '#060B18' : '#EEF7EE', border: `1px solid ${t.border}` }}
-                      >
-                        <div className="text-[15px] sm:text-[17px] font-black tracking-tight" style={{ color: FEATURED_PROJECTS[projectSlide].accentColor }}>{stat.value}</div>
-                        <div className="text-[10px] sm:text-[11px] font-medium leading-tight" style={{ color: t.textFaint }}>{stat.label}</div>
+              <div className="flex flex-col lg:flex-row p-4 sm:p-6 lg:p-[24px_24px_24px_48px] items-center gap-8 lg:gap-[48px] self-stretch bg-[#ECFDF5] rounded-[30px]">
+                <div className="flex flex-col items-start gap-6 flex-1 pointer-events-none select-none">
+                  <AnimatePresence mode="wait">
+                    <motion.div key={currentVal.id} initial={{ opacity: 1, x: -30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 30 }} transition={{ duration: 0.5, ease: "easeOut" }} className="flex flex-col items-start gap-6">
+                      <div className="flex w-14 h-14 p-3 items-center justify-center rounded-full bg-[#10B981]">
+                        {currentVal.icon}
                       </div>
-                    ))}
-                  </div>
+                      <h3 className="text-[#093600] text-[28px] sm:text-[32px] lg:text-[38px] font-bold leading-[1.1] tracking-tight font-['Big_Shoulders_Display',sans-serif] uppercase">
+                        {(currentVal.title + currentVal.titleSecondary).split("").map((char, i) => (
+                          <motion.span key={currentVal.id + "-char-" + i} initial={{ opacity: 0.2 }} animate={{ opacity: 1 }} transition={{ duration: 0.8, delay: i * 0.012, ease: "easeOut" }} className="inline">
+                            {char}
+                          </motion.span>
+                        ))}
+                      </h3>
+                    </motion.div>
+                  </AnimatePresence>
                 </div>
 
-                {/* Navigation controls */}
-                <div className="flex items-center justify-between mt-7 pt-5" style={{ borderTop: `1px solid ${t.border}` }}>
-                  <span className="text-[12px] font-semibold" style={{ color: t.textFaint }}>
-                    {projectSlide + 1} / {FEATURED_PROJECTS.length}
-                  </span>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={prevSlide}
-                      className="w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:opacity-80 active:scale-95"
-                      style={{ backgroundColor: t.accentBg, color: t.accent, border: `1px solid ${t.border}` }}
-                      aria-label="Previous project"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={nextSlide}
-                      className="w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:opacity-80 active:scale-95"
-                      style={{ backgroundColor: t.accentBg, color: t.accent, border: `1px solid ${t.border}` }}
-                      aria-label="Next project"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
+                <div className="w-full lg:w-[452px] h-[300px] sm:h-[400px] lg:h-[444px] relative overflow-hidden rounded-[30px] pointer-events-none select-none">
+                  <AnimatePresence mode="wait">
+                    <motion.div key={currentVal.id + "-img"} initial={{ opacity: 0, scale: 1.1 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ duration: 0.4 }} className="w-full h-full bg-gradient-to-br from-[#10B981]/20 to-[#064E3B]/10 flex items-center justify-center">
+                      <div className="scale-[5] opacity-20 text-[#10B981]">
+                        {currentVal.icon}
+                      </div>
+                    </motion.div>
+                  </AnimatePresence>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-center gap-[8px] mt-6 lg:mt-[24px]">
+                {VALUES.map((_, idx) => (
+                  <button key={idx} onClick={() => setActiveValIdx(idx)} onMouseEnter={() => setActiveValIdx(idx)} className={`w-[10px] h-[10px] rounded-full transition-all duration-300 border border-[#093600] ${activeValIdx === idx ? "bg-[#093600]" : "bg-transparent opacity-30"}`} />
+                ))}
+              </div>
+            </motion.div>
+
+          </motion.div>
+        </section>
+
+        {/* ── 5. DYNAMIC CLIENTS MARQUEE ────────────────────────────────────── */}
+        <section id="clients" className="py-16 md:py-24 px-4 md:px-6 bg-white overflow-hidden border-t border-slate-200">
+          <div className="max-w-[95rem] mx-auto">
+            <Reveal className="text-center mb-16 flex flex-col items-center">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200 mb-4">
+                <Briefcase className="w-3.5 h-3.5 text-[#3B82F6]" />
+                <span className="text-[12px] md:text-[14px] font-bold text-[#3B82F6] tracking-[2px] uppercase font-['IBM_Plex_Mono',monospace]">Trusted Clients</span>
+              </div>
+              <h2 className="font-['Big_Shoulders_Display',sans-serif] text-[32px] sm:text-[40px] md:text-[52px] font-bold leading-none uppercase text-slate-900 tracking-tight">Clients Who Trust ASHCOL</h2>
+              <p className="text-slate-500 text-lg font-medium mt-4 max-w-xl font-sans">From retail and restaurant chains to luxury high-rise towers and banking institutions.</p>
+            </Reveal>
+
+            <div className="relative w-full overflow-hidden flex flex-col gap-6 pt-4">
+              <div className="absolute left-0 top-0 bottom-0 w-32 z-10 pointer-events-none bg-gradient-to-r from-white to-transparent" />
+              <div className="absolute right-0 top-0 bottom-0 w-32 z-10 pointer-events-none bg-gradient-to-l from-white to-transparent" />
+               
+               <div className="flex whitespace-nowrap animate-marquee items-center w-max">
+                  {[...CLIENTS, ...CLIENTS].map((client, i) => (
+                     <div key={`row1-${i}`} className="inline-flex items-center gap-3 px-8 py-5 mx-3 rounded-2xl bg-[#F8FAFC] border border-slate-200 transition-all hover:border-[#10B981] hover:shadow-md hover:-translate-y-1 group cursor-default">
+                        <Check className="w-5 h-5 text-[#10B981] shrink-0" />
+                        <span className="font-semibold text-lg text-slate-700 group-hover:text-[#093600] transition-colors font-sans">{client}</span>
+                     </div>
+                  ))}
+               </div>
+               
+               <div className="flex whitespace-nowrap animate-marquee-reverse items-center w-max">
+                  {[...CLIENTS.slice().reverse(), ...CLIENTS.slice().reverse()].map((client, i) => (
+                     <div key={`row2-${i}`} className="inline-flex items-center gap-3 px-8 py-5 mx-3 rounded-2xl bg-[#F8FAFC] border border-slate-200 transition-all hover:border-[#3B82F6] hover:shadow-md hover:-translate-y-1 group cursor-default">
+                        <Check className="w-5 h-5 text-[#3B82F6] shrink-0" />
+                        <span className="font-semibold text-lg text-slate-700 group-hover:text-[#093600] transition-colors font-sans">{client}</span>
+                     </div>
+                  ))}
+               </div>
+            </div>
+
+            <div className="border-t border-slate-100 pt-20 mt-16 text-center">
+              <h3 className="font-['Big_Shoulders_Display',sans-serif] text-[26px] sm:text-[32px] md:text-[36px] font-bold text-[#093600] tracking-tight uppercase">16+ AC Brands. One Expert Team.</h3>
+              <p className="text-slate-500 text-base font-medium mt-2 mb-10 font-sans">Carrier, Daikin, Panasonic, LG, Kolin — our certified technicians service them all.</p>
+              
+              <div className="relative overflow-hidden">
+                <div className="absolute left-0 top-0 bottom-0 w-24 z-10 pointer-events-none bg-gradient-to-r from-white to-transparent" />
+                <div className="absolute right-0 top-0 bottom-0 w-24 z-10 pointer-events-none bg-gradient-to-l from-white to-transparent" />
+                <div ref={brandScrollRef} onMouseEnter={() => setIsBrandHovered(true)} onMouseLeave={() => setIsBrandHovered(false)} className="flex flex-row gap-5 overflow-x-auto pb-4 pt-2 no-scrollbar cursor-grab active:cursor-grabbing">
+                  {[...BRANDS, ...BRANDS, ...BRANDS].map((b, i) => (
+                    <div key={i} className="min-w-[120px] md:min-w-[150px] p-4 md:p-6 rounded-[24px] bg-[#F8FAFC] border border-slate-200 flex flex-col items-center justify-center gap-3 shadow-sm transition-transform hover:-translate-y-1">
+                      {b.logo ? <img src={b.logo} alt={b.name} className="w-14 h-14 object-contain" /> : <div className="w-14 h-14 bg-white rounded-lg flex items-center justify-center text-[10px] font-bold text-slate-600 shadow-sm border border-slate-100">{b.name}</div>}
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* ── Trusted Clients ──────────────────────────────────────────── */}
-      <section id="clients" ref={clientsRef as React.RefObject<HTMLElement>} className="px-4 md:px-11 lg:px-20 py-12 md:py-20" style={{ backgroundColor: t.bg }}>
-        <div className="flex flex-col items-center text-center gap-4 mb-10">
-          <div className="flex items-center gap-2 bg-[rgba(59,130,246,0.1)] border border-[rgba(59,130,246,0.25)] px-3 py-1.5 rounded-full">
-            <Briefcase className="w-3 h-3 text-[#3B82F6]" />
-            <span className="text-[10px] font-bold text-[#3B82F6] tracking-[2px]">TRUSTED BY</span>
-          </div>
-          <h2 className="text-[clamp(1.5rem,3.5vw,2.4rem)] font-black leading-tight tracking-tight" style={{ color: t.text }}>Clients who trust ASHCOL</h2>
-          <p className="max-w-lg text-[15px] leading-relaxed" style={{ color: t.textMuted }}>From fast food chains to banking institutions and luxury residential towers — ASHCOL is the trusted AC partner across Metro Manila.</p>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 max-w-5xl mx-auto">
-          {CLIENTS.map((client, i) => (
-            <div key={i} className="rounded-xl px-4 py-3 flex items-center gap-2.5 transition-all group" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = '#3B82F640'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = t.border}
-            >
-              <Check className="w-3.5 h-3.5 text-[#3B82F6] flex-shrink-0 opacity-60 group-hover:opacity-100 transition-opacity" />
-              <span className="text-[13px] font-medium truncate" style={{ color: t.textMuted }}>{client}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── AC Brands Serviced ───────────────────────────────────────── */}
-      <section className="px-4 md:px-11 lg:px-20 py-12 md:py-16" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-6 max-w-5xl mx-auto mb-8">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-[3px] mb-1 text-[#10B981]">We Service All Major Brands</p>
-            <h3 className="text-[20px] md:text-[24px] font-black" style={{ color: t.text }}>16+ AC Brands Supported</h3>
-          </div>
-          <p className="text-[13px] max-w-xs text-center sm:text-right" style={{ color: t.textMuted }}>
-            Carrier to Kolin — our technicians are trained across all major residential and commercial AC brands.
-          </p>
-        </div>
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 max-w-5xl mx-auto">
-          {BRANDS.map((brand, i) => (
-            <div key={i} className="rounded-2xl p-4 flex flex-col items-center gap-3 transition-all group cursor-default" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = '#10B98140'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = t.border}
-            >
-              {/* White logo pad */}
-              <div className="w-14 h-14 rounded-xl bg-white flex items-center justify-center p-2 shadow-sm flex-shrink-0">
-                {brand.logo ? (
-                  <img
-                    src={brand.logo}
-                    alt={brand.name}
-                    className="max-w-full max-h-full object-contain"
-                    onError={(e) => {
-                      const img = e.currentTarget as HTMLImageElement
-                      img.style.display = 'none'
-                      const pad = img.parentElement!
-                      pad.classList.add('bg-opacity-10')
-                      pad.className = 'w-14 h-14 rounded-xl bg-[rgba(16,185,129,0.08)] border border-[rgba(16,185,129,0.2)] flex items-center justify-center text-center p-2'
-                      const span = document.createElement('span')
-                      span.textContent = brand.name
-                      span.style.cssText = 'font-size:8px;font-weight:900;color:#10B981;text-align:center;line-height:1.2;padding:2px'
-                      pad.appendChild(span)
-                    }}
-                  />
-                ) : (
-                  /* No logo available — stylized text badge */
-                  <span className="text-[8px] font-black text-[#3A5070] text-center leading-tight tracking-wide uppercase px-1">{brand.name}</span>
-                )}
+        {/* ── 6. SOLRA TEAM 01 (Branches Detailed Cards) ────────────────────── */}
+        <section id="branches" className="w-full bg-[#0F172A] py-24 px-6 lg:px-16 border-t border-b border-white/5">
+          <div className="max-w-[95rem] mx-auto">
+            <Reveal className="text-center mb-16 flex flex-col items-center">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#10B981]/10 border border-[#10B981]/20 mb-4">
+                <MapPin className="w-3.5 h-3.5 text-[#10B981]" />
+                <span className="text-[12px] md:text-[14px] font-bold text-[#10B981] tracking-[2px] uppercase font-['IBM_Plex_Mono',monospace]">OUR LOCATIONS</span>
               </div>
-              <span className="text-[10px] font-bold text-[#3A5070] group-hover:text-[#7A95B8] transition-colors text-center leading-tight">{brand.name}</span>
-            </div>
-          ))}
-        </div>
-      </section>
+              <h2 className="font-['Big_Shoulders_Display',sans-serif] text-4xl md:text-5xl font-bold text-white tracking-tight uppercase">11 Branches Across Luzon</h2>
+              <p className="text-slate-400 text-lg font-medium mt-3 max-w-xl font-sans">8 company-owned hubs & 3 franchise partners ready to deploy expert technicians to your doorstep.</p>
+            </Reveal>
 
-      {/* Branch section removed — now shown as scrollable strip below hero */}
-
-      {/* ── Contact Us ────────────────────────────────────────────────────────── */}
-      <section id="contact" ref={contactRef} className="px-4 md:px-11 lg:px-20 py-12 md:py-20" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
-        <div className="max-w-6xl mx-auto">
-          <div className="flex flex-col items-center text-center gap-4 mb-10">
-            <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full">
-              <Headset className="w-3 h-3 text-[#10B981]" />
-              <span className="text-[10px] font-bold text-[#10B981] tracking-[2px]">CONTACT US</span>
+            {/* Company Owned Branches */}
+            <div className="mb-14">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="h-px flex-1 bg-white/10" />
+                <span className="text-sm font-bold uppercase tracking-widest text-[#10B981] font-['IBM_Plex_Mono',monospace]">Company Branches (8)</span>
+                <div className="h-px flex-1 bg-white/10" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                {BRANCHES.filter(b => !b.isFranchise).map((branch, i) => {
+                  const mapUrl = branch.mapUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('ASHCOL Airconditioning ' + branch.name + ' ' + branch.address)}`
+                  return (
+                    <Reveal key={i} delay={i * 0.05}>
+                      <div className="p-6 rounded-[28px] flex flex-col h-full bg-[#1E293B] border border-white/5 shadow-xl hover:border-[#10B981]/40 transition-all hover:-translate-y-1 group">
+                        <div className="flex items-center justify-between gap-3 mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${branch.color}15`, color: branch.color }}>
+                              <Building2 className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: branch.color }}>{branch.tag}</div>
+                              {branch.isHQ && <span className="text-[9px] font-bold uppercase tracking-widest text-[#10B981] font-['IBM_Plex_Mono',monospace]">Head Office</span>}
+                            </div>
+                          </div>
+                        </div>
+                        <h3 className="font-bold text-lg text-white mb-2 leading-tight font-sans">{branch.name}</h3>
+                        <div className="flex items-start gap-2 text-sm text-slate-400 leading-relaxed mb-6 flex-1 font-sans">
+                          <MapPin className="w-4 h-4 shrink-0 text-slate-500 mt-0.5" />
+                          <span>{branch.address}</span>
+                        </div>
+                        <div className="pt-4 flex items-center justify-between border-t border-white/5">
+                          <a href={`tel:${branch.phones[0]?.replace(/\s/g, '')}`} className="flex items-center gap-1.5 text-sm font-semibold text-slate-300 hover:text-[#10B981] transition-colors font-sans">
+                            <Phone className="w-4 h-4 text-[#10B981]" /> {branch.phones[0]}
+                          </a>
+                          <a href={mapUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[12px] font-bold text-slate-400 hover:text-white transition-colors font-sans">
+                            Map <ArrowUpRight className="w-3 h-3" />
+                          </a>
+                        </div>
+                      </div>
+                    </Reveal>
+                  )
+                })}
+              </div>
             </div>
-            <h2 className="text-[clamp(1.5rem,3.5vw,2.4rem)] font-black leading-tight tracking-tight" style={{ color: t.text }}>Get in Touch</h2>
-            <p className="max-w-lg text-[15px] leading-relaxed" style={{ color: t.textMuted }}>
-              Have questions or ready to book a service? Reach out to us through any of these channels.
-            </p>
+
+            {/* Franchise Partners */}
+            <div>
+              <div className="flex items-center gap-4 mb-6">
+                <div className="h-px flex-1 bg-[#F59E0B]/20" />
+                <span className="text-sm font-bold uppercase tracking-widest text-[#F59E0B] font-['IBM_Plex_Mono',monospace]">Franchise Partners (3)</span>
+                <div className="h-px flex-1 bg-[#F59E0B]/20" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                {BRANCHES.filter(b => b.isFranchise).map((branch, i) => {
+                  const mapUrl = branch.mapUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('ASHCOL Airconditioning ' + branch.name + ' ' + branch.address)}`
+                  return (
+                    <Reveal key={i} delay={i * 0.05}>
+                      <div className="p-6 rounded-[28px] flex flex-col h-full bg-[#1E293B] border border-[#F59E0B]/20 shadow-xl hover:border-[#F59E0B]/50 transition-all hover:-translate-y-1 group">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-[#F59E0B]/10 text-[#F59E0B]"><Building2 className="w-5 h-5" /></div>
+                          <span className="text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full bg-[#F59E0B]/10 text-[#F59E0B] border border-[#F59E0B]/30 font-['IBM_Plex_Mono',monospace]">Franchise</span>
+                        </div>
+                        <h3 className="font-bold text-lg text-white mb-1 leading-tight font-sans">{branch.name}</h3>
+                        <div className="text-xs font-bold mb-3 text-[#F59E0B]">{branch.tag}</div>
+                        <div className="flex items-start gap-2 text-sm text-slate-400 leading-relaxed mb-6 flex-1 font-sans">
+                          <MapPin className="w-4 h-4 shrink-0 text-slate-500 mt-0.5" />
+                          <span>{branch.address}</span>
+                        </div>
+                        <div className="pt-4 flex items-center justify-between border-t border-white/5">
+                          <a href={`tel:${branch.phones[0]?.replace(/\s/g, '')}`} className="flex items-center gap-1.5 text-sm font-semibold text-slate-300 hover:text-[#F59E0B] transition-colors font-sans">
+                            <Phone className="w-4 h-4 text-[#F59E0B]" /> {branch.phones[0]}
+                          </a>
+                          <a href={mapUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[12px] font-bold text-slate-400 hover:text-white transition-colors font-sans">
+                            Map <ArrowUpRight className="w-3 h-3" />
+                          </a>
+                        </div>
+                      </div>
+                    </Reveal>
+                  )
+                })}
+              </div>
+            </div>
           </div>
+        </section>
 
-          {/* Contact card */}
-          <div className="max-w-2xl mx-auto rounded-2xl overflow-hidden" style={{ backgroundColor: t.bgCard, border: `1px solid ${t.border}` }}>
-            <div className="flex flex-col">
-              {CONTACTS.map((c, i) => (
-                <a
-                  key={i}
-                  href={c.href}
-                  className="flex items-center gap-3 sm:gap-4 px-4 sm:px-6 py-4 transition-colors group"
-                  style={{ borderBottom: `1px solid ${t.border}` }}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = isDark ? '#111E33' : '#EEF7EE'}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
-                >
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: t.accentBg, color: t.accent }}>
-                    {c.icon}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: t.textFaint }}>{c.label}</div>
-                    <div className="text-[12px] sm:text-[13px] break-words sm:truncate" style={{ color: t.textMuted }}>{c.value}</div>
-                  </div>
-                  <ArrowUpRight className="w-4 h-4" style={{ color: t.textFaint }} />
-                </a>
-              ))}
-            </div>
-            <div className="flex items-center gap-3 px-4 sm:px-6 py-4" style={{ borderBottom: `1px solid ${t.border}` }}>
-              <Clock className="w-4 h-4" style={{ color: t.accent }} />
-              <span className="text-[13px]" style={{ color: t.textMuted }}>Open 7 days a week · 8:00 AM – 7:00 PM (Including Holidays)</span>
-            </div>
-            <div className="px-4 sm:px-6 py-4">
-              <a
-                href="https://www.facebook.com/AshcolCorp"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-[#1877F2] hover:bg-[#166FE5] transition-colors text-white text-sm font-bold"
-              >
-                <MessageSquare className="w-4 h-4" /> Message us on Facebook
-              </a>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── FAQ ──────────────────────────────────────────────────────────── */}
-      <section id="faq" ref={faqRef} className="px-4 md:px-11 lg:px-20 py-14 md:py-24" style={{ backgroundColor: t.bg, borderTop: `1px solid ${t.border}` }}>
-        <div className="max-w-4xl mx-auto">
-          {/* Header */}
-          <div className="flex flex-col items-center text-center gap-4 mb-12">
-            <div className="flex items-center gap-2 bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.25)] px-3 py-1.5 rounded-full">
-              <MessageSquare className="w-3 h-3 text-[#10B981]" />
-              <span className="text-[10px] font-bold text-[#10B981] tracking-[2px]">FAQ</span>
-            </div>
-            <h2 className="text-[clamp(1.5rem,3.5vw,2.4rem)] font-black leading-tight tracking-tight" style={{ color: t.text }}>
-              Frequently asked questions
+        {/* ── 7. SOLRA FAQS 01 ────────────────────────────────────────────────── */}
+        <section id="faq" className="flex flex-col items-center w-full bg-[#F8FAFC] py-[80px] md:py-[120px] px-6 md:px-[135px] gap-[60px] md:gap-[80px] border-t border-slate-200">
+          <div className="flex flex-col items-center text-center w-full md:w-[772px] gap-4">
+            <h2 className="text-[#093600] font-['Big_Shoulders_Display',sans-serif] text-[40px] md:text-[52px] font-bold leading-none tracking-tight uppercase">
+              Frequently Asked Questions
             </h2>
-            <p className="max-w-lg text-[15px] leading-relaxed" style={{ color: t.textMuted }}>
+            <p className="font-sans text-[16px] md:text-[18px] font-medium leading-[1.4] md:leading-[26px] text-slate-500 mt-2">
               Everything you need to know before booking your first service with ASHCOL.
             </p>
           </div>
 
-          {/* Accordion */}
-          <div className="flex flex-col gap-3">
-            {FAQS.map((faq, i) => (
-              <div
-                key={i}
-                className="rounded-2xl overflow-hidden transition-all duration-200"
-                style={{ border: `1px solid ${openFaq === i ? t.accent + '50' : t.border}`, backgroundColor: t.bgCard }}
-              >
+          <div className="flex flex-col w-[350px] md:w-[772px] gap-3 md:gap-4 items-start">
+            {FAQS.map((faq, i) => {
+              const isActive = openFaq === i;
+              return (
+                <div key={faq.id} className={`group flex flex-col w-full rounded-[12px] md:rounded-[16px] border transition-all duration-300 overflow-hidden self-stretch ${isActive ? "bg-[#10B981] border-[#10B981] shadow-lg text-white" : "bg-white border-slate-200 hover:border-[#10B981]/30 text-slate-900"}`}>
+                  <button onClick={() => setOpenFaq(isActive ? null : i)} className={`flex items-center justify-between w-full p-[14px_12px_14px_14px] md:p-[20px_20px_20px_24px] text-left gap-5 md:gap-4 ${isActive ? "items-start" : "items-center"}`}>
+                    <span className={`font-sans text-[16px] md:text-[18px] font-bold leading-snug transition-colors duration-300 ${isActive ? "text-white" : "text-slate-900"}`}>
+                      {faq.question}
+                    </span>
+                    <div className={`flex items-center justify-center w-8 h-8 md:w-10 md:h-10 rounded-full border transition-all duration-300 flex-shrink-0 ${isActive ? "bg-white text-[#10B981] rotate-0 border-transparent" : "bg-slate-50 text-slate-400 border-slate-200"}`}>
+                      {isActive ? <X size={16} /> : <Plus size={16} />}
+                    </div>
+                  </button>
+                  <AnimatePresence initial={false}>
+                    {isActive && (
+                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3, ease: "easeInOut" }}>
+                        <div className="p-[10px_12px_14px_14px] md:pl-6 md:pr-[24px] md:pb-6 md:pt-1 flex flex-col gap-2 self-stretch">
+                          <p className="font-sans text-[15px] md:text-[16px] font-medium leading-relaxed text-white opacity-95 w-full self-stretch">
+                            {faq.answer}
+                          </p>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-col items-center w-[350px] md:w-full md:max-w-[1170px] bg-[#ECFDF5] rounded-[24px] md:rounded-[40px] p-8 md:p-[64px] gap-6 md:gap-8 text-center border border-[#10B981]/10">
+            <div className="flex flex-col items-center gap-3 self-stretch md:max-w-full">
+              <h4 className="text-[#093600] font-['Big_Shoulders_Display',sans-serif] text-[32px] md:text-[42px] font-bold leading-none uppercase">
+                Still Have Questions?
+              </h4>
+              <p className="font-sans text-[15px] md:text-[18px] font-medium leading-[22px] md:leading-[26px] text-[#093600]/80 text-center">
+                Can't find the answer you're looking for? Message our team directly.
+              </p>
+            </div>
+            <button onClick={() => window.open('https://www.facebook.com/AshcolCorp', '_blank')} className="flex items-center justify-center gap-[12px] w-full md:w-auto px-[32px] py-[16px] bg-[#10B981] rounded-full transition-all duration-300 hover:bg-[#059669] shadow-lg shadow-[#10B981]/20 group text-white active:scale-95">
+              <span className="font-sans text-[16px] font-bold leading-none">
+                Message us on Facebook
+              </span>
+              <MessageSquare className="transition-all duration-300 group-hover:scale-110" size={18} />
+            </button>
+          </div>
+        </section>
+
+        {/* ── 8. FOOTER / CONTACT ────────────────────────────────────────────── */}
+        <section id="contact" className="relative w-full min-h-screen flex flex-col items-center overflow-hidden bg-[#0F172A]">
+          <div className="absolute inset-0 z-0">
+            <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80" className="object-cover object-center w-full h-full opacity-30 mix-blend-overlay" />
+            <div className="absolute inset-0 bg-gradient-to-b from-[#0F172A]/40 to-[#0F172A]" />
+          </div>
+
+          <div className="relative z-10 w-full flex-1 pt-[80px] lg:pt-[160px] flex flex-col items-center justify-between gap-[80px]">
+            <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }} className="flex flex-col items-center text-center w-full max-w-[1440px] mx-auto px-6 md:px-10">
+              <h2 className="text-white font-['Big_Shoulders_Display',sans-serif] text-[40px] md:text-[56px] font-bold leading-none tracking-tight uppercase mb-6">
+                Experience hassle-free <br className="hidden md:block"/> air conditioning today.
+              </h2>
+              <p className="font-sans text-[18px] font-medium leading-[26px] text-white opacity-80 max-w-[620px] mb-10">
+                Reach out to book a service or chat with our team 7 days a week.
+              </p>
+
+              {/* Action Buttons: Call & Facebook Connection */}
+              <div className="flex flex-col items-center gap-6 mt-2">
                 <button
-                  id={`faq-btn-${i}`}
-                  onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                  className="w-full flex items-center justify-between gap-4 px-5 sm:px-6 py-4 sm:py-5 text-left group"
+                  onClick={() => window.location.href = 'https://www.ashcol.com.ph/booking'}
+                  className="group flex px-8 py-4 justify-center items-center gap-3 rounded-full bg-[#10B981] text-white text-[15px] font-bold no-underline transition-all hover:bg-[#059669] hover:shadow-[0_8px_28px_rgba(16,185,129,0.30)] w-full sm:w-auto"
                 >
-                  <span
-                    className="text-[14px] sm:text-[15px] font-semibold leading-snug transition-colors"
-                    style={{ color: openFaq === i ? t.accent : t.text }}
-                  >
-                    {faq.q}
+                  Book Now
+                  <span className="flex flex-col items-center h-4 overflow-hidden">
+                    <ArrowUpRight className="w-4 h-4 shrink-0 transition-transform duration-300 group-hover:-translate-y-full" />
+                    <ArrowUpRight className="w-4 h-4 shrink-0 transition-transform duration-300 group-hover:-translate-y-full" />
                   </span>
-                  <div
-                    className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-all duration-300"
-                    style={{
-                      backgroundColor: openFaq === i ? t.accentBg : (isDark ? '#0F1A2E' : '#EEF7EE'),
-                      color: openFaq === i ? t.accent : t.textFaint,
-                      transform: openFaq === i ? 'rotate(45deg)' : 'rotate(0deg)',
-                    }}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                      <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                    </svg>
-                  </div>
                 </button>
-                {openFaq === i && (
-                  <div
-                    className="px-5 sm:px-6 pb-5 text-[13px] sm:text-[14px] leading-relaxed"
-                    style={{ color: t.textMuted, borderTop: `1px solid ${t.border}`, paddingTop: '16px' }}
-                  >
-                    {faq.a}
+
+                <div className="flex flex-col items-center gap-2 mt-2">
+                  <span className="text-white/60 font-['IBM_Plex_Mono',monospace] text-xs font-medium uppercase tracking-[1.5px]">
+                    or scan QR to book
+                  </span>
+                  <div className="p-4 bg-white rounded-3xl shadow-2xl border border-slate-100">
+                    <img src={qrCodeImg} alt="Scan to Book" className="w-40 h-40 md:w-52 md:h-52 object-contain" />
                   </div>
-                )}
+                </div>
               </div>
-            ))}
+            </motion.div>
+
+            {/* Glass Card Footer */}
+            <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6, delay: 0.2 }} className="w-full max-w-none px-6 md:px-[135px] py-8 md:py-10 md:pt-[48px] md:pb-0 flex flex-col items-start gap-8 md:gap-12 rounded-none border border-white/10 border-x-0 border-b-0 bg-white/5 backdrop-blur-[10px] transform-gpu overflow-hidden shadow-2xl">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-8 lg:gap-12 w-full">
+                <div className="flex flex-col items-start gap-4 lg:col-span-2 text-left">
+                  <div onClick={() => scrollTo('hero')} className="flex items-center gap-3 group cursor-pointer">
+                    <img src={logoImg} alt="ASHCOL Logo" className="w-12 h-12 object-contain rounded-lg transition-transform group-hover:scale-105" />
+                    <h3 className="font-['Big_Shoulders_Display',sans-serif] text-[24px] md:text-[28px] font-bold tracking-wide text-white transition-colors group-hover:text-[#10B981] uppercase">ASHCOL</h3>
+                  </div>
+                  <p className="font-sans text-[15px] font-medium leading-[24px] text-white/70 mt-2">
+                    Keeping YOU Cool since 2014. Professional air conditioning services for homes and businesses across Luzon.
+                  </p>
+                </div>
+
+                <div className="flex flex-col items-start gap-3 md:gap-5">
+                  <h4 className="font-sans text-[16px] font-bold text-white uppercase tracking-wider">Navigate</h4>
+                  <ul className="flex flex-col items-start gap-2 md:gap-3">
+                    {["Services", "About Us", "Branches", "Clients", "FAQs"].map((link) => (
+                      <li key={link}><button onClick={() => scrollTo(link === 'About Us' ? 'about' : link === 'FAQs' ? 'faq' : link.toLowerCase())} className="font-sans text-[13px] md:text-[15px] font-medium text-white/70 hover:text-[#10B981] transition-colors">{link}</button></li>
+                    ))}
+                  </ul>
+                </div>
+                
+                <div className="flex flex-col items-start gap-3 md:gap-5">
+                  <h4 className="font-sans text-[16px] font-bold text-white uppercase tracking-wider">Direct Connect</h4>
+                  <ul className="flex flex-col items-start gap-2 md:gap-3 text-[13px] md:text-[15px] font-medium text-white/70 min-w-0 w-full">
+                    <li className="w-full"><a href="tel:+639177143810" className="hover:text-[#10B981] transition-colors">+63 (917) 714 3810</a></li>
+                    <li className="w-full"><a href="mailto:centralsupport@ashcol.com.ph" className="hover:text-[#10B981] transition-colors break-all">centralsupport@ashcol.com.ph</a></li>
+                    <li className="w-full"><a href="https://www.facebook.com/AshcolCorp" target="_blank" rel="noopener noreferrer" className="hover:text-[#1877F2] transition-colors flex items-center gap-1.5"><MessageSquare size={14}/> Facebook Page</a></li>
+                  </ul>
+                </div>
+
+                <div className="flex flex-col items-start gap-3 md:gap-5 text-left">
+                  <div className="flex flex-col items-start gap-2">
+                    <h4 className="font-sans text-[16px] font-bold text-white uppercase tracking-wider">Headquarters</h4>
+                    <p className="font-sans text-[15px] font-medium leading-relaxed text-white/70 mt-1">
+                      Units 2A & 2B, 2/F, Genesis Building, 182-A 19th Ave, East Rembo, Taguig City, Philippines
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="w-full h-[1px] bg-white/10" />
+
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center w-full gap-6 pb-8">
+                <p className="font-sans text-[13px] font-medium text-white/50 text-left">
+                  © 2026 ASHCOL Airconditioning Services Corporation. All rights reserved.
+                </p>
+                <div className="flex items-center gap-6">
+                  <span className="font-sans text-[13px] font-bold uppercase tracking-widest text-white/30 font-['IBM_Plex_Mono',monospace]">Keeping YOU Cool</span>
+                </div>
+              </div>
+            </motion.div>
           </div>
-
-          {/* Bottom nudge */}
-          <div className="mt-10 text-center">
-            <p className="text-[14px]" style={{ color: t.textMuted }}>
-              Still have questions?{' '}
-              <a href="mailto:headoffice@ashcol.com.ph" className="font-semibold hover:underline" style={{ color: t.accent }}>
-                Email us directly
-              </a>
-              {' '}or call{' '}
-              <a href="tel:+639177143810" className="font-semibold hover:underline" style={{ color: t.accent }}>
-                +63 (917) 7143810
-              </a>
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* ── CTA Banner ──────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden px-5 md:px-11 lg:px-20 py-16 md:py-24 flex flex-col items-center text-center" style={{ backgroundColor: t.bgCardAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
-        <div className="absolute inset-0 orb-green opacity-30 pointer-events-none" />
-        <img src={logoImg} alt="ASHCOL" className="w-14 h-14 object-contain rounded-md mb-5 relative" />
-        <h2 className="relative text-[clamp(1.4rem,4vw,2.5rem)] font-black leading-tight tracking-tight mb-3" style={{ color: t.text }}>
-          Ready to stay cool?<br />Book a service today.
-        </h2>
-        <p className="relative max-w-md text-[14px] md:text-[15px] leading-relaxed mb-7" style={{ color: t.textMuted }}>
-          Residential or commercial — our team is ready to help, 7 days a week.
-        </p>
-        <div className="relative w-full max-w-lg mx-auto">
-          <div className="flex justify-center w-full">
-            <Link
-              to="/booking"
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-3.5 text-[14px] font-bold text-white bg-[#10B981] rounded-xl hover:bg-emerald-500 transition-all glow-green sm:min-w-[220px]"
-            >
-              Book a Service
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {showComingSoon && <ComingSoonModal onClose={() => setShowComingSoon(false)} />}
-
-      {/* ── Footer ──────────────────────────────────────────────────────────── */}
-      <footer className="px-4 md:px-11 lg:px-20 pt-10 pb-8" style={{ backgroundColor: t.bg, borderTop: `1px solid ${t.border}` }}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-8 mb-8 max-w-6xl mx-auto">
-
-          {/* Brand */}
-          <div className="flex items-center gap-3 sm:col-span-2 md:col-span-1">
-            <img src={logoImg} alt="ASHCOL" className="w-11 h-11 object-contain rounded-xl flex-shrink-0" />
-            <div>
-              <div className="text-[15px] font-bold leading-tight" style={{ color: t.text }}>ASHCOL Airconditioning</div>
-              <div className="text-[12px] italic mt-0.5" style={{ color: t.textFaint }}>"Keeping YOU Cool" since 2014</div>
-            </div>
-          </div>
-
-          {/* Quick info */}
-          <div className="flex flex-col gap-3 text-[13px]" style={{ color: t.textFaint }}>
-            <div className="flex items-start gap-2.5">
-              <MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: t.accent }} />
-              <span className="leading-snug">Units 2A &amp; 2B, 2/F, Genesis Building,<br />182-A 19th Ave, East Rembo, Taguig City</span>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <PhoneCall className="w-4 h-4 flex-shrink-0" style={{ color: t.accent }} />
-              <span>+63 (917) 7143810</span>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <Mail className="w-4 h-4 flex-shrink-0" style={{ color: t.accent }} />
-              <span className="break-all">headoffice@ashcol.com.ph</span>
-            </div>
-          </div>
-
-          {/* Quick Links + App */}
-          <div className="flex flex-col gap-2">
-            <div className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: t.textMuted }}>Quick Links</div>
-            <Link to="/booking" className="text-[13px] transition-colors hover:text-[#10B981]" style={{ color: t.textFaint }}>Book a Service</Link>
-          </div>
-        </div>
-
-        <div className="pt-6 text-center text-[12px]" style={{ borderTop: `1px solid ${t.border}`, color: t.textFaint }}>
-          © 2026 ASHCOL Airconditioning Services Corporation. All rights reserved.
-        </div>
-      </footer>
-
+        </section>
+      </div>
     </div>
   )
 }
