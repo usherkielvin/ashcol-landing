@@ -49,10 +49,11 @@ export default function NotificationsDropdown() {
   const textMuted = isLight ? '#64748b' : '#6B90BE'
   const hoverBg = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.06)'
 
-  const handleClick = (id: string, ticketId: string | null) => {
+  const handleClick = (id: string, ticketId: string | null, link: string | null) => {
     void markRead(id)
     setOpen(false)
-    if (ticketId) navigate(`/my-tickets?ticket=${ticketId}`)
+    if (link) navigate(link)
+    else if (ticketId) navigate(`/my-tickets?ticket=${ticketId}`)
   }
 
   return (
@@ -109,7 +110,7 @@ export default function NotificationsDropdown() {
               notifications.map(n => (
                 <button
                   key={n.id}
-                  onClick={() => handleClick(n.id, n.ticketId)}
+                  onClick={() => handleClick(n.id, n.ticketId, n.link)}
                   className="w-full flex items-start gap-2.5 px-4 py-3 text-left transition-colors"
                   style={{ backgroundColor: !n.isRead ? (isLight ? '#f0fdf4' : 'rgba(16,185,129,0.08)') : 'transparent' }}
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}

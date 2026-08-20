@@ -44,6 +44,13 @@ export default function PublicAIChatBot({ isOpen, onClose, isDark }: PublicAICha
   const activeBotMsgIdRef = useRef<string | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => inputRef.current?.focus(), 80)
+    }
+  }, [isOpen])
 
   const isLight = !isDark
   const bg = isLight ? '#ffffff' : '#0A1120'
@@ -263,6 +270,7 @@ export default function PublicAIChatBot({ isOpen, onClose, isDark }: PublicAICha
       >
         <div className="relative flex items-center">
           <input
+            ref={inputRef}
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
@@ -270,13 +278,11 @@ export default function PublicAIChatBot({ isOpen, onClose, isDark }: PublicAICha
               if (e.key === 'Enter' && !isLoading && !isStreaming) handleSendMessage()
             }}
             placeholder={isStreaming ? 'AI is responding…' : 'Ask about aircon or booking…'}
-            disabled={isLoading || isStreaming}
             className="w-full pl-4 pr-12 py-3 rounded-xl text-base sm:text-[13px] focus:outline-none transition-shadow"
             style={{
               backgroundColor: isLight ? '#ffffff' : '#0A1120',
               color: textPrimary,
               border: `1px solid ${border}`,
-              opacity: isLoading || isStreaming ? 0.6 : 1,
             }}
           />
           <button

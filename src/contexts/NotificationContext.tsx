@@ -9,6 +9,7 @@ export interface AppNotification {
   title: string
   message: string
   isRead: boolean
+  link: string | null
   createdAt: string
 }
 

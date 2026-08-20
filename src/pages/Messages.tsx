@@ -54,6 +54,7 @@ export default function Messages() {
   const [activeId, setActiveId] = useState<string | undefined>(conversationId)
   const [showListMobile, setShowListMobile] = useState(!conversationId && !recipientId)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const isNewThread = !!recipientId && !conversationId
@@ -61,6 +62,8 @@ export default function Messages() {
   useEffect(() => {
     setActiveId(conversationId)
     setShowListMobile(!conversationId && !recipientId)
+    // Focus input when selecting a conversation
+    setTimeout(() => inputRef.current?.focus(), 50)
   }, [conversationId, recipientId])
 
   // Directory lookup for the "new thread" recipient header (and as an id->user fallback)
@@ -92,7 +95,12 @@ export default function Messages() {
     if (!silent) setMessagesLoading(true)
     try {
       const msgs = await getMessages(id)
-      setMessages(msgs)
+      setMessages(prev => {
+        if (prev.length === msgs.length && prev[prev.length - 1]?.id === msgs[msgs.length - 1]?.id) {
+          return prev
+        }
+        return msgs
+      })
     } catch {
       // silent — keep last known messages on transient failure
     } finally {
@@ -131,6 +139,8 @@ export default function Messages() {
       setDraft(content)
     } finally {
       setSending(false)
+      // Keep caret focus in the input field without interruption
+      inputRef.current?.focus()
     }
   }
 
@@ -319,14 +329,15 @@ export default function Messages() {
             <div className="p-3 shrink-0" style={{ borderTop: `1px solid ${border}` }}>
               <div className="relative flex items-center">
                 <input
+                  ref={inputRef}
                   type="text"
                   value={draft}
                   onChange={e => setDraft(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleSend() } }}
                   placeholder="Type a message…"
-                  disabled={sending}
+                  autoFocus
                   className="w-full pl-4 pr-12 py-2.5 rounded-xl text-[13px] focus:outline-none"
-                  style={{ backgroundColor: inputBg, color: textPrimary, opacity: sending ? 0.6 : 1 }}
+                  style={{ backgroundColor: inputBg, color: textPrimary }}
                 />
                 <button
                   onClick={() => void handleSend()}

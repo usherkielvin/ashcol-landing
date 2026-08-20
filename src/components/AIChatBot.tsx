@@ -63,6 +63,13 @@ export default function AIChatBot() {
 
   const abortControllerRef = useRef<AbortController | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => inputRef.current?.focus(), 80)
+    }
+  }, [isOpen])
 
   const { theme } = useTheme()
   const isLight = theme === 'light'
@@ -112,6 +119,7 @@ export default function AIChatBot() {
             m.id === botMsgId ? { ...m, isTyping: false } : m
           ))
           activeBotMsgIdRef.current = null
+          inputRef.current?.focus()
         }
         return
       }
@@ -151,6 +159,7 @@ export default function AIChatBot() {
 
     setMessages(prev => [...prev, { id: tempId, text: userText, sender: 'user' }])
     setInputValue('')
+    inputRef.current?.focus()
     setIsLoading(true)
 
     // Reset typewriter queue
@@ -325,13 +334,13 @@ export default function AIChatBot() {
           >
             <div className="relative flex items-center">
               <input
+                ref={inputRef}
                 id="ai-chatbot-input"
                 type="text"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !isLoading && !isStreaming) handleSendMessage() }}
                 placeholder={isStreaming ? 'AI is responding…' : 'Ask me anything…'}
-                disabled={isLoading || isStreaming}
                 className="w-full pl-4 pr-12 py-3 rounded-xl text-base sm:text-[13px] focus:outline-none transition-shadow"
                 style={{
                   backgroundColor: isLight ? '#ffffff' : '#0A1120',
