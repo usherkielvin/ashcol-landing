@@ -831,7 +831,12 @@ export function preserveLocalScheduleFields(local: Ticket, server: Ticket): Tick
       for (const key of [
         'installerName', 'installer', 'technicianName', 'driverName', 'serviceVehicle', 'driver_name',
         'modeOfPayment', 'installationCharges', 'installation_charges', 'update', 'remarksUpdate',
-        'scheduleOutcome', 'paymentMode', 'paymentStatus', 'charges', 'amountCharged',
+        // schedulePhase is scheduleOutcome's sibling — CHECKUP/CLEANING/BACKJOB/MOUNTING all save
+        // with status=SCHEDULED and rely entirely on this field to show as anything but the
+        // generic SERVICES tag. Missing here meant a lagging server response (same read-after-
+        // write race the fields below are guarded against) silently reverted a just-saved
+        // CHECKUP/CLEANING pick back to blank the instant the PATCH response landed.
+        'schedulePhase', 'scheduleOutcome', 'paymentMode', 'paymentStatus', 'charges', 'amountCharged',
         // Schedule date fields — a just-saved date move must never be clobbered by a stale
         // server re-fetch (e.g. read-after-write lag on the prod DB pooler); local is fresher.
         'finalDate', 'scheduledDate', 'previousScheduleDates', 'rescheduledTo', 'reschedulePending',
