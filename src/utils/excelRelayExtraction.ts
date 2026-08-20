@@ -230,51 +230,172 @@ function splitBrandCapacity(brandField: string): { brand: string; capacity: stri
   return { brand: val.toUpperCase(), capacity: '' }
 }
 
+/**
+ * Known valid vehicle/service codes used by the branch.
+ * Fuzzy matching normalizes common typos against this list before giving up.
+ * Add new codes here as the fleet grows.
+ */
+const KNOWN_VEHICLE_CODES = ['FB19', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10']
+
+/**
+ * Normalize a raw vehicle/service code extracted from the Excel SERVICE column.
+ *
+ * Handles:
+ *  - Exact matches (FB19, T2)
+ *  - Strip trailing "-N" sequence numbers: "FB19-1" → "FB19", "T2-3" → "T2"
+ *  - Common typos:
+ *      "F19" → "FB19"  (missing the 'B')
+ *      "T"   → "T2"    (single letter, no digit)
+ *      "T-1" → "T2"    (stripped sequence leaves bare "T")
+ *
+ * Strategy:
+ *  1. Strip a trailing dash+digits sequence number if present.
+ *  2. Check exact match against KNOWN_VEHICLE_CODES.
+ *  3. Try simple suffix-based fuzzy corrections.
+ *  4. Return the candidate as-is if nothing matches (best-effort).
+ */
+function cleanDriverName(raw: string): string {
+  if (!raw) return ''
+  let d = raw.toUpperCase().trim()
+  // Remove "ON CALL", "ON-CALL", "ONCALL" prefix
+  d = d.replace(/^(?:ON\s*-?\s*CALL|ONCALL)\s+/i, '').trim()
+  return d
+}
+
+function normalizeVehicleCode(raw: string): string {
+  if (!raw) return ''
+  // 1. Remove all spaces and inner dashes between letters and digits e.g. "FB - 19" -> "FB19", "T 3" -> "T3", "FB-19" -> "FB19"
+  let compact = raw.toUpperCase().replace(/\s+/g, '').trim()
+
+  // 2. Strip a trailing sequence number e.g. "FB19-1" -> "FB19", "FB19-2" -> "FB19", "T3-1" -> "T3", "T2-1" -> "T2"
+  compact = compact.replace(/-\d+$/, '').trim()
+
+  // 3. Normalize "FB-19" or "FB19"
+  if (/^FB-?19$/.test(compact)) return 'FB19'
+
+  // If bare "FB" without number, treat as FB19 (default FB vehicle)
+  if (compact === 'FB' || compact === 'FB-') return 'FB19'
+
+  // Check exact match in known list
+  if (KNOWN_VEHICLE_CODES.includes(compact)) return compact
+
+  // Handle "F19" -> "FB19"
+  if (/^F\d+$/.test(compact)) {
+    const candidate = 'FB' + compact.slice(1)
+    if (KNOWN_VEHICLE_CODES.includes(candidate)) return candidate
+    return candidate
+  }
+
+  // Handle "T-1", "T-2", etc. where single T was left
+  if (compact === 'T') return 'T2'
+
+  // Handle "T-3" -> "T3", "T-2" -> "T2", "T-4" -> "T4"
+  if (/^T-\d+$/.test(compact)) {
+    return compact.replace('-', '')
+  }
+
+  return compact
+}
+
+/**
+ * Parse the SERVICE column value into a vehicle code and driver name.
+ *
+ * Supported formats:
+ *  "FB - 19 (JOSHUA)"     → vehicle: FB19, driver: JOSHUA
+ *  "FB19 - 2"             → vehicle: FB19, driver: ''
+ *  "T3 - 1(ANGELO)"       → vehicle: T3,   driver: ANGELO
+ *  "T 3 - 2"              → vehicle: T3,   driver: ''
+ *  "T2 - 1 ( ON CALL RONNIE)" → vehicle: T2, driver: RONNIE
+ */
 function parseService(service: string): { vehicle: string; driver: string } {
   const svc = service.trim()
   if (!svc) return { vehicle: '', driver: '' }
-  const upper = svc.toUpperCase()
-  if (upper.includes('FB19')) {
-    const m = svc.match(/\(([^)]+)\)/i)
-    return { vehicle: 'FB19', driver: m ? m[1].trim().toUpperCase() : '' }
-  }
-  const tMatch = upper.match(/^(T\d+)/i)
-  if (tMatch) {
-    const vehicle = tMatch[1].toUpperCase()
-    const m = svc.match(/\(([^)]+)\)/i)
-    return { vehicle, driver: m ? m[1].trim().toUpperCase() : '' }
-  }
-  return { vehicle: svc.toUpperCase(), driver: '' }
+
+  // Extract parenthesised driver name first: "FB - 19 (JOSHUA)" → driver = "JOSHUA"
+  // or "T2 - 1 ( ON CALL RONNIE)" → driver = "RONNIE"
+  const driverMatch = svc.match(/\(([^)]+)\)/i)
+  const rawDriver = driverMatch ? driverMatch[1].trim() : ''
+  const driver = cleanDriverName(rawDriver)
+
+  // Strip driver parenthesis
+  const withoutParens = svc.replace(/\([^)]*\)/g, '').trim()
+
+  const vehicle = normalizeVehicleCode(withoutParens)
+  return { vehicle, driver }
 }
 
+/**
+ * Intelligent status/remarks detection.
+ *
+ * Priority order (highest wins):
+ *  1. Cancellation signals: "C/O", "CANCELLED", "CANCEL"
+ *  2. Explicit completion: INSTALLED, DONE SERVICE, DONE SURVEY, etc.
+ *  3. Dismantle: "DISMANTLE" keyword anywhere in remarks/status
+ *  4. Reschedule: "RESCHED", "MAY EMERGENCY", "NO CONFIRMATION", etc.
+ *  5. Continuation: "CONT", "CONTINUATION", "FOR DAY", "BABALIKAN", "ONGOING"
+ *  6. Status-column fallback
+ *  7. Default: S/I (installation)
+ */
 function mapTicketType(update: string, status: string): { serviceType: string; ticketStatus: string } {
   const up = update.toUpperCase().replace(/\s+/g, ' ').trim()
   const st = status.toUpperCase().replace(/\s+/g, ' ').trim()
 
+  // ── 1. Cancellation detection ───────────────────────────────────────────────
+  // "C/O" = Cancelled Out; also "C/O ASHVAL", "C/O CUSTOMER", etc.
+  // Anchored to avoid false positives: must be a standalone token or at word boundary.
+  if (/\bC\/O\b/.test(up) || up.startsWith('C/O') || up.includes(' C/O')
+      || up.includes('CANCEL')) {
+    return { serviceType: 'CANCELLED', ticketStatus: 'Cancelled' }
+  }
+
+  // ── 2. Completion signals ───────────────────────────────────────────────────
   if (up.includes('INSTALLED') || up.includes('TAPOS NA'))
     return { serviceType: 'DONE_INSTALLED', ticketStatus: 'Closing' }
   if (up.includes('DONE SERVICE'))
     return { serviceType: 'DONE_SERVICE', ticketStatus: 'Closing' }
   if (up.includes('SURVEY W/') || up.includes('SURVEY ONLY') || up.includes('SURVEY W/ OUT'))
     return { serviceType: 'DONE_SURVEY', ticketStatus: 'Closing' }
-  if (up.includes('RESCHED'))
-    return { serviceType: 'RESCHED', ticketStatus: 'Pending' }
-  if (up.includes('NO CONFIRMATION') || up.includes('NO RESPONSE') || up.includes('NO ANSWER'))
-    return { serviceType: 'RESCHED', ticketStatus: 'Pending' }
-  if (up.includes('FOR DAY') || up.includes('BABALIKAN') || up.includes('ON- GOING') || up.includes('ON-GOING') || up.includes('ONGOING'))
-    return { serviceType: 'CONTINUATION', ticketStatus: 'Pending' }
   if (up.includes('DONE'))
     return { serviceType: 'DONE_SERVICE', ticketStatus: 'Closing' }
 
+  // ── 3. Dismantle detection ──────────────────────────────────────────────────
+  // Explicit DISMANTLE keyword takes priority over other status signals
+  if (up.includes('DISMANTLE') || st.includes('DISMANTLE'))
+    return { serviceType: 'DISMANTLE', ticketStatus: 'Pending' }
+
+  // ── 4. Reschedule detection ─────────────────────────────────────────────────
+  if (up.includes('RESCHED') || up.includes('RESCHEDULE'))
+    return { serviceType: 'RESCHED', ticketStatus: 'Pending' }
+  // Filipino/informal reschedule signals
+  if (up.includes('MAY EMERGENCY') || up.includes('EMERGENCY PO')
+      || up.includes('NO CONFIRMATION') || up.includes('NO RESPONSE')
+      || up.includes('NO ANSWER') || up.includes('WALA CONFIRM')
+      || up.includes('HINDI NAKA') || up.includes('DI NAKA'))
+    return { serviceType: 'RESCHED', ticketStatus: 'Pending' }
+
+  // ── 5. Continuation detection ───────────────────────────────────────────────
+  // "CONT" alone or as word prefix (not "CONTACT", "CONTRACT")
+  if (/\bCONT\b/.test(up) || up.includes('CONTINUATION'))
+    return { serviceType: 'CONTINUATION', ticketStatus: 'Pending' }
+  if (up.includes('FOR DAY') || up.includes('BABALIKAN')
+      || up.includes('ON- GOING') || up.includes('ON-GOING') || up.includes('ONGOING'))
+    return { serviceType: 'CONTINUATION', ticketStatus: 'Pending' }
+
+  // ── 6. Status-column fallback ───────────────────────────────────────────────
   if (st.includes('BACKJOB')) return { serviceType: 'BACKJOB', ticketStatus: 'Pending' }
   if (st === 'SURVEY' || st.startsWith('SURVEY')) return { serviceType: 'SURVEY', ticketStatus: 'Pending' }
   if (st === 'S/I') return { serviceType: 'S/I', ticketStatus: 'Pending' }
-  if (st.includes('CHECK UP')) return { serviceType: 'CHECKUP', ticketStatus: 'Pending' }
+  if (st.includes('CHECK UP') || st.includes('CHECKUP')) return { serviceType: 'CHECKUP', ticketStatus: 'Pending' }
+  if (st.includes('DISMANTLE')) return { serviceType: 'DISMANTLE', ticketStatus: 'Pending' }
+  if (st.includes('RESCHED') || st.includes('RESCHEDULE')) return { serviceType: 'RESCHED', ticketStatus: 'Pending' }
+  if (/\bCONT\b/.test(st) || st.includes('CONTINUATION')) return { serviceType: 'CONTINUATION', ticketStatus: 'Pending' }
+  if (st.includes('CANCEL') || /\bC\/O\b/.test(st)) return { serviceType: 'CANCELLED', ticketStatus: 'Cancelled' }
 
-  // Fallback
+  // Mapped types from both columns
   const mapped = TICKET_TYPE_MAP[up] || TICKET_TYPE_MAP[st]
   if (mapped) return { serviceType: mapped, ticketStatus: mapped.startsWith('DONE') ? 'Closing' : 'Pending' }
 
+  // ── 7. Default ───────────────────────────────────────────────────────────────
   return { serviceType: 'S/I', ticketStatus: 'Pending' }
 }
 
@@ -295,6 +416,17 @@ function extractKnownPaymentMode(raw: string): string {
   return upper || 'NO_PAYMENT'
 }
 
+function parseChargeAmount(str: string): number {
+  if (!str) return 0
+  const cleaned = str.replace(/[^\d.,]/g, ' ').trim()
+  const match = cleaned.match(/[\d,]+(?:\.\d+)?/)
+  if (match) {
+    const num = parseFloat(match[0].replace(/,/g, ''))
+    return isNaN(num) ? 0 : num
+  }
+  return 0
+}
+
 function mapPayment(mode: string, charges: string): { modeOfPayment: string; amount: number; payments: { mode: string; amount: number }[] } {
   const mop = mode.toUpperCase().trim()
   const ch = charges.toUpperCase().trim()
@@ -302,6 +434,13 @@ function mapPayment(mode: string, charges: string): { modeOfPayment: string; amo
   if (ch === '' || ch === 'FREE' || ch === 'WW' || ch === '0' || ch === '-' || ch === 'N/A') {
     return { modeOfPayment: 'NO_PAYMENT', amount: 0, payments: [{ mode: 'NO_PAYMENT', amount: 0 }] }
   }
+
+  // If the mode column was empty or unknown, check if the charges column itself contains the payment mode
+  // e.g. "FOR COLLECTION 156,500" or "CASH 1,500"
+  const embeddedModeInCharges = extractKnownPaymentMode(charges)
+  const defaultMode = (mop && mop !== 'NO_PAYMENT' && mop !== 'NO PAYMENT')
+    ? (PAYMENT_MAP[mop] || mop)
+    : (embeddedModeInCharges !== 'NO_PAYMENT' ? embeddedModeInCharges : 'NO_PAYMENT')
 
   // Handle multiple payments in one cell (separated by newlines, multiple spaces, or /)
   const chargeLines = charges.split(/[\n\r]|\s{2,}/).map(p => p.trim()).filter(Boolean)
@@ -313,32 +452,32 @@ function mapPayment(mode: string, charges: string): { modeOfPayment: string; amo
 
   for (let i = 0; i < Math.max(chargeLines.length, modeLines.length); i++) {
     const chargeStr = chargeLines[i] || ''
-    const num = parseFloat(chargeStr.replace(/,/g, ''))
-    const amt = isNaN(num) ? 0 : num
+    const amt = parseChargeAmount(chargeStr)
     totalAmount += amt
 
-    const lineMode = (modeLines[i] || modeLines[0] || mop || '').toUpperCase().trim()
-    const mapped = extractKnownPaymentMode(lineMode)
+    const lineMode = (modeLines[i] || modeLines[0] || defaultMode || '').toUpperCase().trim()
+    const mapped = extractKnownPaymentMode(lineMode) !== 'NO_PAYMENT'
+      ? extractKnownPaymentMode(lineMode)
+      : extractKnownPaymentMode(chargeStr)
     if (mapped && mapped !== 'NO_PAYMENT' && !modes.includes(mapped)) {
       modes.push(mapped)
     }
     if (amt > 0 || mapped) {
-      payments.push({ mode: mapped || 'NO_PAYMENT', amount: amt })
+      payments.push({ mode: (mapped && mapped !== 'NO_PAYMENT' ? mapped : defaultMode) || 'NO_PAYMENT', amount: amt })
     }
   }
 
-  // If no valid charges parsed, try single parse
+  // If no valid charges parsed from lines, try whole string parse
   if (totalAmount === 0) {
-    const num = parseFloat(charges.replace(/,/g, ''))
-    if (!isNaN(num)) totalAmount = num
+    totalAmount = parseChargeAmount(charges)
   }
 
   if (payments.length === 0) {
-    const singleMode = PAYMENT_MAP[mop] || mop || 'NO_PAYMENT'
+    const singleMode = (modes[0] || defaultMode || 'NO_PAYMENT')
     payments.push({ mode: singleMode, amount: totalAmount })
   }
 
-  const finalMode = modes.length > 0 ? modes.join(' / ') : extractKnownPaymentMode(mop)
+  const finalMode = modes.length > 0 ? modes.join(' / ') : defaultMode
 
   return { modeOfPayment: finalMode, amount: totalAmount, payments }
 }
@@ -397,26 +536,45 @@ export async function extractRelayTicketsFromExcel(file: File): Promise<ExcelExt
   }
   const skippedRows = records.length - customerRecords.length
 
-  // 5. Build driver map (first pass)
+  // 5. Build vehicle and driver sequence with section propagation
+  // In Excel files, vehicles and drivers are color-coded in contiguous blocks.
+  // The first row of each block has the driver (e.g. "FB - 19 (JOSHUA)", "T3 - 1(ANGELO)", "T2 - 1( ON CALL RONNIE)"),
+  // and subsequent rows in that block might have vehicle only (e.g. "FB19 - 2", "T3 - 2", "T2 - 2") or even be blank.
   const driverMap: Record<string, string> = {}
   for (const rec of customerRecords) {
     const svc = findValue(rec, 'SERVICE')
     if (!svc) continue
     const { vehicle, driver } = parseService(svc)
-    if (vehicle && driver) driverMap[vehicle] = driver
+    if (vehicle && driver) {
+      driverMap[vehicle] = driver
+    }
   }
 
-  // 6. Extract tickets (second pass)
+  // 6. Extract tickets (second pass with forward-fill tracking)
   const tickets: ExtractedRelayTicket[] = []
+  let currentBlockVehicle = ''
+  let currentBlockDriver = ''
+
   for (const rec of customerRecords) {
     const { brand, capacity } = splitBrandCapacity(findValue(rec, 'BRAND'))
     const updateField = findValue(rec, 'UPDATE')
     const statusField = findValue(rec, 'STATUS')
     const { serviceType } = mapTicketType(updateField, statusField)
     const svcField = findValue(rec, 'SERVICE')
-    const { vehicle } = parseService(svcField)
-    const explicitDriver = parseService(svcField).driver
-    const driver = explicitDriver || (vehicle ? (driverMap[vehicle] || '') : '')
+    const { vehicle: parsedVehicle, driver: parsedDriver } = parseService(svcField)
+
+    // Update active block context if a new vehicle or driver is encountered
+    if (parsedVehicle) {
+      currentBlockVehicle = parsedVehicle
+    }
+    if (parsedDriver) {
+      currentBlockDriver = parsedDriver
+    } else if (parsedVehicle && driverMap[parsedVehicle]) {
+      currentBlockDriver = driverMap[parsedVehicle]
+    }
+
+    const vehicle = parsedVehicle || currentBlockVehicle || ''
+    const driver = parsedDriver || (vehicle ? (driverMap[vehicle] || currentBlockDriver || '') : currentBlockDriver) || ''
     const mopField = findValue(rec, 'MODE OF PAYMENT')
     const chargesField = findValue(rec, 'INSTALLATION CHARGES')
     const { modeOfPayment, amount, payments } = mapPayment(mopField, chargesField)
@@ -427,8 +585,13 @@ export async function extractRelayTicketsFromExcel(file: File): Promise<ExcelExt
     const rawRelayedDate = findValue(rec, 'DATE RALAYED', 'DATE RELAYED', 'RELAYED DATE')
     const relayedDate = rawRelayedDate ? parseDateValue(rawRelayedDate) : ''
 
-    // Detect reschedule from UPDATE field
-    const isResched = updateField.toUpperCase().includes('RESCHED')
+    // Detect reschedule: match all the same signals as mapTicketType priority #4
+    const upForResched = updateField.toUpperCase()
+    const isResched = upForResched.includes('RESCHED') || upForResched.includes('RESCHEDULE')
+      || upForResched.includes('MAY EMERGENCY') || upForResched.includes('EMERGENCY PO')
+      || upForResched.includes('NO CONFIRMATION') || upForResched.includes('NO RESPONSE')
+      || upForResched.includes('NO ANSWER') || upForResched.includes('WALA CONFIRM')
+      || upForResched.includes('HINDI NAKA') || upForResched.includes('DI NAKA')
 
     tickets.push({
       customerName: findValue(rec, "COSTUMER'S NAME", "CUSTOMER'S NAME"),

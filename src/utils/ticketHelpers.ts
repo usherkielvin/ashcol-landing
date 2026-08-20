@@ -1005,9 +1005,11 @@ export function sanitizeTicketPatchBody(body: Record<string, unknown>): Record<s
   return applyRelayScheduleSyncToPatch(next)
 }
 
+export type ScheduleGhostKind = 'completed' | 'resched' | 'cancelled' | 'historical' | null
+
 export function getScheduleRowColors(
   ticket: Ticket,
-  ghostKind: 'completed' | 'resched' | 'cancelled' | null,
+  ghostKind: ScheduleGhostKind,
   isLight: boolean,
   idx: number,
   rowEven: string,
@@ -1095,6 +1097,14 @@ export function getScheduleRowColors(
       baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.28)',
       hoverBg: isLight ? '#fde68a' : 'rgba(251,191,36,0.38)',
       accent: '#fbbf24',
+    }
+  }
+
+  if (ghostKind === 'historical') {
+    return {
+      baseBg: isLight ? '#f1f5f9' : 'rgba(100,116,139,0.18)',
+      hoverBg: isLight ? '#e2e8f0' : 'rgba(100,116,139,0.28)',
+      accent: isLight ? '#64748b' : '#94a3b8',
     }
   }
 
@@ -1474,7 +1484,7 @@ export function getRescheduleHistoryDates(ticket: Ticket): string[] {
 
 export function shouldBlankReschedGhostPayment(
   dateKey?: string,
-  ghostKind?: 'completed' | 'resched' | 'cancelled' | null,
+  ghostKind?: ScheduleGhostKind,
 ): boolean {
   if (!dateKey) return false
   return ghostKind === 'resched'
@@ -1670,13 +1680,10 @@ export function ticketMatchesDateKey(ticket: Ticket, dateKey: string): boolean {
   const meta = parseAcMeta(ticket)
   const scheduledDate = String(meta.scheduledDate || '').split('T')[0].split(' ')[0].trim()
   const archived = String(meta.archivedScheduleDate || '').split('T')[0].split(' ')[0].trim()
-  const installed = String(meta.installedDate || '').split('T')[0].split(' ')[0].trim()
+  const preferred = getPreferredDateKey(ticket)
   const cancelledScheduleDate = String(meta.cancelledScheduleDate || '').split('T')[0].split(' ')[0].trim()
   const finalDate = !isResched ? getFinalDateKey(ticket) : ''
-  // rescheduledTo is legacy-only and no longer written by any reschedule flow — matching on it
-  // made a ticket stick forever to whatever old date a stale value happened to carry (the exact
-  // "grayed-out, uneditable row still on the old date" bug after a plain finalDate move).
-  const dateCandidates = [finalDate, scheduledDate, archived, installed, cancelledScheduleDate].filter(Boolean)
+  const dateCandidates = [finalDate, preferred, scheduledDate, archived, cancelledScheduleDate].filter(Boolean)
 
   for (const candidate of dateCandidates) {
     if (candidate === dateKey) return true
@@ -1688,16 +1695,12 @@ export function isCompletedGhostOnDate(ticket: Ticket, dateKey: string): boolean
   if (!dateKey) return false
   if (!isInstalledWorkflowStatus(ticket.status)) return false
 
-  // The ticket's own current/real date is never a ghost — only duplicate rows left
-  // behind on OLD dates are. Otherwise every completed ticket becomes permanently
-  // read-only (no remarks edits) even on the date it actually belongs on.
-  const currentKey = getEffectiveScheduleDateKey(ticket) || getInstalledDateKey(ticket) || getArchivedScheduleDate(ticket)
+  const currentKey = getEffectiveScheduleDateKey(ticket) || getArchivedScheduleDate(ticket)
   if (currentKey && currentKey === dateKey) return false
 
   const sched = getArchivedScheduleDate(ticket)
   if (sched === dateKey) return true
   if (getPreviousScheduleDates(ticket).includes(dateKey)) return true
-  if (getInstalledDateKey(ticket) === dateKey) return true
   return false
 }
 
@@ -1737,7 +1740,17 @@ export function isCancelledScheduleGhost(ticket: Ticket, dateKey: string): boole
   return cancelledScheduleDate === dateKey
 }
 
-export function getScheduleGhostKind(ticket: Ticket, dateKey: string): 'completed' | 'resched' | 'cancelled' | null {
+export function isHistoricalScheduleTicket(ticket: Ticket, dateKey?: string): boolean {
+  if (!dateKey) return false
+  const meta = parseAcMeta(ticket)
+  if (meta.isHistorical || meta.supersededBy || meta.nextTicketId) {
+    const ownDate = getEffectiveScheduleDateKey(ticket)
+    return ownDate === dateKey
+  }
+  return false
+}
+
+export function getScheduleGhostKind(ticket: Ticket, dateKey: string): 'completed' | 'resched' | 'cancelled' | 'historical' | null {
   if (!dateKey) return null
   if (isCompletedGhostOnDate(ticket, dateKey)) return 'completed'
   // Cancelled tickets keep their one schedule-date row (no duplicate-date bookkeeping like
@@ -1745,6 +1758,7 @@ export function getScheduleGhostKind(ticket: Ticket, dateKey: string): 'complete
   // cancellation instead of the ticket silently vanishing off Schedules.
   if (isCancelledScheduleGhost(ticket, dateKey)) return 'cancelled'
   if (isRescheduledGhostOnDate(ticket, dateKey)) return 'resched'
+  if (isHistoricalScheduleTicket(ticket, dateKey)) return 'historical'
   return null
 }
 
@@ -1840,9 +1854,17 @@ export function getInstalledDateKey(ticket: Ticket): string {
   if (typeof meta.installedDate === 'string' && meta.installedDate.trim()) {
     return meta.installedDate.split('T')[0].split(' ')[0].trim()
   }
-  const raw = ticket.actualCompletion || (ticket as any).actual_completion || ticket.updatedAt || ticket.updated_at
-  if (!raw) return ''
-  return String(raw).split('T')[0].split(' ')[0].trim()
+  if (ticket.actualCompletion || (ticket as any).actual_completion) {
+    const raw = ticket.actualCompletion || (ticket as any).actual_completion
+    return String(raw).split('T')[0].split(' ')[0].trim()
+  }
+  // If the ticket is installed/completed, fall back to its final/preferred schedule date
+  const status = (ticket.status || '').toUpperCase()
+  const outcome = (meta.scheduleOutcome || '').toUpperCase()
+  if (isInstalledWorkflowStatus(status) || outcome === 'DONE_INSTALLED') {
+    return getFinalDateKey(ticket) || getPreferredDateKey(ticket) || ''
+  }
+  return ''
 }
 
 /** Whole months elapsed between a YYYY-MM-DD date key and today. Returns 0 for invalid/empty input. */
@@ -1864,7 +1886,7 @@ export function isScheduleGhostOnDate(ticket: Ticket, dateKey: string): boolean 
 
 export function formatGhostRemarks(
   ticket: Ticket,
-  ghostKind: 'completed' | 'resched' | 'cancelled' | null,
+  ghostKind: ScheduleGhostKind,
   dateKey?: string,
 ): string {
   const base = sanitizeDisplayText(stripArchivedRemarkSuffix((ticket.remarksUpdate || ticket.remarks || '').trim()))
@@ -1978,7 +2000,7 @@ export function formatPaymentAmount(ticket: Ticket): string {
 export function getSchedulePaymentDisplay(
   ticket: Ticket,
   dateKey?: string,
-  ghostKind?: 'completed' | 'resched' | 'cancelled' | null,
+  ghostKind?: ScheduleGhostKind,
 ): string {
   if (shouldBlankReschedGhostPayment(dateKey, ghostKind)) return ''
   const resolved = resolveTicketPayment(ticket)
