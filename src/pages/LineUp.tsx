@@ -1054,7 +1054,7 @@ export default function LineUp() {
    * helpers Schedules itself uses (Tickets.tsx) so Taguig Sales/Services and legacy-UUID branches
    * stay correctly separated here too.
    */
-  const deriveRowsFromSchedule = async (dateStr: string, bId: string): Promise<LineUpRow[]> => {
+  const deriveRowsFromSchedule = async (dateStr: string, bId: string, previousRows: LineUpRow[] = []): Promise<LineUpRow[]> => {
     if (!bId) return []
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -1072,13 +1072,19 @@ export default function LineUp() {
         && !['CANCELLED', 'COMPLETED'].includes(String(t.status || '').toUpperCase())
       )
 
-      const groups = new Map<string, ScheduleTicket[]>()
+      // One row per (vehicle, installer) pair — a ticket's installer field is taken as-is (it may
+      // already be a combined "RANIL/SONNY" string, which stays one row), but two tickets riding
+      // the same vehicle with two *different* installer values split into separate rows instead of
+      // being merged into one blended row, matching how dispatch actually lays these out on paper.
+      const groups = new Map<string, { base: string; installer: string; tickets: ScheduleTicket[] }>()
       for (const t of scoped) {
         const base = parseNameSiteToken(getTicketVehicleDisplay(t)).name
         if (!base) continue
-        const arr = groups.get(base) || []
-        arr.push(t)
-        groups.set(base, arr)
+        const installer = getInstallerDisplay(t).trim()
+        const key = `${base}::${installer}`
+        const entry = groups.get(key) || { base, installer, tickets: [] }
+        entry.tickets.push(t)
+        groups.set(key, entry)
       }
 
       const byTicketNumber = (list: ScheduleTicket[]) => [...list].sort((a, b) => {
@@ -1111,18 +1117,33 @@ export default function LineUp() {
         return best
       }
 
-      const sortedBases = Array.from(groups.keys()).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-      return sortedBases.map((base, i) => {
-        const groupTickets = byTicketNumber(groups.get(base) || [])
+      // Driver/installer "time in" has no source on a ticket — it's a lineup-only manual entry.
+      // Carry it forward from whatever was previously loaded/saved for the same vehicle+installer
+      // instead of stomping a dispatcher-typed time back to the "8:00AM"/"7:00AM" placeholder
+      // every time this re-derives.
+      const prevTimeByKey = new Map<string, { driverTime: string; installerTime: string }>()
+      for (const r of previousRows) {
+        prevTimeByKey.set(`${r.service}::${r.installerName}`, { driverTime: r.driverTime, installerTime: r.installerTime })
+      }
+
+      const sortedKeys = Array.from(groups.entries()).sort(([, a], [, b]) => {
+        const baseCmp = a.base.localeCompare(b.base, undefined, { numeric: true })
+        if (baseCmp !== 0) return baseCmp
+        return a.installer.localeCompare(b.installer, undefined, { numeric: true })
+      })
+
+      return sortedKeys.map(([key, group], i) => {
+        const groupTickets = byTicketNumber(group.tickets)
+        const prevTimes = prevTimeByKey.get(key)
         return {
           id: `local-schedule-${Date.now()}-${i}`,
           lineupDate: dateStr,
           branchId: bId,
-          service: base,
+          service: group.base,
           driverName: mostCommon(groupTickets.map(t => getTicketDriverDisplay(t))),
-          driverTime: '8:00AM',
-          installerName: uniqueJoin(groupTickets.map(t => getInstallerDisplay(t)), '/'),
-          installerTime: '7:00AM',
+          driverTime: prevTimes?.driverTime || '8:00AM',
+          installerName: group.installer,
+          installerTime: prevTimes?.installerTime || '7:00AM',
           negotiator: uniqueJoin(groupTickets.map(t => getTicketNegotiatorName(t)), '/'),
           route: uniqueJoin(groupTickets.map(t => resolveTicketDistrict(t)), ' - '),
           remarks: groupTickets.map(t => scheduleStatusShortLabel(t)).filter(Boolean).join('-'),
@@ -1172,23 +1193,26 @@ export default function LineUp() {
             setNotesRecord(null)
           }
           const serverRows = data.filter(r => r.service !== '__NOTES__' && r.service !== '__WEEKLY_DRIVERS__' && r.service !== '__WEEKLY_INSTALLERS__')
-          if (serverRows.length > 0) {
+          // Always re-derive from today's Schedules tickets so the showcase live-tracks Schedule
+          // changes (reassignments, new/cancelled tickets, status updates) instead of only doing
+          // this the first time a day has zero saved rows. previousRows (whatever was last saved)
+          // is passed through purely to carry over DRIVER/INSTALLER TIME IN, which has no source
+          // on a ticket and would otherwise get reset to the 8:00AM/7:00AM placeholder every sync.
+          const scheduleRows = await deriveRowsFromSchedule(date, branchId, serverRows)
+          if (scheduleRows.length > 0) {
+            setRows(scheduleRows)
+            setDirtyRowIds(prev => {
+              const next = new Set(prev)
+              scheduleRows.forEach(r => next.add(r.id))
+              return next
+            })
+          } else if (serverRows.length > 0) {
+            // No Schedules tickets for this date/branch (e.g. a fully custom day) — keep what
+            // was saved instead of blanking a board someone deliberately curated by hand.
             setRows(serverRows.sort((a, b) => a.sortOrder - b.sortOrder))
           } else {
-            // Fallback: derive from today's Schedules tickets first (real driver/installer/
-            // negotiator/route data), then yesterday's lineup, instead of a fixed template.
-            const scheduleRows = await deriveRowsFromSchedule(date, branchId)
-            if (scheduleRows.length > 0) {
-              setRows(scheduleRows)
-              setDirtyRowIds(prev => {
-                const next = new Set(prev)
-                scheduleRows.forEach(r => next.add(r.id))
-                return next
-              })
-            } else {
-              const yesterdayRows = await fetchYesterdayRows(date, branchId)
-              setRows(yesterdayRows)
-            }
+            const yesterdayRows = await fetchYesterdayRows(date, branchId)
+            setRows(yesterdayRows)
           }
         }
       }
@@ -1205,6 +1229,15 @@ export default function LineUp() {
     void fetchLineup()
 
   }, [fetchLineup])
+
+  // Keep the showcase live-synced with Schedules without requiring a manual reload or the
+  // "Sync from Schedule" button — re-derives on an interval so reassignments/new tickets/status
+  // changes made elsewhere show up here on their own.
+  useEffect(() => {
+    if (!branchId) return
+    const interval = setInterval(() => { void fetchLineup() }, 120_000)
+    return () => clearInterval(interval)
+  }, [fetchLineup, branchId])
 
   const handleUpdateNotes = (val: string) => {
 
@@ -2114,7 +2147,7 @@ export default function LineUp() {
 
   const performSyncFromSchedule = async () => {
     if (!branchId) return
-    const scheduleRows = await deriveRowsFromSchedule(date, branchId)
+    const scheduleRows = await deriveRowsFromSchedule(date, branchId, rows)
     if (scheduleRows.length === 0) {
       showToast("No Schedules tickets found for this date to sync.", "info")
       return

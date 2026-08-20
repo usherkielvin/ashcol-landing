@@ -218,6 +218,12 @@ export default function HappyCalls() {
     if (!res.ok) throw new Error(await res.text().catch(() => 'Failed to add customer'))
     const created = await res.json()
     setLeads(prev => [created, ...prev])
+    // The due-date filter (3M/6M) hides leads that aren't due yet — a freshly added customer
+    // (installedDate defaults to today) would otherwise vanish right after being created.
+    // Switch to the month filter for its actual installedDate so it's guaranteed visible.
+    setSearch('')
+    setStatusFilter('ALL')
+    setMonthFilter(created.installedDate ? String(created.installedDate).slice(0, 7) : '')
   }, [])
 
   const bookCleaning = useCallback(async (id: string, body: Record<string, unknown>) => {
