@@ -4,6 +4,7 @@ import { X, ClipboardList } from 'lucide-react'
 import { EMPTY_CELL, formatPesoPrefix } from '../../utils/textSanitize'
 import {
   type Ticket,
+  type ScheduleGhostKind,
   getScheduleStatusValue,
   getScheduleStatusDisplay,
   getScheduleStatusLabel,
@@ -46,7 +47,7 @@ export function TicketScheduleDetailsPopover({
   onOpenChecklist,
   onUpdateTicket,
 }: {
-  popup: { ticket: Ticket; x: number; y: number; ghostKind?: 'completed' | 'resched' | 'cancelled' | null }
+  popup: { ticket: Ticket; x: number; y: number; ghostKind?: ScheduleGhostKind }
   isLight: boolean
   dateFilter: string
   canEdit: boolean

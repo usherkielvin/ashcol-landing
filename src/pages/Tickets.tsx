@@ -98,6 +98,7 @@ import {
   type PaymentBreakdownEntry,
   type PendingTicketSave,
   type ScheduleOutcome,
+  type ScheduleGhostKind,
 } from '../utils/ticketHelpers'
 
 export type { Ticket, TicketsSurface }
@@ -2860,7 +2861,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     ticket: Ticket
     x: number
     y: number
-    ghostKind?: 'completed' | 'resched' | 'cancelled' | null
+    ghostKind?: ScheduleGhostKind
   } | null>(null)
   const [checklistTicket, setChecklistTicket] = useState<Ticket | null>(null)
   const [finalDatePicker, setFinalDatePicker] = useState<{
@@ -3940,7 +3941,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const openScheduleDetailsPopup = useCallback((
     ticket: Ticket,
     anchorEl?: HTMLElement | null,
-    ghostKind?: 'completed' | 'resched' | 'cancelled' | null,
+    ghostKind?: ScheduleGhostKind,
   ) => {
     commitCellEditRef.current()
     setExpandedCell(null)
@@ -5165,7 +5166,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     }
   }
 
-  function renderCell(ticket: Ticket, col: (typeof columns)[0], idx?: number, rowGhost?: boolean, ghostKind?: 'completed' | 'resched' | 'cancelled' | null, cellExpanded = false) {
+  function renderCell(ticket: Ticket, col: (typeof columns)[0], idx?: number, rowGhost?: boolean, ghostKind?: ScheduleGhostKind, cellExpanded = false) {
     const { label } = col
     const rowIndex = idx ?? visible.findIndex(t => t.id === ticket.id)
 
@@ -5290,6 +5291,29 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           return (
             <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#dc2626' : '#f87171' }} title="Cancelled">
               CANCELLED
+            </span>
+          )
+        }
+        if (ghostKind === 'historical') {
+          const statusVal = getScheduleStatusValue(ticket)
+          const statusColor = getScheduleStatusBadgeStyle(statusVal, isLight, isPendingRow).color
+          const display = getScheduleStatusDisplay(ticket) || EMPTY_CELL
+          let displayLabel = display === 'INSTALLATION' ? 'INSTALL' : ((display === 'FOR APPROVAL' || display === 'FOR QUOTATION') ? 'QUOTATION' : display)
+          if (display === 'CONTINUATION') {
+            displayLabel = 'CONT'
+          }
+          return (
+            <span
+              style={{
+                ...truncStyle,
+                fontWeight: 700,
+                color: statusColor,
+                textTransform: 'uppercase',
+                letterSpacing: '0.02em',
+              }}
+              title={`Historical Record — ${display}`}
+            >
+              {displayLabel}
             </span>
           )
         }

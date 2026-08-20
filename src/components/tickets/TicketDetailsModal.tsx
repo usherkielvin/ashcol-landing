@@ -343,7 +343,7 @@ export function TicketDetailsModal({
                   {isCompleted && archivedSched && (
                     <DField isLight={isLight} label="Scheduled Date" value={archivedSched} />
                   )}
-                  {isCompleted && installedDate && (
+                  {installedDate && (
                     <DField isLight={isLight} label="Installed Date" value={installedDate} />
                   )}
                 </div>

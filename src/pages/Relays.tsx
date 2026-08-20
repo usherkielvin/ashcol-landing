@@ -34,6 +34,14 @@ import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import { DealerSelect } from '../components/DealerSelect'
 import { ROBINSON_APPLIANCES_RE } from '../utils/dealer'
 import { guessDistrict } from '../utils/districtGuesser'
+import {
+  parseAcMeta,
+  getEffectiveScheduleDateKey,
+  getFinalDateKey,
+  getPreferredDateKey,
+  getRescheduleHistoryDates,
+  getPreviousScheduleDates,
+} from '../utils/ticketHelpers'
 import type { ReactNode } from 'react'
 
 function RelayFormField({
@@ -516,8 +524,15 @@ const isScheduledManualTicket = (ticket: Ticket): boolean => {
   const source = String((ticket as Ticket & { source?: string }).source || '').trim().toUpperCase()
   if (source === 'SCHEDULE_MANUAL') return true
 
+  // Excel bulk-import tags all tickets with scheduleIntake: true regardless of vendor — check
+  // this BEFORE the relay-vendor guard below. A RESCHED ticket from an Excel import has a
+  // dealer (e.g. RA NOVA) but was imported via the Schedules sheet and must stay on Schedules
+  // only; it should not appear in Relays because it has no new date yet (reschedulePending).
+  if (details.scheduleIntake === true || details.scheduleIntake === 'true') return true
+
   // Store/source vendors are relay intake. Older builds wrongly stamped scheduleIntake on
   // those rows when preferredDate was set — keep them on Relays until finalDate is set.
+  // (Non-tagged relay-vendor tickets fall through to false here, preserving existing behaviour.)
   const vendor = (ticket.dealer || ticket.sourceVendor || '').trim().toLowerCase()
   const isRelayVendor = Boolean(
     vendor
@@ -527,8 +542,7 @@ const isScheduledManualTicket = (ticket: Ticket): boolean => {
   )
   if (isRelayVendor) return false
 
-  // Schedule-tab markers only (manual add / excel import on Schedules).
-  if (details.scheduleIntake === true || details.scheduleIntake === 'true') return true
+  // Schedule-tab markers only (manual add with no vendor).
   if (details.scheduledDate?.trim()) return true
   return false
 }
@@ -1009,7 +1023,7 @@ export default function Relays() {
   const [excelContextMenu, setExcelContextMenu] = useState<{ idx: number; x: number; y: number } | null>(null)
   const [excelSelectMode, setExcelSelectMode] = useState(false)
   const [excelSelectedIdxs, setExcelSelectedIdxs] = useState<Set<number>>(new Set())
-  const [excelExistingMap, setExcelExistingMap] = useState<Map<string, Ticket>>(new Map())
+  const [excelExistingMap, setExcelExistingMap] = useState<Map<string, Ticket[]>>(new Map())
   const excelFileRef = useRef<HTMLInputElement>(null)
   // Track which ticket indices have been individually overridden so bulk header changes
   // don't overwrite manual per-ticket selections.
@@ -1056,7 +1070,7 @@ export default function Relays() {
 
       // Fetch ALL tickets from API to detect duplicates by customer name
       const authToken = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const existingMap = new Map<string, Ticket>()
+      const allMap = new Map<string, Ticket[]>()
 
       try {
         const res = await fetch(`${API_BASE_URL}/tickets?size=1000`, {
@@ -1068,24 +1082,30 @@ export default function Relays() {
           const allTickets: Ticket[] = payload?.tickets || data?.tickets || (Array.isArray(data) ? data : [])
           for (const t of allTickets) {
             const name = (t.customerName || (t as any).customer_name || '').replace(/\s+/g, ' ').trim().toUpperCase()
-            if (name) existingMap.set(name, t)
+            if (!name) continue
+            const list = allMap.get(name) || []
+            list.push(t)
+            allMap.set(name, list)
           }
+          setExcelExistingMap(new Map(allMap))
         }
       } catch {
         // If fetch fails, fall back to local tickets
         for (const t of tickets) {
           const name = (t.customerName || (t as any).customer_name || '').replace(/\s+/g, ' ').trim().toUpperCase()
-          if (name) existingMap.set(name, t)
+          if (!name) continue
+          const list = allMap.get(name) || []
+          list.push(t)
+          allMap.set(name, list)
         }
+        setExcelExistingMap(new Map(allMap))
       }
-
-      setExcelExistingMap(existingMap)
       setShowExcelPicker(true)
 
       // ── Search for any imported names not found in initial fetch ──
       const missingNames = result.tickets
         .map(t => (t.customerName || '').replace(/\s+/g, ' ').trim())
-        .filter(name => name && !existingMap.has(name.toUpperCase()))
+        .filter(name => name && !allMap.has(name.toUpperCase()))
       if (missingNames.length > 0) {
         // Search each missing name individually (async, updates map as results come in)
         const token2 = authToken
@@ -1098,16 +1118,22 @@ export default function Relays() {
             const data = await res.json()
             const payload = data?.data ?? data ?? {}
             const results: Ticket[] = payload?.tickets || data?.tickets || (Array.isArray(data) ? data : [])
-            const match = results.find((t: any) => {
+            const matches = results.filter((t: any) => {
               const n = (t.customerName || (t as any).customer_name || '').replace(/\s+/g, ' ').trim().toUpperCase()
               return n === name.toUpperCase()
             })
-            if (match) {
-              existingMap.set(name.toUpperCase(), match)
+            if (matches.length > 0) {
+              const existingList = allMap.get(name.toUpperCase()) || []
+              for (const m of matches) {
+                if (!existingList.some(item => item.id === m.id)) {
+                  existingList.push(m)
+                }
+              }
+              allMap.set(name.toUpperCase(), existingList)
             }
           } catch { /* skip */ }
         })).then(() => {
-          setExcelExistingMap(new Map(existingMap))
+          setExcelExistingMap(new Map(allMap))
         })
       }
 
@@ -1332,46 +1358,13 @@ export default function Relays() {
         const resolvedStatus = resolveScheduleStatusFields(ticket.serviceType)
         const brandHp = formatBrandCapacityLabel(ticket.brand, ticket.capacity)
 
-        // Build schedule history for RESCHED tickets
-        const scheduleHistory: Array<{ date: string; newDate: string; remarks: string; timestamp: string }> = []
-        if (ticket.isResched && (ticket.scheduleDate || excelDate)) {
-          scheduleHistory.push({
-            date: ticket.scheduleDate || excelDate,
-            newDate: '',
-            remarks: ticket.remarks || 'RESCHED',
-            timestamp: new Date().toISOString(),
-          })
-        }
-
-        const acDetailsObj = {
-          landmarks: '',
-          brand: ticket.brand || '',
-          capacity: ticket.capacity || '',
-          sku: '',
-          serialNumber: '',
-          alternatePhone: phones.slice(1).join(', '),
-          // Same fallback as the single-ticket prefill above: default to the sheet's schedule
-          // date (not today) so relayed/requested/schedule all agree when the sheet has no
-          // dedicated "DATE RALAYED" column.
-          relayedDate: ticket.relayedDate || ticket.scheduleDate || excelDate || new Date().toISOString().split('T')[0],
-          finalDate: ticket.isResched ? '' : (ticket.scheduleDate || excelDate || ''),
-          installedDate: '',
-          driverName: ticket.driver || '',
-          ...(scheduleHistory.length > 0 ? { scheduleHistory: JSON.stringify(scheduleHistory) } : {}),
-          ...(ticket.isResched ? { previousScheduleDates: JSON.stringify([ticket.scheduleDate || excelDate]) } : {}),
-          ...(ticket.isResched ? { reschedulePending: true } : {}),
-          ...(resolvedStatus.schedulePhase !== undefined ? { schedulePhase: resolvedStatus.schedulePhase } : {}),
-          ...(resolvedStatus.scheduleOutcome !== undefined ? { scheduleOutcome: resolvedStatus.scheduleOutcome } : {}),
-          // Multiple payments → store breakdown
-          ...(ticket.payments && ticket.payments.length > 1 ? { paymentBreakdown: ticket.payments.filter(p => p.amount > 0) } : {}),
-        }
-
         // Resolve payment mode: HYBRID if multiple payment types
         const hasMultiplePayments = ticket.payments && ticket.payments.filter(p => p.amount > 0).length > 1
         const resolvedMop = hasMultiplePayments ? 'HYBRID' : (ticket.modeOfPayment || undefined)
         const resolvedCharges = ticket.installationCharges || 0
 
-        const selectedNegotiator = employees.find(employee => employee.id === ticket.assignedTo)
+        const assignedNegotiatorId = ticket.assignedTo || user?.id || ''
+        const selectedNegotiator = employees.find(employee => employee.id === assignedNegotiatorId)
         const writeBranchId = resolvePortalWriteBranchId(
           ticket.branchId || resolveRelayDefaultBranchId() || '',
           selectedNegotiator?.email,
@@ -1379,19 +1372,22 @@ export default function Relays() {
         )
         const relayBranchId = writeBranchId || resolveRelayDefaultBranchId() || user?.branchId || undefined
 
-        // ─── Duplicate Detection ─────────────────────────────────────────
-        // Search API for existing ticket with same customer name
+        // Target date from the Excel import
+        const newTargetDate = (ticket.scheduleDate || excelDate || '').split('T')[0].trim()
+
+        // ─── Duplicate & Existing Record Detection ─────────────────────────
+        // Search API / local map for all existing tickets with same customer name
         const customerNameNorm = (ticket.customerName || '').trim().toUpperCase()
-        let existingTicketId: string | null = null
+        let candidateTickets: Ticket[] = []
 
         // Check pre-built map first
-        const mapMatch = excelExistingMap.get(customerNameNorm)
-        if (mapMatch) {
-          existingTicketId = mapMatch.id
+        const mapMatches = excelExistingMap.get(customerNameNorm)
+        if (mapMatches && mapMatches.length > 0) {
+          candidateTickets = [...mapMatches]
         }
 
         // If not found in map, do a live API search
-        if (!existingTicketId && ticket.customerName) {
+        if (candidateTickets.length === 0 && ticket.customerName) {
           try {
             const searchRes = await fetch(`${API_BASE_URL}/tickets?search=${encodeURIComponent(ticket.customerName.trim())}&size=20`, {
               headers: { Authorization: `Bearer ${token}` },
@@ -1400,16 +1396,81 @@ export default function Relays() {
               const searchData = await searchRes.json()
               const payload = searchData?.data ?? searchData ?? {}
               const results: any[] = payload?.tickets || searchData?.tickets || (Array.isArray(searchData) ? searchData : (searchData?.results || []))
-              const match = results.find((t: any) => {
+              const nameMatches = results.filter((t: any) => {
                 const n = (t.customerName || t.customer_name || '').trim().toUpperCase()
                 return n === customerNameNorm
               })
-              if (match?.id) existingTicketId = match.id
+              candidateTickets = nameMatches as Ticket[]
             }
           } catch { /* search failed — will create new */ }
         }
 
-        if (existingTicketId) {
+        // Helper to extract a candidate ticket's schedule date
+        const getCandidateDate = (t: Ticket): string => {
+          return getEffectiveScheduleDateKey(t)
+            || getFinalDateKey(t)
+            || getPreferredDateKey(t)
+            || (parseAcMeta(t).scheduledDate ? String(parseAcMeta(t).scheduledDate).split('T')[0].trim() : '')
+        }
+
+        // 1. Check if there is already a record for THIS EXACT schedule date (e.g. re-importing Jan 3)
+        const sameDateCandidate = newTargetDate
+          ? candidateTickets.find(t => getCandidateDate(t) === newTargetDate)
+          : null
+
+        // 2. Otherwise find the latest active/current record (or latest overall) to link history
+        const activeCandidates = candidateTickets.filter(t => !parseAcMeta(t).isHistorical && !parseAcMeta(t).nextTicketId)
+        const latestCandidate = activeCandidates[activeCandidates.length - 1] || candidateTickets[candidateTickets.length - 1] || null
+
+        // Select which existing ticket to target:
+        // If re-importing the same date, target the same-date record (to update it in place).
+        // If importing a new date, target the latest prior record (to create a new record and link the prior as history).
+        const existingTicket: Ticket | null = sameDateCandidate || latestCandidate || null
+
+        // Prior schedule date of the selected existing ticket
+        const priorScheduleDate = existingTicket ? getCandidateDate(existingTicket) : ''
+
+        // Check if this is a cross-date history version / reschedule
+        const isDateMove = Boolean(priorScheduleDate && newTargetDate && priorScheduleDate !== newTargetDate)
+
+        // True if we are attempting a cross-date move against a record already marked historical
+        const isCrossDateOnHistorical = Boolean(existingTicket && parseAcMeta(existingTicket).isHistorical && isDateMove)
+
+        // Update in-place if:
+        // 1. We have an existing ticket on the SAME date (sameDateCandidate is present), OR
+        // 2. We have an existing active ticket and it's not a date move / not undated.
+        const hasNewTargetDate = Boolean(newTargetDate)
+        const isUndatedExistingWithNewDate = hasNewTargetDate && !priorScheduleDate
+        const shouldUpdateExisting = Boolean(
+          existingTicket?.id &&
+          (Boolean(sameDateCandidate) || (!parseAcMeta(existingTicket).isHistorical && !isDateMove && !isUndatedExistingWithNewDate))
+        )
+
+        if (shouldUpdateExisting && existingTicket?.id) {
+          const existingTicketId = existingTicket.id
+          const existingMeta = parseAcMeta(existingTicket)
+
+          // Build merged acDetails preserving existing metadata while updating with new import data
+          const mergedAcDetailsObj = {
+            ...existingMeta,
+            landmarks: existingMeta.landmarks || '',
+            brand: ticket.brand || existingMeta.brand || '',
+            capacity: ticket.capacity || existingMeta.capacity || '',
+            sku: existingMeta.sku || '',
+            serialNumber: existingMeta.serialNumber || '',
+            alternatePhone: phones.slice(1).join(', ') || existingMeta.alternatePhone || '',
+            relayedDate: existingMeta.relayedDate || ticket.relayedDate || newTargetDate || new Date().toISOString().split('T')[0],
+            finalDate: newTargetDate || existingMeta.finalDate || '',
+            scheduledDate: newTargetDate || existingMeta.scheduledDate || '',
+            installedDate: existingMeta.installedDate || '',
+            driverName: ticket.driver || existingMeta.driverName || '',
+            scheduleIntake: true,
+            reschedulePending: ticket.isResched,
+            ...(resolvedStatus.schedulePhase !== undefined ? { schedulePhase: resolvedStatus.schedulePhase } : {}),
+            ...(resolvedStatus.scheduleOutcome !== undefined ? { scheduleOutcome: resolvedStatus.scheduleOutcome } : {}),
+            ...(ticket.payments && ticket.payments.length > 1 ? { paymentBreakdown: ticket.payments.filter(p => p.amount > 0) } : {}),
+          }
+
           // UPDATE existing ticket via PATCH
           const patchPayload: Record<string, any> = {
             customerName: ticket.customerName || undefined,
@@ -1419,17 +1480,18 @@ export default function Relays() {
             dealer: resolveRelayDealerForSubmit(ticket.dealer || 'Direct', ticket.dealerBranch || ''),
             serviceType: ticket.serviceType,
             branchId: relayBranchId,
-            assignedTo: ticket.assignedTo || undefined,
-            negotiatorId: ticket.assignedTo || undefined,
-            preferredDate: ticket.scheduleDate || excelDate || undefined,
+            assignedTo: assignedNegotiatorId || undefined,
+            negotiatorId: assignedNegotiatorId || undefined,
+            preferredDate: newTargetDate || undefined,
+            finalDate: newTargetDate || undefined,
             installerName: ticket.installer || undefined,
             serviceVehicle: ticket.vehicle || undefined,
             driverName: ticket.driver || undefined,
             remarksUpdate: ticket.remarks || undefined,
             installationCharges: resolvedCharges,
             modeOfPayment: resolvedMop,
-            acDetails: JSON.stringify(acDetailsObj),
-            status: resolvedStatus.status === 'SCHEDULED' && !(ticket.scheduleDate || excelDate) ? 'PENDING' : resolvedStatus.status,
+            acDetails: JSON.stringify(mergedAcDetailsObj),
+            status: resolvedStatus.status === 'SCHEDULED' && !newTargetDate ? 'PENDING' : resolvedStatus.status,
           }
 
           const res = await fetch(`${API_BASE_URL}/tickets/${existingTicketId}`, {
@@ -1441,12 +1503,54 @@ export default function Relays() {
             body: JSON.stringify(patchPayload),
           })
           if (!res.ok) {
+            const errText = await res.text().catch(() => '')
+            console.error('PATCH ticket error:', res.status, errText, patchPayload)
             errors++
           } else {
             updated++
           }
         } else {
-          // CREATE new ticket
+          // CREATE new ticket (either brand new customer or new date version for existing customer)
+          const ticketDate = newTargetDate
+
+          const priorReschedDates = existingTicket ? getRescheduleHistoryDates(existingTicket) : []
+          // When a cross-date import creates a NEW ticket and marks the existing one isHistorical,
+          // do NOT add the old date to rescheduleHistoryDates or previousScheduleDates on the new ticket.
+          // The historical record itself already appears on its own date — adding the date here too
+          // would make the new Jan 4 ticket appear as a RESCHED ghost on Jan 3, duplicating the display.
+          // Only keep the ghost-date arrays for chains where the old ticket was already historical
+          // (e.g. chaining Jan 3→4→5: the Jan 4 ticket can carry the Jan 3 date if the Jan 3 record
+          //  is already historical and the current import just extends the chain further).
+          const updatedReschedHistory = !isDateMove ? priorReschedDates : []
+          const updatedPrevDates = !isDateMove ? (existingTicket ? getPreviousScheduleDates(existingTicket) : []) : []
+
+          // Similarly, don't carry the old schedule history into the new ticket when the
+          // old ticket is being preserved — the link is via previousTicketId instead.
+          const newPriorHistory: Array<{ date: string; newDate: string; remarks: string; timestamp: string }> = []
+
+          const newAcDetailsObj = {
+            landmarks: '',
+            brand: ticket.brand || '',
+            capacity: ticket.capacity || '',
+            sku: '',
+            serialNumber: '',
+            alternatePhone: phones.slice(1).join(', '),
+            relayedDate: ticket.relayedDate || ticketDate || new Date().toISOString().split('T')[0],
+            finalDate: ticketDate,
+            scheduledDate: ticketDate,
+            installedDate: '',
+            driverName: ticket.driver || '',
+            scheduleIntake: true,
+            reschedulePending: ticket.isResched,
+            ...(existingTicket?.id ? { previousTicketId: existingTicket.id } : {}),
+            ...(updatedReschedHistory.length > 0 ? { rescheduleHistoryDates: updatedReschedHistory } : {}),
+            ...(updatedPrevDates.length > 0 ? { previousScheduleDates: updatedPrevDates } : {}),
+            ...(newPriorHistory.length > 0 ? { scheduleHistory: JSON.stringify(newPriorHistory) } : {}),
+            ...(resolvedStatus.schedulePhase !== undefined ? { schedulePhase: resolvedStatus.schedulePhase } : {}),
+            ...(resolvedStatus.scheduleOutcome !== undefined ? { scheduleOutcome: resolvedStatus.scheduleOutcome } : {}),
+            ...(ticket.payments && ticket.payments.length > 1 ? { paymentBreakdown: ticket.payments.filter(p => p.amount > 0) } : {}),
+          }
+
           const createPayload = {
             title: `${ticket.serviceType} service`,
             description: ticket.remarks || '',
@@ -1457,7 +1561,8 @@ export default function Relays() {
             contactPhone: phones[0] || undefined,
             location: ticket.address || 'No Address Provided',
             dealer: resolveRelayDealerForSubmit(ticket.dealer || 'Direct', ticket.dealerBranch || ''),
-            preferredDate: ticket.scheduleDate || excelDate || undefined,
+            preferredDate: ticketDate || undefined,
+            finalDate: ticketDate || undefined,
             district: ticket.district || undefined,
             commitType: ticket.commitType || undefined,
             installerName: ticket.installer || undefined,
@@ -1466,11 +1571,11 @@ export default function Relays() {
             remarksUpdate: ticket.remarks || undefined,
             installationCharges: resolvedCharges,
             modeOfPayment: resolvedMop,
-            acDetails: JSON.stringify(acDetailsObj),
-            status: resolvedStatus.status === 'SCHEDULED' && !(ticket.scheduleDate || excelDate) ? 'PENDING' : resolvedStatus.status,
+            acDetails: JSON.stringify(newAcDetailsObj),
+            status: resolvedStatus.status === 'SCHEDULED' && !ticketDate ? 'PENDING' : resolvedStatus.status,
             branchId: relayBranchId,
-            assignedTo: ticket.assignedTo || undefined,
-            negotiatorId: ticket.assignedTo || undefined,
+            assignedTo: assignedNegotiatorId || undefined,
+            negotiatorId: assignedNegotiatorId || undefined,
           }
 
           const res = await fetch(`${API_BASE_URL}/tickets`, {
@@ -1482,6 +1587,8 @@ export default function Relays() {
             body: JSON.stringify(createPayload),
           })
           if (!res.ok) {
+            const errText = await res.text().catch(() => '')
+            console.error('POST ticket error:', res.status, errText, createPayload)
             errors++
           } else {
             created++
@@ -1491,9 +1598,41 @@ export default function Relays() {
             if (createdTicket?.id) {
               applyRelayTicketLocally(createdTicket.id, createdTicket)
             }
+
+            // Sync latest outcome / installed date onto the historical ticket so it links as history,
+            // while preserving its original status (e.g. CONT), date, technician, and negotiator.
+            if (existingTicket?.id && isDateMove && priorScheduleDate) {
+              try {
+                const existingMeta = parseAcMeta(existingTicket)
+                const isCreatedInstalled = (resolvedStatus.status === 'INSTALLED' || resolvedStatus.status === 'COMPLETED' || resolvedStatus.scheduleOutcome === 'DONE_INSTALLED')
+                const patchHistoricalMeta = {
+                  ...existingMeta,
+                  // If the new import represents an actual installation (e.g. Jan 5 CONT -> Jan 6 INSTALLED),
+                  // set the linked actual installed date. If the new import is not installed (e.g. RESCHEDULED),
+                  // keep installedDate empty / as-is.
+                  installedDate: isCreatedInstalled ? (ticketDate || existingMeta.installedDate || '') : (existingMeta.installedDate || ''),
+                  isHistorical: true,
+                  nextTicketId: createdTicket?.id || '',
+                  scheduleHistory: existingMeta.scheduleHistory,
+                }
+                await fetch(`${API_BASE_URL}/tickets/${existingTicket.id}`, {
+                  method: 'PATCH',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                  },
+                  body: JSON.stringify({
+                    acDetails: JSON.stringify(patchHistoricalMeta),
+                  }),
+                })
+              } catch (err) {
+                console.warn('Could not sync historical ticket link:', err)
+              }
+            }
           }
         }
-      } catch {
+      } catch (err) {
+        console.error('Error importing Excel ticket:', ticket, err)
         errors++
       }
       setExcelBulkProgress({ done: i + 1, total: excelTickets.length, errors })
@@ -4257,8 +4396,8 @@ export default function Relays() {
             <div className="flex-1 overflow-y-auto p-4 space-y-2 min-h-0">
               {excelTickets.map((ticket, idx) => {
                 const nameKey = (ticket.customerName || '').replace(/\s+/g, ' ').trim().toUpperCase()
-                const existingTicket = excelExistingMap.get(nameKey)
-                const isExisting = Boolean(existingTicket)
+                const existingTickets = excelExistingMap.get(nameKey) || []
+                const isExisting = existingTickets.length > 0
                 const hasUnmatchedDealer = Boolean(ticket.dealer && excelUnmatchedDealers.includes(ticket.dealer))
 
                 return (
@@ -4720,9 +4859,20 @@ export default function Relays() {
               </p>
               <p className="text-[11px] font-medium mt-1" style={{ color: textMuted }}>
                 {(() => {
-                  const newCount = excelTickets.filter(t => !excelExistingMap.has((t.customerName || '').trim().toUpperCase())).length
-                  const syncCount = excelTickets.length - newCount
-                  if (syncCount > 0) return `${newCount} new ticket${newCount !== 1 ? 's' : ''} will be created, ${syncCount} existing will be updated.`
+                  const updateCount = excelTickets.filter(t => {
+                    const name = (t.customerName || '').trim().toUpperCase()
+                    const candidates = excelExistingMap.get(name) || []
+                    if (candidates.length === 0) return false
+                    const curDate = (t.scheduleDate || excelDate || '').split('T')[0].trim()
+                    const sameDate = candidates.find(c => {
+                      const prior = getEffectiveScheduleDateKey(c) || getFinalDateKey(c) || getPreferredDateKey(c) || ''
+                      return prior === curDate
+                    })
+                    return Boolean(sameDate)
+                  }).length
+                  const newCount = excelTickets.length - updateCount
+                  if (updateCount > 0 && newCount > 0) return `${newCount} new ticket${newCount !== 1 ? 's' : ''} will be created, ${updateCount} existing will be updated.`
+                  if (updateCount > 0) return `All ${updateCount} existing ticket${updateCount !== 1 ? 's' : ''} will be updated.`
                   return 'All tickets will be created as new.'
                 })()}
               </p>
