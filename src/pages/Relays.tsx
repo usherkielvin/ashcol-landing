@@ -4905,7 +4905,6 @@ export default function Relays() {
                             <p className="text-[10px] font-black uppercase tracking-wider mb-2" style={{ color: textMuted }}>Pending</p>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                               {[
-                                { value: 'S/I', label: 'SURVEY & INSTALL' },
                                 { value: 'INSTALL', label: 'INSTALL' },
                                 { value: 'SURVEY', label: 'SURVEY' },
                                 { value: 'CLEANING', label: 'CLEANING' },

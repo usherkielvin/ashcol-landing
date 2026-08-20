@@ -65,7 +65,7 @@ export function categoryDefaultServiceType(value: TicketCategoryValue): string {
     ADMIN_TASK: 'Admin task',
     CLAIMS: 'Claims',
     HR_TASKS: 'HR tasks',
-    INSTALLATION: 'SURVEY & INSTALL',
+    INSTALLATION: 'Install',
     PARTS_SALES: 'Parts Sales',
     PAYROLL_TASKS: 'Payroll tasks',
     QUOTATION: 'Quotation',

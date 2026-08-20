@@ -166,7 +166,6 @@ export type ScheduleStatusGroup = 'pending' | 'closing'
 
 export const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: ScheduleStatusGroup }[] = [
   // Pending
-  { value: 'S/I', label: 'SURVEY & INSTALL', group: 'pending' },
   { value: 'INSTALL', label: 'INSTALL', group: 'pending' },
   { value: 'SURVEY', label: 'SURVEY', group: 'pending' },
   { value: 'CLEANING', label: 'CLEANING', group: 'pending' },
@@ -213,7 +212,7 @@ export function statusShowsScheduleDetails(_statusVal?: string): boolean {
 export function getScheduleTicketKind(ticket: Ticket): string {
   const kind = inferCategoryFromTicket(ticket) as string
   if (kind === 'SURVEY' || kind === 'SERVICES' || kind === 'SURVEY & INSTALL' || kind === 'S/I' || kind === 'INSTALL' || kind === 'CLEANING' || kind === 'CHECKUP' || kind === 'BACKJOB') return kind
-  return 'INSTALLATION'
+  return 'INSTALL'
 }
 
 export function getScheduleStatusBadgeStyle(value: string, isLight: boolean, isOverdue = false): { color: string; backgroundColor: string; borderColor: string } {
@@ -222,7 +221,7 @@ export function getScheduleStatusBadgeStyle(value: string, isLight: boolean, isO
   }
   const normalized = value.toUpperCase().replace(/\s+/g, '_')
   if (normalized === 'INSTALLATION' || normalized === 'INSTALL' || normalized === 'SCHEDULED' || normalized === 'S/I' || normalized === 'S_I' || normalized === 'SI') {
-    return { color: isLight ? '#1d4ed8' : '#93c5fd', backgroundColor: isLight ? '#dbeafe' : 'rgba(59,130,246,0.18)', borderColor: isLight ? '#93c5fd' : 'rgba(59,130,246,0.35)' }
+    return { color: isLight ? '#15803d' : '#86efac', backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.18)', borderColor: isLight ? '#86efac' : 'rgba(22,163,74,0.35)' }
   }
   if (normalized === 'CLEANING') {
     return { color: isLight ? '#0369a1' : '#7dd3fc', backgroundColor: isLight ? '#e0f2fe' : 'rgba(14,165,233,0.16)', borderColor: isLight ? '#7dd3fc' : 'rgba(14,165,233,0.35)' }
@@ -338,10 +337,8 @@ export function getScheduleStatusValue(ticket: Ticket): string {
   if (phase === 'FOR_COLLECTION') return 'FOR_COLLECTION'
 
   let stat = (ticket.status || 'SCHEDULED').toUpperCase().replace(/\s+/g, '_')
-  if (stat === 'S/I' || stat === 'S_I' || stat === 'SI') return 'S/I'
-  if (stat === 'INSTALL') return 'INSTALL'
+  if (stat === 'S/I' || stat === 'S_I' || stat === 'SI' || stat === 'INSTALLATION' || stat === 'INSTALL') return 'INSTALL'
   if (stat === 'CHECKUP') return 'CHECKUP'
-  if (stat === 'INSTALLATION') return 'INSTALLATION'
   if (stat === 'FOR_QUOTATION') stat = 'FOR_APPROVAL'
   if (stat === 'RESCHED') return 'RESCHED'
   if (stat === 'SURVEY') return 'SURVEY'
@@ -361,18 +358,17 @@ export function getScheduleStatusValue(ticket: Ticket): string {
   const kind = getScheduleTicketKind(ticket)
   if (kind === 'SURVEY') return 'SURVEY'
   if (kind === 'SERVICES') return 'SERVICES'
-  if (kind === 'SURVEY & INSTALL' || kind === 'S/I') return 'SURVEY & INSTALL'
-  if (kind === 'INSTALL') return 'INSTALL'
+  if (kind === 'SURVEY & INSTALL' || kind === 'S/I' || kind === 'INSTALL' || kind === 'INSTALLATION') return 'INSTALL'
   if (kind === 'CLEANING') return 'CLEANING'
   if (kind === 'CHECKUP') return 'CHECKUP'
   if (kind === 'BACKJOB') return 'BACKJOB'
-  return 'INSTALLATION'
+  return 'INSTALL'
 }
 
 export function getScheduleStatusLabel(value: string): string {
   const normalized = value.toUpperCase().replace(/\s+/g, '_')
   if (normalized === 'INSTALLED') return 'INSTALLED'
-  if (normalized === 'S/I' || normalized === 'S_I' || normalized === 'SI') return 'INSTALLATION'
+  if (normalized === 'S/I' || normalized === 'S_I' || normalized === 'SI' || normalized === 'INSTALLATION') return 'INSTALL'
   const found = SCHEDULE_STATUS_OPTS.find(opt => opt.value === normalized)
   return (found?.label ?? value.replace(/_/g, ' ')).toUpperCase()
 }
