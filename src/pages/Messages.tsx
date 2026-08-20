@@ -184,8 +184,16 @@ export default function Messages() {
         className={`flex-col w-full sm:w-[300px] shrink-0 border-r ${showListMobile ? 'flex' : 'hidden sm:flex'}`}
         style={{ borderColor: border }}
       >
-        <div className="px-4 py-3.5 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
+        <div className="px-4 py-3.5 flex items-center justify-between shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
           <h1 className="text-[17px] font-black" style={{ color: textPrimary }}>Chats</h1>
+          <button
+            onClick={() => navigate(-1)}
+            title="Exit messages"
+            className="sm:hidden p-1.5 -mr-1.5 rounded-lg transition-colors"
+            style={{ color: textMuted }}
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
         <div className="px-3 pt-3 pb-2 shrink-0">
           <div className="relative">
@@ -240,7 +248,17 @@ export default function Messages() {
       {/* ── Active thread ── */}
       <div className={`flex-1 min-w-0 flex-col ${showListMobile ? 'hidden sm:flex' : 'flex'}`}>
         {!activeId && !isNewThread ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center px-6">
+          <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center px-6 relative">
+            <button
+              onClick={() => navigate(-1)}
+              title="Exit messages"
+              className="absolute top-3 right-4 p-2 rounded-xl transition-colors"
+              style={{ color: textMuted }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
+            >
+              <X className="w-5 h-5" />
+            </button>
             <MessageSquare className="w-10 h-10" style={{ color: textMuted, opacity: 0.4 }} />
             <p className="text-sm font-medium" style={{ color: textMuted }}>Pick a conversation to start chatting</p>
           </div>
@@ -268,20 +286,14 @@ export default function Messages() {
               </div>
 
               <button
-                onClick={() => {
-                  if (activeId || isNewThread) {
-                    navigate('/messages')
-                  } else {
-                    navigate(-1)
-                  }
-                }}
-                title="Close chat"
+                onClick={() => navigate(-1)}
+                title="Exit messages"
                 className="p-1.5 rounded-lg transition-colors shrink-0"
                 style={{ color: textMuted }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 

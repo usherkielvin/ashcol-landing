@@ -45,6 +45,7 @@ import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortal
 import UserAvatar from '../components/UserAvatar'
 import MessagesDropdown from '../components/MessagesDropdown'
 import NotificationsDropdown from '../components/NotificationsDropdown'
+import FloatingChatWindow from '../components/FloatingChatWindow'
 import { HEADER_MENU_OPENED_EVENT, broadcastHeaderMenuOpen } from '../utils/headerMenuCoordination'
 
 
@@ -821,6 +822,14 @@ export default function DashboardLayout() {
                   <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
                     Profile
                   </h1>
+                ) : location.pathname.startsWith('/messages') || currentPage === 'Messages' ? (
+                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
+                    Messages
+                  </h1>
+                ) : currentPage === 'Search' || location.pathname === '/search' ? (
+                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
+                    Search
+                  </h1>
                 ) : currentPage === 'Relays' || currentPage === 'Employees' || currentPage === 'Members' || currentPage === 'Registration' ? (
                   <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
                     {currentPage}
@@ -1061,6 +1070,8 @@ export default function DashboardLayout() {
 
       {/* ── Global Agentic Chat UI ────────────────────── */}
       {/* <AIChatBot /> */}
+
+      <FloatingChatWindow />
     </div>
   )
 }
