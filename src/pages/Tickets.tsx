@@ -114,6 +114,45 @@ export {
   getTicketNegotiatorName,
 }
 
+function AutoFitText({ text, style, title, minScale = 0.55 }: {
+  text: string
+  style?: React.CSSProperties
+  title?: string
+  minScale?: number
+}) {
+  const outerRef = useRef<HTMLDivElement>(null)
+  const innerRef = useRef<HTMLSpanElement>(null)
+  const [scale, setScale] = useState(1)
+
+  useLayoutEffect(() => {
+    const outer = outerRef.current
+    const inner = innerRef.current
+    if (!outer || !inner) return
+    const fit = () => {
+      const containerWidth = outer.clientWidth
+      const textWidth = inner.scrollWidth
+      if (containerWidth <= 0 || textWidth <= 0) return
+      const next = Math.min(1, containerWidth / textWidth)
+      setScale(Math.max(minScale, next))
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(outer)
+    return () => ro.disconnect()
+  }, [text, minScale])
+
+  return (
+    <div ref={outerRef} className="w-full overflow-hidden flex items-center justify-center" title={title ?? text}>
+      <span
+        ref={innerRef}
+        style={{ ...style, display: 'inline-block', whiteSpace: 'nowrap', transform: `scale(${scale})` }}
+      >
+        {text}
+      </span>
+    </div>
+  )
+}
+
 export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const { theme, toggleTheme } = useTheme()
   const { user } = useAuth()
@@ -5221,9 +5260,31 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         )
       }
       return withEditPencil(
-        <span style={truncStyle} title={fullAddress}>
-          {district || EMPTY_CELL}
-        </span>,
+        <AutoFitText
+          text={district || EMPTY_CELL}
+          title={fullAddress}
+          style={{ color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: 'uppercase' }}
+        />,
+        ticket, label, rowGhost, rowIndex,
+      )
+    }
+
+    if (label === 'DLR') {
+      const isDealerEmpty = !val || val === '—' || val === EMPTY_CELL
+      if (isDealerEmpty) {
+        return withEditPencil(
+          <span style={{ ...truncStyle, color: isPendingRow ? '#FDE047' : (isLight ? '#D97706' : '#FACC15'), fontWeight: 700 }} title="N/A">
+            N/A
+          </span>,
+          ticket, label, rowGhost, rowIndex,
+        )
+      }
+      return withEditPencil(
+        showExpanded ? (
+          <span style={truncStyle} title={val}>{val}</span>
+        ) : (
+          <AutoFitText text={val} title={val} style={{ color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: 'uppercase' }} />
+        ),
         ticket, label, rowGhost, rowIndex,
       )
     }
@@ -5756,9 +5817,17 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         )
       }
       return withEditPencil(
-        <span style={{ ...truncStyle, fontWeight: 600 }} title={commitVal || undefined}>
-          {commitVal || EMPTY_CELL}
-        </span>,
+        showExpanded ? (
+          <span style={{ ...truncStyle, fontWeight: 600 }} title={commitVal || undefined}>
+            {commitVal || EMPTY_CELL}
+          </span>
+        ) : (
+          <AutoFitText
+            text={commitVal || EMPTY_CELL}
+            title={commitVal || undefined}
+            style={{ fontWeight: 600, color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: 'uppercase' }}
+          />
+        ),
         ticket, label, rowGhost, rowIndex,
       )
     }
