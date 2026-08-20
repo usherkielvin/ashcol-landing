@@ -5811,11 +5811,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         )
       }
       return withEditPencil(
-        <AutoFitText
-          text={val}
-          align="left"
-          style={{ fontWeight: 600, color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: 'uppercase' }}
-        />,
+        <span style={{ ...truncStyle, fontWeight: 600 }} title={val}>
+          {val}
+        </span>,
         ticket, label, rowGhost, rowIndex,
       )
     }

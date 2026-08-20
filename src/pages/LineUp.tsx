@@ -6,11 +6,11 @@ import { createPortal } from 'react-dom'
 
 import {
 
-  Plus, Trash2, Edit3, X, Printer, ClipboardList, Upload, Download, Building2,
+  Plus, Trash2, Edit3, X, ClipboardList, Upload,
 
   Loader2, Truck, User, Clock, MapPin, MessageSquare,
 
-  ChevronDown, Camera, Copy, Save, Check, Maximize2, ArrowLeft,
+  ChevronDown, Save, Check, Maximize2, ArrowLeft,
 
   CalendarDays, Wrench, Users,
 
@@ -20,7 +20,7 @@ import { useTheme } from '../contexts/ThemeContext'
 
 import { useAuth } from '../contexts/AuthContext'
 
-import { API_BASE_URL, isSameBaseBranch, isPortalAdmin, resolvePortalWriteBranchId, resolveScopedBranchId, fetchTicketsPage, type InstallerBranchIndexEntry } from '../utils/api'
+import { API_BASE_URL, isSameBaseBranch, isPortalAdmin, resolvePortalWriteBranchId, resolveScopedBranchId, fetchTicketsPage, findBranchListEntry, type InstallerBranchIndexEntry } from '../utils/api'
 
 import {
   fetchVehicles as fetchVehiclesApi,
@@ -32,7 +32,7 @@ import {
 
 import { normalizeRelayScheduleTicketList } from '../utils/relayScheduleSync'
 
-import { fetchCachedLineupInstallerIndex, fetchCachedDriverOnlyNames } from '../utils/portalDirectoryCache'
+import { fetchCachedLineupInstallerIndex, fetchCachedDriverOnlyNames, fetchCachedEmployees } from '../utils/portalDirectoryCache'
 
 import {
   ticketBelongsOnScheduleDate,
@@ -51,8 +51,6 @@ import { EmployeeNameLink } from '../components/EmployeeNameLink'
 
 
 import * as XLSX from 'xlsx'
-
-import html2canvas from 'html2canvas'
 
 const branchThemes: Record<string, { name: string; accent: string; accentDark: string; accentLight: string }> = {
 
@@ -358,7 +356,12 @@ export default function LineUp() {
 
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
 
-  const [branchId, setBranchId] = useState('')
+  const [branchId, setBranchId] = useState<string>(() => {
+    if (typeof localStorage !== 'undefined') {
+      return localStorage.getItem('ashcol-global-branch-id') || ''
+    }
+    return ''
+  })
 
   const lineupApiBranchId = useMemo(
     () => resolvePortalWriteBranchId(branchId, user?.email, user?.jobTitle) || branchId,
@@ -543,8 +546,6 @@ export default function LineUp() {
 
   const printAreaRef   = useRef<HTMLDivElement>(null)
 
-  const exportMenuRef  = useRef<HTMLDivElement>(null)
-
   // Save-race prevention: map local-* IDs → real DB IDs, and track in-flight POSTs
 
   const localToRealIdRef    = useRef<Map<string, string>>(new Map())
@@ -555,11 +556,7 @@ export default function LineUp() {
 
   const [scanError, setScanError]           = useState('')
 
-  const [copyingImage, setCopyingImage]     = useState(false)
-
   const [showcaseOpen, setShowcaseOpen]     = useState(false)
-
-  const [exportMenuOpen, setExportMenuOpen] = useState(false)
 
   const [selectedRowId, setSelectedRowId]   = useState<string | null>(null)
 
@@ -957,37 +954,42 @@ export default function LineUp() {
 
       
 
-      if (user?.branchId) {
-        const userBranchLower = user.branchId.toLowerCase()
-        const isUserTaguig = userBranchLower.includes('taguig') || userBranchLower.startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
-        if (isUserTaguig) {
-          const emailLower = (user.email || '').toLowerCase()
-          const isServicesUser = userBranchLower.includes('service') || emailLower.includes('service')
-          const matchedBranch = finalList.find(b => {
-            const bNameUpper = b.name.toUpperCase()
-            return isServicesUser ? bNameUpper.includes('SERVICE') : bNameUpper.includes('SALES')
-          })
-          setBranchId(matchedBranch ? matchedBranch.id : (finalList[0]?.id ?? ''))
-        } else {
-          const userBranchIdUpper = user.branchId.toUpperCase()
-          const exactMatch = finalList.find(b => b.id.toUpperCase() === userBranchIdUpper)
-          setBranchId(exactMatch ? exactMatch.id : (finalList[0]?.id ?? ''))
+      const storedGlobal = typeof localStorage !== 'undefined' ? localStorage.getItem('ashcol-global-branch-id') : null
+      const targetId = isPortalAdmin(role) ? (storedGlobal || user?.branchId) : (user?.branchId || storedGlobal)
+      const matchedBranch = targetId ? findBranchListEntry(targetId, finalList, user?.email) : undefined
+
+      if (matchedBranch) {
+        setBranchId(matchedBranch.id)
+      } else if (branchId) {
+        const currentMatch = findBranchListEntry(branchId, finalList, user?.email)
+        if (currentMatch) {
+          setBranchId(currentMatch.id)
+        } else if (finalList.length > 0) {
+          setBranchId(finalList[0].id)
         }
       } else if (finalList.length > 0) {
         setBranchId(finalList[0].id)
-      } else if (finalList.length > 0) {
-        setBranchId(finalList[0].id)
-      } else if (finalList.length > 0) {
-
-        setBranchId(finalList[0].id)
-
       }
 
     } catch (e) { console.error(e) }
 
-  }, [user?.branchId, user?.role, user?.email])
+  }, [user?.branchId, user?.role, user?.email, role, branchId])
 
   useEffect(() => { void loadBranches() }, [loadBranches])
+
+  useEffect(() => {
+    const handleGlobalBranchChange = () => {
+      const gId = typeof localStorage !== 'undefined' ? localStorage.getItem('ashcol-global-branch-id') : null
+      if (gId && branches.length > 0) {
+        const found = findBranchListEntry(gId, branches, user?.email)
+        if (found) {
+          setBranchId(found.id)
+        }
+      }
+    }
+    window.addEventListener('ashcol-global-branch-change', handleGlobalBranchChange)
+    return () => window.removeEventListener('ashcol-global-branch-change', handleGlobalBranchChange)
+  }, [branches, user?.email])
 
   const [lineupNotes, setLineupNotes] = useState('')
 
@@ -1060,11 +1062,19 @@ export default function LineUp() {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       if (!token) return []
       const scopedBranch = resolveScopedBranchId(bId)
-      const [rawTickets, lineupIndex, driverOnlyNames] = await Promise.all([
+      const [rawTickets, lineupIndex, driverOnlyNames, employeeList] = await Promise.all([
         fetchTicketsPage('/tickets/branch', token, { size: 200, paginate: false, branchId: scopedBranch, date: dateStr }),
         fetchCachedLineupInstallerIndex(token).catch(() => [] as InstallerBranchIndexEntry[]),
         fetchCachedDriverOnlyNames(token).catch(() => [] as string[]),
+        fetchCachedEmployees(token).catch(() => [] as Array<Record<string, unknown>>),
       ])
+      // getTicketNegotiatorName falls back to blank when a ticket only has negotiatorId (no
+      // denormalized negotiatorName in its acDetails) and no employee list is given to resolve
+      // it against — which is why some rows showed the negotiator and others showed "—" for no
+      // visible reason. Passing the id->name lookup here makes it resolve for every ticket.
+      const employeesForLookup = (employeeList as Array<Record<string, unknown>>)
+        .map(u => ({ id: String(u.id || ''), name: String(u.name || '') }))
+        .filter(u => u.id && u.name)
       const tickets = normalizeRelayScheduleTicketList(rawTickets as ScheduleTicket[]) as ScheduleTicket[]
       const scoped = tickets.filter(t =>
         ticketBelongsOnScheduleDate(t, dateStr)
@@ -1144,7 +1154,7 @@ export default function LineUp() {
           driverTime: prevTimes?.driverTime || '8:00AM',
           installerName: group.installer,
           installerTime: prevTimes?.installerTime || '7:00AM',
-          negotiator: uniqueJoin(groupTickets.map(t => getTicketNegotiatorName(t)), '/'),
+          negotiator: uniqueJoin(groupTickets.map(t => getTicketNegotiatorName(t, employeesForLookup)), '/'),
           route: uniqueJoin(groupTickets.map(t => resolveTicketDistrict(t)), ' - '),
           remarks: groupTickets.map(t => scheduleStatusShortLabel(t)).filter(Boolean).join('-'),
           sortOrder: i,
@@ -1661,6 +1671,10 @@ export default function LineUp() {
 
             </div>
 
+          ) : field === 'remarks' && /\bDONE/i.test(value) ? (
+
+            <span style={{ color: '#16a34a', fontWeight: 800 }}>{value}</span>
+
           ) : (
 
             value || '—'
@@ -1831,6 +1845,10 @@ export default function LineUp() {
 
           </div>
 
+        ) : field === 'remarks' && /\bDONE/i.test(value) ? (
+
+          <span style={{ color: '#16a34a', fontWeight: 800 }}>{value}</span>
+
         ) : (
 
           value || <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>—</span>
@@ -1982,6 +2000,10 @@ export default function LineUp() {
           {(field === 'driverName' || field === 'installerName') ? (
 
             value ? <EmployeeNameLink nameOrId={value} /> : <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>empty</span>
+
+          ) : field === 'remarks' && /\bDONE/i.test(value) ? (
+
+            <span style={{ color: '#16a34a', fontWeight: 800 }}>{value}</span>
 
           ) : (
 
@@ -2394,68 +2416,6 @@ export default function LineUp() {
 
   }
 
-  const performClearAll = async () => {
-
-    if (!branchId) return
-
-    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-
-    try {
-
-      const res = await fetch(`${API_BASE_URL}/v1/lineup/all?branchId=${encodeURIComponent(lineupApiBranchId)}&date=${date}&includeNotes=false`, {
-
-        method: 'DELETE',
-
-        headers: { Authorization: `Bearer ${token}` }
-
-      })
-
-      if (res.ok) {
-
-        showToast('All lineup entries cleared from database ✓', 'success')
-
-      } else {
-
-        showToast('Failed to clear database — removing locally', 'error')
-
-      }
-
-    } catch (err: any) {
-
-      showToast('DB error: ' + (err.message || 'connection failed') + ' — removing locally', 'error')
-
-    }
-
-    setRows([])
-
-    const all = lsLoad().filter(r => !(r.lineupDate === date && r.branchId === branchId && r.service !== '__NOTES__' && r.service !== '__WEEKLY_DRIVERS__' && r.service !== '__WEEKLY_INSTALLERS__'))
-
-    lsSave(all)
-
-  }
-
-  const handleClearAllRows = () => {
-
-    if (!branchId) return
-
-    setConfirmModal({
-
-      title: 'Clear Schedule',
-
-      message: `Are you sure you want to permanently delete all ${rows.length} lineup entries for this date? This cannot be undone.`,
-
-      confirmText: 'Delete All',
-
-      cancelText: 'Cancel',
-
-      type: 'danger',
-
-      onConfirm: () => { void performClearAll() },
-
-    })
-
-  }
-
   // ── Totals ───────────────────────────────────────────────────────────────
 
   const sumAllUnits = (text: string): number => {
@@ -2779,228 +2739,6 @@ export default function LineUp() {
 
 
   // ── Image Export ─────────────────────────────────────────────────────────
-
-  const captureLineupImage = async (): Promise<HTMLCanvasElement | null> => {
-
-    const target = captureAreaRef.current
-
-    if (!target) return null
-
-    // 1. Hide UI-only elements that must not appear in the exported image
-
-    const noPrintEls = target.querySelectorAll<HTMLElement>('.no-print')
-
-    noPrintEls.forEach(el => { el.style.display = 'none' })
-
-    // 2. Strip rounded corners / borders so no sub-pixel clipping artifact appears
-
-    const savedRadius = target.style.borderRadius
-
-    const savedBorder = target.style.border
-
-    const savedShadow = target.style.boxShadow
-
-    const savedOverflowRoot = target.style.overflow
-
-    target.style.borderRadius = '0'
-
-    target.style.border = 'none'
-
-    target.style.boxShadow = 'none'
-
-    target.style.overflow = 'visible'
-
-    // 3. Expand overflow-x:auto containers so the full table width is captured
-
-    const overflowEls = target.querySelectorAll<HTMLElement>('.overflow-x-auto')
-
-    const savedOverflows: string[] = []
-
-    overflowEls.forEach(el => {
-
-      savedOverflows.push(el.style.overflow)
-
-      el.style.overflow = 'visible'
-
-      el.style.width = el.scrollWidth + 'px'
-
-    })
-
-    // 4. Scroll page to top so html2canvas viewport math is clean
-
-    const prevScrollY = window.scrollY
-
-    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
-
-    await new Promise(r => requestAnimationFrame(r))
-
-    const bgColor = isLight ? '#ffffff' : '#0A1120'
-
-    try {
-
-      const canvas = await html2canvas(target, {
-
-        scale: 4,
-
-        useCORS: true,
-
-        allowTaint: true,
-
-        backgroundColor: bgColor,
-
-        logging: false,
-
-        scrollX: 0,
-
-        scrollY: 0,
-
-        width: target.scrollWidth,
-
-        height: target.scrollHeight,
-
-        windowWidth: target.scrollWidth,
-
-        windowHeight: target.scrollHeight,
-
-      })
-
-      return canvas
-
-    } finally {
-
-      // Restore everything
-
-      target.style.borderRadius = savedRadius
-
-      target.style.border = savedBorder
-
-      target.style.boxShadow = savedShadow
-
-      target.style.overflow = savedOverflowRoot
-
-      window.scrollTo({ top: prevScrollY, behavior: 'instant' as ScrollBehavior })
-
-      overflowEls.forEach((el, i) => {
-
-        el.style.overflow = savedOverflows[i]
-
-        el.style.width = ''
-
-      })
-
-      noPrintEls.forEach(el => { el.style.display = '' })
-
-    }
-
-  }
-
-  const handleCopyImage = async () => {
-
-    if (rows.length === 0) { showToast('No data to copy!', 'error'); return }
-
-    setCopyingImage(true)
-
-    try {
-
-      const canvas = await captureLineupImage()
-
-      if (!canvas) return
-
-      canvas.toBlob(async (blob) => {
-
-        if (!blob) return
-
-        try {
-
-          await navigator.clipboard.write([
-
-            new ClipboardItem({ 'image/png': blob })
-
-          ])
-
-          showToast('Line-up copied as image! Paste it directly into your group chat.', 'success')
-
-        } catch {
-
-          window.open(canvas.toDataURL('image/png'), '_blank')
-
-        }
-
-        setCopyingImage(false)
-
-      }, 'image/png')
-
-    } catch (e: any) {
-
-      showToast('Failed to capture image: ' + (e.message || 'Unknown error'), 'error')
-
-      setCopyingImage(false)
-
-    }
-
-  }
-
-  const handleSaveImage = async () => {
-
-    if (rows.length === 0) { showToast('No data to export!', 'error'); return }
-
-    setCopyingImage(true)
-
-    try {
-
-      const canvas = await captureLineupImage()
-
-      if (!canvas) return
-
-      const link = document.createElement('a')
-
-      link.download = `ASHCOL_LineUp_${branchName.replace(/\s+/g, '_')}_${date}.png`
-
-      link.href = canvas.toDataURL('image/png')
-
-      link.click()
-
-      showToast('Line-up image downloaded successfully!', 'success')
-
-    } catch (e: any) {
-
-      showToast('Failed to save image: ' + (e.message || 'Unknown error'), 'error')
-
-    } finally {
-
-      setCopyingImage(false)
-
-    }
-
-  }
-
-  // ── Excel ────────────────────────────────────────────────────────────────
-
-  const handleExportExcel = () => {
-
-    if (rows.length === 0) { showToast('No data to export!', 'error'); return }
-
-    const data = rows.map((r, i) => ({
-      '#': i + 1,
-      SERVICE: r.service,
-      DRIVER: r.driverName,
-      'SCHEDULED TIME – IN OF DRIVER': r.driverTime,
-      [isTaguigServices ? 'TECHNICIAN' : 'INSTALLER']: r.installerName,
-      [isTaguigServices ? 'SCHEDULED TIME – IN OF TECHNICIAN' : 'SCHEDULED TIME – IN OF INSTALLER']: r.installerTime,
-      NEGOTIATOR: r.negotiator,
-      ROUTE: r.route,
-      REMARKS: r.remarks
-    }))
-
-    const ws = XLSX.utils.json_to_sheet(data)
-
-    const wb = XLSX.utils.book_new()
-
-    XLSX.utils.book_append_sheet(wb, ws, 'LineUp')
-
-    XLSX.writeFile(wb, `ASHCOL_LineUp_${branchName.replace(/\s+/g, '_')}_${date}.xlsx`)
-
-  }
 
   const performExcelImport = async (parsedRows: LineUpRow[]) => {
 
@@ -4020,152 +3758,123 @@ export default function LineUp() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  const branchLineupSelector = (
-
-    <div
-
-      className="no-print mb-4 rounded-xl p-3 flex flex-col gap-3 md:hidden"
-
-      style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
-
-    >
-
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-
-        <div className="min-w-0">
-
-          <p className="text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: textMuted }}>
-
-            Select Branch Line-Up
-
-          </p>
-
-          <div className="flex items-center gap-2 min-w-0">
-
-            <Building2 className="w-4 h-4 shrink-0" style={{ color: currentTheme.accent }} />
-
-            <span className="text-sm font-black uppercase truncate" style={{ color: textPrimary }}>
-
-              {branchName || 'Loading branches...'}
-
-            </span>
-
-          </div>
-
-        </div>
-
-        {branches.length > 0 ? (
-
-          <div className="relative flex items-center w-full md:w-64 shrink-0">
-
-            <Building2 className="w-3.5 h-3.5" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
-
-            <select
-
-              value={branchId}
-
-              onChange={e => setBranchId(e.target.value)}
-
-              className="w-full rounded-lg pl-8 pr-8 py-2 text-xs font-bold appearance-none outline-none cursor-pointer"
-
-              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-
-            >
-
-              {branches.length === 0 && <option value="">Loading branches...</option>}
-
-              {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-
-            </select>
-
-            <ChevronDown className="absolute right-2.5 w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
-
-          </div>
-
-        ) : (
-
-          <span className="rounded-lg px-3 py-2 text-xs font-bold w-fit"
-
-            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-
-            {branchName || 'Loading...'}
-
-          </span>
-
-        )}
-
-      </div>
-
-    </div>
-
-  )
-
   return (
 
     <div style={{ minHeight: '100%', backgroundColor: pageBg }}>
 
-      {branchLineupSelector}
+      {/* ── Single-line header: tabs + (Daily only) date/Showcase/Sync/Add Row ── */}
 
-      {/* ── Inner Tab Switcher — standard physical segmented control ── */}
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
 
-      <div
-        className="inline-flex p-1.5 rounded-xl shadow-inner mb-5 gap-1 max-w-full overflow-x-auto no-scrollbar"
-        style={{ backgroundColor: isLight ? '#f1f5f9' : '#030712', border: `1px solid ${isLight ? '#e2e8f0' : '#1e293b'}` }}
-      >
+        <div
+          className="inline-flex p-1.5 rounded-xl shadow-inner gap-1 max-w-full overflow-x-auto no-scrollbar"
+          style={{ backgroundColor: isLight ? '#f1f5f9' : '#030712', border: `1px solid ${isLight ? '#e2e8f0' : '#1e293b'}` }}
+        >
 
-        {([
+          {([
 
-          { id: 'field',  label: 'Daily Schedule',  icon: <Truck className="w-3.5 h-3.5" /> },
+            { id: 'field',  label: 'Daily Schedule',  icon: <Truck className="w-3.5 h-3.5" /> },
 
-          { id: 'weekly', label: 'Weekly Schedule', icon: <CalendarDays className="w-3.5 h-3.5" /> },
+            { id: 'weekly', label: 'Weekly Schedule', icon: <CalendarDays className="w-3.5 h-3.5" /> },
 
-          { id: 'vehicles', label: 'Vehicles', icon: <Wrench className="w-3.5 h-3.5" /> },
+            { id: 'vehicles', label: 'Vehicles', icon: <Wrench className="w-3.5 h-3.5" /> },
 
-        ] as const).map(tab => {
+          ] as const).map(tab => {
 
-          const active = activeTab === tab.id
+            const active = activeTab === tab.id
 
-          return (
+            return (
 
-          <button
+            <button
 
-            key={tab.id}
+              key={tab.id}
 
-            type="button"
+              type="button"
 
-            onClick={() => setActiveTab(tab.id)}
+              onClick={() => setActiveTab(tab.id)}
 
-            className={`flex-shrink-0 flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold whitespace-nowrap transition-colors border outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-0 ${
+              className={`flex-shrink-0 flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold whitespace-nowrap transition-colors border outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-0 ${
 
-              active
+                active
 
-                ? isLight
+                  ? isLight
 
-                  ? 'bg-white shadow-[0_2px_8px_rgba(0,0,0,0.08)] border-slate-200 text-slate-900'
+                    ? 'bg-white shadow-[0_2px_8px_rgba(0,0,0,0.08)] border-slate-200 text-slate-900'
 
-                  : 'bg-gradient-to-b from-slate-700 to-slate-800 shadow-[0_2px_8px_rgba(0,0,0,0.4)] border-slate-600 text-white'
+                    : 'bg-gradient-to-b from-slate-700 to-slate-800 shadow-[0_2px_8px_rgba(0,0,0,0.4)] border-slate-600 text-white'
 
-                : isLight
+                  : isLight
 
-                  ? 'text-slate-500 hover:text-slate-900 font-medium border-transparent'
+                    ? 'text-slate-500 hover:text-slate-900 font-medium border-transparent'
 
-                  : 'text-slate-400 hover:text-white font-medium border-transparent'
+                    : 'text-slate-400 hover:text-white font-medium border-transparent'
 
-            }`}
+              }`}
 
-            style={{ ['--tw-ring-color' as any]: currentTheme.accent }}
+              style={{ ['--tw-ring-color' as any]: currentTheme.accent }}
 
-          >
+            >
 
-            {tab.icon}
+              {tab.icon}
 
-            {tab.label}
+              {tab.label}
 
-          </button>
+            </button>
 
-          )
+            )
 
-        })}
+          })}
+
+        </div>
+
+        {activeTab === 'field' && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+
+            {/* Date */}
+            <div onClick={() => { desktopDateInputRef.current?.showPicker?.() }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer"
+              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
+              <ClipboardList className="w-3.5 h-3.5" style={{ color: currentTheme.accent }} />
+              <input ref={desktopDateInputRef} type="date" value={date} onChange={e => setDate(e.target.value)}
+                className="date-input-no-indicator date-input-trigger-only bg-transparent outline-none text-xs font-bold cursor-pointer" style={{ color: textPrimary }} />
+            </div>
+
+            {/* Showcase */}
+            <button type="button" onClick={() => setShowcaseOpen(!showcaseOpen)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] md:text-xs font-bold transition-all"
+              style={{
+                backgroundColor: showcaseOpen ? 'transparent' : '#16a34a',
+                border: '2px solid #16a34a',
+                color: showcaseOpen ? '#16a34a' : '#ffffff',
+                boxShadow: showcaseOpen ? 'none' : '0 2px 8px rgba(22,163,74,0.35)',
+              }}>
+              <Maximize2 className="w-3.5 h-3.5" />
+              {showcaseOpen ? 'Exit Showcase' : 'Showcase'}
+            </button>
+
+            {!showcaseOpen && canEdit && (
+              <>
+                {/* Sync from Schedule */}
+                <button type="button" onClick={handleSyncFromSchedule}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg font-bold text-xs transition-all hover:scale-105"
+                  style={{ color: currentTheme.accent, border: `1px solid ${currentTheme.accent}30`, backgroundColor: `${currentTheme.accent}08` }}>
+                  <ClipboardList className="w-4 h-4" /> Sync from Schedule
+                </button>
+
+                {/* Add Row */}
+                <button type="button" onClick={handleAddRow}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg font-bold text-xs text-white transition-all hover:scale-105"
+                  style={{
+                    background: `linear-gradient(135deg, ${currentTheme.accent}, ${currentTheme.accentDark})`,
+                    boxShadow: `0 4px 12px ${currentTheme.accent}20`,
+                  }}>
+                  <Plus className="w-4 h-4" /> Add Row
+                </button>
+              </>
+            )}
+
+          </div>
+        )}
 
       </div>
 
@@ -5097,322 +4806,6 @@ export default function LineUp() {
           ═══════════════════════════════════════════════════════ */}
 
       <div className="hidden md:flex flex-col gap-6 pb-8">
-
-        {/* Top Control Bar */}
-
-        <div className="rounded-xl p-4 lg:p-5 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4"
-
-          style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-
-          <div className="min-w-0">
-
-            <p className="text-[10px] md:text-[11px] font-black uppercase tracking-widest mb-0.5" style={{ color: currentTheme.accent }}>Scheduling</p>
-
-            <h2 className="text-lg md:text-xl font-black tracking-tight mb-0.5 whitespace-nowrap" style={{ color: textPrimary }}>Daily Branch Line-Up</h2>
-
-            <p className="text-xs md:text-sm" style={{ color: textMuted }}>Manage and view daily field deployment schedules across all branches.</p>
-
-          </div>
-
-          <div className="flex items-center gap-1.5 shrink-0 w-full xl:w-auto justify-start xl:justify-end flex-wrap">
-
-            {/* Select Branch */}
-
-            {branches.length > 0 && (
-
-              <div className="relative flex items-center">
-
-                <Building2 className="w-3.5 h-3.5" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: currentTheme.accent, pointerEvents: 'none', zIndex: 1 }} />
-
-                <select
-
-                  value={branchId}
-
-                  onChange={e => setBranchId(e.target.value)}
-
-                  className="rounded-lg pl-8 pr-8 py-2 text-xs font-bold appearance-none outline-none cursor-pointer"
-
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-
-                >
-
-                  {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-
-                </select>
-
-                <ChevronDown className="absolute right-2.5 w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
-
-              </div>
-
-            )}
-
-            {/* Date */}
-
-            <div onClick={() => {
-
-                desktopDateInputRef.current?.showPicker?.()
-
-              }}
-
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer"
-
-              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-
-              <ClipboardList className="w-3.5 h-3.5" style={{ color: currentTheme.accent }} />
-
-              <input ref={desktopDateInputRef} type="date" value={date} onChange={e => setDate(e.target.value)}
-
-                className="date-input-no-indicator date-input-trigger-only bg-transparent outline-none text-xs font-bold cursor-pointer" style={{ color: textPrimary }} />
-
-            </div>
-
-            {/* Showcase Button */}
-
-            <button
-
-              type="button"
-
-              onClick={() => setShowcaseOpen(!showcaseOpen)}
-
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] md:text-xs font-bold transition-all"
-
-              style={{
-
-                backgroundColor: showcaseOpen ? 'transparent' : '#16a34a',
-
-                border: '2px solid #16a34a',
-
-                color: showcaseOpen ? '#16a34a' : '#ffffff',
-
-                boxShadow: showcaseOpen ? 'none' : '0 2px 8px rgba(22,163,74,0.35)',
-
-              }}
-
-            >
-
-              <Maximize2 className="w-3.5 h-3.5" />
-
-              {showcaseOpen ? 'Exit Showcase' : 'Showcase'}
-
-            </button>
-
-            {/* Edit View Exclusive Actions */}
-
-            {!showcaseOpen && (
-
-              <>
-
-                {/* Export Dropdown */}
-
-                <div className="relative" ref={exportMenuRef}>
-
-                  <button type="button"
-
-                    onClick={() => { setExportMenuOpen(o => !o) }}
-
-                    className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg font-bold text-xs border transition-all hover:scale-105"
-
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-
-                    <Download className="w-3.5 h-3.5" style={{ color: currentTheme.accent }} />
-
-                    Export
-
-                    <ChevronDown className={`w-3 h-3 transition-transform duration-150 ${exportMenuOpen ? 'rotate-180' : ''}`} />
-
-                  </button>
-
-                  {exportMenuOpen && (
-
-                    <>
-
-                      <div className="fixed inset-0 z-40" onClick={() => setExportMenuOpen(false)} />
-
-                      <div className="absolute right-0 top-11 z-50 w-48 rounded-xl overflow-hidden shadow-xl"
-
-                        style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-
-                        <div className="py-1">
-
-                          <button type="button"
-
-                            onClick={() => { handleExportExcel(); setExportMenuOpen(false) }}
-
-                            className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors"
-
-                            style={{ color: textPrimary }}
-
-                            onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
-
-                            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
-
-                            <Download className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-
-                            <div>
-
-                              <div>Export Excel</div>
-
-                              <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>.xlsx spreadsheet</div>
-
-                            </div>
-
-                          </button>
-
-                          <button type="button"
-
-                            onClick={() => { handleCopyImage(); setExportMenuOpen(false) }}
-
-                            disabled={copyingImage}
-
-                            className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors disabled:opacity-40"
-
-                            style={{ color: textPrimary }}
-
-                            onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
-
-                            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
-
-                            {copyingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: textMuted }} /> : <Copy className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />}
-
-                            <div>
-
-                              <div>Copy Image</div>
-
-                              <div className="text-[10px] font-medium opacity-60">Paste to group chat</div>
-
-                            </div>
-
-                          </button>
-
-                          <button type="button"
-
-                            onClick={() => { handleSaveImage(); setExportMenuOpen(false) }}
-
-                            disabled={copyingImage}
-
-                            className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors disabled:opacity-40"
-
-                            style={{ color: textPrimary }}
-
-                            onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
-
-                            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
-
-                            {copyingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: textMuted }} /> : <Camera className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />}
-
-                            <div>
-
-                              <div>Save Image</div>
-
-                              <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>Download .png file</div>
-
-                            </div>
-
-                          </button>
-
-                          <div style={{ height: '1px', backgroundColor: border, margin: '4px 16px' }} />
-
-                          <button type="button"
-
-                            onClick={() => { window.print(); setExportMenuOpen(false) }}
-
-                            className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-semibold transition-colors"
-
-                            style={{ color: textPrimary }}
-
-                            onMouseEnter={e => (e.currentTarget.style.backgroundColor = isLight ? '#F1F5F9' : '#0F172A')}
-
-                            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
-
-                            <Printer className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
-
-                            <div>
-
-                              <div>Print</div>
-
-                              <div className="text-[10px] font-normal mt-0.5" style={{ color: textMuted }}>Send to printer</div>
-
-                            </div>
-
-                          </button>
-
-                        </div>
-
-                      </div>
-
-                    </>
-
-                  )}
-
-                </div>
-
-                {/* Sync from Schedule */}
-
-                {canEdit && (
-
-                  <button type="button" onClick={handleSyncFromSchedule}
-
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg font-bold text-xs transition-all hover:scale-105"
-
-                    style={{
-
-                      color: currentTheme.accent,
-
-                      border: `1px solid ${currentTheme.accent}30`,
-
-                      backgroundColor: `${currentTheme.accent}08`,
-
-                    }}>
-
-                    <ClipboardList className="w-4 h-4" /> Sync from Schedule
-
-                  </button>
-
-                )}
-
-                {/* Clear Schedule */}
-
-                {canEdit && rows.length > 0 && (
-
-                  <button type="button" onClick={handleClearAllRows}
-
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg font-bold text-xs text-red-600 border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 transition-all hover:scale-105">
-
-                    <Trash2 className="w-4 h-4" /> Clear Schedule
-
-                  </button>
-
-                )}
-
-                {/* Add Row */}
-
-                {canEdit && (
-
-                  <button type="button" onClick={handleAddRow}
-
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg font-bold text-xs text-white transition-all hover:scale-105"
-
-                    style={{
-
-                      background: `linear-gradient(135deg, ${currentTheme.accent}, ${currentTheme.accentDark})`,
-
-                      boxShadow: `0 4px 12px ${currentTheme.accent}20`,
-
-                    }}>
-
-                    <Plus className="w-4 h-4" /> Add Row
-
-                  </button>
-
-                )}
-
-              </>
-
-            )}
-
-          </div>
-
-        </div>
 
         {/* Showcase / Edit View toggle rendering */}
 

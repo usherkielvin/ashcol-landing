@@ -181,10 +181,12 @@ export default function DashboardLayout() {
   const [showCollapsedIcons, setShowCollapsedIcons] = useState(false)
   const [profileOpen, setProfileOpen]           = useState(false)
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false)
+  const [headerBranchDropdownOpen, setHeaderBranchDropdownOpen] = useState(false)
   const [openAccordion, setOpenAccordion]       = useState<string | null>(null)
   const [activeSubItem, setActiveSubItem]        = useState<string | null>(null)
   const profileRef = useRef<HTMLDivElement>(null)
   const branchRef = useRef<HTMLDivElement>(null)
+  const headerBranchRef = useRef<HTMLDivElement>(null)
   const lastPathname = useRef<string | null>(null)
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const navVisibleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -371,14 +373,18 @@ export default function DashboardLayout() {
     load()
   }, [user?.branchId, isPortalAdminUser])
 
-  // Close dropdowns on outside click
+  // Close dropdowns on outside click. Capture phase so a target element's own
+  // stopPropagation() (e.g. a table row/cell click handler) can't block this from firing —
+  // that was letting clicks anywhere on page content pass through without closing the header
+  // branch dropdown.
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false)
       if (branchRef.current && !branchRef.current.contains(e.target as Node)) setBranchDropdownOpen(false)
+      if (headerBranchRef.current && !headerBranchRef.current.contains(e.target as Node)) setHeaderBranchDropdownOpen(false)
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('mousedown', handler, true)
+    return () => document.removeEventListener('mousedown', handler, true)
   }, [])
 
   const canAccessRelays = canMemberAccessRelaysAndTicketCreation(user)
@@ -962,9 +968,50 @@ export default function DashboardLayout() {
                       {currentPage}
                     </span>
                     {branchLabel ? (
-                      <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }} title={branchLabel}>
-                        {branchLabel}
-                      </h1>
+                      isPortalAdminUser && adminBranches.length > 0 ? (
+                        <div ref={headerBranchRef} className="relative">
+                          <button
+                            onClick={() => setHeaderBranchDropdownOpen(prev => !prev)}
+                            className="flex items-center gap-1 text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate transition-opacity hover:opacity-80"
+                            style={{ color: textPrimary }}
+                            title={`Active Branch: ${branchLabel}`}
+                          >
+                            <span className="truncate">{branchLabel}</span>
+                            <ChevronDown className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+                          </button>
+                          {headerBranchDropdownOpen && (
+                              <div
+                                className="absolute z-50 w-56 rounded-xl shadow-2xl overflow-hidden top-[calc(100%+8px)] left-0"
+                                style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0' }}
+                              >
+                                <div className="px-4 py-3 text-xs font-black uppercase tracking-wider text-slate-400" style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                  Active Branch
+                                </div>
+                                <div className="py-1.5 max-h-72 overflow-y-auto no-scrollbar">
+                                  {adminBranches.map((b) => {
+                                    const isSelected = b.id === globalBranchId
+                                    return (
+                                      <button
+                                        key={b.id}
+                                        onClick={() => { handleGlobalBranchChange(b.id); setHeaderBranchDropdownOpen(false) }}
+                                        className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-semibold transition-colors text-left ${
+                                          isSelected ? 'bg-emerald-50 text-slate-900' : 'text-slate-600 hover:bg-emerald-50 hover:text-slate-900'
+                                        }`}
+                                      >
+                                        <span>{formatBranchName(b.name)}</span>
+                                        {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />}
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                          )}
+                        </div>
+                      ) : (
+                        <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }} title={branchLabel}>
+                          {branchLabel}
+                        </h1>
+                      )
                     ) : null}
                   </>
                 )}
