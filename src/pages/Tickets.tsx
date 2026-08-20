@@ -114,11 +114,19 @@ export {
   getTicketNegotiatorName,
 }
 
-function AutoFitText({ text, style, title, minScale = 0.55 }: {
+/**
+ * Columns rendered with AutoFitText need a cell wrapper with a real resolved width to measure
+ * against — the shared center-aligned-column wrapper below normally uses w-auto/shrink-to-fit
+ * instead, which left AutoFitText with nothing well-defined to measure and made it a no-op.
+ */
+const AUTOFIT_COLUMNS = new Set(['DESTINATION', 'DLR', 'COMMIT', 'BRAND'])
+
+function AutoFitText({ text, style, title, minScale = 0.55, align = 'center' }: {
   text: string
   style?: React.CSSProperties
   title?: string
   minScale?: number
+  align?: 'left' | 'center'
 }) {
   const outerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLSpanElement>(null)
@@ -142,7 +150,11 @@ function AutoFitText({ text, style, title, minScale = 0.55 }: {
   }, [text, minScale])
 
   return (
-    <div ref={outerRef} className="w-full overflow-hidden flex items-center justify-center" title={title ?? text}>
+    <div
+      ref={outerRef}
+      className={`w-full overflow-hidden flex items-center ${align === 'left' ? 'justify-start' : 'justify-center'}`}
+      title={title ?? text}
+    >
       <span
         ref={innerRef}
         style={{ ...style, display: 'inline-block', whiteSpace: 'nowrap', transform: `scale(${scale})` }}
@@ -5289,6 +5301,26 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       )
     }
 
+    if (label === 'BRAND') {
+      const isBrandEmpty = !val || val === '—' || val === EMPTY_CELL
+      if (isBrandEmpty) {
+        return withEditPencil(
+          <span style={{ ...truncStyle, color: isPendingRow ? '#FDE047' : (isLight ? '#D97706' : '#FACC15'), fontWeight: 700 }} title="N/A">
+            N/A
+          </span>,
+          ticket, label, rowGhost, rowIndex,
+        )
+      }
+      return withEditPencil(
+        showExpanded ? (
+          <span style={truncStyle} title={val}>{val}</span>
+        ) : (
+          <AutoFitText text={val} title={val} style={{ color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: 'uppercase' }} />
+        ),
+        ticket, label, rowGhost, rowIndex,
+      )
+    }
+
     if (label === 'STATUS') {
       const outcome = getScheduleOutcome(ticket)
       if (rowGhost) {
@@ -5779,9 +5811,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         )
       }
       return withEditPencil(
-        <span style={{ ...truncStyle, fontWeight: 600 }} title={val}>
-          {val}
-        </span>,
+        <AutoFitText
+          text={val}
+          align="left"
+          style={{ fontWeight: 600, color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: 'uppercase' }}
+        />,
         ticket, label, rowGhost, rowIndex,
       )
     }
@@ -6884,7 +6918,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                         }`}
                                       style={{ minHeight: TABLE_ROW_HEIGHT - 2 }}
                                     >
-                                      <div className={`min-w-0 overflow-hidden ${col.align === 'center' && col.label !== 'VEHICLE' ? 'w-auto max-w-full' : 'w-full'}`}>
+                                      <div className={`min-w-0 overflow-hidden ${col.align === 'center' && col.label !== 'VEHICLE' && !AUTOFIT_COLUMNS.has(col.label) ? 'w-auto max-w-full' : 'w-full'}`}>
                                         {renderCell(ticket, col, idx, isGhost, ghostKind, false)}
                                       </div>
                                     </div>
