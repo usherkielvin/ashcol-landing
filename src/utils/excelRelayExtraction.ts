@@ -205,15 +205,6 @@ function findValue(record: Record<string, string>, ...candidates: string[]): str
   return ''
 }
 
-function isAccountingRow(record: Record<string, string>): boolean {
-  const name = findValue(record, "COSTUMER'S NAME", "CUSTOMER'S NAME")
-  const dest = findValue(record, 'DESTINATION', 'ADDRESS')
-  if (!name && !dest) return true
-  const update = findValue(record, 'UPDATE').toUpperCase()
-  if (!name && !dest && ACCOUNTING_KEYWORDS.some(kw => update.startsWith(kw))) return true
-  return false
-}
-
 export interface ParsedUnitInfo {
   brand: string
   capacity: string
@@ -334,11 +325,6 @@ export function parseUnitsFromBrandField(brandField: string): ParsedUnitInfo[] {
 
   // Single unit fallback
   return [{ brand: mainBrand, capacity: remainder }]
-}
-
-function splitBrandCapacity(brandField: string): { brand: string; capacity: string } {
-  const units = parseUnitsFromBrandField(brandField)
-  return units[0] || { brand: '', capacity: '' }
 }
 
 /**
@@ -694,7 +680,6 @@ export async function extractRelayTicketsFromExcel(file: File): Promise<ExcelExt
   let currentBlockDriver = ''
 
   for (const rec of customerRecords) {
-    const { brand, capacity } = splitBrandCapacity(findValue(rec, 'BRAND'))
     const updateField = findValue(rec, 'UPDATE')
     const statusField = findValue(rec, 'STATUS')
     const { serviceType } = mapTicketType(updateField, statusField)

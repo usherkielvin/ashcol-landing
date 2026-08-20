@@ -13,7 +13,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage, parseCreatedTicketResponse, formatFetchError, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, isTaguigServiceTicket, DEALERS_UPDATED_EVENT, notifyDealersUpdated, canMemberAccessRelaysAndTicketCreation } from '../utils/api'
 import { deriveRosterFromEmployees } from '../utils/branchRoster'
-import { readTabCache, readTabCacheEntry, relaysCacheKey, writeTabCache, isTabCacheFresh, type RelaysTabCache, clearWarrantyCache, clearSchedulesCache, clearRelayScheduleCaches, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
+import { readTabCache, readTabCacheEntry, relaysCacheKey, writeTabCache, isTabCacheFresh, type RelaysTabCache, clearWarrantyCache, clearRelayScheduleCaches, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
 import {
   hasRelayLeftQueue,
   normalizeRelayScheduleTicket,
@@ -1682,7 +1682,7 @@ export default function Relays() {
     // Clear stale schedule and relay caches and broadcast update so Schedules immediately shows newly created tickets
     clearRelayScheduleCaches()
     window.dispatchEvent(new CustomEvent(TAB_CACHE_UPDATED, { detail: { fullRefresh: true } }))
-    void fetchData({ force: true })
+    void fetchData({ soft: false })
   }
 
   /** Resolve unmatched dealers: map to existing dealers or add new ones */
