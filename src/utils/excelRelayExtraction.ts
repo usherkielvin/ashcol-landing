@@ -446,12 +446,20 @@ function mapTicketType(update: string, status: string): { serviceType: string; t
   }
 
   // ── 2. Completion signals ───────────────────────────────────────────────────
-  if (up.includes('INSTALLED') || up.includes('TAPOS NA'))
+  if (up.includes('INSTALLED') || up.includes('TAPOS NA') || up.includes('DONE INSTALL'))
     return { serviceType: 'DONE_INSTALLED', ticketStatus: 'Closing' }
+  if (up.includes('SURVEY') && (up.includes('DONE') || up.includes('TAPOS') || up.includes('ONLY') || up.includes('W/') || up.includes('W/OUT') || up.includes('WITH') || up.includes('DOCS')))
+    return { serviceType: 'DONE_SURVEY', ticketStatus: 'Closing' }
+  if (up.includes('DONE SURVEY') || up.includes('SURVEY W/') || up.includes('SURVEY ONLY') || up.includes('SURVEY W/ OUT') || up.includes('SURVEY W/ DOCS'))
+    return { serviceType: 'DONE_SURVEY', ticketStatus: 'Closing' }
+  if (up.includes('DONE CLEANING') || up.includes('CLEANING DONE'))
+    return { serviceType: 'DONE_CLEANING', ticketStatus: 'Closing' }
+  if (up.includes('DONE CHECKUP') || up.includes('DONE CHECK UP') || up.includes('CHECKUP DONE'))
+    return { serviceType: 'DONE_CHECKUP', ticketStatus: 'Closing' }
+  if (up.includes('DONE BACKJOB') || up.includes('BACKJOB DONE'))
+    return { serviceType: 'DONE_BACKJOB', ticketStatus: 'Closing' }
   if (up.includes('DONE SERVICE'))
     return { serviceType: 'DONE_SERVICE', ticketStatus: 'Closing' }
-  if (up.includes('SURVEY W/') || up.includes('SURVEY ONLY') || up.includes('SURVEY W/ OUT'))
-    return { serviceType: 'DONE_SURVEY', ticketStatus: 'Closing' }
   if (up.includes('DONE'))
     return { serviceType: 'DONE_SERVICE', ticketStatus: 'Closing' }
 
