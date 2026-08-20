@@ -1413,6 +1413,11 @@ export default function LineUpPage() {
     void fetchWeeklySchedule()
   }, [fetchWeeklySchedule])
 
+  // Re-fetch from server every time the user navigates to the weekly tab
+  useEffect(() => {
+    if (activeTab === 'weekly') void fetchWeeklySchedule()
+  }, [activeTab, fetchWeeklySchedule])
+
   const handleSaveWeeklySchedule = async () => {
     if (!lineupApiBranchId) return
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''

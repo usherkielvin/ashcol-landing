@@ -9,7 +9,8 @@ import {
   PanelLeftOpen, ClipboardList, Search,
   User, Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
   Building2, Calendar, Landmark, Wifi, CircleDollarSign, ListOrdered,
-  LayoutDashboard, Route, Truck, ClipboardCheck, PhoneCall, Percent, Wallet, CalendarPlus
+  LayoutDashboard, Route, Truck, ClipboardCheck, PhoneCall, Percent, Wallet, CalendarPlus,
+  History, Shield, Settings
 } from 'lucide-react'
 import {
   MdOutlineConfirmationNumber,
@@ -40,8 +41,11 @@ import {
 } from 'react-icons/md'
 import { FiMinus, FiPlus } from 'react-icons/fi'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortalAdmin, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry, formatBranchName, canMemberAccessRelaysAndTicketCreation } from '../utils/api'
+import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortalAdmin, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry, formatBranchName, canMemberAccessRelaysAndTicketCreation, isSystemAdmin, isPortalStaffUser, isWarrantyRegistrar } from '../utils/api'
 import UserAvatar from '../components/UserAvatar'
+import MessagesDropdown from '../components/MessagesDropdown'
+import NotificationsDropdown from '../components/NotificationsDropdown'
+import { HEADER_MENU_OPENED_EVENT, broadcastHeaderMenuOpen } from '../utils/headerMenuCoordination'
 
 
 // import AIChatBot from '../components/AIChatBot'
@@ -176,16 +180,12 @@ export default function DashboardLayout() {
   // navVisible lags behind sidebarCollapsed so text never renders mid-transition
   // collapse → hide text immediately; expand → show text only after width finishes
   const [navVisible, setNavVisible] = useState(true)
-  // showCollapsedIcons controls the icon-rail visibility independently:
-  // set to false immediately on hover-enter so icons never drift to center
   const [showCollapsedIcons, setShowCollapsedIcons] = useState(false)
   const [profileOpen, setProfileOpen]           = useState(false)
-  const [branchDropdownOpen, setBranchDropdownOpen] = useState(false)
   const [headerBranchDropdownOpen, setHeaderBranchDropdownOpen] = useState(false)
   const [openAccordion, setOpenAccordion]       = useState<string | null>(null)
   const [activeSubItem, setActiveSubItem]        = useState<string | null>(null)
   const profileRef = useRef<HTMLDivElement>(null)
-  const branchRef = useRef<HTMLDivElement>(null)
   const headerBranchRef = useRef<HTMLDivElement>(null)
   const lastPathname = useRef<string | null>(null)
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -380,11 +380,17 @@ export default function DashboardLayout() {
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false)
-      if (branchRef.current && !branchRef.current.contains(e.target as Node)) setBranchDropdownOpen(false)
       if (headerBranchRef.current && !headerBranchRef.current.contains(e.target as Node)) setHeaderBranchDropdownOpen(false)
     }
     document.addEventListener('mousedown', handler, true)
-    return () => document.removeEventListener('mousedown', handler, true)
+    const onHeaderMenuOpened = (e: Event) => {
+      if ((e as CustomEvent).detail !== 'profile') setProfileOpen(false)
+    }
+    window.addEventListener(HEADER_MENU_OPENED_EVENT, onHeaderMenuOpened)
+    return () => {
+      document.removeEventListener('mousedown', handler, true)
+      window.removeEventListener(HEADER_MENU_OPENED_EVENT, onHeaderMenuOpened)
+    }
   }, [])
 
   const canAccessRelays = canMemberAccessRelaysAndTicketCreation(user)
@@ -441,7 +447,7 @@ export default function DashboardLayout() {
     if (!user) return
     const currentPath = location.pathname
     const alwaysAllowed = ['/profile', '/tickets/create', '/create-ticket']
-    if (alwaysAllowed.includes(currentPath)) return
+    if (alwaysAllowed.includes(currentPath) || currentPath.startsWith('/messages')) return
 
 
     const isAllowed = navLinks.some(link => currentPath === link.path || currentPath.startsWith(link.path + '/'))
@@ -464,7 +470,9 @@ export default function DashboardLayout() {
   const inputBorder = isLight ? '#cbd5e1'              : '#1e3254'
 
   const currentPage = navLinks.find(l => location.pathname === l.path)?.name
-    ?? (location.pathname === '/my-tickets' ? 'My Tickets' : 'Dashboard')
+    ?? (location.pathname === '/my-tickets' ? 'My Tickets'
+      : location.pathname.startsWith('/messages') ? 'Messages'
+      : 'Dashboard')
   const navGroups = buildNavGroups(navLinks)
   const collapsedNavItems = buildCollapsedNavItems(navLinks)
 
@@ -782,151 +790,6 @@ export default function DashboardLayout() {
 
         </nav>
 
-        {/* ── Bottom Sticky Section ─────────────────────── */}
-        {(() => {
-          const showBranch = isPortalAdminUser && adminBranches.length > 0
-          return (
-            <div
-              className="px-2.5 pt-2 pb-3 space-y-2 shrink-0 mt-auto flex flex-col justify-end"
-              style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}
-            >
-              {/* Branch Switcher (Admin only) */}
-              {showBranch && (
-                <div ref={branchRef} className="relative w-full flex flex-col items-center">
-                  {/* Branch Popup when collapsed */}
-                  {!navVisible && branchDropdownOpen && (
-                    <div
-                      className="absolute z-50 w-52 rounded-xl shadow-2xl overflow-hidden bottom-[calc(100%+8px)] left-0"
-                      style={{ backgroundColor: '#0d2818', border: '1px solid rgba(255,255,255,0.12)' }}
-                    >
-                      <div className="px-4 py-3 text-xs font-black uppercase tracking-wider text-white/40" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                        Active Branch
-                      </div>
-                      <div className="py-1.5 max-h-60 overflow-y-auto custom-scrollbar">
-                        {adminBranches.map((b) => {
-                          const isSelected = b.id === globalBranchId
-                          return (
-                            <button
-                              key={b.id}
-                              onClick={() => { handleGlobalBranchChange(b.id); setBranchDropdownOpen(false) }}
-                              className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-semibold transition-colors text-left ${
-                                isSelected ? 'bg-white/15 text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'
-                              }`}
-                            >
-                              <span>{formatBranchName(b.name)}</span>
-                              {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Branch Button / Select */}
-                  {!navVisible ? (
-                    <button
-                      onClick={() => setBranchDropdownOpen(prev => !prev)}
-                      className="flex items-center justify-center w-11 h-11 rounded-xl border border-white/10 bg-[#1e732c] hover:bg-[#238533] transition-all text-white font-black text-[13px] shadow-sm uppercase shrink-0"
-                      title={`Active Branch: ${branchLabel || ''}`}
-                    >
-                      {branchLabel ? getBranchCode(branchLabel) : <Building2 className="w-5 h-5 text-white/70" />}
-                    </button>
-                  ) : (
-                    <div className="relative w-full">
-                      <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white pointer-events-none z-10" />
-                      <select
-                        value={globalBranchId || ''}
-                        onChange={(e) => handleGlobalBranchChange(e.target.value)}
-                        className="w-full pl-9 pr-8 py-2.5 rounded-xl text-sm font-bold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20 transition-all bg-[#1e732c] text-white shadow-lg shadow-[0_4px_12px_rgba(0,0,0,0.25)] border-0"
-                      >
-                        {adminBranches.map((b) => (
-                          <option key={b.id} value={b.id} style={{ backgroundColor: '#0a180f', color: '#fff' }}>
-                            {formatBranchName(b.name)}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/70 pointer-events-none" />
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* User Profile Item */}
-              <div ref={profileRef} className="relative w-full flex justify-center">
-                {/* Profile Dropdown Popup */}
-                {profileOpen && (
-                  <div
-                    className="absolute z-50 w-52 rounded-xl shadow-2xl overflow-hidden bottom-[calc(100%+8px)] left-0"
-                    style={{ backgroundColor: '#0d2818', border: '1px solid rgba(255,255,255,0.12)' }}
-                  >
-                    <div className="px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                      <p className="text-sm font-bold truncate text-white">{user?.name}</p>
-                      <p className="text-[11px] truncate text-white/50">{user?.email}</p>
-                    </div>
-                    <div className="py-1.5">
-                      <Link
-                        to="/profile"
-                        onClick={() => setProfileOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
-                      >
-                        <UserCircle className="w-4 h-4 text-green-400" />
-                        My Account
-                      </Link>
-                      <div className="mx-3 my-1 border-t border-white/10" />
-                      <button
-                        onClick={() => { setProfileOpen(false); logout() }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-white/60 transition-colors text-left hover:bg-white/10 hover:text-red-400"
-                      >
-                        <LogOut className="w-4 h-4" />
-                        Logout
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Profile Trigger Button */}
-                <button
-                  onClick={() => setProfileOpen(p => !p)}
-                  title={user?.name}
-                  className={`flex items-center text-left transition-all duration-200 rounded-xl ${
-                    !navVisible
-                      ? 'w-11 h-11 justify-center border border-transparent hover:bg-white/10'
-                      : 'w-full px-3 py-2 border border-white/10 bg-white/10 hover:bg-white/15 gap-2.5'
-                  }`}
-                >
-                  <UserAvatar
-                    name={user?.name}
-                    imageUrl={user?.picture}
-                    size="sm"
-                    ring
-                    variant="sidebar"
-                    className="shrink-0"
-                  />
-
-                  {/* Name + Role - only rendered when navVisible is true */}
-                  {navVisible && (
-                    <div className="flex-1 min-w-0 transition-all duration-200 whitespace-nowrap">
-                      <p className="text-sm font-semibold truncate leading-snug text-white">
-                        {formatPersonName(user?.name ?? '') || 'User'}
-                      </p>
-                      <p className="text-xs truncate leading-none mt-0.5 text-white/60 font-normal">
-                        {user?.jobTitle ? formatPersonName(user.jobTitle) : formatRole(user?.role) || 'Staff'}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Chevron */}
-                  {navVisible && (
-                    <ChevronDown
-                      className={`w-4 h-4 transition-transform duration-200 shrink-0 text-white/70 ${profileOpen ? 'rotate-180' : ''}`}
-                    />
-                  )}
-                </button>
-              </div>
-            </div>
-          )
-        })()}
-
 
       </aside>
     </div>
@@ -935,7 +798,7 @@ export default function DashboardLayout() {
       <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
 
         {/* ── Global Header (Mobile/Tablet/Desktop) ──────────────── */}
-        {currentPage !== 'DDRM' && currentPage !== 'Search' && (
+        {currentPage !== 'DDRM' && (
           <header 
             className="flex-none z-30 backdrop-blur-md w-full min-w-0 max-w-full relative"
             style={{ 
@@ -1022,30 +885,147 @@ export default function DashboardLayout() {
             </div>
 
             {/* Right: Actions */}
-            <div className="flex items-center gap-2 shrink-0">
-              {/* Theme Toggle */}
-              <button
-                onClick={toggleTheme}
-                title={isLight ? 'Switch to Dark' : 'Switch to Light'}
-                className="hidden md:flex items-center gap-2 px-3.5 py-2 rounded-xl transition-all hover:scale-105"
-                style={{
-                  color: textMuted,
-                  backgroundColor: hoverBg,
-                  border: `1px solid ${inputBorder}`,
-                }}
-              >
-                {isLight ? (
-                  <>
-                    <Moon className="w-4 h-4" />
-                    <span className="text-xs font-semibold whitespace-nowrap">Dark Mode</span>
-                  </>
-                ) : (
-                  <>
-                    <Sun className="w-4 h-4" style={{ color: '#F59E0B' }} />
-                    <span className="text-xs font-semibold whitespace-nowrap">Light Mode</span>
-                  </>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <MessagesDropdown />
+              <NotificationsDropdown />
+
+              {/* Profile */}
+              <div ref={profileRef} className="relative">
+                <button
+                  onClick={() => {
+                    const next = !profileOpen
+                    if (next) broadcastHeaderMenuOpen('profile')
+                    setProfileOpen(next)
+                  }}
+                  title={user?.name}
+                  className="flex items-center gap-1.5 p-1 pr-1.5 rounded-xl transition-all"
+                  style={{ backgroundColor: profileOpen ? hoverBg : 'transparent' }}
+                  onMouseEnter={e => { if (!profileOpen) (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg }}
+                  onMouseLeave={e => { if (!profileOpen) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent' }}
+                >
+                  <UserAvatar name={user?.name} imageUrl={user?.picture} size="xs" ring className="shrink-0" />
+                  <ChevronDown
+                    className={`hidden sm:block w-3.5 h-3.5 transition-transform duration-200 shrink-0 ${profileOpen ? 'rotate-180' : ''}`}
+                    style={{ color: textMuted }}
+                  />
+                </button>
+
+                {profileOpen && (
+                  <div
+                    className="absolute z-50 w-64 rounded-2xl shadow-2xl overflow-hidden top-[calc(100%+8px)] right-0"
+                    style={{ backgroundColor: isLight ? '#ffffff' : '#0d1626', border: `1px solid ${inputBorder}` }}
+                  >
+                    <div className="px-4 py-3.5 flex items-center gap-3" style={{ borderBottom: `1px solid ${inputBorder}` }}>
+                      <UserAvatar name={user?.name} imageUrl={user?.picture} size="sm" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold truncate" style={{ color: textPrimary }}>{formatPersonName(user?.name ?? '') || 'User'}</p>
+                        <p className="text-[11px] truncate" style={{ color: textMuted }}>{user?.email}</p>
+                      </div>
+                    </div>
+
+                    <div className="py-1.5">
+                      <Link
+                        to="/profile"
+                        onClick={() => setProfileOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
+                        style={{ color: textPrimary }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
+                      >
+                        <UserCircle className="w-4 h-4 text-green-500" />
+                        My Profile
+                      </Link>
+                      {isPortalStaffUser(user?.role) && (
+                        <Link
+                          to="/profile?tab=history"
+                          onClick={() => setProfileOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
+                          style={{ color: textPrimary }}
+                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
+                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
+                        >
+                          <History className="w-4 h-4 text-green-500" />
+                          Ticket History
+                        </Link>
+                      )}
+                      {isWarrantyRegistrar(user?.jobTitle) && (
+                        <Link
+                          to="/profile?tab=registrations"
+                          onClick={() => setProfileOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
+                          style={{ color: textPrimary }}
+                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
+                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
+                        >
+                          <ClipboardCheck className="w-4 h-4 text-green-500" />
+                          Registered Tickets
+                        </Link>
+                      )}
+                      {isSystemAdmin(user?.role) && (
+                        <Link
+                          to="/profile?tab=users"
+                          onClick={() => setProfileOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
+                          style={{ color: textPrimary }}
+                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
+                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
+                        >
+                          <Shield className="w-4 h-4 text-green-500" />
+                          User Management
+                        </Link>
+                      )}
+                      <Link
+                        to="/profile?tab=privacy"
+                        onClick={() => setProfileOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
+                        style={{ color: textPrimary }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
+                      >
+                        <Settings className="w-4 h-4 text-green-500" />
+                        Settings &amp; Privacy
+                      </Link>
+
+                      <div className="mx-3 my-1.5" style={{ borderTop: `1px solid ${inputBorder}` }} />
+
+                      <button
+                        onClick={toggleTheme}
+                        className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-left transition-colors"
+                        style={{ color: textPrimary }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
+                      >
+                        <span className="flex items-center gap-3">
+                          {isLight ? <Moon className="w-4 h-4 text-green-500" /> : <Sun className="w-4 h-4" style={{ color: '#F59E0B' }} />}
+                          Dark Mode
+                        </span>
+                        <span
+                          className="relative w-9 h-5 rounded-full transition-colors shrink-0"
+                          style={{ backgroundColor: isLight ? inputBorder : '#10B981' }}
+                        >
+                          <span
+                            className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all"
+                            style={{ left: isLight ? '2px' : 'calc(100% - 18px)' }}
+                          />
+                        </span>
+                      </button>
+
+                      <div className="mx-3 my-1.5" style={{ borderTop: `1px solid ${inputBorder}` }} />
+
+                      <button
+                        onClick={() => { setProfileOpen(false); logout() }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-left transition-colors hover:text-red-500"
+                        style={{ color: textMuted }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
+                      >
+                        <LogOut className="w-4 h-4" />
+                        Logout
+                      </button>
+                    </div>
+                  </div>
                 )}
-              </button>
+              </div>
             </div>
           </div>
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useAuth, getInitials } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import {
@@ -33,6 +34,8 @@ const ic = `w-full border rounded-xl px-4 py-3 font-medium transition-all focus:
 
 type Tab = 'profile' | 'address' | 'password' | 'privacy' | 'notifications' | 'users' | 'history' | 'registrations'
 
+const VALID_TABS: Tab[] = ['profile', 'address', 'password', 'privacy', 'notifications', 'users', 'history', 'registrations']
+
 export default function Profile() {
   const { user, setUser, logout } = useAuth()
   const { theme } = useTheme()
@@ -41,7 +44,20 @@ export default function Profile() {
   const isStaffUser = isPortalStaffUser(user?.role)
   const isRegistrar = isWarrantyRegistrar(user?.jobTitle)
   const fileRef = useRef<HTMLInputElement>(null)
-  const [tab, setTab] = useState<Tab>('profile')
+  const [searchParams] = useSearchParams()
+  const [tab, setTab] = useState<Tab>(() => {
+    const requested = searchParams.get('tab') as Tab | null
+    return requested && VALID_TABS.includes(requested) ? requested : 'profile'
+  })
+
+  // Re-sync when navigated here with a different ?tab= while already mounted (e.g. from the header profile menu)
+  useEffect(() => {
+    const requested = searchParams.get('tab') as Tab | null
+    if (requested && VALID_TABS.includes(requested) && requested !== tab) {
+      setTab(requested)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   // ── Theme tokens ──────────────────────────────────────────────────────────
   const cardBg      = isLight ? '#ffffff'  : '#0A1120'

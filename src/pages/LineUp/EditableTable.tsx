@@ -374,21 +374,21 @@ export const EditableTable: React.FC<EditableTableProps> = ({
           </div>
         )}
 
-        {/* Command Center header — single tactile bar with accent top stripe */}
+        {/* Command Center header — centered bold banner with branch name and date */}
         <div
-          className="flex justify-between items-center px-6 py-4 shadow-sm"
+          className="flex flex-col items-center justify-center px-6 py-5 shadow-sm text-center"
           style={{
             background: `linear-gradient(135deg, ${currentTheme.accent}, ${currentTheme.accentDark})`,
             color: '#ffffff',
             border: 'none',
           }}
         >
-          <span className="font-black uppercase tracking-wide text-base md:text-lg" style={{ color: '#ffffff', letterSpacing: '0.02em' }}>
+          <div className="font-black uppercase tracking-wide text-lg md:text-2xl" style={{ color: '#ffffff', letterSpacing: '0.02em', lineHeight: 1.2 }}>
             TEAM {branchName ? branchName.toUpperCase() : '—'} LINE UP
-          </span>
-          <span className="text-sm font-bold uppercase tracking-wider" style={{ color: 'rgba(255, 255, 255, 0.95)' }}>
+          </div>
+          <div className="text-xs md:text-sm font-bold uppercase tracking-wider mt-1 opacity-95" style={{ color: '#ffffff' }}>
             {englishLabel(date)}
-          </span>
+          </div>
         </div>
 
         {/* Table */}
@@ -406,7 +406,7 @@ export const EditableTable: React.FC<EditableTableProps> = ({
             </colgroup>
             <thead>
               <tr>
-                {thOrig('SERVICE')}
+                {thOrig('VEHICLE')}
                 {thOrig('DRIVER')}
                 {thOrig('DRIVER IN')}
                 {thOrig(isTaguigServices ? 'TECHNICIAN' : 'INSTALLER')}

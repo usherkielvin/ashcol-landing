@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
-import { useOutletContext, useSearchParams, useNavigate } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, X, Edit3, AlertTriangle, CalendarDays,
   Eye, Loader2, Pencil, Moon, Sun, Trash2,
-  ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Menu, Maximize2,
+  ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Maximize2,
   UsersRound, ChevronDown, SlidersHorizontal, CalendarRange,
   TrendingUp, Receipt, Radio,
 } from 'lucide-react'
@@ -170,7 +170,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const { user } = useAuth()
   const navigate = useNavigate()
   const pathname = pathnameForSurface(surface)
-  const { setSidebarOpen } = useOutletContext<{ setSidebarOpen: (v: boolean) => void }>() || {}
   const isMyTickets = surface === 'my-tickets'
   const isLight = theme === 'light'
 
@@ -7364,18 +7363,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           )) : (
           /* Render Overview Search Panel */
           <div className="flex-1 flex flex-col min-h-0 w-full h-full overflow-hidden relative" style={{ backgroundColor: isLight ? '#f1f5f9' : '#060B18' }}>
-            {/* Top Header Row */}
-            <div className="flex items-center justify-center p-4 md:p-6 pb-2 w-full shrink-0 z-50 relative">
-              {/* Mobile Menu Button (absolute to keep branches perfectly centered) */}
-              <button
-                onClick={() => setSidebarOpen?.(true)}
-                className="md:hidden absolute left-4 p-2.5 rounded-xl border shadow-sm transition-transform active:scale-95 shrink-0 z-10"
-                style={{ borderColor: border, backgroundColor: cardBg, color: textPrimary }}
-              >
-                <Menu className="w-5 h-5" />
-              </button>
-
-              {/* Branches Showcase (Centered) */}
+            {/* Branches Showcase */}
+            <div className="flex items-center justify-center py-2 px-4 md:px-6 w-full shrink-0 z-20 relative" style={{ borderBottom: `1px solid ${border}` }}>
               <div
                 className="flex items-center justify-start overflow-x-auto hide-scrollbar py-1 w-full max-w-full"
                 style={{ WebkitOverflowScrolling: 'touch', maskImage: 'linear-gradient(to right, transparent, black 2%, black 98%, transparent)', WebkitMaskImage: 'linear-gradient(to right, transparent, black 2%, black 98%, transparent)' }}
@@ -7388,7 +7377,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   ].map((branch, idx, arr) => (
                     <div key={branch} className="flex items-center gap-4 shrink-0">
                       <span
-                        className="text-[13px] md:text-[16px] font-black uppercase tracking-[0.15em]"
+                        className="text-[12px] md:text-[14px] font-black uppercase tracking-[0.15em]"
                         style={{ color: idx % 2 === 0 ? green : textPrimary }}
                       >
                         {branch}

@@ -75,7 +75,7 @@ export const ShowcaseModal: React.FC<ShowcaseModalProps> = ({
 
   return (
     <div
-      className="lineup-showcase-overlay fixed inset-y-0 right-0 z-[10000] overflow-auto"
+      className="lineup-showcase-overlay fixed inset-0 z-[10000] overflow-auto w-full h-full"
       style={{ backgroundColor: isLight ? '#f8fafc' : '#030712' }}
     >
       <div className="min-h-screen flex flex-col">

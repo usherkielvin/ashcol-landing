@@ -17,6 +17,7 @@ import Profile from './pages/Profile'
 import Branches from './pages/Branches'
 import Relays from './pages/Relays'
 import Bookings from './pages/Bookings'
+import Messages from './pages/Messages'
 
 import DailyAuditReport from './pages/DailyAuditReport'
 import AuditFinanceExpenses from './pages/AuditFinanceExpenses'
@@ -37,6 +38,7 @@ import OperationsForms from './pages/OperationsForms'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { NotificationProvider } from './contexts/NotificationContext'
+import { MessagingProvider } from './contexts/MessagingContext'
 import { EmployeeDetailsProvider } from './contexts/EmployeeDetailsContext'
 import { getPortalHomePath } from './utils/api'
 import AutoUpdateWatcher from './components/AutoUpdateWatcher'
@@ -105,6 +107,9 @@ export default function App() {
           <Route path="/employees/:id" element={<Employees />} />
           <Route path="/vehicles" element={<Vehicles />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/messages" element={<Messages />} />
+          <Route path="/messages/new/:recipientId" element={<Messages />} />
+          <Route path="/messages/:conversationId" element={<Messages />} />
 
           <Route path="/audit-report" element={<DailyAuditReport />} />
           <Route path="/audit-expenses" element={<AuditFinanceExpenses />} />
@@ -133,14 +138,16 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <NotificationProvider>
-          <EmployeeDetailsProvider>
-            <AutoUpdateWatcher />
-            {GOOGLE_OAUTH_ENABLED ? (
-              <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>{routes}</GoogleOAuthProvider>
-            ) : (
-              routes
-            )}
-          </EmployeeDetailsProvider>
+          <MessagingProvider>
+            <EmployeeDetailsProvider>
+              <AutoUpdateWatcher />
+              {GOOGLE_OAUTH_ENABLED ? (
+                <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>{routes}</GoogleOAuthProvider>
+              ) : (
+                routes
+              )}
+            </EmployeeDetailsProvider>
+          </MessagingProvider>
         </NotificationProvider>
       </AuthProvider>
     </ThemeProvider>
