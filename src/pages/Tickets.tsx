@@ -3471,12 +3471,17 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   }, [dateFilter, fetchTickets, isMyTickets, hydrateFromTabCache])
 
   useEffect(() => {
-    const onCacheUpdated = () => {
-      hydrateFromTabCache()
+    const onCacheUpdated = (e: Event) => {
+      const custom = e as CustomEvent
+      if (custom.detail?.fullRefresh) {
+        void fetchTickets({ soft: false, force: true, quiet: false })
+      } else {
+        hydrateFromTabCache()
+      }
     }
     window.addEventListener(TAB_CACHE_UPDATED, onCacheUpdated)
     return () => window.removeEventListener(TAB_CACHE_UPDATED, onCacheUpdated)
-  }, [hydrateFromTabCache])
+  }, [hydrateFromTabCache, fetchTickets])
 
   useEffect(() => {
     if (isMyTickets || activeTab !== 'schedules') return

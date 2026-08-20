@@ -45,6 +45,11 @@ export interface ExtractedRelayTicket {
   relayedDate: string
   /** Whether this ticket is a reschedule (UPDATE contains "RESCHED") */
   isResched: boolean
+  /** Multi-unit breakdown fields for parent-child grouping */
+  unitGroupId?: string
+  unitIndex?: number
+  unitCount?: number
+  isChildUnit?: boolean
 }
 
 export interface ExcelExtractionResult {
@@ -209,25 +214,131 @@ function isAccountingRow(record: Record<string, string>): boolean {
   return false
 }
 
-function splitBrandCapacity(brandField: string): { brand: string; capacity: string } {
-  const val = brandField.replace(/\s+/g, ' ').trim()
-  if (!val || val.toUpperCase() === 'N/A' || val === '-') return { brand: '', capacity: '' }
-  const upper = val.toUpperCase()
+export interface ParsedUnitInfo {
+  brand: string
+  capacity: string
+}
+
+export function parseUnitsFromBrandField(brandField: string): ParsedUnitInfo[] {
+  const raw = brandField.replace(/\s+/g, ' ').trim()
+  if (!raw || raw.toUpperCase() === 'N/A' || raw === '-') return [{ brand: '', capacity: '' }]
+
+  // 1. Identify primary brand from KNOWN_BRANDS
+  const upper = raw.toUpperCase()
+  let mainBrand = ''
+  let remainder = raw
   const sorted = [...KNOWN_BRANDS].sort((a, b) => b.length - a.length)
   for (const kb of sorted) {
     if (upper.startsWith(kb)) {
-      let brand = kb
-      if (BRAND_CORRECTIONS[brand]) brand = BRAND_CORRECTIONS[brand]
-      return { brand, capacity: val.substring(kb.length).trim() }
+      mainBrand = kb
+      if (BRAND_CORRECTIONS[mainBrand]) mainBrand = BRAND_CORRECTIONS[mainBrand]
+      remainder = raw.substring(kb.length).trim()
+      break
     }
   }
-  const parts = val.split(/\s+/)
-  if (parts.length > 1 && !/\d/.test(parts[0])) {
-    let brand = parts[0].toUpperCase()
-    if (BRAND_CORRECTIONS[brand]) brand = BRAND_CORRECTIONS[brand]
-    return { brand, capacity: parts.slice(1).join(' ') }
+
+  if (!mainBrand) {
+    // If brand is mentioned elsewhere or at the beginning
+    const foundKb = sorted.find(kb => upper.includes(kb))
+    if (foundKb) {
+      mainBrand = BRAND_CORRECTIONS[foundKb] || foundKb
+    } else {
+      const parts = raw.split(/\s+/)
+      if (parts.length > 1 && !/\d/.test(parts[0])) {
+        mainBrand = parts[0].toUpperCase()
+        if (BRAND_CORRECTIONS[mainBrand]) mainBrand = BRAND_CORRECTIONS[mainBrand]
+        remainder = parts.slice(1).join(' ')
+      } else {
+        mainBrand = raw.toUpperCase()
+      }
+    }
   }
-  return { brand: val.toUpperCase(), capacity: '' }
+
+  // 2. Extract unit-type or mount suffix like "WALL MOUNTED", "FLOOR MOUNTED", "CASSETTE", "WINDOW TYPE"
+  let mountType = ''
+  const mountMatch = raw.match(/\b(WALL\s*MOUNTED|FLOOR\s*MOUNTED|WINDOW\s*TYPE|WINDOW|CEILING\s*CASSETTE|CASSETTE|INVERTER|NON-INVERTER|NON\s*INVERTER)\b/i)
+  if (mountMatch) {
+    mountType = mountMatch[0].trim()
+  }
+
+  // 3. Detect multi-segment HP ratings with optional unit multipliers (e.g. "1HP (2UNITS) 2HP (2UNITS) WALL MOUNTED", "1.5HP (2UNITS) 1.0HP", "1.5HP AND 1HP (2UNITS)")
+  // Match patterns like: (HP rating) followed optionally by (count UNITS)
+  const segmentRegex = /(\d+(?:\.\d+)?)\s*(?:HP|TR|TONS?|TON)\b(?:\s*(?:[xX]|\*|\(|\/|,)?\s*(\d+)\s*(?:UNITS?|PCS?|SETS?)\)?)?/gi
+  const segmentMatches = [...raw.matchAll(segmentRegex)]
+
+  if (segmentMatches.length > 1 || (segmentMatches.length === 1 && segmentMatches[0][2])) {
+    const units: ParsedUnitInfo[] = []
+    for (const match of segmentMatches) {
+      const hpVal = `${match[1]}HP`
+      const count = match[2] ? parseInt(match[2], 10) : 1
+      const capStr = mountType && !hpVal.includes(mountType.toUpperCase()) ? `${hpVal} ${mountType}` : hpVal
+      const safeCount = (count > 0 && count <= 20) ? count : 1
+      for (let c = 0; c < safeCount; c++) {
+        units.push({
+          brand: mainBrand,
+          capacity: capStr,
+        })
+      }
+    }
+    if (units.length > 0) {
+      return units
+    }
+  }
+
+  // Also check for patterns like "1.5 / 1.0 HP" or "1.5 & 1.0 HP" or "1.5, 1.0 HP"
+  const slashHpMatch = raw.match(/(\d+(?:\.\d+)?)\s*(?:\/|\&|\,|\+|\bAND\b)\s*(\d+(?:\.\d+)?)\s*(?:HP|TR|TONS?|TON)\b/i)
+  if (slashHpMatch) {
+    const hp1 = `${slashHpMatch[1]}HP`
+    const hp2 = `${slashHpMatch[2]}HP`
+    return [
+      { brand: mainBrand, capacity: mountType ? `${hp1} ${mountType}` : hp1 },
+      { brand: mainBrand, capacity: mountType ? `${hp2} ${mountType}` : hp2 },
+    ]
+  }
+
+  // 4. Check if string indicates multiple units via overall count: e.g. "2 UNITS", "2UNITS", "2 PCS", "2X 1.5HP", "2 SETS"
+  const multiplierMatch = raw.match(/\b(\d+)\s*[xX]\s*(\d+(?:\.\d+)?\s*(?:HP|TR|TONS?|TON)?)/i)
+  if (multiplierMatch) {
+    const count = parseInt(multiplierMatch[1], 10)
+    const spec = multiplierMatch[2].trim()
+    if (count > 1 && count <= 20) {
+      const capStr = mountType && !spec.toUpperCase().includes(mountType.toUpperCase()) ? `${spec} ${mountType}` : spec
+      const result: ParsedUnitInfo[] = []
+      for (let i = 0; i < count; i++) {
+        result.push({ brand: mainBrand, capacity: capStr })
+      }
+      return result
+    }
+  }
+
+  const multiUnitCountMatch = raw.match(/\b(\d+)\s*(?:UNITS?|PCS?|SETS?)\b/i)
+  if (multiUnitCountMatch) {
+    const count = parseInt(multiUnitCountMatch[1], 10)
+    if (count > 1 && count <= 20) {
+      const cleanCap = remainder
+        .replace(/\(\s*\d+\s*(?:UNITS?|PCS?|SETS?)\s*\)/gi, '')
+        .replace(/\b\d+\s*(?:UNITS?|PCS?|SETS?)\b/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+      const singleCap = cleanCap || (mountType ? mountType : '')
+      const result: ParsedUnitInfo[] = []
+      for (let i = 0; i < count; i++) {
+        result.push({
+          brand: mainBrand,
+          capacity: singleCap,
+        })
+      }
+      return result
+    }
+  }
+
+  // Single unit fallback
+  return [{ brand: mainBrand, capacity: remainder }]
+}
+
+function splitBrandCapacity(brandField: string): { brand: string; capacity: string } {
+  const units = parseUnitsFromBrandField(brandField)
+  return units[0] || { brand: '', capacity: '' }
 }
 
 /**
@@ -366,12 +477,20 @@ function mapTicketType(update: string, status: string): { serviceType: string; t
   // ── 4. Reschedule detection ─────────────────────────────────────────────────
   if (up.includes('RESCHED') || up.includes('RESCHEDULE'))
     return { serviceType: 'RESCHED', ticketStatus: 'Pending' }
-  // Filipino/informal reschedule signals
-  if (up.includes('MAY EMERGENCY') || up.includes('EMERGENCY PO')
-      || up.includes('NO CONFIRMATION') || up.includes('NO RESPONSE')
-      || up.includes('NO ANSWER') || up.includes('WALA CONFIRM')
-      || up.includes('HINDI NAKA') || up.includes('DI NAKA'))
+  // Client availability / emergency / no-confirmation signals
+  if (
+    up.includes('NOT AVAILABLE') || up.includes('HINDI AVAILABLE') || up.includes('DI AVAILABLE')
+    || up.includes('UNAVAILABLE') || up.includes('CLIENT UNAVAILABLE') || up.includes('HINDI SIYA AVAILABLE')
+    || up.includes('HINDI DAW AVAILABLE') || up.includes('DI RAW AVAILABLE')
+    || up.includes('MAY BIGLAANG LAKAD') || up.includes('MAY BIGLAAN LAKAD') || up.includes('BIGLAAN LAKAD')
+    || up.includes('MAY LAKAD') || up.includes('WALA SA BAHAY') || up.includes('WALA SA SITE')
+    || up.includes('MAY EMERGENCY') || up.includes('EMERGENCY PO')
+    || up.includes('NO CONFIRMATION') || up.includes('NO RESPONSE')
+    || up.includes('NO ANSWER') || up.includes('WALA CONFIRM') || up.includes('WALANG CONFIRM')
+    || up.includes('HINDI NAKA') || up.includes('DI NAKA') || up.includes('HINDI MA CONTACT') || up.includes('DI MA CONTACT')
+  ) {
     return { serviceType: 'RESCHED', ticketStatus: 'Pending' }
+  }
 
   // ── 5. Continuation detection ───────────────────────────────────────────────
   // "CONT" alone or as word prefix (not "CONTACT", "CONTRACT")
@@ -528,11 +647,30 @@ export async function extractRelayTicketsFromExcel(file: File): Promise<ExcelExt
     if (hasData) records.push(record)
   }
 
-  // 4. Cut off at the first accounting/empty row — everything after the gap is excluded
+  // 4. Filter customer data rows vs footer accounting/summary rows
+  // A row is an accounting summary row if it has an accounting keyword in UPDATE/NAME/DEST/SERVICE and lacks a customer name
   const customerRecords: Record<string, string>[] = []
   for (const rec of records) {
-    if (isAccountingRow(rec)) break // Stop at the first non-customer row
-    customerRecords.push(rec)
+    const name = findValue(rec, "COSTUMER'S NAME", "CUSTOMER'S NAME")
+    const dest = findValue(rec, 'DESTINATION', 'ADDRESS')
+    const update = findValue(rec, 'UPDATE').toUpperCase()
+    const service = findValue(rec, 'SERVICE').toUpperCase()
+    const brand = findValue(rec, 'BRAND').toUpperCase()
+    const mop = findValue(rec, 'MODE OF PAYMENT').toUpperCase()
+
+    const isAccountingSummary = !name && (
+      ACCOUNTING_KEYWORDS.some(kw => update.startsWith(kw) || service.startsWith(kw) || brand.startsWith(kw) || mop.startsWith(kw))
+    )
+
+    if (isAccountingSummary) {
+      // If it's a summary row (like TOTAL/SUMMARY), skip it but don't drop preceding customer rows
+      continue
+    }
+
+    // A row is valid if it has a customer name, destination, brand, service, or payment info
+    if (name || dest || brand || mop) {
+      customerRecords.push(rec)
+    }
   }
   const skippedRows = records.length - customerRecords.length
 
@@ -585,38 +723,46 @@ export async function extractRelayTicketsFromExcel(file: File): Promise<ExcelExt
     const rawRelayedDate = findValue(rec, 'DATE RALAYED', 'DATE RELAYED', 'RELAYED DATE')
     const relayedDate = rawRelayedDate ? parseDateValue(rawRelayedDate) : ''
 
-    // Detect reschedule: match all the same signals as mapTicketType priority #4
-    const upForResched = updateField.toUpperCase()
-    const isResched = upForResched.includes('RESCHED') || upForResched.includes('RESCHEDULE')
-      || upForResched.includes('MAY EMERGENCY') || upForResched.includes('EMERGENCY PO')
-      || upForResched.includes('NO CONFIRMATION') || upForResched.includes('NO RESPONSE')
-      || upForResched.includes('NO ANSWER') || upForResched.includes('WALA CONFIRM')
-      || upForResched.includes('HINDI NAKA') || upForResched.includes('DI NAKA')
+    // Detect reschedule: match serviceType or any reschedule/unavailability signals
+    const isResched = serviceType === 'RESCHED'
 
-    tickets.push({
-      customerName: findValue(rec, "COSTUMER'S NAME", "CUSTOMER'S NAME"),
-      contactPhone: findValue(rec, 'CONTACT NO.', 'CONTACT NO', 'CONTACT NUMBER'),
-      address: findValue(rec, 'DESTINATION', 'ADDRESS'),
-      district: findValue(rec, 'DISTRICT'),
-      dealer,
-      dealerBranch: branch,
-      brand,
-      capacity,
-      commitType: findValue(rec, 'COMMIT', 'COMMIT / PROMO'),
-      negotiator: findValue(rec, 'NEGOTIATOR'),
-      remarks: updateField,
-      status: serviceType,
-      serviceType,
-      vehicle,
-      driver,
-      installer: cleanInstaller(findValue(rec, 'INSTALLER')),
-      modeOfPayment,
-      installationCharges: amount,
-      payments,
-      scheduleDate,
-      relayedDate,
-      isResched,
-    })
+    const units = parseUnitsFromBrandField(findValue(rec, 'BRAND'))
+    const customerName = findValue(rec, "COSTUMER'S NAME", "CUSTOMER'S NAME")
+    const unitCount = units.length
+    const unitGroupId = unitCount > 1 ? `grp_${customerRecords.indexOf(rec)}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}` : undefined
+
+    for (let uIdx = 0; uIdx < units.length; uIdx++) {
+      const u = units[uIdx]
+      const isChild = uIdx > 0
+      tickets.push({
+        customerName,
+        contactPhone: findValue(rec, 'CONTACT NO.', 'CONTACT NO', 'CONTACT NUMBER'),
+        address: findValue(rec, 'DESTINATION', 'ADDRESS'),
+        district: findValue(rec, 'DISTRICT'),
+        dealer,
+        dealerBranch: branch,
+        brand: u.brand,
+        capacity: u.capacity,
+        commitType: findValue(rec, 'COMMIT', 'COMMIT / PROMO'),
+        negotiator: findValue(rec, 'NEGOTIATOR'),
+        remarks: updateField,
+        status: serviceType,
+        serviceType,
+        vehicle,
+        driver,
+        installer: cleanInstaller(findValue(rec, 'INSTALLER')),
+        modeOfPayment: isChild ? 'NO_PAYMENT' : modeOfPayment,
+        installationCharges: isChild ? 0 : amount,
+        payments: isChild ? [{ mode: 'NO_PAYMENT', amount: 0 }] : payments,
+        scheduleDate,
+        relayedDate,
+        isResched,
+        unitGroupId,
+        unitIndex: uIdx + 1,
+        unitCount,
+        isChildUnit: isChild,
+      })
+    }
   }
 
   // 7. Merge continuation rows — only merge if customer name is EMPTY (accounting/extra payment row)

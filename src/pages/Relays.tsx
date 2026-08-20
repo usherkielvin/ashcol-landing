@@ -13,7 +13,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage, parseCreatedTicketResponse, formatFetchError, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, isTaguigServiceTicket, DEALERS_UPDATED_EVENT, notifyDealersUpdated, canMemberAccessRelaysAndTicketCreation } from '../utils/api'
 import { deriveRosterFromEmployees } from '../utils/branchRoster'
-import { readTabCache, readTabCacheEntry, relaysCacheKey, writeTabCache, isTabCacheFresh, type RelaysTabCache, clearWarrantyCache, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
+import { readTabCache, readTabCacheEntry, relaysCacheKey, writeTabCache, isTabCacheFresh, type RelaysTabCache, clearWarrantyCache, clearSchedulesCache, clearRelayScheduleCaches, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
 import {
   hasRelayLeftQueue,
   normalizeRelayScheduleTicket,
@@ -41,6 +41,7 @@ import {
   getPreferredDateKey,
   getRescheduleHistoryDates,
   getPreviousScheduleDates,
+  getScheduleStatusBadgeStyle,
 } from '../utils/ticketHelpers'
 import type { ReactNode } from 'react'
 
@@ -1024,6 +1025,15 @@ export default function Relays() {
   const [excelSelectMode, setExcelSelectMode] = useState(false)
   const [excelSelectedIdxs, setExcelSelectedIdxs] = useState<Set<number>>(new Set())
   const [excelExistingMap, setExcelExistingMap] = useState<Map<string, Ticket[]>>(new Map())
+  const [excelExpandedGroupIds, setExcelExpandedGroupIds] = useState<Set<string>>(new Set())
+  const toggleExcelGroup = (groupId: string) => {
+    setExcelExpandedGroupIds(prev => {
+      const next = new Set(prev)
+      if (next.has(groupId)) next.delete(groupId)
+      else next.add(groupId)
+      return next
+    })
+  }
   const excelFileRef = useRef<HTMLInputElement>(null)
   // Track which ticket indices have been individually overridden so bulk header changes
   // don't overwrite manual per-ticket selections.
@@ -1414,13 +1424,31 @@ export default function Relays() {
         }
 
         // 1. Check if there is already a record for THIS EXACT schedule date (e.g. re-importing Jan 3)
+        // If re-importing multi-unit tickets, match the candidate having the exact same unitIndex or unitGroupId
         const sameDateCandidate = newTargetDate
-          ? candidateTickets.find(t => getCandidateDate(t) === newTargetDate)
+          ? candidateTickets.find(t => {
+              if (getCandidateDate(t) !== newTargetDate) return false
+              const candMeta = parseAcMeta(t)
+              const candUnitIndex = candMeta.unitIndex ?? (candMeta.isChildUnit ? 2 : 1)
+              const curUnitIndex = ticket.unitIndex ?? (ticket.isChildUnit ? 2 : 1)
+              if (ticket.unitCount && ticket.unitCount > 1) {
+                return candUnitIndex === curUnitIndex
+              }
+              return true
+            })
           : null
 
         // 2. Otherwise find the latest active/current record (or latest overall) to link history
         const activeCandidates = candidateTickets.filter(t => !parseAcMeta(t).isHistorical && !parseAcMeta(t).nextTicketId)
-        const latestCandidate = activeCandidates[activeCandidates.length - 1] || candidateTickets[candidateTickets.length - 1] || null
+        const curUnitIdx = ticket.unitIndex ?? (ticket.isChildUnit ? 2 : 1)
+        const matchedActiveByUnit = ticket.unitCount && ticket.unitCount > 1
+          ? activeCandidates.find(t => {
+              const meta = parseAcMeta(t)
+              const candIdx = meta.unitIndex ?? (meta.isChildUnit ? 2 : 1)
+              return candIdx === curUnitIdx
+            })
+          : null
+        const latestCandidate = matchedActiveByUnit || (ticket.unitCount && ticket.unitCount > 1 ? null : (activeCandidates[activeCandidates.length - 1] || candidateTickets[candidateTickets.length - 1] || null))
 
         // Select which existing ticket to target:
         // If re-importing the same date, target the same-date record (to update it in place).
@@ -1463,6 +1491,10 @@ export default function Relays() {
             driverName: ticket.driver || existingMeta.driverName || '',
             scheduleIntake: true,
             reschedulePending: ticket.isResched,
+            ...(ticket.unitGroupId ? { unitGroupId: ticket.unitGroupId } : {}),
+            ...(ticket.unitIndex ? { unitIndex: ticket.unitIndex } : {}),
+            ...(ticket.unitCount ? { unitCount: ticket.unitCount } : {}),
+            ...(ticket.isChildUnit !== undefined ? { isChildUnit: ticket.isChildUnit } : {}),
             ...(resolvedStatus.schedulePhase !== undefined ? { schedulePhase: resolvedStatus.schedulePhase } : {}),
             ...(resolvedStatus.scheduleOutcome !== undefined ? { scheduleOutcome: resolvedStatus.scheduleOutcome } : {}),
             ...(ticket.payments && ticket.payments.length > 1 ? { paymentBreakdown: ticket.payments.filter(p => p.amount > 0) } : {}),
@@ -1539,6 +1571,10 @@ export default function Relays() {
             driverName: ticket.driver || '',
             scheduleIntake: true,
             reschedulePending: ticket.isResched,
+            ...(ticket.unitGroupId ? { unitGroupId: ticket.unitGroupId } : {}),
+            ...(ticket.unitIndex ? { unitIndex: ticket.unitIndex } : {}),
+            ...(ticket.unitCount ? { unitCount: ticket.unitCount } : {}),
+            ...(ticket.isChildUnit !== undefined ? { isChildUnit: ticket.isChildUnit } : {}),
             ...(existingTicket?.id ? { previousTicketId: existingTicket.id } : {}),
             ...(updatedReschedHistory.length > 0 ? { rescheduleHistoryDates: updatedReschedHistory } : {}),
             ...(updatedPrevDates.length > 0 ? { previousScheduleDates: updatedPrevDates } : {}),
@@ -1594,6 +1630,10 @@ export default function Relays() {
             const createdTicket = (parsed || payload?.data || payload) as Ticket
             if (createdTicket?.id) {
               applyRelayTicketLocally(createdTicket.id, createdTicket)
+              if (customerNameNorm) {
+                const existing = excelExistingMap.get(customerNameNorm) || []
+                excelExistingMap.set(customerNameNorm, [...existing, createdTicket])
+              }
             }
 
             // Sync latest outcome / installed date onto the historical ticket so it links as history,
@@ -1638,6 +1678,11 @@ export default function Relays() {
     setExcelBulkCreating(false)
     setShowExcelPicker(false)
     setExcelResultModal({ created, updated, errors })
+
+    // Clear stale schedule and relay caches and broadcast update so Schedules immediately shows newly created tickets
+    clearRelayScheduleCaches()
+    window.dispatchEvent(new CustomEvent(TAB_CACHE_UPDATED, { detail: { fullRefresh: true } }))
+    void fetchData({ force: true })
   }
 
   /** Resolve unmatched dealers: map to existing dealers or add new ones */
@@ -4321,7 +4366,7 @@ export default function Relays() {
                     Excel Import
                   </h2>
                   <p className="text-[11px] font-medium" style={{ color: textMuted }}>
-                    {excelFileName} — {excelTickets.length} tickets extracted
+                    {excelFileName} — {excelTickets.length} individual unit{excelTickets.length !== 1 ? 's' : ''}{excelTickets.some(t => t.isChildUnit) ? ` (${excelTickets.filter(t => !t.isChildUnit).length} tickets)` : ' extracted'}
                   </p>
                 </div>
                 <button type="button" onClick={() => setShowExcelPicker(false)} className="p-2 rounded-lg hover:bg-slate-500/10" style={{ color: textMuted }}>
@@ -4391,146 +4436,247 @@ export default function Relays() {
 
             {/* Ticket List */}
             <div className="flex-1 overflow-y-auto p-4 space-y-2 min-h-0">
-              {excelTickets.map((ticket, idx) => {
-                const nameKey = (ticket.customerName || '').replace(/\s+/g, ' ').trim().toUpperCase()
-                const existingTickets = excelExistingMap.get(nameKey) || []
-                const isExisting = existingTickets.length > 0
-                const hasUnmatchedDealer = Boolean(ticket.dealer && excelUnmatchedDealers.includes(ticket.dealer))
+              {(() => {
+                // Group tickets by unitGroupId if present
+                const parentIndices: number[] = []
+                const childrenByGroup = new Map<string, number[]>()
 
-                return (
-                <div
-                  key={idx}
-                  className="w-full overflow-hidden rounded-xl border transition-all hover:border-emerald-500/50"
-                  style={{ backgroundColor: inputBg, borderColor: excelSelectMode && excelSelectedIdxs.has(idx) ? '#ef4444' : (isExisting ? (isLight ? '#60a5fa' : '#3b82f6') : inputBorder) }}
-                  onContextMenu={(e) => {
-                    e.preventDefault()
-                    setExcelContextMenu({ idx, x: e.clientX, y: e.clientY })
-                  }}
-                >
-                  {excelSelectMode && (
-                    <label className="flex items-center gap-2 px-3 pt-2 cursor-pointer" onClick={e => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={excelSelectedIdxs.has(idx)}
-                        onChange={() => {
-                          setExcelSelectedIdxs(prev => {
-                            const next = new Set(prev)
-                            if (next.has(idx)) next.delete(idx)
-                            else next.add(idx)
-                            return next
-                          })
+                excelTickets.forEach((ticket, idx) => {
+                  if (ticket.isChildUnit && ticket.unitGroupId) {
+                    const list = childrenByGroup.get(ticket.unitGroupId) || []
+                    list.push(idx)
+                    childrenByGroup.set(ticket.unitGroupId, list)
+                  } else {
+                    parentIndices.push(idx)
+                  }
+                })
+
+                // Render each parent ticket, followed by its children if expanded
+                return parentIndices.map((parentIdx) => {
+                  const parentTicket = excelTickets[parentIdx]
+                  const groupId = parentTicket.unitGroupId
+                  const hasChildren = Boolean(groupId && (parentTicket.unitCount || 0) > 1)
+                  const childIndices = (groupId ? childrenByGroup.get(groupId) : []) || []
+                  const isExpanded = groupId ? excelExpandedGroupIds.has(groupId) : false
+
+                  const renderTicketCard = (ticket: EditableExcelRelayTicket, idx: number, isChild: boolean) => {
+                    const nameKey = (ticket.customerName || '').replace(/\s+/g, ' ').trim().toUpperCase()
+                    const existingTickets = excelExistingMap.get(nameKey) || []
+                    const isExisting = existingTickets.length > 0
+                    const hasUnmatchedDealer = Boolean(ticket.dealer && excelUnmatchedDealers.includes(ticket.dealer))
+
+                    return (
+                      <div
+                        key={idx}
+                        className={`w-full overflow-hidden rounded-xl border transition-all hover:border-emerald-500/50 ${isChild ? 'ml-6 border-dashed border-l-4 border-l-blue-400 dark:border-l-blue-500' : ''}`}
+                        style={{
+                          backgroundColor: isChild ? (isLight ? '#f8fafc' : 'rgba(255,255,255,0.03)') : inputBg,
+                          borderColor: excelSelectMode && excelSelectedIdxs.has(idx) ? '#ef4444' : (isExisting ? (isLight ? '#60a5fa' : '#3b82f6') : inputBorder),
+                          maxWidth: isChild ? 'calc(100% - 24px)' : '100%',
                         }}
-                        className="w-4 h-4 rounded accent-red-500"
-                      />
-                      <span className="text-[10px] font-bold" style={{ color: excelSelectedIdxs.has(idx) ? '#ef4444' : textMuted }}>
-                        {excelSelectedIdxs.has(idx) ? 'Selected for removal' : 'Select'}
-                      </span>
-                    </label>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => handlePickExcelTicket(ticket, idx)}
-                    className="w-full text-left p-3 transition-all hover:bg-emerald-500/5 active:scale-[0.99]"
-                  >
-                    <div className="flex items-center justify-between gap-3 mb-1">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-sm font-bold truncate" style={{ color: textPrimary }}>
-                          {idx + 1}. {ticket.customerName}
-                        </span>
-                        {isExisting ? (
-                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" style={{ backgroundColor: 'rgba(59,130,246,0.15)', color: '#3b82f6' }}>
-                            EXISTS — WILL UPDATE
-                          </span>
-                        ) : (
-                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10B981' }}>
-                            NEW
-                          </span>
+                        onContextMenu={(e) => {
+                          e.preventDefault()
+                          setExcelContextMenu({ idx, x: e.clientX, y: e.clientY })
+                        }}
+                      >
+                        {excelSelectMode && (
+                          <label className="flex items-center gap-2 px-3 pt-2 cursor-pointer" onClick={e => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={excelSelectedIdxs.has(idx)}
+                              onChange={() => {
+                                setExcelSelectedIdxs(prev => {
+                                  const next = new Set(prev)
+                                  if (next.has(idx)) next.delete(idx)
+                                  else next.add(idx)
+                                  return next
+                                })
+                              }}
+                              className="w-4 h-4 rounded accent-red-500"
+                            />
+                            <span className="text-[10px] font-bold" style={{ color: excelSelectedIdxs.has(idx) ? '#ef4444' : textMuted }}>
+                              {excelSelectedIdxs.has(idx) ? 'Selected for removal' : 'Select'}
+                            </span>
+                          </label>
                         )}
-                        {hasUnmatchedDealer && (
-                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
-                            ⚠️ NO DEALER
-                          </span>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => handlePickExcelTicket(ticket, idx)}
+                          className="w-full text-left p-3 transition-all hover:bg-emerald-500/5 active:scale-[0.99]"
+                        >
+                          <div className="flex items-center justify-between gap-3 mb-1">
+                            <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                              {/* Tree Branch indicator for Child Units */}
+                              {isChild && (
+                                <span className="text-blue-500 font-mono text-[12px] font-bold select-none shrink-0" title="Child Unit">
+                                  └──
+                                </span>
+                              )}
+
+                              {/* Expand/Collapse Toggle for Parent Ticket */}
+                              {!isChild && hasChildren && groupId && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    toggleExcelGroup(groupId)
+                                  }}
+                                  className="inline-flex items-center justify-center w-5 h-5 rounded-md hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 transition-colors shrink-0"
+                                  title={isExpanded ? 'Collapse child units' : `Expand ${childIndices.length} child unit(s)`}
+                                >
+                                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
+                                </button>
+                              )}
+
+                              <span className="text-sm font-bold truncate" style={{ color: textPrimary }}>
+                                {!isChild ? `${parentIdx + 1}. ` : ''}{ticket.customerName}
+                              </span>
+
+                              {/* Parent / Child Unit Badge */}
+                              {!isChild && hasChildren && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    if (groupId) toggleExcelGroup(groupId)
+                                  }}
+                                  className="inline-flex items-center gap-1 text-[9.5px] font-black px-2 py-0.5 rounded-full shrink-0 transition-transform active:scale-95 cursor-pointer shadow-sm"
+                                  style={{
+                                    backgroundColor: isLight ? 'rgba(16,185,129,0.14)' : 'rgba(16,185,129,0.25)',
+                                    color: isLight ? '#047857' : '#34d399',
+                                    border: `1px solid ${isLight ? 'rgba(16,185,129,0.35)' : 'rgba(16,185,129,0.45)'}`,
+                                  }}
+                                  title={`Click to ${isExpanded ? 'collapse' : 'expand'} child units`}
+                                >
+                                  <span>{ticket.unitCount || (childIndices.length + 1)} Units (Parent)</span>
+                                  <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
+                                </button>
+                              )}
+
+                              {isChild && (
+                                <span
+                                  className="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0 uppercase tracking-wider"
+                                  style={{
+                                    backgroundColor: isLight ? 'rgba(59,130,246,0.12)' : 'rgba(59,130,246,0.22)',
+                                    color: isLight ? '#1d4ed8' : '#60a5fa',
+                                    border: `1px solid ${isLight ? 'rgba(59,130,246,0.25)' : 'rgba(59,130,246,0.35)'}`,
+                                  }}
+                                  title={`Child Unit ${ticket.unitIndex || 2} of ${ticket.unitCount || 2}`}
+                                >
+                                  Unit {ticket.unitIndex || 2} (Child)
+                                </span>
+                              )}
+
+                              {isExisting ? (
+                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" style={{ backgroundColor: 'rgba(59,130,246,0.15)', color: '#3b82f6' }}>
+                                  EXISTS — WILL UPDATE
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10B981' }}>
+                                  NEW
+                                </span>
+                              )}
+                              {hasUnmatchedDealer && (
+                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
+                                  ⚠️ NO DEALER
+                                </span>
+                              )}
+                            </div>
+                            <span
+                              className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 border"
+                              style={getScheduleStatusBadgeStyle(ticket.serviceType, isLight)}
+                            >
+                              {ticket.serviceType.replace(/_/g, ' ')}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-4 text-[10px] font-medium flex-wrap" style={{ color: textMuted }}>
+                            {ticket.address && <span className="truncate max-w-[200px]">{ticket.address}</span>}
+                            {ticket.brand && (
+                              <span className="font-bold" style={{ color: textPrimary }}>
+                                ❄️ {ticket.brand} {ticket.capacity}
+                              </span>
+                            )}
+                            {ticket.dealerBranch && <span style={{ color: hasUnmatchedDealer ? '#ef4444' : textMuted }}>🏢 {ticket.dealerBranch}</span>}
+                            {ticket.vehicle && <span>🚗 {ticket.vehicle}{ticket.driver ? ` (${ticket.driver})` : ''}</span>}
+                            {ticket.installationCharges > 0 && <span>💰 ₱{ticket.installationCharges.toLocaleString()}</span>}
+                          </div>
+                          {ticket.remarks && (
+                            <p className="mt-1 text-[10px] font-medium truncate max-w-full" style={{ color: textMuted, opacity: 0.8 }}>
+                              💬 {ticket.remarks}
+                            </p>
+                          )}
+                        </button>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 px-3 py-2.5 border-t" style={{ borderColor: inputBorder, backgroundColor: isLight ? '#f8fafc' : 'rgba(255,255,255,0.02)' }}>
+                          <label className="min-w-0">
+                            <span className="block mb-1 text-[9px] font-black uppercase tracking-wider" style={{ color: excelDateOverrides.has(idx) ? '#f59e0b' : textMuted }}>Schedule Date{excelDateOverrides.has(idx) ? ' ✦' : ''}</span>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                const input = event.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null
+                                input?.showPicker?.()
+                              }}
+                              className="relative flex w-full items-center justify-center rounded-lg border px-2 py-1.5 text-[10px] font-bold"
+                              style={{ backgroundColor: ticket.scheduleDate ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)') : inputBg, borderColor: excelDateOverrides.has(idx) ? '#f59e0b' : (ticket.scheduleDate ? '#10B981' : inputBorder), color: ticket.scheduleDate ? '#10B981' : textMuted, colorScheme: isLight ? 'light' : 'dark' }}
+                            >
+                              {ticket.scheduleDate ? new Date(ticket.scheduleDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase() : 'ADD DATE'}
+                              <input
+                                type="date"
+                                value={ticket.scheduleDate}
+                                onChange={event => updateExcelTicket(idx, { scheduleDate: event.target.value })}
+                                className="absolute h-0 w-0 pointer-events-none opacity-0"
+                              />
+                            </button>
+                          </label>
+                          <label className="min-w-0">
+                            <span className="block mb-1 text-[9px] font-black uppercase tracking-wider" style={{ color: excelBranchOverrides.has(idx) ? '#f59e0b' : textMuted }}>Branch Zone{excelBranchOverrides.has(idx) ? ' ✦' : ''}</span>
+                            <select
+                              value={ticket.branchId}
+                              onChange={event => updateExcelTicket(idx, { branchId: event.target.value, assignedTo: '' })}
+                              className="w-full rounded-lg border px-2 py-1.5 text-[10px] font-bold outline-none"
+                              style={{ backgroundColor: inputBg, borderColor: excelBranchOverrides.has(idx) ? '#f59e0b' : inputBorder, color: textPrimary }}
+                            >
+                              <option value="">Select branch...</option>
+                              {branches.map(branch => <option key={branch.id} value={branch.id}>{formatBranchName(branch.name)}</option>)}
+                            </select>
+                          </label>
+                          <label className="min-w-0">
+                            <span className="block mb-1 text-[9px] font-black uppercase tracking-wider" style={{ color: excelNegotiatorOverrides.has(idx) ? '#f59e0b' : textMuted }}>Negotiator{excelNegotiatorOverrides.has(idx) ? ' ✦' : ''}</span>
+                            <select
+                              value={ticket.assignedTo}
+                              onChange={event => {
+                                const assignedTo = event.target.value
+                                const negotiator = negotiatorsForBranch(ticket.branchId || resolveRelayDefaultBranchId()).find(employee => employee.id === assignedTo)
+                                updateExcelTicket(idx, {
+                                  assignedTo,
+                                  branchId: negotiator?.branchId || ticket.branchId,
+                                })
+                              }}
+                              className="w-full rounded-lg border px-2 py-1.5 text-[10px] font-bold outline-none"
+                              style={{ backgroundColor: inputBg, borderColor: excelNegotiatorOverrides.has(idx) ? '#f59e0b' : inputBorder, color: textPrimary }}
+                            >
+                              <option value="">Select negotiator...</option>
+                              {negotiatorsForBranch(ticket.branchId || resolveRelayDefaultBranchId()).map(employee => {
+                                const branchName = employee.branchId ? formatBranchName(resolveBranch(employee.branchId)?.name || '') : ''
+                                const firstName = (employee.name || '').split(' ')[0]
+                                return <option key={employee.id} value={employee.id}>{(branchName ? `${firstName} - ${branchName}` : firstName).toUpperCase()}</option>
+                              })}
+                            </select>
+                          </label>
+                        </div>
                       </div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{
-                        backgroundColor: ticket.serviceType.startsWith('DONE') ? 'rgba(16,185,129,0.1)' : 'rgba(251,191,36,0.1)',
-                        color: ticket.serviceType.startsWith('DONE') ? '#10B981' : '#f59e0b',
-                      }}>
-                        {ticket.serviceType.replace(/_/g, ' ')}
-                      </span>
+                    )
+                  }
+
+                  return (
+                    <div key={parentIdx} className="space-y-1.5">
+                      {renderTicketCard(parentTicket, parentIdx, false)}
+                      {hasChildren && isExpanded && childIndices.map(childIdx => (
+                        renderTicketCard(excelTickets[childIdx], childIdx, true)
+                      ))}
                     </div>
-                    <div className="flex items-center gap-4 text-[10px] font-medium" style={{ color: textMuted }}>
-                      {ticket.address && <span className="truncate max-w-[200px]">{ticket.address}</span>}
-                      {ticket.brand && <span>{ticket.brand} {ticket.capacity}</span>}
-                      {ticket.dealerBranch && <span style={{ color: hasUnmatchedDealer ? '#ef4444' : textMuted }}>🏢 {ticket.dealerBranch}</span>}
-                      {ticket.vehicle && <span>🚗 {ticket.vehicle}{ticket.driver ? ` (${ticket.driver})` : ''}</span>}
-                    </div>
-                    {ticket.remarks && (
-                      <p className="mt-1 text-[10px] font-medium truncate max-w-full" style={{ color: textMuted, opacity: 0.8 }}>
-                        💬 {ticket.remarks}
-                      </p>
-                    )}
-                  </button>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 px-3 py-2.5 border-t" style={{ borderColor: inputBorder, backgroundColor: isLight ? '#f8fafc' : 'rgba(255,255,255,0.02)' }}>
-                    <label className="min-w-0">
-                      <span className="block mb-1 text-[9px] font-black uppercase tracking-wider" style={{ color: excelDateOverrides.has(idx) ? '#f59e0b' : textMuted }}>Schedule Date{excelDateOverrides.has(idx) ? ' ✦' : ''}</span>
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          const input = event.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null
-                          input?.showPicker?.()
-                        }}
-                        className="relative flex w-full items-center justify-center rounded-lg border px-2 py-1.5 text-[10px] font-bold"
-                        style={{ backgroundColor: ticket.scheduleDate ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)') : inputBg, borderColor: excelDateOverrides.has(idx) ? '#f59e0b' : (ticket.scheduleDate ? '#10B981' : inputBorder), color: ticket.scheduleDate ? '#10B981' : textMuted, colorScheme: isLight ? 'light' : 'dark' }}
-                      >
-                        {ticket.scheduleDate ? new Date(ticket.scheduleDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase() : 'ADD DATE'}
-                        <input
-                          type="date"
-                          value={ticket.scheduleDate}
-                          onChange={event => updateExcelTicket(idx, { scheduleDate: event.target.value })}
-                          className="absolute h-0 w-0 pointer-events-none opacity-0"
-                        />
-                      </button>
-                    </label>
-                    <label className="min-w-0">
-                      <span className="block mb-1 text-[9px] font-black uppercase tracking-wider" style={{ color: excelBranchOverrides.has(idx) ? '#f59e0b' : textMuted }}>Branch Zone{excelBranchOverrides.has(idx) ? ' ✦' : ''}</span>
-                      <select
-                        value={ticket.branchId}
-                        onChange={event => updateExcelTicket(idx, { branchId: event.target.value, assignedTo: '' })}
-                        className="w-full rounded-lg border px-2 py-1.5 text-[10px] font-bold outline-none"
-                        style={{ backgroundColor: inputBg, borderColor: excelBranchOverrides.has(idx) ? '#f59e0b' : inputBorder, color: textPrimary }}
-                      >
-                        <option value="">Select branch...</option>
-                        {branches.map(branch => <option key={branch.id} value={branch.id}>{formatBranchName(branch.name)}</option>)}
-                      </select>
-                    </label>
-                    <label className="min-w-0">
-                      <span className="block mb-1 text-[9px] font-black uppercase tracking-wider" style={{ color: excelNegotiatorOverrides.has(idx) ? '#f59e0b' : textMuted }}>Negotiator{excelNegotiatorOverrides.has(idx) ? ' ✦' : ''}</span>
-                      <select
-                        value={ticket.assignedTo}
-                        onChange={event => {
-                          const assignedTo = event.target.value
-                          const negotiator = negotiatorsForBranch(ticket.branchId || resolveRelayDefaultBranchId()).find(employee => employee.id === assignedTo)
-                          updateExcelTicket(idx, {
-                            assignedTo,
-                            branchId: negotiator?.branchId || ticket.branchId,
-                          })
-                        }}
-                        className="w-full rounded-lg border px-2 py-1.5 text-[10px] font-bold outline-none"
-                        style={{ backgroundColor: inputBg, borderColor: excelNegotiatorOverrides.has(idx) ? '#f59e0b' : inputBorder, color: textPrimary }}
-                      >
-                        <option value="">Select negotiator...</option>
-                        {negotiatorsForBranch(ticket.branchId || resolveRelayDefaultBranchId()).map(employee => {
-                          const branchName = employee.branchId ? formatBranchName(resolveBranch(employee.branchId)?.name || '') : ''
-                          const firstName = (employee.name || '').split(' ')[0]
-                          return <option key={employee.id} value={employee.id}>{(branchName ? `${firstName} - ${branchName}` : firstName).toUpperCase()}</option>
-                        })}
-                      </select>
-                    </label>
-                  </div>
-                </div>
-                )
-              })}
+                  )
+                })
+              })()}
             </div>
 
             {/* Right-click context menu */}
@@ -4695,7 +4841,7 @@ export default function Relays() {
                   >
                     {excelBulkCreating
                       ? `${excelBulkProgress.done}/${excelBulkProgress.total}...`
-                      : `Update ${excelTickets.length} Tickets`
+                      : `Update ${excelTickets.length} Unit${excelTickets.length !== 1 ? 's' : ''}`
                     }
                   </button>
                 )}
