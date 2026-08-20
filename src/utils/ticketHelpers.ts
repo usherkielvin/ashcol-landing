@@ -998,12 +998,18 @@ export function sanitizeTicketPatchBody(body: Record<string, unknown>): Record<s
       )
     }
   }
-  // For non-completion statuses like RESCHED, ensure scheduleOutcome is cleared in acDetails
+  // For non-completion statuses like RESCHED, ensure scheduleOutcome is cleared in acDetails.
+  // Only scheduleOutcome — NOT schedulePhase. This runs as the last transform before the PATCH is
+  // sent, so blanking schedulePhase here stripped the sub-type out of the request entirely:
+  // CLEANING/CHECKUP/BACKJOB/MOUNTING all save as status=SCHEDULED with no scheduleOutcome, so they
+  // matched this branch every time and reached the server with schedulePhase="" — which reads back
+  // as the generic SERVICES tag. applyScheduleStatusPatch is authoritative for schedulePhase (it
+  // explicitly sets or clears it per status), so this must not second-guess it.
   if (status !== 'INSTALLED' && status !== 'COMPLETED' && status !== 'DONE_DISMANTLE' && status !== 'DONE_SYSTEM_REPROCESS' && !next.scheduleOutcome) {
     if (typeof next.acDetails === 'string') {
       next.acDetails = mergeAcMeta(
         { acDetails: next.acDetails } as Ticket,
-        { scheduleOutcome: '', schedulePhase: '' },
+        { scheduleOutcome: '' },
       )
     }
   }
