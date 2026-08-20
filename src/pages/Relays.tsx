@@ -1433,9 +1433,6 @@ export default function Relays() {
         // Check if this is a cross-date history version / reschedule
         const isDateMove = Boolean(priorScheduleDate && newTargetDate && priorScheduleDate !== newTargetDate)
 
-        // True if we are attempting a cross-date move against a record already marked historical
-        const isCrossDateOnHistorical = Boolean(existingTicket && parseAcMeta(existingTicket).isHistorical && isDateMove)
-
         // Update in-place if:
         // 1. We have an existing ticket on the SAME date (sameDateCandidate is present), OR
         // 2. We have an existing active ticket and it's not a date move / not undated.

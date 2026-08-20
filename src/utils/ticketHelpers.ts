@@ -1867,7 +1867,7 @@ export function getInstalledDateKey(ticket: Ticket): string {
   }
   // If the ticket is installed/completed, fall back to its final/preferred schedule date
   const status = (ticket.status || '').toUpperCase()
-  const outcome = (meta.scheduleOutcome || '').toUpperCase()
+  const outcome = String(meta.scheduleOutcome || '').toUpperCase()
   if (isInstalledWorkflowStatus(status) || outcome === 'DONE_INSTALLED') {
     return getFinalDateKey(ticket) || getPreferredDateKey(ticket) || ''
   }
