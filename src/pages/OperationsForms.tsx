@@ -409,8 +409,10 @@ export default function OperationsForms() {
     setOtEntries(emptyOtRows())
   }
 
+  // Admins/management review via approve/reject/delete only — editing the submitted
+  // content is reserved for the requester themselves while it's still pending.
   const canEditRecord = (r: { status: string; employeeId: string }) =>
-    r.status === 'PENDING' && (isAdmin || r.employeeId === user?.id)
+    r.status === 'PENDING' && r.employeeId === user?.id
 
   const openNewForm = () => {
     resetForms()
@@ -1079,7 +1081,12 @@ export default function OperationsForms() {
                     />
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                       <FormField label="Member Name">
-                        <input className={`${inputCls} uppercase`} style={istyle} value={(user?.name || '').toUpperCase()} readOnly />
+                        <input
+                          className={`${inputCls} uppercase`}
+                          style={istyle}
+                          value={(modal.record ? getRequesterName(modal.record.employeeId) : (user?.name || '')).toUpperCase()}
+                          readOnly
+                        />
                       </FormField>
                       <FormField label="Branch" required>
                         {autoBranch ? (
