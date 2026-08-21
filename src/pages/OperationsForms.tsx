@@ -43,6 +43,7 @@ interface CashAdvance {
 interface BudgetRequest {
   id: string
   employeeId: string
+  branchId?: string
   requestDate: string
   fromBranch?: string
   fromDept?: string
@@ -56,12 +57,14 @@ interface BudgetRequest {
   status: string
   createdAt: string
   lineItemsJson?: string
+  notes?: string
   rejectionReason?: string
 }
 
 interface OvertimeRequest {
   id: string
   employeeId: string
+  branchId?: string
   employeeName?: string
   position?: string
   department?: string
@@ -69,6 +72,7 @@ interface OvertimeRequest {
   status: string
   createdAt: string
   entriesJson?: string
+  notes?: string
   rejectionReason?: string
 }
 
@@ -265,10 +269,35 @@ export default function OperationsForms() {
     employeeId === user?.id ? (user?.name || '—') : (userDirectory[employeeId]?.name || employeeId || '—'),
     [user?.id, user?.name, userDirectory])
 
-  const getRequesterBranch = useCallback((employeeId: string, fallbackBranchId?: string) => {
-    const branchId = employeeId === user?.id ? user?.branchId : (userDirectory[employeeId]?.branchId || fallbackBranchId)
-    return getBranchLabel(branchId) || '—'
-  }, [user?.id, user?.branchId, userDirectory])
+  const resolveBranchLabel = useCallback((explicitBranch?: string | null, recordBranchId?: string | null, employeeId?: string | null) => {
+    const candidates = [
+      explicitBranch,
+      recordBranchId,
+      employeeId ? userDirectory[employeeId]?.branchId : null,
+      employeeId === user?.id ? user?.branchId : null,
+    ].filter(Boolean) as string[]
+
+    for (const cand of candidates) {
+      if (!cand) continue
+      const candClean = cand.trim()
+      if (!candClean) continue
+
+      const matched = findBranchListEntry(candClean, branches) || branches.find(b =>
+        b.id.toLowerCase() === candClean.toLowerCase() ||
+        b.name.toLowerCase() === candClean.toLowerCase()
+      )
+      if (matched) {
+        return matched.name.toUpperCase().replace(/^ASHCOL\s+/i, '').replace(/-(SALES|SERVICES)$/i, '').trim()
+      }
+
+      const formatted = getBranchLabel(candClean)
+      if (formatted && formatted !== '—' && !formatted.includes('-') && formatted.length < 30) {
+        return formatted
+      }
+    }
+
+    return '—'
+  }, [branches, userDirectory, user?.id, user?.branchId])
 
   const unifiedRows: UnifiedRow[] = useMemo(() => {
     const ca = cashAdvances.map((a): UnifiedRow => ({
@@ -281,7 +310,7 @@ export default function OperationsForms() {
       notesText: a.notes,
       amount: a.amount,
       detail: a.purpose || '—',
-      branchLabel: getRequesterBranch(a.employeeId, a.branchId),
+      branchLabel: resolveBranchLabel(null, a.branchId, a.employeeId),
       requesterName: getRequesterName(a.employeeId),
       raw: a,
     }))
@@ -292,9 +321,10 @@ export default function OperationsForms() {
       employeeId: b.employeeId,
       status: b.status,
       rejectionReason: b.rejectionReason,
+      notesText: b.notes,
       amount: Number(b.totalAmount),
       detail: b.payeeName ? `Payee: ${b.payeeName}` : (b.poNumber ? `PO ${b.poNumber}` : '—'),
-      branchLabel: b.fromBranch || getRequesterBranch(b.employeeId),
+      branchLabel: resolveBranchLabel(b.fromBranch, b.branchId, b.employeeId),
       requesterName: getRequesterName(b.employeeId),
       raw: b,
     }))
@@ -305,14 +335,15 @@ export default function OperationsForms() {
       employeeId: o.employeeId,
       status: o.status,
       rejectionReason: o.rejectionReason,
+      notesText: o.notes,
       amount: null,
       detail: o.cutoffPeriod ? `Cut-off: ${o.cutoffPeriod}` : '—',
-      branchLabel: getRequesterBranch(o.employeeId),
+      branchLabel: resolveBranchLabel(o.department, o.branchId, o.employeeId),
       requesterName: o.employeeName || getRequesterName(o.employeeId),
       raw: o,
     }))
     return [...ca, ...bud, ...ot].sort((x, y) => new Date(y.createdAt).getTime() - new Date(x.createdAt).getTime())
-  }, [cashAdvances, budgetRequests, overtimeRequests, getRequesterBranch, getRequesterName])
+  }, [cashAdvances, budgetRequests, overtimeRequests, resolveBranchLabel, getRequesterName])
 
   const filteredRows = unifiedRows.filter(r =>
     (typeFilter === 'ALL' || r.type === typeFilter) &&
@@ -587,6 +618,59 @@ export default function OperationsForms() {
     REJECTED: '#dc2626', DISBURSED: '#4f46e5', FULLY_PAID: '#0d9488',
   }
 
+  const [editingNotesId, setEditingNotesId] = useState<string | null>(null)
+  const [notesInput, setNotesInput] = useState('')
+  const [savingNotes, setSavingNotes] = useState(false)
+
+  const startEditingNotes = (row: UnifiedRow) => {
+    if (!isAdmin) return
+    setEditingNotesId(row.id)
+    setNotesInput(row.notesText || '')
+  }
+
+  const cancelEditingNotes = () => {
+    setEditingNotesId(null)
+    setNotesInput('')
+  }
+
+  const handleSaveNotes = async (type: TabId, id: string, notes: string) => {
+    setSavingNotes(true)
+    const endpoints: Record<TabId, string> = {
+      'cash-advance': `${API_BASE_URL}/hris/cash-advances/${id}/notes`,
+      budget: `${API_BASE_URL}/operations/budget-requests/${id}/notes`,
+      overtime: `${API_BASE_URL}/operations/overtime-requests/${id}/notes`,
+    }
+
+    // Optimistic UI updates
+    if (type === 'cash-advance') {
+      setCashAdvances(prev => prev.map(c => c.id === id ? { ...c, notes } : c))
+    } else if (type === 'budget') {
+      setBudgetRequests(prev => prev.map(b => b.id === id ? { ...b, notes } : b))
+    } else {
+      setOvertimeRequests(prev => prev.map(o => o.id === id ? { ...o, notes } : o))
+    }
+
+    if (modal?.record && modal.record.id === id) {
+      setModal(m => m ? { ...m, record: { ...m.record!, notes } as any } : null)
+    }
+
+    try {
+      const res = await fetch(endpoints[type], {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes }),
+      })
+      if (!res.ok) {
+        fetchAll()
+      }
+    } catch {
+      fetchAll()
+    } finally {
+      setSavingNotes(false)
+      setEditingNotesId(null)
+    }
+  }
+
   const statusText = (status: string) => (
     <span className="font-bold uppercase tracking-wide text-xs" style={{ color: statusColors[status] || statusColors.PENDING }}>
       {status.replace(/_/g, ' ')}
@@ -604,6 +688,7 @@ export default function OperationsForms() {
   }
 
   const disabled = modal?.mode === 'view'
+  const autoBranch = modal?.mode === 'add' && !!user?.branchId
 
   const StatCard = ({ label, value, icon: Icon, color }: { label: string; value: number | string; icon: typeof FileText; color: string }) => (
     <div
@@ -768,8 +853,60 @@ export default function OperationsForms() {
                     <td className={`${cellCls} max-w-xs truncate`} style={{ color: textPrimary }} title={r.detail}>{r.detail}</td>
                     <td className={`${cellCls} whitespace-nowrap`} style={{ color: textPrimary }}>{r.amount != null ? formatPeso(r.amount) : '—'}</td>
                     <td className={cellCls}>{statusText(r.status)}</td>
-                    <td className={`${cellCls} max-w-[160px] truncate`} style={{ color: textMuted }} title={r.status === 'REJECTED' ? r.rejectionReason : r.notesText}>
-                      {r.status === 'REJECTED' ? (r.rejectionReason || '—') : (r.notesText || '—')}
+                    <td
+                      className={`${cellCls} max-w-[200px] select-none`}
+                      style={{ color: textPrimary }}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation()
+                        if (isAdmin) startEditingNotes(r)
+                      }}
+                      title={isAdmin ? "Double-click to add/edit note for this member" : undefined}
+                    >
+                      {editingNotesId === r.id ? (
+                        <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                          <input
+                            type="text"
+                            value={notesInput}
+                            onChange={e => setNotesInput(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') handleSaveNotes(r.type, r.id, notesInput)
+                              else if (e.key === 'Escape') cancelEditingNotes()
+                            }}
+                            className="px-2 py-1 rounded text-xs w-full focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+                            style={istyle}
+                            placeholder="Add note for member…"
+                            autoFocus
+                            disabled={savingNotes}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSaveNotes(r.type, r.id, notesInput)}
+                            disabled={savingNotes}
+                            className="p-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
+                            title="Save Note"
+                          >
+                            {savingNotes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEditingNotes}
+                            disabled={savingNotes}
+                            className="p-1 rounded hover:bg-black/[0.06] dark:hover:bg-white/[0.08] text-slate-400 hover:text-slate-200 transition-colors"
+                            title="Cancel"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className={`flex items-center justify-between gap-1 group ${isAdmin ? 'cursor-pointer hover:text-emerald-500' : ''}`}>
+                          <span className="truncate" title={r.status === 'REJECTED' ? (r.rejectionReason || r.notesText || '') : (r.notesText || '')}>
+                            {r.status === 'REJECTED' ? (r.rejectionReason ? `Reason: ${r.rejectionReason}` : (r.notesText || '—')) : (r.notesText || '—')}
+                          </span>
+                          {isAdmin && (
+                            <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-60 shrink-0 text-emerald-500 transition-opacity" />
+                          )}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -797,6 +934,17 @@ export default function OperationsForms() {
             <MenuItem icon={Eye} label="View" onClick={() => { openRecord('view', contextMenu.row.type, contextMenu.row.raw); closeContextMenu() }} />
             {canEditRecord(contextMenu.row) && (
               <MenuItem icon={Pencil} label="Edit" onClick={() => { openRecord('edit', contextMenu.row.type, contextMenu.row.raw); closeContextMenu() }} />
+            )}
+            {isAdmin && (
+              <MenuItem
+                icon={Pencil}
+                label="Add / Edit Note"
+                color="#10B981"
+                onClick={() => {
+                  startEditingNotes(contextMenu.row)
+                  closeContextMenu()
+                }}
+              />
             )}
             {isAdmin && contextMenu.row.status === 'PENDING' && (
               <>
@@ -870,18 +1018,47 @@ export default function OperationsForms() {
           <div className="p-6 md:p-10">
               {/* Status info banner for edit/view */}
               {modal.record && (
-                <div className="flex flex-wrap items-center gap-3 mb-6 p-3.5 rounded-xl"
+                <div className="flex flex-col gap-3 mb-6 p-4 rounded-xl"
                   style={{ backgroundColor: isLight ? '#f8fafc' : '#0B132B', border: `1px solid ${border}` }}>
-                  <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Status</span>
-                  {statusText(modal.record.status)}
-                  {modal.record.status === 'REJECTED' && (modal.record as any).rejectionReason && (
-                    <span className="text-xs" style={{ color: textMuted }}>
-                      — Reason: <span className="font-semibold" style={{ color: textPrimary }}>{(modal.record as any).rejectionReason}</span>
-                    </span>
-                  )}
-                  {modal.record.status !== 'PENDING' && (
-                    <span className="text-[10px] ml-auto" style={{ color: textMuted }}>This request can no longer be edited.</span>
-                  )}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Status</span>
+                    {statusText(modal.record.status)}
+                    {modal.record.status === 'REJECTED' && (modal.record as any).rejectionReason && (
+                      <span className="text-xs" style={{ color: textMuted }}>
+                        — Reason: <span className="font-semibold" style={{ color: textPrimary }}>{(modal.record as any).rejectionReason}</span>
+                      </span>
+                    )}
+                    {modal.record.status !== 'PENDING' && (
+                      <span className="text-[10px] ml-auto" style={{ color: textMuted }}>This request can no longer be edited.</span>
+                    )}
+                  </div>
+
+                  {/* Notes for member (editable by Admin / Management, visible to member) */}
+                  <div className="pt-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5" style={{ borderTop: `1px solid ${border}` }}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Notes / Remarks:</span>
+                      <span className="text-xs font-semibold" style={{ color: (modal.record as any).notes ? textPrimary : textMuted }}>
+                        {(modal.record as any).notes || 'No notes added yet.'}
+                      </span>
+                    </div>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const existingNote = (modal.record as any).notes || ''
+                          const newNote = window.prompt('Enter note for member:', existingNote)
+                          if (newNote !== null) {
+                            handleSaveNotes(modal.type, modal.record!.id, newNote)
+                          }
+                        }}
+                        className="px-3 py-1 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 shadow-sm hover:opacity-90 transition-opacity"
+                        style={{ backgroundColor: accent }}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        {(modal.record as any).notes ? 'Edit Note' : 'Add Note'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -905,13 +1082,17 @@ export default function OperationsForms() {
                         <input className={`${inputCls} uppercase`} style={istyle} value={(user?.name || '').toUpperCase()} readOnly />
                       </FormField>
                       <FormField label="Branch" required>
-                        <select className={inputCls} style={istyle} value={caBranchId} onChange={e => setCaBranchId(e.target.value)} disabled={disabled} required>
-                          <option value="">Select branch…</option>
-                          {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
-                          {caBranchId && !findBranchListEntry(caBranchId, branches) && (
-                            <option value={caBranchId}>{getBranchLabel(caBranchId)}</option>
-                          )}
-                        </select>
+                        {autoBranch ? (
+                          <input className={inputCls} style={istyle} value={getBranchLabel(user?.branchId)} readOnly />
+                        ) : (
+                          <select className={inputCls} style={istyle} value={caBranchId} onChange={e => setCaBranchId(e.target.value)} disabled={disabled} required>
+                            <option value="">Select branch…</option>
+                            {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
+                            {caBranchId && !findBranchListEntry(caBranchId, branches) && (
+                              <option value={caBranchId}>{getBranchLabel(caBranchId)}</option>
+                            )}
+                          </select>
+                        )}
                       </FormField>
                       <FormField label="Date" required>
                         <input className={inputCls} style={istyle} type="text" value={formatDateCaps(modal.record ? modal.record.createdAt : new Date().toISOString())} readOnly />
@@ -981,7 +1162,14 @@ export default function OperationsForms() {
                         <input className={inputCls} style={istyle} type="date" value={budgetDate} onChange={e => setBudgetDate(e.target.value)} disabled={disabled} required />
                       </FormField>
                       <FormField label="From — Branch" required>
-                        <input className={inputCls} style={istyle} value={budgetBranch} onChange={e => setBudgetBranch(e.target.value)} readOnly={disabled} required />
+                        {autoBranch ? (
+                          <input className={inputCls} style={istyle} value={budgetBranch} readOnly />
+                        ) : (
+                          <select className={inputCls} style={istyle} value={budgetBranch} onChange={e => setBudgetBranch(e.target.value)} disabled={disabled} required>
+                            <option value="">Select branch…</option>
+                            {branches.map(b => <option key={b.id} value={b.name.toUpperCase()}>{b.name.toUpperCase()}</option>)}
+                          </select>
+                        )}
                       </FormField>
                       <FormField label="Dept.">
                         <input className={inputCls} style={istyle} value={budgetDept} onChange={e => setBudgetDept(e.target.value)} readOnly={disabled} />
