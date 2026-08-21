@@ -40,7 +40,18 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       const res = await fetch(`${API_BASE_URL}/notifications`, { headers: authHeaders() })
       if (!res.ok) return
       const data = await res.json()
-      const fetched: AppNotification[] = data?.data || []
+      const rawList: any[] = Array.isArray(data?.data) ? data.data : []
+      const fetched: AppNotification[] = rawList.map((n: any) => ({
+        id: String(n.id || ''),
+        userId: String(n.userId || n.user_id || ''),
+        ticketId: n.ticketId || n.ticket_id || null,
+        title: n.title || '',
+        message: n.message || '',
+        isRead: Boolean(n.isRead ?? n.read ?? n.is_read ?? false),
+        link: n.link || null,
+        createdAt: n.createdAt || n.created_at || '',
+      }))
+
       // Preserve any optimistic isRead=true that the server hasn't caught up with yet
       setNotifications(prev => {
         const readIds = new Set(prev.filter(n => n.isRead).map(n => n.id))
