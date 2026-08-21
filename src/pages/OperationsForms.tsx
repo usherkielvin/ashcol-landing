@@ -1279,25 +1279,7 @@ export default function OperationsForms() {
                       </button>
                     )}
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6" style={{ borderTop: `1px solid ${border}` }}>
-                      <div className="text-center">
-                        <div className="h-12 mb-2" style={{ borderBottom: `1px solid ${textPrimary}` }} />
-                        <div className="text-[10px] font-bold uppercase" style={{ color: textMuted }}>Requested by</div>
-                        <div className="text-xs font-semibold mt-1">{user?.name}</div>
-                        <div className="text-[9px] mt-0.5" style={{ color: textMuted }}>Signature Over Printed Name</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="h-12 mb-2" style={{ borderBottom: `1px solid ${textPrimary}` }} />
-                        <div className="text-[10px] font-bold uppercase" style={{ color: textMuted }}>Noted by</div>
-                        <div className="text-[9px] mt-1" style={{ color: textMuted }}>Accounting Staff</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="h-12 mb-2" style={{ borderBottom: `1px solid ${textPrimary}` }} />
-                        <div className="text-[10px] font-bold uppercase" style={{ color: textMuted }}>Approved by</div>
-                        <div className="text-[9px] mt-1" style={{ color: textMuted }}>VP / COO · President / CEO</div>
-                      </div>
-                    </div>
-
+                    {/* Actions */}
                     <div className="flex justify-end gap-2 mt-8">
                       <button type="button" onClick={closeModal} className="px-5 py-2.5 rounded-xl text-xs font-bold" style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b' }}>
                         {disabled ? 'Close' : 'Cancel'}
@@ -1397,18 +1379,7 @@ export default function OperationsForms() {
                       The employee is under no obligation to work more than 45 hours per week. All overtime is voluntary and may only be worked by agreement between employer and employee and must have written approval first. Maximum permissible overtime is 5 hours in a day if badly needed specially during peak season. I hereby declare above over time claims are true and correct. ART. 119. False Reporting. — It shall be unlawful for any person to make any statement, report, or record filed or kept pursuant to the provisions of this Code knowing such statement, report or record to be false in any material respect. (P.D. 442, Labor Code)
                     </p>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4" style={{ borderTop: `1px solid ${border}` }}>
-                      <div className="text-center">
-                        <div className="h-12 mb-2" style={{ borderBottom: `1px solid ${textPrimary}` }} />
-                        <div className="text-[10px] font-bold uppercase" style={{ color: textMuted }}>Member Name & Signature</div>
-                        <div className="text-xs font-semibold mt-1">{otName}</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="h-12 mb-2" style={{ borderBottom: `1px solid ${textPrimary}` }} />
-                        <div className="text-[10px] font-bold uppercase" style={{ color: textMuted }}>HR Manager</div>
-                      </div>
-                    </div>
-
+                    {/* Actions */}
                     <div className="flex justify-end gap-2 mt-8">
                       <button type="button" onClick={closeModal} className="px-5 py-2.5 rounded-xl text-xs font-bold" style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b' }}>
                         {disabled ? 'Close' : 'Cancel'}
