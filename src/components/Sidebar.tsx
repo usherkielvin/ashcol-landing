@@ -61,7 +61,7 @@ const Sidebar = () => {
       title: "Operations",
       icon: <MdOutlinePeopleAlt size={20} />,
       subItems: [
-        { name: "Lineup",       icon: <MdOutlinePlaylistAdd size={15} /> },
+        { name: "LINEUP",       icon: <MdOutlinePlaylistAdd size={15} /> },
         { name: "HRIS",         icon: <MdOutlineDescription size={15} /> },
         { name: "DDRM",         icon: <MdOutlineAltRoute size={15} /> },
         { name: "Request Forms", icon: <MdOutlineDescription size={15} /> },

@@ -107,7 +107,7 @@ function buildNavGroups(navLinks: NavLinkDef[]) {
       title: 'Operations',
       Icon: MdOutlinePeopleAlt,
       subItems: [
-        { name: 'Lineup', icon: <MdOutlinePlaylistAdd size={16} />, path: findPath('Lineup') },
+        { name: 'LINEUP', icon: <MdOutlinePlaylistAdd size={16} />, path: findPath('LINEUP') },
         { name: 'HRIS', icon: <MdOutlineDescription size={16} />, path: findPath('HRIS') },
         { name: 'DDRM', icon: <MdOutlineAltRoute size={16} />, path: findPath('DDRM') },
         { name: 'Request Forms', icon: <MdOutlineDescription size={16} />, path: findPath('Request Forms') },
@@ -407,7 +407,7 @@ export default function DashboardLayout() {
     { name: 'Registration',   path: '/registration',    icon: ClipboardCheck, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Happy Calls',    path: '/happy-calls',     icon: PhoneCall,      roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Office tasks',    path: '/office-tasks',     icon: Building2,       roles: ['admin', 'management'] },
-    { name: 'Lineup',          path: '/lineup',           icon: ListOrdered,     roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'LINEUP',          path: '/lineup',           icon: ListOrdered,     roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Members',         path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
     { name: 'Vehicles',        path: '/vehicles',         icon: Truck,           roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Expense Records', path: '/audit-expenses',  icon: ClipboardList,  roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
@@ -426,8 +426,8 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'management' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'Lineup', 'Request Forms', ...(canAccessRelays ? ['Relays', 'Bookings'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
-  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'Lineup', 'Request Forms', ...(canAccessRelays ? ['Relays', 'Bookings'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
+  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'LINEUP', 'Request Forms', ...(canAccessRelays ? ['Relays', 'Bookings'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
+  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'LINEUP', 'Request Forms', ...(canAccessRelays ? ['Relays', 'Bookings'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 
