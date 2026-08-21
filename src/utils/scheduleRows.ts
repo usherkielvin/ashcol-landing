@@ -102,10 +102,14 @@ export function isCompletedGhostOnDate(ticket: Ticket, dateKey: string): boolean
   const currentKey = getEffectiveScheduleDateKey(ticket) || getArchivedScheduleDate(ticket)
   if (currentKey && currentKey === dateKey) return false
 
+  // getArchivedScheduleDate is the single source of truth for "where this completed
+  // ticket's ghost belongs" (it already falls back to the last previousScheduleDates
+  // entry when archivedScheduleDate itself is empty). Also checking every raw entry in
+  // previousScheduleDates here caused a stale duplicate to keep rendering a ghost on the
+  // old date even after archivedScheduleDate was corrected to the new one, since a
+  // ticket can only reach first-completion once and this array is never pruned on read.
   const sched = getArchivedScheduleDate(ticket)
-  if (sched === dateKey) return true
-  if (getPreviousScheduleDates(ticket).includes(dateKey)) return true
-  return false
+  return sched === dateKey
 }
 
 export function isRescheduledGhostOnDate(ticket: Ticket, dateKey: string): boolean {
