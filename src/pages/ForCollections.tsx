@@ -1074,6 +1074,8 @@ export default function ForCollections() {
         const totalIncentives = incentiveItems.reduce((sum, it) => sum + (it.amount || 0), 0)
         // Commission Expenses Breakdown
         const commissionItems = itemsList.filter(it => it.type === 'COMMISSION')
+        // Cash Advance Breakdown
+        const cashAdvanceItems = itemsList.filter(it => it.type === 'CASH_ADVANCE')
 
         // Calculate totals from items list
         const totalCashCollection = cashTxItems.reduce((sum, it) => sum + (it.amount || 0), 0) + partsSaleItems.reduce((sum, it) => sum + (it.amount || 0), 0)
@@ -1092,7 +1094,7 @@ export default function ForCollections() {
         const renderItemTable = (title: string, itemsList: any[], columns: { label: string; render: (item: any) => React.ReactNode; align?: 'left' | 'right' | 'center' }[], customTotal?: number, noBorderBottom?: boolean) => {
           if (itemsList.length === 0) return null
           const sumValue = customTotal !== undefined ? customTotal : itemsList.reduce((acc, it) => acc + (it.amount || 0), 0)
-          const isExpenseType = title.includes('Expense') || title.includes('Purchase') || title.includes('Order')
+          const isExpenseType = title.includes('Expense') || title.includes('Purchase') || title.includes('Order') || title.includes('Cash Advance')
           
           return (
             <div className={`px-6 py-5 ${noBorderBottom ? '' : 'border-b'}`} style={{ borderColor: border }}>
@@ -1544,6 +1546,13 @@ export default function ForCollections() {
                           </span>
                         )
                       }
+                    ])}
+
+                    {/* Cash Advance Breakdown */}
+                    {renderItemTable('Cash Advance', cashAdvanceItems, [
+                      { label: 'Member Name', render: (item) => <span style={{ color: textPrimary }}>{item.description?.split('|')[0] || '—'}</span> },
+                      { label: 'Details', render: (item) => <span style={{ color: textPrimary }}>{item.description?.split('|').slice(1).join('|') || '—'}</span> },
+                      { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> },
                     ])}
                   </>
                 )}

@@ -1662,6 +1662,8 @@ export default function DailyAuditReport() {
                 const commissionItems = items.filter(it => it.type === 'COMMISSION')
                 const paidCommissionItems = commissionItems.filter(it => it.collectionResolved)
                 const totalPaidCommissionExpenses = paidCommissionItems.reduce((sum, it) => sum + (it.amount || 0), 0)
+                // Cash Advance Breakdown
+                const cashAdvanceItems = items.filter(it => it.type === 'CASH_ADVANCE')
 
                 const formatHpDisplay = (raw?: any) => {
                   if (!raw || raw === '—') return '—'
@@ -1674,7 +1676,7 @@ export default function DailyAuditReport() {
                 const renderItemTable = (title: string, itemsList: any[], columns: { label: string; render: (item: any) => React.ReactNode; align?: 'left' | 'right' | 'center' }[], customTotal?: number, noBorderBottom?: boolean) => {
                   if (itemsList.length === 0) return null
                   const sumValue = customTotal !== undefined ? customTotal : itemsList.reduce((acc, it) => acc + (it.amount || 0), 0)
-                  const isExpenseType = title.includes('Expense') || title.includes('Purchase') || title.includes('Order')
+                  const isExpenseType = title.includes('Expense') || title.includes('Purchase') || title.includes('Order') || title.includes('Cash Advance')
                   
                   return (
                     <div className={`px-6 py-5 ${noBorderBottom ? '' : 'border-b'}`} style={{ borderColor: border }}>
@@ -1949,6 +1951,13 @@ export default function DailyAuditReport() {
                               </span>
                             )
                           }
+                        ])}
+
+                        {/* Cash Advance Breakdown */}
+                        {renderItemTable('Cash Advance', cashAdvanceItems, [
+                          { label: 'Member Name', render: (item) => <span style={{ color: textPrimary }}>{item.description?.split('|')[0] || '—'}</span> },
+                          { label: 'Details', render: (item) => <span style={{ color: textPrimary }}>{item.description?.split('|').slice(1).join('|') || '—'}</span> },
+                          { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> },
                         ])}
 
                         {/* Unit Summary stats grid */}
