@@ -696,6 +696,20 @@ export function canMemberAccessRelaysAndTicketCreation(user?: PortalUserLike | n
   return isRelayDispatcherOrTicketCreator(user.jobTitle)
 }
 
+/** Matches "DDRM", "Daily Driver Route Monitoring", "Driver Route Monitoring", or "Driver Monitoring" subroles. */
+export function isDdrmMember(jobTitle?: string | null): boolean {
+  if (!jobTitle) return false
+  const lower = jobTitle.toLowerCase()
+  return lower.includes('ddrm') || lower.includes('driver route') || lower.includes('driver monitoring')
+}
+
+export function canMemberAccessDdrm(user?: PortalUserLike | null): boolean {
+  if (!user) return false
+  const role = (user.role || '').toLowerCase()
+  if (role === 'admin' || role === 'management' || role === 'manager' || role === 'oic' || role === 'administrator') return true
+  return isDdrmMember(user.jobTitle)
+}
+
 
 export function notifyEmployeesDirectoryUpdated(): void {
   try {

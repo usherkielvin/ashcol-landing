@@ -41,7 +41,7 @@ import {
 } from 'react-icons/md'
 import { FiMinus, FiPlus } from 'react-icons/fi'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortalAdmin, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry, formatBranchName, canMemberAccessRelaysAndTicketCreation, isSystemAdmin, isPortalStaffUser, isWarrantyRegistrar } from '../utils/api'
+import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortalAdmin, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry, formatBranchName, canMemberAccessRelaysAndTicketCreation, canMemberAccessDdrm, isSystemAdmin, isPortalStaffUser, isWarrantyRegistrar } from '../utils/api'
 import UserAvatar from '../components/UserAvatar'
 import MessagesDropdown from '../components/MessagesDropdown'
 import NotificationsDropdown from '../components/NotificationsDropdown'
@@ -395,6 +395,7 @@ export default function DashboardLayout() {
   }, [])
 
   const canAccessRelays = canMemberAccessRelaysAndTicketCreation(user)
+  const canAccessDdrm = canMemberAccessDdrm(user)
 
   const allLinks = [
     { name: 'Schedules',       path: '/schedules',        icon: CalendarDays },
@@ -416,7 +417,7 @@ export default function DashboardLayout() {
     { name: 'Daily Transaction', path: '/audit-report',   icon: TrendingUp,      roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin', 'management'] },
     { name: 'HRIS',              path: '/admin-hris',       icon: Calendar,        roles: ['admin', 'management', 'manager'] },
-    { name: 'DDRM',              path: '/ddrm',             icon: Route,           roles: ['admin', 'management', 'manager'] },
+    { name: 'DDRM',              path: '/ddrm',             icon: Route,           roles: canAccessDdrm ? ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] : ['admin', 'management', 'manager'] },
     { name: 'Operations Forms',  path: '/operations-forms', icon: ClipboardList, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Bills',             path: '/admin-bills',      icon: Landmark,        roles: ['admin', 'management', 'manager'] },
     { name: 'Telecoms',          path: '/admin-telecom',    icon: Wifi,            roles: ['admin', 'management', 'manager'] },
@@ -425,8 +426,8 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'management' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms', ...(canAccessRelays ? ['Relays', 'Bookings'] : [])]
-  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms', ...(canAccessRelays ? ['Relays', 'Bookings'] : [])]
+  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms', ...(canAccessRelays ? ['Relays', 'Bookings'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
+  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms', ...(canAccessRelays ? ['Relays', 'Bookings'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 
@@ -799,13 +800,12 @@ export default function DashboardLayout() {
       <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
 
         {/* ── Global Header (Mobile/Tablet/Desktop) ──────────────── */}
-        {currentPage !== 'DDRM' && (
-          <header 
-            className="flex-none z-30 backdrop-blur-md w-full min-w-0 max-w-full relative"
-            style={{ 
-              backgroundColor: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(10,17,32,0.8)'
-            }}
-          >
+        <header 
+          className="flex-none z-30 backdrop-blur-md w-full min-w-0 max-w-full relative"
+          style={{ 
+            backgroundColor: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(10,17,32,0.8)'
+          }}
+        >
           {/* Top row: title + icons */}
           <div className="h-14 flex items-center justify-between px-4 md:px-6 lg:px-8 relative min-w-0">
             <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0 mr-2">
@@ -1040,12 +1040,11 @@ export default function DashboardLayout() {
 
           <div id="header-toolbar-slot" className="w-full min-w-0 max-w-full" />
         </header>
-        )}
 
         {/* ── Page Content ───────────────────────────────── */}
         <main className={
           currentPage === 'DDRM'
-            ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-[2px]"
+            ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-2 md:p-3"
             : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search')
               ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
               : currentPage === 'Operations Forms'

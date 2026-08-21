@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react'
-import { useOutletContext } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
-import { API_BASE_URL } from '../utils/api'
+import { useAuth } from '../contexts/AuthContext'
+import { API_BASE_URL, isPortalAdmin, formatBranchName, branchScopesMatch } from '../utils/api'
 import {
-  Route, Plus, Search, AlertCircle, Upload, Trash2, Eye, Loader2,
-  ChevronLeft, Save, Rows3, MapPin, Menu
+  Plus, Search, AlertCircle, Trash2, Eye, Loader2,
+  Save, Rows3, MapPin, Building2, X, ArrowLeft
 } from 'lucide-react'
 
 type ViewMode = 'ledger' | 'sheet'
@@ -96,26 +96,11 @@ function emptyRow() {
   }
 }
 
-function blankSheet() {
-  return {
-    dateFiled: new Date().toISOString().substring(0, 10),
-    filedBy: '',
-    driverName: '',
-    position: 'Driver',
-    branch: '',
-    cutOffPeriod: '',
-    validatedBy: '',
-    totalApprovedOt: '',
-    remarksOic: '',
-    idleTimeRemarks: '',
-    rows: Array.from({ length: 7 }, () => emptyRow()),
-  }
-}
-
 export default function Ddrm() {
   const { theme } = useTheme()
-  const { setSidebarOpen } = useOutletContext<{ setSidebarOpen: (v: boolean) => void }>() || {}
+  const { user } = useAuth()
   const isLight = theme === 'light'
+  const isPortalAdminUser = isPortalAdmin(user?.role)
 
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
   const pageBg      = isLight ? '#f8fafc' : '#060B18'
@@ -131,18 +116,28 @@ export default function Ddrm() {
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [driverSheets, setDriverSheets] = useState<any[]>([])
-  const [scanning, setScanning] = useState(false)
+  const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
+  const [globalBranchId, setGlobalBranchId] = useState<string | null>(
+    () => localStorage.getItem('ashcol-global-branch-id')
+  )
+  const [filterByBranch, setFilterByBranch] = useState(true)
   const [saving, setSaving] = useState(false)
   const [loadingSheet, setLoadingSheet] = useState(false)
   const [editingSheet, setEditingSheet] = useState<any | null>(null)
   const [siteCount, setSiteCount] = useState(3)
   const [driverContextMenu, setDriverContextMenu] = useState<{ x: number; y: number; sheet: any } | null>(null)
   const driverContextMenuRef = useRef<HTMLDivElement>(null)
-  const driverFileInputRef = useRef<HTMLInputElement>(null)
   const sheetScrollRef = useRef<HTMLDivElement>(null)
   const dragScrollRef = useRef<{ active: boolean; startX: number; startLeft: number; moved: boolean }>({
     active: false, startX: 0, startLeft: 0, moved: false,
   })
+
+  // Listen to active branch changes from global layout header
+  useEffect(() => {
+    const sync = () => setGlobalBranchId(localStorage.getItem('ashcol-global-branch-id'))
+    window.addEventListener('ashcol-global-branch-change', sync)
+    return () => window.removeEventListener('ashcol-global-branch-change', sync)
+  }, [])
 
   const getToken = useCallback((): string => {
     return localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -164,6 +159,43 @@ export default function Ddrm() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  useEffect(() => {
+    const loadBranches = async () => {
+      try {
+        const token = getToken()
+        const res = await fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
+        if (res.ok) {
+          const data = await res.json()
+          setBranches(data?.data || [])
+        }
+      } catch { /* silent */ }
+    }
+    loadBranches()
+  }, [getToken])
+
+  const activeBranchLabel = useMemo(() => {
+    const targetId = isPortalAdminUser ? globalBranchId : (user?.branchId || globalBranchId)
+    if (!targetId || targetId === 'ALL_BRANCHES') return 'All Branches'
+    const found = branches.find(b => b.id === targetId || branchScopesMatch(b.id, targetId))
+    return found ? formatBranchName(found.name) : formatBranchName(targetId)
+  }, [isPortalAdminUser, globalBranchId, user?.branchId, branches])
+
+  function blankSheet() {
+    return {
+      dateFiled: new Date().toISOString().substring(0, 10),
+      filedBy: user?.name || '',
+      driverName: '',
+      position: 'Driver',
+      branch: (activeBranchLabel && activeBranchLabel !== 'All Branches') ? activeBranchLabel : (user?.branchId ? formatBranchName(user.branchId) : ''),
+      cutOffPeriod: '',
+      validatedBy: '',
+      totalApprovedOt: '',
+      remarksOic: '',
+      idleTimeRemarks: '',
+      rows: Array.from({ length: 7 }, () => emptyRow()),
+    }
+  }
 
   useEffect(() => {
     if (!driverContextMenu) return
@@ -413,62 +445,6 @@ export default function Ddrm() {
     setView('ledger')
   }
 
-  const handleScanDriverSheet = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    setScanning(true)
-    setError(null)
-    const fd = new FormData()
-    fd.append('file', file)
-
-    try {
-      const token = getToken()
-      const res = await fetch(`${API_BASE_URL}/hris/driver-routes/scan`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
-      })
-      if (res.ok) {
-        const data = await res.json()
-        if (data.error) {
-          alert(data.error)
-        } else {
-          openSheet({
-            dateFiled: data.dateFiled || new Date().toISOString().substring(0, 10),
-            filedBy: data.filedBy || '',
-            driverName: (data.driverName || '').toUpperCase(),
-            position: data.position || 'Driver',
-            branch: (data.branch || '').toUpperCase(),
-            cutOffPeriod: data.cutOffPeriod || '',
-            validatedBy: data.validatedBy || '',
-            totalApprovedOt: data.totalApprovedOt || '',
-            remarksOic: data.remarksOic || '',
-            idleTimeRemarks: data.idleTimeRemarks || '',
-            rows: (data.rows || []).map((r: any) => ({
-              logDate: r.logDate || '',
-              postedSchedule: r.postedSchedule || '',
-              bioTimeIn: r.bioTimeIn || '',
-              bioTimeOut: r.bioTimeOut || '',
-              departureTime: r.departureTime || '',
-              arrivalTime: r.arrivalTime || '',
-              sites: r.sites || [],
-              remarks: r.remarks || '',
-            })),
-          })
-        }
-      } else {
-        const err = await res.json().catch(() => ({}))
-        alert(err.error || err.message || `Scan failed (HTTP ${res.status})`)
-      }
-    } catch (err: any) {
-      alert('Error scanning sheet: ' + err.message)
-    } finally {
-      setScanning(false)
-      if (driverFileInputRef.current) driverFileInputRef.current.value = ''
-    }
-  }
-
   const handleSaveDriverSheet = async (e?: React.FormEvent) => {
     e?.preventDefault()
     if (!editingSheet) return
@@ -630,12 +606,34 @@ export default function Ddrm() {
     try { el.releasePointerCapture?.(e.pointerId) } catch { /* ignore */ }
   }
 
-  const filteredSheets = driverSheets.filter(s => {
-    const q = searchQuery.toLowerCase()
-    return (s.driverName || '').toLowerCase().includes(q) ||
-      (s.branch && s.branch.toLowerCase().includes(q)) ||
-      (s.cutOffPeriod && s.cutOffPeriod.toLowerCase().includes(q))
-  })
+  const filteredSheets = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim()
+    const targetBranchId = isPortalAdminUser ? globalBranchId : (user?.branchId || globalBranchId)
+
+    return driverSheets.filter(s => {
+      // If branch filtering is active and a specific branch is selected
+      if (filterByBranch && targetBranchId && targetBranchId !== 'ALL_BRANCHES') {
+        const sheetBranch = (s.branch || '').toUpperCase()
+        const activeNameUpper = activeBranchLabel.toUpperCase()
+        const matches = branchScopesMatch(sheetBranch, targetBranchId) ||
+          sheetBranch.includes(activeNameUpper) ||
+          activeNameUpper.includes(sheetBranch)
+        if (sheetBranch && !matches) return false
+      }
+
+      if (q) {
+        const matchesQuery =
+          (s.driverName || '').toLowerCase().includes(q) ||
+          (s.branch && s.branch.toLowerCase().includes(q)) ||
+          (s.cutOffPeriod && s.cutOffPeriod.toLowerCase().includes(q)) ||
+          (s.position && s.position.toLowerCase().includes(q)) ||
+          (s.validatedBy && s.validatedBy.toLowerCase().includes(q))
+        if (!matchesQuery) return false
+      }
+
+      return true
+    })
+  }, [driverSheets, searchQuery, filterByBranch, isPortalAdminUser, globalBranchId, user?.branchId, activeBranchLabel])
 
   const siteLabels = useMemo(() => SITE_TONES.slice(0, siteCount), [siteCount])
 
@@ -647,7 +645,7 @@ export default function Ddrm() {
 
   return (
     <div
-      className="ddrm-page flex flex-col gap-1 flex-1 min-h-0 h-full w-full"
+      className="ddrm-page flex flex-col gap-2 flex-1 min-h-0 h-full w-full"
       style={{
         fontFamily: '"DM Sans", system-ui, sans-serif',
         backgroundColor: pageBg,
@@ -658,37 +656,9 @@ export default function Ddrm() {
         ['--excel-cell-text' as any]: textPrimary,
       }}
     >
-      {/* ── Page header (ledger only) ── */}
-      {view === 'ledger' && (
-      <div
-        className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 px-2 py-1.5 shrink-0 rounded-2xl shadow-xl"
-        style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
-      >
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="md:hidden p-2 rounded-lg"
-            style={{ color: textMuted, backgroundColor: softPanel }}
-            onClick={() => setSidebarOpen?.(true)}
-          >
-            <Menu className="w-4 h-4" />
-          </button>
-          <div>
-            <h2 className="text-xl font-extrabold tracking-tight flex items-center gap-2 leading-none">
-              <Route className="w-6 h-6" style={{ color: excelGreen }} />
-              DDRM
-            </h2>
-            <p className="text-sm mt-1 font-semibold" style={{ color: textMuted }}>
-              Drivers Daily Route Monitoring &amp; Overtime
-            </p>
-          </div>
-        </div>
-      </div>
-      )}
-
       {error && (
         <div
-          className="flex items-center gap-3 p-3 rounded-lg shrink-0"
+          className="flex items-center gap-3 p-3 rounded-xl shrink-0"
           style={{
             backgroundColor: isLight ? '#fef2f2' : 'rgba(239,68,68,0.08)',
             border: `1px solid ${isLight ? '#fecaca' : '#7f1d1d'}`,
@@ -702,49 +672,75 @@ export default function Ddrm() {
 
       {/* ══ LEDGER VIEW ═══════════════════════════════════════════ */}
       {view === 'ledger' && (
-        <div className="overflow-hidden flex flex-col flex-1 min-h-0 rounded-2xl shadow-xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-          <div className="px-2 py-2 flex flex-col md:flex-row items-center justify-between gap-2 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
-            <div className="relative w-full md:w-72">
-              <Search className="absolute left-3.5 top-3 w-4 h-4" style={{ color: textMuted }} />
-              <input
-                type="text"
-                placeholder="Search driver, branch, cut-off…"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#10B981]/40"
-                style={fieldStyle}
-              />
+        <div className="overflow-hidden flex flex-col flex-1 min-h-0 rounded-2xl shadow-xl border" style={{ backgroundColor: cardBg, borderColor: border }}>
+          
+          {/* Header Action Bar */}
+          <div className="px-4 py-3 flex flex-col md:flex-row items-center justify-between gap-3 shrink-0 border-b" style={{ borderColor: border }}>
+            
+            {/* Left: Active Branch indicator & search */}
+            <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+              
+              {/* Branch Filter Tag */}
+              <div
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-sm"
+                style={{
+                  backgroundColor: isLight ? '#f8fafc' : '#0F1A2E',
+                  borderColor: border,
+                }}
+              >
+                <Building2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                <span className="text-slate-400 text-[11px] uppercase tracking-wider">Branch:</span>
+                <span className="text-emerald-500 font-extrabold uppercase">{activeBranchLabel}</span>
+              </div>
+
+              {activeBranchLabel !== 'All Branches' && (
+                <button
+                  type="button"
+                  onClick={() => setFilterByBranch(prev => !prev)}
+                  className={`px-2.5 py-1.5 rounded-xl text-[11px] font-extrabold uppercase tracking-wider transition-all border ${
+                    filterByBranch
+                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                      : 'bg-slate-500/10 text-slate-400 border-slate-500/20 hover:bg-slate-500/20'
+                  }`}
+                  title={filterByBranch ? "Click to show all branches" : "Click to filter to active branch only"}
+                >
+                  {filterByBranch ? 'Active Only' : 'All Branches'}
+                </button>
+              )}
+
+              {/* Sheet count */}
+              <div className="text-xs font-bold px-2.5 py-1.5 rounded-xl text-slate-400 bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                {filteredSheets.length} {filteredSheets.length === 1 ? 'Sheet' : 'Sheets'}
+              </div>
+
+              {/* Search Box */}
+              <div className="relative w-full sm:w-64 md:w-72">
+                <Search className="absolute left-3.5 top-2.5 w-4 h-4" style={{ color: textMuted }} />
+                <input
+                  type="text"
+                  placeholder="Search driver, branch, cut-off…"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-8 py-1.5 rounded-xl text-xs sm:text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#10B981]/40 border transition-all"
+                  style={fieldStyle}
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <input
-                ref={driverFileInputRef}
-                type="file"
-                accept="image/*,application/pdf"
-                className="hidden"
-                onChange={handleScanDriverSheet}
-              />
-              <button
-                onClick={() => driverFileInputRef.current?.click()}
-                disabled={scanning || loadingSheet}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-[#10B981]/10 text-[#10B981] hover:bg-[#10B981]/25 transition-all disabled:opacity-50"
-              >
-                {scanning ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Scanning…
-                  </>
-                ) : (
-                  <>
-                    <Upload className="w-4 h-4" />
-                    Import Scan
-                  </>
-                )}
-              </button>
+            {/* Right: Actions */}
+            <div className="flex items-center gap-2 w-full md:w-auto justify-end">
               <button
                 onClick={() => openSheet(blankSheet())}
                 disabled={loadingSheet}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-[#10B981] text-white hover:opacity-90 transition-all shadow-md disabled:opacity-50"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-[#10B981] text-white hover:bg-[#0ea372] transition-all shadow-md shadow-emerald-500/20 active:scale-95 disabled:opacity-50"
               >
                 <Plus className="w-4 h-4" /> Add Sheet
               </button>
@@ -825,7 +821,7 @@ export default function Ddrm() {
                       <div className="flex flex-col items-center gap-2">
                         <MapPin className="w-8 h-8 opacity-40" />
                         <span className="text-base font-bold">No driver sheets yet</span>
-                        <span className="text-sm">Import a scan or add a blank sheet to get started.</span>
+                        <span className="text-sm">Add a blank sheet to get started.</span>
                       </div>
                     </td>
                   </tr>
@@ -840,75 +836,69 @@ export default function Ddrm() {
       {view === 'sheet' && editingSheet && (
         <form
           onSubmit={handleSaveDriverSheet}
-          className="overflow-hidden flex flex-col flex-1 min-h-0 rounded-2xl shadow-xl"
-          style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+          className="overflow-hidden flex flex-col flex-1 min-h-0 rounded-2xl shadow-xl border"
+          style={{ backgroundColor: cardBg, borderColor: border }}
         >
           {/* Clean top bar */}
           <div
-            className="shrink-0 px-3 py-3 flex flex-col xl:flex-row xl:items-center justify-between gap-3"
-            style={{ borderBottom: `1px solid ${border}` }}
+            className="shrink-0 px-4 py-3 flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-b"
+            style={{ borderColor: border }}
           >
             <div className="flex items-center gap-3 min-w-0">
               <button
                 type="button"
-                className="md:hidden p-2 rounded-lg shrink-0"
-                style={{ color: textMuted, backgroundColor: softPanel }}
-                onClick={() => setSidebarOpen?.(true)}
-              >
-                <Menu className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
                 onClick={closeSheet}
-                className="p-2 rounded-lg shrink-0 transition-colors"
-                style={{ backgroundColor: softPanel, color: textPrimary }}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all border hover:border-emerald-500/40"
+                style={{ backgroundColor: softPanel, borderColor: border, color: textPrimary }}
                 title="Back to ledger"
               >
-                <ChevronLeft className="w-5 h-5" />
+                <ArrowLeft className="w-4 h-4 text-emerald-500 shrink-0" />
+                <span className="hidden sm:inline">Back to Ledger</span>
               </button>
+              
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span
-                    className="px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-widest"
-                    style={{ backgroundColor: `${excelGreen}18`, color: excelGreen }}
+                    className="px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border"
+                    style={{ backgroundColor: `${excelGreen}15`, color: excelGreen, borderColor: `${excelGreen}40` }}
                   >
-                    {editingSheet.id ? 'Editing' : 'New'}
+                    {editingSheet.id ? 'Editing Sheet' : 'New Sheet'}
                   </span>
-                  <h3 className="text-xl font-extrabold uppercase tracking-tight truncate" style={{ color: textPrimary }}>
+                  <h3 className="text-base sm:text-lg font-black uppercase tracking-tight truncate" style={{ color: textPrimary }}>
                     {(editingSheet.driverName || 'UNNAMED DRIVER').toUpperCase()}
                   </h3>
                 </div>
-                <p className="text-sm font-semibold mt-0.5 truncate" style={{ color: textMuted }}>
+                <p className="text-xs font-semibold mt-0.5 truncate text-slate-400">
                   {[editingSheet.branch ? String(editingSheet.branch).toUpperCase() : null, editingSheet.cutOffPeriod, editingSheet.position]
                     .filter(Boolean)
-                    .join('  ·  ') || 'Route sheet details'}
+                    .join('  ·  ') || 'Driver Route Sheet'}
                 </p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
               <div
-                className="flex items-center gap-2 rounded-lg px-2.5 py-1.5"
-                style={{ backgroundColor: softPanel }}
+                className="flex items-center gap-2 rounded-xl px-2.5 py-1.5 border"
+                style={{ backgroundColor: softPanel, borderColor: border }}
               >
-                <MapPin className="w-4 h-4" style={{ color: textMuted }} />
-                <span className="text-xs font-extrabold uppercase tracking-wide" style={{ color: textMuted }}>Sites</span>
+                <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-400">Sites</span>
                 <button
                   type="button"
                   disabled={siteCount <= 1}
                   onClick={() => setSiteCount(c => Math.max(1, c - 1))}
-                  className="w-7 h-7 rounded-md text-sm font-extrabold disabled:opacity-30"
-                  style={{ color: textPrimary, backgroundColor: cardBg }}
+                  className="w-6 h-6 rounded-lg text-xs font-black disabled:opacity-30 border transition-all"
+                  style={{ color: textPrimary, backgroundColor: cardBg, borderColor: border }}
                 >
                   −
                 </button>
-                <span className="w-6 text-center text-sm font-extrabold">{siteCount}</span>
+                <span className="w-5 text-center text-xs font-black">{siteCount}</span>
                 <button
                   type="button"
                   disabled={siteCount >= SITE_TONES.length}
                   onClick={() => setSiteCount(c => Math.min(SITE_TONES.length, c + 1))}
-                  className="w-7 h-7 rounded-md text-sm font-extrabold disabled:opacity-30"
-                  style={{ color: textPrimary, backgroundColor: cardBg }}
+                  className="w-6 h-6 rounded-lg text-xs font-black disabled:opacity-30 border transition-all"
+                  style={{ color: textPrimary, backgroundColor: cardBg, borderColor: border }}
                 >
                   +
                 </button>
@@ -916,26 +906,25 @@ export default function Ddrm() {
               <button
                 type="button"
                 onClick={addDayRow}
-                className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg text-sm font-extrabold"
-                style={{ backgroundColor: softPanel, color: textPrimary }}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider border transition-all hover:opacity-90"
+                style={{ backgroundColor: softPanel, borderColor: border, color: textPrimary }}
               >
-                <Rows3 className="w-4 h-4" /> Add Day
+                <Rows3 className="w-3.5 h-3.5 text-emerald-500" /> Add Day
               </button>
               <button
                 type="button"
                 onClick={closeSheet}
-                className="px-3.5 py-2.5 rounded-lg text-sm font-extrabold"
-                style={{ color: textMuted }}
+                className="px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-extrabold text-white bg-[#10B981] hover:opacity-90 disabled:opacity-50"
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider text-white bg-[#10B981] hover:bg-[#0ea372] shadow-md shadow-emerald-500/20 active:scale-95 disabled:opacity-50 transition-all"
               >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Save
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                Save Sheet
               </button>
             </div>
           </div>
