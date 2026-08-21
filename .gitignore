@@ -19,6 +19,10 @@ dist-ssr
 # Cursor / local AI config
 .ai/
 
+# Claude Code project files (not committed)
+CLAUDE.md
+.claude/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
