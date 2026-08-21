@@ -800,13 +800,12 @@ export default function DashboardLayout() {
       <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
 
         {/* ── Global Header (Mobile/Tablet/Desktop) ──────────────── */}
-        {currentPage !== 'DDRM' && (
-          <header 
-            className="flex-none z-30 backdrop-blur-md w-full min-w-0 max-w-full relative"
-            style={{ 
-              backgroundColor: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(10,17,32,0.8)'
-            }}
-          >
+        <header 
+          className="flex-none z-30 backdrop-blur-md w-full min-w-0 max-w-full relative"
+          style={{ 
+            backgroundColor: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(10,17,32,0.8)'
+          }}
+        >
           {/* Top row: title + icons */}
           <div className="h-14 flex items-center justify-between px-4 md:px-6 lg:px-8 relative min-w-0">
             <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0 mr-2">
@@ -1041,12 +1040,11 @@ export default function DashboardLayout() {
 
           <div id="header-toolbar-slot" className="w-full min-w-0 max-w-full" />
         </header>
-        )}
 
         {/* ── Page Content ───────────────────────────────── */}
         <main className={
           currentPage === 'DDRM'
-            ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-[2px]"
+            ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-2 md:p-3"
             : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search')
               ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
               : currentPage === 'Operations Forms'
