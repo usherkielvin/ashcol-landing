@@ -16,7 +16,7 @@ export function AshcolFormHeader({ title, subtitle, isLight, textPrimary, textMu
       style={{ borderBottom: `2px solid ${isLight ? '#0f172a' : border}` }}
     >
       <div className="flex items-center justify-center gap-3 mb-2">
-        <img src={logoImg} alt="ASHCOL" className="w-12 h-12 rounded-full object-cover shadow-sm" />
+        <img src={logoImg} alt="ASHCOL" className="h-14 w-auto object-contain" />
         <div className="text-left">
           <div
             className="text-lg font-black tracking-wide leading-tight"

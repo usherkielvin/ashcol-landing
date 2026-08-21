@@ -107,10 +107,10 @@ function buildNavGroups(navLinks: NavLinkDef[]) {
       title: 'Operations',
       Icon: MdOutlinePeopleAlt,
       subItems: [
+        { name: 'Lineup', icon: <MdOutlinePlaylistAdd size={16} />, path: findPath('Lineup') },
         { name: 'HRIS', icon: <MdOutlineDescription size={16} />, path: findPath('HRIS') },
         { name: 'DDRM', icon: <MdOutlineAltRoute size={16} />, path: findPath('DDRM') },
-        { name: 'Operations Forms', icon: <MdOutlineDescription size={16} />, path: findPath('Operations Forms') },
-        { name: 'Line-up', icon: <MdOutlinePlaylistAdd size={16} />, path: findPath('Lineup') },
+        { name: 'Request Forms', icon: <MdOutlineDescription size={16} />, path: findPath('Request Forms') },
         { name: 'Office tasks', icon: <MdOutlineChecklist size={16} />, path: findPath('Office tasks') },
       ].filter(s => navLinks.some(l => l.path === s.path)),
     },
@@ -418,7 +418,7 @@ export default function DashboardLayout() {
     { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin', 'management'] },
     { name: 'HRIS',              path: '/admin-hris',       icon: Calendar,        roles: ['admin', 'management', 'manager'] },
     { name: 'DDRM',              path: '/ddrm',             icon: Route,           roles: canAccessDdrm ? ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] : ['admin', 'management', 'manager'] },
-    { name: 'Operations Forms',  path: '/operations-forms', icon: ClipboardList, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Request Forms',     path: '/operations-forms', icon: ClipboardList, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Bills',             path: '/admin-bills',      icon: Landmark,        roles: ['admin', 'management', 'manager'] },
     { name: 'Telecoms',          path: '/admin-telecom',    icon: Wifi,            roles: ['admin', 'management', 'manager'] },
   ]
@@ -426,8 +426,8 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'management' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
 
-  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms', ...(canAccessRelays ? ['Relays', 'Bookings'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
-  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'Lineup', 'Operations Forms', ...(canAccessRelays ? ['Relays', 'Bookings'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
+  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'Lineup', 'Request Forms', ...(canAccessRelays ? ['Relays', 'Bookings'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
+  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'Lineup', 'Request Forms', ...(canAccessRelays ? ['Relays', 'Bookings'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 
@@ -1047,7 +1047,7 @@ export default function DashboardLayout() {
             ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-2 md:p-3"
             : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search')
               ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
-              : currentPage === 'Operations Forms'
+              : (currentPage === 'Request Forms' || currentPage === 'Operations Forms')
                 ? "flex-1 overflow-y-auto px-6 py-6 relative"
                 : "flex-1 overflow-y-auto p-5 md:p-8 relative"
         }>

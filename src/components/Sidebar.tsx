@@ -14,6 +14,7 @@ import {
   MdOutlineDescription,
   MdOutlinePlaylistAdd,
   MdOutlineChecklist,
+  MdOutlineAltRoute,
   // Finance sub-icons
   MdOutlineReceipt,
   MdOutlineMonetizationOn,
@@ -60,8 +61,10 @@ const Sidebar = () => {
       title: "Operations",
       icon: <MdOutlinePeopleAlt size={20} />,
       subItems: [
+        { name: "Lineup",       icon: <MdOutlinePlaylistAdd size={15} /> },
         { name: "HRIS",         icon: <MdOutlineDescription size={15} /> },
-        { name: "Line-up",      icon: <MdOutlinePlaylistAdd size={15} /> },
+        { name: "DDRM",         icon: <MdOutlineAltRoute size={15} /> },
+        { name: "Request Forms", icon: <MdOutlineDescription size={15} /> },
         { name: "Office tasks", icon: <MdOutlineChecklist size={15} /> },
       ],
     },
