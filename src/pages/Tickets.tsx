@@ -73,7 +73,7 @@ import {
   getArchivedScheduleDate, getBranchDisplayName, getCellRawValue, getContinuationDates, getCustomerDisplayName,
   getEmptyRequiredColumnsForClose, getF, getFinalDateKey, getInstalledDateKey,
   getInstallerDisplay, getNextContinuationDate, getOverviewStatusBadge, getPaymentBreakdown, getPaymentMode,
-  getPreferredDateKey, getScheduleGhostKind, getScheduleOutcome, getSchedulePaymentDisplay, getScheduleRowColors,
+  getPreferredDateKey, getPreviousScheduleDates, getScheduleGhostKind, getScheduleOutcome, getSchedulePaymentDisplay, getScheduleRowColors,
   getScheduleStatusBadgeStyle, getScheduleStatusDisplay, getScheduleStatusLabel, getScheduleStatusValue,
   getScheduleUpdateDisplay, getTicketCommitDisplay, getTicketDriverDisplay, getTicketDriverName,
   getTicketNegotiatorName, getTicketNumberDisplay, getTicketVehicleDisplay, importRowMatchesTicket,
@@ -2313,11 +2313,22 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         const syncedInstalledKey = (typeof body.actualCompletion === 'string' && body.actualCompletion
           ? body.actualCompletion.split('T')[0]
           : '') || getInstalledDateKey(ticketWithEdits)
+
+        // This is a direct correction, not a real reschedule — drop the date(s) being
+        // superseded from previousScheduleDates too, or the Schedules grid keeps rendering
+        // a ghost row on the old date forever (isCompletedGhostOnDate checks that array)
+        // even though every visible field now agrees on the new date.
+        const oldArchivedKey = getArchivedScheduleDate(originalTicket)
+        const oldInstalledKey = getInstalledDateKey(originalTicket)
+        const prevScheduleDates = getPreviousScheduleDates(originalTicket)
+          .filter(d => d !== oldArchivedKey && d !== oldInstalledKey)
+
         finalBody = {
           ...body,
           acDetails: mergeAcMeta(ticketWithEdits, {
             ...(syncedFinalKey ? { archivedScheduleDate: syncedFinalKey } : {}),
             ...(syncedInstalledKey ? { installedDate: syncedInstalledKey } : {}),
+            previousScheduleDates: prevScheduleDates,
           }),
         }
       }
