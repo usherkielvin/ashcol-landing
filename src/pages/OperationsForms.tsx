@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { NumericFormat } from 'react-number-format'
 import {
   FileText, CreditCard, Clock, Plus, Search, Filter, Loader2,
@@ -151,6 +152,10 @@ export default function OperationsForms() {
 
   const role = (user?.role || '').toLowerCase()
   const isAdmin = isPortalAdmin(role) || role === 'manager'
+
+  const [searchParams, setSearchParams] = useSearchParams()
+  const targetId = searchParams.get('id')
+  const targetType = searchParams.get('type') as TabId | null
 
   const [modal, setModal] = useState<{ mode: ModalMode; type: TabId; record: CashAdvance | BudgetRequest | OvertimeRequest | null } | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: UnifiedRow } | null>(null)
@@ -420,7 +425,25 @@ export default function OperationsForms() {
     setModal({ mode, type, record })
   }
 
-  const closeModal = () => setModal(null)
+  // Auto-open full view modal when navigating from a notification link
+  useEffect(() => {
+    if (!targetId || unifiedRows.length === 0) return
+    const row = unifiedRows.find(r => r.id === targetId && (!targetType || r.type === targetType))
+      || unifiedRows.find(r => r.id === targetId)
+    if (row && (!modal || modal.record?.id !== row.id)) {
+      openRecord('view', row.type, row.raw)
+    }
+  }, [targetId, targetType, unifiedRows, modal])
+
+  const closeModal = () => {
+    setModal(null)
+    if (searchParams.get('id')) {
+      const next = new URLSearchParams(searchParams)
+      next.delete('id')
+      next.delete('type')
+      setSearchParams(next, { replace: true })
+    }
+  }
 
   const openContextMenu = (e: React.MouseEvent, row: UnifiedRow) => {
     e.preventDefault()
@@ -955,7 +978,7 @@ export default function OperationsForms() {
                         <input className={inputCls} style={istyle} value="Finance / Accounting Dept" readOnly />
                       </FormField>
                       <FormField label="Date" required>
-                        <input className={inputCls} style={istyle} type="date" value={budgetDate} onChange={e => setBudgetDate(e.target.value)} readOnly={disabled} required />
+                        <input className={inputCls} style={istyle} type="date" value={budgetDate} onChange={e => setBudgetDate(e.target.value)} disabled={disabled} required />
                       </FormField>
                       <FormField label="From — Branch" required>
                         <input className={inputCls} style={istyle} value={budgetBranch} onChange={e => setBudgetBranch(e.target.value)} readOnly={disabled} required />
@@ -983,7 +1006,7 @@ export default function OperationsForms() {
                       {' '}account no.{' '}
                       <input className="inline-block w-24 px-1 py-0.5 border-b text-xs font-semibold focus:outline-none" style={{ ...istyle, borderRadius: 0, border: 'none', borderBottom: `1px solid ${inputBorder}` }} value={accountNo} onChange={e => setAccountNo(e.target.value)} placeholder="acct #" readOnly={disabled} />
                       {' '}due on{' '}
-                      <input className="inline-block w-28 px-1 py-0.5 text-xs font-semibold focus:outline-none" style={{ ...istyle, borderRadius: 4 }} type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} readOnly={disabled} />
+                      <input className="inline-block w-28 px-1 py-0.5 text-xs font-semibold focus:outline-none" style={{ ...istyle, borderRadius: 4 }} type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} disabled={disabled} />
                       {' '}as payment for the ff:
                     </p>
 
