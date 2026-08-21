@@ -157,7 +157,11 @@ export function TicketDetailsModal({
   const finalScheduleDate = getFinalDateKey(t)
   const dealer = getF(t, 'dealer')
   const diser = getF(t, 'diser')
+  // "Scheduled Date" reflects a closed ticket, not just the narrower INSTALLED/COMPLETED
+  // pair isInstalledWorkflowStatus checks — DONE_DISMANTLE/DONE_SYSTEM_REPROCESS/DONE_MOUNTING
+  // are also closing statuses (see Tickets.tsx's alreadyClosed list) and were being hidden here.
   const isCompleted = isInstalledWorkflowStatus(t.status)
+    || ['DONE_DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'DONE_MOUNTING'].includes((t.status || '').toUpperCase())
   const paymentAmt = formatPaymentAmount(t)
   const paymentMode = getPaymentMode(t)
   const archivedSched = formatDateKeyLabel(getArchivedScheduleDate(t))
