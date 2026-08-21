@@ -547,6 +547,13 @@ export function buildReschedulePatchBody(
   const userRemarks = (options.remarks || '').trim().replace(/^RESCHED PENDING:\s*/i, '')
 
   if (options.pending) {
+    // schedulePhase (SURVEY/CLEANING/CHECKUP/...) must be cleared here — getScheduleStatusValue()
+    // reads it before ticket.status, so a leftover phase from before the reschedule keeps the badge
+    // showing the old phase (e.g. "SURVEY") forever even though status genuinely saved as RESCHED.
+    // Not cleared in the "pick a new date" branch below, since SCHEDULED intentionally keeps the
+    // sub-type phase (CLEANING/CHECKUP/BACKJOB/MOUNTING all save as status=SCHEDULED and rely on
+    // schedulePhase to show their real badge).
+    acUpdates.schedulePhase = ''
     acUpdates.reschedulePending = true
     const formattedRemarks = userRemarks
       ? `RESCHED PENDING: ${userRemarks}`
