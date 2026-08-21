@@ -35,6 +35,7 @@ interface RebateRow    { id: string; ticketNumber: string; customer: string; com
 interface OrderRow     { id: string; customer: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 interface ExpenseRow   { id: string; name: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 interface IncentiveRow { id: string; customer: string; company: string; hp: string; promodiser: string; amount: string; collectionResolved?: boolean }
+interface CashAdvanceRow { id: string; memberName: string; details: string; amount: string }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -244,6 +245,7 @@ const mkPay  = (): OrderRow    => ({ id: uid(), customer: '', description: '', a
 const mkExp  = (): ExpenseRow  => ({ id: uid(), name: '', description: '', amount: '', receiptReturned: false })
 const mkInc  = (): IncentiveRow => ({ id: uid(), customer: '', company: '', hp: '', promodiser: '', amount: '', collectionResolved: false })
 const mkComm = (): CommissionRow => ({ id: uid(), ticketNumber: '', store: '', diser: '', customer: '', brand: '', hp: '', dateInstalled: '', amount: '' })
+const mkCashAdv = (): CashAdvanceRow => ({ id: uid(), memberName: '', details: '', amount: '' })
 
 // Temporarily hidden: saving a report with INCENTIVE items crashes the production backend
 // (Jackson classpath mismatch — NoClassDefFoundError: JsonMappingException$Reference) until
@@ -672,6 +674,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const [payables, setPayables]         = useState<OrderRow[]>([mkPay()])
   // Expenses with Receipts
   const [expReceipt, setExpReceipt]     = useState<ExpenseRow[]>([mkExp()])
+  // Cash Advance
+  const [cashAdvances, setCashAdvances] = useState<CashAdvanceRow[]>([mkCashAdv()])
   // Expenses for Purchase
   const [expPurch, setExpPurch]         = useState<ExpenseRow[]>([mkExp()])
   // Incentives
@@ -1047,6 +1051,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       const onlineTxList: OnlineTxRow[] = []
       const checkRemList: CheckRow[] = []
       const expReceiptList: ExpenseRow[] = []
+      const cashAdvancesList: CashAdvanceRow[] = []
       const expPurchList: ExpenseRow[] = []
       const ordersList: OrderRow[] = []
       const forCollList: ForCollRow[] = []
@@ -1113,6 +1118,14 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
               receiptDate: item.receiptDate || '',
               resolvedExpenseId: item.resolvedExpenseId || '',
               receiptStatus: item.receiptStatus || ''
+            })
+          } else if (type === 'CASH_ADVANCE') {
+            const parts = desc.split('|')
+            cashAdvancesList.push({
+              id: uid(),
+              memberName: parts[0] ? formatDisplayUserLabel(parts[0]) : '',
+              details: parts[1] || '',
+              amount: amt
             })
           } else if (type === 'PURCHASE') {
             if (desc.startsWith('ORDER|')) {
@@ -1230,6 +1243,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         })
       }
       setExpReceipt(expReceiptList.length > 0 ? expReceiptList : [mkExp()])
+      setCashAdvances(cashAdvancesList.length > 0 ? cashAdvancesList : [mkCashAdv()])
 
       if (expPurchList.length === 0 && data.totalForPurchase != null && Number(data.totalForPurchase) > 0) {
         expPurchList.push({
@@ -1304,6 +1318,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     setCommissions([mkComm()])
     setOrders([mkOrd()])
     setExpReceipt([mkExp()])
+    setCashAdvances([mkCashAdv()])
     setExpPurch([mkExp()])
     setScheduledUnits('0')
     setSurveyOnlyUnits('0')
@@ -1727,11 +1742,14 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const totalOrders          = sumArr(orders.map(r => r.amount))
   const totalPayables        = sumArr(payables.map(r => r.amount))
   const totalExpReceipt      = sumArr(expReceipt.map(r => r.amount))
+  const totalCashAdvance     = sumArr(cashAdvances.map(r => r.amount))
   const totalExpPurch        = sumArr(expPurch.map(r => r.amount))
   const totalIncentives      = sumArr(incentives.map(r => r.amount))
   // Incentives reduce Gross Sales (applied server-side in ReportService), but they're not cash
   // that left the branch's hand — they must NOT be subtracted from Cash on Hand / Deposit here.
-  const grandTotalExpenses   = totalExpReceipt + totalExpPurch
+  // Cash Advance IS a real cash outflow (unlike Rebates/Commission/Payables, which are
+  // informational-only totals), so it belongs in the deduction alongside the Expenses sections.
+  const grandTotalExpenses   = totalExpReceipt + totalExpPurch + totalCashAdvance
   const totalFundReceived    = num(cashOnHand) + num(fundFromHo) + totalCashCollection + totalCashReturns
   const totalCashOnHand      = totalFundReceived - grandTotalExpenses
 
@@ -1769,6 +1787,11 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           receiptNo: r.receiptNo || null,
           receiptDate: r.receiptDate || null,
           resolvedExpenseId: r.resolvedExpenseId || null
+        })),
+        ...cashAdvances.filter(r => r.memberName || r.amount).map(r => ({
+          type: 'CASH_ADVANCE',
+          description: `${r.memberName}|${r.details}`,
+          amount: parseFloat(r.amount) || 0,
         })),
         ...expPurch.filter(r => r.name || r.amount).map(r => ({
           type: 'PURCHASE',
@@ -2709,6 +2732,56 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                 </tbody>
               </table>
               {canSubmit && !reviewMode && <AddRowBtn onClick={() => setExpReceipt(p => [...p, mkExp()])} label="Add row" />}
+            </div>
+          </div>
+
+          {/* Cash Advance */}
+          <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+            <SectionHeader label="Cash Advance" total={totalCashAdvance} variant="expense" />
+            <div className="p-2">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr>
+                    <th className={tableTh}>Member Name</th>
+                    <th className={tableTh}>Details</th>
+                    <th className={tableTh + ' text-right w-28'}>Amount</th>
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {cashAdvances.map(row => (
+                    <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                      <td className={tableTd}>
+                        {isFormDisabled ? (
+                          <div className="px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                            <EmployeeNameLink nameOrId={row.memberName} />
+                          </div>
+                        ) : (
+                          <input type="text" placeholder="Member Name" value={row.memberName}
+                            onChange={e => setCashAdvances(p => p.map(r => r.id === row.id ? { ...r, memberName: e.target.value } : r))}
+                            className={flushInput} />
+                        )}
+                      </td>
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Details" value={row.details}
+                          onChange={e => setCashAdvances(p => p.map(r => r.id === row.id ? { ...r, details: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
+                          onValueChange={(values) => setCashAdvances(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
+                          className={flushInputNumber} disabled={isFormDisabled} />
+                      </td>
+                      {canSubmit && !reviewMode && (
+                        <td className={tableTd + ' text-center'}>
+                          <DelBtn onClick={() => setCashAdvances(p => p.filter(r => r.id !== row.id))} />
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setCashAdvances(p => [...p, mkCashAdv()])} label="Add row" />}
             </div>
           </div>
 

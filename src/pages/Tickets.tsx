@@ -2302,6 +2302,24 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         const schedKey = oldDateKey || resolveScheduleCompletionDateKey(originalTicket, dateFilter)
         const ticketWithEdits = { ...originalTicket, ...body, acDetails: body.acDetails }
         finalBody = enrichCompletePatchBody({ ...body }, ticketWithEdits, schedKey)
+      } else if (alreadyClosed && originalTicket) {
+        // Ticket was already marked done before this edit — "Scheduled Date"/"Installed Date"
+        // on the read-only view are a one-time snapshot taken at first completion (see
+        // buildArchiveAcMeta). Without this, editing Schedule Date/Installed Date on an
+        // already-closed ticket updates the live fields but leaves that snapshot stale,
+        // so the edit modal and the view modal show two different dates for the same ticket.
+        const ticketWithEdits = { ...originalTicket, ...body, acDetails: body.acDetails } as Ticket
+        const syncedFinalKey = finalDateKey || getFinalDateKey(ticketWithEdits)
+        const syncedInstalledKey = (typeof body.actualCompletion === 'string' && body.actualCompletion
+          ? body.actualCompletion.split('T')[0]
+          : '') || getInstalledDateKey(ticketWithEdits)
+        finalBody = {
+          ...body,
+          acDetails: mergeAcMeta(ticketWithEdits, {
+            ...(syncedFinalKey ? { archivedScheduleDate: syncedFinalKey } : {}),
+            ...(syncedInstalledKey ? { installedDate: syncedInstalledKey } : {}),
+          }),
+        }
       }
 
       const archiveOriginal = originalTicket

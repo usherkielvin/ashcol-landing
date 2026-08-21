@@ -4,7 +4,7 @@ import { NumericFormat } from 'react-number-format'
 import {
   FileText, CreditCard, Clock, Plus, Search, Filter, Loader2,
   Check, X, AlertCircle, Trash2, Eye, Pencil, MousePointerClick, ChevronLeft,
-  CircleCheck, CircleX, Hourglass, TrendingUp,
+  CircleCheck, CircleX, Hourglass, TrendingUp, ChevronDown,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -598,21 +598,93 @@ export default function OperationsForms() {
     }
   }
 
-  const handleStatusUpdate = async (type: TabId, id: string, status: string) => {
+  const [statusMenu, setStatusMenu] = useState<{ id: string; type: TabId; currentStatus: string; x: number; y: number } | null>(null)
+
+  const openStatusMenu = (e: React.MouseEvent, row: UnifiedRow) => {
+    e.stopPropagation()
+    if (!isAdmin) return
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setStatusMenu({
+      id: row.id,
+      type: row.type,
+      currentStatus: row.status,
+      x: rect.left,
+      y: rect.bottom + 4,
+    })
+  }
+
+  const closeStatusMenu = () => setStatusMenu(null)
+
+  const getStatusOptions = (type: TabId) => {
+    if (type === 'cash-advance') {
+      return [
+        { value: 'PENDING', label: 'Pending', color: '#d97706' },
+        { value: 'APPROVED', label: 'Approved', color: '#16a34a' },
+        { value: 'DISBURSED', label: 'Disbursed', color: '#4f46e5' },
+        { value: 'FULLY_PAID', label: 'Fully Paid', color: '#0d9488' },
+        { value: 'REJECTED', label: 'Rejected', color: '#dc2626' },
+      ]
+    }
+    if (type === 'budget') {
+      return [
+        { value: 'PENDING', label: 'Pending', color: '#d97706' },
+        { value: 'NOTED', label: 'Noted', color: '#2563eb' },
+        { value: 'APPROVED', label: 'Approved', color: '#16a34a' },
+        { value: 'REJECTED', label: 'Rejected', color: '#dc2626' },
+      ]
+    }
+    return [
+      { value: 'PENDING', label: 'Pending', color: '#d97706' },
+      { value: 'APPROVED', label: 'Approved', color: '#16a34a' },
+      { value: 'REJECTED', label: 'Rejected', color: '#dc2626' },
+    ]
+  }
+
+  const handleStatusUpdate = async (type: TabId, id: string, status: string, rejectionReason?: string) => {
     const endpoints: Record<string, string> = {
       budget: `${API_BASE_URL}/operations/budget-requests/${id}/status`,
       overtime: `${API_BASE_URL}/operations/overtime-requests/${id}/status`,
       'cash-advance': `${API_BASE_URL}/hris/cash-advances/${id}/approve`,
     }
-    const body = type === 'cash-advance' ? { status, notes: '' } : { status }
+
+    // Optimistic UI updates
+    if (type === 'cash-advance') {
+      setCashAdvances(prev => prev.map(c => c.id === id ? { ...c, status } : c))
+    } else if (type === 'budget') {
+      setBudgetRequests(prev => prev.map(b => b.id === id ? { ...b, status, rejectionReason } : b))
+    } else {
+      setOvertimeRequests(prev => prev.map(o => o.id === id ? { ...o, status, rejectionReason } : o))
+    }
+
+    if (modal?.record && modal.record.id === id) {
+      setModal(m => m ? { ...m, record: { ...m.record!, status, rejectionReason } as any } : null)
+    }
+
+    const body: Record<string, any> = { status }
+    if (rejectionReason) body.rejectionReason = rejectionReason
+    if (type === 'cash-advance' && !body.notes) body.notes = ''
+
     try {
       const res = await fetch(endpoints[type], {
         method: 'PUT',
         headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-      if (res.ok) fetchAll()
-    } catch { /* ignore */ }
+      if (!res.ok) fetchAll()
+    } catch {
+      fetchAll()
+    }
+  }
+
+  const onSelectStatus = async (type: TabId, id: string, newStatus: string) => {
+    closeStatusMenu()
+    let rejectionReason = ''
+    if (newStatus === 'REJECTED') {
+      const reason = window.prompt('Enter rejection reason (optional):', '')
+      if (reason === null) return // user cancelled
+      rejectionReason = reason
+    }
+    await handleStatusUpdate(type, id, newStatus, rejectionReason)
   }
 
   const statusColors: Record<string, string> = {
@@ -853,8 +925,26 @@ export default function OperationsForms() {
                     <td className={`${cellCls} whitespace-nowrap`} style={{ color: textPrimary }}>{r.requesterName}</td>
                     <td className={`${cellCls} whitespace-nowrap`} style={{ color: textPrimary }}>{r.branchLabel}</td>
                     <td className={`${cellCls} max-w-xs truncate`} style={{ color: textPrimary }} title={r.detail}>{r.detail}</td>
-                    <td className={`${cellCls} whitespace-nowrap`} style={{ color: textPrimary }}>{r.amount != null ? formatPeso(r.amount) : '—'}</td>
-                    <td className={cellCls}>{statusText(r.status)}</td>
+                    <td className={`${cellCls} select-none`}>
+                      {isAdmin ? (
+                        <button
+                          type="button"
+                          onClick={(e) => openStatusMenu(e, r)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all hover:scale-105 shadow-sm active:scale-95 cursor-pointer"
+                          style={{
+                            color: statusColors[r.status] || statusColors.PENDING,
+                            backgroundColor: `${statusColors[r.status] || statusColors.PENDING}18`,
+                            border: `1px solid ${statusColors[r.status] || statusColors.PENDING}33`,
+                          }}
+                          title="Click to edit status"
+                        >
+                          {r.status.replace(/_/g, ' ')}
+                          <ChevronDown className="w-3 h-3 opacity-70" />
+                        </button>
+                      ) : (
+                        statusText(r.status)
+                      )}
+                    </td>
                     <td
                       className={`${cellCls} max-w-[200px] select-none`}
                       style={{ color: textPrimary }}
@@ -967,6 +1057,44 @@ export default function OperationsForms() {
                 <MenuItem icon={Trash2} label="Delete" color="#dc2626" onClick={() => { closeContextMenu(); requestDeleteRecord(contextMenu.row.type, contextMenu.row.id, contextMenu.row.detail) }} />
               </>
             )}
+          </div>
+        </>
+      )}
+
+      {/* Status dropdown menu for Admin / Management */}
+      {statusMenu && (
+        <>
+          <div className="fixed inset-0 z-[15900]" onClick={closeStatusMenu} onContextMenu={e => { e.preventDefault(); closeStatusMenu() }} />
+          <div
+            className="fixed z-[15950] min-w-[160px] rounded-xl shadow-2xl overflow-hidden py-1"
+            style={{
+              top: Math.min(statusMenu.y, window.innerHeight - 240),
+              left: Math.min(statusMenu.x, window.innerWidth - 180),
+              backgroundColor: cardBg,
+              border: `1px solid ${border}`,
+            }}
+          >
+            <div className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider border-b" style={{ color: textMuted, borderColor: border }}>
+              Change Status
+            </div>
+            {getStatusOptions(statusMenu.type).map(opt => {
+              const active = statusMenu.currentStatus === opt.value
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => onSelectStatus(statusMenu.type, statusMenu.id, opt.value)}
+                  className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold text-left hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
+                  style={{ color: opt.color }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: opt.color }} />
+                    <span>{opt.label}</span>
+                  </div>
+                  {active && <Check className="w-3.5 h-3.5 shrink-0" style={{ color: opt.color }} />}
+                </button>
+              )
+            })}
           </div>
         </>
       )}
