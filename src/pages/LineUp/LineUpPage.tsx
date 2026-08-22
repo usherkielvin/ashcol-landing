@@ -488,9 +488,7 @@ export default function LineUpPage() {
     const raw = (getScheduleStatusDisplay(ticket) || '').toUpperCase()
     if (!raw) return ''
     if (
-      raw === 'INSTALLATION'
-      || raw === 'INSTALL'
-      || raw === 'DONE INSTALL'
+      raw === 'DONE INSTALL'
       || raw === 'DONE_INSTALL'
       || raw === 'DONE_INSTALLED'
       || raw === 'DONE INSTALLED'
@@ -498,12 +496,21 @@ export default function LineUpPage() {
     ) {
       return 'INSTALLED'
     }
+    if (
+      raw === 'INSTALLATION'
+      || raw === 'INSTALL'
+      || raw === 'S/I'
+      || raw === 'S_I'
+      || raw === 'SI'
+    ) {
+      return 'INSTALL'
+    }
     if (raw.includes('QUOTATION') || raw.includes('APPROVAL')) return 'QUOTATION'
     return raw
       .replace(/\bDONE_INSTALLED\b/gi, 'INSTALLED')
       .replace(/\bDONE_INSTALL\b/gi, 'INSTALLED')
       .replace(/\bDONE\s+INSTALL(?:ED)?\b/gi, 'INSTALLED')
-      .replace(/\bINSTALLATION\b/gi, 'INSTALLED')
+      .replace(/\bINSTALLATION\b/gi, 'INSTALL')
       .replace(/\bDONE_CLEANING\b/gi, 'CLEANING')
       .replace(/\bDONE_SURVEY\b/gi, 'SURVEY')
       .replace(/\bDONE_CHECKUP\b/gi, 'CHECKUP')

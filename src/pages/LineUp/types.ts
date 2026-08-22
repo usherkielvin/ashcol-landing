@@ -323,7 +323,7 @@ export const normalizeRemarksString = (str: string): string => {
     .replace(/\bDONE_INSTALLED\b/gi, 'INSTALLED')
     .replace(/\bDONE_INSTALL\b/gi, 'INSTALLED')
     .replace(/\bDONE\s+INSTALL(?:ED)?\b/gi, 'INSTALLED')
-    .replace(/\bINSTALLATION\b/gi, 'INSTALLED')
+    .replace(/\bINSTALLATION\b/gi, 'INSTALL')
     .replace(/\bDONE_CLEANING\b/gi, 'CLEANING')
     .replace(/\bDONE_SURVEY\b/gi, 'SURVEY')
     .replace(/\bDONE_CHECKUP\b/gi, 'CHECKUP')
