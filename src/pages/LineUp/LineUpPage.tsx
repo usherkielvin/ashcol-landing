@@ -447,42 +447,6 @@ export default function LineUpPage() {
   const [lineupNotes, setLineupNotes] = useState('')
   const [notesRecord, setNotesRecord] = useState<LineUpRow | null>(null)
 
-  const fetchYesterdayRows = async (currentDateStr: string, bId: string): Promise<LineUpRow[]> => {
-    try {
-      const d = new Date(currentDateStr)
-      d.setDate(d.getDate() - 1)
-      const yesterdayStr = d.toISOString().split('T')[0]
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const res = await fetch(`${API_BASE_URL}/v1/lineup?date=${yesterdayStr}&branchId=${bId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const data = await res.json()
-        if (Array.isArray(data)) {
-          const serverRows = data.filter(r => r.service !== '__NOTES__' && r.service !== '__WEEKLY_DRIVERS__' && r.service !== '__WEEKLY_INSTALLERS__')
-          if (serverRows.length > 0) {
-            return serverRows.sort((a, b) => a.sortOrder - b.sortOrder).map((r, i) => ({
-              id: `local-yesterday-${Date.now()}-${i}`,
-              lineupDate: currentDateStr,
-              branchId: bId,
-              service: r.service || '',
-              driverName: r.driverName || '',
-              driverTime: r.driverTime || '8:00AM',
-              installerName: r.installerName || '',
-              installerTime: r.installerTime || '7:00AM',
-              negotiator: r.negotiator || '',
-              route: r.route || '',
-              remarks: r.remarks || '',
-              sortOrder: r.sortOrder ?? i
-            }))
-          }
-        }
-      }
-    } catch (e) {
-      console.error("Error fetching yesterday's lineup:", e)
-    }
-    return []
-  }
 
   const scheduleStatusShortLabel = (ticket: ScheduleTicket): string => {
     const raw = (getScheduleStatusDisplay(ticket) || '').toUpperCase()
@@ -676,16 +640,14 @@ export default function LineUpPage() {
             } else if (serverRows.length > 0) {
               setRows(serverRows.sort((a, b) => a.sortOrder - b.sortOrder))
             } else {
-              const yesterdayRows = await fetchYesterdayRows(date, branchId)
-              setRows(yesterdayRows)
+              setRows([])
             }
           } else {
             // Auto-sync is OFF: keep and display saved server rows directly
             if (serverRows.length > 0) {
               setRows(serverRows.sort((a, b) => a.sortOrder - b.sortOrder))
             } else {
-              const yesterdayRows = await fetchYesterdayRows(date, branchId)
-              setRows(yesterdayRows)
+              setRows([])
             }
           }
         }
