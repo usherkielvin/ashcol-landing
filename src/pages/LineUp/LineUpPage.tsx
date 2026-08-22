@@ -240,6 +240,10 @@ export default function LineUpPage() {
 
   const [rows, setRows] = useState<LineUpRow[]>([])
   const [loading, setLoading] = useState(false)
+  const [autoSyncSchedule, setAutoSyncScheduleState] = useState<boolean>(() => {
+    const saved = localStorage.getItem('ashcol_lineup_auto_sync_schedule')
+    return saved !== null ? saved === 'true' : false
+  })
   const [expandedCard, setExpandedCard] = useState<string | null>(null)
 
   const fileInputRef   = useRef<HTMLInputElement>(null)
@@ -612,7 +616,8 @@ export default function LineUpPage() {
     }
   }
 
-  const fetchLineup = useCallback(async () => {
+  const fetchLineup = useCallback(async (forceAutoSync?: boolean) => {
+    const shouldAutoSync = typeof forceAutoSync === 'boolean' ? forceAutoSync : autoSyncSchedule
     const all = lsLoad()
     let filtered = branchId
       ? all.filter(r => r.lineupDate === date && r.branchId === branchId)
@@ -651,19 +656,30 @@ export default function LineUpPage() {
               ...r,
               remarks: normalizeRemarksString(r.remarks || ''),
             }))
-          const scheduleRows = await deriveRowsFromSchedule(date, branchId, serverRows)
-          if (scheduleRows.length > 0) {
-            setRows(scheduleRows)
-            setDirtyRowIds(prev => {
-              const next = new Set(prev)
-              scheduleRows.forEach(r => next.add(r.id))
-              return next
-            })
-          } else if (serverRows.length > 0) {
-            setRows(serverRows.sort((a, b) => a.sortOrder - b.sortOrder))
+
+          if (shouldAutoSync) {
+            const scheduleRows = await deriveRowsFromSchedule(date, branchId, serverRows)
+            if (scheduleRows.length > 0) {
+              setRows(scheduleRows)
+              setDirtyRowIds(prev => {
+                const next = new Set(prev)
+                scheduleRows.forEach(r => next.add(r.id))
+                return next
+              })
+            } else if (serverRows.length > 0) {
+              setRows(serverRows.sort((a, b) => a.sortOrder - b.sortOrder))
+            } else {
+              const yesterdayRows = await fetchYesterdayRows(date, branchId)
+              setRows(yesterdayRows)
+            }
           } else {
-            const yesterdayRows = await fetchYesterdayRows(date, branchId)
-            setRows(yesterdayRows)
+            // Auto-sync is OFF: keep and display saved server rows directly
+            if (serverRows.length > 0) {
+              setRows(serverRows.sort((a, b) => a.sortOrder - b.sortOrder))
+            } else {
+              const yesterdayRows = await fetchYesterdayRows(date, branchId)
+              setRows(yesterdayRows)
+            }
           }
         }
       }
@@ -673,7 +689,19 @@ export default function LineUpPage() {
       setLoading(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date, branchId, lineupApiBranchId])
+  }, [date, branchId, lineupApiBranchId, autoSyncSchedule])
+
+  const handleToggleAutoSyncSchedule = (val: boolean) => {
+    setAutoSyncScheduleState(val)
+    localStorage.setItem('ashcol_lineup_auto_sync_schedule', String(val))
+    if (val) {
+      showToast("Auto Sync Schedule enabled", "info")
+      void fetchLineup(true)
+    } else {
+      showToast("Auto Sync Schedule disabled (using saved lineup)", "info")
+      void fetchLineup(false)
+    }
+  }
 
   useEffect(() => {
     void fetchLineup()
@@ -1598,6 +1626,8 @@ export default function LineUpPage() {
         textMuted={textMuted}
         inputBg={inputBg}
         inputBorder={inputBorder}
+        autoSyncSchedule={autoSyncSchedule}
+        setAutoSyncSchedule={handleToggleAutoSyncSchedule}
         handleSyncFromSchedule={handleSyncFromSchedule}
         handleAddRow={handleAddRow}
         toast={toast}

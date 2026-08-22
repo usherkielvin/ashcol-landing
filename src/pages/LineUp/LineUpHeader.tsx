@@ -23,6 +23,8 @@ interface LineUpHeaderProps {
   textMuted: string
   inputBg: string
   inputBorder: string
+  autoSyncSchedule?: boolean
+  setAutoSyncSchedule?: (val: boolean) => void
   handleSyncFromSchedule: () => void
   handleAddRow: () => void
   toast: { message: string; type: 'success' | 'error' | 'info' } | null
@@ -51,6 +53,8 @@ export const LineUpHeader: React.FC<LineUpHeaderProps> = ({
   textMuted,
   inputBg,
   inputBorder,
+  autoSyncSchedule = false,
+  setAutoSyncSchedule,
   handleSyncFromSchedule,
   handleAddRow,
   toast,
@@ -136,6 +140,38 @@ export const LineUpHeader: React.FC<LineUpHeaderProps> = ({
 
             {!showcaseOpen && canEdit && (
               <>
+                {/* Auto-Sync Schedule Toggle */}
+                {setAutoSyncSchedule && (
+                  <button
+                    type="button"
+                    onClick={() => setAutoSyncSchedule(!autoSyncSchedule)}
+                    className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer select-none"
+                    style={{
+                      backgroundColor: autoSyncSchedule ? `${currentTheme.accent}18` : inputBg,
+                      border: `1px solid ${autoSyncSchedule ? currentTheme.accent : inputBorder}`,
+                      color: autoSyncSchedule ? currentTheme.accent : textMuted,
+                    }}
+                    title={
+                      autoSyncSchedule
+                        ? 'Auto-Sync Schedule is ON: automatically loads and derives rows from today\'s Schedules tickets'
+                        : 'Auto-Sync Schedule is OFF: loads your saved Lineup rows directly without clobbering'
+                    }
+                  >
+                    <div
+                      className={`w-6 h-3.5 rounded-full transition-colors relative flex items-center ${
+                        autoSyncSchedule ? 'bg-emerald-500' : 'bg-slate-400/40'
+                      }`}
+                    >
+                      <div
+                        className={`w-2.5 h-2.5 rounded-full bg-white transition-transform ${
+                          autoSyncSchedule ? 'translate-x-3' : 'translate-x-0.5'
+                        }`}
+                      />
+                    </div>
+                    <span>Auto Sync Sched</span>
+                  </button>
+                )}
+
                 {/* Sync from Schedule */}
                 <button
                   type="button"
