@@ -95,29 +95,39 @@ export default function TicketHistoryTable({ person, headerLeft }: { person: His
         const tickets: any[] = data?.data?.tickets || data?.data?.content || data?.data || []
 
         const nameNorm = (person.name || '').toLowerCase().trim()
-        const personId = person.id
+        const personId = (person.id || '').trim().toLowerCase()
         const personEmail = (person.email || '').toLowerCase().trim()
         const personPersonalEmail = (person.personalEmail || '').toLowerCase().trim()
+        const nameTokens = nameNorm.split(/\s+/).filter(tok => tok.length > 2)
+
+        const isPersonMatch = (val?: string | null) => {
+          if (!val) return false
+          const str = String(val).trim().toLowerCase()
+          if (!str) return false
+          if (str === personId) return true
+          if (personEmail && str === personEmail) return true
+          if (personPersonalEmail && str === personPersonalEmail) return true
+          if (nameNorm && (str === nameNorm || nameNorm.includes(str) || str.includes(nameNorm))) return true
+          for (const tok of nameTokens) {
+            if (str.includes(tok)) return true
+          }
+          return false
+        }
 
         const relevant = tickets.filter((t: any) => {
           if (t.customerId === personId || t.customer_id === personId) return true
           if (t.createdByUserId === personId || t.created_by_user_id === personId) return true
-          if (t.createdBy && t.createdBy.toLowerCase().trim() === nameNorm) return true
-          if (t.createdByName && t.createdByName.toLowerCase().trim() === nameNorm) return true
-          if (t.createdByName && personEmail && t.createdByName.toLowerCase().trim() === personEmail) return true
+          if (isPersonMatch(t.createdBy) || isPersonMatch(t.createdByName)) return true
           if (t.negotiatorId === personId || t.negotiator_id === personId) return true
-          if (t.negotiatorName && t.negotiatorName.toLowerCase().trim() === nameNorm) return true
+          if (isPersonMatch(t.negotiatorName)) return true
           if (t.assignedTo === personId || t.assigned_to === personId) return true
-          if (t.assignedEmployeeName && t.assignedEmployeeName.toLowerCase().trim() === nameNorm) return true
+          if (isPersonMatch(t.assignedEmployeeName)) return true
           if (t.installerId === personId || t.installer_id === personId) return true
-          if (t.installerName && t.installerName.toLowerCase().trim() === nameNorm) return true
+          if (isPersonMatch(t.installerName)) return true
           if (t.driverId === personId || t.driver_id === personId) return true
-          if (t.driverName && t.driverName.toLowerCase().trim() === nameNorm) return true
-          if (t.closedBy === personId || t.closed_by === personId) return true
-          if (t.closedBy && t.closedBy.toLowerCase().trim() === nameNorm) return true
-          if (t.closedBy && personEmail && t.closedBy.toLowerCase().trim() === personEmail) return true
-          if (t.warrantyRegistrationCompletedBy === personId || t.warranty_registration_completed_by === personId) return true
-          if (t.warrantyRegistrationCompletedBy && t.warrantyRegistrationCompletedBy.toLowerCase().trim() === nameNorm) return true
+          if (isPersonMatch(t.driverName)) return true
+          if (t.closedBy === personId || t.closed_by === personId || isPersonMatch(t.closedBy)) return true
+          if (t.warrantyRegistrationCompletedBy === personId || t.warranty_registration_completed_by === personId || isPersonMatch(t.warrantyRegistrationCompletedBy)) return true
           const customerEmail = (t.customerEmail || t.customer_email || '').toLowerCase().trim()
           if (customerEmail && (customerEmail === personEmail || (personPersonalEmail && customerEmail === personPersonalEmail))) return true
           return isOwnProfile

@@ -90,27 +90,53 @@ export default function WarrantyRegistrationHistoryTable({ person, headerLeft }:
         const tickets: any[] = data?.data?.tickets || data?.data?.content || data?.data || []
 
         const nameNorm = (person.name || '').toLowerCase().trim()
-        const personId = person.id
+        const personId = (person.id || '').trim().toLowerCase()
         const personEmail = (person.email || '').toLowerCase().trim()
         const personPersonalEmail = (person.personalEmail || '').toLowerCase().trim()
+        const nameTokens = nameNorm.split(/\s+/).filter(tok => tok.length > 2)
+
+        const isPersonMatch = (val?: string | null) => {
+          if (!val) return false
+          const str = String(val).trim().toLowerCase()
+          if (!str) return false
+          if (str === personId) return true
+          if (personEmail && str === personEmail) return true
+          if (personPersonalEmail && str === personPersonalEmail) return true
+          if (nameNorm && (str === nameNorm || nameNorm.includes(str) || str.includes(nameNorm))) return true
+          for (const tok of nameTokens) {
+            if (str.includes(tok)) return true
+          }
+          return false
+        }
 
         const relevant = tickets.filter((t: any) => {
-          const isCompleted = Boolean(t.warrantyRegistrationCompleted || t.warranty_registration_completed)
+          const meta = parseUnitMeta(t)
+          const isCompleted = Boolean(
+            t.warrantyRegistrationCompleted ||
+            t.warranty_registration_completed ||
+            t.warrantyRegistrationNumber ||
+            t.warranty_registration_number ||
+            String(meta.warrantyRegistrationStatus || '').toUpperCase() === 'REGISTERED' ||
+            String(t.warrantyDocsStatus || t.warranty_docs_status || '').toUpperCase() === 'REGISTERED'
+          )
           if (!isCompleted) return false
-          const completedBy = String(t.warrantyRegistrationCompletedBy || t.warranty_registration_completed_by || '').trim()
+
+          const completedBy = String(
+            t.warrantyRegistrationCompletedBy ||
+            t.warranty_registration_completed_by ||
+            meta.warrantyRegisteredBy ||
+            ''
+          ).trim()
+
           if (!completedBy) {
             return isOwnProfile
           }
-          const completedByNorm = completedBy.toLowerCase()
-          if (completedBy === personId) return true
-          if (nameNorm && completedByNorm === nameNorm) return true
-          if (personEmail && completedByNorm === personEmail) return true
-          if (personPersonalEmail && completedByNorm === personPersonalEmail) return true
-          return isOwnProfile
+          return isPersonMatch(completedBy) || isOwnProfile
         })
 
         const getRegisteredTime = (t: any) => {
-          const raw = t.warrantyRegistrationCompletedAt || t.warranty_registration_completed_at || t.createdAt || t.created_at
+          const meta = parseUnitMeta(t)
+          const raw = meta.warrantyRegistrationDate || t.warrantyRegistrationCompletedAt || t.warranty_registration_completed_at || t.actualCompletion || t.actual_completion || t.createdAt || t.created_at
           if (!raw) return 0
           const time = new Date(raw).getTime()
           return isNaN(time) ? 0 : time
@@ -134,11 +160,40 @@ export default function WarrantyRegistrationHistoryTable({ person, headerLeft }:
     fetchHistory()
   }, [person.id, person.name, person.email, person.personalEmail, user])
 
+  const parseUnitMeta = (t: any): Record<string, any> => {
+    const raw = t?.acDetails || t?.ac_details
+    if (!raw || typeof raw !== 'string') return {}
+    try {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        const first = parsed.find(item => item && typeof item === 'object' && !Array.isArray(item))
+        return (first && typeof first === 'object') ? first as Record<string, any> : {}
+      }
+      return parsed && typeof parsed === 'object' ? parsed as Record<string, any> : {}
+    } catch {
+      return {}
+    }
+  }
+
+  const getRegisteredDateStr = (t: any) => {
+    const meta = parseUnitMeta(t)
+    return (
+      meta.warrantyRegistrationDate ||
+      t.warrantyRegistrationCompletedAt ||
+      t.warranty_registration_completed_at ||
+      t.actualCompletion ||
+      t.actual_completion ||
+      t.createdAt ||
+      t.created_at ||
+      ''
+    )
+  }
+
   // ── Filter logic ───────────────────────────────────────────────────────────
   const displayedHistory = history.filter(t => {
     if (branchFilter && t.branchId !== branchFilter && t.branch_id !== branchFilter) return false
     if (dateFilter) {
-      const registeredStr = t.warrantyRegistrationCompletedAt || t.warranty_registration_completed_at || t.createdAt || t.created_at
+      const registeredStr = getRegisteredDateStr(t)
       if (!registeredStr) return false
       const targetYMD = dateFilter.trim()
       const match = String(registeredStr).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
@@ -175,11 +230,16 @@ export default function WarrantyRegistrationHistoryTable({ person, headerLeft }:
   }
 
   const registeredDateTime = (t: any) => {
-    const raw = t.warrantyRegistrationCompletedAt || t.createdAt || t.created_at
+    const raw = getRegisteredDateStr(t)
     if (!raw) return '—'
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(raw).trim())) {
+      const [y, m, d] = String(raw).trim().split('-').map(Number)
+      const dateObj = new Date(y, m - 1, d)
+      return dateObj.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' })
+    }
     const d = new Date(raw)
     return isNaN(d.getTime())
-      ? '—'
+      ? String(raw)
       : d.toLocaleString(undefined, { month: 'short', day: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit' })
   }
 
