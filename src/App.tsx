@@ -24,6 +24,7 @@ import AuditFinanceExpenses from './pages/AuditFinanceExpenses'
 import ForCollections from './pages/ForCollections'
 import Commissions from './pages/Commissions'
 import CashAdvances from './pages/CashAdvances'
+import Payroll from './pages/Payroll'
 import DailyServiceReport from './pages/DailyServiceReport'
 import Registration from './pages/Registration'
 import HappyCalls from './pages/HappyCalls'
@@ -119,6 +120,7 @@ export default function App() {
           <Route path="/collections" element={<ForCollections />} />
           <Route path="/commissions" element={<Commissions />} />
           <Route path="/cash-advances" element={<CashAdvances />} />
+          <Route path="/payroll" element={<Payroll />} />
           <Route path="/lineup" element={<LineUp />} />
           <Route path="/weekly-field-schedule" element={<Navigate to="/lineup?tab=weekly" replace />} />
           <Route path="/service-report" element={<DailyServiceReport />} />

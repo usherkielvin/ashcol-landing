@@ -70,16 +70,33 @@ export default function TicketHistoryTable({ person, headerLeft }: { person: His
       setLoading(true)
       try {
         const headers = { Authorization: `Bearer ${token()}` }
-        const isAdminOrMgmt = user?.role?.toUpperCase() === 'ADMIN' || user?.role?.toUpperCase() === 'MANAGEMENT'
-        const endpoint = isAdminOrMgmt ? `${API_BASE_URL}/tickets?size=2000` : `${API_BASE_URL}/tickets/branch?size=2000`
-        const res = await fetch(endpoint, { headers })
-        if (!res.ok) return
-        const data = await res.json()
+        const isOwnProfile = person.id === user?.id
+        // Org-wide ticket history for this person — never restricted to current user's branch
+        // or active admin branch.
+        const endpoint = isOwnProfile
+          ? `${API_BASE_URL}/tickets/history/mine?size=2000`
+          : `${API_BASE_URL}/tickets/history/user/${encodeURIComponent(person.id)}?size=2000`
+
+        let data: any = null
+        try {
+          const res = await fetch(endpoint, { headers })
+          if (res.ok) {
+            data = await res.json()
+          } else {
+            // Fallback for older backend versions with global tickets query
+            const fallbackRes = await fetch(`${API_BASE_URL}/tickets?branchId=ALL&size=2000`, { headers })
+            if (fallbackRes.ok) data = await fallbackRes.json()
+          }
+        } catch {
+          const fallbackRes = await fetch(`${API_BASE_URL}/tickets?branchId=ALL&size=2000`, { headers })
+          if (fallbackRes.ok) data = await fallbackRes.json()
+        }
+
         const tickets: any[] = data?.data?.tickets || data?.data?.content || data?.data || []
 
-        const nameNorm = person.name.toLowerCase().trim()
+        const nameNorm = (person.name || '').toLowerCase().trim()
         const personId = person.id
-        const personEmail = person.email.toLowerCase().trim()
+        const personEmail = (person.email || '').toLowerCase().trim()
         const personPersonalEmail = (person.personalEmail || '').toLowerCase().trim()
 
         const relevant = tickets.filter((t: any) => {
@@ -87,7 +104,7 @@ export default function TicketHistoryTable({ person, headerLeft }: { person: His
           if (t.createdByUserId === personId || t.created_by_user_id === personId) return true
           if (t.createdBy && t.createdBy.toLowerCase().trim() === nameNorm) return true
           if (t.createdByName && t.createdByName.toLowerCase().trim() === nameNorm) return true
-          if (t.createdByName && t.createdByName.toLowerCase().trim() === personEmail) return true
+          if (t.createdByName && personEmail && t.createdByName.toLowerCase().trim() === personEmail) return true
           if (t.negotiatorId === personId || t.negotiator_id === personId) return true
           if (t.negotiatorName && t.negotiatorName.toLowerCase().trim() === nameNorm) return true
           if (t.assignedTo === personId || t.assigned_to === personId) return true
@@ -98,12 +115,12 @@ export default function TicketHistoryTable({ person, headerLeft }: { person: His
           if (t.driverName && t.driverName.toLowerCase().trim() === nameNorm) return true
           if (t.closedBy === personId || t.closed_by === personId) return true
           if (t.closedBy && t.closedBy.toLowerCase().trim() === nameNorm) return true
-          if (t.closedBy && t.closedBy.toLowerCase().trim() === personEmail) return true
+          if (t.closedBy && personEmail && t.closedBy.toLowerCase().trim() === personEmail) return true
           if (t.warrantyRegistrationCompletedBy === personId || t.warranty_registration_completed_by === personId) return true
           if (t.warrantyRegistrationCompletedBy && t.warrantyRegistrationCompletedBy.toLowerCase().trim() === nameNorm) return true
           const customerEmail = (t.customerEmail || t.customer_email || '').toLowerCase().trim()
           if (customerEmail && (customerEmail === personEmail || (personPersonalEmail && customerEmail === personPersonalEmail))) return true
-          return false
+          return isOwnProfile
         })
 
         const getCreatedTime = (t: any) => {

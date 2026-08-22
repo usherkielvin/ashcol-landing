@@ -32,7 +32,7 @@ const uid = () => Math.random().toString(36).slice(2)
  * Strip branch/company prefixes from an installer name.
  * Re-implements the logic from DTR_Form.tsx `cleanInstallerName`.
  */
-function cleanInstallerName(name: string, currentBranchName?: string): string {
+export function cleanInstallerName(name: string, currentBranchName?: string): string {
   let cleaned = name.trim()
   cleaned = cleaned.replace(/^ASHCOL\s*[-|:]?\s*/i, '').trim()
   if (currentBranchName) {
@@ -168,7 +168,7 @@ export function filterQualifyingTickets(tickets: Ticket[]): Ticket[] {
  * Strip trailing number counters from installer names.
  * Examples: "JHUMAR - 3" → "JHUMAR", "RYAN (2)" → "RYAN", "KENNAN 4" → "KENNAN"
  */
-function stripInstallerCounter(name: string): string {
+export function stripInstallerCounter(name: string): string {
   return name
     .replace(/\s*[-–—]\s*\d+\s*$/, '')   // "JHUMAR - 3" or "JHUMAR -3"
     .replace(/\s*\(\d+\)\s*$/, '')        // "RYAN (2)"

@@ -65,25 +65,52 @@ export default function WarrantyRegistrationHistoryTable({ person, headerLeft }:
       setLoading(true)
       try {
         const headers = { Authorization: `Bearer ${token()}` }
-        const isAdminOrMgmt = user?.role?.toUpperCase() === 'ADMIN' || user?.role?.toUpperCase() === 'MANAGEMENT'
-        const endpoint = isAdminOrMgmt ? `${API_BASE_URL}/tickets?size=1000` : `${API_BASE_URL}/tickets/branch?size=1000`
-        const res = await fetch(endpoint, { headers })
-        if (!res.ok) return
-        const data = await res.json()
+        const isOwnProfile = person.id === user?.id
+        // Org-wide warranty registrations for this person — never restricted to current user's branch
+        // or active admin branch.
+        const endpoint = isOwnProfile
+          ? `${API_BASE_URL}/tickets/warranty-registrations/mine?size=2000`
+          : `${API_BASE_URL}/tickets/warranty-registrations/user/${encodeURIComponent(person.id)}?size=2000`
+
+        let data: any = null
+        try {
+          const res = await fetch(endpoint, { headers })
+          if (res.ok) {
+            data = await res.json()
+          } else {
+            // Fallback for older backend versions with global tickets query
+            const fallbackRes = await fetch(`${API_BASE_URL}/tickets?branchId=ALL&size=2000`, { headers })
+            if (fallbackRes.ok) data = await fallbackRes.json()
+          }
+        } catch {
+          const fallbackRes = await fetch(`${API_BASE_URL}/tickets?branchId=ALL&size=2000`, { headers })
+          if (fallbackRes.ok) data = await fallbackRes.json()
+        }
+
         const tickets: any[] = data?.data?.tickets || data?.data?.content || data?.data || []
 
-        const nameNorm = person.name.toLowerCase().trim()
+        const nameNorm = (person.name || '').toLowerCase().trim()
         const personId = person.id
+        const personEmail = (person.email || '').toLowerCase().trim()
+        const personPersonalEmail = (person.personalEmail || '').toLowerCase().trim()
 
         const relevant = tickets.filter((t: any) => {
-          if (!t.warrantyRegistrationCompleted) return false
-          if (t.warrantyRegistrationCompletedBy === personId) return true
-          if (t.warrantyRegistrationCompletedBy && t.warrantyRegistrationCompletedBy.toLowerCase().trim() === nameNorm) return true
-          return false
+          const isCompleted = Boolean(t.warrantyRegistrationCompleted || t.warranty_registration_completed)
+          if (!isCompleted) return false
+          const completedBy = String(t.warrantyRegistrationCompletedBy || t.warranty_registration_completed_by || '').trim()
+          if (!completedBy) {
+            return isOwnProfile
+          }
+          const completedByNorm = completedBy.toLowerCase()
+          if (completedBy === personId) return true
+          if (nameNorm && completedByNorm === nameNorm) return true
+          if (personEmail && completedByNorm === personEmail) return true
+          if (personPersonalEmail && completedByNorm === personPersonalEmail) return true
+          return isOwnProfile
         })
 
         const getRegisteredTime = (t: any) => {
-          const raw = t.warrantyRegistrationCompletedAt || t.createdAt || t.created_at
+          const raw = t.warrantyRegistrationCompletedAt || t.warranty_registration_completed_at || t.createdAt || t.created_at
           if (!raw) return 0
           const time = new Date(raw).getTime()
           return isNaN(time) ? 0 : time
@@ -111,15 +138,24 @@ export default function WarrantyRegistrationHistoryTable({ person, headerLeft }:
   const displayedHistory = history.filter(t => {
     if (branchFilter && t.branchId !== branchFilter && t.branch_id !== branchFilter) return false
     if (dateFilter) {
-      const registeredStr = t.warrantyRegistrationCompletedAt || t.createdAt || t.created_at
+      const registeredStr = t.warrantyRegistrationCompletedAt || t.warranty_registration_completed_at || t.createdAt || t.created_at
       if (!registeredStr) return false
+      const targetYMD = dateFilter.trim()
+      const match = String(registeredStr).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+      if (match) {
+        const itemYMD = `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`
+        if (itemYMD === targetYMD) return true
+      }
       const rDate = new Date(registeredStr)
-      const fDate = new Date(dateFilter + 'T00:00:00')
-      return (
-        rDate.getFullYear() === fDate.getFullYear() &&
-        rDate.getMonth() === fDate.getMonth() &&
-        rDate.getDate() === fDate.getDate()
-      )
+      if (!isNaN(rDate.getTime())) {
+        const fDate = new Date(dateFilter + 'T00:00:00')
+        return (
+          rDate.getFullYear() === fDate.getFullYear() &&
+          rDate.getMonth() === fDate.getMonth() &&
+          rDate.getDate() === fDate.getDate()
+        )
+      }
+      return false
     }
     return true
   })
