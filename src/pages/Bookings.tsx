@@ -84,20 +84,28 @@ export default function Bookings() {
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
-  const loadBookings = useCallback(async () => {
-    setLoading(true)
+  const loadBookings = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
     setError('')
     try {
       const rows = await fetchBookings(authToken(), statusFilter)
       setBookings(rows)
     } catch (err) {
-      setError(errMsg(err, 'Failed to load bookings'))
+      if (!silent) setError(errMsg(err, 'Failed to load bookings'))
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [statusFilter])
 
-  useEffect(() => { void loadBookings() }, [loadBookings])
+  useEffect(() => {
+    void loadBookings()
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void loadBookings(true)
+      }
+    }, 20_000)
+    return () => clearInterval(interval)
+  }, [loadBookings])
 
   // Count stats
   const stats = useMemo(() => {

@@ -112,7 +112,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
 
     poll()
-    intervalRef.current = setInterval(poll, 60_000)
+    intervalRef.current = setInterval(poll, 30_000)
 
     const onVisible = () => {
       if (document.visibilityState === 'visible') void fetchNotifications()
