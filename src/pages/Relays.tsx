@@ -2068,6 +2068,86 @@ export default function Relays() {
     [employees, addForm.branchId, resolveRelayDefaultBranchId],
   )
 
+  const [showNameSuggestions, setShowNameSuggestions] = useState(false)
+
+  const addFormNameMatches = useMemo(() => {
+    const raw = (addForm.customerName || '').trim()
+    const norm = raw.toLowerCase().replace(/[^a-z0-9]/g, '')
+    if (norm.length < 3) return []
+    const tokens = raw.toLowerCase().split(/\s+/).filter(t => t.length >= 2)
+
+    // Match against openFieldTickets and all loaded tickets without duplicates
+    const allCandidates = openFieldTickets.length > 0 ? openFieldTickets : tickets
+    const seen = new Set<string>()
+    const matches: Ticket[] = []
+
+    for (const t of allCandidates) {
+      if (!t || !t.id || seen.has(t.id)) continue
+      const tCustomer = (t.customerName || '').trim()
+      const tNorm = tCustomer.toLowerCase().replace(/[^a-z0-9]/g, '')
+      if (tNorm.length < 3) continue
+
+      const isSubMatch = tNorm.includes(norm) || norm.includes(tNorm)
+      const tokenMatch = tokens.length > 0 && tokens.every(tok => tCustomer.toLowerCase().includes(tok))
+
+      if (isSubMatch || tokenMatch) {
+        seen.add(t.id)
+        matches.push(t)
+        if (matches.length >= 6) break
+      }
+    }
+    return matches
+  }, [addForm.customerName, openFieldTickets, tickets])
+
+  const handleSelectNameSuggestion = useCallback((ticket: Ticket) => {
+    const details = parseAcDetails(ticket)
+    const phone = ticket.contactPhone || details.alternatePhone || ''
+    const phones = phone ? phone.split(/[/,]|\s{2,}/).map((p: string) => p.trim()).filter(Boolean) : ['']
+    
+    // Parse dealer
+    let formDealer = ticket.dealer || ticket.sourceVendor || ''
+    let formDealerBranch = ''
+    if (formDealer) {
+      const parsed = parseDealer(formDealer)
+      if (parsed.store === 'Robinsons' || parsed.store === 'Abenson') {
+        formDealer = parsed.store
+        formDealerBranch = parsed.branch
+      } else if (parsed.store === 'Direct') {
+        formDealer = 'Direct'
+        formDealerBranch = ''
+      } else {
+        formDealer = parsed.customStore || formDealer
+        formDealerBranch = parsed.branch
+      }
+    }
+
+    setAddForm(prev => ({
+      ...prev,
+      customerName: ticket.customerName || prev.customerName,
+      contactPhone: phones[0] || prev.contactPhone,
+      locationRaw: ticket.location || prev.locationRaw,
+      district: ticket.district || prev.district,
+      landmarks: details.landmarks || prev.landmarks,
+      dealer: formDealer || prev.dealer,
+      dealerBranch: formDealerBranch || prev.dealerBranch,
+      diser: ticket.diser || prev.diser,
+      brand: details.brand || prev.brand,
+      capacity: details.capacity || prev.capacity,
+      sku: details.sku || prev.sku,
+      serialNumber: details.serialNumber || prev.serialNumber,
+      commitType: ticket.commitType || prev.commitType,
+      branchId: ticket.branchId || prev.branchId,
+      assignedTo: ticket.assignedTo || prev.assignedTo,
+    }))
+
+    if (phones.length > 0 && phones[0]) {
+      setAddPhoneNumbers(phones)
+    }
+
+    setShowNameSuggestions(false)
+  }, [])
+
+
 
   const openAddModal = useCallback(() => {
     const defaultBranch = resolveRelayDefaultBranchId()
@@ -5287,7 +5367,129 @@ export default function Relays() {
                   <RelayFormSectionHead step={2} icon={<UserRound className="w-3.5 h-3.5" />} title="Customer Details" subtitle="Who and where to deliver service" />
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
                     <RelayFormField label="Customer Name" required compact className="md:col-span-5">
-                      <input type="text" required value={addForm.customerName} onChange={e => setAddForm(prev => ({ ...prev, customerName: e.target.value }))} placeholder="Full name" className={addInput} style={fieldStyle(addForm.customerName)} />
+                      <div className="relative">
+                        <input
+                          type="text"
+                          required
+                          value={addForm.customerName}
+                          onChange={e => {
+                            setAddForm(prev => ({ ...prev, customerName: e.target.value }))
+                            setShowNameSuggestions(true)
+                          }}
+                          onFocus={() => setShowNameSuggestions(true)}
+                          onBlur={() => {
+                            // Delay hiding to allow click on suggestions
+                            setTimeout(() => setShowNameSuggestions(false), 250)
+                          }}
+                          onKeyDown={e => {
+                            if (e.key === 'Escape') {
+                              setShowNameSuggestions(false)
+                            }
+                          }}
+                          placeholder="Full name"
+                          className={addInput}
+                          style={fieldStyle(addForm.customerName)}
+                        />
+
+                        {/* Existing Ticket Match Popup Dropdown */}
+                        {showNameSuggestions && addFormNameMatches.length > 0 && (
+                          <div
+                            className="absolute left-0 right-0 top-full mt-1.5 z-50 rounded-xl border shadow-2xl overflow-hidden backdrop-blur-md animate-in fade-in-50 zoom-in-95 duration-150"
+                            style={{
+                              backgroundColor: isLight ? 'rgba(255, 255, 255, 0.98)' : 'rgba(15, 23, 42, 0.98)',
+                              borderColor: isLight ? '#cbd5e1' : '#334155',
+                              boxShadow: isLight
+                                ? '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)'
+                                : '0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4)',
+                            }}
+                          >
+                            <div
+                              className="px-3 py-2 border-b flex items-center justify-between"
+                              style={{
+                                backgroundColor: isLight ? '#f1f5f9' : 'rgba(30, 41, 59, 0.8)',
+                                borderColor: isLight ? '#e2e8f0' : '#334155',
+                              }}
+                            >
+                              <span className="text-[10.5px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                                <Search className="w-3 h-3" />
+                                Existing Ticket Found ({addFormNameMatches.length})
+                              </span>
+                              <span className="text-[9.5px] font-semibold" style={{ color: textMuted }}>
+                                Click to auto-fill
+                              </span>
+                            </div>
+
+                            <div className="max-h-[220px] overflow-y-auto divide-y" style={{ borderColor: isLight ? '#f1f5f9' : '#1e293b' }}>
+                              {addFormNameMatches.map((t) => {
+                                const ticketNo = getTicketNumber(t)
+                                const details = parseAcDetails(t)
+                                const statusLabel = getRelayStatusLabel(t)
+                                const schedDate = details.finalDate || details.scheduledDate || t.preferredDate
+                                const branch = resolveBranch(t.branchId)?.name || ''
+                                const locationPreview = t.location || t.district || ''
+
+                                return (
+                                  <button
+                                    key={t.id}
+                                    type="button"
+                                    onMouseDown={(e) => {
+                                      e.preventDefault()
+                                      handleSelectNameSuggestion(t)
+                                    }}
+                                    className="w-full text-left px-3.5 py-2.5 transition-colors flex flex-col gap-1 hover:bg-emerald-500/10 group cursor-pointer"
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <span className="font-mono text-xs font-black text-emerald-600 dark:text-emerald-400">
+                                          {ticketNo}
+                                        </span>
+                                        <span className="text-xs font-bold truncate" style={{ color: textPrimary }}>
+                                          {t.customerName}
+                                        </span>
+                                      </div>
+                                      <span
+                                        className="text-[10px] font-extrabold px-2 py-0.5 rounded-md shrink-0 uppercase tracking-wide"
+                                        style={{
+                                          backgroundColor: isLight ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.2)',
+                                          color: isLight ? '#047857' : '#34d399',
+                                        }}
+                                      >
+                                        {statusLabel || t.serviceType || 'TICKET'}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-3 text-[11px] font-medium" style={{ color: textMuted }}>
+                                      {schedDate && (
+                                        <span className="flex items-center gap-1">
+                                          <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                                          {String(schedDate).slice(0, 10)}
+                                        </span>
+                                      )}
+                                      {t.contactPhone && (
+                                        <span className="flex items-center gap-1">
+                                          <Phone className="w-3 h-3 text-slate-400 shrink-0" />
+                                          {t.contactPhone}
+                                        </span>
+                                      )}
+                                      {branch && (
+                                        <span className="truncate">
+                                          {formatBranchName(branch)}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {locationPreview && (
+                                      <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
+                                        📍 {locationPreview}
+                                      </p>
+                                    )}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </RelayFormField>
                     {addFormSyncTarget && (
                       <div className="md:col-span-12 border rounded-xl px-3.5 py-3 flex flex-col gap-1"
