@@ -42,6 +42,7 @@ import {
   getRescheduleHistoryDates,
   getPreviousScheduleDates,
   getScheduleStatusBadgeStyle,
+  formatSpecificDoneStatus,
 } from '../utils/ticketHelpers'
 import type { ReactNode } from 'react'
 
@@ -5488,7 +5489,8 @@ export default function Relays() {
                                 {addFormNameMatches.map((t: any) => {
                                   const ticketNo = t.ticketNumber || t.ticket_number || getTicketNumber(t) || t.id || 'TICKET'
                                   const details = parseAcDetails(t)
-                                  const statusLabel = (t.status || '').toUpperCase() || getRelayStatusLabel(t) || t.serviceType || 'TICKET'
+                                  const statusLabel = formatSpecificDoneStatus(t)
+                                  const statusBadge = getScheduleStatusBadgeStyle(statusLabel, isLight)
                                   const schedDate = details.finalDate || details.scheduledDate || t.preferredDate || t.preferred_date || t.createdAt
                                   const branchObj = resolveBranch(t.branchId || t.branch_id)
                                   const branchName = branchObj?.name || t.branchName || t.branch_name || ''
@@ -5529,8 +5531,9 @@ export default function Relays() {
                                           <span
                                             className="text-[10px] font-extrabold px-2 py-0.5 rounded-md uppercase tracking-wide"
                                             style={{
-                                              backgroundColor: isLight ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.2)',
-                                              color: isLight ? '#047857' : '#34d399',
+                                              backgroundColor: statusBadge.backgroundColor,
+                                              color: statusBadge.color,
+                                              border: `1px solid ${statusBadge.borderColor}`
                                             }}
                                           >
                                             {statusLabel}

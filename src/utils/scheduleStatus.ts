@@ -141,10 +141,6 @@ export function getScheduleStatusBadgeStyle(value: string, isLight: boolean, isO
   return { color: isLight ? '#475569' : '#cbd5e1', backgroundColor: isLight ? '#f1f5f9' : 'rgba(148,163,184,0.12)', borderColor: isLight ? '#cbd5e1' : 'rgba(148,163,184,0.3)' }
 }
 
-function isInstalledRemarks(_text?: string | null): boolean {
-  return false
-}
-
 function ticketRemarksText(ticket: Partial<Ticket>, fields?: Partial<Ticket>): string {
   return (
     fields?.remarksUpdate
@@ -176,18 +172,88 @@ export function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | n
   }
   const remarks = ticketRemarksText(ticket as Ticket).toLowerCase()
   const stat = String(ticket.status || '').toUpperCase()
-  if (isInstalledWorkflowStatus(stat)) {
-    if (/clean/i.test(remarks)) return 'DONE_CLEANING'
-    if (/checkup|check-up/i.test(remarks)) return 'DONE_CHECKUP'
-    if (/backjob|back-job|back job/i.test(remarks)) return 'DONE_BACKJOB'
-    if (/survey/i.test(remarks)) return 'DONE_SURVEY'
-    if (isInstalledRemarks(remarks)) return 'DONE_INSTALLED'
+  const svc = String(ticket.serviceType || (ticket as any).service_type || '').toLowerCase()
+  const cat = String(ticket.ticketCategory || (ticket as any).ticket_category || '').toLowerCase()
+  const textBlob = `${svc} ${cat} ${remarks}`
+
+  if (isInstalledWorkflowStatus(stat) || stat.startsWith('DONE') || stat === 'COMPLETED' || stat === 'COMPLETE') {
+    if (/clean/i.test(textBlob)) return 'DONE_CLEANING'
+    if (/checkup|check-up/i.test(textBlob)) return 'DONE_CHECKUP'
+    if (/backjob|back-job|back job/i.test(textBlob)) return 'DONE_BACKJOB'
+    if (/survey/i.test(textBlob)) return 'DONE_SURVEY'
+    if (/mount/i.test(textBlob)) return 'DONE_MOUNTING'
+    if (/dismantle/i.test(textBlob)) return 'DONE_DISMANTLE'
+    if (/quotation/i.test(textBlob)) return 'DONE_QUOTATION'
+    if (/system.*reprocess|reprocess/i.test(textBlob)) return 'DONE_SYSTEM_REPROCESS'
+    if (/repair|service|maintenance/i.test(textBlob)) return 'DONE_SERVICE'
+    if (/install|s[\/_]?i/i.test(textBlob)) return 'DONE_INSTALLED'
+    return 'DONE_SERVICE'
   }
   if (stat === 'SURVEY' && /done.*survey|survey.*done|surveyed/i.test(remarks)) return 'DONE_SURVEY'
   if (stat === 'DONE_SYSTEM_REPROCESS') return 'DONE_SYSTEM_REPROCESS'
   if (stat === 'DONE_DISMANTLE') return 'DONE_DISMANTLE'
   if (stat === 'DONE_NEGOTIATION') return 'DONE_NEGOTIATION'
   return null
+}
+
+export function formatSpecificDoneStatus(ticket: Partial<Ticket> | any): string {
+  if (!ticket) return 'TICKET'
+
+  const meta = parseAcMeta(ticket as Ticket)
+  const explicit = String(meta.scheduleOutcome || ticket.scheduleOutcome || '').toUpperCase().trim()
+  if (explicit) {
+    if (explicit === 'DONE_INSTALLED' || explicit === 'INSTALLED') return 'INSTALLED'
+    if (explicit === 'DONE_CLEANING') return 'DONE CLEANING'
+    if (explicit === 'DONE_CHECKUP') return 'DONE CHECKUP'
+    if (explicit === 'DONE_BACKJOB') return 'DONE BACKJOB'
+    if (explicit === 'DONE_SERVICE') return 'DONE SERVICE'
+    if (explicit === 'DONE_MOUNTING') return 'DONE MOUNTING'
+    if (explicit === 'DONE_SURVEY') return 'DONE SURVEY'
+    if (explicit === 'DONE_DISMANTLE') return 'DONE DISMANTLE'
+    if (explicit === 'DONE_QUOTATION') return 'DONE QUOTATION'
+    if (explicit === 'DONE_SYSTEM_REPROCESS') return 'DONE SYSTEM REPROCESS'
+    if (explicit === 'DONE_NEGOTIATION') return 'DONE NEGOTIATION'
+    return explicit.replace(/_/g, ' ')
+  }
+
+  const rawStat = String(ticket.status || '').toUpperCase().trim().replace(/\s+/g, '_')
+  const svc = String(ticket.serviceType || ticket.service_type || '').toUpperCase().trim()
+  const cat = String(ticket.ticketCategory || ticket.ticket_category || '').toUpperCase().trim()
+  const phase = String(meta.schedulePhase || '').toUpperCase().trim()
+  const remarks = String(ticket.remarksUpdate || ticket.remarks || ticket.description || ticket.title || '').toUpperCase().trim()
+  const combined = `${rawStat} ${svc} ${cat} ${phase} ${remarks}`
+
+  const isClosed = rawStat === 'COMPLETED' || rawStat === 'COMPLETE' || rawStat === 'INSTALLED' || rawStat === 'DONE' || rawStat.startsWith('DONE_') || rawStat.startsWith('DONE ')
+
+  if (isClosed) {
+    if (combined.includes('CLEAN')) return 'DONE CLEANING'
+    if (combined.includes('CHECK')) return 'DONE CHECKUP'
+    if (combined.includes('BACKJOB') || combined.includes('BACK JOB') || combined.includes('BACK-JOB')) return 'DONE BACKJOB'
+    if (combined.includes('MOUNT')) return 'DONE MOUNTING'
+    if (combined.includes('DISMANTLE')) return 'DONE DISMANTLE'
+    if (combined.includes('SURVEY')) return 'DONE SURVEY'
+    if (combined.includes('QUOTATION')) return 'DONE QUOTATION'
+    if (combined.includes('REPROCESS')) return 'DONE SYSTEM REPROCESS'
+    if (combined.includes('REPAIR') || combined.includes('MAINTENANCE') || combined.includes('SERVICE')) return 'DONE SERVICE'
+    if (combined.includes('INSTALL') || combined.includes('S/I') || combined.includes('S_I') || combined.includes('SI')) return 'INSTALLED'
+    return 'DONE SERVICE'
+  }
+
+  if (rawStat === 'CANCELLED' || rawStat === 'CANCEL') return 'CANCELLED'
+  if (rawStat === 'RESCHED') return 'RESCHED'
+  if (rawStat === 'CONTINUATION') return 'CONTINUATION'
+  if (rawStat === 'FOR_APPROVAL' || rawStat === 'FOR QUOTATION') return 'FOR QUOTATION'
+  if (rawStat === 'SYSTEM_REPROCESS') return 'SYSTEM REPROCESS'
+  if (rawStat === 'DISMANTLE') return 'DISMANTLE'
+  if (combined.includes('CLEAN')) return 'CLEANING'
+  if (combined.includes('CHECK')) return 'CHECKUP'
+  if (combined.includes('BACKJOB') || combined.includes('BACK JOB')) return 'BACKJOB'
+  if (combined.includes('MOUNT')) return 'MOUNTING'
+  if (combined.includes('SURVEY')) return 'SURVEY'
+  if (combined.includes('INSTALL') || combined.includes('S/I')) return 'INSTALL'
+  if (combined.includes('SERVICE') || combined.includes('REPAIR')) return 'SERVICE'
+
+  return rawStat ? rawStat.replace(/_/g, ' ') : (svc || 'TICKET')
 }
 
 export function getScheduleStatusValue(ticket: Ticket): string {

@@ -4,7 +4,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { API_BASE_URL } from '../utils/api'
 import { useOutletContext } from 'react-router-dom'
 import SearchResultDetailModal from '../components/SearchResultDetailModal'
-import { getInstallerDisplay } from '../utils/ticketHelpers'
+import { getInstallerDisplay, formatSpecificDoneStatus, getScheduleStatusBadgeStyle } from '../utils/ticketHelpers'
 
 interface Ticket {
   id: string
@@ -102,15 +102,6 @@ export default function SearchTab() {
     if (typeof loc === 'string') return loc
     const parts = [loc.addressLine1, loc.barangay, loc.city, loc.province].filter(Boolean)
     return parts.length > 0 ? parts.join(', ') : '—'
-  }
-
-  const getStatusStyle = (status: string) => {
-    const s = (status || '').toUpperCase()
-    if (s.includes('COMPLETE')) return { backgroundColor: 'rgba(16,185,129,0.1)', color: '#10B981' }
-    if (s.includes('PROGRESS') || s.includes('ASSIGNED')) return { backgroundColor: 'rgba(59,130,246,0.1)', color: '#3B82F6' }
-    if (s.includes('PENDING')) return { backgroundColor: 'rgba(245,158,11,0.1)', color: '#F59E0B' }
-    if (s.includes('CANCEL')) return { backgroundColor: 'rgba(239,68,68,0.1)', color: '#EF4444' }
-    return { backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textMuted }
   }
 
   return (
@@ -231,7 +222,8 @@ export default function SearchTab() {
                 {overviewResults.map(ticket => {
                   const ticketNum = ticket.ticketNumber || ticket.ticket_number || ticket.id
                   const customer = ticket.customerName || ticket.customer_name || 'No Customer Name'
-                  const statusStyle = getStatusStyle(ticket.status)
+                  const specificStatus = formatSpecificDoneStatus(ticket)
+                  const statusStyle = getScheduleStatusBadgeStyle(specificStatus, isLight)
                   // Never fall back to assignedEmployeeName here — that field holds the
                   // negotiator/assigned sales staff, not the installer/technician.
                   const technician = getInstallerDisplay(ticket as any)
@@ -248,8 +240,15 @@ export default function SearchTab() {
                           <span className="text-[10px] font-extrabold tracking-wide uppercase" style={{ color: textMuted }}>
                             {ticketNum}
                           </span>
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ backgroundColor: statusStyle.backgroundColor, color: statusStyle.color }}>
-                            {ticket.status}
+                          <span
+                            className="px-2 py-0.5 rounded text-[9.5px] font-black uppercase tracking-wider"
+                            style={{
+                              backgroundColor: statusStyle.backgroundColor,
+                              color: statusStyle.color,
+                              border: `1px solid ${statusStyle.borderColor}`
+                            }}
+                          >
+                            {specificStatus}
                           </span>
                         </div>
 
