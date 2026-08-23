@@ -2069,6 +2069,61 @@ export default function Relays() {
   )
 
   const [showNameSuggestions, setShowNameSuggestions] = useState(false)
+  const [apiNameMatches, setApiNameMatches] = useState<Ticket[]>([])
+  const [nameSearchLoading, setNameSearchLoading] = useState(false)
+
+  // Asynchronous ticket search across ALL branches & statuses via backend search API
+  useEffect(() => {
+    const raw = (addForm.customerName || '').trim()
+    if (raw.length < 3 || !isAddModalOpen) {
+      setApiNameMatches([])
+      setNameSearchLoading(false)
+      return
+    }
+
+    let isCancelled = false
+    setNameSearchLoading(true)
+
+    const timer = setTimeout(async () => {
+      try {
+        const tokenStr = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const headers = { Authorization: `Bearer ${tokenStr}` }
+        const res = await fetch(`${API_BASE_URL}/tickets?q=${encodeURIComponent(raw)}&size=50`, { headers })
+        if (res.ok && !isCancelled) {
+          const data = await res.json()
+          const list: any[] = data?.data?.tickets || data?.tickets || (Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [])
+          if (Array.isArray(list)) {
+            const mapped = list.map((t: any) => ({
+              ...t,
+              id: String(t.id || ''),
+              customerName: t.customerName || t.customer_name || '',
+              contactPhone: t.contactPhone || t.contact_phone || '',
+              location: t.location || t.address || '',
+              district: t.district || '',
+              ticketNumber: t.ticketNumber || t.ticket_number || '',
+              branchId: t.branchId || t.branch_id || '',
+              dealer: t.dealer || t.sourceVendor || t.source_vendor || '',
+              diser: t.diser || '',
+              preferredDate: t.preferredDate || t.preferred_date || '',
+              status: t.status || '',
+              serviceType: t.serviceType || t.service_type || '',
+              unitType: t.unitType || t.unit_type || '',
+            }))
+            setApiNameMatches(mapped as Ticket[])
+          }
+        }
+      } catch (e) {
+        console.error('Failed to search tickets by customer name:', e)
+      } finally {
+        if (!isCancelled) setNameSearchLoading(false)
+      }
+    }, 250)
+
+    return () => {
+      isCancelled = true
+      clearTimeout(timer)
+    }
+  }, [addForm.customerName, isAddModalOpen])
 
   const addFormNameMatches = useMemo(() => {
     const raw = (addForm.customerName || '').trim()
@@ -2076,36 +2131,38 @@ export default function Relays() {
     if (norm.length < 3) return []
     const tokens = raw.toLowerCase().split(/\s+/).filter(t => t.length >= 2)
 
-    // Match against openFieldTickets and all loaded tickets without duplicates
-    const allCandidates = openFieldTickets.length > 0 ? openFieldTickets : tickets
+    // Match against API search results + openFieldTickets + all loaded tickets without duplicates
+    const allCandidates = [...apiNameMatches, ...openFieldTickets, ...tickets]
     const seen = new Set<string>()
     const matches: Ticket[] = []
 
     for (const t of allCandidates) {
       if (!t || !t.id || seen.has(t.id)) continue
-      const tCustomer = (t.customerName || '').trim()
+      const tCustomer = (t.customerName || (t as any).customer_name || '').trim()
       const tNorm = tCustomer.toLowerCase().replace(/[^a-z0-9]/g, '')
       if (tNorm.length < 3) continue
 
+      // Support loose match (contains normalized or contains tokens)
       const isSubMatch = tNorm.includes(norm) || norm.includes(tNorm)
       const tokenMatch = tokens.length > 0 && tokens.every(tok => tCustomer.toLowerCase().includes(tok))
+      const looseTokenMatch = tokens.length > 0 && tokens.some(tok => tCustomer.toLowerCase().includes(tok))
 
-      if (isSubMatch || tokenMatch) {
+      if (isSubMatch || tokenMatch || looseTokenMatch) {
         seen.add(t.id)
         matches.push(t)
-        if (matches.length >= 6) break
+        if (matches.length >= 10) break
       }
     }
     return matches
-  }, [addForm.customerName, openFieldTickets, tickets])
+  }, [addForm.customerName, apiNameMatches, openFieldTickets, tickets])
 
-  const handleSelectNameSuggestion = useCallback((ticket: Ticket) => {
+  const handleSelectNameSuggestion = useCallback((ticket: any) => {
     const details = parseAcDetails(ticket)
-    const phone = ticket.contactPhone || details.alternatePhone || ''
+    const phone = ticket.contactPhone || ticket.contact_phone || details.alternatePhone || ''
     const phones = phone ? phone.split(/[/,]|\s{2,}/).map((p: string) => p.trim()).filter(Boolean) : ['']
     
     // Parse dealer
-    let formDealer = ticket.dealer || ticket.sourceVendor || ''
+    let formDealer = ticket.dealer || ticket.sourceVendor || ticket.source_vendor || ''
     let formDealerBranch = ''
     if (formDealer) {
       const parsed = parseDealer(formDealer)
@@ -2123,9 +2180,9 @@ export default function Relays() {
 
     setAddForm(prev => ({
       ...prev,
-      customerName: ticket.customerName || prev.customerName,
+      customerName: ticket.customerName || ticket.customer_name || prev.customerName,
       contactPhone: phones[0] || prev.contactPhone,
-      locationRaw: ticket.location || prev.locationRaw,
+      locationRaw: ticket.location || ticket.address || prev.locationRaw,
       district: ticket.district || prev.district,
       landmarks: details.landmarks || prev.landmarks,
       dealer: formDealer || prev.dealer,
@@ -2136,7 +2193,7 @@ export default function Relays() {
       sku: details.sku || prev.sku,
       serialNumber: details.serialNumber || prev.serialNumber,
       commitType: ticket.commitType || prev.commitType,
-      branchId: ticket.branchId || prev.branchId,
+      branchId: ticket.branchId || ticket.branch_id || prev.branchId,
       assignedTo: ticket.assignedTo || prev.assignedTo,
     }))
 
@@ -2146,6 +2203,7 @@ export default function Relays() {
 
     setShowNameSuggestions(false)
   }, [])
+
 
 
 
@@ -5392,7 +5450,7 @@ export default function Relays() {
                         />
 
                         {/* Existing Ticket Match Popup Dropdown */}
-                        {showNameSuggestions && addFormNameMatches.length > 0 && (
+                        {showNameSuggestions && (addFormNameMatches.length > 0 || nameSearchLoading) && (
                           <div
                             className="absolute left-0 right-0 top-full mt-1.5 z-50 rounded-xl border shadow-2xl overflow-hidden backdrop-blur-md animate-in fade-in-50 zoom-in-95 duration-150"
                             style={{
@@ -5404,89 +5462,107 @@ export default function Relays() {
                             }}
                           >
                             <div
-                              className="px-3 py-2 border-b flex items-center justify-between"
+                              className="px-3.5 py-2 border-b flex items-center justify-between"
                               style={{
                                 backgroundColor: isLight ? '#f1f5f9' : 'rgba(30, 41, 59, 0.8)',
                                 borderColor: isLight ? '#e2e8f0' : '#334155',
                               }}
                             >
                               <span className="text-[10.5px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-                                <Search className="w-3 h-3" />
-                                Existing Ticket Found ({addFormNameMatches.length})
+                                {nameSearchLoading ? (
+                                  <Loader2 className="w-3 h-3 animate-spin text-emerald-500" />
+                                ) : (
+                                  <Search className="w-3 h-3" />
+                                )}
+                                {nameSearchLoading && addFormNameMatches.length === 0
+                                  ? 'Searching all branches...'
+                                  : `Existing Tickets Found (${addFormNameMatches.length})`}
                               </span>
                               <span className="text-[9.5px] font-semibold" style={{ color: textMuted }}>
                                 Click to auto-fill
                               </span>
                             </div>
 
-                            <div className="max-h-[220px] overflow-y-auto divide-y" style={{ borderColor: isLight ? '#f1f5f9' : '#1e293b' }}>
-                              {addFormNameMatches.map((t) => {
-                                const ticketNo = getTicketNumber(t)
-                                const details = parseAcDetails(t)
-                                const statusLabel = getRelayStatusLabel(t)
-                                const schedDate = details.finalDate || details.scheduledDate || t.preferredDate
-                                const branch = resolveBranch(t.branchId)?.name || ''
-                                const locationPreview = t.location || t.district || ''
+                            {addFormNameMatches.length > 0 && (
+                              <div className="max-h-[240px] overflow-y-auto divide-y" style={{ borderColor: isLight ? '#f1f5f9' : '#1e293b' }}>
+                                {addFormNameMatches.map((t: any) => {
+                                  const ticketNo = t.ticketNumber || t.ticket_number || getTicketNumber(t) || t.id || 'TICKET'
+                                  const details = parseAcDetails(t)
+                                  const statusLabel = (t.status || '').toUpperCase() || getRelayStatusLabel(t) || t.serviceType || 'TICKET'
+                                  const schedDate = details.finalDate || details.scheduledDate || t.preferredDate || t.preferred_date || t.createdAt
+                                  const branchObj = resolveBranch(t.branchId || t.branch_id)
+                                  const branchName = branchObj?.name || t.branchName || t.branch_name || ''
+                                  const locationPreview = t.location || t.address || t.district || ''
 
-                                return (
-                                  <button
-                                    key={t.id}
-                                    type="button"
-                                    onMouseDown={(e) => {
-                                      e.preventDefault()
-                                      handleSelectNameSuggestion(t)
-                                    }}
-                                    className="w-full text-left px-3.5 py-2.5 transition-colors flex flex-col gap-1 hover:bg-emerald-500/10 group cursor-pointer"
-                                  >
-                                    <div className="flex items-center justify-between gap-2">
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <span className="font-mono text-xs font-black text-emerald-600 dark:text-emerald-400">
-                                          {ticketNo}
-                                        </span>
-                                        <span className="text-xs font-bold truncate" style={{ color: textPrimary }}>
-                                          {t.customerName}
-                                        </span>
+                                  return (
+                                    <button
+                                      key={t.id}
+                                      type="button"
+                                      onMouseDown={(e) => {
+                                        e.preventDefault()
+                                        handleSelectNameSuggestion(t)
+                                      }}
+                                      className="w-full text-left px-3.5 py-2.5 transition-colors flex flex-col gap-1 hover:bg-emerald-500/10 group cursor-pointer"
+                                    >
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <span className="font-mono text-xs font-black text-emerald-600 dark:text-emerald-400">
+                                            {ticketNo}
+                                          </span>
+                                          <span className="text-xs font-bold truncate" style={{ color: textPrimary }}>
+                                            {t.customerName || t.customer_name}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                          {branchName && (
+                                            <span
+                                              className="text-[9.5px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider"
+                                              style={{
+                                                borderColor: isLight ? '#cbd5e1' : '#334155',
+                                                color: textMuted,
+                                                backgroundColor: isLight ? '#f8fafc' : 'rgba(255,255,255,0.03)'
+                                              }}
+                                            >
+                                              {formatBranchName(branchName)}
+                                            </span>
+                                          )}
+                                          <span
+                                            className="text-[10px] font-extrabold px-2 py-0.5 rounded-md uppercase tracking-wide"
+                                            style={{
+                                              backgroundColor: isLight ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.2)',
+                                              color: isLight ? '#047857' : '#34d399',
+                                            }}
+                                          >
+                                            {statusLabel}
+                                          </span>
+                                        </div>
                                       </div>
-                                      <span
-                                        className="text-[10px] font-extrabold px-2 py-0.5 rounded-md shrink-0 uppercase tracking-wide"
-                                        style={{
-                                          backgroundColor: isLight ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.2)',
-                                          color: isLight ? '#047857' : '#34d399',
-                                        }}
-                                      >
-                                        {statusLabel || t.serviceType || 'TICKET'}
-                                      </span>
-                                    </div>
 
-                                    <div className="flex items-center gap-3 text-[11px] font-medium" style={{ color: textMuted }}>
-                                      {schedDate && (
-                                        <span className="flex items-center gap-1">
-                                          <Clock className="w-3 h-3 text-slate-400 shrink-0" />
-                                          {String(schedDate).slice(0, 10)}
-                                        </span>
-                                      )}
-                                      {t.contactPhone && (
-                                        <span className="flex items-center gap-1">
-                                          <Phone className="w-3 h-3 text-slate-400 shrink-0" />
-                                          {t.contactPhone}
-                                        </span>
-                                      )}
-                                      {branch && (
-                                        <span className="truncate">
-                                          {formatBranchName(branch)}
-                                        </span>
-                                      )}
-                                    </div>
+                                      <div className="flex items-center gap-3 text-[11px] font-medium" style={{ color: textMuted }}>
+                                        {schedDate && (
+                                          <span className="flex items-center gap-1">
+                                            <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                                            {String(schedDate).slice(0, 10)}
+                                          </span>
+                                        )}
+                                        {(t.contactPhone || t.contact_phone) && (
+                                          <span className="flex items-center gap-1">
+                                            <Phone className="w-3 h-3 text-slate-400 shrink-0" />
+                                            {t.contactPhone || t.contact_phone}
+                                          </span>
+                                        )}
+                                      </div>
 
-                                    {locationPreview && (
-                                      <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
-                                        📍 {locationPreview}
-                                      </p>
-                                    )}
-                                  </button>
-                                )
-                              })}
-                            </div>
+                                      {locationPreview && (
+                                        <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
+                                          📍 {typeof locationPreview === 'object' ? JSON.stringify(locationPreview) : locationPreview}
+                                        </p>
+                                      )}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
