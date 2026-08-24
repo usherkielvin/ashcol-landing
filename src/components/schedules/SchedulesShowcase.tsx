@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, FileDown, Loader2, Printer, X } from 'lucide-react'
+import { ArrowLeft, FileDown, Loader2, Printer, Sheet, X } from 'lucide-react'
+import * as XLSX from 'xlsx'
 
 export type ScheduleShowcaseRow = {
   id: string
@@ -537,6 +538,36 @@ export function SchedulesShowcase({
     } finally { setExportingPdf(false) }
   }, [branchLabel, dateKey, dateLabel, exportingPdf, isTaguigServices, onBeforeExport, paymentByRowId, rows])
 
+  const handleExportExcel = useCallback(() => {
+    if (rows.length === 0) return
+    const installerLabel = isTaguigServices ? 'TECHNICIAN' : 'INSTALLER'
+    const dealerLabel = isTaguigServices ? 'ENDORSED BY' : 'DEALER / STORE'
+    const wsData = rows.map(row => ({
+      'NO.': row.index,
+      'TICKET NO': showcaseCellText(row.ticketNumber),
+      'NAME': showcaseCellText(row.name),
+      'CONTACT NO': showcaseCellText(row.contact),
+      'DESTINATION': showcaseCellText(row.destination),
+      'DISTRICT': showcaseCellText(row.district),
+      'BRAND': showcaseCellText(row.brand),
+      [dealerLabel]: showcaseCellText(row.dealer),
+      'STATUS': showcaseCellText(row.status),
+      'COMMIT': showcaseCellText(row.commit),
+      [installerLabel]: showcaseCellText(row.installer),
+      'NEGOTIATOR': showcaseCellText(row.negotiator),
+      'DRIVER': showcaseCellText(row.driver),
+      'VEHICLE': showcaseCellText(row.service),
+      'UPDATE': showcaseCellText(row.update),
+      'PAYMENT': showcaseCellText(resolveRowPayment(row, paymentByRowId)),
+    }))
+    const ws = XLSX.utils.json_to_sheet(wsData)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, (scheduleDate || 'Schedule').slice(0, 31))
+    const safeBranch = (branchLabel || 'schedule').replace(/[^\w-]+/g, '_')
+    const safeDate = (dateLabel || 'all-dates').replace(/[^\w-]+/g, '_')
+    XLSX.writeFile(wb, `ashcol-schedules_${safeBranch}_${safeDate}.xlsx`)
+  }, [rows, isTaguigServices, paymentByRowId, scheduleDate, branchLabel, dateLabel])
+
   if (!open) return null
 
   const installerHeaders = buildInstallerHeaders(isTaguigServices)
@@ -774,6 +805,13 @@ export function SchedulesShowcase({
                 style={{ backgroundColor: HEADER_GREEN, border: `1px solid ${HEADER_GREEN_DARK}` }}>
                 {exportingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
                 Export PDF
+              </button>
+              <button type="button" onClick={handleExportExcel}
+                disabled={rows.length === 0}
+                title="Export this list to Excel"
+                className="h-10 rounded-xl flex items-center justify-center gap-2 px-3 text-sm font-bold text-slate-700 bg-white border border-slate-300 disabled:opacity-50">
+                <Sheet className="w-4 h-4" />
+                Export Excel
               </button>
               <button type="button" onClick={onClose}
                 className="h-10 rounded-xl flex items-center justify-center gap-2 px-3 text-sm font-bold text-white"
