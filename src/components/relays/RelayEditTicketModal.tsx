@@ -57,6 +57,9 @@ export type RelayEditTicketModalProps = {
   onClose: () => void
   onDelete?: () => void
   onSave: (draft: RelayEditDraft) => void
+  /** Fired when the 15Q checklist modal persists on its own (a plain PATCH, not a full drawer save) —
+   *  just merges the already-saved fields into local state, distinct from onSave's RelayEditDraft shape. */
+  onTicketPatched?: (ticket: TicketLike) => void
   getTicketNumber: (ticket: any) => string
   parseAcDetails: (ticket: any) => { finalDate?: string; previousScheduleDates?: string[] }
   draftExtensions?: Partial<RelayEditDraft>
@@ -124,6 +127,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
     onMerge,
     onClose,
     onSave,
+    onTicketPatched,
     getTicketNumber,
     parseAcDetails,
     draftExtensions,
@@ -877,7 +881,9 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
           isLight={isLight}
           onClose={() => setShow15QChecklist(false)}
           onSaved={(updatedTicket) => {
-            onSave?.(updatedTicket as any)
+            // The checklist already PATCHed itself — this is a Ticket, not a RelayEditDraft, so it
+            // must not go through onSave (that reconstructs a full drawer-save payload from draft state).
+            onTicketPatched?.(updatedTicket as unknown as TicketLike)
           }}
         />
       )}

@@ -8176,6 +8176,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           onClose={closeEditModal}
           onDelete={() => { if (editTicket?.id) { handleDelete(editTicket.id); closeEditModal() } }}
           onSave={handleUnifiedEditSave}
+          onTicketPatched={(updated) => {
+            const patched = updated as unknown as Ticket
+            setEditTicket(prev => (prev ? { ...prev, ...patched } : prev))
+            setTickets(prev => prev.map(t => (t.id === patched.id ? { ...t, ...patched } : t)))
+          }}
           getTicketNumber={(t) => (t.ticketNumber || t.ticket_number || t.id || '')}
           parseAcDetails={(t) => { try { return t.acDetails ? JSON.parse(t.acDetails) : {} } catch { return {} } }}
           draftExtensions={{
@@ -8232,6 +8237,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           onClose={requestCloseEditModal}
           onDelete={canEdit ? () => { if (editTicket?.id) { handleDelete(editTicket.id); closeEditModal() } } : undefined}
           onSave={handleUnifiedEditSave}
+          onTicketPatched={(updated) => {
+            const patched = updated as unknown as Ticket
+            setEditTicket(prev => (prev ? { ...prev, ...patched } : prev))
+            setTickets(prev => prev.map(t => (t.id === patched.id ? { ...t, ...patched } : t)))
+          }}
           getTicketNumber={(t) => (t.ticketNumber || t.ticket_number || t.id || '')}
           parseAcDetails={(t) => { try { return t.acDetails ? JSON.parse(t.acDetails) : {} } catch { return {} } }}
           draftExtensions={{

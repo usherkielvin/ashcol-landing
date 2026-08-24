@@ -4481,6 +4481,11 @@ export default function Relays() {
           onMerge={handleMergeTickets}
           onClose={() => setIsActionDrawerOpen(false)}
           onSave={handleDrawerActionSave}
+          onTicketPatched={(updated) => {
+            const patched = updated as unknown as Ticket
+            setSelectedTicket(prev => (prev ? { ...prev, ...patched } : prev))
+            setTickets(prev => prev.map(t => (t.id === patched.id ? { ...t, ...patched } : t)))
+          }}
           getTicketNumber={(t) => getTicketNumber(t as Ticket)}
           parseAcDetails={(t) => parseAcDetails(t as Ticket)}
         />

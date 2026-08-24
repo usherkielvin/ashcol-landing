@@ -4,11 +4,11 @@ import { NumericFormat } from 'react-number-format'
 import {
   FileText, CreditCard, Clock, Plus, Search, Filter, Loader2,
   Check, X, AlertCircle, Trash2, Eye, Pencil, MousePointerClick, ChevronLeft,
-  CircleCheck, CircleX, Hourglass, TrendingUp, ChevronDown,
+  CircleCheck, CircleX, Hourglass, TrendingUp, ChevronDown, Building2,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, isPortalAdmin, findBranchListEntry, type BranchListEntry } from '../utils/api'
+import { API_BASE_URL, isPortalAdmin, findBranchListEntry, formatBranchName, type BranchListEntry } from '../utils/api'
 import { AshcolFormHeader } from '../components/operations/AshcolFormHeader'
 import { FormField, formInputStyle } from '../components/operations/FormField'
 import { fetchCachedEmployees } from '../utils/portalDirectoryCache'
@@ -81,6 +81,7 @@ interface UnifiedRow {
   type: TabId
   createdAt: string
   employeeId: string
+  branchId?: string
   status: string
   rejectionReason?: string
   notesText?: string
@@ -169,6 +170,7 @@ export default function OperationsForms() {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [typeFilter, setTypeFilter] = useState<'ALL' | TabId>('ALL')
+  const [branchFilter, setBranchFilter] = useState('ALL')
 
   const [cashAdvances, setCashAdvances] = useState<CashAdvance[]>([])
   const [budgetRequests, setBudgetRequests] = useState<BudgetRequest[]>([])
@@ -305,6 +307,7 @@ export default function OperationsForms() {
       type: 'cash-advance',
       createdAt: a.createdAt,
       employeeId: a.employeeId,
+      branchId: a.branchId || userDirectory[a.employeeId]?.branchId,
       status: a.status,
       rejectionReason: a.rejectionReason,
       notesText: a.notes,
@@ -319,6 +322,7 @@ export default function OperationsForms() {
       type: 'budget',
       createdAt: b.createdAt,
       employeeId: b.employeeId,
+      branchId: b.branchId || userDirectory[b.employeeId]?.branchId,
       status: b.status,
       rejectionReason: b.rejectionReason,
       notesText: b.notes,
@@ -333,6 +337,7 @@ export default function OperationsForms() {
       type: 'overtime',
       createdAt: o.createdAt,
       employeeId: o.employeeId,
+      branchId: o.branchId || userDirectory[o.employeeId]?.branchId,
       status: o.status,
       rejectionReason: o.rejectionReason,
       notesText: o.notes,
@@ -343,18 +348,40 @@ export default function OperationsForms() {
       raw: o,
     }))
     return [...ca, ...bud, ...ot].sort((x, y) => new Date(y.createdAt).getTime() - new Date(x.createdAt).getTime())
-  }, [cashAdvances, budgetRequests, overtimeRequests, resolveBranchLabel, getRequesterName])
+  }, [cashAdvances, budgetRequests, overtimeRequests, resolveBranchLabel, getRequesterName, userDirectory])
+
+  const matchesBranch = useCallback((r: UnifiedRow, filterId: string) => {
+    if (!filterId || filterId === 'ALL') return true
+    if (r.branchId && r.branchId.toLowerCase() === filterId.toLowerCase()) return true
+
+    const selectedBranch = branches.find(b => b.id.toLowerCase() === filterId.toLowerCase())
+    if (!selectedBranch) return false
+
+    const branchName = selectedBranch.name.toLowerCase()
+    const rowLabel = r.branchLabel.toLowerCase()
+
+    if (rowLabel && (rowLabel === branchName || branchName.includes(rowLabel) || rowLabel.includes(branchName))) return true
+
+    const formattedSelected = formatBranchName(selectedBranch.name, selectedBranch.id).toLowerCase()
+    if (rowLabel && (rowLabel === formattedSelected || formattedSelected.includes(rowLabel) || rowLabel.includes(formattedSelected))) return true
+
+    return false
+  }, [branches])
 
   const filteredRows = unifiedRows.filter(r =>
     (typeFilter === 'ALL' || r.type === typeFilter) &&
     (statusFilter === 'ALL' || r.status === statusFilter) &&
+    matchesBranch(r, branchFilter) &&
     (searchQuery.trim() === '' ||
       r.requesterName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       r.detail.toLowerCase().includes(searchQuery.toLowerCase()) ||
       r.branchLabel.toLowerCase().includes(searchQuery.toLowerCase()))
   )
 
-  const statsBase = typeFilter === 'ALL' ? unifiedRows : unifiedRows.filter(r => r.type === typeFilter)
+  const statsBase = unifiedRows.filter(r =>
+    (typeFilter === 'ALL' || r.type === typeFilter) &&
+    matchesBranch(r, branchFilter)
+  )
   const stats = {
     total: statsBase.length,
     pending: statsBase.filter(r => r.status === 'PENDING').length,
@@ -835,7 +862,7 @@ export default function OperationsForms() {
       {!modal && (
       <>
       {/* Summary stat cards */}
-      <div className="flex flex-wrap gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3">
         <StatCard label="Total requests" value={stats.total} icon={TrendingUp} color="#6366f1" />
         <StatCard label="Pending" value={stats.pending} icon={Hourglass} color="#d97706" />
         <StatCard label="Approved" value={stats.approved} icon={CircleCheck} color="#16a34a" />
@@ -843,10 +870,10 @@ export default function OperationsForms() {
       </div>
 
       {/* List card */}
-      <div className="rounded-2xl overflow-hidden shadow-xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-        <div className="p-4 flex flex-col md:flex-row items-center justify-between gap-3" style={{ borderBottom: `1px solid ${border}` }}>
-          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-            <div className="relative w-full md:w-56">
+      <div className="rounded-xl sm:rounded-2xl overflow-hidden shadow-xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+        <div className="p-3 sm:p-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 sm:gap-3" style={{ borderBottom: `1px solid ${border}` }}>
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-3 w-full md:w-auto">
+            <div className="col-span-2 relative w-full sm:w-56">
               <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: textMuted }} />
               <input
                 type="text"
@@ -857,23 +884,40 @@ export default function OperationsForms() {
                 style={istyle}
               />
             </div>
-            <div className="flex items-center gap-1.5">
-              <Filter className="w-3.5 h-3.5" style={{ color: textMuted }} />
+            {isAdmin && (
+              <div className="relative w-full sm:w-auto">
+                <Building2 className="absolute left-2.5 top-2.5 w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
+                <select
+                  value={branchFilter}
+                  onChange={e => setBranchFilter(e.target.value)}
+                  className={`${inputCls} pl-8 appearance-none cursor-pointer`}
+                  style={istyle}
+                  aria-label="Filter by branch"
+                >
+                  <option value="ALL">All branches</option>
+                  {branches.map(b => (
+                    <option key={b.id} value={b.id}>{formatBranchName(b.name, b.id)}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="relative w-full sm:w-auto">
+              <Filter className="absolute left-2.5 top-2.5 w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
               <select
                 value={typeFilter}
                 onChange={e => setTypeFilter(e.target.value as 'ALL' | TabId)}
-                className={`${inputCls} appearance-none`}
+                className={`${inputCls} pl-8 appearance-none cursor-pointer`}
                 style={istyle}
               >
                 <option value="ALL">All types</option>
                 {TABS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
               </select>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="relative w-full sm:w-auto col-span-2 sm:col-span-1">
               <select
                 value={statusFilter}
                 onChange={e => setStatusFilter(e.target.value)}
-                className={`${inputCls} appearance-none`}
+                className={`${inputCls} appearance-none cursor-pointer`}
                 style={istyle}
               >
                 <option value="ALL">All statuses</option>
@@ -891,53 +935,46 @@ export default function OperationsForms() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          {loading ? (
-            <div className="flex items-center justify-center py-16 gap-2" style={{ color: textMuted }}>
-              <Loader2 className="w-5 h-5 animate-spin" />
-              <span className="text-xs font-semibold">Loading…</span>
-            </div>
-          ) : (
-            <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F1A2E' }}>
-                  {['Date', 'Type', 'Requested By', 'Branch', 'Details', 'Amount', 'Status', 'Notes'].map(h => (
-                    <th key={h} className="text-left px-4 py-3 font-bold" style={{ borderBottom: `1px solid ${border}` }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRows.length === 0 ? (
-                  <tr><td colSpan={8} className="text-center py-12" style={{ color: textMuted }}>No requests found.</td></tr>
-                ) : filteredRows.map(r => (
-                  <tr
-                    key={`${r.type}-${r.id}`}
-                    onContextMenu={e => openContextMenu(e, r)}
-                    className="transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.03]"
-                    style={{
-                      borderBottom: `1px solid ${border}`,
-                      borderLeft: `3px solid ${statusColors[r.status] || statusColors.PENDING}`,
-                      cursor: 'context-menu',
-                    }}
-                  >
-                    <td className={`${cellCls} whitespace-nowrap`} style={{ color: textPrimary }}>{formatDateCaps(r.createdAt)}</td>
-                    <td className={cellCls}>{typeText(r.type)}</td>
-                    <td className={`${cellCls} whitespace-nowrap`} style={{ color: textPrimary }}>{r.requesterName}</td>
-                    <td className={`${cellCls} whitespace-nowrap`} style={{ color: textPrimary }}>{r.branchLabel}</td>
-                    <td className={`${cellCls} max-w-xs truncate`} style={{ color: textPrimary }} title={r.detail}>{r.detail}</td>
-                    <td className={`${cellCls} whitespace-nowrap`} style={{ color: textPrimary }}>{r.amount != null ? formatPeso(r.amount) : '—'}</td>
-                    <td className={`${cellCls} select-none`}>
+        {loading ? (
+          <div className="flex items-center justify-center py-16 gap-2" style={{ color: textMuted }}>
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className="text-xs font-semibold">Loading…</span>
+          </div>
+        ) : filteredRows.length === 0 ? (
+          <div className="text-center py-12 text-xs font-semibold" style={{ color: textMuted }}>No requests found.</div>
+        ) : (
+          <>
+            {/* Mobile Card View (shown below md) */}
+            <div className="md:hidden divide-y" style={{ borderColor: border }}>
+              {filteredRows.map(r => (
+                <div
+                  key={`card-${r.type}-${r.id}`}
+                  onClick={() => openRecord('view', r.type, r.raw)}
+                  className="p-3.5 flex flex-col gap-2.5 transition-colors active:bg-black/[0.03] dark:active:bg-white/[0.04] cursor-pointer"
+                  style={{
+                    borderLeft: `4px solid ${statusColors[r.status] || statusColors.PENDING}`,
+                  }}
+                >
+                  {/* Top row: Type badge, Date, Status */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {typeText(r.type)}
+                      <span className="text-[11px] font-semibold" style={{ color: textMuted }}>
+                        {formatDateCaps(r.createdAt)}
+                      </span>
+                    </div>
+                    <div onClick={e => e.stopPropagation()}>
                       {isAdmin ? (
                         <button
                           type="button"
                           onClick={(e) => openStatusMenu(e, r)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all hover:scale-105 shadow-sm active:scale-95 cursor-pointer"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-sm cursor-pointer"
                           style={{
                             color: statusColors[r.status] || statusColors.PENDING,
                             backgroundColor: `${statusColors[r.status] || statusColors.PENDING}18`,
                             border: `1px solid ${statusColors[r.status] || statusColors.PENDING}33`,
                           }}
-                          title="Click to edit status"
+                          title="Click to change status"
                         >
                           {r.status.replace(/_/g, ' ')}
                           <ChevronDown className="w-3 h-3 opacity-70" />
@@ -945,68 +982,201 @@ export default function OperationsForms() {
                       ) : (
                         statusText(r.status)
                       )}
-                    </td>
-                    <td
-                      className={`${cellCls} max-w-[200px] select-none`}
-                      style={{ color: textPrimary }}
-                      onDoubleClick={(e) => {
+                    </div>
+                  </div>
+
+                  {/* Middle row: Requester Name and Branch badge */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-black uppercase truncate" style={{ color: textPrimary }}>
+                      {r.requesterName}
+                    </span>
+                    {r.branchLabel && r.branchLabel !== '—' && (
+                      <span
+                        className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase shrink-0"
+                        style={{
+                          backgroundColor: isLight ? '#f1f5f9' : '#142038',
+                          color: textMuted,
+                          border: `1px solid ${border}`,
+                        }}
+                      >
+                        {r.branchLabel}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Details and Amount */}
+                  <div className="flex items-center justify-between gap-3 text-xs">
+                    <span className="truncate text-xs font-semibold" style={{ color: textMuted }} title={r.detail}>
+                      {r.detail}
+                    </span>
+                    {r.amount != null && (
+                      <span className="text-xs font-black shrink-0" style={{ color: textPrimary }}>
+                        {formatPeso(r.amount)}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Notes row if any */}
+                  {(r.notesText || (r.status === 'REJECTED' && r.rejectionReason)) && (
+                    <div
+                      className="text-[11px] p-2 rounded-lg"
+                      style={{
+                        backgroundColor: isLight ? '#f8fafc' : '#0e172a',
+                        border: `1px solid ${border}`,
+                        color: r.status === 'REJECTED' ? '#dc2626' : textMuted,
+                      }}
+                      onClick={e => {
                         e.stopPropagation()
                         if (isAdmin) startEditingNotes(r)
                       }}
-                      title={isAdmin ? "Double-click to add/edit note for this member" : undefined}
                     >
-                      {editingNotesId === r.id ? (
-                        <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-                          <input
-                            type="text"
-                            value={notesInput}
-                            onChange={e => setNotesInput(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') handleSaveNotes(r.type, r.id, notesInput)
-                              else if (e.key === 'Escape') cancelEditingNotes()
-                            }}
-                            className="px-2 py-1 rounded text-xs w-full focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
-                            style={istyle}
-                            placeholder="Add note for member…"
-                            autoFocus
-                            disabled={savingNotes}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleSaveNotes(r.type, r.id, notesInput)}
-                            disabled={savingNotes}
-                            className="p-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
-                            title="Save Note"
-                          >
-                            {savingNotes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={cancelEditingNotes}
-                            disabled={savingNotes}
-                            className="p-1 rounded hover:bg-black/[0.06] dark:hover:bg-white/[0.08] text-slate-400 hover:text-slate-200 transition-colors"
-                            title="Cancel"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className={`flex items-center justify-between gap-1 group ${isAdmin ? 'cursor-pointer hover:text-emerald-500' : ''}`}>
-                          <span className="truncate" title={r.status === 'REJECTED' ? (r.rejectionReason || r.notesText || '') : (r.notesText || '')}>
-                            {r.status === 'REJECTED' ? (r.rejectionReason ? `Reason: ${r.rejectionReason}` : (r.notesText || '—')) : (r.notesText || '—')}
-                          </span>
-                          {isAdmin && (
-                            <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-60 shrink-0 text-emerald-500 transition-opacity" />
-                          )}
-                        </div>
-                      )}
-                    </td>
+                      <span className="font-bold">
+                        {r.status === 'REJECTED' && r.rejectionReason ? 'Reason: ' : 'Note: '}
+                      </span>
+                      <span>
+                        {r.status === 'REJECTED' ? (r.rejectionReason || r.notesText) : r.notesText}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Card actions */}
+                  <div className="flex items-center justify-end gap-2 pt-0.5" onClick={e => e.stopPropagation()}>
+                    {canEditRecord(r as any) && (
+                      <button
+                        type="button"
+                        onClick={() => openRecord('edit', r.type, r.raw)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all text-blue-600 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800"
+                      >
+                        <Pencil className="w-3 h-3" /> Edit
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => openRecord('view', r.type, r.raw)}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all hover:opacity-80"
+                      style={{
+                        backgroundColor: isLight ? '#f1f5f9' : '#172544',
+                        color: textPrimary,
+                        border: `1px solid ${border}`,
+                      }}
+                    >
+                      <Eye className="w-3 h-3" /> View Form
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop Table View (shown on md and up) */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F1A2E' }}>
+                    {['Date', 'Type', 'Requested By', 'Branch', 'Details', 'Amount', 'Status', 'Notes'].map(h => (
+                      <th key={h} className="text-left px-4 py-3 font-bold" style={{ borderBottom: `1px solid ${border}` }}>{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+                </thead>
+                <tbody>
+                  {filteredRows.map(r => (
+                    <tr
+                      key={`${r.type}-${r.id}`}
+                      onContextMenu={e => openContextMenu(e, r)}
+                      className="transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.03]"
+                      style={{
+                        borderBottom: `1px solid ${border}`,
+                        borderLeft: `3px solid ${statusColors[r.status] || statusColors.PENDING}`,
+                        cursor: 'context-menu',
+                      }}
+                    >
+                      <td className={`${cellCls} whitespace-nowrap`} style={{ color: textPrimary }}>{formatDateCaps(r.createdAt)}</td>
+                      <td className={cellCls}>{typeText(r.type)}</td>
+                      <td className={`${cellCls} whitespace-nowrap`} style={{ color: textPrimary }}>{r.requesterName}</td>
+                      <td className={`${cellCls} whitespace-nowrap`} style={{ color: textPrimary }}>{r.branchLabel}</td>
+                      <td className={`${cellCls} max-w-xs truncate`} style={{ color: textPrimary }} title={r.detail}>{r.detail}</td>
+                      <td className={`${cellCls} whitespace-nowrap`} style={{ color: textPrimary }}>{r.amount != null ? formatPeso(r.amount) : '—'}</td>
+                      <td className={`${cellCls} select-none`}>
+                        {isAdmin ? (
+                          <button
+                            type="button"
+                            onClick={(e) => openStatusMenu(e, r)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all hover:scale-105 shadow-sm active:scale-95 cursor-pointer"
+                            style={{
+                              color: statusColors[r.status] || statusColors.PENDING,
+                              backgroundColor: `${statusColors[r.status] || statusColors.PENDING}18`,
+                              border: `1px solid ${statusColors[r.status] || statusColors.PENDING}33`,
+                            }}
+                            title="Click to edit status"
+                          >
+                            {r.status.replace(/_/g, ' ')}
+                            <ChevronDown className="w-3 h-3 opacity-70" />
+                          </button>
+                        ) : (
+                          statusText(r.status)
+                        )}
+                      </td>
+                      <td
+                        className={`${cellCls} max-w-[200px] select-none`}
+                        style={{ color: textPrimary }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation()
+                          if (isAdmin) startEditingNotes(r)
+                        }}
+                        title={isAdmin ? "Double-click to add/edit note for this member" : undefined}
+                      >
+                        {editingNotesId === r.id ? (
+                          <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                            <input
+                              type="text"
+                              value={notesInput}
+                              onChange={e => setNotesInput(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') handleSaveNotes(r.type, r.id, notesInput)
+                                else if (e.key === 'Escape') cancelEditingNotes()
+                              }}
+                              className="px-2 py-1 rounded text-xs w-full focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+                              style={istyle}
+                              placeholder="Add note for member…"
+                              autoFocus
+                              disabled={savingNotes}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSaveNotes(r.type, r.id, notesInput)}
+                              disabled={savingNotes}
+                              className="p-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
+                              title="Save Note"
+                            >
+                              {savingNotes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelEditingNotes}
+                              disabled={savingNotes}
+                              className="p-1 rounded hover:bg-black/[0.06] dark:hover:bg-white/[0.08] text-slate-400 hover:text-slate-200 transition-colors"
+                              title="Cancel"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className={`flex items-center justify-between gap-1 group ${isAdmin ? 'cursor-pointer hover:text-emerald-500' : ''}`}>
+                            <span className="truncate" title={r.status === 'REJECTED' ? (r.rejectionReason || r.notesText || '') : (r.notesText || '')}>
+                              {r.status === 'REJECTED' ? (r.rejectionReason ? `Reason: ${r.rejectionReason}` : (r.notesText || '—')) : (r.notesText || '—')}
+                            </span>
+                            {isAdmin && (
+                              <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-60 shrink-0 text-emerald-500 transition-opacity" />
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
       </>
       )}
@@ -1103,10 +1273,10 @@ export default function OperationsForms() {
       {/* Add / Edit / View — full page */}
       {modal && (
         <div
-          className="rounded-2xl overflow-hidden shadow-xl"
+          className="rounded-xl sm:rounded-2xl overflow-hidden shadow-xl"
           style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
         >
-          <div className="flex items-center gap-2 px-3 py-2 flex-wrap" style={{ borderBottom: `1px solid ${border}` }}>
+          <div className="flex items-center gap-2 px-3 py-2.5 flex-wrap" style={{ borderBottom: `1px solid ${border}` }}>
             <button
               onClick={closeModal}
               className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold transition-colors hover:bg-black/5 dark:hover:bg-white/5"
@@ -1131,7 +1301,7 @@ export default function OperationsForms() {
                       key={t.id}
                       type="button"
                       onClick={() => switchCreateType(t.id)}
-                      className="rounded-md px-3 py-1.5 text-[11px] font-bold transition-all"
+                      className="rounded-md px-2.5 sm:px-3 py-1 sm:py-1.5 text-[11px] font-bold transition-all"
                       style={{
                         backgroundColor: active ? cardBg : 'transparent',
                         color: active ? t.color : textMuted,
@@ -1146,57 +1316,57 @@ export default function OperationsForms() {
             )}
           </div>
 
-          <div className="p-6 md:p-10">
-              {/* Status info banner for edit/view */}
-              {modal.record && (
-                <div className="flex flex-col gap-3 mb-6 p-4 rounded-xl"
-                  style={{ backgroundColor: isLight ? '#f8fafc' : '#0B132B', border: `1px solid ${border}` }}>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Status</span>
-                    {statusText(modal.record.status)}
-                    {modal.record.status === 'REJECTED' && (modal.record as any).rejectionReason && (
-                      <span className="text-xs" style={{ color: textMuted }}>
-                        — Reason: <span className="font-semibold" style={{ color: textPrimary }}>{(modal.record as any).rejectionReason}</span>
-                      </span>
-                    )}
-                    {modal.record.status !== 'PENDING' && (
-                      <span className="text-[10px] ml-auto" style={{ color: textMuted }}>This request can no longer be edited.</span>
-                    )}
-                  </div>
-
-                  {/* Notes for member (editable by Admin / Management, visible to member) */}
-                  <div className="pt-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5" style={{ borderTop: `1px solid ${border}` }}>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Notes / Remarks:</span>
-                      <span className="text-xs font-semibold" style={{ color: (modal.record as any).notes ? textPrimary : textMuted }}>
-                        {(modal.record as any).notes || 'No notes added yet.'}
-                      </span>
-                    </div>
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const existingNote = (modal.record as any).notes || ''
-                          const newNote = window.prompt('Enter note for member:', existingNote)
-                          if (newNote !== null) {
-                            handleSaveNotes(modal.type, modal.record!.id, newNote)
-                          }
-                        }}
-                        className="px-3 py-1 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 shadow-sm hover:opacity-90 transition-opacity"
-                        style={{ backgroundColor: accent }}
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                        {(modal.record as any).notes ? 'Edit Note' : 'Add Note'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-
+          <div className="p-2 sm:p-6 md:p-10">
               <div
-                className="max-w-6xl mx-auto rounded-xl shadow-lg p-8 md:p-12"
-                style={{ backgroundColor: paperBg, border: `1px solid ${isLight ? '#d1d5db' : border}` }}
+                className="max-w-6xl mx-auto rounded-lg sm:rounded-xl shadow-none sm:shadow-lg p-3 sm:p-8 md:p-12 border-0 sm:border"
+                style={{ backgroundColor: paperBg, borderColor: isLight ? '#d1d5db' : border }}
               >
+                {/* Status info banner for edit/view */}
+                {modal.record && (
+                  <div className="flex flex-col gap-2.5 mb-5 p-3 sm:p-4 rounded-lg sm:rounded-xl"
+                    style={{ backgroundColor: isLight ? '#f8fafc' : '#0B132B', border: `1px solid ${border}` }}>
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                      <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Status</span>
+                      {statusText(modal.record.status)}
+                      {modal.record.status === 'REJECTED' && (modal.record as any).rejectionReason && (
+                        <span className="text-xs" style={{ color: textMuted }}>
+                          — Reason: <span className="font-semibold" style={{ color: textPrimary }}>{(modal.record as any).rejectionReason}</span>
+                        </span>
+                      )}
+                      {modal.record.status !== 'PENDING' && (
+                        <span className="text-[10px] sm:ml-auto" style={{ color: textMuted }}>This request can no longer be edited.</span>
+                      )}
+                    </div>
+
+                    {/* Notes for member (editable by Admin / Management, visible to member) */}
+                    <div className="pt-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2" style={{ borderTop: `1px solid ${border}` }}>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Notes / Remarks:</span>
+                        <span className="text-xs font-semibold" style={{ color: (modal.record as any).notes ? textPrimary : textMuted }}>
+                          {(modal.record as any).notes || 'No notes added yet.'}
+                        </span>
+                      </div>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const existingNote = (modal.record as any).notes || ''
+                            const newNote = window.prompt('Enter note for member:', existingNote)
+                            if (newNote !== null) {
+                              handleSaveNotes(modal.type, modal.record!.id, newNote)
+                            }
+                          }}
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 shadow-sm hover:opacity-90 transition-opacity"
+                          style={{ backgroundColor: accent }}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          {(modal.record as any).notes ? 'Edit Note' : 'Add Note'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* ── Cash Advance Form ── */}
                 {modal.type === 'cash-advance' && (
                   <form onSubmit={handleSubmitCashAdvance}>
@@ -1208,7 +1378,7 @@ export default function OperationsForms() {
                       textMuted={textMuted}
                       border={border}
                     />
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 mb-6">
                       <FormField label="Member Name">
                         <input
                           className={`${inputCls} uppercase`}
@@ -1290,7 +1460,7 @@ export default function OperationsForms() {
                       textMuted={textMuted}
                       border={border}
                     />
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5 text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-5 text-xs">
                       <FormField label="To">
                         <input className={inputCls} style={istyle} value="Finance / Accounting Dept" readOnly />
                       </FormField>
@@ -1334,69 +1504,71 @@ export default function OperationsForms() {
                       {' '}as payment for the ff:
                     </p>
 
-                    <table className="w-full text-xs mb-2" style={{ borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F1A2E' }}>
-                          <th className="text-left px-3 py-2 font-bold w-12" style={{ border: `1px solid ${border}` }}>#</th>
-                          <th className="text-left px-3 py-2 font-bold" style={{ border: `1px solid ${border}` }}>PARTICULARS</th>
-                          <th className="text-right px-3 py-2 font-bold w-36" style={{ border: `1px solid ${border}` }}>AMOUNT</th>
-                          {!disabled && <th className="w-10" style={{ border: `1px solid ${border}` }} />}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {lineItems.map((li, i) => (
-                          <tr key={i}>
-                            <td className="px-3 py-1.5 text-center font-bold" style={{ border: `1px solid ${border}` }}>{i + 1}</td>
-                            <td style={{ border: `1px solid ${border}` }}>
-                              <input
-                                className="w-full px-2 py-1.5 text-xs focus:outline-none bg-transparent"
-                                style={{ color: textPrimary }}
-                                value={li.particulars}
-                                onChange={e => {
-                                  const next = [...lineItems]
-                                  next[i] = { ...next[i], particulars: e.target.value }
-                                  setLineItems(next)
-                                }}
-                                placeholder="Description of item…"
-                                readOnly={disabled}
-                              />
-                            </td>
-                            <td style={{ border: `1px solid ${border}` }}>
-                              <NumericFormat
-                                className="w-full px-2 py-1.5 text-xs text-right focus:outline-none bg-transparent"
-                                style={{ color: textPrimary }}
-                                thousandSeparator=","
-                                decimalScale={2}
-                                fixedDecimalScale
-                                allowNegative={false}
-                                prefix="₱ "
-                                value={li.amount || ''}
-                                onValueChange={v => {
-                                  const next = [...lineItems]
-                                  next[i] = { ...next[i], amount: parseFloat(v.value) || 0 }
-                                  setLineItems(next)
-                                }}
-                                disabled={disabled}
-                              />
-                            </td>
-                            {!disabled && (
-                              <td className="text-center" style={{ border: `1px solid ${border}` }}>
-                                {lineItems.length > 1 && (
-                                  <button type="button" onClick={() => setLineItems(lineItems.filter((_, j) => j !== i))} className="p-1 text-red-500">
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                              </td>
-                            )}
+                    <div className="overflow-x-auto -mx-1 sm:mx-0 mb-2">
+                      <table className="w-full text-xs min-w-[340px]" style={{ borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F1A2E' }}>
+                            <th className="text-left px-3 py-2 font-bold w-12" style={{ border: `1px solid ${border}` }}>#</th>
+                            <th className="text-left px-3 py-2 font-bold" style={{ border: `1px solid ${border}` }}>PARTICULARS</th>
+                            <th className="text-right px-3 py-2 font-bold w-36" style={{ border: `1px solid ${border}` }}>AMOUNT</th>
+                            {!disabled && <th className="w-10" style={{ border: `1px solid ${border}` }} />}
                           </tr>
-                        ))}
-                        <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#0B132B' }}>
-                          <td colSpan={2} className="px-3 py-2 text-right font-black uppercase text-[10px] tracking-wider" style={{ border: `1px solid ${border}` }}>Total</td>
-                          <td className="px-3 py-2 text-right font-black" style={{ border: `1px solid ${border}` }}>{formatPeso(budgetTotal)}</td>
-                          {!disabled && <td style={{ border: `1px solid ${border}` }} />}
-                        </tr>
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {lineItems.map((li, i) => (
+                            <tr key={i}>
+                              <td className="px-3 py-1.5 text-center font-bold" style={{ border: `1px solid ${border}` }}>{i + 1}</td>
+                              <td style={{ border: `1px solid ${border}` }}>
+                                <input
+                                  className="w-full px-2 py-1.5 text-xs focus:outline-none bg-transparent"
+                                  style={{ color: textPrimary }}
+                                  value={li.particulars}
+                                  onChange={e => {
+                                    const next = [...lineItems]
+                                    next[i] = { ...next[i], particulars: e.target.value }
+                                    setLineItems(next)
+                                  }}
+                                  placeholder="Description of item…"
+                                  readOnly={disabled}
+                                />
+                              </td>
+                              <td style={{ border: `1px solid ${border}` }}>
+                                <NumericFormat
+                                  className="w-full px-2 py-1.5 text-xs text-right focus:outline-none bg-transparent"
+                                  style={{ color: textPrimary }}
+                                  thousandSeparator=","
+                                  decimalScale={2}
+                                  fixedDecimalScale
+                                  allowNegative={false}
+                                  prefix="₱ "
+                                  value={li.amount || ''}
+                                  onValueChange={v => {
+                                    const next = [...lineItems]
+                                    next[i] = { ...next[i], amount: parseFloat(v.value) || 0 }
+                                    setLineItems(next)
+                                  }}
+                                  disabled={disabled}
+                                />
+                              </td>
+                              {!disabled && (
+                                <td className="text-center" style={{ border: `1px solid ${border}` }}>
+                                  {lineItems.length > 1 && (
+                                    <button type="button" onClick={() => setLineItems(lineItems.filter((_, j) => j !== i))} className="p-1 text-red-500">
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                          <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#0B132B' }}>
+                            <td colSpan={2} className="px-3 py-2 text-right font-black uppercase text-[10px] tracking-wider" style={{ border: `1px solid ${border}` }}>Total</td>
+                            <td className="px-3 py-2 text-right font-black" style={{ border: `1px solid ${border}` }}>{formatPeso(budgetTotal)}</td>
+                            {!disabled && <td style={{ border: `1px solid ${border}` }} />}
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
                     {!disabled && (
                       <button
                         type="button"
@@ -1439,7 +1611,7 @@ export default function OperationsForms() {
                       textMuted={textMuted}
                       border={border}
                     />
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-5">
                       <FormField label="Member Name" required>
                         <input className={inputCls} style={istyle} value={otName} onChange={e => setOtName(e.target.value)} readOnly={disabled} required />
                       </FormField>
