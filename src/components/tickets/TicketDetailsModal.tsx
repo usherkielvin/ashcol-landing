@@ -179,8 +179,7 @@ export function TicketDetailsModal({
 
   return ReactDOM.createPortal((
     <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-3"
-      style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
-      onClick={onClose}>
+      style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}>
       <div className="w-full rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
         style={{
           backgroundColor: cardBg,
@@ -190,8 +189,7 @@ export function TicketDetailsModal({
           maxWidth: showHistoryPanel
             ? 'min(1480px, calc(100vw - 0px))'
             : 'min(720px, 100vw)',
-        }}
-        onClick={e => e.stopPropagation()}>
+        }}>
 
         {/* Sticky header — X always visible, never scrolls away */}
         <div

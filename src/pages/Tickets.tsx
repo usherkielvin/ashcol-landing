@@ -6,7 +6,7 @@ import {
   Eye, Loader2, Pencil, Moon, Sun, Trash2,
   ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Maximize2,
   UsersRound, ChevronDown, SlidersHorizontal, CalendarRange,
-  TrendingUp, Receipt, Radio,
+  TrendingUp, Receipt, Radio, Download,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -208,7 +208,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     }
   }, [surface])
 
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const initialUrlQuery = searchParams.get('q') || searchParams.get('ticket') || ''
 
   const [overviewSearchInput, setOverviewSearchInput] = useState(() => initialUrlQuery)
@@ -696,6 +696,53 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const contextMenuRef = useRef<HTMLDivElement>(null)
   const [detailTicket, setDetailTicket] = useState<Ticket | null>(null)
   const [showHistoryPanel, setShowHistoryPanel] = useState(false)
+
+  // Auto-open ticket details modal when navigating with ?ticket= or ?id= query param (e.g. from notifications)
+  const handledTicketParamRef = useRef<string | null>(null)
+  useEffect(() => {
+    const targetId = (searchParams.get('ticket') || searchParams.get('id') || '').trim()
+    if (!targetId) {
+      handledTicketParamRef.current = null
+      return
+    }
+    if (handledTicketParamRef.current === targetId) return
+
+    const authToken = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    if (!authToken) return
+
+    void (async () => {
+      // 1. Check in currently loaded tickets list
+      const fromList = tickets.find(t => t.id === targetId || t.ticketNumber === targetId || t.ticket_number === targetId)
+      if (fromList) {
+        handledTicketParamRef.current = targetId
+        setDetailTicket(fromList)
+        return
+      }
+
+      // 2. Check cached by number
+      const cached = getTicketByNumber(targetId) as Ticket | null
+      if (cached?.id) {
+        handledTicketParamRef.current = targetId
+        setDetailTicket(cached)
+        return
+      }
+
+      // 3. Fetch from API by ID or Number
+      const isNumberFormat = /^AS-\d+/i.test(targetId) || /^TKT-\d+/i.test(targetId)
+      const fetched = isNumberFormat
+        ? await fetchTicketByNumber(authToken, targetId)
+        : await fetchTicketById(authToken, targetId)
+
+      if (fetched && typeof fetched === 'object') {
+        const normalized = normalizeRelayScheduleTicket(fetched) as Ticket
+        if (normalized?.id) {
+          handledTicketParamRef.current = targetId
+          cacheTicketByNumber(normalized as unknown as Record<string, unknown>)
+          setDetailTicket(normalized)
+        }
+      }
+    })()
+  }, [searchParams, tickets])
 
   useEffect(() => {
     if (!contextMenu) return
@@ -3810,6 +3857,35 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     return list
   }, [filtered, sortConfig, isMyTickets, branchEmployees, activeBranchId, vehicleTripLabels, monthViewActive])
 
+  /** Exports exactly what's on screen — same rows, same order, as whatever filters
+   *  (negotiator, Pending/Closing, date/month, search) are currently active. */
+  const handleExportExcel = useCallback(() => {
+    if (visible.length === 0) return
+    const rows = visible.map(t => ({
+      'Ticket No': getF(t, 'ticketNumber', 'ticket_number') || t.id,
+      'Customer': getF(t, 'customerName', 'customer_name'),
+      'District': parseDistrict(t.location, t.district) || formatAddress(t.location),
+      'Brand': parseBrand(t),
+      'Dealer': getF(t, 'dealer'),
+      'Commit': getF(t, 'commitType', 'commit_type'),
+      'Negotiator': resolveNegotiatorDisplayName(t, branchEmployees),
+      'Status': getScheduleStatusDisplay(t),
+      'Remarks': getF(t, 'remarksUpdate', 'remarks'),
+      'Final Date': getFinalDateKey(t) ? formatDisplayDate(getFinalDateKey(t)) : '',
+    }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    const sheetName = isMyTickets ? 'My Tickets' : 'Schedules'
+    XLSX.utils.book_append_sheet(wb, ws, sheetName)
+    const filterLabel = myTicketsStatusFilter === 'PENDING_GROUP' ? 'Pending'
+      : myTicketsStatusFilter === 'CLOSING_GROUP' ? 'Closing'
+      : 'All'
+    const negoLabel = isMyTickets && myTicketsNegotiatorFilter
+      ? `_${formatNegotiatorLabel(myTicketsNegotiatorOptions.find(emp => emp.id === myTicketsNegotiatorFilter) || {}, true)}`
+      : ''
+    XLSX.writeFile(wb, `ASHCOL_${sheetName.replace(' ', '')}_${filterLabel}${negoLabel}_${new Date().toISOString().split('T')[0]}.xlsx`)
+  }, [visible, isMyTickets, branchEmployees, myTicketsStatusFilter, myTicketsNegotiatorFilter, myTicketsNegotiatorOptions])
+
   // Each ticket's position within its contiguous vehicle-group run in `visible` — visible is
   // already sorted with same-vehicle rows contiguous, so this is a single linear scan. Used to
   // animate the "make room" row slide while dragging a VEHICLE cell.
@@ -6305,6 +6381,19 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 }
               </span>
             </button>
+
+            {/* Export to Excel — respects whatever's currently filtered/shown above */}
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              disabled={visible.length === 0}
+              title="Export the currently filtered list to Excel"
+              className="shrink-0 whitespace-nowrap flex items-center gap-1.5 h-9 px-3 rounded-md border text-[11px] font-bold transition-all shadow-sm disabled:opacity-50"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+            >
+              <Download className="w-3.5 h-3.5 shrink-0" />
+              <span>Export</span>
+            </button>
           </div>
         </div>,
         document.getElementById('header-toolbar-slot') ?? document.body,
@@ -7786,10 +7875,29 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           history={history}
           loadingHistory={loadingHistory}
           showHistoryPanel={showHistoryPanel}
-          onClose={() => { setDetailTicket(null); setShowHistoryPanel(false) }}
+          onClose={() => {
+            setDetailTicket(null)
+            setShowHistoryPanel(false)
+            if (searchParams.get('ticket') || searchParams.get('id')) {
+              const nextParams = new URLSearchParams(searchParams)
+              nextParams.delete('ticket')
+              nextParams.delete('id')
+              setSearchParams(nextParams, { replace: true })
+            }
+          }}
           onToggleHistory={() => setShowHistoryPanel(prev => !prev)}
           onHideHistory={() => setShowHistoryPanel(false)}
-          onEdit={() => { openEditModal(detailTicket); setDetailTicket(null); setShowHistoryPanel(false) }}
+          onEdit={() => {
+            openEditModal(detailTicket)
+            setDetailTicket(null)
+            setShowHistoryPanel(false)
+            if (searchParams.get('ticket') || searchParams.get('id')) {
+              const nextParams = new URLSearchParams(searchParams)
+              nextParams.delete('ticket')
+              nextParams.delete('id')
+              setSearchParams(nextParams, { replace: true })
+            }
+          }}
           onDelete={isAdmin ? () => handleDelete(detailTicket.id) : undefined}
           onUpdateTicket={(updated) => {
             setDetailTicket(updated)
