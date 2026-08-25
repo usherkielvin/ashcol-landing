@@ -1,22 +1,36 @@
 import { fetchTicketsPage } from './api'
 import {
   getScheduleStatusValue,
+  getScheduleStatusDisplay,
   resolveTicketPayment,
-  parseBrand,
   formatAddress,
   getTicketCommitDisplay,
   getInstallerDisplay,
   getInstalledDateKey,
   getEffectiveScheduleDateKey,
+  isGenericUnitTypeLabel,
+  parseAcMeta,
   type Ticket,
 } from './ticketHelpers'
+import { parseBrandFromAcDetails } from './warrantyTicketDisplay'
 import { cleanInstallerName, stripInstallerCounter } from './schedulePrefill'
+
+/** Brand only, no capacity/HP — the payroll sheet's Brand column doesn't need the unit size. */
+function parseBrandOnly(ticket: Ticket): string {
+  const meta = parseAcMeta(ticket)
+  const fromAc = parseBrandFromAcDetails(ticket.acDetails || ticket.ac_details)
+  const explicitBrand = String(fromAc || meta.brand || meta.unitBrand || '').trim()
+  if (explicitBrand) return explicitBrand
+  const unit = (ticket.unitType || ticket.unit_type || '').trim()
+  return unit && !isGenericUnitTypeLabel(unit) ? unit : ''
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface PayrollRow {
   id: string
   ticketId?: string
+  ticketNumber: string
   installerName: string
   workDate: string
   customerName: string
@@ -30,6 +44,32 @@ export interface PayrollRow {
   installationFee: string
   earthGrounding: string
   dailyAllowance: string
+  // Fee-type breakdown, mirroring the branch's real payroll worksheet — most are blank per
+  // job, shown only when unhidden via the column menu (see COLUMN_DEFS in Payroll.tsx).
+  excessCopperTube: string
+  hauling: string
+  dismantling: string
+  electricalWorks: string
+  chippingWorks: string
+  breaker: string
+  powerSupplyLaborOnly: string
+  powerSupplyLaborMaterials: string
+  specialBracketCatwalk: string
+  specialBracketWelding: string
+  excessCopperTubeLaborOnly: string
+  relocationAccuFcu: string
+  systemReprocessLabor: string
+  drainPumpInstallation: string
+  scaffoldingInstallation: string
+  flushingOldPipe: string
+  sterneBracket: string
+  breakerInstallationLabor: string
+  chargingOfFreon: string
+  materialsReturn: string
+  installationChecklist: string
+  videoUpload: string
+  remarks: string
+  audited: string
 }
 
 export interface PayrollRates {
@@ -59,20 +99,14 @@ const uid = () => Math.random().toString(36).slice(2)
 
 // ── Job classification ──────────────────────────────────────────────────────
 
-/** Label shown in the INSTALLATION UPLOAD column, and the key used to look up a rate. */
-function classifyJob(ticket: Ticket): { label: string; rateKey: keyof PayrollRates | null } {
+/** The rate key to look up a fee by — separate from the display label below. */
+function classifyJobRateKey(ticket: Ticket): keyof PayrollRates | null {
   const status = getScheduleStatusValue(ticket)
   const rawStatus = (ticket.status || '').toUpperCase()
 
-  if (rawStatus === 'RESCHED' || status === 'RESCHED') {
-    return { label: 'RESCHEDULED', rateKey: 'rescheduled' }
-  }
-  if (status === 'DONE_CLEANING' || status === 'CLEANING') {
-    return { label: 'CLEANING', rateKey: 'cleaning' }
-  }
-  if (status === 'DONE_SURVEY' || status === 'SURVEY') {
-    return { label: 'SURVEY', rateKey: 'survey' }
-  }
+  if (rawStatus === 'RESCHED' || status === 'RESCHED') return 'rescheduled'
+  if (status === 'DONE_CLEANING' || status === 'CLEANING') return 'cleaning'
+  if (status === 'DONE_SURVEY' || status === 'SURVEY') return 'survey'
   if (
     status === 'DONE_INSTALLED'
     || status === 'INSTALL'
@@ -80,10 +114,15 @@ function classifyJob(ticket: Ticket): { label: string; rateKey: keyof PayrollRat
     || rawStatus === 'INSTALLED'
     || rawStatus === 'COMPLETED'
   ) {
-    return { label: 'INSTALL', rateKey: 'install' }
+    return 'install'
   }
-  // Any other outcome (checkup, backjob, negotiation, etc.) — show the raw status, no fee guess.
-  return { label: status.replace(/_/g, ' '), rateKey: null }
+  // Any other outcome (checkup, backjob, negotiation, etc.) — no fee guess.
+  return null
+}
+
+/** Label shown in the Status column — exactly what the ticket's own Schedule Status shows (e.g. "DONE INSTALL"). */
+function classifyJob(ticket: Ticket): { label: string; rateKey: keyof PayrollRates | null } {
+  return { label: getScheduleStatusDisplay(ticket), rateKey: classifyJobRateKey(ticket) }
 }
 
 /** Installer field can hold "JHUMAR / RANIL" for a teamwork job — the payroll sheet is per-installer. */
@@ -106,9 +145,10 @@ export function mapTicketToPayrollRows(ticket: Ticket, branchName: string, rates
   if (names.length === 0) return []
 
   const workDate = getInstalledDateKey(ticket) || getEffectiveScheduleDateKey(ticket)
+  const ticketNumber = (ticket.ticketNumber || ticket.ticket_number || '').trim()
   const customerName = (ticket.customerName || ticket.customer_name || '').trim().toUpperCase()
   const cityAddress = formatAddress(ticket.location).toUpperCase()
-  const brandCapacity = parseBrand(ticket)
+  const brandCapacity = parseBrandOnly(ticket)
   const commit = getTicketCommitDisplay(ticket).toUpperCase()
   const sifQuotation = commit.includes('FREE') ? 'N/A' : (brandCapacity ? 'SIF' : 'N/A')
 
@@ -126,6 +166,7 @@ export function mapTicketToPayrollRows(ticket: Ticket, branchName: string, rates
   return names.map((installerName) => ({
     id: uid(),
     ticketId: ticket.id,
+    ticketNumber,
     installerName,
     workDate,
     customerName,
@@ -139,6 +180,30 @@ export function mapTicketToPayrollRows(ticket: Ticket, branchName: string, rates
     installationFee: String(installationFee),
     earthGrounding: '',
     dailyAllowance: '',
+    excessCopperTube: '',
+    hauling: '',
+    dismantling: '',
+    electricalWorks: '',
+    chippingWorks: '',
+    breaker: '',
+    powerSupplyLaborOnly: '',
+    powerSupplyLaborMaterials: '',
+    specialBracketCatwalk: '',
+    specialBracketWelding: '',
+    excessCopperTubeLaborOnly: '',
+    relocationAccuFcu: '',
+    systemReprocessLabor: '',
+    drainPumpInstallation: '',
+    scaffoldingInstallation: '',
+    flushingOldPipe: '',
+    sterneBracket: '',
+    breakerInstallationLabor: '',
+    chargingOfFreon: '',
+    materialsReturn: '',
+    installationChecklist: '',
+    videoUpload: '',
+    remarks: '',
+    audited: '',
   }))
 }
 
@@ -177,8 +242,15 @@ export async function fetchAndMapPayroll(
 
     let rows: PayrollRow[] = []
     for (const ticket of tickets) {
+      // Only pull completed jobs into payroll — skip reschedules, surveys, for-approval, etc.
+      const rateKey = classifyJobRateKey(ticket)
+      if (rateKey !== 'install' && rateKey !== 'cleaning') continue
       rows.push(...mapTicketToPayrollRows(ticket, branchName, rates))
     }
+    // The backend's ?month= match is a broad OR across several schedule date fields (preferred,
+    // rescheduled-to, archived, etc.), not strictly "job actually done this month" — so it can
+    // return tickets whose real work date falls in a different month. Re-check here.
+    rows = rows.filter((r) => !r.workDate || r.workDate.slice(0, 7) === monthKey)
     rows = applyDailyAllowance(rows, rates)
     rows.sort((a, b) => (a.workDate || '').localeCompare(b.workDate || ''))
 
