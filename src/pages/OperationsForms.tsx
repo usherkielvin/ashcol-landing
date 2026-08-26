@@ -406,10 +406,21 @@ export default function OperationsForms() {
             method: 'DELETE',
             headers: { Authorization: `Bearer ${getToken()}` },
           })
-          if (res.ok) fetchAll()
-          else setError('Failed to delete request.')
-        } catch {
-          setError('Failed to delete request.')
+          if (res.ok) {
+            if (type === 'cash-advance') {
+              setCashAdvances(prev => prev.filter(c => c.id !== id))
+            } else if (type === 'budget') {
+              setBudgetRequests(prev => prev.filter(b => b.id !== id))
+            } else {
+              setOvertimeRequests(prev => prev.filter(o => o.id !== id))
+            }
+            fetchAll()
+          } else {
+            const errText = await res.text().catch(() => '')
+            setError(errText || 'Failed to delete request.')
+          }
+        } catch (err: any) {
+          setError(err?.message || 'Failed to delete request.')
         }
       },
     })
@@ -439,6 +450,10 @@ export default function OperationsForms() {
   // Admins/management review via approve/reject/delete only — editing the submitted
   // content is reserved for the requester themselves while it's still pending.
   const canEditRecord = (r: { status: string; employeeId: string }) =>
+    r.status === 'PENDING' && r.employeeId === user?.id
+
+  // The creator of a PENDING request can withdraw (delete) their own submission.
+  const canDeleteAsOwner = (r: { status: string; employeeId: string }) =>
     r.status === 'PENDING' && r.employeeId === user?.id
 
   const openNewForm = () => {
@@ -1041,6 +1056,15 @@ export default function OperationsForms() {
 
                   {/* Card actions */}
                   <div className="flex items-center justify-end gap-2 pt-0.5" onClick={e => e.stopPropagation()}>
+                    {canDeleteAsOwner(r) && (
+                      <button
+                        type="button"
+                        onClick={() => requestDeleteRecord(r.type, r.id, r.detail)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all text-red-600 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800"
+                      >
+                        <Trash2 className="w-3 h-3" /> Delete
+                      </button>
+                    )}
                     {canEditRecord(r as any) && (
                       <button
                         type="button"
@@ -1222,7 +1246,7 @@ export default function OperationsForms() {
             {isAdmin && contextMenu.row.status === 'NOTED' && contextMenu.row.type === 'budget' && (
               <MenuItem icon={Check} label="Approve" color="#16a34a" onClick={() => { handleStatusUpdate('budget', contextMenu.row.id, 'APPROVED'); closeContextMenu() }} />
             )}
-            {isAdmin && (
+            {(isAdmin || canDeleteAsOwner(contextMenu.row)) && (
               <>
                 <div style={{ borderTop: `1px solid ${border}` }} className="my-1" />
                 <MenuItem icon={Trash2} label="Delete" color="#dc2626" onClick={() => { closeContextMenu(); requestDeleteRecord(contextMenu.row.type, contextMenu.row.id, contextMenu.row.detail) }} />
@@ -1346,23 +1370,39 @@ export default function OperationsForms() {
                           {(modal.record as any).notes || 'No notes added yet.'}
                         </span>
                       </div>
-                      {isAdmin && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const existingNote = (modal.record as any).notes || ''
-                            const newNote = window.prompt('Enter note for member:', existingNote)
-                            if (newNote !== null) {
-                              handleSaveNotes(modal.type, modal.record!.id, newNote)
-                            }
-                          }}
-                          className="px-2.5 py-1 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 shadow-sm hover:opacity-90 transition-opacity"
-                          style={{ backgroundColor: accent }}
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                          {(modal.record as any).notes ? 'Edit Note' : 'Add Note'}
-                        </button>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {canDeleteAsOwner(modal.record) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              closeModal()
+                              requestDeleteRecord(modal!.type, modal!.record!.id, (modal!.record as any).payeeName || (modal!.record as any).purpose || (modal!.record as any).cutoffPeriod || modal!.type)
+                            }}
+                            className="px-2.5 py-1 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 shadow-sm hover:opacity-90 transition-opacity"
+                            style={{ backgroundColor: '#dc2626' }}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Withdraw Request
+                          </button>
+                        )}
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const existingNote = (modal.record as any).notes || ''
+                              const newNote = window.prompt('Enter note for member:', existingNote)
+                              if (newNote !== null) {
+                                handleSaveNotes(modal.type, modal.record!.id, newNote)
+                              }
+                            }}
+                            className="px-2.5 py-1 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 shadow-sm hover:opacity-90 transition-opacity"
+                            style={{ backgroundColor: accent }}
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                            {(modal.record as any).notes ? 'Edit Note' : 'Add Note'}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
