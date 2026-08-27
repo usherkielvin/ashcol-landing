@@ -6,7 +6,7 @@ import {
   Eye, Loader2, Pencil, Moon, Sun,
   ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Maximize2,
   UsersRound, ChevronDown, SlidersHorizontal, CalendarRange,
-  TrendingUp, Receipt, Radio, Download,
+  TrendingUp, Receipt, Radio, Download, MessageSquare,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -6560,11 +6560,77 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
           {activeTab === 'schedules' && (
             <>
-              {/* Filters & Dates ribbon — weekly date pills, custom date, filters, assign
-                  drivers, and showcase all live in one horizontally-scrolling row so nothing
-                  wraps or squishes on narrow screens; it just scrolls (same mechanism on
-                  mobile and desktop now, instead of two separately-built layouts). */}
-              <div className="flex flex-nowrap items-center gap-2.5 overflow-x-auto no-scrollbar w-full pb-1 md:pb-0 flex-1 order-2 md:order-1">
+              {/* Mobile Native Date Picker — Whole Element is interactive button */}
+              <div className="flex md:hidden items-center gap-2 w-fit self-start order-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const el = document.getElementById('mobile-native-date-picker-input') as HTMLInputElement | null
+                    if (el) {
+                      if (typeof (el as any).showPicker === 'function') {
+                        try {
+                          (el as any).showPicker()
+                        } catch {
+                          el.focus()
+                          el.click()
+                        }
+                      } else {
+                        el.focus()
+                        el.click()
+                      }
+                    }
+                  }}
+                  className="relative inline-flex items-center gap-2 h-9 px-3 rounded-xl border font-bold text-xs shadow-xs transition-all active:scale-[0.98] cursor-pointer"
+                  style={{
+                    backgroundColor: inputBg,
+                    borderColor: dateFilter && dateFilter !== todayDateKey() ? green : inputBorder,
+                    color: textPrimary,
+                  }}
+                >
+                  <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: green }} strokeWidth={2.2} />
+                  <span className="text-xs font-black uppercase tracking-wide whitespace-nowrap">
+                    {dateFilter === todayDateKey()
+                      ? `Today · ${formatDisplayDate(dateFilter, '')}`
+                      : dateFilter
+                        ? new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          }).toUpperCase()
+                        : "TODAY'S SCHEDULE"}
+                  </span>
+                  <ChevronDown className="w-3.5 h-3.5 opacity-50 shrink-0 ml-0.5" style={{ color: textMuted }} />
+
+                  {/* Native Date Picker Input */}
+                  <input
+                    id="mobile-native-date-picker-input"
+                    type="date"
+                    value={dateFilter || todayDateKey()}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleDateFilterChange(e.target.value)
+                      }
+                    }}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer pointer-events-none"
+                    aria-label="Pick schedule date"
+                  />
+                </button>
+
+                {dateFilter && dateFilter !== todayDateKey() && (
+                  <button
+                    type="button"
+                    onClick={() => handleDateFilterChange(todayDateKey())}
+                    className="h-9 px-2.5 rounded-xl border text-[11px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/20 active:scale-95 transition-all cursor-pointer shrink-0"
+                    title="Reset to today"
+                  >
+                    Today
+                  </button>
+                )}
+              </div>
+
+              {/* Desktop Filters & Dates ribbon — hidden on mobile screens */}
+              <div className="hidden md:flex flex-nowrap items-center gap-2.5 overflow-x-auto no-scrollbar w-full pb-1 md:pb-0 flex-1 order-2 md:order-1">
                 {/* Segmented weekly date pills */}
                 <div className="flex items-center gap-1 bg-slate-100 dark:bg-[#030712] p-1 rounded-lg shrink-0">
                   {weeklyTabs.map(tab => {
@@ -7391,7 +7457,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                         <div
                           key={`${ticket.id}${isGhost ? `-ghost-${ghostKind}` : ''}`}
                           onClick={() => setDetailTicket(ticket)}
-                          className="w-full rounded-xl overflow-hidden border transition-transform active:scale-[0.985] cursor-pointer"
+                          className="w-full rounded-2xl overflow-hidden border shadow-sm transition-all duration-200 hover:shadow-md active:scale-[0.99] cursor-pointer flex flex-col"
                           style={{
                             backgroundColor: rowColors.baseBg,
                             borderColor: border,
@@ -7400,35 +7466,41 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                         >
                           {/* ── Card Header: ticket no (left) / status badge (right) ── */}
                           <div
-                            className="px-3 py-2 flex justify-between items-center border-b"
-                            style={{ backgroundColor: isLight ? 'rgba(248,250,252,0.7)' : 'rgba(15,26,46,0.5)', borderColor: border }}
+                            className="px-4 py-3 flex justify-between items-center border-b"
+                            style={{ backgroundColor: isLight ? 'rgba(248,250,252,0.85)' : 'rgba(15,26,46,0.6)', borderColor: border }}
                           >
-                            <span className="text-[10.5px] font-bold tabular-nums" style={{ color: textMuted }}>
+                            <span className="text-[15px] sm:text-base font-black tracking-tight uppercase" style={{ color: isLight ? '#0f172a' : '#f8fafc' }}>
                               {ticketNo}
                             </span>
                             {statusDisplay ? (
-                              <span
-                                className="text-[10.5px] font-black uppercase shrink-0 tracking-wider px-2.5 py-1 rounded-full border shadow-sm"
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  openStatusPicker(ticket, 'inline', e.currentTarget as HTMLElement)
+                                }}
+                                className="h-8 px-3.5 rounded-md text-xs font-black uppercase shrink-0 tracking-wider border shadow-xs transition-all active:scale-95 hover:opacity-90 cursor-pointer flex items-center justify-center"
                                 style={{
                                   color: statusStyle.color,
                                   backgroundColor: statusStyle.backgroundColor,
                                   borderColor: statusStyle.borderColor,
                                 }}
+                                title="Click to change status"
                               >
                                 {statusDisplay === 'INSTALLATION' ? 'INSTALL' : statusDisplay}
-                              </span>
+                              </button>
                             ) : null}
                           </div>
 
                           {/* ── Card Body: customer name / phone, then brand/dealer + location ── */}
-                          <div className="p-3">
-                            <div className="flex items-start justify-between gap-2">
-                              <span
-                                className="text-sm font-black uppercase tracking-wide leading-tight truncate"
+                          <div className="px-4 py-3.5 space-y-1.5">
+                            <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                              <h3
+                                className="text-base font-black uppercase tracking-tight leading-tight truncate"
                                 style={{ color: isDuplicateName ? (isLight ? '#9f1239' : '#f43f5e') : textPrimary }}
                               >
                                 {getCustomerDisplayName(ticket)}
-                              </span>
+                              </h3>
                               {phone ? (
                                 <a
                                   href={`tel:${phone.replace(/[^\d+]/g, '')}`}
@@ -7438,7 +7510,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                     void copyTextToClipboard(phone)
                                     showToast(`Copied ${fmtPhone(phone) || phone}`)
                                   }}
-                                  className="text-[11px] font-semibold tabular-nums hover:underline shrink-0"
+                                  className="text-xs font-bold tabular-nums hover:underline shrink-0"
                                   style={{ color: isLight ? '#0369a1' : '#7dd3fc' }}
                                 >
                                   {fmtPhone(phone) || phone}
@@ -7446,26 +7518,26 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                               ) : null}
                             </div>
                             {(brand || dealer) ? (
-                              <div className="text-[10.5px] font-semibold truncate mt-1" style={{ color: textMuted }}>
+                              <div className="text-xs font-semibold truncate" style={{ color: textMuted }}>
                                 {[brand, dealer].filter(Boolean).join(' · ')}
                               </div>
                             ) : null}
                             {fullAddress ? (
-                              <div className="flex items-center gap-1 mt-0.5 w-full" style={{ color: textMuted }}>
-                                <MapPin className="w-2.5 h-2.5 shrink-0" style={{ color: green }} />
-                                <span className="text-[10.5px] font-medium truncate w-full" title={fullAddress}>{fullAddress}</span>
+                              <div className="flex items-start gap-1.5 pt-0.5 w-full" style={{ color: textMuted }}>
+                                <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: green }} />
+                                <span className="text-xs font-medium line-clamp-2 leading-relaxed" title={fullAddress}>{fullAddress}</span>
                               </div>
                             ) : null}
                           </div>
 
                           {/* ── Card Crew: strict 2x2 grid — Negotiator, Installer, Vehicle, Driver ── */}
                           <div
-                            className="grid grid-cols-2 gap-2 px-3 py-2.5 border-y"
-                            style={{ backgroundColor: isLight ? 'rgba(248,250,252,0.5)' : 'rgba(15,26,46,0.3)', borderColor: border }}
+                            className="grid grid-cols-2 gap-3 px-4 py-3 border-y"
+                            style={{ backgroundColor: isLight ? 'rgba(248,250,252,0.6)' : 'rgba(15,26,46,0.35)', borderColor: border }}
                           >
-                            <div className="flex flex-col min-w-0">
-                              <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Negotiator</span>
-                              <span className="text-[11px] font-semibold truncate" style={{ color: (negotiatorName && negotiatorName !== EMPTY_CELL) ? (isPendingRow ? '#ffffff' : textPrimary) : textMuted }}>
+                            <div className="flex flex-col min-w-0 gap-0.5">
+                              <span className="text-[9.5px] font-black tracking-widest uppercase" style={{ color: textMuted }}>Negotiator</span>
+                              <span className="text-xs font-bold truncate uppercase" style={{ color: (negotiatorName && negotiatorName !== EMPTY_CELL) ? (isPendingRow ? '#ffffff' : textPrimary) : textMuted }}>
                                 {negotiatorName && negotiatorName !== EMPTY_CELL ? negotiatorName : '—'}
                               </span>
                               {negotiatorPhone ? (
@@ -7477,28 +7549,28 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                     void copyTextToClipboard(negotiatorPhone)
                                     showToast(`Copied ${fmtPhone(negotiatorPhone) || negotiatorPhone}`)
                                   }}
-                                  className="text-[10px] tabular-nums font-bold hover:underline truncate"
+                                  className="text-[10.5px] tabular-nums font-bold hover:underline truncate"
                                   style={{ color: isLight ? '#0369a1' : '#7dd3fc' }}
                                 >
                                   {fmtPhone(negotiatorPhone) || negotiatorPhone}
                                 </a>
                               ) : null}
                             </div>
-                            <div className="flex flex-col min-w-0">
-                              <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Installer</span>
-                              <span className="text-[11px] font-semibold truncate" style={{ color: installer ? (isLight ? '#0369a1' : '#7dd3fc') : textMuted }}>
+                            <div className="flex flex-col min-w-0 gap-0.5">
+                              <span className="text-[9.5px] font-black tracking-widest uppercase" style={{ color: textMuted }}>Installer</span>
+                              <span className="text-xs font-bold truncate uppercase" style={{ color: installer ? (isLight ? '#0369a1' : '#7dd3fc') : textMuted }}>
                                 {installer || '—'}
                               </span>
                             </div>
-                            <div className="flex flex-col min-w-0">
-                              <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Vehicle</span>
-                              <span className="text-[11px] font-semibold truncate uppercase tabular-nums" style={{ color: vehicle ? textPrimary : textMuted }}>
+                            <div className="flex flex-col min-w-0 gap-0.5">
+                              <span className="text-[9.5px] font-black tracking-widest uppercase" style={{ color: textMuted }}>Vehicle</span>
+                              <span className="text-xs font-bold truncate uppercase tabular-nums" style={{ color: vehicle ? textPrimary : textMuted }}>
                                 {vehicle || '—'}
                               </span>
                             </div>
-                            <div className="flex flex-col min-w-0">
-                              <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: textMuted }}>Driver</span>
-                              <span className="text-[11px] font-semibold truncate" style={{ color: driver ? textPrimary : textMuted }}>
+                            <div className="flex flex-col min-w-0 gap-0.5">
+                              <span className="text-[9.5px] font-black tracking-widest uppercase" style={{ color: textMuted }}>Driver</span>
+                              <span className="text-xs font-bold truncate uppercase" style={{ color: driver ? textPrimary : textMuted }}>
                                 {driver || '—'}
                               </span>
                             </div>
@@ -7508,35 +7580,71 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                           {(() => {
                             const finalDateKey = getFinalDateKey(ticket)
                             return (
-                              <div className="px-3 py-2 flex justify-between items-center gap-2">
-                                <div className="min-w-0 flex-1">
-                                  {(commit || payment) ? (
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-[10.5px] font-medium truncate" style={{ color: textMuted }}>{commit || '—'}</span>
-                                      {payment ? (
-                                        <span className="text-[11px] shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{payment}</span>
-                                      ) : null}
-                                    </div>
+                              <div className="px-4 py-3.5 flex flex-col gap-3">
+                                <div className="flex justify-between items-center gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    {(commit || payment) ? (
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-xs font-bold truncate uppercase" style={{ color: textMuted }}>{commit || '—'}</span>
+                                        {payment ? (
+                                          <span className="text-xs shrink-0 font-black tabular-nums" style={{ color: textPrimary }}>{payment}</span>
+                                        ) : null}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                  {finalDateKey ? (
+                                    <span className="text-xs font-black tabular-nums shrink-0 uppercase tracking-wide" style={{ color: textPrimary }}>
+                                      {formatDisplayDate(finalDateKey, '')}
+                                    </span>
+                                  ) : canEdit && !isGhost ? (
+                                    <button
+                                      type="button"
+                                      onClick={e => { e.stopPropagation(); startCellEdit(ticket, 'FINAL DATE', e.currentTarget as HTMLElement, idx) }}
+                                      className="text-xs font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/30 shrink-0 transition-all hover:bg-emerald-500/20 active:scale-95"
+                                    >
+                                      + DATE
+                                    </button>
                                   ) : null}
+                                </div>
+
+                                <div className="flex items-center justify-between gap-3 pt-2.5 border-t border-dashed" style={{ borderColor: isLight ? 'rgba(203,213,225,0.7)' : 'rgba(30,41,59,0.7)' }}>
+                                  <button
+                                    type="button"
+                                    onClick={e => {
+                                      e.stopPropagation()
+                                      setHistoryGraphModal({ ticket, isOpen: true })
+                                    }}
+                                    className="h-10 px-4 rounded-xl text-xs font-black uppercase flex items-center gap-2 border transition-all active:scale-95 shrink-0 shadow-xs cursor-pointer"
+                                    style={{
+                                      backgroundColor: remarks
+                                        ? (isLight ? '#dcfce7' : 'rgba(34, 197, 94, 0.18)')
+                                        : (isLight ? '#f1f5f9' : 'rgba(148, 163, 184, 0.12)'),
+                                      borderColor: remarks
+                                        ? (isLight ? '#86efac' : 'rgba(34, 197, 94, 0.4)')
+                                        : (isLight ? '#cbd5e1' : 'rgba(148, 163, 184, 0.28)'),
+                                      color: remarks
+                                        ? (isLight ? '#166534' : '#4ade80')
+                                        : textMuted,
+                                    }}
+                                    title="Open remarks chat view and history"
+                                  >
+                                    <MessageSquare className="w-4 h-4 shrink-0" />
+                                    <span>Update Remarks</span>
+                                  </button>
                                   {remarks ? (
-                                    <p className="text-[10.5px] truncate font-medium" style={{ color: textMuted }} title={remarks}>
+                                    <p
+                                      className="text-xs truncate font-semibold flex-1 cursor-pointer hover:underline text-right leading-snug"
+                                      style={{ color: isLight ? '#15803d' : '#86efac' }}
+                                      title={remarks}
+                                      onClick={e => {
+                                        e.stopPropagation()
+                                        setHistoryGraphModal({ ticket, isOpen: true })
+                                      }}
+                                    >
                                       {remarks}
                                     </p>
                                   ) : null}
                                 </div>
-                                {finalDateKey ? (
-                                  <span className="text-[10.5px] font-bold tabular-nums shrink-0" style={{ color: textPrimary }}>
-                                    {formatDisplayDate(finalDateKey, '')}
-                                  </span>
-                                ) : canEdit && !isGhost ? (
-                                  <button
-                                    type="button"
-                                    onClick={e => { e.stopPropagation(); startCellEdit(ticket, 'FINAL DATE', e.currentTarget as HTMLElement, idx) }}
-                                    className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-1 rounded shrink-0"
-                                  >
-                                    + DATE
-                                  </button>
-                                ) : null}
                               </div>
                             )
                           })()}
@@ -8038,6 +8146,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           }}
           onToggleHistory={() => setShowHistoryPanel(prev => !prev)}
           onHideHistory={() => setShowHistoryPanel(false)}
+          onOpenStatusPicker={(t, el) => openStatusPicker(t, 'inline', el)}
           onEdit={() => {
             openEditModal(detailTicket)
             setDetailTicket(null)

@@ -85,6 +85,7 @@ export function TicketDetailsModal({
   onEdit,
   onDelete,
   onUpdateTicket,
+  onOpenStatusPicker,
 }: {
   ticket: Ticket
   isLight: boolean
@@ -106,6 +107,7 @@ export function TicketDetailsModal({
   onEdit?: () => void
   onDelete?: () => void
   onUpdateTicket?: (updatedTicket: Ticket) => void
+  onOpenStatusPicker?: (ticket: Ticket, anchorEl?: HTMLElement | null) => void
 }) {
   const [currentTicket, setCurrentTicket] = useState<Ticket>(ticket)
   const [showChecklist, setShowChecklist] = useState(false)
@@ -205,14 +207,34 @@ export function TicketDetailsModal({
                 <h2 className="text-sm sm:text-base font-black leading-tight uppercase tracking-wide" style={{ color: textPrimary }}>
                   {custName || 'Direct Client'}
                 </h2>
-                <span
-                  className="text-[10px] sm:text-[11px] font-bold shrink-0 uppercase tracking-wide"
-                  style={{ color: scheduleBadgeStyle.color }}
-                >
-                  {scheduleStatusDisplay}
-                </span>
+                {onOpenStatusPicker ? (
+                  <button
+                    type="button"
+                    onClick={(e) => onOpenStatusPicker(t, e.currentTarget as HTMLElement)}
+                    className="h-8 px-3.5 rounded-md text-xs font-black shrink-0 uppercase tracking-wide border transition-all active:scale-95 hover:opacity-85 cursor-pointer shadow-xs flex items-center justify-center"
+                    style={{
+                      color: scheduleBadgeStyle.color,
+                      backgroundColor: scheduleBadgeStyle.backgroundColor,
+                      borderColor: scheduleBadgeStyle.borderColor,
+                    }}
+                    title="Click to change status"
+                  >
+                    {scheduleStatusDisplay}
+                  </button>
+                ) : (
+                  <span
+                    className="h-8 px-3.5 rounded-md text-xs font-bold shrink-0 uppercase tracking-wide border flex items-center justify-center"
+                    style={{
+                      color: scheduleBadgeStyle.color,
+                      backgroundColor: scheduleBadgeStyle.backgroundColor,
+                      borderColor: scheduleBadgeStyle.borderColor,
+                    }}
+                  >
+                    {scheduleStatusDisplay}
+                  </span>
+                )}
                 {branchName && branchName !== EMPTY_CELL && (
-                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 uppercase" style={{
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-md shrink-0 uppercase" style={{
                     backgroundColor: inputBg,
                     color: textMuted,
                     border: `1px solid ${border}`,
@@ -221,7 +243,7 @@ export function TicketDetailsModal({
                   </span>
                 )}
               </div>
-              <p className="mt-1 text-sm sm:text-base font-black tracking-wide uppercase" style={{ color: textPrimary }}>
+              <p className="mt-1.5 text-base sm:text-lg font-black tracking-tight uppercase" style={{ color: textPrimary }}>
                 {t.ticketNumber || t.ticket_number || EMPTY_CELL}
               </p>
               {isDuplicateName && (
@@ -245,6 +267,18 @@ export function TicketDetailsModal({
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 )}
               </button>
+              {onEdit && (
+                <button
+                  type="button"
+                  onClick={onEdit}
+                  className="p-2 shrink-0 rounded-xl border transition-colors hover:bg-emerald-500/10 hover:border-emerald-500/30 hover:text-emerald-600"
+                  style={{ borderColor: border, backgroundColor: inputBg, color: textMuted }}
+                  aria-label="Edit ticket"
+                  title="Edit ticket"
+                >
+                  <Edit3 className="w-4.5 h-4.5" />
+                </button>
+              )}
               {onDelete && (
                 <button
                   type="button"
