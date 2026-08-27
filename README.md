@@ -1,7 +1,10 @@
-# ❄️ ASHCOL PORTAL — Enterprise Web Operations Platform
+<p align="center">
+  <img src="public/ash-logo.jpg" alt="Ashcol Corporation Logo" width="240" />
+</p>
 
-> **Proprietary & Confidential**  
-> *Production Operations & Enterprise Service Management Platform for **Ashcol Airconditioning Corporation**.*
+<h1 align="center">ASHCOL PORTAL</h1>
+<p align="center"><strong>Enterprise Operations & HVAC Service Management Platform</strong></p>
+<p align="center"><em>Ashcol Airconditioning Corporation • Proprietary & Confidential</em></p>
 
 ---
 
