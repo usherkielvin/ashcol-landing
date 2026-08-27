@@ -1,5 +1,0 @@
-      {/* ── Modals: Driver Route Sheet Preview/Edit ─────────────── */}
-      {showDriverSheetModal && editingSheet && (
-        <>
-          {/* ── DESKTOP MODAL (hidden on mobile) ── */}
-          <div className="hidden md:flex fixed inset-0 z-50 items-center justify-center p-4">

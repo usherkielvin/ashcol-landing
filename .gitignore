@@ -36,3 +36,14 @@ CLAUDE.md
 *.code-workspace
 workspace/
 .vercel
+.kiro/
+*.patch
+*.sql
+scratch/
+scratch_*
+temp_*
+temp-*
+clean-*
+fix.*
+fix-*
+check_error*
