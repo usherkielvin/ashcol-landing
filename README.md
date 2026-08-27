@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/ash-logo.jpg" alt="Ashcol Corporation Logo" width="240" />
+  <img src="public/ash-logo.png" alt="Ashcol Corporation Logo" width="240" />
 </p>
 
 <h1 align="center">ASHCOL PORTAL</h1>
