@@ -25,20 +25,26 @@ export function RemarksSection({
   onPrimaryChange: (value: string) => void
   theme: RelayFormTheme
 }) {
-  const { inputClassName, getInputStyle } = theme
+  const { isLight, inputClassName, getInputStyle } = theme
+  const showRemarksField = remarks !== undefined
 
   return (
     <section>
       <FormSectionHead step={step} icon={<MessageSquare className="w-3.5 h-3.5" />} title="Remarks" subtitle={subtitle} />
       <div className="grid grid-cols-1 gap-3.5">
-        {onRemarksChange && (
+        {showRemarksField && (
           <FormField label="Remarks / Update">
             <textarea
               value={remarks || ''}
-              onChange={e => onRemarksChange(e.target.value.toUpperCase())}
+              readOnly={!onRemarksChange}
+              onChange={onRemarksChange ? (e => onRemarksChange(e.target.value.toUpperCase())) : undefined}
               rows={2}
-              className={`${inputClassName} resize-none uppercase`}
-              style={{ ...getInputStyle(remarks), textTransform: 'uppercase' }}
+              className={`${inputClassName} resize-none uppercase ${!onRemarksChange ? 'cursor-not-allowed select-text' : ''}`}
+              style={{
+                ...getInputStyle(remarks),
+                textTransform: 'uppercase',
+                ...(!onRemarksChange ? { opacity: 0.85, backgroundColor: isLight ? '#f8fafc' : 'rgba(255,255,255,0.04)' } : {}),
+              }}
             />
           </FormField>
         )}
@@ -47,7 +53,7 @@ export function RemarksSection({
             value={primaryValue}
             onChange={e => onPrimaryChange(e.target.value)}
             placeholder={primaryPlaceholder}
-            rows={onRemarksChange ? 4 : 3}
+            rows={3}
             className={`${inputClassName} resize-none`}
             style={getInputStyle(primaryValue)}
           />

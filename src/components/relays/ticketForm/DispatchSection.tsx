@@ -2,7 +2,7 @@ import { Truck } from 'lucide-react'
 import { FormField, FormSectionHead } from './FormField'
 import type { RelayFormTheme } from './theme'
 
-export type InstallerOption = { id: string; name: string; label: string }
+export type InstallerOption = { id: string; name: string; label?: string }
 
 export function DispatchSection({
   step,
@@ -50,7 +50,7 @@ export function DispatchSection({
           >
             <option value="">{isTaguigServices ? 'Select technician...' : 'Select installer...'}</option>
             {installerOptions.map(opt => (
-              <option key={opt.id} value={opt.name}>{opt.label}</option>
+              <option key={opt.id} value={opt.name}>{opt.label || opt.name}</option>
             ))}
           </select>
         </FormField>

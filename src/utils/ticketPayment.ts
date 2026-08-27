@@ -177,18 +177,24 @@ export function ticketHasPaymentInfo(ticket: Partial<Ticket>): boolean {
   return Boolean(mode || (charges != null && !Number.isNaN(Number(charges)) && Number(charges) > 0))
 }
 
+export type PaymentSectionRow = { mode: string; amount: number; customMode?: string }
+
 /** Collapses the multi-row split-payment UI (PaymentSection) into the single `modeOfPayment` /
- *  `installationCharges` fields tickets are actually saved with. Multiple rows become `HYBRID`. */
+ *  `installationCharges` fields tickets are actually saved with, plus the `paymentBreakdown`
+ *  array persisted in acDetails. A CUSTOM row resolves to its typed-in customMode name.
+ *  Multiple rows become `HYBRID`. */
 export function derivePaymentSummary(
-  rows: { mode: string; amount: number }[],
-  fallback?: { modeOfPayment?: string; installationCharges?: number },
-): { modeOfPayment: string | undefined; installationCharges: number } {
-  const total = rows.reduce((sum, p) => sum + (p.amount || 0), 0)
-  const installationCharges = total || Number(fallback?.installationCharges) || 0
-  const modeOfPayment = rows.length > 1
+  rows: PaymentSectionRow[],
+): { modeOfPayment: string; installationCharges: number; paymentBreakdown: { mode: string; amount: number }[] } {
+  const installationCharges = rows.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+  const paymentBreakdown = rows.map(p => ({
+    mode: p.mode === 'CUSTOM' ? (p.customMode?.trim().toUpperCase() || 'CUSTOM') : p.mode,
+    amount: Number(p.amount) || 0,
+  }))
+  const modeOfPayment = paymentBreakdown.length > 1
     ? 'HYBRID'
-    : (rows[0]?.mode || fallback?.modeOfPayment || undefined)
-  return { modeOfPayment, installationCharges }
+    : (paymentBreakdown[0]?.mode || 'NO_PAYMENT')
+  return { modeOfPayment, installationCharges, paymentBreakdown }
 }
 
 export function getEmptyRequiredColumnsForClose(

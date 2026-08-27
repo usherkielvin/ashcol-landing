@@ -14,6 +14,7 @@ export function AirconDetailsSection({
   onSerialNumberChange,
   commitType,
   onCommitTypeChange,
+  controlNumber,
   voucher,
   theme,
 }: {
@@ -28,6 +29,8 @@ export function AirconDetailsSection({
   onSerialNumberChange: (value: string) => void
   commitType: string
   onCommitTypeChange: (value: string) => void
+  /** Edit-only, field-surface: "Control No. / SI (Aircon)" papers reference. */
+  controlNumber?: { value: string; onChange: (value: string) => void }
   /** Edit-only: shows the attached AI-extraction voucher/image when one is on file. */
   voucher?: { url: string; label: string }
   theme: RelayFormTheme
@@ -50,9 +53,14 @@ export function AirconDetailsSection({
         <FormField label="Serial No." className={voucher ? 'md:col-span-4' : 'md:col-span-4'}>
           <input type="text" value={serialNumber} onChange={e => onSerialNumberChange(e.target.value)} placeholder="Serial" className={inputClassName} style={getInputStyle(serialNumber)} />
         </FormField>
-        <FormField label="Commit / Promo" className={voucher ? 'md:col-span-8' : 'md:col-span-12'}>
+        <FormField label="Commit / Promo" className={voucher ? 'md:col-span-8' : controlNumber ? 'md:col-span-8' : 'md:col-span-12'}>
           <input type="text" value={commitType} onChange={e => onCommitTypeChange(e.target.value)} placeholder="Promo terms" className={inputClassName} style={getInputStyle(commitType)} />
         </FormField>
+        {controlNumber && (
+          <FormField label="Control No. / SI (Aircon)" className="md:col-span-4">
+            <input type="text" value={controlNumber.value} onChange={e => controlNumber.onChange(e.target.value)} placeholder="Aircon papers / SI" className={inputClassName} style={getInputStyle(controlNumber.value)} />
+          </FormField>
+        )}
         {voucher && (
           <div className="md:col-span-4 flex flex-col justify-end">
             <div className="rounded-lg p-2 flex items-center justify-between border" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>

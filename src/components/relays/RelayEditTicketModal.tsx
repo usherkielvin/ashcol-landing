@@ -1,16 +1,29 @@
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom'
-import { AlertTriangle, FileText, X, Store, UserRound, Wind, Users, CalendarDays, MessageSquare, Info, Truck, ClipboardList, CreditCard, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, X, ClipboardList } from 'lucide-react'
 import { ConfirmationChecklistModal, isChecklistFilled } from '../tickets/ConfirmationChecklistModal'
-import { API_BASE_URL, formatBranchName } from '../../utils/api'
+import { API_BASE_URL } from '../../utils/api'
 import { resolveScheduleStatusFields } from '../../constants/ticketCategories'
 import { buildRelayEditDraft, type RelayEditDraft } from './relayEditForm'
 import type { TicketEditSurface } from '../../utils/ticketEditBridge'
-import { DealerSelect, type DealerOption } from '../DealerSelect'
-import { ROBINSON_APPLIANCES_RE } from '../../utils/dealer'
-import { guessDistrict } from '../../utils/districtGuesser'
-
-
+import type { DealerOption } from '../DealerSelect'
+import { derivePaymentSummary } from '../../utils/ticketPayment'
+import {
+  StatusGrid,
+  resolveEffectiveStatusForGrid,
+  StatusChangeConfirmDialog,
+  type StatusConfirmState,
+  DealerSection,
+  CustomerDetailsSection,
+  AirconDetailsSection,
+  BranchNegotiatorSection,
+  SchedulingSection,
+  DispatchSection,
+  PaymentSection,
+  RemarksSection,
+  type RelayFormTheme,
+  type PaymentRow,
+} from './ticketForm'
 
 type Branch = { id: string; name: string }
 type Employee = { id: string; name?: string; branchId?: string | null; phone?: string | null }
@@ -67,34 +80,37 @@ export type RelayEditTicketModalProps = {
   draftExtensions?: Partial<RelayEditDraft>
 }
 
-const EField = ({ label, children, className = '' }: { label: string; children: ReactNode; className?: string }) => (
-  <div className={`flex flex-col gap-1.5 ${className}`}>
-    <label className="text-[10.5px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">{label}</label>
-    {children}
-  </div>
-)
+const STANDARD_PAYMENT_MODES = new Set(['CASH', 'GCASH', 'BANK TRANSFER', 'CHEQUE', 'FOR COLLECTION', 'NO_PAYMENT', 'FREE', 'FREE INSTALL', 'PENDING'])
 
-const ESHead = ({
-  title,
-  step,
-  icon: Icon,
-  border,
-}: {
-  title: string
-  subtitle?: string
-  step?: number
-  icon?: ReactNode
-  border: string
-}) => (
-  <div className="flex items-center gap-2.5 pt-1 pb-2.5 border-b mb-4" style={{ borderColor: border }}>
-    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/10 text-[#10B981] shrink-0">
-      {Icon ?? <span className="text-[11px] font-black">{step}</span>}
-    </div>
-    <div className="min-w-0">
-      <p className="text-[11.5px] font-black uppercase tracking-wider text-[#10B981] leading-tight">{title}</p>
-    </div>
-  </div>
-)
+function seedPaymentRows(ticket: TicketLike, draftExtensions?: Partial<RelayEditDraft>): PaymentRow[] {
+  const metaBreakdown = (ticket as any)?.acDetails ? (() => {
+    try {
+      const parsed = typeof (ticket as any).acDetails === 'string' ? JSON.parse((ticket as any).acDetails) : (ticket as any).acDetails
+      return Array.isArray(parsed?.paymentBreakdown) ? parsed.paymentBreakdown : null
+    } catch { return null }
+  })() : null
+
+  if (metaBreakdown && metaBreakdown.length > 0) {
+    return metaBreakdown.map((p: any) => {
+      const m = String(p.mode || 'CASH').toUpperCase()
+      const isStd = STANDARD_PAYMENT_MODES.has(m)
+      return {
+        mode: isStd ? m : 'CUSTOM',
+        amount: Number(p.amount) || 0,
+        customMode: isStd ? '' : m,
+      }
+    })
+  }
+
+  const currentMode = String(draftExtensions?.modeOfPayment || (ticket as any)?.modeOfPayment || (ticket as any)?.mode_of_payment || 'NO_PAYMENT').toUpperCase()
+  const currentAmt = Number(draftExtensions?.installationCharges ?? (ticket as any)?.installationCharges ?? (ticket as any)?.installation_charges ?? 0)
+  const isStd = STANDARD_PAYMENT_MODES.has(currentMode)
+  return [{
+    mode: isStd ? currentMode : 'CUSTOM',
+    amount: currentAmt,
+    customMode: isStd ? '' : currentMode,
+  }]
+}
 
 function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
   const {
@@ -126,8 +142,6 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
     technicianOptions = [],
 
     editOriginalDate = '',
-    // Determine if fetched-account dropdown is active (Sept 1, 2026+)
-    // and we have actual accounts to show
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onMergeTargetChange,
     onMerge,
@@ -150,55 +164,21 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
   const [show15QChecklist, setShow15QChecklist] = useState(false)
   const rawChecklist = (ticket as any).confirmationChecklist || (ticket as any).confirmation_checklist
   const has15QChecklist = isChecklistFilled(rawChecklist)
-  const [confirmModal, setConfirmModal] = useState<{
-    type: 'status' | 'discard'
-    targetStatus?: { value: string; label: string }
-    onConfirm: () => void
-  } | null>(null)
-
-  const [editPayments, setEditPayments] = useState<Array<{ mode: string; amount: number; customMode?: string }>>(() => {
-    const metaBreakdown = (ticket as any)?.acDetails ? (() => {
-      try {
-        const parsed = typeof (ticket as any).acDetails === 'string' ? JSON.parse((ticket as any).acDetails) : (ticket as any).acDetails
-        return Array.isArray(parsed?.paymentBreakdown) ? parsed.paymentBreakdown : null
-      } catch { return null }
-    })() : null
-
-    if (metaBreakdown && metaBreakdown.length > 0) {
-      return metaBreakdown.map((p: any) => {
-        const m = String(p.mode || 'CASH').toUpperCase()
-        const isStd = ['CASH', 'GCASH', 'BANK TRANSFER', 'CHEQUE', 'FOR COLLECTION', 'NO_PAYMENT', 'FREE', 'FREE INSTALL', 'PENDING'].includes(m)
-        return {
-          mode: isStd ? m : 'CUSTOM',
-          amount: Number(p.amount) || 0,
-          customMode: isStd ? '' : m,
-        }
-      })
-    }
-
-    const currentMode = String(draftExtensions?.modeOfPayment || (ticket as any)?.modeOfPayment || (ticket as any)?.mode_of_payment || 'NO_PAYMENT').toUpperCase()
-    const currentAmt = Number(draftExtensions?.installationCharges ?? (ticket as any)?.installationCharges ?? (ticket as any)?.installation_charges ?? 0)
-    const isStd = ['CASH', 'GCASH', 'BANK TRANSFER', 'CHEQUE', 'FOR COLLECTION', 'NO_PAYMENT', 'FREE', 'FREE INSTALL', 'PENDING'].includes(currentMode)
-    return [{
-      mode: isStd ? currentMode : 'CUSTOM',
-      amount: currentAmt,
-      customMode: isStd ? '' : currentMode,
-    }]
-  })
+  const [confirmModal, setConfirmModal] = useState<StatusConfirmState | null>(null)
+  const [editPayments, setEditPayments] = useState<PaymentRow[]>(() => seedPaymentRows(ticket, draftExtensions))
 
   useEffect(() => {
     const next = buildRelayEditDraft(ticket, parseStoreVendor, resolveBranch, draftExtensions)
     setDraft(next)
     initialDraftRef.current = JSON.stringify(next)
+    setEditPayments(seedPaymentRows(ticket, draftExtensions))
   }, [ticket.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const requestClose = () => {
     if (JSON.stringify(draft) !== initialDraftRef.current) {
       setConfirmModal({
         type: 'discard',
-        onConfirm: () => {
-          onClose()
-        },
+        onConfirm: () => { onClose() },
       })
       return
     }
@@ -232,6 +212,12 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
 
   const relayInput = `${compactInput} normal-case`
 
+  const relayFormTheme: RelayFormTheme = {
+    isLight, cardBg, border, textPrimary, textMuted, inputBg, inputBorder,
+    inputClassName: relayInput,
+    getInputStyle: () => inputStyle,
+  }
+
   const installerSelectOptions = useMemo(() => {
     if (technicianOptions && technicianOptions.length > 0) return technicianOptions
     if (installerRoster && installerRoster.length > 0) {
@@ -240,76 +226,16 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
     return []
   }, [technicianOptions, installerRoster])
 
-  const handlePaymentChange = (index: number, field: 'mode' | 'amount' | 'customMode', value: any) => {
-    setEditPayments(prev => {
-      const next = [...prev]
-      if (!next[index]) return prev
-      if (field === 'mode') {
-        const nextMode = String(value).toUpperCase()
-        next[index] = {
-          ...next[index],
-          mode: nextMode,
-          amount: (nextMode === 'NO_PAYMENT' || nextMode === 'FREE' || nextMode === 'FREE INSTALL') ? 0 : next[index].amount,
-        }
-      } else if (field === 'amount') {
-        next[index] = { ...next[index], amount: Number(value) || 0 }
-      } else if (field === 'customMode') {
-        next[index] = { ...next[index], customMode: String(value).toUpperCase() }
-      }
+  const negotiatorOptions = negotiatorsForBranch(draft.assignBranchId || undefined)
+  const negotiatorPhone = (negotiatorsForBranch(undefined).find((emp) => emp.id === draft.assignTechId)?.phone || draft.negotiatorPhone || '')
 
-      const totalAmount = next.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
-      const validPayments = next.map(p => ({
-        mode: p.mode === 'CUSTOM' ? (p.customMode?.trim().toUpperCase() || 'CUSTOM') : p.mode,
-        amount: Number(p.amount) || 0,
-      }))
-      const isHybrid = validPayments.length > 1
-      const effectiveMode = isHybrid ? 'HYBRID' : (validPayments[0]?.mode || 'NO_PAYMENT')
-
-      patch({
-        modeOfPayment: effectiveMode,
-        installationCharges: totalAmount,
-        paymentBreakdown: validPayments,
-      })
-
-      return next
-    })
-  }
-
-  const handleAddPaymentRow = () => {
-    setEditPayments(prev => {
-      const next = [...prev, { mode: 'CASH', amount: 0, customMode: '' }]
-      const totalAmount = next.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
-      const validPayments = next.map(p => ({
-        mode: p.mode === 'CUSTOM' ? (p.customMode?.trim().toUpperCase() || 'CUSTOM') : p.mode,
-        amount: Number(p.amount) || 0,
-      }))
-      patch({
-        modeOfPayment: 'HYBRID',
-        installationCharges: totalAmount,
-        paymentBreakdown: validPayments,
-      })
-      return next
-    })
-  }
-
-  const handleRemovePaymentRow = (index: number) => {
-    setEditPayments(prev => {
-      if (prev.length <= 1) return prev
-      const next = prev.filter((_, i) => i !== index)
-      const totalAmount = next.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
-      const validPayments = next.map(p => ({
-        mode: p.mode === 'CUSTOM' ? (p.customMode?.trim().toUpperCase() || 'CUSTOM') : p.mode,
-        amount: Number(p.amount) || 0,
-      }))
-      const isHybrid = validPayments.length > 1
-      const effectiveMode = isHybrid ? 'HYBRID' : (validPayments[0]?.mode || 'NO_PAYMENT')
-
-      patch({
-        modeOfPayment: effectiveMode,
-        installationCharges: totalAmount,
-        paymentBreakdown: validPayments,
-      })
-      return next
+  const applyPaymentRows = (next: PaymentRow[]) => {
+    setEditPayments(next)
+    const summary = derivePaymentSummary(next)
+    patch({
+      modeOfPayment: summary.modeOfPayment,
+      installationCharges: summary.installationCharges,
+      paymentBreakdown: summary.paymentBreakdown,
     })
   }
 
@@ -404,560 +330,176 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-6 min-h-0">
 
           <div className="flex flex-col gap-5 mb-6 pb-6 border-b" style={{ borderColor: border }}>
-            <div className="flex flex-col gap-5">
-              {(() => {
-                const renderStatusButton = (st: { value: string, label: string }) => {
-                    let rawStat = (draft.scheduleStatus || draft.updateStatus || draft.serviceType || '').trim().toUpperCase()
-                    if (['PENDING', 'ASSIGNED', 'SCHEDULED', 'COMPLETED', ''].includes(rawStat)) {
-                      rawStat = (draft.serviceType || 'S/I').trim().toUpperCase()
-                    }
-
-                    const targetVal = st.value.toUpperCase()
-                    const targetLabel = st.label.toUpperCase()
-
-                    const isSelected =
-                      rawStat === targetVal ||
-                      rawStat === targetLabel ||
-                      ((rawStat === 'SERVICES' || rawStat === 'SERVICE') && (targetVal === 'SERVICE' || targetLabel === 'SERVICE')) ||
-                      ((rawStat === 'INSTALLATION' || rawStat === 'INSTALL') && (targetVal === 'INSTALL' || targetLabel === 'INSTALL')) ||
-                      ((rawStat === 'SURVEY_INSTALL' || rawStat === 'S/I') && (targetVal === 'S/I' || targetLabel === 'SURVEY_INSTALL'));
-                   return (
-                     <button
-                       key={st.value}
-                       type="button"
-                       onClick={() => {
-                          if (!isSelected) {
-                             setConfirmModal({
-                               type: 'status',
-                               targetStatus: st,
-                               onConfirm: () => {
-                                 const updates: any = {
-                                   scheduleStatus: st.value,
-                                   updateStatus: st.value,
-                                   serviceType: st.value,
-                                   ticketCategory: resolveScheduleStatusFields(st.value).ticketCategory || 'INSTALLATION',
-                                 }
-                                 
-                                 patch(updates)
-                               },
-                             })
-                          }
-                       }}
-                       className="flex items-center justify-center py-3 px-2 rounded-xl border font-black text-[11px] uppercase tracking-wide transition-all duration-150 select-none cursor-pointer"
-                       style={isSelected ? {
-                         backgroundColor: '#10B981',
-                         borderColor: '#10B981',
-                         color: 'white',
-                         boxShadow: '0 2px 8px rgba(16,185,129,0.3)'
-                       } : {
-                         backgroundColor: isLight ? '#f8fafc' : 'rgba(255,255,255,0.02)',
-                         borderColor: border,
-                         color: textMuted
-                       }}
-                     >
-                       {st.label}
-                     </button>
-                   )
-                }
-                
-                return (
-                  <>
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-wider mb-2" style={{ color: textMuted }}>Pending</p>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {[
-                          { value: 'INSTALL', label: 'INSTALL' },
-                          { value: 'SURVEY', label: 'SURVEY' },
-                          { value: 'CLEANING', label: 'CLEANING' },
-                          { value: 'CHECKUP', label: 'CHECKUP' },
-                          { value: 'BACKJOB', label: 'BACKJOB' },
-                          { value: 'SERVICE', label: 'SERVICE' },
-                          { value: 'MOUNTING', label: 'MOUNTING' },
-                          { value: 'RESCHED', label: 'RESCHED' },
-                          { value: 'CONTINUATION', label: 'CONTINUATION' },
-                          { value: 'FOR APPROVAL', label: 'FOR QUOTATION' },
-                          { value: 'SYSTEM_REPROCESS', label: 'SYSTEM REPROCESS' },
-                          { value: 'DISMANTLE', label: 'DISMANTLE' },
-                        ].map(renderStatusButton)}
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-wider mb-2" style={{ color: textMuted }}>Closing</p>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {[
-                          { value: 'DONE_INSTALLED', label: 'DONE INSTALL' },
-                          { value: 'DONE_CLEANING', label: 'DONE CLEANING' },
-                          { value: 'DONE_SURVEY', label: 'DONE SURVEY' },
-                          { value: 'DONE_CHECKUP', label: 'DONE CHECKUP' },
-                          { value: 'DONE_BACKJOB', label: 'DONE BACKJOB' },
-                          { value: 'DONE_SERVICE', label: 'DONE SERVICE' },
-                          { value: 'DONE_MOUNTING', label: 'DONE MOUNTING' },
-                          { value: 'DONE_SYSTEM_REPROCESS', label: 'DONE SYSTEM REPROCESS' },
-                          { value: 'DONE_DISMANTLE', label: 'DONE DISMANTLE' },
-                          { value: 'DONE_QUOTATION', label: 'DONE QUOTATION' },
-                          { value: 'CANCELLED', label: 'CANCELLED' },
-                        ].map(renderStatusButton)}
-                      </div>
-                    </div>
-                  </>
-                )
-              })()}
-            </div>
+            <StatusGrid
+              currentStatus={resolveEffectiveStatusForGrid(
+                isFieldSurface ? draft.scheduleStatus : draft.updateStatus,
+                draft.serviceType,
+              )}
+              onRequestChange={(st) => {
+                setConfirmModal({
+                  type: 'status',
+                  targetLabel: st.label,
+                  onConfirm: () => {
+                    patch({
+                      scheduleStatus: st.value,
+                      updateStatus: st.value,
+                      serviceType: st.value,
+                      ticketCategory: resolveScheduleStatusFields(st.value).ticketCategory || 'INSTALLATION',
+                    })
+                  },
+                })
+              }}
+              isLight={isLight}
+              border={border}
+              textMuted={textMuted}
+            />
           </div>
 
           {/* 1. Dealer & transaction */}
-          <div>
-            <ESHead step={1} icon={<Store className="w-3.5 h-3.5" />} title="Dealer / Store" subtitle="Where the relay came from" border={border} />
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5 sm:gap-4">
-              <EField label="Dealer / Store">
-                <DealerSelect
-                  value={draft.dealerName}
-                  dealers={dealers}
-                  onChange={(name) => patch({ dealerName: name })}
-                  onDealersChanged={onDealersChanged}
-                  isLight={isLight}
-                  inputBg={inputBg}
-                  inputBorder={inputBorder}
-                  textPrimary={textPrimary}
-                  textMuted={textMuted}
-                />
-              </EField>
-              <EField label="Dealer / Store Branch"><input type="text" value={draft.dealerBranch} onChange={(e) => patch({ dealerBranch: e.target.value })} className={relayInput} style={inputStyle} /></EField>
-              <EField label="Diser"><input type="text" value={draft.diser} onChange={(e) => patch({ diser: e.target.value })} placeholder="Dealer's sales rep name" className={relayInput} style={inputStyle} autoComplete="off" /></EField>
-              {ROBINSON_APPLIANCES_RE.test(draft.dealerName) && (
-                <EField label="Transaction ID">
-                  <input type="text" value={draft.robinsonsTransactionId} onChange={(e) => patch({ robinsonsTransactionId: e.target.value })} className={relayInput} style={inputStyle} autoComplete="off" placeholder="Robinsons Transaction ID" />
-                </EField>
-              )}
-            </div>
-          </div>
+          <DealerSection
+            step={1}
+            dealer={draft.dealerName}
+            onDealerChange={(name) => patch({ dealerName: name })}
+            dealerBranch={draft.dealerBranch}
+            onDealerBranchChange={(v) => patch({ dealerBranch: v })}
+            diser={draft.diser}
+            onDiserChange={(v) => patch({ diser: v })}
+            transactionId={draft.robinsonsTransactionId}
+            onTransactionIdChange={(v) => patch({ robinsonsTransactionId: v })}
+            dealers={dealers}
+            onDealersChanged={onDealersChanged}
+            theme={relayFormTheme}
+          />
 
           {/* 2. Customer details */}
-          <div>
-            <ESHead step={2} icon={<UserRound className="w-3.5 h-3.5" />} title="Customer Details" subtitle="Who and where to deliver service" border={border} />
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5 sm:gap-4">
-              <EField label="Customer Name" className="md:col-span-2">
-                <input type="text" value={draft.customerName} onChange={(e) => patch({ customerName: e.target.value.toUpperCase() })} className={relayInput} style={inputStyle} autoComplete="off" spellCheck={false} />
-              </EField>
-              <EField label="Contact Number" className="md:col-span-2">
-                <div className="flex flex-col gap-2">
-                  {draft.phoneNumbers.map((phone, pIdx) => (
-                    <div key={`phone-${pIdx}`} className="flex gap-2 items-center">
-                      <input type="text" value={phone} onChange={(e) => { const next = [...draft.phoneNumbers]; next[pIdx] = e.target.value; patch({ phoneNumbers: next }) }} className={relayInput} style={inputStyle} autoComplete="off" />
-                      {pIdx === 0 ? (
-                        <button type="button" onClick={() => patch({ phoneNumbers: [...draft.phoneNumbers, ''] })} className="p-1 px-2.5 rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 font-bold text-xs shrink-0">+</button>
-                      ) : (
-                        <button type="button" onClick={() => patch({ phoneNumbers: draft.phoneNumbers.filter((_, idx) => idx !== pIdx) })} className="p-1 px-2.5 rounded-lg text-white bg-red-600 hover:bg-red-700 font-bold text-xs shrink-0">-</button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </EField>
-              <EField label="Address" className="md:col-span-3">
-                <input
-                  type="text"
-                  value={draft.location}
-                  onChange={(e) => {
-                    const loc = e.target.value.toUpperCase()
-                    const guessed = guessDistrict(loc)
-                    patch({ location: loc, district: guessed || draft.district })
-                  }}
-                  className={relayInput}
-                  style={inputStyle}
-                  autoComplete="off"
-                />
-              </EField>
-              <EField label="District Zone"><input type="text" value={draft.district} onChange={(e) => patch({ district: e.target.value })} className={relayInput} style={inputStyle} /></EField>
-              <EField label="Additional Notes / Landmark" className="md:col-span-4">
-                <input type="text" value={draft.landmarks} onChange={(e) => patch({ landmarks: e.target.value })} className={relayInput} style={inputStyle} />
-              </EField>
-            </div>
-          </div>
+          <CustomerDetailsSection
+            step={2}
+            customerName={draft.customerName}
+            onCustomerNameChange={(v) => patch({ customerName: v })}
+            phoneNumbers={draft.phoneNumbers}
+            onPhoneNumbersChange={(next) => patch({ phoneNumbers: next })}
+            address={draft.location}
+            district={draft.district}
+            onLocationChange={({ location, district }) => patch({ location, district: district ?? draft.district })}
+            onDistrictChange={(v) => patch({ district: v })}
+            landmark={draft.landmarks}
+            onLandmarkChange={(v) => patch({ landmarks: v })}
+            theme={relayFormTheme}
+          />
 
           {/* 3. Aircon details */}
-          <div>
-            <ESHead step={3} icon={<Wind className="w-3.5 h-3.5" />} title="Aircon Details" subtitle="Unit being serviced or installed" border={border} />
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5 sm:gap-4">
-              <EField label="Brand / HP" className="md:col-span-2">
-                <input type="text" value={draft.brandHp} onChange={(e) => { const val = e.target.value; const parts = val.trim().split(/\s+/); patch({ brandHp: val, brand: parts[0] || '', capacity: parts.slice(1).join(' ') || '' }) }} className={relayInput} style={inputStyle} />
-              </EField>
-              <EField label="Commit Type / Promo" className="md:col-span-2">
-                <input type="text" value={draft.commitType} onChange={(e) => patch({ commitType: e.target.value })} className={relayInput} style={inputStyle} />
-              </EField>
-              {draft.images && (
-                <div className="flex flex-col justify-end">
-                  <div className="rounded-lg p-2 flex items-center justify-between border" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-                    <div className="flex items-center gap-2">
-                      <FileText className="w-4 h-4 text-emerald-500 shrink-0" />
-                      <div className="text-[10px]">
-                        <p className="font-bold" style={{ color: textPrimary }}>Attached Voucher</p>
-                        <p className="truncate max-w-[100px]" style={{ color: textMuted }}>{draft.images.split('/').pop()}</p>
-                      </div>
-                    </div>
-                    <a href={draft.images.startsWith('http') ? draft.images : `${API_BASE_URL.replace('/api', '')}${draft.images}`} target="_blank" rel="noreferrer" className="px-2 py-0.5 bg-emerald-500/10 hover:bg-emerald-500/25 text-emerald-500 rounded text-[9px] font-bold transition-all">View</a>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+          <AirconDetailsSection
+            step={3}
+            brand={draft.brand}
+            onBrandChange={(v) => patch({ brand: v, brandHp: `${v} ${draft.capacity}`.trim() })}
+            capacity={draft.capacity}
+            onCapacityChange={(v) => patch({ capacity: v, brandHp: `${draft.brand} ${v}`.trim() })}
+            sku={draft.sku}
+            onSkuChange={(v) => patch({ sku: v })}
+            serialNumber={draft.serialNumber}
+            onSerialNumberChange={(v) => patch({ serialNumber: v })}
+            commitType={draft.commitType}
+            onCommitTypeChange={(v) => patch({ commitType: v })}
+            controlNumber={isFieldSurface ? { value: draft.controlNumber, onChange: (v) => patch({ controlNumber: v }) } : undefined}
+            voucher={draft.images ? { url: draft.images.startsWith('http') ? draft.images : `${API_BASE_URL.replace('/api', '')}${draft.images}`, label: draft.images.split('/').pop() || draft.images } : undefined}
+            theme={relayFormTheme}
+          />
 
-          {/* 4. Ashcol branch & assignment */}
-          <div>
-            <ESHead step={4} icon={<Users className="w-3.5 h-3.5" />} title="Branch and Negotiator" border={border} />
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4">
-              <EField label="Branch Zone">
-                <select
-                  value={draft.assignBranchId}
-                  onChange={(e) => {
-                    const nextBranchId = resolveBranch(e.target.value)?.id || e.target.value
-                    const hadNegotiator = !!draft.assignTechId
-                    patch({
-                      assignBranchId: nextBranchId,
-                      assignTechId: '',
-                      negotiatorPhone: '',
-                      updateStatus: hadNegotiator && (draft.updateStatus === 'ASSIGNED' || draft.updateStatus === 'SCHEDULED')
-                        ? 'PENDING'
-                        : draft.updateStatus,
-                    })
-                  }}
-                  className={relayInput}
-                  style={inputStyle}
-                >
-                  <option value="">Select Branch...</option>
-                  {branches.map((b) => <option key={b.id} value={b.id}>{formatBranchName(b.name)}</option>)}
-                </select>
-              </EField>
-              <EField label="Negotiator">
-                <select
-                  value={draft.assignTechId}
-                  onChange={(e) => {
-                    const val = e.target.value
-                    const foundEmp = negotiatorsForBranch(undefined).find((emp) => emp.id === val)
-                      || negotiatorsForBranch(draft.assignBranchId || undefined).find((emp) => emp.id === val)
-                    const negoBranchId = foundEmp?.branchId ? (resolveBranch(foundEmp.branchId)?.id || foundEmp.branchId) : draft.assignBranchId
-                    const profilePhone = foundEmp?.phone || ''
-                    patch({
-                      assignTechId: val,
-                      assignBranchId: negoBranchId,
-                      negotiatorPhone: profilePhone,
-                      updateStatus: val && draft.updateStatus === 'PENDING' ? 'ASSIGNED' : draft.updateStatus,
-                    })
-                  }}
-                  className={relayInput}
-                  style={inputStyle}
-                >
-                  <option value="">Select Negotiator...</option>
-                  {negotiatorsForBranch(draft.assignBranchId || undefined).map((emp) => {
-                    const branchRaw = emp.branchId ? (resolveBranch(emp.branchId)?.name || '') : ''
-                    const branchName = formatBranchName(branchRaw)
-                    const firstName = (emp.name || '').split(' ')[0]
-                    const nameWithBranch = branchName ? `${firstName} - ${branchName}` : firstName
-                    return <option key={emp.id} value={emp.id}>{nameWithBranch.toUpperCase()}</option>
-                  })}
-                </select>
-              </EField>
-              <EField label="Negotiator Phone No.">
-                <input
-                  type="text"
-                  readOnly
-                  value={
-                    (negotiatorsForBranch(undefined).find((emp) => emp.id === draft.assignTechId)?.phone || draft.negotiatorPhone || '').trim() || 'N/A'
-                  }
-                  className={`${relayInput} cursor-text select-all`}
-                  style={inputStyle}
-                />
-              </EField>
-            </div>
-          </div>
+          {/* 4. Branch & assignment */}
+          <BranchNegotiatorSection
+            step={4}
+            title="Branch and Negotiator"
+            branchId={draft.assignBranchId}
+            onBranchChange={(branchId) => {
+              const nextBranchId = resolveBranch(branchId)?.id || branchId
+              const hadNegotiator = !!draft.assignTechId
+              patch({
+                assignBranchId: nextBranchId,
+                assignTechId: '',
+                negotiatorPhone: '',
+                updateStatus: hadNegotiator && (draft.updateStatus === 'ASSIGNED' || draft.updateStatus === 'SCHEDULED')
+                  ? 'PENDING'
+                  : draft.updateStatus,
+              })
+            }}
+            branches={branches}
+            negotiatorId={draft.assignTechId}
+            onNegotiatorChange={(val) => {
+              const foundEmp = negotiatorsForBranch(undefined).find((emp) => emp.id === val)
+                || negotiatorOptions.find((emp) => emp.id === val)
+              const negoBranchId = foundEmp?.branchId ? (resolveBranch(foundEmp.branchId)?.id || foundEmp.branchId) : draft.assignBranchId
+              const profilePhone = foundEmp?.phone || ''
+              patch({
+                assignTechId: val,
+                assignBranchId: negoBranchId,
+                negotiatorPhone: profilePhone,
+                updateStatus: val && draft.updateStatus === 'PENDING' ? 'ASSIGNED' : draft.updateStatus,
+              })
+            }}
+            negotiators={negotiatorOptions}
+            resolveBranchName={(branchId) => resolveBranch(branchId)?.name || ''}
+            negotiatorPhone={negotiatorPhone}
+            theme={relayFormTheme}
+          />
 
           {/* 5. Scheduling */}
-          <div>
-            <ESHead
-              step={5}
-              icon={<CalendarDays className="w-3.5 h-3.5" />}
-              title="Scheduling"
-              subtitle={isOverview ? 'Requested & confirmed dates' : 'Relay, requested & confirmed dates'}
-              border={border}
+          <SchedulingSection
+            step={5}
+            subtitle={isOverview ? 'Requested & confirmed dates' : 'Relay, requested & confirmed dates'}
+            relayedDate={draft.relayedDate}
+            onRelayedDateChange={(v) => patch({ relayedDate: v })}
+            requestedDate={draft.preferredDate}
+            onRequestedDateChange={(v) => patch({ preferredDate: v })}
+            scheduleDate={draft.finalDate}
+            onScheduleDateChange={(v) => patch({ finalDate: v })}
+            scheduleDateDisabled={isFieldSurface && isReschedStatus && draft.reschedulePending}
+            installedDate={draft.actualCompletion}
+            onInstalledDateChange={(v) => patch({ actualCompletion: v })}
+            reschedPending={isFieldSurface && isReschedStatus ? {
+              checked: draft.reschedulePending,
+              onChange: (checked) => patch({ reschedulePending: checked }),
+            } : undefined}
+            theme={relayFormTheme}
+          />
+
+          {/* 6. Dispatch */}
+          {isFieldSurface && (
+            <DispatchSection
+              step={6}
+              idPrefix={`edit-ticket-${ticket.id}`}
+              subtitle="Technician, driver & vehicle assignment"
+              isTaguigServices={isTaguigServices}
+              installerName={draft.installerName}
+              onInstallerChange={(v) => patch({ installerName: v })}
+              installerOptions={installerSelectOptions}
+              driverName={draft.driverName}
+              onDriverChange={(v) => patch({ driverName: v })}
+              driverRoster={driverRoster}
+              vehicle={draft.serviceDriver}
+              onVehicleChange={(v) => patch({ serviceDriver: v })}
+              theme={relayFormTheme}
             />
-            <div className={isOverview ? 'grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4' : 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5 sm:gap-4'}>
-              <EField label="Relayed Date">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    const input = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
-                    if (input && input.showPicker) input.showPicker();
-                  }}
-                  className={`${relayInput} font-bold text-center relative flex flex-col items-center justify-center`}
-                  style={inputStyle}
-                >
-                  {draft.relayedDate ? new Date(draft.relayedDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase() : 'ADD DATE'}
-                  <input type="date" value={draft.relayedDate} onChange={(e) => patch({ relayedDate: e.target.value })} className="absolute opacity-0 pointer-events-none w-0 h-0" style={{ pointerEvents: 'none' }} />
-                </button>
-              </EField>
-              <EField label="Preferred Date">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    const input = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
-                    if (input && input.showPicker) input.showPicker();
-                  }}
-                  className={`${relayInput} font-bold text-center relative flex flex-col items-center justify-center`}
-                  style={inputStyle}
-                >
-                  {draft.preferredDate ? new Date(draft.preferredDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase() : 'ADD DATE'}
-                  <input type="date" value={draft.preferredDate} onChange={(e) => patch({ preferredDate: e.target.value })} className="absolute opacity-0 pointer-events-none w-0 h-0" style={{ pointerEvents: 'none' }} />
-                </button>
-              </EField>
-              <EField label="Schedule Date" className={!isOverview && !isReschedStatus ? 'md:col-span-2' : ''}>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    const input = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
-                    if (input && input.showPicker) input.showPicker();
-                  }}
-                  className={`${relayInput} font-bold text-center relative flex flex-col items-center justify-center`}
-                  style={{
-                    ...inputStyle,
-                    backgroundColor: draft.finalDate ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)') : inputBg,
-                    borderColor: draft.finalDate ? (isLight ? '#86efac' : 'rgba(22,163,74,0.35)') : inputBorder,
-                    color: draft.finalDate ? '#10B981' : textPrimary,
-                    opacity: isFieldSurface && isReschedStatus && draft.reschedulePending ? 0.5 : 1,
-                  }}
-                >
-                  {draft.finalDate ? new Date(draft.finalDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase() : 'ADD DATE'}
-                  <input
-                    type="date"
-                    disabled={isFieldSurface && isReschedStatus && draft.reschedulePending}
-                    value={draft.finalDate}
-                    onChange={(e) => patch({ finalDate: e.target.value })}
-                    className="absolute opacity-0 pointer-events-none w-0 h-0"
-                    style={{ pointerEvents: 'none' }}
-                  />
-                </button>
-              </EField>
-              <EField label="Installed Date">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    const input = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
-                    if (input && input.showPicker) input.showPicker();
-                  }}
-                  className={`${relayInput} font-bold text-center relative flex flex-col items-center justify-center`}
-                  style={inputStyle}
-                >
-                  {draft.actualCompletion ? new Date(draft.actualCompletion).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase() : 'ADD DATE'}
-                  <input
-                    type="date"
-                    value={draft.actualCompletion}
-                    onChange={(e) => patch({ actualCompletion: e.target.value })}
-                    className="absolute opacity-0 pointer-events-none w-0 h-0"
-                    style={{ pointerEvents: 'none' }}
-                  />
-                </button>
-              </EField>
-              {isFieldSurface && isReschedStatus && (
-                <label className={`flex items-center gap-2 text-xs font-semibold cursor-pointer ${isOverview ? 'sm:col-span-2' : 'md:col-span-2'}`} style={{ color: textPrimary }}>
-                  <input
-                    type="checkbox"
-                    checked={draft.reschedulePending}
-                    onChange={(e) => patch({ reschedulePending: e.target.checked })}
-                    className="rounded border-slate-300"
-                  />
-                  Pending — no date slot available yet (Final Date above stays as-is until confirmed)
-                </label>
-              )}
-            </div>
-          </div>
-
-          {/* 4. Ticket Info / Control No */}
-          {isFieldSurface && (
-            <div>
-              <ESHead icon={<Info className="w-3.5 h-3.5" />} title="Ticket Info" border={border} />
-              <div className="grid grid-cols-1 gap-3.5 sm:gap-4">
-                <EField label="Control No. / SI (Aircon)">
-                  <input type="text" value={draft.controlNumber} onChange={(e) => patch({ controlNumber: e.target.value })} className={relayInput} style={inputStyle} placeholder="Aircon papers / SI" />
-                </EField>
-              </div>
-            </div>
           )}
 
-          {/* 5. Dispatch */}
+          {/* 7. Remarks */}
+          <RemarksSection
+            step={7}
+            remarks={isFieldSurface ? draft.remarks : undefined}
+            primaryLabel={isFieldSurface ? 'Add New Remark (appends to history)' : 'Add New Remark / Update'}
+            primaryPlaceholder="Type a new update (e.g. FOR CLEANING — send names for work permit). Saved remarks appear in Update History and this field clears."
+            primaryValue={draft.remarksUpdate}
+            onPrimaryChange={(v) => patch({ remarksUpdate: v })}
+            theme={relayFormTheme}
+          />
+
+          {/* 8. Payment Details */}
           {isFieldSurface && (
-            <div>
-              <ESHead icon={<Truck className="w-3.5 h-3.5" />} title="Dispatch" subtitle="Technician, driver & vehicle assignment" border={border} />
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 sm:gap-4">
-                <EField label={isTaguigServices ? 'Technician' : 'Installer / Technician'}>
-                  {installerSelectOptions.length > 0 ? (
-                    <select
-                      value={draft.installerName}
-                      onChange={(e) => patch({ installerName: e.target.value })}
-                      className={relayInput}
-                      style={{ ...inputStyle, fontFamily: 'inherit' }}
-                    >
-                      <option value="">
-                        {isTaguigServices ? 'Select technician…' : 'Select installer…'}
-                      </option>
-                      {installerSelectOptions.map((t) => (
-                        <option key={t.id} value={t.name}>{t.label || t.name}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      type="text"
-                      value={draft.installerName}
-                      placeholder="Installer name"
-                      onChange={(e) => patch({ installerName: e.target.value })}
-                      className={relayInput}
-                      style={inputStyle}
-                    />
-                  )}
-                </EField>
-                <EField label="Driver">
-                  <input
-                    type="text"
-                    value={draft.driverName}
-                    list="unified-ticket-driver-roster"
-                    placeholder={driverRoster.length ? 'Select or type driver…' : 'Driver name'}
-                    onChange={(e) => patch({ driverName: e.target.value })}
-                    className={relayInput}
-                    style={inputStyle}
-                  />
-                  <datalist id="unified-ticket-driver-roster">
-                    {driverRoster.map((name) => <option key={name} value={name} />)}
-                  </datalist>
-                </EField>
-                <EField label="Vehicle">
-                  <input
-                    type="text"
-                    value={draft.serviceDriver}
-                    onChange={(e) => patch({ serviceDriver: e.target.value })}
-                    className={relayInput}
-                    style={inputStyle}
-                    placeholder="e.g. T2, FB19"
-                  />
-                </EField>
-              </div>
-            </div>
-          )}
-
-          {/* 6. Remarks */}
-          <div>
-            <ESHead step={6} icon={<MessageSquare className="w-3.5 h-3.5" />} title="Remarks" subtitle="Notes or special instructions" border={border} />
-            {isFieldSurface && (
-              <EField label="Remarks / Update" className="mb-3">
-                <textarea
-                  value={draft.remarks || ''}
-                  readOnly
-                  rows={2}
-                  className={`${relayInput} resize-none uppercase cursor-not-allowed select-text`}
-                  style={{ ...inputStyle, textTransform: 'uppercase', opacity: 0.85, backgroundColor: isLight ? '#f8fafc' : 'rgba(255,255,255,0.04)' }}
-                />
-              </EField>
-            )}
-            <EField label={isFieldSurface ? 'Add New Remark (appends to history)' : 'Add New Remark / Update'}>
-              <textarea
-                value={draft.remarksUpdate}
-                onChange={(e) => patch({ remarksUpdate: e.target.value.toUpperCase() })}
-                rows={3}
-                placeholder="Type a new update (e.g. FOR CLEANING — send names for work permit). Saved remarks appear in Update History and this field clears."
-                className={`${relayInput} resize-none uppercase`}
-                style={{ ...inputStyle, textTransform: 'uppercase' }}
-              />
-            </EField>
-          </div>
-
-          {/* 7. Payment Details */}
-          {isFieldSurface && (
-            <div>
-              <div className="flex items-center justify-between border-b pb-2 mb-3" style={{ borderColor: border }}>
-                <div className="flex items-center gap-2">
-                  <CreditCard className="w-3.5 h-3.5 text-emerald-500" />
-                  <h3 className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>Payment Details</h3>
-                </div>
-                <div className="flex items-center gap-2">
-                  {editPayments.length > 0 && editPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0) > 0 && (
-                    <span className="text-xs font-black px-2.5 py-0.5 rounded-lg border" style={{ backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.3)', color: '#10B981' }}>
-                      Total: ₱{editPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0).toLocaleString()}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleAddPaymentRow}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-xs transition-all active:scale-95"
-                  >
-                    <Plus className="w-3 h-3" />
-                    <span>Add Payment</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                {editPayments.map((p, idx) => (
-                  <div key={`p-${idx}`} className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end p-2.5 rounded-xl border" style={{ borderColor: border, backgroundColor: isLight ? 'rgba(248,250,252,0.6)' : 'rgba(255,255,255,0.02)' }}>
-                    <div className={p.mode === 'CUSTOM' ? 'sm:col-span-4' : 'sm:col-span-6'}>
-                      <EField label={idx === 0 ? 'Mode of Payment' : `Payment #${idx + 1} Mode`}>
-                        <select
-                          value={p.mode}
-                          onChange={(e) => handlePaymentChange(idx, 'mode', e.target.value)}
-                          className={relayInput}
-                          style={inputStyle}
-                        >
-                          <option value="NO_PAYMENT">NO PAYMENT / FREE</option>
-                          <option value="CASH">CASH</option>
-                          <option value="GCASH">GCASH</option>
-                          <option value="BANK TRANSFER">BANK TRANSFER</option>
-                          <option value="CHEQUE">CHEQUE</option>
-                          <option value="FOR COLLECTION">FOR COLLECTION</option>
-                          <option value="FREE INSTALL">FREE INSTALL</option>
-                          <option value="CUSTOM">+ CUSTOM PAYMENT TYPE...</option>
-                        </select>
-                      </EField>
-                    </div>
-                    {p.mode === 'CUSTOM' && (
-                      <div className="sm:col-span-3">
-                        <EField label="Custom Type Name">
-                          <input
-                            type="text"
-                            value={p.customMode || ''}
-                            placeholder="e.g. PAYMAYA, VOUCHER"
-                            onChange={(e) => handlePaymentChange(idx, 'customMode', e.target.value.toUpperCase())}
-                            className={relayInput}
-                            style={inputStyle}
-                          />
-                        </EField>
-                      </div>
-                    )}
-                    <div className={p.mode === 'CUSTOM' ? 'sm:col-span-4' : 'sm:col-span-5'}>
-                      <EField label="Amount (₱)">
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          placeholder="0.00"
-                          value={p.mode === 'NO_PAYMENT' || p.mode === 'FREE' || p.mode === 'FREE INSTALL' ? '' : (p.amount || '')}
-                          disabled={p.mode === 'NO_PAYMENT' || p.mode === 'FREE' || p.mode === 'FREE INSTALL'}
-                          onChange={(e) => handlePaymentChange(idx, 'amount', e.target.value)}
-                          className={relayInput}
-                          style={inputStyle}
-                        />
-                      </EField>
-                    </div>
-                    <div className="sm:col-span-1 flex items-center justify-end pb-1">
-                      {editPayments.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemovePaymentRow(idx)}
-                          className="p-2 rounded-lg text-red-500 hover:bg-red-500/10 transition-colors"
-                          title="Remove payment"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <PaymentSection
+              step={8}
+              payments={editPayments}
+              onPaymentsChange={applyPaymentRows}
+              theme={relayFormTheme}
+            />
           )}
 
           {mergeCandidates.length > 0 && onMerge && onMergeTargetChange && (
@@ -998,75 +540,17 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
     document.body,
   )}
 
-  {confirmModal && ReactDOM.createPortal(
-    <div
-      className="fixed inset-0 z-[12000] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150"
-      style={{ backgroundColor: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(6px)' }}
-      onClick={() => setConfirmModal(null)}
-    >
-      <div
-        className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden border animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-150 p-5 sm:p-6 flex flex-col gap-4"
-        style={{ backgroundColor: cardBg, borderColor: border }}
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm sm:text-base font-black leading-tight" style={{ color: textPrimary }}>
-            {confirmModal.type === 'discard'
-              ? 'Discard Unsaved Changes?'
-              : 'Confirm Status Change'}
-          </h3>
-          <button
-            type="button"
-            onClick={() => setConfirmModal(null)}
-            className="p-1.5 rounded-lg hover:bg-slate-500/10 transition-colors shrink-0"
-            style={{ color: textMuted }}
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {(() => {
-          const currentStatusLabel = (() => {
-            const raw = ((isFieldSurface ? draft.scheduleStatus : draft.updateStatus) || draft.serviceType || 'PENDING').toUpperCase()
-            if (raw === 'SERVICES' || raw === 'SERVICE') return 'SERVICE'
-            if (raw === 'INSTALLATION' || raw === 'INSTALL') return 'INSTALL'
-            if (raw === 'S/I' || raw === 'SURVEY_INSTALL') return 'SURVEY & INSTALL'
-            return raw.replace(/_/g, ' ')
-          })()
-
-          return (
-            <p className="text-xs sm:text-sm font-medium leading-relaxed" style={{ color: textPrimary }}>
-              {confirmModal.type === 'discard'
-                ? 'You have unsaved changes on this ticket. Discard changes and close?'
-                : `Are you sure you want to change the status from ${currentStatusLabel} to ${confirmModal.targetStatus?.label}?`}
-            </p>
-          )
-        })()}
-
-        <div className="flex items-center justify-end gap-2.5 pt-2">
-          <button
-            type="button"
-            onClick={() => setConfirmModal(null)}
-            className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-bold border transition-colors hover:bg-slate-500/10"
-            style={{ borderColor: inputBorder, color: textMuted, backgroundColor: 'transparent' }}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              confirmModal.onConfirm()
-              setConfirmModal(null)
-            }}
-            className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 active:scale-95 shadow-sm"
-            style={{ background: confirmModal.type === 'discard' ? 'linear-gradient(135deg, #f59e0b, #d97706)' : 'linear-gradient(135deg, #10B981, #059669)' }}
-          >
-            {confirmModal.type === 'discard' ? 'Discard' : 'OK'}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
+  {confirmModal && (
+    <StatusChangeConfirmDialog
+      state={confirmModal}
+      currentStatus={(isFieldSurface ? draft.scheduleStatus : draft.updateStatus) || draft.serviceType}
+      onClose={() => setConfirmModal(null)}
+      cardBg={cardBg}
+      border={border}
+      inputBorder={inputBorder}
+      textPrimary={textPrimary}
+      textMuted={textMuted}
+    />
   )}
       {show15QChecklist && (
         <ConfirmationChecklistModal

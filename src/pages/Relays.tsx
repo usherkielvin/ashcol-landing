@@ -1238,7 +1238,7 @@ export default function Relays() {
     setAddPhoneNumbers(phones.length > 0 ? phones : [''])
     // Set payments — use the ticket's payments array directly if available
     if (ticket.payments && ticket.payments.length > 0 && ticket.payments.some(p => p.amount > 0 || p.mode)) {
-      setAddPayments(ticket.payments.map(p => ({ mode: p.mode || '', amount: p.amount || 0 })))
+      setAddPayments(ticket.payments.map(p => ({ mode: p.mode || 'NO_PAYMENT', amount: p.amount || 0 })))
     } else {
       const modes = (ticket.modeOfPayment || '').split(/[/,]/).map(m => m.trim()).filter(Boolean)
       if (modes.length > 1 && ticket.installationCharges > 0) {
@@ -1248,7 +1248,7 @@ export default function Relays() {
           amount: i === modes.length - 1 ? ticket.installationCharges - perPayment * (modes.length - 1) : perPayment,
         })))
       } else {
-        setAddPayments([{ mode: modes[0] || ticket.modeOfPayment || '', amount: ticket.installationCharges || 0 }])
+        setAddPayments([{ mode: modes[0] || ticket.modeOfPayment || 'NO_PAYMENT', amount: ticket.installationCharges || 0 }])
       }
     }
     // Close picker, open create modal
@@ -1947,7 +1947,7 @@ export default function Relays() {
   }
 
   const [addPhoneNumbers, setAddPhoneNumbers] = useState<string[]>([''])
-  const [addPayments, setAddPayments] = useState<{ mode: string; amount: number }[]>([{ mode: '', amount: 0 }])
+  const [addPayments, setAddPayments] = useState<{ mode: string; amount: number; customMode?: string }[]>([{ mode: 'NO_PAYMENT', amount: 0, customMode: '' }])
   const [addForm, _setAddForm] = useState({
     title: 'S/I service',
     description: '',
@@ -2820,6 +2820,7 @@ export default function Relays() {
     // that rows/labels read (getCategoryLabel, formatRelayTicketTypeShort) — must be in acDetails
     // from the start, or a new BACKJOB/CHECKUP ticket shows the wrong type from row one.
     const resolvedCreateStatus = resolveScheduleStatusFields(addForm.status)
+    const paymentSummary = derivePaymentSummary(addPayments)
     const acDetailsObj = {
       landmarks: addForm.landmarks || '',
       brand: addForm.brand || '',
@@ -2833,7 +2834,7 @@ export default function Relays() {
       driverName: addForm.driverName || '',
       ...(resolvedCreateStatus.schedulePhase !== undefined ? { schedulePhase: resolvedCreateStatus.schedulePhase } : {}),
       ...(resolvedCreateStatus.scheduleOutcome !== undefined ? { scheduleOutcome: resolvedCreateStatus.scheduleOutcome } : {}),
-      ...(addPayments.length > 1 ? { paymentBreakdown: addPayments.filter(p => p.amount > 0) } : {}),
+      paymentBreakdown: paymentSummary.paymentBreakdown,
     }
     const writeBranchId = resolvePortalWriteBranchId(
       addForm.branchId || resolveRelayDefaultBranchId(),
@@ -2875,8 +2876,8 @@ export default function Relays() {
       serviceVehicle: addForm.serviceVehicle || undefined,
       driverName: addForm.driverName || undefined,
       remarksUpdate: addForm.remarksUpdate || undefined,
-      installationCharges: addPayments.reduce((sum, p) => sum + p.amount, 0) || (Number(addForm.installationCharges) || 0),
-      modeOfPayment: addPayments.length > 1 ? 'HYBRID' : (addPayments[0]?.mode || addForm.modeOfPayment || undefined),
+      installationCharges: paymentSummary.installationCharges,
+      modeOfPayment: paymentSummary.modeOfPayment,
       controlNumber: addForm.controlNumber || undefined,
       ticketNumber: syncTicketNumber,
       acDetails: JSON.stringify(acDetailsObj),
