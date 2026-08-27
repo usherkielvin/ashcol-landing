@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Search, X, Loader2, ClipboardCheck, QrCode, ArrowRightCircle, Ban,
   Phone, MapPin, Calendar, Wrench, CheckCircle2,
-  Clock, AlertCircle
+  Clock, AlertCircle, Copy, Check
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { API_BASE_URL } from '../utils/api'
@@ -581,152 +581,201 @@ export default function Bookings() {
         })}
       </div>
 
-      {/* Booking Details Side Drawer / Modal */}
+      {/* Booking Details Modal (Centered & Redesigned) */}
       {selectedBooking && (
         <div 
-          className="fixed inset-0 z-[999] flex justify-end p-0 md:p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150"
+          className="fixed inset-0 z-[999] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
           onClick={() => setSelectedBooking(null)}
         >
           <div 
-            className="w-full max-w-lg h-full md:h-auto md:max-h-[90vh] md:rounded-2xl border shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200"
+            className="w-full max-w-xl max-h-[90vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
             style={{ backgroundColor: cardBg, borderColor: border }}
             onClick={e => e.stopPropagation()}
           >
-            {/* Drawer Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: border }}>
-              <div className="flex items-center gap-2">
-                <span className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b shrink-0" style={{ borderColor: border }}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 shadow-sm shrink-0">
                   <Wrench className="w-5 h-5" />
-                </span>
+                </div>
                 <div>
-                  <h2 className="text-base font-bold" style={{ color: textPrimary }}>Booking Details</h2>
-                  <p className="text-xs" style={{ color: textMuted }}>ID: {selectedBooking.id}</p>
+                  <h2 className="text-base sm:text-lg font-bold tracking-tight" style={{ color: textPrimary }}>
+                    Booking Details
+                  </h2>
+                  <p className="text-xs" style={{ color: textMuted }}>
+                    Customer service appointment request
+                  </p>
                 </div>
               </div>
-              <button 
-                type="button" 
-                onClick={() => setSelectedBooking(null)}
-                className="p-1.5 rounded-lg hover:bg-slate-500/10"
-                style={{ color: textMuted }}
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {statusBadge(selectedBooking.status)}
+                <button 
+                  type="button" 
+                  onClick={() => setSelectedBooking(null)}
+                  className="p-1.5 rounded-lg hover:bg-slate-500/10 transition-colors ml-1"
+                  style={{ color: textMuted }}
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
-            {/* Drawer Body */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {/* Customer Info Card */}
-              <div className="p-4 rounded-xl border space-y-3" style={{ backgroundColor: panelBg, borderColor: border }}>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wider" style={{ color: textMuted }}>Customer</span>
-                  {statusBadge(selectedBooking.status)}
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
+              {/* Customer Profile Banner */}
+              <div className="p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3" style={{ backgroundColor: panelBg, borderColor: border }}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-11 h-11 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-500 font-bold text-base flex items-center justify-center shrink-0">
+                    {selectedBooking.customerName.charAt(0).toUpperCase() || 'C'}
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-blue-500">Customer</span>
+                    <h3 className="text-base sm:text-lg font-bold truncate" style={{ color: textPrimary }}>
+                      {selectedBooking.customerName}
+                    </h3>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-lg font-extrabold" style={{ color: textPrimary }}>{selectedBooking.customerName}</h3>
+                <div className="flex items-center gap-2 shrink-0">
                   <a 
                     href={`tel:${selectedBooking.contactPhone}`}
-                    className="inline-flex items-center gap-2 mt-1 text-sm font-semibold text-emerald-500 hover:underline"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors"
                   >
-                    <Phone className="w-4 h-4" />
+                    <Phone className="w-3.5 h-3.5" />
                     {selectedBooking.contactPhone}
                   </a>
+                  <button
+                    type="button"
+                    onClick={(e) => copyPhone(selectedBooking.id, selectedBooking.contactPhone, e)}
+                    className="p-1.5 rounded-lg border hover:bg-slate-500/10 transition-colors"
+                    style={{ borderColor: inputBorder, color: copiedId === selectedBooking.id ? green : textMuted }}
+                    title="Copy Phone Number"
+                  >
+                    {copiedId === selectedBooking.id ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
                 </div>
               </div>
 
-              {/* Unit & Request Details */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-bold uppercase tracking-wider" style={{ color: textMuted }}>Service Request</h4>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 rounded-xl border" style={{ backgroundColor: panelBg, borderColor: border }}>
-                    <span className="text-[11px]" style={{ color: textMuted }}>Brand / Model</span>
-                    <p className="text-sm font-bold mt-0.5" style={{ color: textPrimary }}>{selectedBooking.brand || 'N/A'}</p>
+              {/* Service Request Info Grid */}
+              <div className="space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
+                  Service & Equipment Details
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div className="p-3.5 rounded-xl border flex flex-col justify-center" style={{ backgroundColor: panelBg, borderColor: border }}>
+                    <span className="text-[11px] font-medium" style={{ color: textMuted }}>Brand / Model</span>
+                    <p className="text-sm font-bold mt-0.5" style={{ color: textPrimary }}>
+                      {selectedBooking.brand || <span className="italic font-normal text-slate-400">Not specified</span>}
+                    </p>
                   </div>
-                  <div className="p-3 rounded-xl border" style={{ backgroundColor: panelBg, borderColor: border }}>
-                    <span className="text-[11px]" style={{ color: textMuted }}>Capacity / HP</span>
-                    <p className="text-sm font-bold mt-0.5" style={{ color: textPrimary }}>{selectedBooking.capacity || 'N/A'}</p>
+                  <div className="p-3.5 rounded-xl border flex flex-col justify-center" style={{ backgroundColor: panelBg, borderColor: border }}>
+                    <span className="text-[11px] font-medium" style={{ color: textMuted }}>Capacity / Horsepower</span>
+                    <p className="text-sm font-bold mt-0.5" style={{ color: textPrimary }}>
+                      {selectedBooking.capacity || <span className="italic font-normal text-slate-400">Not specified</span>}
+                    </p>
                   </div>
                 </div>
 
-                <div className="p-3 rounded-xl border space-y-1" style={{ backgroundColor: panelBg, borderColor: border }}>
-                  <span className="text-[11px]" style={{ color: textMuted }}>Issue Description</span>
-                  <p className="text-sm leading-relaxed" style={{ color: textPrimary }}>
-                    {selectedBooking.issueDescription || 'No description provided.'}
+                {/* Issue Description */}
+                <div className="p-3.5 rounded-xl border space-y-1.5" style={{ backgroundColor: panelBg, borderColor: border }}>
+                  <span className="text-[11px] font-medium" style={{ color: textMuted }}>Reported Problem / Issue</span>
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: textPrimary }}>
+                    {selectedBooking.issueDescription || <span className="italic text-slate-400">No issue description provided.</span>}
                   </p>
                 </div>
               </div>
 
-              {/* Location Card */}
+              {/* Address & Landmark */}
               <div className="space-y-2">
-                <h4 className="text-xs font-bold uppercase tracking-wider" style={{ color: textMuted }}>Address & Location</h4>
-                <div className="p-4 rounded-xl border flex items-start gap-3" style={{ backgroundColor: panelBg, borderColor: border }}>
-                  <MapPin className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-                  <div className="space-y-1 text-xs">
-                    <p className="font-semibold text-sm" style={{ color: textPrimary }}>{formatAddress(selectedBooking) || 'No address provided'}</p>
+                <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
+                  Service Address
+                </span>
+                <div className="p-3.5 rounded-xl border flex items-start gap-3" style={{ backgroundColor: panelBg, borderColor: border }}>
+                  <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500 shrink-0 mt-0.5">
+                    <MapPin className="w-4 h-4" />
+                  </div>
+                  <div className="space-y-1 text-xs flex-1 min-w-0">
+                    <p className="font-semibold text-sm leading-snug" style={{ color: textPrimary }}>
+                      {formatAddress(selectedBooking) || <span className="italic font-normal text-slate-400">No address provided</span>}
+                    </p>
                     {selectedBooking.landmark && (
-                      <p style={{ color: textMuted }}>Landmark: <span className="font-medium text-slate-300">{selectedBooking.landmark}</span></p>
+                      <p className="text-xs" style={{ color: textMuted }}>
+                        Landmark: <span className="font-semibold" style={{ color: textPrimary }}>{selectedBooking.landmark}</span>
+                      </p>
                     )}
                   </div>
                 </div>
               </div>
 
-              {/* Timeline Dates */}
-              <div className="grid grid-cols-2 gap-3">
+              {/* Timing / Schedule info */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <div className="p-3 rounded-xl border flex items-center gap-3" style={{ backgroundColor: panelBg, borderColor: border }}>
-                  <Calendar className="w-5 h-5 text-blue-500 shrink-0" />
+                  <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500 shrink-0">
+                    <Calendar className="w-4 h-4" />
+                  </div>
                   <div>
-                    <span className="text-[10px] font-bold uppercase" style={{ color: textMuted }}>Requested Date</span>
-                    <p className="text-xs font-bold" style={{ color: textPrimary }}>{formatDate(selectedBooking.requestedDate) || 'Flexible'}</p>
+                    <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>Preferred Date</span>
+                    <p className="text-xs font-bold" style={{ color: textPrimary }}>
+                      {formatDate(selectedBooking.requestedDate) || 'Flexible / Any'}
+                    </p>
                   </div>
                 </div>
                 <div className="p-3 rounded-xl border flex items-center gap-3" style={{ backgroundColor: panelBg, borderColor: border }}>
-                  <Clock className="w-5 h-5 text-slate-400 shrink-0" />
+                  <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500 shrink-0">
+                    <Clock className="w-4 h-4" />
+                  </div>
                   <div>
-                    <span className="text-[10px] font-bold uppercase" style={{ color: textMuted }}>Submitted On</span>
-                    <p className="text-xs font-bold" style={{ color: textPrimary }}>{formatDate(selectedBooking.createdAt)}</p>
+                    <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>Date Submitted</span>
+                    <p className="text-xs font-bold" style={{ color: textPrimary }}>
+                      {formatDate(selectedBooking.createdAt) || 'Recent'}
+                    </p>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Drawer Footer Actions */}
-            <div className="p-4 border-t flex items-center justify-between gap-3" style={{ borderColor: border }}>
+            {/* Modal Footer Actions */}
+            <div className="p-4 sm:px-6 border-t flex items-center justify-between gap-3 shrink-0" style={{ borderColor: border }}>
               {selectedBooking.status === 'CONVERTED' ? (
-                <div className="w-full py-2.5 rounded-xl text-center text-xs font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                  Ticket Converted
+                <div className="w-full py-2.5 rounded-xl text-center text-xs font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 flex items-center justify-center gap-2">
+                  <CheckCircle2 className="w-4 h-4" /> Ticket Converted
                 </div>
               ) : selectedBooking.status === 'DISMISSED' ? (
-                <div className="w-full py-2.5 rounded-xl text-center text-xs font-bold bg-slate-500/10 text-slate-400 border border-slate-500/20">
-                  Booking Dismissed
+                <div className="w-full py-2.5 rounded-xl text-center text-xs font-bold bg-slate-500/10 text-slate-400 border border-slate-500/20 flex items-center justify-center gap-2">
+                  <Ban className="w-4 h-4" /> Booking Dismissed
                 </div>
               ) : (
-                <>
+                <div className="flex items-center justify-between gap-2.5 w-full">
                   <button
                     type="button"
                     onClick={() => dismissBooking(selectedBooking.id)}
-                    className="flex-1 py-2.5 rounded-xl text-xs font-bold border text-red-500 hover:bg-red-500/10 transition-colors"
+                    className="px-4 py-2.5 rounded-xl text-xs font-bold border text-red-500 hover:bg-red-500/10 transition-colors"
                     style={{ borderColor: inputBorder }}
                   >
                     Dismiss
                   </button>
-                  {selectedBooking.status === 'NEW' && (
+
+                  <div className="flex items-center gap-2.5 ml-auto">
+                    {selectedBooking.status === 'NEW' && (
+                      <button
+                        type="button"
+                        onClick={() => markContacted(selectedBooking.id)}
+                        className="px-4 py-2.5 rounded-xl text-xs font-bold border text-amber-500 hover:bg-amber-500/10 transition-colors"
+                        style={{ borderColor: inputBorder }}
+                      >
+                        Mark Contacted
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={() => markContacted(selectedBooking.id)}
-                      className="flex-1 py-2.5 rounded-xl text-xs font-bold border text-amber-500 hover:bg-amber-500/10 transition-colors"
-                      style={{ borderColor: inputBorder }}
+                      onClick={() => convertToTicket(selectedBooking)}
+                      className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-sm hover:opacity-90 active:scale-[0.98] transition-all"
+                      style={{ backgroundColor: green }}
                     >
-                      Mark Contacted
+                      <ArrowRightCircle className="w-4 h-4" /> Convert to Ticket
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => convertToTicket(selectedBooking)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-white shadow-sm hover:opacity-90 transition-opacity"
-                    style={{ backgroundColor: green }}
-                  >
-                    <ArrowRightCircle className="w-4 h-4" /> Convert to Ticket
-                  </button>
-                </>
+                  </div>
+                </div>
               )}
             </div>
           </div>

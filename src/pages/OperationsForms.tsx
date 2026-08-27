@@ -5,6 +5,7 @@ import {
   FileText, CreditCard, Clock, Plus, Search, Filter, Loader2,
   Check, X, AlertCircle, Trash2, Eye, Pencil, MousePointerClick, ChevronLeft,
   CircleCheck, CircleX, Hourglass, TrendingUp, ChevronDown, Building2,
+  MessageSquare,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -177,6 +178,9 @@ export default function OperationsForms() {
   const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequest[]>([])
   const [userDirectory, setUserDirectory] = useState<Record<string, { name: string; branchId: string }>>({})
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null)
+  const [isEditingModalNotes, setIsEditingModalNotes] = useState(false)
+  const [modalNotesInput, setModalNotesInput] = useState('')
+  const [rejectDialog, setRejectDialog] = useState<{ isOpen: boolean; type: TabId; id: string; currentReason: string } | null>(null)
 
   // Cash advance form
   const [caAmount, setCaAmount] = useState('')
@@ -512,6 +516,9 @@ export default function OperationsForms() {
 
   const closeModal = () => {
     setModal(null)
+    setIsEditingModalNotes(false)
+    setModalNotesInput('')
+    setRejectDialog(null)
     if (searchParams.get('id')) {
       const next = new URLSearchParams(searchParams)
       next.delete('id')
@@ -720,13 +727,16 @@ export default function OperationsForms() {
 
   const onSelectStatus = async (type: TabId, id: string, newStatus: string) => {
     closeStatusMenu()
-    let rejectionReason = ''
     if (newStatus === 'REJECTED') {
-      const reason = window.prompt('Enter rejection reason (optional):', '')
-      if (reason === null) return // user cancelled
-      rejectionReason = reason
+      setRejectDialog({
+        isOpen: true,
+        type,
+        id,
+        currentReason: '',
+      })
+      return
     }
-    await handleStatusUpdate(type, id, newStatus, rejectionReason)
+    await handleStatusUpdate(type, id, newStatus)
   }
 
   const statusColors: Record<string, string> = {
@@ -1345,31 +1355,127 @@ export default function OperationsForms() {
                 className="max-w-6xl mx-auto rounded-lg sm:rounded-xl shadow-none sm:shadow-lg p-3 sm:p-8 md:p-12 border-0 sm:border"
                 style={{ backgroundColor: paperBg, borderColor: isLight ? '#d1d5db' : border }}
               >
-                {/* Status info banner for edit/view */}
+                {/* Status & Review banner for edit/view */}
                 {modal.record && (
-                  <div className="flex flex-col gap-2.5 mb-5 p-3 sm:p-4 rounded-lg sm:rounded-xl"
-                    style={{ backgroundColor: isLight ? '#f8fafc' : '#0B132B', border: `1px solid ${border}` }}>
-                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                      <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Status</span>
-                      {statusText(modal.record.status)}
-                      {modal.record.status === 'REJECTED' && (modal.record as any).rejectionReason && (
-                        <span className="text-xs" style={{ color: textMuted }}>
-                          — Reason: <span className="font-semibold" style={{ color: textPrimary }}>{(modal.record as any).rejectionReason}</span>
+                  <div
+                    className="flex flex-col gap-3.5 mb-6 p-4 sm:p-5 rounded-xl transition-all shadow-sm"
+                    style={{
+                      backgroundColor: isLight ? '#f8fafc' : '#0B132B',
+                      border: `1px solid ${border}`,
+                    }}
+                  >
+                    {/* Top Row: Status badge, Admin Quick Action buttons, Status Dropdown, and Withdraw/Delete */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5" style={{ borderBottom: `1px solid ${border}` }}>
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md" style={{ backgroundColor: isLight ? '#e2e8f0' : '#172544', color: textMuted }}>
+                          STATUS
                         </span>
-                      )}
-                      {modal.record.status !== 'PENDING' && (
-                        <span className="text-[10px] sm:ml-auto" style={{ color: textMuted }}>This request can no longer be edited.</span>
-                      )}
-                    </div>
 
-                    {/* Notes for member (editable by Admin / Management, visible to member) */}
-                    <div className="pt-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2" style={{ borderTop: `1px solid ${border}` }}>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Notes / Remarks:</span>
-                        <span className="text-xs font-semibold" style={{ color: (modal.record as any).notes ? textPrimary : textMuted }}>
-                          {(modal.record as any).notes || 'No notes added yet.'}
-                        </span>
+                        {/* Current status pill or admin dropdown */}
+                        {isAdmin ? (
+                          <div className="relative inline-block">
+                            <button
+                              type="button"
+                              onClick={(e) => openStatusMenu(e, {
+                                id: modal.record!.id,
+                                type: modal.type,
+                                status: modal.record!.status,
+                              } as any)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wider shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                              style={{
+                                color: statusColors[modal.record.status] || statusColors.PENDING,
+                                backgroundColor: `${statusColors[modal.record.status] || statusColors.PENDING}18`,
+                                border: `1px solid ${statusColors[modal.record.status] || statusColors.PENDING}40`,
+                              }}
+                              title="Click to change status"
+                            >
+                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColors[modal.record.status] || statusColors.PENDING }} />
+                              {modal.record.status.replace(/_/g, ' ')}
+                              <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+                            </button>
+                          </div>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wider"
+                            style={{
+                              color: statusColors[modal.record.status] || statusColors.PENDING,
+                              backgroundColor: `${statusColors[modal.record.status] || statusColors.PENDING}18`,
+                              border: `1px solid ${statusColors[modal.record.status] || statusColors.PENDING}40`,
+                            }}
+                          >
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColors[modal.record.status] || statusColors.PENDING }} />
+                            {modal.record.status.replace(/_/g, ' ')}
+                          </span>
+                        )}
+
+                        {/* Admin Quick Status Actions in View Tab */}
+                        {isAdmin && (
+                          <div className="flex items-center gap-1.5 ml-0 sm:ml-2 flex-wrap">
+                            {modal.type === 'budget' && modal.record.status === 'PENDING' && (
+                              <button
+                                type="button"
+                                onClick={() => handleStatusUpdate('budget', modal.record!.id, 'NOTED')}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white shadow-sm transition-transform active:scale-95 hover:opacity-90 cursor-pointer"
+                                style={{ backgroundColor: '#2563eb' }}
+                                title="Mark this budget request as Noted"
+                              >
+                                <Check className="w-3 h-3" /> Mark as Noted
+                              </button>
+                            )}
+                            {(modal.record.status === 'PENDING' || (modal.type === 'budget' && modal.record.status === 'NOTED')) && (
+                              <button
+                                type="button"
+                                onClick={() => handleStatusUpdate(modal.type, modal.record!.id, 'APPROVED')}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white shadow-sm transition-transform active:scale-95 hover:opacity-90 cursor-pointer"
+                                style={{ backgroundColor: '#16a34a' }}
+                                title="Approve this request"
+                              >
+                                <Check className="w-3 h-3" /> Approve
+                              </button>
+                            )}
+                            {modal.record.status === 'PENDING' && (
+                              <button
+                                type="button"
+                                onClick={() => setRejectDialog({
+                                  isOpen: true,
+                                  type: modal.type,
+                                  id: modal.record!.id,
+                                  currentReason: '',
+                                })}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white shadow-sm transition-transform active:scale-95 hover:opacity-90 cursor-pointer"
+                                style={{ backgroundColor: '#dc2626' }}
+                                title="Reject this request"
+                              >
+                                <X className="w-3 h-3" /> Reject
+                              </button>
+                            )}
+                            {modal.type === 'cash-advance' && modal.record.status === 'APPROVED' && (
+                              <button
+                                type="button"
+                                onClick={() => handleStatusUpdate('cash-advance', modal.record!.id, 'DISBURSED')}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white shadow-sm transition-transform active:scale-95 hover:opacity-90 cursor-pointer"
+                                style={{ backgroundColor: '#4f46e5' }}
+                                title="Mark as Disbursed"
+                              >
+                                <Check className="w-3 h-3" /> Mark Disbursed
+                              </button>
+                            )}
+                            {modal.type === 'cash-advance' && modal.record.status === 'DISBURSED' && (
+                              <button
+                                type="button"
+                                onClick={() => handleStatusUpdate('cash-advance', modal.record!.id, 'FULLY_PAID')}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white shadow-sm transition-transform active:scale-95 hover:opacity-90 cursor-pointer"
+                                style={{ backgroundColor: '#0d9488' }}
+                                title="Mark as Fully Paid"
+                              >
+                                <Check className="w-3 h-3" /> Mark Fully Paid
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
+
+                      {/* Right side: Delete / Withdraw */}
                       <div className="flex items-center gap-2">
                         {canDeleteAsOwner(modal.record) && (
                           <button
@@ -1378,31 +1484,162 @@ export default function OperationsForms() {
                               closeModal()
                               requestDeleteRecord(modal!.type, modal!.record!.id, (modal!.record as any).payeeName || (modal!.record as any).purpose || (modal!.record as any).cutoffPeriod || modal!.type)
                             }}
-                            className="px-2.5 py-1 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 shadow-sm hover:opacity-90 transition-opacity"
+                            className="px-2.5 py-1 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 shadow-sm hover:opacity-90 transition-opacity cursor-pointer"
                             style={{ backgroundColor: '#dc2626' }}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                             Withdraw Request
                           </button>
                         )}
-                        {isAdmin && (
+                        {isAdmin && !canDeleteAsOwner(modal.record) && (
                           <button
                             type="button"
                             onClick={() => {
-                              const existingNote = (modal.record as any).notes || ''
-                              const newNote = window.prompt('Enter note for member:', existingNote)
-                              if (newNote !== null) {
-                                handleSaveNotes(modal.type, modal.record!.id, newNote)
-                              }
+                              closeModal()
+                              requestDeleteRecord(modal!.type, modal!.record!.id, (modal!.record as any).payeeName || (modal!.record as any).purpose || (modal!.record as any).cutoffPeriod || modal!.type)
                             }}
-                            className="px-2.5 py-1 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 shadow-sm hover:opacity-90 transition-opacity"
-                            style={{ backgroundColor: accent }}
+                            className="px-2.5 py-1 rounded-lg text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-500/10 border border-red-300 dark:border-red-800 flex items-center gap-1.5 transition-colors cursor-pointer"
                           >
-                            <Pencil className="w-3.5 h-3.5" />
-                            {(modal.record as any).notes ? 'Edit Note' : 'Add Note'}
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Delete
                           </button>
                         )}
                       </div>
+                    </div>
+
+                    {/* Rejection Reason Alert if rejected */}
+                    {modal.record.status === 'REJECTED' && (modal.record as any).rejectionReason && (
+                      <div
+                        className="p-3 rounded-lg flex items-start gap-2.5"
+                        style={{
+                          backgroundColor: isLight ? '#fef2f2' : 'rgba(239, 68, 68, 0.1)',
+                          border: `1px solid ${isLight ? '#fecaca' : 'rgba(239, 68, 68, 0.25)'}`,
+                          color: isLight ? '#dc2626' : '#f87171',
+                        }}
+                      >
+                        <CircleX className="w-4 h-4 shrink-0 mt-0.5" />
+                        <div className="flex-1 text-xs">
+                          <div className="font-bold uppercase tracking-wider text-[10px]">Rejection Reason</div>
+                          <div className="font-medium mt-0.5">{(modal.record as any).rejectionReason}</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Notes / Remarks Section */}
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <MessageSquare className="w-3.5 h-3.5" style={{ color: accent }} />
+                          <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
+                            Notes / Remarks for Requester:
+                          </span>
+                        </div>
+                        {isAdmin && !isEditingModalNotes && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setModalNotesInput((modal.record as any).notes || '')
+                              setIsEditingModalNotes(true)
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white shadow-sm hover:opacity-90 transition-all cursor-pointer"
+                            style={{ backgroundColor: accent }}
+                          >
+                            <Pencil className="w-3 h-3" />
+                            {(modal.record as any).notes ? 'Edit Note' : 'Add Custom Note'}
+                          </button>
+                        )}
+                      </div>
+
+                      {isEditingModalNotes ? (
+                        <div className="flex flex-col gap-2.5 p-3.5 rounded-xl border animate-fadeIn" style={{ backgroundColor: isLight ? '#ffffff' : '#080E1E', borderColor: border }}>
+                          <textarea
+                            rows={3}
+                            value={modalNotesInput}
+                            onChange={e => setModalNotesInput(e.target.value)}
+                            placeholder="Type custom note, instructions, or disbursement details for the member..."
+                            className="w-full p-2.5 text-xs font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            style={istyle}
+                            autoFocus
+                          />
+
+                          {/* Quick preset templates */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] font-bold" style={{ color: textMuted }}>Quick suggestions:</span>
+                            {[
+                              'Approved and forwarded to accounting for check issuance.',
+                              'Please submit the original physical receipts to admin.',
+                              'Cash available for pickup at branch cashier.',
+                              'Please coordinate with HR for verification.',
+                            ].map(preset => (
+                              <button
+                                key={preset}
+                                type="button"
+                                onClick={() => setModalNotesInput(prev => prev ? `${prev} ${preset}` : preset)}
+                                className="text-[10px] px-2 py-0.5 rounded-md font-semibold border transition-colors hover:bg-black/5 dark:hover:bg-white/5 text-left cursor-pointer"
+                                style={{ borderColor: border, color: textMuted }}
+                              >
+                                + {preset}
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="flex items-center justify-end gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsEditingModalNotes(false)
+                                setModalNotesInput('')
+                              }}
+                              disabled={savingNotes}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+                              style={{ color: textMuted }}
+                            >
+                              Cancel
+                            </button>
+                            {(modal.record as any).notes && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await handleSaveNotes(modal.type, modal.record!.id, '')
+                                  setIsEditingModalNotes(false)
+                                }}
+                                disabled={savingNotes}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer"
+                              >
+                                Clear Note
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await handleSaveNotes(modal.type, modal.record!.id, modalNotesInput)
+                                setIsEditingModalNotes(false)
+                              }}
+                              disabled={savingNotes}
+                              className="px-4 py-1.5 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 shadow-sm hover:opacity-90 transition-opacity cursor-pointer"
+                              style={{ backgroundColor: accent }}
+                            >
+                              {savingNotes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                              Save Note
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          className="p-3 rounded-lg text-xs font-medium flex items-start justify-between gap-3"
+                          style={{
+                            backgroundColor: (modal.record as any).notes
+                              ? (isLight ? '#ffffff' : '#0F1A2E')
+                              : (isLight ? '#f1f5f9' : '#0e172a'),
+                            border: `1px solid ${border}`,
+                            color: (modal.record as any).notes ? textPrimary : textMuted,
+                          }}
+                        >
+                          <div className="flex-1 whitespace-pre-wrap">
+                            {(modal.record as any).notes || 'No remarks or notes added yet.'}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1742,6 +1979,68 @@ export default function OperationsForms() {
               </div>
             </div>
           </div>
+      )}
+
+      {/* Custom Rejection Dialog Modal */}
+      {rejectDialog && rejectDialog.isOpen && (
+        <div className="fixed inset-0 z-[16000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div
+            className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border p-5 flex flex-col gap-4 animate-fadeIn"
+            style={{ backgroundColor: cardBg, borderColor: border, color: textPrimary }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center bg-red-100 dark:bg-red-950/50 text-red-600">
+                  <X className="w-4 h-4" />
+                </div>
+                <h3 className="text-sm font-black">Reject Request</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRejectDialog(null)}
+                className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-slate-400 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs" style={{ color: textMuted }}>
+              Please specify the reason for rejecting this request. The requester will be notified.
+            </p>
+
+            <textarea
+              rows={3}
+              value={rejectDialog.currentReason}
+              onChange={e => setRejectDialog({ ...rejectDialog, currentReason: e.target.value })}
+              placeholder="Enter rejection reason (e.g. Incomplete details, over budget, please resubmit)..."
+              className="w-full p-3 text-xs font-medium rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500"
+              style={istyle}
+              autoFocus
+            />
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setRejectDialog(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+                style={{ color: textMuted }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const { type, id, currentReason } = rejectDialog
+                  setRejectDialog(null)
+                  await handleStatusUpdate(type, id, 'REJECTED', currentReason)
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-700 shadow-sm transition-colors cursor-pointer"
+              >
+                Confirm Rejection
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />

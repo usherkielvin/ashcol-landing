@@ -1,7 +1,7 @@
 import { API_BASE_URL, readApiError } from './api'
 import { isTabCacheFresh, readTabCache, readTabCacheEntry, writeTabCache } from './ticketTabCache'
 
-const VERSION = 1
+const VERSION = 2
 
 function employeesKey(role?: string) {
   return `portal-dir:v${VERSION}:employees:${role || 'all'}`

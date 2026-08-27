@@ -640,14 +640,31 @@ export function getBranchDisplayName(id: string | null): string {
 }
 
 export function formatNegotiatorLabel(
-  emp: { name?: string | null; branchId?: string | null },
+  emp: { name?: string | null; nickname?: string | null; branchId?: string | null },
   omitBranch = false,
+  firstNameOnly = false,
 ): string {
+  const nickname = (emp.nickname || '').trim().toUpperCase()
+  if (nickname) return nickname
   const fullName = (emp.name || '').trim().toUpperCase()
   const firstName = fullName.split(/\s+/)[0]
+  if (firstNameOnly) return firstName || fullName
   if (omitBranch) return fullName || firstName
   const branch = getBranchDisplayName(emp.branchId || null)
   return branch ? `${fullName || firstName} (${branch.toUpperCase()})` : (fullName || firstName)
+}
+
+/** Formats installer dropdown label as NICKNAME(BRANCH) e.g. "ALLAN(TAGUIG SALES)" or "CRIS(TAGUIG SALES)". */
+export function formatInstallerLabel(
+  emp: { name?: string | null; nickname?: string | null; branchId?: string | null },
+  branchNameOverride?: string | null,
+): string {
+  const nick = (emp.nickname || '').trim().toUpperCase()
+  const fullName = (emp.name || '').trim().toUpperCase()
+  const firstName = fullName.split(/\s+/)[0]
+  const displayName = nick || firstName || fullName
+  const branch = branchNameOverride || getBranchDisplayName(emp.branchId || null)
+  return branch ? `${displayName}(${branch.toUpperCase()})` : displayName
 }
 
 export function applyImportFieldsFromRow(

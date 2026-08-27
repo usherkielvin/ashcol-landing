@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import ReactDOM from 'react-dom'
-import { AlertTriangle, FileText, X, Store, UserRound, Wind, Users, CalendarDays, MessageSquare, Info, Truck, ClipboardList } from 'lucide-react'
+import { AlertTriangle, FileText, X, Store, UserRound, Wind, Users, CalendarDays, MessageSquare, Info, Truck, ClipboardList, CreditCard, Plus, Trash2 } from 'lucide-react'
 import { ConfirmationChecklistModal, isChecklistFilled } from '../tickets/ConfirmationChecklistModal'
 import { API_BASE_URL, formatBranchName } from '../../utils/api'
 import { resolveScheduleStatusFields } from '../../constants/ticketCategories'
@@ -50,6 +50,8 @@ export type RelayEditTicketModalProps = {
   driverRoster?: string[]
   installerRoster?: string[]
   isTaguigServices?: boolean
+  /** Fetched technician accounts for this branch — when provided, replaces free-text with a dropdown. */
+  technicianOptions?: { id: string; name: string; label?: string }[]
 
   editOriginalDate?: string
   onMergeTargetChange?: (id: string) => void
@@ -121,8 +123,12 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
     driverRoster = [],
     installerRoster = [],
     isTaguigServices = false,
+    technicianOptions = [],
 
     editOriginalDate = '',
+    // Determine if fetched-account dropdown is active (Sept 1, 2026+)
+    // and we have actual accounts to show
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onMergeTargetChange,
     onMerge,
     onClose,
@@ -149,6 +155,36 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
     targetStatus?: { value: string; label: string }
     onConfirm: () => void
   } | null>(null)
+
+  const [editPayments, setEditPayments] = useState<Array<{ mode: string; amount: number; customMode?: string }>>(() => {
+    const metaBreakdown = (ticket as any)?.acDetails ? (() => {
+      try {
+        const parsed = typeof (ticket as any).acDetails === 'string' ? JSON.parse((ticket as any).acDetails) : (ticket as any).acDetails
+        return Array.isArray(parsed?.paymentBreakdown) ? parsed.paymentBreakdown : null
+      } catch { return null }
+    })() : null
+
+    if (metaBreakdown && metaBreakdown.length > 0) {
+      return metaBreakdown.map((p: any) => {
+        const m = String(p.mode || 'CASH').toUpperCase()
+        const isStd = ['CASH', 'GCASH', 'BANK TRANSFER', 'CHEQUE', 'FOR COLLECTION', 'NO_PAYMENT', 'FREE', 'FREE INSTALL', 'PENDING'].includes(m)
+        return {
+          mode: isStd ? m : 'CUSTOM',
+          amount: Number(p.amount) || 0,
+          customMode: isStd ? '' : m,
+        }
+      })
+    }
+
+    const currentMode = String(draftExtensions?.modeOfPayment || (ticket as any)?.modeOfPayment || (ticket as any)?.mode_of_payment || 'NO_PAYMENT').toUpperCase()
+    const currentAmt = Number(draftExtensions?.installationCharges ?? (ticket as any)?.installationCharges ?? (ticket as any)?.installation_charges ?? 0)
+    const isStd = ['CASH', 'GCASH', 'BANK TRANSFER', 'CHEQUE', 'FOR COLLECTION', 'NO_PAYMENT', 'FREE', 'FREE INSTALL', 'PENDING'].includes(currentMode)
+    return [{
+      mode: isStd ? currentMode : 'CUSTOM',
+      amount: currentAmt,
+      customMode: isStd ? '' : currentMode,
+    }]
+  })
 
   useEffect(() => {
     const next = buildRelayEditDraft(ticket, parseStoreVendor, resolveBranch, draftExtensions)
@@ -195,6 +231,87 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
   }), [inputBg, inputBorder, textPrimary])
 
   const relayInput = `${compactInput} normal-case`
+
+  const installerSelectOptions = useMemo(() => {
+    if (technicianOptions && technicianOptions.length > 0) return technicianOptions
+    if (installerRoster && installerRoster.length > 0) {
+      return installerRoster.map((name, idx) => ({ id: `roster-${idx}`, name, label: name }))
+    }
+    return []
+  }, [technicianOptions, installerRoster])
+
+  const handlePaymentChange = (index: number, field: 'mode' | 'amount' | 'customMode', value: any) => {
+    setEditPayments(prev => {
+      const next = [...prev]
+      if (!next[index]) return prev
+      if (field === 'mode') {
+        const nextMode = String(value).toUpperCase()
+        next[index] = {
+          ...next[index],
+          mode: nextMode,
+          amount: (nextMode === 'NO_PAYMENT' || nextMode === 'FREE' || nextMode === 'FREE INSTALL') ? 0 : next[index].amount,
+        }
+      } else if (field === 'amount') {
+        next[index] = { ...next[index], amount: Number(value) || 0 }
+      } else if (field === 'customMode') {
+        next[index] = { ...next[index], customMode: String(value).toUpperCase() }
+      }
+
+      const totalAmount = next.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+      const validPayments = next.map(p => ({
+        mode: p.mode === 'CUSTOM' ? (p.customMode?.trim().toUpperCase() || 'CUSTOM') : p.mode,
+        amount: Number(p.amount) || 0,
+      }))
+      const isHybrid = validPayments.length > 1
+      const effectiveMode = isHybrid ? 'HYBRID' : (validPayments[0]?.mode || 'NO_PAYMENT')
+
+      patch({
+        modeOfPayment: effectiveMode,
+        installationCharges: totalAmount,
+        paymentBreakdown: validPayments,
+      })
+
+      return next
+    })
+  }
+
+  const handleAddPaymentRow = () => {
+    setEditPayments(prev => {
+      const next = [...prev, { mode: 'CASH', amount: 0, customMode: '' }]
+      const totalAmount = next.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+      const validPayments = next.map(p => ({
+        mode: p.mode === 'CUSTOM' ? (p.customMode?.trim().toUpperCase() || 'CUSTOM') : p.mode,
+        amount: Number(p.amount) || 0,
+      }))
+      patch({
+        modeOfPayment: 'HYBRID',
+        installationCharges: totalAmount,
+        paymentBreakdown: validPayments,
+      })
+      return next
+    })
+  }
+
+  const handleRemovePaymentRow = (index: number) => {
+    setEditPayments(prev => {
+      if (prev.length <= 1) return prev
+      const next = prev.filter((_, i) => i !== index)
+      const totalAmount = next.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+      const validPayments = next.map(p => ({
+        mode: p.mode === 'CUSTOM' ? (p.customMode?.trim().toUpperCase() || 'CUSTOM') : p.mode,
+        amount: Number(p.amount) || 0,
+      }))
+      const isHybrid = validPayments.length > 1
+      const effectiveMode = isHybrid ? 'HYBRID' : (validPayments[0]?.mode || 'NO_PAYMENT')
+
+      patch({
+        modeOfPayment: effectiveMode,
+        installationCharges: totalAmount,
+        paymentBreakdown: validPayments,
+      })
+      return next
+    })
+  }
 
   return (
     <>
@@ -652,86 +769,55 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
             </div>
           </div>
 
-          {/* 6. Remarks */}
-          <div>
-            <ESHead step={6} icon={<MessageSquare className="w-3.5 h-3.5" />} title="Remarks" subtitle="Notes or special instructions" border={border} />
-            {isFieldSurface && (
-              <EField label="Remarks / Update" className="mb-3">
-                <textarea
-                  value={draft.remarks}
-                  onChange={(e) => patch({ remarks: e.target.value.toUpperCase() })}
-                  rows={2}
-                  className={`${relayInput} resize-none uppercase`}
-                  style={{ ...inputStyle, textTransform: 'uppercase' }}
-                />
-              </EField>
-            )}
-            <EField label={isFieldSurface ? 'Add New Remark (appends to history)' : 'Add New Remark / Update'}>
-              <textarea
-                value={draft.remarksUpdate}
-                onChange={(e) => patch({ remarksUpdate: e.target.value.toUpperCase() })}
-                rows={4}
-                placeholder="Type a new update (e.g. FOR CLEANING — send names for work permit). Saved remarks appear in Update History and this field clears."
-                className={`${relayInput} resize-none uppercase`}
-                style={{ ...inputStyle, textTransform: 'uppercase' }}
-              />
-            </EField>
-          </div>
-
+          {/* 4. Ticket Info / Control No */}
           {isFieldSurface && (
             <div>
               <ESHead icon={<Info className="w-3.5 h-3.5" />} title="Ticket Info" border={border} />
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 sm:gap-4">
+              <div className="grid grid-cols-1 gap-3.5 sm:gap-4">
                 <EField label="Control No. / SI (Aircon)">
                   <input type="text" value={draft.controlNumber} onChange={(e) => patch({ controlNumber: e.target.value })} className={relayInput} style={inputStyle} placeholder="Aircon papers / SI" />
-                </EField>
-                <EField label="Mode of Payment">
-                  <select
-                    value={draft.modeOfPayment || 'NO_PAYMENT'}
-                    onChange={(e) => {
-                      const v = e.target.value
-                      patch({
-                        modeOfPayment: v,
-                        installationCharges: (v === 'NO_PAYMENT' || v === 'FREE' || v === 'FREE INSTALL') ? 0 : draft.installationCharges,
-                      })
-                    }}
-                    className={relayInput}
-                    style={inputStyle}
-                  >
-                    <option value="NO_PAYMENT">NO PAYMENT</option>
-                    <option value="CASH">CASH</option>
-                    <option value="BANK TRANSFER">BANK TRANSFER</option>
-                    <option value="GCASH">GCASH</option>
-                    <option value="CHEQUE">CHEQUE</option>
-                    <option value="FOR COLLECTION">FOR COLLECTION</option>
-                    <option value="FREE INSTALL">FREE INSTALL</option>
-                  </select>
-                </EField>
-                <EField label="Payment Amount (₱)">
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={draft.modeOfPayment === 'NO_PAYMENT' || !draft.modeOfPayment ? '' : (draft.installationCharges ?? '')}
-                    disabled={!draft.modeOfPayment || draft.modeOfPayment === 'NO_PAYMENT' || draft.modeOfPayment === 'FREE' || draft.modeOfPayment === 'FREE INSTALL'}
-                    onChange={(e) => patch({ installationCharges: e.target.value ? Number(e.target.value) : 0 })}
-                    className={relayInput}
-                    style={inputStyle}
-                  />
                 </EField>
               </div>
             </div>
           )}
 
+          {/* 5. Dispatch */}
           {isFieldSurface && (
             <div>
-              <ESHead icon={<Truck className="w-3.5 h-3.5" />} title="Dispatch" border={border} />
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5 sm:gap-4">
+              <ESHead icon={<Truck className="w-3.5 h-3.5" />} title="Dispatch" subtitle="Technician, driver & vehicle assignment" border={border} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 sm:gap-4">
+                <EField label={isTaguigServices ? 'Technician' : 'Installer / Technician'}>
+                  {installerSelectOptions.length > 0 ? (
+                    <select
+                      value={draft.installerName}
+                      onChange={(e) => patch({ installerName: e.target.value })}
+                      className={relayInput}
+                      style={{ ...inputStyle, fontFamily: 'inherit' }}
+                    >
+                      <option value="">
+                        {isTaguigServices ? 'Select technician…' : 'Select installer…'}
+                      </option>
+                      {installerSelectOptions.map((t) => (
+                        <option key={t.id} value={t.name}>{t.label || t.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={draft.installerName}
+                      placeholder="Installer name"
+                      onChange={(e) => patch({ installerName: e.target.value })}
+                      className={relayInput}
+                      style={inputStyle}
+                    />
+                  )}
+                </EField>
                 <EField label="Driver">
                   <input
                     type="text"
                     value={draft.driverName}
                     list="unified-ticket-driver-roster"
+                    placeholder={driverRoster.length ? 'Select or type driver…' : 'Driver name'}
                     onChange={(e) => patch({ driverName: e.target.value })}
                     className={relayInput}
                     style={inputStyle}
@@ -747,22 +833,129 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                     onChange={(e) => patch({ serviceDriver: e.target.value })}
                     className={relayInput}
                     style={inputStyle}
-                    placeholder="e.g. T2"
+                    placeholder="e.g. T2, FB19"
                   />
                 </EField>
-                <EField label={isTaguigServices ? 'Technician' : 'Installer / Technician'}>
-                  <input
-                    type="text"
-                    value={draft.installerName}
-                    list="unified-ticket-installer-roster"
-                    onChange={(e) => patch({ installerName: e.target.value })}
-                    className={relayInput}
-                    style={inputStyle}
-                  />
-                  <datalist id="unified-ticket-installer-roster">
-                    {installerRoster.map((name) => <option key={name} value={name} />)}
-                  </datalist>
-                </EField>
+              </div>
+            </div>
+          )}
+
+          {/* 6. Remarks */}
+          <div>
+            <ESHead step={6} icon={<MessageSquare className="w-3.5 h-3.5" />} title="Remarks" subtitle="Notes or special instructions" border={border} />
+            {isFieldSurface && (
+              <EField label="Remarks / Update" className="mb-3">
+                <textarea
+                  value={draft.remarks || ''}
+                  readOnly
+                  rows={2}
+                  className={`${relayInput} resize-none uppercase cursor-not-allowed select-text`}
+                  style={{ ...inputStyle, textTransform: 'uppercase', opacity: 0.85, backgroundColor: isLight ? '#f8fafc' : 'rgba(255,255,255,0.04)' }}
+                />
+              </EField>
+            )}
+            <EField label={isFieldSurface ? 'Add New Remark (appends to history)' : 'Add New Remark / Update'}>
+              <textarea
+                value={draft.remarksUpdate}
+                onChange={(e) => patch({ remarksUpdate: e.target.value.toUpperCase() })}
+                rows={3}
+                placeholder="Type a new update (e.g. FOR CLEANING — send names for work permit). Saved remarks appear in Update History and this field clears."
+                className={`${relayInput} resize-none uppercase`}
+                style={{ ...inputStyle, textTransform: 'uppercase' }}
+              />
+            </EField>
+          </div>
+
+          {/* 7. Payment Details */}
+          {isFieldSurface && (
+            <div>
+              <div className="flex items-center justify-between border-b pb-2 mb-3" style={{ borderColor: border }}>
+                <div className="flex items-center gap-2">
+                  <CreditCard className="w-3.5 h-3.5 text-emerald-500" />
+                  <h3 className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>Payment Details</h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  {editPayments.length > 0 && editPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0) > 0 && (
+                    <span className="text-xs font-black px-2.5 py-0.5 rounded-lg border" style={{ backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.3)', color: '#10B981' }}>
+                      Total: ₱{editPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0).toLocaleString()}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleAddPaymentRow}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-xs transition-all active:scale-95"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Add Payment</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {editPayments.map((p, idx) => (
+                  <div key={`p-${idx}`} className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end p-2.5 rounded-xl border" style={{ borderColor: border, backgroundColor: isLight ? 'rgba(248,250,252,0.6)' : 'rgba(255,255,255,0.02)' }}>
+                    <div className={p.mode === 'CUSTOM' ? 'sm:col-span-4' : 'sm:col-span-6'}>
+                      <EField label={idx === 0 ? 'Mode of Payment' : `Payment #${idx + 1} Mode`}>
+                        <select
+                          value={p.mode}
+                          onChange={(e) => handlePaymentChange(idx, 'mode', e.target.value)}
+                          className={relayInput}
+                          style={inputStyle}
+                        >
+                          <option value="NO_PAYMENT">NO PAYMENT / FREE</option>
+                          <option value="CASH">CASH</option>
+                          <option value="GCASH">GCASH</option>
+                          <option value="BANK TRANSFER">BANK TRANSFER</option>
+                          <option value="CHEQUE">CHEQUE</option>
+                          <option value="FOR COLLECTION">FOR COLLECTION</option>
+                          <option value="FREE INSTALL">FREE INSTALL</option>
+                          <option value="CUSTOM">+ CUSTOM PAYMENT TYPE...</option>
+                        </select>
+                      </EField>
+                    </div>
+                    {p.mode === 'CUSTOM' && (
+                      <div className="sm:col-span-3">
+                        <EField label="Custom Type Name">
+                          <input
+                            type="text"
+                            value={p.customMode || ''}
+                            placeholder="e.g. PAYMAYA, VOUCHER"
+                            onChange={(e) => handlePaymentChange(idx, 'customMode', e.target.value.toUpperCase())}
+                            className={relayInput}
+                            style={inputStyle}
+                          />
+                        </EField>
+                      </div>
+                    )}
+                    <div className={p.mode === 'CUSTOM' ? 'sm:col-span-4' : 'sm:col-span-5'}>
+                      <EField label="Amount (₱)">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="0.00"
+                          value={p.mode === 'NO_PAYMENT' || p.mode === 'FREE' || p.mode === 'FREE INSTALL' ? '' : (p.amount || '')}
+                          disabled={p.mode === 'NO_PAYMENT' || p.mode === 'FREE' || p.mode === 'FREE INSTALL'}
+                          onChange={(e) => handlePaymentChange(idx, 'amount', e.target.value)}
+                          className={relayInput}
+                          style={inputStyle}
+                        />
+                      </EField>
+                    </div>
+                    <div className="sm:col-span-1 flex items-center justify-end pb-1">
+                      {editPayments.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemovePaymentRow(idx)}
+                          className="p-2 rounded-lg text-red-500 hover:bg-red-500/10 transition-colors"
+                          title="Remove payment"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}

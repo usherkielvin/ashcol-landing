@@ -419,20 +419,51 @@ export function branchScopesMatch(
 export type BranchStaffOption = {
   id: string
   name: string
+  nickname?: string | null
   branchId?: string | null
   email?: string | null
   role?: string | null
   jobTitle?: string | null
   phone?: string | null
+  isActive?: boolean | string | number | null
+  active?: boolean | string | number | null
+  is_active?: boolean | string | number | null
+  enabled?: boolean | string | number | null
+  status?: string | null
+}
+
+export function isAccountActive(user?: {
+  isActive?: boolean | string | number | null
+  active?: boolean | string | number | null
+  is_active?: boolean | string | number | null
+  enabled?: boolean | string | number | null
+  status?: string | null
+} | null): boolean {
+  if (!user) return false
+  if (user.isActive === false || user.isActive === 'false' || user.isActive === 0) return false
+  if (user.active === false || user.active === 'false' || user.active === 0) return false
+  if (user.is_active === false || user.is_active === 'false' || user.is_active === 0) return false
+  if (user.enabled === false || user.enabled === 'false' || user.enabled === 0) return false
+  if (typeof user.status === 'string') {
+    const s = user.status.trim().toUpperCase()
+    if (s === 'INACTIVE' || s === 'DEACTIVATED' || s === 'DISABLED' || s === 'SUSPENDED') return false
+  }
+  return true
 }
 
 const FIELD_CREW_TITLE_PATTERN = /\b(TECHNICIAN|INSTALLER)\b/
 
-/** Staff who may appear as negotiator — any branch employee (incl. OIC/management), excluding field crew. */
+/** Staff who may appear as negotiator — any active branch employee (incl. OIC/management), excluding field crew. */
 export function isNegotiatorCandidate(user: {
   role?: string | null
   jobTitle?: string | null
+  isActive?: boolean | string | number | null
+  active?: boolean | string | number | null
+  is_active?: boolean | string | number | null
+  enabled?: boolean | string | number | null
+  status?: string | null
 }): boolean {
+  if (!isAccountActive(user)) return false
   const roleLower = (user.role || '').toLowerCase().replace(/\s+/g, '_')
   if (roleLower === 'customer') return false
   // Only exclude system-wide admin accounts — they aren't tied to a single branch.
@@ -453,43 +484,18 @@ export function filterBranchNegotiators(
   branchSource?: string | null,
   options?: { strict?: boolean },
 ): BranchStaffOption[] {
-  const eligible = users.filter(isNegotiatorCandidate)
+  const eligible = users
+    .filter(isAccountActive)
+    .filter(isNegotiatorCandidate)
   if (!branchSource || branchSource === 'ALL_BRANCHES' || branchSource === 'ALL') {
     if (options?.strict) return []
     return eligible.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
   }
-  const matched = eligible.filter((u) => {
-    const isGlobal = !u.branchId?.trim() ||
-      u.branchId.toUpperCase() === 'ALL' ||
-      u.branchId.toUpperCase() === 'ALL_BRANCHES' ||
-      u.role?.toLowerCase() === 'admin' ||
-      u.role?.toLowerCase() === 'administrator'
-    if (isGlobal) return true
-
-    const normalizedSource = branchSource.toUpperCase()
-    const normalizedUserBranch = (u.branchId || '').toUpperCase()
-
-    const isSourceTaguigSales = normalizedSource === 'BR-TAGUIG-SALES'
-      || (normalizedSource.includes('TAGUIG') && !normalizedSource.includes('SERVICE'))
-    const isUserTaguigServices = normalizedUserBranch === 'BR-TAGUIG-SERVICES'
-      || (normalizedUserBranch.includes('TAGUIG') && normalizedUserBranch.includes('SERVICE'))
-
-    if (isSourceTaguigSales && isUserTaguigServices) {
-      return true
-    }
-
-    return branchScopesMatch(u.branchId, branchSource, u.email)
-  })
-  if (matched.length > 0) {
-    return matched.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-  }
-  if (options?.strict) {
-    return []
-  }
-  // Fallback: staff without branch on file still selectable for active branch
-  const unassigned = eligible.filter((u) => !u.branchId?.trim())
-  return (unassigned.length > 0 ? unassigned : eligible)
-    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  // Strict branch match only — a staff member with no branch on file, or on a different
+  // branch (including the Taguig Sales/Services split), does not show up as a negotiator
+  // option until their profile has the matching branch assigned.
+  const matched = eligible.filter((u) => branchScopesMatch(u.branchId, branchSource, u.email))
+  return matched.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
 }
 
 /** Ensure the signed-in negotiator can select themselves on branch schedules. */

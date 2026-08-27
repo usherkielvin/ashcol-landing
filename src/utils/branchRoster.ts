@@ -41,6 +41,16 @@ export function isSalesCoordinatorEmployee(emp: {
   return title.includes('sales coordinator') || role.includes('sales coordinator') || title.includes('coordinator')
 }
 
+/** An employee whose job title or role contains 'coordinator' — the tag used for negotiator accounts. */
+export function isCoordinatorEmployee(emp: {
+  jobTitle?: string | null
+  role?: string | null
+}): boolean {
+  const title = (emp.jobTitle || '').toLowerCase()
+  const role = (emp.role || '').toLowerCase()
+  return title.includes('coordinator') || role.includes('coordinator')
+}
+
 export function isDriverEmployee(emp: { jobTitle?: string | null }): boolean {
   return (emp.jobTitle || '').toLowerCase().includes('driver')
 }
@@ -100,6 +110,8 @@ export function deriveRosterFromEmployees(
   const drivers: string[] = []
   const installers: string[] = []
   for (const emp of employees) {
+    if (emp.isActive === false || emp.active === false) continue
+    if (typeof emp.status === 'string' && emp.status.toUpperCase() === 'INACTIVE') continue
     if (!employeeMatchesBranchScope(emp, branchId)) continue
     if (isSalesCoordinatorEmployee(emp)) continue
     const name = (emp.name || '').trim()
@@ -114,6 +126,23 @@ export function deriveRosterFromEmployees(
     }
   }
   return { drivers, installers }
+}
+
+/** Coordinator/negotiator names scoped to a branch — for lineup negotiator dropdowns. */
+export function deriveCoordinatorsFromEmployees(
+  employees: BranchStaffOption[],
+  branchId: string,
+): string[] {
+  const names: string[] = []
+  for (const emp of employees) {
+    if (emp.isActive === false || emp.active === false) continue
+    if (typeof emp.status === 'string' && emp.status.toUpperCase() === 'INACTIVE') continue
+    if (!employeeMatchesBranchScope(emp, branchId)) continue
+    if (!isCoordinatorEmployee(emp)) continue
+    const name = (emp.name || '').trim()
+    if (name) names.push(name)
+  }
+  return mergeRosterNames(names)
 }
 
 export function buildBranchRoster(

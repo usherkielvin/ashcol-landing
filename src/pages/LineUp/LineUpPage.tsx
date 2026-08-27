@@ -29,6 +29,12 @@ import {
   fetchCachedEmployees,
 } from '../../utils/portalDirectoryCache'
 import {
+  deriveRosterFromEmployees,
+  deriveCoordinatorsFromEmployees,
+  type BranchRoster,
+} from '../../utils/branchRoster'
+import type { BranchStaffOption } from '../../utils/api'
+import {
   ticketBelongsOnScheduleDate,
   ticketBelongsOnScheduleBranch,
   getTicketVehicleDisplay,
@@ -292,6 +298,44 @@ export default function LineUpPage() {
     remarks: string[]
   }>({ services: [], drivers: [], installers: [], negotiators: [], routes: [], remarks: [] })
 
+  // ── Branch staff roster (real employee accounts) — powers strict Installer/Negotiator dropdowns ──
+  const [staffEmployees, setStaffEmployees] = useState<BranchStaffOption[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    if (!token) return
+    fetchCachedEmployees(token)
+      .then(list => {
+        if (cancelled) return
+        setStaffEmployees(
+          (list as Array<Record<string, unknown>>).map(u => ({
+            id: String(u.id || ''),
+            name: String(u.name || ''),
+            branchId: u.branchId ? String(u.branchId) : (u.branch_id ? String(u.branch_id) : null),
+            email: u.email ? String(u.email) : null,
+            role: u.role ? String(u.role) : null,
+            jobTitle: u.jobTitle ? String(u.jobTitle) : (u.job_title ? String(u.job_title) : null),
+            isActive: typeof u.isActive === 'boolean' ? u.isActive : undefined,
+            active: typeof u.active === 'boolean' ? u.active : undefined,
+            status: u.status ? String(u.status) : null,
+          }))
+        )
+      })
+      .catch(() => { if (!cancelled) setStaffEmployees([]) })
+    return () => { cancelled = true }
+  }, [])
+
+  const branchStaffRoster: BranchRoster = useMemo(
+    () => deriveRosterFromEmployees(staffEmployees, branchId || ''),
+    [staffEmployees, branchId],
+  )
+
+  const branchCoordinatorOptions = useMemo(
+    () => deriveCoordinatorsFromEmployees(staffEmployees, branchId || ''),
+    [staffEmployees, branchId],
+  )
+
   const finalVehicleOptions = useMemo(() => {
     const dynamicNames = vehicles.map(v => v.name.toUpperCase())
     return [...new Set([...suggestions.services.map(s => s.toUpperCase()), ...dynamicNames, ...VEHICLE_OPTIONS])].sort()
@@ -302,15 +346,17 @@ export default function LineUpPage() {
     [suggestions.drivers]
   )
 
-  const finalInstallerOptions = useMemo(() =>
-    [...new Set([...suggestions.installers.map(i => i.toUpperCase()), ...INSTALLER_OPTIONS])].sort(),
-    [suggestions.installers]
-  )
+  const finalInstallerOptions = useMemo(() => {
+    const rosterNames = branchStaffRoster.installers.map(n => n.toUpperCase())
+    if (rosterNames.length > 0) return [...new Set(rosterNames)].sort()
+    return [...new Set([...suggestions.installers.map(i => i.toUpperCase()), ...INSTALLER_OPTIONS])].sort()
+  }, [branchStaffRoster.installers, suggestions.installers])
 
-  const finalNegotiatorOptions = useMemo(() =>
-    [...new Set([...suggestions.negotiators.map(n => n.toUpperCase()), ...NEGOTIATOR_OPTIONS])].sort(),
-    [suggestions.negotiators]
-  )
+  const finalNegotiatorOptions = useMemo(() => {
+    const rosterNames = branchCoordinatorOptions.map(n => n.toUpperCase())
+    if (rosterNames.length > 0) return [...new Set(rosterNames)].sort()
+    return [...new Set([...suggestions.negotiators.map(n => n.toUpperCase()), ...NEGOTIATOR_OPTIONS])].sort()
+  }, [branchCoordinatorOptions, suggestions.negotiators])
 
   const finalRouteOptions = useMemo(() =>
     [...new Set([...suggestions.routes.map(r => r.toUpperCase()), ...ROUTE_OPTIONS])].sort(),
@@ -587,8 +633,13 @@ export default function LineUpPage() {
     }
   }
 
-  const fetchLineup = useCallback(async (forceAutoSync?: boolean) => {
+  const fetchLineup = useCallback(async (forceAutoSync?: boolean, isPeriodicPoll = false) => {
     const shouldAutoSync = typeof forceAutoSync === 'boolean' ? forceAutoSync : autoSyncSchedule
+
+    // When auto-sync is OFF and this is a background poll, skip entirely.
+    // The user is managing the lineup manually — don't overwrite their edits.
+    if (!shouldAutoSync && isPeriodicPoll) return
+
     const all = lsLoad()
     let filtered = branchId
       ? all.filter(r => r.lineupDate === date && r.branchId === branchId)
@@ -643,7 +694,7 @@ export default function LineUpPage() {
               setRows([])
             }
           } else {
-            // Auto-sync is OFF: keep and display saved server rows directly
+            // Auto-sync is OFF: display saved server rows only (no schedule derivation)
             if (serverRows.length > 0) {
               setRows(serverRows.sort((a, b) => a.sortOrder - b.sortOrder))
             } else {
@@ -678,7 +729,10 @@ export default function LineUpPage() {
 
   useEffect(() => {
     if (!branchId) return
-    const interval = setInterval(() => { void fetchLineup() }, 120_000)
+    // When auto-sync is ON, poll every 2 min with schedule derivation.
+    // When OFF, still poll the server for any saved lineup changes by colleagues,
+    // but pass isPeriodicPoll=true so in-progress manual edits are not disrupted.
+    const interval = setInterval(() => { void fetchLineup(undefined, true) }, 120_000)
     return () => clearInterval(interval)
   }, [fetchLineup, branchId])
 

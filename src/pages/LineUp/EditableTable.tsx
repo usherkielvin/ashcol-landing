@@ -189,7 +189,8 @@ export const EditableTable: React.FC<EditableTableProps> = ({
     field: keyof LineUpRow,
     options: string[],
     style: React.CSSProperties,
-    placeholder = 'Click to edit...'
+    placeholder = 'Click to edit...',
+    selectOnly = false
   ) => {
     const isEditing = editingCell?.rowId === row.id && editingCell?.field === field
     const value = (row[field] as string) || ''
@@ -262,6 +263,41 @@ export const EditableTable: React.FC<EditableTableProps> = ({
 
     if (isEditing) {
       const datalistId = `list-${field}-${row.id}`
+      if (selectOnly) {
+        return (
+          <td
+            style={{
+              border: '1px solid #000000',
+              padding: '2px 4px',
+              ...style,
+              boxShadow: 'inset 0 0 0 2px #10B981',
+              backgroundColor: isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.05)',
+            }}
+          >
+            <select
+              value={tempValue}
+              autoFocus
+              onChange={e => {
+                setTempValue(e.target.value)
+                void saveCell(row, field, e.target.value)
+              }}
+              onBlur={handleBlur}
+              className="w-full px-2 py-1.5 rounded border-none bg-transparent outline-none"
+              style={{
+                color: textPrimary,
+                textAlign: style.textAlign,
+                fontWeight: style.fontWeight,
+                fontSize: style.fontSize,
+              }}
+            >
+              <option value="">{placeholder}</option>
+              {options.map(opt => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          </td>
+        )
+      }
       return (
         <td
           style={{
@@ -515,9 +551,9 @@ export const EditableTable: React.FC<EditableTableProps> = ({
                       {renderEditableTd(row, 'service', finalVehicleOptions, { textAlign: 'center', fontWeight: 950, fontSize: '13px', color: textPrimary })}
                       {renderEditableTd(row, 'driverName', finalDriverOptions, { textAlign: 'center', fontWeight: 900, fontSize: '15px', color: textPrimary })}
                       {renderEditableTd(row, 'driverTime', ['8:00AM', '7:00AM', '6:00AM', '9:00AM'], { textAlign: 'center', fontSize: '11px', color: textPrimary })}
-                      {renderEditableTd(row, 'installerName', finalInstallerOptions, { textAlign: 'center', fontWeight: 900, fontSize: '15px', color: textPrimary })}
+                      {renderEditableTd(row, 'installerName', finalInstallerOptions, { textAlign: 'center', fontWeight: 900, fontSize: '15px', color: textPrimary }, 'Select installer...', true)}
                       {renderEditableTd(row, 'installerTime', ['7:00AM', '8:00AM', '6:00AM', '9:00AM'], { textAlign: 'center', fontSize: '11px', color: textPrimary })}
-                      {renderEditableTd(row, 'negotiator', finalNegotiatorOptions, { textAlign: 'center', fontWeight: 900, fontSize: '15px', color: textPrimary })}
+                      {renderEditableTd(row, 'negotiator', finalNegotiatorOptions, { textAlign: 'center', fontWeight: 900, fontSize: '15px', color: textPrimary }, 'Select negotiator...', true)}
                       {renderEditableTd(row, 'route', finalRouteOptions, { fontSize: '12px', color: textPrimary, fontWeight: 600, position: 'relative' }, 'e.g. QC - MANILA')}
                       {renderEditableTd(row, 'remarks', finalRemarksOptions, { fontSize: '12px', color: textPrimary, position: 'relative' }, 'e.g. INSTALL - INSTALL (3 UNITS)')}
                     </tr>

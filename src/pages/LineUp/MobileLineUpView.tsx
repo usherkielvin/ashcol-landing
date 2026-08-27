@@ -107,7 +107,8 @@ export const MobileLineUpView: React.FC<MobileLineUpViewProps> = ({
     label: string,
     icon: React.ReactNode,
     options: string[],
-    full = false
+    full = false,
+    selectOnly = false
   ) => {
     const isEditing = editingCell?.rowId === row.id && editingCell?.field === field
     const value = (row[field] as string) || ''
@@ -128,6 +129,31 @@ export const MobileLineUpView: React.FC<MobileLineUpViewProps> = ({
 
     if (isEditing) {
       const datalistId = `m-list-${field}-${row.id}`
+      if (selectOnly) {
+        return (
+          <div className={`p-3 flex flex-col gap-1 ${full ? 'col-span-2' : ''}`} style={{ backgroundColor: cellBg }}>
+            <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
+              {icon} {label}
+            </div>
+            <select
+              value={tempValue}
+              autoFocus
+              onChange={e => {
+                setTempValue(e.target.value)
+                void saveCell(row, field, e.target.value)
+              }}
+              onBlur={handleBlur}
+              className="w-full px-2 py-1 text-xs font-semibold rounded border outline-none mt-1"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+            >
+              <option value="">Select...</option>
+              {options.map(opt => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          </div>
+        )
+      }
       return (
         <div className={`p-3 flex flex-col gap-1 ${full ? 'col-span-2' : ''}`} style={{ backgroundColor: cellBg }}>
           <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
@@ -486,9 +512,9 @@ export const MobileLineUpView: React.FC<MobileLineUpViewProps> = ({
                       {renderMobileCell(row, 'service', 'Service', <Truck className="w-3 h-3" />, finalVehicleOptions, true)}
                       {renderMobileCell(row, 'driverName', 'Driver', <User className="w-3 h-3" />, finalDriverOptions)}
                       {renderMobileCell(row, 'driverTime', 'Driver in', <Clock className="w-3 h-3" />, ['8:00AM', '7:00AM', '6:00AM', '9:00AM'])}
-                      {renderMobileCell(row, 'installerName', isTaguigServices ? 'Technician' : 'Installer', <User className="w-3 h-3" />, finalInstallerOptions)}
+                      {renderMobileCell(row, 'installerName', isTaguigServices ? 'Technician' : 'Installer', <User className="w-3 h-3" />, finalInstallerOptions, false, true)}
                       {renderMobileCell(row, 'installerTime', isTaguigServices ? 'Technician in' : 'Installer in', <Clock className="w-3 h-3" />, ['7:00AM', '8:00AM', '6:00AM', '9:00AM'])}
-                      {renderMobileCell(row, 'negotiator', 'Negotiator', <User className="w-3 h-3" />, finalNegotiatorOptions, true)}
+                      {renderMobileCell(row, 'negotiator', 'Negotiator', <User className="w-3 h-3" />, finalNegotiatorOptions, true, true)}
                       {renderMobileCell(row, 'route', 'Route', <MapPin className="w-3 h-3" />, finalRouteOptions, true)}
                       {renderMobileCell(row, 'remarks', 'Remarks', <MessageSquare className="w-3 h-3" />, finalRemarksOptions, true)}
                     </div>

@@ -474,8 +474,9 @@ export default function DashboardLayout() {
   const hoverBg     = isLight ? '#f1f5f9'              : '#0f1e36'
   const inputBorder = isLight ? '#cbd5e1'              : '#1e3254'
 
-  const currentPage = navLinks.find(l => location.pathname === l.path)?.name
-    ?? (location.pathname === '/my-tickets' ? 'My Tickets'
+  const currentPage = navLinks.find(l => location.pathname === l.path || (l.path !== '/' && location.pathname.startsWith(l.path + '/')))?.name
+    ?? (location.pathname.startsWith('/employees') ? 'Members'
+      : location.pathname === '/my-tickets' ? 'My Tickets'
       : location.pathname.startsWith('/messages') ? 'Messages'
       : 'Dashboard')
   const navGroups = buildNavGroups(navLinks)
@@ -503,8 +504,12 @@ export default function DashboardLayout() {
     setOpenAccordion(null)
   }, [location.pathname, navGroups])
 
-  // Auto collapse on table-heavy tabs
+  // Auto collapse on table-heavy tabs and scroll to top on route change
+  const mainContentRef = useRef<HTMLElement>(null)
   useEffect(() => {
+    if (mainContentRef.current) {
+      mainContentRef.current.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior })
+    }
     const isTablePage = ['/relays', '/my-tickets', '/schedules', '/service-report', '/search', '/lineup', '/ddrm'].some(p => 
       location.pathname === p || location.pathname.startsWith(p + '/')
     )
@@ -833,7 +838,7 @@ export default function DashboardLayout() {
                   <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
                     Search
                   </h1>
-                ) : currentPage === 'Relays' || currentPage === 'Employees' || currentPage === 'Members' || currentPage === 'Registration' || currentPage === 'Request Forms' || location.pathname === '/operations-forms' ? (
+                ) : currentPage === 'Relays' || currentPage === 'Employees' || currentPage === 'Members' || currentPage === 'Registration' || currentPage === 'Request Forms' || currentPage === 'Payroll' || location.pathname === '/payroll' || location.pathname === '/operations-forms' ? (
                   <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
                     {currentPage}
                   </h1>
@@ -1045,15 +1050,18 @@ export default function DashboardLayout() {
         </header>
 
         {/* ── Page Content ───────────────────────────────── */}
-        <main className={
-          currentPage === 'DDRM'
-            ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-2 md:p-3"
-            : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search')
-              ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
-              : (currentPage === 'Request Forms' || currentPage === 'Operations Forms')
-                ? "flex-1 overflow-y-auto px-6 py-6 relative"
-                : "flex-1 overflow-y-auto p-5 md:p-8 relative"
-        }>
+        <main
+          ref={mainContentRef}
+          className={
+            currentPage === 'DDRM'
+              ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-2 md:p-3"
+              : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search')
+                ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
+                : (currentPage === 'Request Forms' || currentPage === 'Operations Forms')
+                  ? "flex-1 overflow-y-auto px-6 py-6 relative"
+                  : "flex-1 overflow-y-auto p-5 md:p-8 relative"
+          }
+        >
           {/* Subtle ambient gradient */}
           {!isLight && (
             <div className="pointer-events-none fixed top-0 right-0 w-[500px] h-[500px] opacity-[0.06]"

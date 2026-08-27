@@ -3,14 +3,14 @@ import { useSearchParams, useNavigate } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, X, Edit3, AlertTriangle, CalendarDays,
-  Eye, Loader2, Pencil, Moon, Sun, Trash2,
+  Eye, Loader2, Pencil, Moon, Sun,
   ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Maximize2,
   UsersRound, ChevronDown, SlidersHorizontal, CalendarRange,
   TrendingUp, Receipt, Radio, Download,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, isNegotiatorCandidate, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, isPortalAdmin, isCoordinatorOrOicUser, getActivePortalBranchId, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, DEALERS_UPDATED_EVENT, notifyDealersUpdated, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, isNegotiatorCandidate, isAccountActive, isSameBaseBranch, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, isPortalAdmin, isCoordinatorOrOicUser, getActivePortalBranchId, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, DEALERS_UPDATED_EVENT, notifyDealersUpdated, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import {
   cacheTicketsByNumber,
   cacheTicketByNumber,
@@ -30,6 +30,8 @@ import {
   BRANCH_ROSTER_UPDATED_EVENT,
   buildBranchRoster,
   fetchAllBranchRosters,
+  isCoordinatorEmployee,
+  isInstallerEmployee,
   type BranchRoster,
 } from '../utils/branchRoster'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
@@ -68,7 +70,7 @@ import {
   buildReschedulePatchBody, buildVehicleTripLabels, compareTicketsByColumn, computeSafePopoverPosition,
   currentWeekMondayDateKey, defaultSortForSchedulesView, enrichCompletePatchBody, filterOverviewSearchResults,
   fetchTicketById, findTicketInListByRef, fmtPhone, formatAddress, formatDateKeyLabel, formatDateToKey,
-  formatDisplayDate, formatGhostRemarks, formatMonthFilterLabel, formatNegotiatorLabel, formatPaymentAmount,
+  formatDisplayDate, formatGhostRemarks, formatMonthFilterLabel, formatNegotiatorLabel, formatInstallerLabel, formatPaymentAmount,
   formatPaymentBreakdownText, formatRelayTicketTypeShort, formatServiceDriver, formatSimpleDateShort,
   getArchivedScheduleDate, getBranchDisplayName, getCellRawValue, getContinuationDates, getCustomerDisplayName,
   getEmptyRequiredColumnsForClose, getF, getFinalDateKey, getInstalledDateKey,
@@ -983,6 +985,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       ? branchEmployees.find(emp => (emp.email || '').trim().toLowerCase() === userEmail)
       : undefined
     if (directoryMatch) {
+      if (!isAccountActive(directoryMatch)) {
+        return null
+      }
       return {
         id: directoryMatch.id,
         name: directoryMatch.name || user.name,
@@ -990,6 +995,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         email: directoryMatch.email || user.email,
         role: directoryMatch.role || user.role,
         jobTitle: directoryMatch.jobTitle || user.jobTitle,
+        isActive: true,
       }
     }
     return {
@@ -999,10 +1005,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       email: user.email,
       role: user.role,
       jobTitle: user.jobTitle,
+      isActive: true,
     }
   }, [user?.id, user?.name, user?.branchId, user?.email, user?.role, user?.jobTitle, branchEmployees])
 
-  /** Negotiators assigned to a branch only (no cross-branch / global fallback). */
+  /** Negotiators assigned to a branch only — limited to active, coordinator-tagged employees. */
   const negotiatorsForBranch = useCallback((branchId?: string | null) => {
     const filterBranch =
       resolveSchedulesNegotiatorBranch(branchId)
@@ -1011,7 +1018,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       || null
     const isAll = !branchId || branchId === 'ALL' || branchId === 'ALL_BRANCHES'
     const matched = branchEmployees
+      .filter(isAccountActive)
       .filter(isNegotiatorCandidate)
+      // Only active coordinators appear in the negotiator/assigned-to dropdown.
+      // This prevents managers, OIC staff, technicians, and deactivated accounts from appearing.
+      .filter(isCoordinatorEmployee)
       .filter(u => {
         if (isAll) return true
         const bid = (u.branchId || '').trim()
@@ -1091,6 +1102,52 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const editModalRoster = useMemo(
     () => rosterForBranch(editForm.branchId || activeBranchId),
     [rosterForBranch, editForm.branchId, activeBranchId],
+  )
+
+  // ── Technician account dropdown (Sept 1 2026+) ─────────────────
+  // Replaces the free-text installer input with a proper select populated
+  // from branchEmployees filtered to technician / installer job titles.
+  // Note: TECHNICIAN_DROPDOWN_ACTIVE is a stable constant (computed once at module
+  // render time, never changes per session), so it is intentionally excluded from deps.
+  const TECHNICIAN_DROPDOWN_ACTIVE = new Date() >= new Date('2026-09-01T00:00:00')
+  const TECHNICIAN_DROPDOWN_START_DATE = '2026-09-01'
+  // A ticket scheduled on/after the rollout date gets the strict dropdown even before
+  // TECHNICIAN_DROPDOWN_ACTIVE flips globally — e.g. a job booked today for Sept 1.
+  const isTechnicianDropdownActiveForTicket = useCallback((ticket: Ticket) => {
+    if (TECHNICIAN_DROPDOWN_ACTIVE) return true
+    const scheduleDate = getFinalDateKey(ticket) || getPreferredDateKey(ticket)
+    return Boolean(scheduleDate && scheduleDate >= TECHNICIAN_DROPDOWN_START_DATE)
+  }, [TECHNICIAN_DROPDOWN_ACTIVE]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const techniciansForBranch = useCallback((branchId?: string | null) => {
+    const filterBranch =
+      resolveSchedulesNegotiatorBranch(branchId)
+      || resolvePortalWriteBranchId(user?.branchId, user?.email, user?.jobTitle)
+      || user?.branchId
+      || null
+    return branchEmployees
+      .filter(isAccountActive)
+      .filter(emp => isInstallerEmployee(emp))
+      .filter(emp => {
+        const bid = (emp.branchId || '').trim()
+        if (!bid) return false
+        return filterBranch ? (isBranchMatch(bid, filterBranch) || isSameBaseBranch(bid, filterBranch)) : true
+      })
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      .map(emp => {
+        const label = formatInstallerLabel(emp)
+        return { id: emp.id, name: (emp.name || '').trim(), label, branchId: emp.branchId }
+      })
+  }, [branchEmployees, resolveSchedulesNegotiatorBranch, isBranchMatch, user?.branchId, user?.email, user?.jobTitle]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const addModalTechnicians = useMemo(
+    () => techniciansForBranch(activeBranchId),
+    [techniciansForBranch, activeBranchId],
+  )
+
+  const editModalTechnicians = useMemo(
+    () => techniciansForBranch(editForm.branchId || activeBranchId || editTicket?.branchId),
+    [techniciansForBranch, editForm.branchId, activeBranchId, editTicket?.branchId],
   )
 
   // Drop negotiator if branch filter no longer includes them
@@ -2162,6 +2219,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           body.installationCharges = Number(paymentCharges)
         }
         if (paymentMode) body.modeOfPayment = paymentMode
+        if (Array.isArray((activeForm as any).paymentBreakdown) && (activeForm as any).paymentBreakdown.length > 0) {
+          acMetaExtras.paymentBreakdown = (activeForm as any).paymentBreakdown.filter((p: any) => p.amount > 0 || (p.mode && p.mode !== 'NO_PAYMENT'))
+        }
       }
 
       if (finalDateKey) {
@@ -3571,14 +3631,16 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     const loadEmployees = (force = false) => {
       fetchCachedEmployees(authToken, undefined, { force })
         .then((list) => {
-          const mapped: BranchStaffOption[] = list.map((u) => ({
+          const mapped: BranchStaffOption[] = list.map((u: any) => ({
             id: String(u.id || ''),
             name: String(u.name || ''),
+            nickname: (u.nickname || '') as string | undefined,
             branchId: (u.branchId || u.branch_id) as string | undefined,
             email: u.email as string | undefined,
             role: (u.role as string | undefined),
             jobTitle: (u.jobTitle || u.job_title) as string | undefined,
             phone: u.phone as string | undefined,
+            isActive: isAccountActive(u),
           })).filter((u) => u.id && u.name)
           setBranchEmployees(mapped)
         })
@@ -4007,6 +4069,23 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     return map
   }, [visible, tickets, dateFilter])
 
+  // Schedule table display only — shows the installer's nickname if set on their account,
+  // otherwise just their first name. The full name stays intact everywhere else (edit
+  // seeding, payroll matching, lineup grouping) so nothing downstream loses precision.
+  function formatInstallerShortDisplay(fullName: string): string {
+    const trimmed = (fullName || '').trim()
+    if (!trimmed) return ''
+    // Multiple installers on one vehicle are joined "MANNY GONZALES / ROMAR CRUZ" —
+    // shorten each name separately so both survive, not just the first.
+    if (trimmed.includes('/')) {
+      return trimmed.split('/').map(part => formatInstallerShortDisplay(part.trim())).filter(Boolean).join(' / ')
+    }
+    const matched = branchEmployees.find(emp => (emp.name || '').trim().toLowerCase() === trimmed.toLowerCase())
+    const nick = (matched?.nickname || '').trim()
+    if (nick) return nick.toUpperCase()
+    return trimmed.split(/\s+/)[0]?.toUpperCase() || trimmed.toUpperCase()
+  }
+
   // ─────────────────────────────────────────────────────────────
   function getCellDisplay(ticket: Ticket, colLabel: string): string {
     const raw = (() => {
@@ -4025,7 +4104,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         case 'PAYMENT': return getSchedulePaymentDisplay(ticket, dateFilter, getScheduleGhostKind(ticket, dateFilter))
         case 'MOP': return getPaymentMode(ticket)
         case 'COMMIT': return getTicketCommitDisplay(ticket)
-        case 'INSTALLER': return getInstallerDisplay(ticket, branchEmployees, activeBranchId)
+        case 'INSTALLER': return formatInstallerShortDisplay(getInstallerDisplay(ticket, branchEmployees, activeBranchId))
         case 'NEGOTIATOR': return getTicketNegotiatorName(ticket, branchEmployees)
         case 'NOTE': return ticket.note || ''
         case 'SERVICE': return isMyTickets ? formatRelayTicketTypeShort(ticket) : getTicketDriverDisplay(ticket)
@@ -5180,19 +5259,92 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         >
           <option value="">{EMPTY_CELL} Select negotiator {EMPTY_CELL}</option>
           {options.map(emp => (
-            <option key={emp.id} value={emp.name}>{formatNegotiatorLabel(emp)}</option>
+            // Display first name only — full name is stored as value for data integrity
+            <option key={emp.id} value={emp.name}>{formatNegotiatorLabel(emp, false, true)}</option>
           ))}
           {current && !matchedOption && !options.some(emp => emp.name === current) && (
-            <option value={current}>{current}</option>
+            <option value={current}>{formatNegotiatorLabel({ name: current, branchId: null }, false, true)}</option>
           )}
         </select>,
         colLabel,
       )
     }
 
-    if (colLabel === 'INSTALLER' || (colLabel === 'SERVICE' && !isMyTickets) || (colLabel === 'VEHICLE' && !isMyTickets)) {
+    if (colLabel === 'INSTALLER') {
+      // Strict dropdown once this ticket's own schedule date reaches the technician-account
+      // rollout — resolves real branchEmployees accounts instead of typing freely. Tickets
+      // scheduled before the rollout date still fall back to the free-text roster input below.
+      const dropdownActiveForTicket = isTechnicianDropdownActiveForTicket(ticket)
+      if (dropdownActiveForTicket) {
+        const ticketBranchId = resolveTicketScheduleBranchId(ticket, installerLineupIndex, driverOnlyNames) || activeBranchId
+        const techOptions = techniciansForBranch(ticketBranchId)
+        const current = editingCell.value
+        const currentLower = current.trim().toLowerCase()
+        const matchedOption = currentLower
+          ? techOptions.find(t => {
+              const nameLower = t.name.toLowerCase()
+              return nameLower === currentLower || nameLower.includes(currentLower) || currentLower.includes(nameLower)
+            })
+          : undefined
+        const selectValue = matchedOption ? matchedOption.name : current
+        return wrapEditingCell(
+          <select
+            autoFocus
+            disabled={isSaving}
+            value={selectValue}
+            onChange={e => syncDraftValue(e.target.value)}
+            onBlur={onBlur}
+            onClick={e => e.stopPropagation()}
+            onMouseDown={e => e.stopPropagation()}
+            onKeyDown={onKeyDown}
+            className="w-full rounded-md outline-none cursor-pointer"
+            style={{ ...inputStyle, paddingRight: 4 }}
+          >
+            <option value="">{EMPTY_CELL} {isTaguigServices ? 'Select technician' : 'Select installer'} {EMPTY_CELL}</option>
+            {techOptions.map(t => (
+              <option key={t.id} value={t.name}>{t.label || (t.name || '').trim().split(/\s+/)[0]?.toUpperCase() || t.name}</option>
+            ))}
+            {/* preserve existing value if it doesn't match any account */}
+            {current && !matchedOption && !techOptions.some(t => t.name === current) && (
+              <option value={current}>{current}</option>
+            )}
+          </select>,
+          colLabel,
+        )
+      }
+
       const roster = rosterForTicket(ticket)
-      const options = colLabel === 'INSTALLER' ? roster.installers : roster.drivers
+      const listId = `ticket-roster-${ticket.id}-INSTALLER`
+      return wrapEditingCell(
+        <>
+          <input
+            autoFocus
+            disabled={isSaving}
+            type="text"
+            list={listId}
+            value={editingCell.value}
+            onChange={e => syncDraftValue(e.target.value)}
+            onBlur={onBlur}
+            onClick={e => e.stopPropagation()}
+            onMouseDown={e => e.stopPropagation()}
+            onKeyDown={onKeyDown}
+            className="w-full rounded-md outline-none"
+            style={inputStyle}
+            placeholder="Select or type installer…"
+          />
+          <datalist id={listId}>
+            {roster.installers.map(name => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
+        </>,
+        colLabel,
+      )
+    }
+
+    if ((colLabel === 'SERVICE' && !isMyTickets) || (colLabel === 'VEHICLE' && !isMyTickets)) {
+      const roster = rosterForTicket(ticket)
+      const options = roster.drivers
       const listId = `ticket-roster-${ticket.id}-${colLabel}`
       return wrapEditingCell(
         <>
@@ -5209,11 +5361,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             onKeyDown={onKeyDown}
             className="w-full rounded-md outline-none"
             style={inputStyle}
-            placeholder={
-              colLabel === 'INSTALLER' ? 'Select or type installer\u2026'
-                : colLabel === 'VEHICLE' ? 'Type vehicle code\u2026'
-                  : 'Select or type driver\u2026'
-            }
+            placeholder={colLabel === 'VEHICLE' ? 'Type vehicle code…' : 'Select or type driver…'}
           />
           <datalist id={listId}>
             {options.map(name => (
@@ -6013,17 +6161,21 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             </button>
           )
         }
-        return withEditPencil(
+        // No hover pencil — a single click opens the dropdown picker directly.
+        return (
           <span style={{ ...truncStyle, color: textMuted }} title="No Installer">
             {EMPTY_CELL}
-          </span>,
-          ticket, label, rowGhost, rowIndex,
+          </span>
         )
       }
 
       // Use .label (strips "- N" trip suffix) not .name — .name also chops "MANNY / ROMAR" to "MANNY".
-      const displayInstaller = curToken.label || rawInstaller
-      return withEditPencil(
+      const fullDisplayInstaller = curToken.label || rawInstaller
+      // Show nickname if set on their account, otherwise first name only — full name stays
+      // in the tooltip and everywhere the raw value is used (edit seeding, payroll, etc).
+      const displayInstaller = formatInstallerShortDisplay(fullDisplayInstaller)
+      // No hover pencil — a single click opens the dropdown picker directly.
+      return (
         <span
           style={{
             ...truncStyle,
@@ -6032,11 +6184,10 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             paddingTop: isNewInstallerGroup ? 8 : 0,
             marginTop: isNewInstallerGroup ? 4 : 0,
           }}
-          title={displayInstaller}
+          title={fullDisplayInstaller}
         >
           {displayInstaller}
-        </span>,
-        ticket, label, rowGhost, rowIndex,
+        </span>
       )
     }
 
@@ -6044,13 +6195,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       const negName = getTicketNegotiatorName(ticket, branchEmployees) || EMPTY_CELL
       const isNegEmpty = !negName || negName === EMPTY_CELL || negName === '—'
       const negTarget = ticket.negotiatorId || ticket.negotiator_id || resolveNegotiatorDisplayName(ticket, branchEmployees) || negName
-      return withEditPencil(
+      // No hover pencil — a single click opens the dropdown picker directly.
+      return (
         <div className="flex flex-col items-center justify-center text-center">
           <span style={{ ...truncStyle, fontWeight: isNegEmpty ? 700 : 600, color: isNegEmpty ? (isPendingRow ? '#FDE047' : (isLight ? '#D97706' : '#FACC15')) : (isPendingRow ? '#ffffff' : undefined) }} title={negName}>
             {!isNegEmpty ? <EmployeeNameLink nameOrId={negTarget} displayText={negName} /> : 'N/A'}
           </span>
-        </div>,
-        ticket, label, rowGhost, rowIndex,
+        </div>
       )
     }
 
@@ -6982,6 +7133,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                     // VEHICLE is drag-to-reorder now — a tap-to-view-details popup
                                     // on the same cell just gets in the way of grabbing it.
                                     if (col.label === 'VEHICLE' || col.label === 'TICKET NO') return
+                                    // INSTALLER/NEGOTIATOR are strict dropdown pickers — a single
+                                    // click should open the dropdown directly, not a view-popup
+                                    // with a separate pencil button to get to the picker.
+                                    if ((col.label === 'INSTALLER' || col.label === 'NEGOTIATOR') && canEdit && !isGhost) {
+                                      startCellEdit(ticket, col.label, e.currentTarget as HTMLElement, idx)
+                                      return
+                                    }
                                     setExpandedCell(prev =>
                                       prev?.ticketId === ticket.id && prev?.colLabel === col.label
                                         ? null
@@ -7841,17 +7999,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 </button>
               )}
 
-              {/* Delete Ticket (Admin Only) */}
-              {isAdmin && (
-                <button onClick={() => { handleDelete(contextMenu.ticket.id); setContextMenu(null) }}
-                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors"
-                  style={{ color: '#EF4444' }}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#fee2e2' : '#450a0a'}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
-                  <Trash2 className="w-3.5 h-3.5 shrink-0 text-red-500" />
-                  Delete Ticket
-                </button>
-              )}
+
 
 
             </div>
@@ -8132,17 +8280,35 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     </datalist>
                   </Field>
                   <Field label={isTaguigServices ? 'Technician' : 'Installer / Technician'}>
-                    <input type="text" value={addForm.installerName || ''}
-                      list="add-ticket-installer-roster"
-                      placeholder={activeBranchRoster.installers.length ? 'Select or type installer\u2026' : 'e.g. RYAN - 1'}
-                      onChange={e => setAddForm({ ...addForm, installerName: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    <datalist id="add-ticket-installer-roster">
-                      {activeBranchRoster.installers.map(name => (
-                        <option key={name} value={name} />
-                      ))}
-                    </datalist>
+                    {addModalTechnicians.length > 0 ? (
+                      <select
+                        value={addForm.installerName || ''}
+                        onChange={e => setAddForm({ ...addForm, installerName: e.target.value })}
+                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
+                      >
+                        <option value="">
+                          {isTaguigServices ? 'Select technician…' : 'Select installer / technician…'}
+                        </option>
+                        {addModalTechnicians.map(t => (
+                          <option key={t.id} value={t.name}>{t.label || (t.name || '').trim().split(/\s+/)[0]?.toUpperCase() || t.name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <>
+                        <input type="text" value={addForm.installerName || ''}
+                          list="add-ticket-installer-roster"
+                          placeholder={activeBranchRoster.installers.length ? 'Select or type installer…' : 'e.g. RYAN - 1'}
+                          onChange={e => setAddForm({ ...addForm, installerName: e.target.value })}
+                          className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
+                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                        <datalist id="add-ticket-installer-roster">
+                          {activeBranchRoster.installers.map(name => (
+                            <option key={name} value={name} />
+                          ))}
+                        </datalist>
+                      </>
+                    )}
                   </Field>
                   <Field label="Negotiator" required>
                     <select
@@ -8278,8 +8444,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           showDelete={canEdit && activeTab !== 'overview'}
           driverRoster={editModalRoster.drivers}
           installerRoster={editModalRoster.installers}
+          technicianOptions={editModalTechnicians}
           isTaguigServices={isTaguigServices}
-
           editOriginalDate={editOriginalDate ? formatDateKeyLabel(editOriginalDate) : ''}
           onClose={closeEditModal}
           onDelete={() => { if (editTicket?.id) { handleDelete(editTicket.id); closeEditModal() } }}
@@ -8340,6 +8506,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           showDelete={canEdit}
           driverRoster={editModalRoster.drivers}
           installerRoster={editModalRoster.installers}
+          technicianOptions={editModalTechnicians}
           isTaguigServices={isTaguigServices}
           editOriginalDate={editOriginalDate ? formatDateKeyLabel(editOriginalDate) : ''}
           onClose={requestCloseEditModal}

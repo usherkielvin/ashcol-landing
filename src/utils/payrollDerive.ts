@@ -105,18 +105,21 @@ function classifyJobRateKey(ticket: Ticket): keyof PayrollRates | null {
   const rawStatus = (ticket.status || '').toUpperCase()
 
   if (rawStatus === 'RESCHED' || status === 'RESCHED') return 'rescheduled'
-  if (status === 'DONE_CLEANING' || status === 'CLEANING') return 'cleaning'
-  if (status === 'DONE_SURVEY' || status === 'SURVEY') return 'survey'
+  // 'CLEANING'/'SURVEY'/'INSTALL' (no DONE_ prefix) are the *pending*, not-yet-worked
+  // schedule statuses (see SCHEDULE_STATUS_OPTS groups in scheduleStatus.ts) — a job only
+  // owes a fee once it's actually been done, so only the DONE_/closing variants count here.
+  if (status === 'DONE_CLEANING') return 'cleaning'
+  if (status === 'DONE_SURVEY') return 'survey'
   if (
     status === 'DONE_INSTALLED'
-    || status === 'INSTALL'
     || status === 'S/I'
     || rawStatus === 'INSTALLED'
     || rawStatus === 'COMPLETED'
   ) {
     return 'install'
   }
-  // Any other outcome (checkup, backjob, negotiation, etc.) — no fee guess.
+  // Any other outcome (pending install/cleaning, checkup, backjob, negotiation, etc.) —
+  // not yet completed, or not a billable job type — no fee guess.
   return null
 }
 

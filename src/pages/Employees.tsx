@@ -4,8 +4,9 @@ import {
   Search, Wrench, Mail, Phone, Building2,
   CheckCircle, XCircle, Trash2, X, Plus, Copy,
   Check, Eye, EyeOff,
-  Camera, Calendar, User, ArrowLeft,
-  Loader2, ChevronDown, Filter
+  Camera, Calendar, User,
+  Loader2, ChevronDown, Filter, Edit3, Shield,
+  Clock, Briefcase, UserCheck
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -23,6 +24,19 @@ function formatDisplayDate(dateStr?: string | null): string {
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
+function calculateTenure(dateStr?: string | null): string | null {
+  if (!dateStr) return null
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return null
+  const now = new Date()
+  const diffMonths = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth())
+  if (diffMonths < 1) return 'New member'
+  if (diffMonths < 12) return `${diffMonths} mo${diffMonths > 1 ? 's' : ''}`
+  const years = Math.floor(diffMonths / 12)
+  const remainingMonths = diffMonths % 12
+  return remainingMonths > 0 ? `${years} yr${years > 1 ? 's' : ''} ${remainingMonths} mo` : `${years} yr${years > 1 ? 's' : ''}`
+}
+
 function formatPhoneNumber(phone?: string | null): string {
   if (!phone) return '—'
   const cleaned = phone.replace(/\D/g, '')
@@ -36,6 +50,7 @@ function formatPhoneNumber(phone?: string | null): string {
 interface Employee {
   id: string
   name: string
+  nickname?: string
   email: string
   phone: string
   role: string
@@ -315,29 +330,6 @@ const Field = ({ label, children, labelColor }: FieldProps) => (
   </div>
 )
 
-interface DetailFieldProps {
-  label: string
-  value: string
-  icon?: React.ReactNode
-  emptyLabel?: string
-}
-
-const DetailField = ({ label, value, icon, emptyLabel = 'Not set' }: DetailFieldProps) => (
-  <div className="min-w-0 flex flex-col gap-1">
-    <div className="flex items-center gap-1.5" style={{ color: 'var(--detail-muted)' }}>
-      {icon && <span className="shrink-0 opacity-70 [&>svg]:w-3.5 [&>svg]:h-3.5">{icon}</span>}
-      <span className="text-[10px] font-black uppercase tracking-wider">{label.toUpperCase()}</span>
-    </div>
-    <div
-      className="text-sm font-semibold truncate"
-      style={{ color: value ? 'var(--detail-text)' : 'var(--detail-muted)' }}
-      title={value || undefined}
-    >
-      {value || emptyLabel}
-    </div>
-  </div>
-)
-
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function Employees() {
   const { theme } = useTheme()
@@ -412,10 +404,19 @@ export default function Employees() {
   const [showCreate,   setShowCreate]   = useState(false)
   const [newTechCreds, setNewTechCreds] = useState<{ email: string; password: string } | null>(null)
   const [copiedField,  setCopiedField]  = useState<'email' | 'password' | null>(null)
+  const [copiedKey,    setCopiedKey]    = useState<string | null>(null)
+
+  const copyToClipboard = (text?: string | null, keyName: string = 'key') => {
+    if (!text) return
+    navigator.clipboard.writeText(text)
+    setCopiedKey(keyName)
+    setTimeout(() => setCopiedKey(null), 2000)
+    showToast('success', 'Copied to clipboard!')
+  }
 
   // Edit form
   const [editForm, setEditForm] = useState({
-    name: '', email: '', phone: '',
+    name: '', nickname: '', email: '', phone: '',
     role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
     branchId: '', isActive: true, newPassword: '',
     personalEmail: '',
@@ -429,7 +430,7 @@ export default function Employees() {
 
   // Create form
   const [createForm, setCreateForm] = useState({
-    name: '', email: '', branchId: '',
+    name: '', nickname: '', email: '', branchId: '',
     role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
     phone: '', personalEmail: '',
     dateHired: '',
@@ -446,7 +447,7 @@ export default function Employees() {
     setCreateStep(1)
     setFormErr('')
     setCreateForm({
-      name: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
+      name: '', nickname: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
       phone: '', personalEmail: '', dateHired: '', birthDate: '', profileImage: '',
     })
   }
@@ -455,7 +456,7 @@ export default function Employees() {
     setCreateStep(1)
     setFormErr('')
     setCreateForm({
-      name: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
+      name: '', nickname: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
       phone: '', personalEmail: '', dateHired: '', birthDate: '', profileImage: '',
     })
     setShowCreate(true)
@@ -562,6 +563,7 @@ export default function Employees() {
         return {
           id:          s.id,
           name:        formatPersonName(s.name || 'Unknown'),
+          nickname:    s.nickname    || '',
           email:       s.email       || '',
           phone:       s.phone       || '',
           role:        (s.role       || 'EMPLOYEE').toUpperCase(),
@@ -644,16 +646,29 @@ export default function Employees() {
 
 
   // ── Detail tab navigation ───────────────────────────────────────────────────
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior })
+    const mainEl = document.querySelector('main')
+    if (mainEl) {
+      mainEl.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior })
+    }
+  }
+
   const handleRowClick = (emp: Employee) => {
     setSelectedEmployee(emp)
     setActiveDrawerTab('overview')
     navigate(`/employees/${emp.id}`)
+    scrollToTop()
   }
 
-  const closeDetailTab = () => navigate('/employees')
+  const closeDetailTab = () => {
+    navigate('/employees')
+    scrollToTop()
+  }
 
   // Keep the detail tab's employee in sync with the URL (deep link / refresh / back button).
   useEffect(() => {
+    scrollToTop()
     if (!routeEmployeeId) {
       setSelectedEmployee(null)
       return
@@ -723,6 +738,7 @@ export default function Employees() {
     return {
       id: s.id,
       name: formatPersonName(s.name || 'Unknown'),
+      nickname: s.nickname || '',
       email: s.email || '',
       phone: s.phone || '',
       role: (s.role || 'EMPLOYEE').toUpperCase(),
@@ -761,7 +777,7 @@ export default function Employees() {
     titles.filter(t => !allJobTitles.includes(t)).forEach(addCustomJobTitle)
     const validJt = titles.length ? joinJobTitles(titles) : 'TECHNICIAN'
     setEditForm({
-      name: formatPersonName(emp.name), email: emp.email, phone: emp.phone,
+      name: formatPersonName(emp.name), nickname: emp.nickname || '', email: emp.email, phone: emp.phone,
       role: emp.role, jobTitle: validJt,
       branchId: emp.branchId, isActive: emp.isActive, newPassword: '',
       personalEmail: emp.personalEmail || '',
@@ -786,6 +802,7 @@ export default function Employees() {
 
       const payload: Record<string, unknown> = {
         name: formatPersonName(editForm.name.trim()),
+        nickname: editForm.nickname.trim() || null,
         email: editForm.email.trim(),
         phone: editForm.phone.trim(),
         branchId: editForm.branchId,
@@ -918,6 +935,7 @@ export default function Employees() {
       if (selectedEmployee?.id === emp.id) {
         setSelectedEmployee(updated)
       }
+      notifyEmployeesDirectoryUpdated()
       showToast('success', nextActive ? `${emp.name} reactivated.` : `${emp.name} deactivated.`)
     } catch {
       showToast('error', 'Could not update account status.')
@@ -968,6 +986,7 @@ export default function Employees() {
       const isPriv = createForm.role === 'MANAGER' || createForm.role === 'MANAGEMENT'
       const body: Record<string, string> = {
         name:     formattedName,
+        nickname: createForm.nickname.trim(),
         email:    createForm.email.trim(),
         role:     isPriv ? createForm.role : 'EMPLOYEE',
         jobTitle: (createForm.role === 'EMPLOYEE' || createForm.role === 'MANAGEMENT') ? createForm.jobTitle : '',
@@ -1591,210 +1610,594 @@ export default function Employees() {
         </div>
       )}
 
-      {/* ── Employee Detail Tab (full-width, replaces the list while open — no longer a popup) ── */}
+      {/* ── Employee Detail Tab (full-width, replaces the list while open — clean & full-screen on mobile) ── */}
       {isDrawerOpen && selectedEmployee && (
+        <div
+          className="-m-5 sm:-m-5 md:m-0 rounded-none md:rounded-2xl shadow-lg flex flex-col overflow-hidden min-h-[calc(100vh-4.5rem)] md:min-h-[700px] border-0 md:border transition-all"
+          style={{
+            backgroundColor: cardBg,
+            borderColor: border,
+            animation: 'modalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+          }}
+        >
+          {/* Top Sticky Navigation Bar */}
           <div
-            className="rounded-2xl shadow-sm flex flex-col overflow-hidden"
+            className="sticky top-0 z-20 px-4 sm:px-6 py-3.5 border-b backdrop-blur-md flex items-center justify-between gap-3 shrink-0"
             style={{
-              backgroundColor: cardBg,
-              border: `1px solid ${border}`,
-              animation: 'modalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+              borderColor: border,
+              backgroundColor: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(10,17,32,0.94)',
             }}
           >
-            {/* Header */}
-            <div className="p-4 sm:px-6 sm:py-5 border-b flex flex-wrap items-center justify-between gap-3 shrink-0" style={{ borderColor: border }}>
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <button
-                  onClick={closeDetailTab}
-                  className="p-2 rounded-lg transition-all hover:bg-slate-500/10 shrink-0"
-                  style={{ color: textMuted }}
-                  aria-label="Back to Members"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                </button>
-                <div className="relative group shrink-0">
-                  <UserAvatar name={selectedEmployee.name} imageUrl={selectedEmployee.profileImage} size="md" ring className="" />
-                  <div
-                    onClick={triggerImageUpload}
-                    className="absolute inset-0 rounded-full bg-black/55 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-opacity"
-                  >
-                    <Camera className="w-4 h-4 text-white" />
-                  </div>
-                  {imageUploading && (
-                    <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center">
-                      <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
-                    </div>
-                  )}
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-xs font-black uppercase tracking-wider text-emerald-500">
+                Member Details
+              </span>
+              <span className="text-xs text-slate-400">•</span>
+              <span className="text-xs font-bold truncate" style={{ color: textPrimary }}>{selectedEmployee.name}</span>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={closeDetailTab}
+                className="p-2 rounded-xl transition-all hover:bg-slate-500/10 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 active:scale-95"
+                aria-label="Close"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Hero Profile Banner */}
+          <div
+            className="p-5 sm:p-7 border-b flex flex-col md:flex-row md:items-center justify-between gap-5 shrink-0"
+            style={{
+              borderColor: border,
+              background: isLight
+                ? 'linear-gradient(135deg, rgba(241,245,249,0.8) 0%, rgba(255,255,255,1) 100%)'
+                : 'linear-gradient(135deg, rgba(15,26,46,0.7) 0%, rgba(10,17,32,1) 100%)',
+            }}
+          >
+            {/* Left: Avatar + Details */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5 min-w-0 flex-1">
+              {/* Avatar with Camera Upload Overlay */}
+              <div className="relative group shrink-0 self-center sm:self-auto">
+                <div className="w-20 h-20 sm:w-22 sm:h-22 rounded-2xl overflow-hidden shadow-md ring-2 ring-emerald-500/30">
+                  <UserAvatar
+                    name={selectedEmployee.name}
+                    imageUrl={selectedEmployee.profileImage}
+                    size="lg"
+                    className="!w-full !h-full !rounded-2xl"
+                  />
                 </div>
-                <div className="min-w-0">
-                  <h3 className="text-base font-bold tracking-tight truncate" style={{ color: textPrimary }}>{selectedEmployee.name}</h3>
-                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                    <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: roleColor(selectedEmployee.role).bg, color: roleColor(selectedEmployee.role).text }}>
-                      {resolveLabel(selectedEmployee.role, selectedEmployee.jobTitle)}
-                    </span>
-                    {selectedEmployee.branchName && (
-                      <span className="text-[11px] flex items-center gap-1" style={{ color: textMuted }}>
-                        <Building2 className="w-3 h-3 shrink-0" /><span className="truncate">{selectedEmployee.branchName}</span>
+                <div
+                  onClick={triggerImageUpload}
+                  className="absolute inset-0 rounded-2xl bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-1 cursor-pointer transition-opacity text-white"
+                  title="Change profile picture"
+                >
+                  <Camera className="w-5 h-5 text-white" />
+                  <span className="text-[9px] font-black uppercase tracking-wider">CHANGE</span>
+                </div>
+                {imageUploading && (
+                  <div className="absolute inset-0 rounded-2xl bg-black/50 backdrop-blur-xs flex items-center justify-center">
+                    <Loader2 className="w-6 h-6 animate-spin text-emerald-400" />
+                  </div>
+                )}
+                <div
+                  className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 shadow-sm"
+                  style={{
+                    backgroundColor: selectedEmployee.isActive ? '#10B981' : '#94a3b8',
+                    borderColor: cardBg,
+                  }}
+                  title={selectedEmployee.isActive ? 'Active Member' : 'Deactivated'}
+                />
+              </div>
+
+              {/* Profile Meta & Badges */}
+              <div className="flex flex-col gap-1.5 min-w-0 w-full sm:w-auto text-center sm:text-left">
+                <div className="flex items-center justify-center sm:justify-start gap-3 flex-wrap">
+                  <h2 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2 flex-wrap" style={{ color: textPrimary }}>
+                    <span>{selectedEmployee.name}</span>
+                    {selectedEmployee.nickname && (
+                      <span className="text-sm font-black px-2.5 py-0.5 rounded-lg border tracking-wide uppercase" style={{ backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.3)', color: '#10B981' }}>
+                        "{selectedEmployee.nickname}"
                       </span>
                     )}
-                    <span className="text-[11px] flex items-center gap-1" style={{ color: selectedEmployee.isActive ? '#10B981' : textMuted }}>
-                      {selectedEmployee.isActive ? <CheckCircle className="w-3 h-3 shrink-0" /> : <XCircle className="w-3 h-3 shrink-0" />}
-                      {selectedEmployee.isActive ? 'Active' : 'Inactive'}
+                  </h2>
+                  {(isAdmin || isManager) && !isProtectedFromEdit(selectedEmployee.role) && (
+                    <button
+                      onClick={() => openEdit(selectedEmployee)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm active:scale-95 text-white hover:opacity-90 shrink-0"
+                      style={{ backgroundColor: '#10B981' }}
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>EDIT PROFILE</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Badges Flow */}
+                <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap pt-0.5">
+                  {/* Role / Job Title Pills */}
+                  {parseJobTitles(selectedEmployee.jobTitle).length > 0 ? (
+                    parseJobTitles(selectedEmployee.jobTitle).map(jt => (
+                      <span
+                        key={jt}
+                        className="text-[11px] font-bold px-2.5 py-0.5 rounded-lg uppercase tracking-wide border shadow-xs"
+                        style={{
+                          backgroundColor: roleColor(selectedEmployee.role).bg,
+                          color: roleColor(selectedEmployee.role).text,
+                          borderColor: roleColor(selectedEmployee.role).border,
+                        }}
+                      >
+                        {jt}
+                      </span>
+                    ))
+                  ) : (
+                    <span
+                      className="text-[11px] font-bold px-2.5 py-0.5 rounded-lg uppercase tracking-wide border shadow-xs"
+                      style={{
+                        backgroundColor: roleColor(selectedEmployee.role).bg,
+                        color: roleColor(selectedEmployee.role).text,
+                        borderColor: roleColor(selectedEmployee.role).border,
+                      }}
+                    >
+                      {resolveLabel(selectedEmployee.role, selectedEmployee.jobTitle)}
                     </span>
+                  )}
+
+                  {/* Branch Badge */}
+                  {selectedEmployee.branchName && (
+                    <span
+                      className="text-[11px] font-semibold px-2.5 py-0.5 rounded-lg flex items-center gap-1.5 border"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(241,245,249,0.8)' : 'rgba(15,26,46,0.8)',
+                        borderColor: border,
+                        color: textPrimary,
+                      }}
+                    >
+                      <Building2 className="w-3 h-3 text-emerald-500 shrink-0" />
+                      <span>{selectedEmployee.branchName}</span>
+                    </span>
+                  )}
+
+                  {/* Combined Active Status & Live Login / Presence */}
+                  <div
+                    className="text-[11px] font-semibold px-2.5 py-0.5 rounded-lg flex items-center gap-1.5 border shadow-xs"
+                    style={{
+                      backgroundColor: selectedEmployee.isActive ? 'rgba(16,185,129,0.1)' : 'rgba(148,163,184,0.1)',
+                      borderColor: selectedEmployee.isActive ? 'rgba(16,185,129,0.3)' : 'rgba(148,163,184,0.3)',
+                      color: selectedEmployee.isActive ? '#10B981' : textMuted,
+                    }}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${selectedEmployee.isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                    <span className="font-bold">{selectedEmployee.isActive ? 'Active' : 'Inactive'}</span>
+                    <span className="opacity-40">•</span>
                     <PresenceStatus lastActiveAt={selectedEmployee.lastActiveAt} lastLoginAt={selectedEmployee.lastLoginAt} textMuted={textMuted} />
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {(isAdmin || isManager) && !isProtectedFromEdit(selectedEmployee.role) && (
-                  <button
-                    onClick={() => openEdit(selectedEmployee)}
-                    className="px-3.5 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider border transition-all hover:bg-slate-500/10"
-                    style={{ borderColor: border, color: textPrimary }}
-                  >
-                    EDIT PROFILE
-                  </button>
-                )}
-                <button
-                  onClick={closeDetailTab}
-                  className="p-2 rounded-lg transition-all hover:bg-slate-500/10 ml-1"
-                  style={{ color: textMuted }}
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
             </div>
 
-            {/* Tabs */}
-            <div className="flex border-b shrink-0 overflow-x-auto" style={{ borderColor: border }}>
-              {([
-                'overview',
-                'history',
-                ...(isWarrantyRegistrar(selectedEmployee.jobTitle) ? ['registrations' as const] : []),
-              ] as const).map(tab => (
+            {/* Right: Quick Action Buttons */}
+            <div className="flex items-center justify-center sm:justify-end gap-2 flex-wrap pt-3 sm:pt-0 border-t sm:border-t-0" style={{ borderColor: border }}>
+              {selectedEmployee.phone && (
+                <a
+                  href={`tel:${selectedEmployee.phone}`}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all hover:border-emerald-500 hover:text-emerald-500 active:scale-95"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  title="Call Phone Number"
+                >
+                  <Phone className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Call</span>
+                </a>
+              )}
+              {selectedEmployee.email && (
+                <a
+                  href={`mailto:${selectedEmployee.email}`}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all hover:border-emerald-500 hover:text-emerald-500 active:scale-95"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  title="Send Email"
+                >
+                  <Mail className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Email</span>
+                </a>
+              )}
+              <button
+                onClick={() => copyToClipboard(selectedEmployee.id, 'id')}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all hover:border-emerald-500 hover:text-emerald-500 active:scale-95"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                title="Copy Member ID"
+              >
+                {copiedKey === 'id' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 text-emerald-500" />}
+                <span>{copiedKey === 'id' ? 'Copied ID' : 'Copy ID'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Tab Navigation */}
+          <div className="flex border-b shrink-0 overflow-x-auto px-4 sm:px-6" style={{ borderColor: border }}>
+            {([
+              { id: 'overview' as const, label: 'OVERVIEW', icon: <User className="w-3.5 h-3.5" /> },
+              { id: 'history' as const, label: 'TICKET HISTORY', icon: <Calendar className="w-3.5 h-3.5" /> },
+              ...(isWarrantyRegistrar(selectedEmployee.jobTitle)
+                ? [{ id: 'registrations' as const, label: 'REGISTERED TICKETS', icon: <Wrench className="w-3.5 h-3.5" /> }]
+                : []),
+            ]).map(tab => {
+              const isActive = activeDrawerTab === tab.id
+              return (
                 <button
-                  key={tab}
-                  onClick={() => setActiveDrawerTab(tab)}
-                  className="px-4 sm:px-6 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all whitespace-nowrap"
+                  key={tab.id}
+                  onClick={() => setActiveDrawerTab(tab.id)}
+                  className="flex items-center gap-2 px-4 sm:px-6 py-3.5 text-xs font-black uppercase tracking-wider border-b-2 transition-all whitespace-nowrap"
                   style={{
-                    borderColor: activeDrawerTab === tab ? '#10B981' : 'transparent',
-                    color: activeDrawerTab === tab ? '#10B981' : textMuted,
+                    borderColor: isActive ? '#10B981' : 'transparent',
+                    color: isActive ? '#10B981' : textMuted,
                   }}
                 >
-                  {tab === 'overview' ? 'OVERVIEW' : tab === 'history' ? 'TICKET HISTORY' : 'REGISTERED TICKETS'}
+                  {tab.icon}
+                  <span>{tab.label}</span>
                 </button>
-              ))}
-            </div>
+              )
+            })}
+          </div>
 
-            {/* Tab Body */}
-            <div className="flex-1 min-h-0 flex flex-col" style={detailTokens}>
+          {/* Tab Body */}
+          <div className="flex-1 min-h-0 flex flex-col" style={detailTokens}>
 
-              {/* ── Overview Tab ── */}
-              {activeDrawerTab === 'overview' && (
-                <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
+            {/* ── Overview Tab ── */}
+            {activeDrawerTab === 'overview' && (
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 flex flex-col gap-6">
 
-                  {/* Profile Details — contact, role, and account fields in one dense sheet */}
-                  <div className="rounded-2xl border p-5" style={{ borderColor: 'var(--detail-border)', backgroundColor: 'var(--detail-bg)' }}>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-5">
-                      <DetailField label="WORK EMAIL" value={selectedEmployee.email} icon={<Mail />} emptyLabel="—" />
-                      <DetailField label="PERSONAL EMAIL" value={selectedEmployee.personalEmail || ''} icon={<Mail />} emptyLabel="—" />
-                      <DetailField label="PHONE NUMBER" value={selectedEmployee.phone} icon={<Phone />} emptyLabel="—" />
-                      <DetailField label="JOB TITLE" value={selectedEmployee.jobTitle ? formatJobTitleLabel(selectedEmployee.jobTitle) : (selectedEmployee.role === 'MANAGER' ? 'OFFICER IN CHARGE' : formatRoleLabel(selectedEmployee.role).toUpperCase())} icon={<Wrench />} emptyLabel="—" />
-                      <DetailField label="DATE HIRED" value={formatDisplayDate(selectedEmployee.dateHired)} icon={<Calendar />} />
-                      <DetailField label="BIRTHDATE" value={formatDisplayDate(selectedEmployee.birthDate)} icon={<Calendar />} />
-                      <DetailField label="MEMBER ID" value={selectedEmployee.id.slice(0, 16) + '…'} icon={<User />} />
-                      <DetailField
-                        label="REGISTERED"
-                        value={selectedEmployee.createdAt ? new Date(selectedEmployee.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' }) : ''}
-                        icon={<Calendar />}
-                        emptyLabel="UNKNOWN"
-                      />
-                      <DetailField
-                        label="LAST LOGIN"
-                        value={selectedEmployee.lastLoginAt ? new Date(selectedEmployee.lastLoginAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : ''}
-                        icon={<Calendar />}
-                        emptyLabel="NEVER"
-                      />
-                    </div>
+                {/* Section 1: Contact & Workplace */}
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-emerald-500">
+                    <Mail className="w-3.5 h-3.5" />
+                    <span>Contact & Location</span>
                   </div>
 
-                  {/* Account Controls — membership toggle + danger zone, one compact row */}
-                  <div className="rounded-2xl border p-3.5 flex items-center justify-between gap-3 flex-wrap" style={{ borderColor: 'var(--detail-border)', backgroundColor: 'var(--detail-bg)' }}>
-                    <button
-                      onClick={() => requestToggleActive(selectedEmployee)}
-                      className="flex items-center gap-2.5 pl-1.5 pr-3 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all hover:opacity-80"
-                      style={{ color: selectedEmployee.isActive ? '#10B981' : textMuted }}
-                      title={selectedEmployee.isActive ? 'Click to deactivate' : 'Click to reactivate'}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {/* Work Email */}
+                    <div
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
                     >
-                      <span
-                        className="relative inline-flex h-4 w-7 items-center rounded-full transition-colors shrink-0"
-                        style={{ backgroundColor: selectedEmployee.isActive ? '#10B981' : border }}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
+                            <Mail className="w-3.5 h-3.5" />
+                          </div>
+                          <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>WORK EMAIL</span>
+                        </div>
+                        {selectedEmployee.email && (
+                          <button
+                            onClick={() => copyToClipboard(selectedEmployee.email, 'workEmail')}
+                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors"
+                            title="Copy email"
+                          >
+                            {copiedKey === 'workEmail' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        )}
+                      </div>
+                      <div className="text-sm font-bold break-all select-text" style={{ color: textPrimary }}>
+                        {selectedEmployee.email || '—'}
+                      </div>
+                    </div>
+
+                    {/* Personal Email */}
+                    <div
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg flex items-center justify-center text-blue-500 bg-blue-500/10 shrink-0">
+                            <Mail className="w-3.5 h-3.5" />
+                          </div>
+                          <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>PERSONAL EMAIL</span>
+                        </div>
+                        {selectedEmployee.personalEmail && (
+                          <button
+                            onClick={() => copyToClipboard(selectedEmployee.personalEmail, 'personalEmail')}
+                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors"
+                            title="Copy personal email"
+                          >
+                            {copiedKey === 'personalEmail' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        )}
+                      </div>
+                      <div className={`text-sm font-bold break-all select-text ${selectedEmployee.personalEmail ? '' : 'italic opacity-60'}`} style={{ color: selectedEmployee.personalEmail ? textPrimary : textMuted }}>
+                        {selectedEmployee.personalEmail || 'Not provided'}
+                      </div>
+                    </div>
+
+                    {/* Phone Number */}
+                    <div
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
+                            <Phone className="w-3.5 h-3.5" />
+                          </div>
+                          <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>PHONE NUMBER</span>
+                        </div>
+                        {selectedEmployee.phone && (
+                          <button
+                            onClick={() => copyToClipboard(selectedEmployee.phone, 'phone')}
+                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors"
+                            title="Copy phone number"
+                          >
+                            {copiedKey === 'phone' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        )}
+                      </div>
+                      <div className="text-sm font-bold" style={{ color: textPrimary }}>
+                        {formatPhoneNumber(selectedEmployee.phone)}
+                      </div>
+                    </div>
+
+                    {/* Assigned Branch */}
+                    <div
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-amber-500 bg-amber-500/10 shrink-0">
+                          <Building2 className="w-3.5 h-3.5" />
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>ASSIGNED BRANCH</span>
+                      </div>
+                      <div className="text-sm font-bold uppercase truncate" style={{ color: textPrimary }}>
+                        {selectedEmployee.branchName || 'All Branches'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 2: Role & Employment Details */}
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-emerald-500">
+                    <Briefcase className="w-3.5 h-3.5" />
+                    <span>Role & Employment Information</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {/* Job Title */}
+                    <div
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all sm:col-span-2"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-violet-500 bg-violet-500/10 shrink-0">
+                          <Wrench className="w-3.5 h-3.5" />
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>JOB TITLE & ROLES</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {parseJobTitles(selectedEmployee.jobTitle).length > 0 ? (
+                          parseJobTitles(selectedEmployee.jobTitle).map(jt => (
+                            <span
+                              key={jt}
+                              className="text-xs font-bold px-3 py-1 rounded-lg uppercase tracking-wide border shadow-xs"
+                              style={{
+                                backgroundColor: roleColor(selectedEmployee.role).bg,
+                                color: roleColor(selectedEmployee.role).text,
+                                borderColor: roleColor(selectedEmployee.role).border,
+                              }}
+                            >
+                              {jt}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-sm font-bold uppercase" style={{ color: textPrimary }}>
+                            {resolveLabel(selectedEmployee.role, selectedEmployee.jobTitle)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Date Hired */}
+                    <div
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
+                          <Calendar className="w-3.5 h-3.5" />
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>DATE HIRED</span>
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold" style={{ color: textPrimary }}>
+                          {formatDisplayDate(selectedEmployee.dateHired)}
+                        </div>
+                        {selectedEmployee.dateHired && calculateTenure(selectedEmployee.dateHired) && (
+                          <div className="text-[11px] font-semibold text-emerald-500 mt-0.5">
+                            Tenure: {calculateTenure(selectedEmployee.dateHired)}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Birthdate */}
+                    <div
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-pink-500 bg-pink-500/10 shrink-0">
+                          <Calendar className="w-3.5 h-3.5" />
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>BIRTHDATE</span>
+                      </div>
+                      <div className={`text-sm font-bold ${selectedEmployee.birthDate ? '' : 'italic opacity-60'}`} style={{ color: selectedEmployee.birthDate ? textPrimary : textMuted }}>
+                        {formatDisplayDate(selectedEmployee.birthDate)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 3: System & Security Metadata */}
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-emerald-500">
+                    <Shield className="w-3.5 h-3.5" />
+                    <span>System & Account Metadata</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Member ID */}
+                    <div
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg flex items-center justify-center text-indigo-500 bg-indigo-500/10 shrink-0">
+                            <User className="w-3.5 h-3.5" />
+                          </div>
+                          <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>MEMBER ID</span>
+                        </div>
+                        <button
+                          onClick={() => copyToClipboard(selectedEmployee.id, 'memberId')}
+                          className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors"
+                          title="Copy Full Member ID"
+                        >
+                          {copiedKey === 'memberId' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                      <div className="text-xs font-mono font-semibold break-all select-text" style={{ color: textPrimary }}>
+                        {selectedEmployee.id}
+                      </div>
+                    </div>
+
+                    {/* Registered Date */}
+                    <div
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-cyan-500 bg-cyan-500/10 shrink-0">
+                          <Clock className="w-3.5 h-3.5" />
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>REGISTERED</span>
+                      </div>
+                      <div className="text-sm font-bold" style={{ color: textPrimary }}>
+                        {selectedEmployee.createdAt ? new Date(selectedEmployee.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' }) : 'Unknown'}
+                      </div>
+                    </div>
+
+                    {/* Combined Active & Last Login */}
+                    <div
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
+                          <UserCheck className="w-3.5 h-3.5" />
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>STATUS & LOGIN ACTIVITY</span>
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-1.5 text-sm font-bold" style={{ color: selectedEmployee.isActive ? '#10B981' : textMuted }}>
+                          <span className={`w-2 h-2 rounded-full ${selectedEmployee.isActive ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                          <span>{selectedEmployee.isActive ? 'Active Member' : 'Deactivated'}</span>
+                        </div>
+                        <div className="text-xs mt-0.5 flex items-center gap-1" style={{ color: textMuted }}>
+                          <span>Last login:</span>
+                          <span className="font-semibold truncate" style={{ color: textPrimary }}>
+                            {selectedEmployee.lastLoginAt ? new Date(selectedEmployee.lastLoginAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Never logged in'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 4: Account Actions & Danger Zone */}
+                <div className="flex flex-col gap-3 pt-2">
+                  <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-emerald-500">
+                    <Shield className="w-3.5 h-3.5" />
+                    <span>Account Status & Actions</span>
+                  </div>
+
+                  <div
+                    className="p-5 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                  >
+                    <div className="flex items-center gap-4">
+                      {/* Interactive switch */}
+                      <button
+                        type="button"
+                        onClick={() => requestToggleActive(selectedEmployee)}
+                        className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 focus:outline-none"
+                        style={{ backgroundColor: selectedEmployee.isActive ? '#10B981' : '#94a3b8' }}
+                        title={selectedEmployee.isActive ? 'Click to deactivate' : 'Click to reactivate'}
                       >
                         <span
-                          className="inline-block h-3 w-3 rounded-full bg-white shadow-sm transition-transform"
-                          style={{ transform: selectedEmployee.isActive ? 'translateX(13px)' : 'translateX(1px)' }}
+                          className="inline-block h-4 w-4 rounded-full bg-white shadow-md transition-transform"
+                          style={{ transform: selectedEmployee.isActive ? 'translateX(24px)' : 'translateX(4px)' }}
                         />
-                      </span>
-                      {selectedEmployee.isActive ? 'ACTIVE MEMBER' : 'DEACTIVATED'}
-                    </button>
+                      </button>
+
+                      <div className="flex flex-col">
+                        <div className="text-xs font-black uppercase tracking-wider" style={{ color: selectedEmployee.isActive ? '#10B981' : textMuted }}>
+                          {selectedEmployee.isActive ? 'ACTIVE MEMBER' : 'DEACTIVATED ACCOUNT'}
+                        </div>
+                        <div className="text-xs" style={{ color: textMuted }}>
+                          {selectedEmployee.isActive
+                            ? 'Member is active and has access to assigned branch operations.'
+                            : 'Member is deactivated and cannot log into the portal.'}
+                        </div>
+                      </div>
+                    </div>
 
                     {isAdmin && !isProtectedFromDelete(selectedEmployee.role) && (
                       <button
                         onClick={() => requestDelete(selectedEmployee)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all hover:bg-red-500/10"
-                        style={{ color: '#EF4444' }}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all border border-red-500/30 text-red-500 hover:bg-red-500/10 active:scale-95"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        DELETE MEMBER
+                        <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                        <span>DELETE MEMBER</span>
                       </button>
                     )}
                   </div>
-
                 </div>
-              )}
 
-              {/* ── History Tab ── */}
-              {activeDrawerTab === 'history' && (
-                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                  <TicketHistoryTable
-                    person={{
-                      id: selectedEmployee.id,
-                      name: selectedEmployee.name,
-                      email: selectedEmployee.email,
-                      personalEmail: selectedEmployee.personalEmail,
-                    }}
-                  />
-                </div>
-              )}
+              </div>
+            )}
 
-              {/* ── Registered Tickets Tab (warranty registrars only) ── */}
-              {activeDrawerTab === 'registrations' && isWarrantyRegistrar(selectedEmployee.jobTitle) && (
-                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                  <WarrantyRegistrationHistoryTable
-                    person={{
-                      id: selectedEmployee.id,
-                      name: selectedEmployee.name,
-                      email: selectedEmployee.email,
-                      personalEmail: selectedEmployee.personalEmail,
-                    }}
-                  />
-                </div>
-              )}
+            {/* ── History Tab ── */}
+            {activeDrawerTab === 'history' && (
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                <TicketHistoryTable
+                  person={{
+                    id: selectedEmployee.id,
+                    name: selectedEmployee.name,
+                    email: selectedEmployee.email,
+                    personalEmail: selectedEmployee.personalEmail,
+                  }}
+                />
+              </div>
+            )}
 
-            </div>
+            {/* ── Registered Tickets Tab (warranty registrars only) ── */}
+            {activeDrawerTab === 'registrations' && isWarrantyRegistrar(selectedEmployee.jobTitle) && (
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                <WarrantyRegistrationHistoryTable
+                  person={{
+                    id: selectedEmployee.id,
+                    name: selectedEmployee.name,
+                    email: selectedEmployee.email,
+                    personalEmail: selectedEmployee.personalEmail,
+                  }}
+                />
+              </div>
+            )}
 
-            {/* Footer */}
-            <div className="px-6 py-3.5 border-t flex items-center justify-between shrink-0" style={{ borderColor: border, backgroundColor: isLight ? 'rgba(248,250,252,0.8)' : 'rgba(10,17,32,0.8)' }}>
-              <span className="text-[11px]" style={{ color: textMuted }}>ID: {selectedEmployee.id.slice(0, 16)}…</span>
-              <button
-                onClick={closeDetailTab}
-                className="px-4 py-1.5 rounded-lg text-xs font-bold border transition-all hover:bg-slate-500/10"
-                style={{ borderColor: border, color: textMuted }}
-              >
-                Close
-              </button>
-            </div>
           </div>
+        </div>
       )}
 
       {/* ── Edit Modal ── */}
@@ -1895,6 +2298,9 @@ export default function Employees() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Field label="FULL NAME" labelColor={textMuted}>
                       <input className={inputCls} style={inputStyle} value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} onBlur={e => setEditForm(p => ({ ...p, name: formatPersonName(e.target.value) }))} />
+                    </Field>
+                    <Field label="NICKNAME (DROPDOWN SHORT NAME)" labelColor={textMuted}>
+                      <input className={inputCls} style={inputStyle} value={editForm.nickname} onChange={e => setEditForm(p => ({ ...p, nickname: e.target.value }))} placeholder="e.g. ALLAN, CRIS, TROY" />
                     </Field>
                     <Field label="LOGIN EMAIL" labelColor={textMuted}>
                       <input className={inputCls} style={inputStyle} type="email" value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} />
@@ -2092,7 +2498,7 @@ export default function Employees() {
 
               {createStep === 1 && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="sm:col-span-2">
+                  <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <Field label="FULL NAME" labelColor={textMuted}>
                       <input
                         className={inputCls}
@@ -2102,6 +2508,15 @@ export default function Employees() {
                         onBlur={e => setCreateForm(p => ({ ...p, name: formatPersonName(e.target.value) }))}
                         placeholder="JUAN DELA CRUZ"
                         autoFocus
+                      />
+                    </Field>
+                    <Field label="NICKNAME (OPTIONAL)" labelColor={textMuted}>
+                      <input
+                        className={inputCls}
+                        style={inputStyle}
+                        value={createForm.nickname}
+                        onChange={e => setCreateForm(p => ({ ...p, nickname: e.target.value }))}
+                        placeholder="e.g. JUAN"
                       />
                     </Field>
                   </div>

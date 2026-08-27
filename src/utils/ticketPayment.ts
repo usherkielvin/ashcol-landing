@@ -177,6 +177,20 @@ export function ticketHasPaymentInfo(ticket: Partial<Ticket>): boolean {
   return Boolean(mode || (charges != null && !Number.isNaN(Number(charges)) && Number(charges) > 0))
 }
 
+/** Collapses the multi-row split-payment UI (PaymentSection) into the single `modeOfPayment` /
+ *  `installationCharges` fields tickets are actually saved with. Multiple rows become `HYBRID`. */
+export function derivePaymentSummary(
+  rows: { mode: string; amount: number }[],
+  fallback?: { modeOfPayment?: string; installationCharges?: number },
+): { modeOfPayment: string | undefined; installationCharges: number } {
+  const total = rows.reduce((sum, p) => sum + (p.amount || 0), 0)
+  const installationCharges = total || Number(fallback?.installationCharges) || 0
+  const modeOfPayment = rows.length > 1
+    ? 'HYBRID'
+    : (rows[0]?.mode || fallback?.modeOfPayment || undefined)
+  return { modeOfPayment, installationCharges }
+}
+
 export function getEmptyRequiredColumnsForClose(
   ticketOrForm: Partial<Ticket> & { serviceDriver?: string; ticketCategory?: any },
 ): string[] {

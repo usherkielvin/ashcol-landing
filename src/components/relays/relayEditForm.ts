@@ -58,6 +58,7 @@ export type RelayEditDraft = {
   reschedulePending: boolean
   remarks: string
   commitTerms: string
+  paymentBreakdown?: Array<{ mode: string; amount: number }>
 }
 
 type TicketLike = {
