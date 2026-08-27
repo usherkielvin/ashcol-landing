@@ -57,27 +57,27 @@ export function getTicketScheduleOutcome(ticket: TicketLike): string {
 }
 
 export function shouldBackfillTicketArchive(ticket: TicketLike): boolean {
+  const stat = String(ticket.status || '').toUpperCase()
+  if (
+    stat === 'COMPLETED' ||
+    stat === 'CLOSED' ||
+    stat === 'DONE' ||
+    stat === 'INSTALLED' ||
+    stat.startsWith('DONE_')
+  ) {
+    return true
+  }
+
   const remarks = ticketRemarks(ticket)
   const remarksLower = remarks.toLowerCase()
   if (remarksLower.includes('pending warranty') || remarksLower.includes('warranty regi')) {
     return true
   }
+
   const outcome = getTicketScheduleOutcome(ticket)
-  if (
-    outcome === 'DONE_CLEANING'
-    || outcome === 'DONE_SURVEY'
-    || outcome === 'DONE_SYSTEM_REPROCESS'
-    || outcome === 'DONE_DISMANTLE'
-    || outcome === 'DONE_CHECKUP'
-    || outcome === 'DONE_BACKJOB'
-    || outcome === 'DONE_SERVICE'
-    || outcome === 'DONE_MOUNTING'
-  ) return false
-  if (outcome === 'DONE_INSTALLED') return true
+  if (outcome && outcome.startsWith('DONE_')) return true
   if (isInstalledRemarks(remarks)) return true
-  if (/clean/i.test(remarks) || /survey/i.test(remarks)) return false
-  const status = String(ticket.status || '').toUpperCase()
-  if (status === 'COMPLETED') return true
+
   return false
 }
 
@@ -108,37 +108,11 @@ function parseBrandFromTicket(ticket: TicketLike): string {
   const raw = ticket.acDetails ?? ticket.ac_details
   if (!raw || typeof raw !== 'string') return unit || ''
   try {
-    const parsed = JSON.parse(raw)
-    const units = Array.isArray(parsed) ? parsed : [parsed]
-    const brands: string[] = []
-    for (const u of units) {
-      if (!u || typeof u !== 'object') continue
-      const row = u as Record<string, unknown>
-      const joined = joinBrandCapacity(
-        typeof row.brand === 'string' ? row.brand : '',
-        typeof row.capacity === 'string' ? row.capacity : '',
-      )
-      if (joined && !isGenericUnitLabel(joined)) brands.push(joined)
-      const details = Array.isArray(row.details) ? row.details : []
-      for (const detail of details) {
-        if (detail && typeof detail === 'object' && typeof (detail as Record<string, unknown>).brand === 'string') {
-          brands.push((detail as Record<string, unknown>).brand as string)
-        }
-      }
-      if (typeof row.unitType === 'string' && row.unitType.trim() && !isGenericUnitLabel(row.unitType)) {
-        return row.unitType.trim()
-      }
-    }
-    if (brands.length) return brands.join(', ')
-  } catch { /* ignore */ }
-  return unit || ''
-}
-
-function joinBrandCapacity(brand: string, capacity: string) {
-  const b = brand.trim()
-  const c = capacity.trim()
-  if (b && c) return `${b} ${c}`
-  return b || c
+    const p = JSON.parse(raw) as { brand?: string; indoorBrand?: string; outdoorBrand?: string; unitType?: string }
+    return p?.brand || p?.indoorBrand || p?.outdoorBrand || p?.unitType || unit || ''
+  } catch {
+    return unit || ''
+  }
 }
 
 function isGenericUnitLabel(value: string) {
@@ -153,7 +127,10 @@ function isGenericUnitLabel(value: string) {
 
 function parseNegotiatorFromTicket(ticket: TicketLike): string {
   const meta = parseAcMeta(ticket)
-  return String(meta.negotiatorName || meta.negotiator || '').trim()
+  const fromMeta = String(meta.negotiatorName || meta.negotiator || '').trim()
+  if (fromMeta) return fromMeta
+  const assigned = String(ticket.assignedEmployeeName ?? ticket.assigned_employee_name ?? '').trim()
+  return assigned
 }
 
 function getField(ticket: TicketLike, ...keys: string[]): string {
@@ -168,15 +145,14 @@ function formatAddress(loc: unknown): string {
   if (!loc) return ''
   if (typeof loc === 'string') {
     const s = loc.trim()
-    if (!s) return ''
-    if (s.startsWith('{') || s.startsWith('[')) {
+    if (s.startsWith('{')) {
       try {
         const p = JSON.parse(s) as { address?: string; region?: string }
         const addr = (p?.address ?? '').trim()
         const region = (p?.region ?? '').trim()
         return addr && region && !addr.toLowerCase().includes(region.toLowerCase())
           ? `${addr}, ${region}` : addr || region || s
-      } catch { /* fall through */ }
+      } catch { return s }
     }
     return s
   }
@@ -269,9 +245,46 @@ export function buildArchivePayloadFromTicket(
     .split('T')[0].split(' ')[0].trim()
   const mode = getField(ticket, 'modeOfPayment', 'mode_of_payment').toUpperCase() || 'CASH'
   const charges = ticket.installationCharges ?? ticket.installation_charges ?? ticket.amountCharged ?? 0
-  const remarks = getField(ticket, 'remarksUpdate', 'remarks') || 'Installed'
   const commitTerms = getField(ticket, 'commitType', 'commitTerms', 'description')
   const freeInstall = mode === 'FREE INSTALL' || mode === 'FREE' || /FREE/i.test(commitTerms)
+
+  const outcome = getTicketScheduleOutcome(ticket) || ''
+  const serviceTypeRaw = getField(ticket, 'serviceType', 'service_type') || ''
+  const rawRemarks = getField(ticket, 'remarksUpdate', 'remarks') || ''
+
+  let serviceType = 'INSTALLATION'
+  let statusCode = 'I'
+
+  if (outcome === 'DONE_CLEANING' || /clean/i.test(serviceTypeRaw) || /clean/i.test(rawRemarks)) {
+    serviceType = 'CLEANING'
+    statusCode = 'S'
+  } else if (outcome === 'DONE_SURVEY' || /survey/i.test(serviceTypeRaw) || /survey/i.test(rawRemarks)) {
+    serviceType = 'SURVEY'
+    statusCode = 'S'
+  } else if (outcome === 'DONE_CHECKUP' || /checkup/i.test(serviceTypeRaw) || /checkup/i.test(rawRemarks)) {
+    serviceType = 'CHECKUP'
+    statusCode = 'S'
+  } else if (outcome === 'DONE_BACKJOB' || /backjob/i.test(serviceTypeRaw) || /backjob/i.test(rawRemarks)) {
+    serviceType = 'BACKJOB'
+    statusCode = 'S'
+  } else if (outcome === 'DONE_DISMANTLE' || /dismantle/i.test(serviceTypeRaw) || /dismantle/i.test(rawRemarks)) {
+    serviceType = 'DISMANTLE'
+    statusCode = 'S'
+  } else if (outcome === 'DONE_MOUNTING' || /mounting/i.test(serviceTypeRaw) || /mounting/i.test(rawRemarks)) {
+    serviceType = 'MOUNTING'
+    statusCode = 'S'
+  } else if (outcome === 'DONE_SERVICE' || /service/i.test(serviceTypeRaw) || /service/i.test(rawRemarks)) {
+    serviceType = 'SERVICE'
+    statusCode = 'S'
+  } else if (freeInstall) {
+    serviceType = 'FREE_INSTALLATION'
+    statusCode = 'I'
+  } else if (serviceTypeRaw) {
+    serviceType = serviceTypeRaw.toUpperCase()
+    statusCode = /install/i.test(serviceTypeRaw) ? 'I' : 'S'
+  }
+
+  const remarks = rawRemarks || (outcome ? outcome.replace('DONE_', '') : (statusCode === 'I' ? 'Installed' : 'Service Done'))
 
   return {
     branchId: resolveScopedBranchId(branchId),
@@ -283,8 +296,8 @@ export function buildArchivePayloadFromTicket(
     customerAddress: formatAddress(ticket.location),
     customerPhone: getField(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone'),
     district: parseDistrict(ticket),
-    serviceType: freeInstall ? 'FREE_INSTALLATION' : 'INSTALLATION',
-    statusCode: 'I',
+    serviceType,
+    statusCode,
     commitTerms,
     dealer: getField(ticket, 'dealer', 'sourceVendor', 'source_vendor'),
     unitBrandModel: parseBrandFromTicket(ticket) || getField(ticket, 'unitType', 'unit_type'),
@@ -330,14 +343,13 @@ export async function syncMissingTicketArchives(
   const existingIds = new Set(
     existingRows.map((r) => r.ticketId).filter((id): id is string => Boolean(id)),
   )
-  const maxCreate = options?.maxCreate ?? 30
+  const maxCreate = options?.maxCreate ?? 100
 
   let tickets: unknown[]
   try {
     tickets = await fetchTicketsPage('/tickets', token, {
-      size: 300,
-      categoryGroup: 'FIELD',
-      status: 'COMPLETED',
+      size: 500,
+      paginate: false,
     })
   } catch {
     return []

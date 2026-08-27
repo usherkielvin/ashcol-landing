@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
 import ReactDOM from 'react-dom'
 import {
-  CalendarDays, Upload, Edit3, Trash2,
+  CalendarDays, Upload, Edit3,
   X, Search, AlertTriangle, Building2, Eye,
   Check, ChevronDown, User,
 } from 'lucide-react'
@@ -417,7 +417,6 @@ export default function DailyServiceReport() {
   const isAllBranchUser = isAdmin || isManager
   const isBranchScoped = role === 'staff' || role === 'employee' || role === 'oic'
   const canImport = isAllBranchUser || isBranchScoped
-  const canDelete = isAdmin || isManager
   const canEdit = isAdmin || isManager || role === 'staff' || role === 'employee' || role === 'oic'
 
   const initialArchives = (() => {
@@ -522,19 +521,7 @@ export default function DailyServiceReport() {
     setRows(prev => [newRow, ...prev])
   }
 
-  // Escape hatch for the trailing "X" column on both the desktop table and
-  // mobile cards. An unsaved blank row (id still `temp-...`, same convention
-  // saveCell already uses to detect an in-progress add) is just dropped from
-  // local state — it was never persisted, so there's nothing to delete on the
-  // server. A real, saved row goes through the existing confirm+DELETE flow.
-  const handleRemoveRow = (id: string) => {
-    if (id.startsWith('temp-')) {
-      setRows(prev => prev.filter(r => r.id !== id))
-      return
-    }
-    const row = rows.find(r => r.id === id)
-    if (row) handleDelete(row)
-  }
+
 
   // Pending Excel import waiting for an all-branch user to choose a target branch
   const [pendingImport, setPendingImport] = useState<{ file: File; branchId: string; detectedDate: string | null } | null>(null)
@@ -1548,25 +1535,7 @@ export default function DailyServiceReport() {
     }
   }
 
-  // ── Save (create / update) ────────────────────────────────────────────────
-  const handleDelete = async (row: ServiceRow) => {
-    if (!window.confirm(`Delete service record for ${row.customerName}?`)) return
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const res = await fetch(`${API_BASE_URL}/v1/service-reports/${row.id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        alert(err.error || err.message || `Delete failed (HTTP ${res.status})`)
-        return
-      }
-      fetchRows({ soft: true, force: true })
-    } catch (e) {
-      console.error(e); alert('Network error while deleting')
-    }
-  }
+
 
 
   // ── Derived data ──────────────────────────────────────────────────────────
@@ -1742,9 +1711,6 @@ export default function DailyServiceReport() {
                 {columns.map(col => (
                   <col key={col.label} style={{ width: col.w }} />
                 ))}
-                {/* Trailing action column — row cancel/delete "X", fixed width so it
-                    never eats into the percentage-weighted data columns above. */}
-                <col style={{ width: '34px' }} />
               </colgroup>
               <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                 <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#060B18' }}>
@@ -1872,23 +1838,6 @@ export default function DailyServiceReport() {
                           </td>
                         )
                       })}
-                      <td style={{
-                        padding: '7px 6px',
-                        borderBottom: `1px solid ${border}`,
-                        width: '34px', minWidth: 0, maxWidth: '34px',
-                        textAlign: 'center',
-                        verticalAlign: 'middle',
-                        backgroundColor: rowSelectedBg,
-                      }}>
-                        <button
-                          type="button"
-                          onClick={e => { e.stopPropagation(); handleRemoveRow(r.id) }}
-                          title={r.id.startsWith('temp-') ? 'Cancel this row' : 'Delete this record'}
-                          className="text-slate-400 hover:text-red-500 transition-colors p-1 rounded"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
                     </tr>
                   )
                 }))}
@@ -1927,27 +1876,17 @@ export default function DailyServiceReport() {
                       onContextMenu={e => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, row: r }) }}
                       className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#0A1120] shadow-sm overflow-hidden active:scale-[0.985] transition-transform cursor-pointer"
                     >
-                      {/* Header: ticket no (left) / completed date + cancel-delete "X" (right) */}
+                      {/* Header: ticket no (left) / completed date (right) */}
                       <div className="px-3 py-2 flex justify-between items-center border-b" style={{ borderColor: border, backgroundColor: isLight ? 'rgba(248,250,252,0.7)' : 'rgba(15,26,46,0.5)' }}>
                         <span className="text-[10.5px] font-bold tabular-nums" style={{ color: textMuted }}>
                           {r.ticketNumber || '—'}
                         </span>
-                        <div className="flex items-center gap-2">
-                          {completedLabel ? (
-                            <span className="flex items-center gap-1 text-[10.5px] font-bold" style={{ color: textPrimary }}>
-                              <CalendarDays className="w-3 h-3 shrink-0" style={{ color: textMuted }} />
-                              {completedLabel}
-                            </span>
-                          ) : null}
-                          <button
-                            type="button"
-                            onClick={e => { e.stopPropagation(); handleRemoveRow(r.id) }}
-                            title={r.id.startsWith('temp-') ? 'Cancel this row' : 'Delete this record'}
-                            className="text-slate-400 hover:text-red-500 transition-colors p-0.5 rounded shrink-0"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        {completedLabel ? (
+                          <span className="flex items-center gap-1 text-[10.5px] font-bold" style={{ color: textPrimary }}>
+                            <CalendarDays className="w-3 h-3 shrink-0" style={{ color: textMuted }} />
+                            {completedLabel}
+                          </span>
+                        ) : null}
                       </div>
 
                       {/* Body: customer name / brand · dealer / district */}
@@ -2026,15 +1965,6 @@ export default function DailyServiceReport() {
                 onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'}
                 onClick={() => { startEdit(contextMenu.row, columns[0].label); setContextMenu(null) }}>
                 <Edit3 className="w-3.5 h-3.5" style={{ color: textMuted }} /> Edit row
-              </button>
-            )}
-            {canDelete && (
-              <button className="flex items-center gap-3 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors"
-                style={{ color: textPrimary }}
-                onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.backgroundColor = inputBg}
-                onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'}
-                onClick={() => { handleDelete(contextMenu.row); setContextMenu(null) }}>
-                <Trash2 className="w-3.5 h-3.5" /> Delete row
               </button>
             )}
           </div>
