@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo, type FocusEvent, type MouseEvent as ReactMouseEvent, type CSSProperties } from 'react'
 import { NumericFormat } from 'react-number-format'
-import { Search, Building2, Calendar, CheckCircle2, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, SlidersHorizontal, X } from 'lucide-react'
+import { Search, Building2, Calendar, CheckCircle2, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, SlidersHorizontal, Plus, X } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatBranchName, isPortalAdmin } from '../utils/api'
@@ -23,6 +23,30 @@ const shortDate = (ymd: string) => {
   const [y, m, d] = ymd.split('-').map(Number)
   if (!y || !m || !d) return ymd
   return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+const longDate = (ymd: string) => {
+  if (!ymd) return ''
+  const [y, m, d] = ymd.split('-').map(Number)
+  if (!y || !m || !d) return ymd
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+}
+const getInitials = (name: string) => {
+  const words = name.trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return '—'
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase()
+  return (words[0][0] + words[1][0]).toUpperCase()
+}
+// A handful of deterministic gradient pairs so each installer's avatar reads as a distinct
+// person at a glance, without storing per-user color state anywhere.
+const AVATAR_GRADIENTS: [string, string][] = [
+  ['#10B981', '#0EA5E9'], ['#F59E0B', '#EF4444'], ['#8B5CF6', '#EC4899'],
+  ['#06B6D4', '#3B82F6'], ['#84CC16', '#10B981'], ['#F97316', '#EAB308'],
+]
+const avatarGradient = (name: string) => {
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0
+  const [from, to] = AVATAR_GRADIENTS[hash % AVATAR_GRADIENTS.length]
+  return `linear-gradient(135deg, ${from}, ${to})`
 }
 
 function getFridayToFriday(d: Date = new Date()): { from: string; to: string } {
@@ -82,6 +106,20 @@ const rowTotal = (r: PayrollRow) =>
 
 const installerTotal = (installerRows: PayrollRow[]) =>
   installerRows.reduce((sum, r) => sum + rowTotal(r), 0)
+
+// Every field a manually added row needs, defaulted blank — used by the "Add Job" form so a
+// payroll officer can key in a day's job order without it having come from a synced ticket.
+const emptyPayrollRow = (): PayrollRow => ({
+  id: uid(), ticketNumber: '', installerName: '', workDate: '', customerName: '', cityAddress: '',
+  brandCapacity: '', sifQuotation: '', totalPipeLength: '', amountCollected: '', actualCollected: '',
+  installationUpload: '', installationFee: '', earthGrounding: '', dailyAllowance: '',
+  excessCopperTube: '', hauling: '', dismantling: '', electricalWorks: '', chippingWorks: '',
+  breaker: '', powerSupplyLaborOnly: '', powerSupplyLaborMaterials: '', specialBracketCatwalk: '',
+  specialBracketWelding: '', excessCopperTubeLaborOnly: '', relocationAccuFcu: '',
+  systemReprocessLabor: '', drainPumpInstallation: '', scaffoldingInstallation: '',
+  flushingOldPipe: '', sterneBracket: '', breakerInstallationLabor: '', chargingOfFreon: '',
+  materialsReturn: '', installationChecklist: '', videoUpload: '', remarks: '', audited: '',
+})
 
 // Money owed BACK to the branch — parses the free-text remit field ("2,000 CASH", "FREE")
 // down to its numeric amount, ignoring the payment-method text.
@@ -273,6 +311,60 @@ export default function Payroll() {
     hiddenColumnsByInstaller[installerName] ?? new Set(DEFAULT_HIDDEN_COLUMNS)
   const [columnManagerFor, setColumnManagerFor] = useState<string | null>(null)
   const [columnSearch, setColumnSearch] = useState('')
+
+  // "Add Job" form — a per-day job order a payroll officer keys in by hand, for an install
+  // that never came through as a synced schedule ticket.
+  const emptyAddJobDraft = { workDate: '', ticketNumber: '', customerName: '', brandCapacity: '', installationUpload: '', installationFee: '', actualCollected: '' }
+  const [addJobFor, setAddJobFor] = useState<string | null>(null)
+  const [addJobDraft, setAddJobDraft] = useState(emptyAddJobDraft)
+  const openAddJob = (installerName: string) => {
+    setAddJobDraft(emptyAddJobDraft)
+    setAddJobFor(installerName)
+  }
+  const submitAddJob = () => {
+    if (!addJobFor || !addJobDraft.workDate) return
+    addManualRow(addJobFor, addJobDraft)
+    setAddJobFor(null)
+  }
+
+  // Schedule tickets only ever carry an installer's first name/nickname (see
+  // cleanInstallerName in schedulePrefill.ts — that's what payrollDerive.ts groups rows by),
+  // so the payroll page shows that short form unless we look up the real full name. Fetches
+  // every EMPLOYEE tagged INSTALLER or TECHNICIAN for the selected branch and maps
+  // "first word of their real name" → their full name, purely for display.
+  const [branchTechnicians, setBranchTechnicians] = useState<{ id: string; name: string; jobTitle: string }[]>([])
+  useEffect(() => {
+    if (!branchFilter) { setBranchTechnicians([]); return }
+    let cancelled = false
+    fetch(`${API_BASE_URL}/user/all?role=EMPLOYEE`, { headers: { Authorization: `Bearer ${getToken()}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (cancelled || !data) return
+        const list: any[] = data?.data || []
+        const filtered = list
+          .filter(u => u.branchId === branchFilter)
+          .filter(u => /INSTALLER|TECHNICIAN/i.test(u.jobTitle || ''))
+          .map(u => ({ id: u.id, name: String(u.name || '').trim(), jobTitle: u.jobTitle || '' }))
+        setBranchTechnicians(filtered)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [branchFilter])
+
+  const installerFullNames = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const t of branchTechnicians) {
+      const firstWord = t.name.split(/\s+/)[0]?.toUpperCase()
+      // First match wins — if two technicians at the same branch share a first name/nickname,
+      // this can't disambiguate and falls back to showing the short ticket-derived form.
+      if (firstWord && !map[firstWord]) map[firstWord] = t.name
+    }
+    return map
+  }, [branchTechnicians])
+  const displayInstallerName = (shortName: string) => {
+    const key = shortName.trim().split(/\s+/)[0]?.toUpperCase()
+    return (key && installerFullNames[key]) || shortName
+  }
 
   // Drag-to-resize column widths — shared across every installer table, persisted so a
   // widened column stays widened next visit.
@@ -550,25 +642,42 @@ export default function Payroll() {
     void loadAndSync()
   }, [loadAndSync])
 
+  // Shared by every mutation below — groups by month (a row can belong to a different month
+  // than the active filter) and pushes each group to its own backend save.
+  const scheduleAutoSave = (updated: PayrollRow[]) => {
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    setSaveStatus('saving')
+    autoSaveTimer.current = setTimeout(() => {
+      if (isAdmin && branchFilter) {
+        const monthGroups = new Map<string, PayrollRow[]>()
+        for (const r of updated) {
+          const m = r.workDate ? r.workDate.slice(0, 7) : (dateFrom ? dateFrom.slice(0, 7) : new Date().toISOString().slice(0, 7))
+          if (!monthGroups.has(m)) monthGroups.set(m, [])
+          monthGroups.get(m)!.push(r)
+        }
+        for (const [mKey, mRows] of monthGroups.entries()) {
+          void savePayrollToBackend(mRows, branchFilter, mKey)
+        }
+      }
+    }, 700)
+  }
+
   // Debounced auto-save on row edits
   const updateRow = (id: string, patch: Partial<PayrollRow>) => {
     setRows(prev => {
       const updated = prev.map(r => r.id === id ? { ...r, ...patch } : r)
-      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
-      setSaveStatus('saving')
-      autoSaveTimer.current = setTimeout(() => {
-        if (isAdmin && branchFilter) {
-          const monthGroups = new Map<string, PayrollRow[]>()
-          for (const r of updated) {
-            const m = r.workDate ? r.workDate.slice(0, 7) : (dateFrom ? dateFrom.slice(0, 7) : new Date().toISOString().slice(0, 7))
-            if (!monthGroups.has(m)) monthGroups.set(m, [])
-            monthGroups.get(m)!.push(r)
-          }
-          for (const [mKey, mRows] of monthGroups.entries()) {
-            void savePayrollToBackend(mRows, branchFilter, mKey)
-          }
-        }
-      }, 700)
+      scheduleAutoSave(updated)
+      return updated
+    })
+  }
+
+  // Manually keyed-in job order — the "Add Job" form's submit handler. No ticketId, so it
+  // stays fully editable afterward like any other hand-added row.
+  const addManualRow = (installerName: string, patch: Partial<PayrollRow>) => {
+    const newRow: PayrollRow = { ...emptyPayrollRow(), installerName, ...patch }
+    setRows(prev => {
+      const updated = [...prev, newRow]
+      scheduleAutoSave(updated)
       return updated
     })
   }
@@ -674,6 +783,9 @@ export default function Payroll() {
   const globalBaseInstallTotal = useMemo(() => baseInstallTotal(filteredRows), [filteredRows])
   const globalRemittanceTotal = useMemo(() => remittanceTotal(filteredRows), [filteredRows])
   const globalAddOnTotal = grandTotal - globalBaseInstallTotal
+  const currentBranchDisplay = branchFilter
+    ? formatBranchName(branches.find(b => b.id === branchFilter)?.name || user?.branchId || '')
+    : ''
 
 
   // If filters change out from under the selected installer (different month/branch/search
@@ -1053,6 +1165,32 @@ export default function Payroll() {
           </button>
       </div>
 
+      {/* Branded per-branch payroll header — mirrors the branch's own printed weekly
+          payroll & allowance sheet, so this page reads as the same official document. */}
+      {branchFilter && (
+        <div className="rounded-2xl overflow-hidden shadow-sm" style={{ border: `1px solid ${border}` }}>
+          <div
+            className="px-5 py-2.5 text-center"
+            style={{
+              background: isLight
+                ? 'linear-gradient(90deg, rgba(16,185,129,0.16), rgba(14,165,233,0.16))'
+                : 'linear-gradient(90deg, rgba(16,185,129,0.22), rgba(14,165,233,0.22))',
+              borderBottom: `1px solid ${border}`,
+            }}
+          >
+            <div className="text-sm font-extrabold uppercase tracking-wide" style={{ color: isLight ? '#065f46' : '#6EE7B7' }}>
+              {currentBranchDisplay || 'Branch'} Installer&rsquo;s Payroll &amp; Allowance
+            </div>
+          </div>
+          {(dateFrom || dateTo) && (
+            <div className="px-5 py-2 flex items-center justify-center gap-2 text-xs font-bold" style={{ backgroundColor: cardBg, color: textMuted }}>
+              <Calendar className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              Period Covered: {dateFrom ? longDate(dateFrom) : '—'} – {dateTo ? longDate(dateTo) : '—'}
+            </div>
+          )}
+        </div>
+      )}
+
       {initialLoading ? (
         <div className="rounded-2xl p-6 flex flex-col gap-2" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
           {[1, 2, 3].map(i => (
@@ -1096,7 +1234,7 @@ export default function Payroll() {
                   style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-extrabold" style={{ color: textPrimary }}>{installerName}</span>
+                    <span className="text-sm font-extrabold" style={{ color: textPrimary }}>{displayInstallerName(installerName)}</span>
                     <span className="text-[11px] font-semibold" style={{ color: textMuted }}>
                       {installerRows.length} job{installerRows.length !== 1 ? 's' : ''}
                     </span>
@@ -1109,6 +1247,16 @@ export default function Payroll() {
                     >
                       <SlidersHorizontal className="w-3 h-3" />
                       Columns
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openAddJob(installerName)}
+                      title="Key in a day's job order by hand"
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-colors"
+                      style={{ color: '#10B981', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.14)' }}
+                    >
+                      <Plus className="w-3 h-3" />
+                      Add Job
                     </button>
                   </div>
                   <span className="text-sm font-extrabold" style={{ color: '#10B981' }}>₱{peso(installerTotal(installerRows))}</span>
@@ -1357,39 +1505,76 @@ export default function Payroll() {
           })}
         </div>
       ) : (
-        // Roster — click an installer to open their table, instead of previewing every
-        // installer's full spreadsheet on one page.
+        // Roster — a big-row table list, one installer per row. Click a row (or its
+        // "View Payroll" pill) to open that installer's table.
         <div className="flex flex-col gap-4 -mx-5 md:-mx-8">
           <div className="overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}`, borderBottom: `1px solid ${border}` }}>
+            <div
+              className="hidden md:grid items-center px-5 py-2.5"
+              style={{ gridTemplateColumns: '1fr 140px 200px 160px', backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}
+            >
+              <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Installer</span>
+              <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Jobs</span>
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-right" style={{ color: textMuted }}>Net Payout</span>
+              <span />
+            </div>
+
             {grouped.map(([installerName, installerRows], idx) => {
+              const total = installerTotal(installerRows)
               const rowBg = idx % 2 === 1 ? zebraBg : 'transparent'
               return (
                 <button
                   key={installerName}
                   type="button"
                   onClick={() => setSelectedInstaller(installerName)}
-                  className="flex items-center justify-between w-full px-4 py-3 text-left transition-colors"
-                  style={{ backgroundColor: rowBg, borderBottom: idx < grouped.length - 1 ? `1px solid ${border}` : 'none' }}
+                  className="group w-full flex flex-wrap md:grid items-center gap-x-4 gap-y-2 px-5 py-5 text-left transition-colors"
+                  style={{
+                    gridTemplateColumns: '1fr 140px 200px 160px',
+                    backgroundColor: rowBg,
+                    borderBottom: idx < grouped.length - 1 ? `1px solid ${border}` : 'none',
+                  }}
                   onMouseEnter={e => { e.currentTarget.style.backgroundColor = rowHoverBg }}
                   onMouseLeave={e => { e.currentTarget.style.backgroundColor = rowBg }}
                 >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <ChevronRight className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
-                    <span className="text-sm font-extrabold truncate" style={{ color: textPrimary }}>{installerName}</span>
-                    <span className="text-[11px] font-semibold shrink-0" style={{ color: textMuted }}>
-                      {installerRows.length} job{installerRows.length !== 1 ? 's' : ''}
-                    </span>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className="w-12 h-12 rounded-xl flex items-center justify-center text-sm font-extrabold text-white shrink-0"
+                      style={{ background: avatarGradient(installerName) }}
+                    >
+                      {getInitials(installerName)}
+                    </div>
+                    <span className="text-base font-extrabold truncate" style={{ color: textPrimary }}>{displayInstallerName(installerName)}</span>
                   </div>
-                  <span className="text-sm font-extrabold shrink-0" style={{ color: '#10B981' }}>₱{peso(installerTotal(installerRows))}</span>
+
+                  <span className="text-sm font-semibold" style={{ color: textMuted }}>
+                    {installerRows.length} job{installerRows.length !== 1 ? 's' : ''}
+                  </span>
+
+                  <div className="text-right">
+                    <div className="md:hidden text-[9px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Net Payout</div>
+                    <div className="text-lg font-extrabold tabular-nums" style={{ color: '#10B981' }}>₱{peso(total)}</div>
+                  </div>
+
+                  <span
+                    className="flex items-center justify-center gap-1 px-3 py-2 rounded-full text-xs font-bold transition-transform group-hover:translate-x-0.5 shrink-0 ml-auto md:ml-0"
+                    style={{ color: '#10B981', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.14)' }}
+                  >
+                    View Payroll
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </span>
                 </button>
               )
             })}
           </div>
 
-          {/* SUMMARY — global breakdown only; the roster above already lists each installer's own total. */}
-          <div className="overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}`, borderBottom: `1px solid ${border}` }}>
-            <div className="px-4 py-3" style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}>
+          {/* SUMMARY — global breakdown only; each row above already shows its own installer's total. */}
+          <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <div className="px-4 py-3 flex items-center gap-2" style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}>
+              <div className="w-1.5 h-4 rounded-full" style={{ background: 'linear-gradient(180deg,#10B981,#0EA5E9)' }} />
               <span className="text-sm font-extrabold" style={{ color: textPrimary }}>Summary</span>
+              <span className="text-[11px] font-semibold" style={{ color: textMuted }}>
+                {grouped.length} installer{grouped.length !== 1 ? 's' : ''}
+              </span>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4">
               {footerTile('Total Remittance Collected', globalRemittanceTotal, remitAccent)}
@@ -1417,7 +1602,7 @@ export default function Payroll() {
               <div className="flex items-center gap-2">
                 <SlidersHorizontal className="w-4 h-4" style={{ color: '#10B981' }} />
                 <h2 className="text-sm font-extrabold" style={{ color: textPrimary }}>
-                  Manage Columns — {columnManagerFor}
+                  Manage Columns — {displayInstallerName(columnManagerFor)}
                 </h2>
               </div>
               <button type="button" onClick={() => setColumnManagerFor(null)} className="p-1.5 rounded-lg hover:bg-red-500/10">
@@ -1516,6 +1701,142 @@ export default function Payroll() {
                 style={{ background: '#10B981' }}
               >
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {addJobFor && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(8,12,20,0.55)' }}
+          onClick={() => setAddJobFor(null)}
+        >
+          <div
+            className="w-full rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            style={{ maxWidth: 440, maxHeight: '88vh', backgroundColor: cardBg, border: `1px solid ${border}` }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
+              <div className="flex items-center gap-2">
+                <Plus className="w-4 h-4" style={{ color: '#10B981' }} />
+                <h2 className="text-sm font-extrabold" style={{ color: textPrimary }}>
+                  Add Job — {displayInstallerName(addJobFor)}
+                </h2>
+              </div>
+              <button type="button" onClick={() => setAddJobFor(null)} className="p-1.5 rounded-lg hover:bg-red-500/10">
+                <X className="w-4 h-4" style={{ color: textMuted }} />
+              </button>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 flex flex-col gap-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Date *</span>
+                <input
+                  type="date"
+                  value={addJobDraft.workDate}
+                  onChange={e => setAddJobDraft(prev => ({ ...prev, workDate: e.target.value }))}
+                  className="w-full rounded-xl border px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }}
+                />
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Job Order / Ticket #</span>
+                <input
+                  type="text"
+                  value={addJobDraft.ticketNumber}
+                  onChange={e => setAddJobDraft(prev => ({ ...prev, ticketNumber: e.target.value }))}
+                  className="w-full rounded-xl border px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                />
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Customer Name</span>
+                <input
+                  type="text"
+                  value={addJobDraft.customerName}
+                  onChange={e => setAddJobDraft(prev => ({ ...prev, customerName: e.target.value }))}
+                  className="w-full rounded-xl border px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                />
+              </label>
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Brand / Capacity</span>
+                  <input
+                    type="text"
+                    value={addJobDraft.brandCapacity}
+                    onChange={e => setAddJobDraft(prev => ({ ...prev, brandCapacity: e.target.value }))}
+                    className="w-full rounded-xl border px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Job Type</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. DONE INSTALL"
+                    value={addJobDraft.installationUpload}
+                    onChange={e => setAddJobDraft(prev => ({ ...prev, installationUpload: e.target.value }))}
+                    className="w-full rounded-xl border px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  />
+                </label>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Install Fee</span>
+                  <NumericFormat
+                    thousandSeparator=","
+                    decimalScale={2}
+                    allowNegative={false}
+                    value={addJobDraft.installationFee}
+                    onValueChange={values => setAddJobDraft(prev => ({ ...prev, installationFee: values.value }))}
+                    className="w-full rounded-xl border px-3 py-2 text-sm font-semibold text-right focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: remitAccent }}>Remit (G-Cash / Bank)</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. 2,000 CASH"
+                    value={addJobDraft.actualCollected}
+                    onChange={e => setAddJobDraft(prev => ({ ...prev, actualCollected: e.target.value }))}
+                    className="w-full rounded-xl border px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+                    style={{ backgroundColor: remitTint, borderColor: inputBorder, color: textPrimary }}
+                  />
+                </label>
+              </div>
+
+              <p className="text-[11px] font-medium" style={{ color: textMuted }}>
+                Every other fee/add-on column can be filled in afterward, right in the table —
+                this just gets the job order on the sheet for that day.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-5 py-3 shrink-0" style={{ borderTop: `1px solid ${border}` }}>
+              <button
+                type="button"
+                onClick={() => setAddJobFor(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold"
+                style={{ color: textMuted, backgroundColor: isLight ? '#f1f5f9' : '#0d1520' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitAddJob}
+                disabled={!addJobDraft.workDate}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ background: '#10B981' }}
+              >
+                Add Job
               </button>
             </div>
           </div>
