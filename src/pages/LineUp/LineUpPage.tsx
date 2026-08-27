@@ -347,15 +347,25 @@ export default function LineUpPage() {
   )
 
   const finalInstallerOptions = useMemo(() => {
-    const rosterNames = branchStaffRoster.installers.map(n => n.toUpperCase())
+    const formatFirst = (str: string) => {
+      const clean = str.trim().replace(/\s*\([^)]*\)\s*/g, '').replace(/^(sir|ma'am|maam|mr|ms|mrs|engr)\.?\s+/i, '').trim()
+      return clean.split(/\s+/)[0].toUpperCase()
+    }
+    const rosterNames = branchStaffRoster.installers.map(formatFirst).filter(Boolean)
+    const suggested = suggestions.installers.map(formatFirst).filter(Boolean)
     if (rosterNames.length > 0) return [...new Set(rosterNames)].sort()
-    return [...new Set([...suggestions.installers.map(i => i.toUpperCase()), ...INSTALLER_OPTIONS])].sort()
+    return [...new Set([...suggested, ...INSTALLER_OPTIONS])].sort()
   }, [branchStaffRoster.installers, suggestions.installers])
 
   const finalNegotiatorOptions = useMemo(() => {
-    const rosterNames = branchCoordinatorOptions.map(n => n.toUpperCase())
+    const formatFirst = (str: string) => {
+      const clean = str.trim().replace(/\s*\([^)]*\)\s*/g, '').replace(/^(sir|ma'am|maam|mr|ms|mrs|engr)\.?\s+/i, '').trim()
+      return clean.split(/\s+/)[0].toUpperCase()
+    }
+    const rosterNames = branchCoordinatorOptions.map(formatFirst).filter(Boolean)
+    const suggested = suggestions.negotiators.map(formatFirst).filter(Boolean)
     if (rosterNames.length > 0) return [...new Set(rosterNames)].sort()
-    return [...new Set([...suggestions.negotiators.map(n => n.toUpperCase()), ...NEGOTIATOR_OPTIONS])].sort()
+    return [...new Set([...suggested, ...NEGOTIATOR_OPTIONS])].sort()
   }, [branchCoordinatorOptions, suggestions.negotiators])
 
   const finalRouteOptions = useMemo(() =>
@@ -561,7 +571,9 @@ export default function LineUpPage() {
       for (const t of scoped) {
         const base = parseNameSiteToken(getTicketVehicleDisplay(t)).name
         if (!base) continue
-        const installer = getInstallerDisplay(t).trim()
+        const rawInstaller = getInstallerDisplay(t).trim()
+        const cleanInstaller = rawInstaller.replace(/\s*\([^)]*\)\s*/g, '').replace(/^(sir|ma'am|maam|mr|ms|mrs|engr)\.?\s+/i, '').trim()
+        const installer = (cleanInstaller.split(/\s+/)[0] || '').toUpperCase()
         const key = `${base}::${installer}`
         const entry = groups.get(key) || { base, installer, tickets: [] }
         entry.tickets.push(t)
@@ -612,12 +624,15 @@ export default function LineUpPage() {
       return sortedKeys.map(([key, group], i) => {
         const groupTickets = byTicketNumber(group.tickets)
         const prevTimes = prevTimeByKey.get(key)
+        const rawDriver = mostCommon(groupTickets.map(t => getTicketDriverDisplay(t)))
+        const cleanDriver = rawDriver.replace(/\s*\([^)]*\)\s*/g, '').replace(/^(sir|ma'am|maam|mr|ms|mrs|engr)\.?\s+/i, '').trim()
+        const driverName = (cleanDriver.split(/\s+/)[0] || '').toUpperCase()
         return {
           id: `local-schedule-${Date.now()}-${i}`,
           lineupDate: dateStr,
           branchId: bId,
           service: group.base,
-          driverName: mostCommon(groupTickets.map(t => getTicketDriverDisplay(t))),
+          driverName,
           driverTime: prevTimes?.driverTime || '8:00AM',
           installerName: group.installer,
           installerTime: prevTimes?.installerTime || '7:00AM',

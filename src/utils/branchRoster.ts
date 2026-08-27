@@ -103,6 +103,14 @@ export function employeeMatchesBranchScope(
   return false
 }
 
+function extractStaffFirstName(emp: BranchStaffOption): string {
+  const nickname = ((emp as { nickname?: string }).nickname || '').trim()
+  if (nickname) return nickname.toUpperCase()
+  const raw = (emp.name || '').trim().replace(/^(sir|ma'am|maam|mr|ms|mrs|engr)\.?\s+/i, '').trim()
+  if (!raw) return ''
+  return raw.split(/\s+/)[0].toUpperCase()
+}
+
 export function deriveRosterFromEmployees(
   employees: BranchStaffOption[],
   branchId: string,
@@ -114,15 +122,15 @@ export function deriveRosterFromEmployees(
     if (typeof emp.status === 'string' && emp.status.toUpperCase() === 'INACTIVE') continue
     if (!employeeMatchesBranchScope(emp, branchId)) continue
     if (isSalesCoordinatorEmployee(emp)) continue
-    const name = (emp.name || '').trim()
-    if (!name) continue
+    const firstName = extractStaffFirstName(emp)
+    if (!firstName) continue
     if (isDriverEmployee(emp)) {
-      drivers.push(name)
+      drivers.push(firstName)
     } else if (isInstallerEmployee(emp)) {
-      installers.push(name)
+      installers.push(firstName)
     } else {
       const title = (emp.jobTitle || '').toLowerCase()
-      if (!title.includes('coordinator')) installers.push(name)
+      if (!title.includes('coordinator')) installers.push(firstName)
     }
   }
   return { drivers, installers }
@@ -139,8 +147,8 @@ export function deriveCoordinatorsFromEmployees(
     if (typeof emp.status === 'string' && emp.status.toUpperCase() === 'INACTIVE') continue
     if (!employeeMatchesBranchScope(emp, branchId)) continue
     if (!isCoordinatorEmployee(emp)) continue
-    const name = (emp.name || '').trim()
-    if (name) names.push(name)
+    const firstName = extractStaffFirstName(emp)
+    if (firstName) names.push(firstName)
   }
   return mergeRosterNames(names)
 }

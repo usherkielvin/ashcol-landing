@@ -549,8 +549,15 @@ export function compareTicketsByColumn(
 export function getTicketNegotiatorName(ticket: Ticket, employees?: { id: string; name: string }[]): string {
   const fullname = resolveNegotiatorDisplayName(ticket, employees)
   if (!fullname) return ''
-  let cleanName = fullname.trim()
+  let cleanName = fullname.trim().replace(/\s*\([^)]*\)\s*/g, '').trim()
   cleanName = cleanName.replace(/^(sir|ma'am|maam|mr|ms|mrs|engr)\.?\s+/i, '')
+  if (cleanName.includes('/')) {
+    return cleanName
+      .split('/')
+      .map(part => part.trim().replace(/^(sir|ma'am|maam|mr|ms|mrs|engr)\.?\s+/i, '').split(/\s+/)[0].toUpperCase())
+      .filter(Boolean)
+      .join('/')
+  }
   const firstName = cleanName.split(/\s+/)[0]
   return firstName.toUpperCase()
 }
