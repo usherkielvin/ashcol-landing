@@ -633,6 +633,17 @@ export function toApiDateTime(d = new Date()): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
+// Combines a resolved YYYY-MM-DD completion date with the current time-of-day, so
+// backdated jobs (encoded after the fact) keep their real completion date instead of
+// silently being stamped with the encoding day. Falls back to `now()` if dateKey is unusable.
+export function toApiDateTimeForDateKey(dateKey: string, time = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateKey || '')
+  if (!match) return toApiDateTime(time)
+  const [, y, m, d] = match
+  return `${y}-${m}-${d}T${pad(time.getHours())}:${pad(time.getMinutes())}:${pad(time.getSeconds())}`
+}
+
 export function resolveClosingStatusForOutcome(outcome: string, incomingStatus?: string): string {
   const o = (outcome || '').toUpperCase()
   const incoming = (incomingStatus || '').toUpperCase()
@@ -663,7 +674,7 @@ export function enrichCompletePatchBody(
     ...(remarksUpdate !== undefined ? { remarksUpdate, remarks: remarksUpdate } : {}),
     status: closeStatus,
     scheduleOutcome: outcome,
-    actualCompletion: toApiDateTime(),
+    actualCompletion: toApiDateTimeForDateKey(schedKey),
     acDetails: mergeAcMeta(
       { ...ticket, acDetails: baseAc } as Ticket,
       {

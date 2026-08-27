@@ -410,15 +410,15 @@ export default function DashboardLayout() {
     { name: 'Happy Calls',    path: '/happy-calls',     icon: PhoneCall,      roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Office tasks',    path: '/office-tasks',     icon: Building2,       roles: ['admin', 'management'] },
     { name: 'LINEUP',          path: '/lineup',           icon: ListOrdered,     roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
-    { name: 'Members',         path: '/employees',        icon: UserCog,         roles: ['admin', 'manager'] },
-    { name: 'Vehicles',        path: '/vehicles',         icon: Truck,           roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Members',         path: '/employees',        icon: UserCog,         roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic', 'technician', 'driver'] },
+    { name: 'Vehicles',        path: '/vehicles',         icon: Truck,           roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic', 'technician', 'driver'] },
     { name: 'Expense Records', path: '/audit-expenses',  icon: ClipboardList,  roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'For Collections',  path: '/collections',     icon: CircleDollarSign, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Commissions',      path: '/commissions',     icon: Percent,          roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Cash Advance',     path: '/cash-advances',   icon: Wallet,           roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Payroll',          path: '/payroll',          icon: Banknote,        roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Daily Transaction', path: '/audit-report',   icon: TrendingUp,      roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
-    { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin', 'management'] },
+    { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic', 'technician', 'driver'] },
     { name: 'HRIS',              path: '/admin-hris',       icon: Calendar,        roles: ['admin', 'management', 'manager'] },
     { name: 'DDRM',              path: '/ddrm',             icon: Route,           roles: canAccessDdrm ? ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] : ['admin', 'management', 'manager'] },
     { name: 'Request Forms',     path: '/operations-forms', icon: ClipboardList, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
@@ -427,10 +427,10 @@ export default function DashboardLayout() {
   ]
 
   const role = (user?.role || '').toLowerCase()
-  const isAuthorizedRole = role === 'admin' || role === 'management' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic'
+  const isAuthorizedRole = role === 'admin' || role === 'management' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic' || role === 'technician' || role === 'driver'
 
-  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Payroll', 'Daily Transaction', 'Expense Records', 'LINEUP', 'Request Forms', ...(canAccessRelays ? ['Relays', 'Bookings'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
-  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Payroll', 'Daily Transaction', 'Expense Records', 'LINEUP', 'Request Forms', ...(canAccessRelays ? ['Relays', 'Bookings'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
+  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Payroll', 'Daily Transaction', 'Expense Records', 'LINEUP', 'Request Forms', 'Members', 'Vehicles', 'Directory', ...(canAccessRelays ? ['Relays', 'Bookings'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
+  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Payroll', 'Daily Transaction', 'Expense Records', 'LINEUP', 'Request Forms', 'Members', 'Vehicles', 'Directory', ...(canAccessRelays ? ['Relays', 'Bookings'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 

@@ -336,7 +336,6 @@ export default function Employees() {
   const { user } = useAuth()
   const isLight  = theme === 'light'
   const isAdmin   = isSystemAdmin(user?.role)
-  const isManager = user?.role?.toLowerCase() === 'manager'
 
   // Theme tokens
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
@@ -1282,7 +1281,7 @@ export default function Employees() {
           </div>
 
           {/* Add Member Button */}
-          {(isAdmin || isManager) && (
+          {isAdmin && (
             <button
               onClick={openCreateFlow}
               className="w-full md:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-sm shrink-0"
@@ -1378,23 +1377,36 @@ export default function Employees() {
                       </div>
                     </div>
 
-                    {/* Status Toggle Button */}
-                    <button
-                      type="button"
-                      onClick={evt => {
-                        evt.stopPropagation()
-                        requestToggleActive(e)
-                      }}
-                      className="shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider transition-all border hover:opacity-80"
-                      style={{
-                        backgroundColor: e.isActive ? 'rgba(16,185,129,0.1)' : 'rgba(148,163,184,0.1)',
-                        borderColor: e.isActive ? 'rgba(16,185,129,0.3)' : 'rgba(148,163,184,0.3)',
-                        color: e.isActive ? '#10B981' : '#94a3b8',
-                      }}
-                      title="Toggle active status"
-                    >
-                      {e.isActive ? 'ACTIVE' : 'INACTIVE'}
-                    </button>
+                    {/* Status Badge / Toggle */}
+                    {isAdmin ? (
+                      <button
+                        type="button"
+                        onClick={evt => {
+                          evt.stopPropagation()
+                          requestToggleActive(e)
+                        }}
+                        className="shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider transition-all border hover:opacity-80"
+                        style={{
+                          backgroundColor: e.isActive ? 'rgba(16,185,129,0.1)' : 'rgba(148,163,184,0.1)',
+                          borderColor: e.isActive ? 'rgba(16,185,129,0.3)' : 'rgba(148,163,184,0.3)',
+                          color: e.isActive ? '#10B981' : '#94a3b8',
+                        }}
+                        title="Toggle active status"
+                      >
+                        {e.isActive ? 'ACTIVE' : 'INACTIVE'}
+                      </button>
+                    ) : (
+                      <span
+                        className="shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider border"
+                        style={{
+                          backgroundColor: e.isActive ? 'rgba(16,185,129,0.1)' : 'rgba(148,163,184,0.1)',
+                          borderColor: e.isActive ? 'rgba(16,185,129,0.3)' : 'rgba(148,163,184,0.3)',
+                          color: e.isActive ? '#10B981' : '#94a3b8',
+                        }}
+                      >
+                        {e.isActive ? 'ACTIVE' : 'INACTIVE'}
+                      </span>
+                    )}
                   </div>
 
                   {/* Metadata Chips: Role, Branch, Contact */}
@@ -1584,14 +1596,23 @@ export default function Employees() {
 
                     {/* Status */}
                     <td className="px-6 py-5 text-center">
-                      <button
-                        onClick={evt => { evt.stopPropagation(); requestToggleActive(e) }}
-                        className="inline-flex items-center gap-1 text-xs font-bold tracking-wider transition-all hover:opacity-85"
-                        style={{ color: e.isActive ? '#10B981' : '#94a3b8' }}
-                        title="Toggle status"
-                      >
-                        {e.isActive ? 'ACTIVE' : 'INACTIVE'}
-                      </button>
+                      {isAdmin ? (
+                        <button
+                          onClick={evt => { evt.stopPropagation(); requestToggleActive(e) }}
+                          className="inline-flex items-center gap-1 text-xs font-bold tracking-wider transition-all hover:opacity-85"
+                          style={{ color: e.isActive ? '#10B981' : '#94a3b8' }}
+                          title="Toggle status"
+                        >
+                          {e.isActive ? 'ACTIVE' : 'INACTIVE'}
+                        </button>
+                      ) : (
+                        <span
+                          className="inline-flex items-center gap-1 text-xs font-bold tracking-wider"
+                          style={{ color: e.isActive ? '#10B981' : '#94a3b8' }}
+                        >
+                          {e.isActive ? 'ACTIVE' : 'INACTIVE'}
+                        </span>
+                      )}
                     </td>
 
                   </tr>
@@ -1704,7 +1725,7 @@ export default function Employees() {
                       </span>
                     )}
                   </h2>
-                  {(isAdmin || isManager) && !isProtectedFromEdit(selectedEmployee.role) && (
+                  {isAdmin && !isProtectedFromEdit(selectedEmployee.role) && (
                     <button
                       onClick={() => openEdit(selectedEmployee)}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm active:scale-95 text-white hover:opacity-90 shrink-0"
@@ -2116,54 +2137,56 @@ export default function Employees() {
                 </div>
 
                 {/* Section 4: Account Actions & Danger Zone */}
-                <div className="flex flex-col gap-3 pt-2">
-                  <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-emerald-500">
-                    <Shield className="w-3.5 h-3.5" />
-                    <span>Account Status & Actions</span>
-                  </div>
-
-                  <div
-                    className="p-5 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder }}
-                  >
-                    <div className="flex items-center gap-4">
-                      {/* Interactive switch */}
-                      <button
-                        type="button"
-                        onClick={() => requestToggleActive(selectedEmployee)}
-                        className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 focus:outline-none"
-                        style={{ backgroundColor: selectedEmployee.isActive ? '#10B981' : '#94a3b8' }}
-                        title={selectedEmployee.isActive ? 'Click to deactivate' : 'Click to reactivate'}
-                      >
-                        <span
-                          className="inline-block h-4 w-4 rounded-full bg-white shadow-md transition-transform"
-                          style={{ transform: selectedEmployee.isActive ? 'translateX(24px)' : 'translateX(4px)' }}
-                        />
-                      </button>
-
-                      <div className="flex flex-col">
-                        <div className="text-xs font-black uppercase tracking-wider" style={{ color: selectedEmployee.isActive ? '#10B981' : textMuted }}>
-                          {selectedEmployee.isActive ? 'ACTIVE MEMBER' : 'DEACTIVATED ACCOUNT'}
-                        </div>
-                        <div className="text-xs" style={{ color: textMuted }}>
-                          {selectedEmployee.isActive
-                            ? 'Member is active and has access to assigned branch operations.'
-                            : 'Member is deactivated and cannot log into the portal.'}
-                        </div>
-                      </div>
+                {isAdmin && (
+                  <div className="flex flex-col gap-3 pt-2">
+                    <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-emerald-500">
+                      <Shield className="w-3.5 h-3.5" />
+                      <span>Account Status & Actions</span>
                     </div>
 
-                    {isAdmin && !isProtectedFromDelete(selectedEmployee.role) && (
-                      <button
-                        onClick={() => requestDelete(selectedEmployee)}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all border border-red-500/30 text-red-500 hover:bg-red-500/10 active:scale-95"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                        <span>DELETE MEMBER</span>
-                      </button>
-                    )}
+                    <div
+                      className="p-5 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                    >
+                      <div className="flex items-center gap-4">
+                        {/* Interactive switch */}
+                        <button
+                          type="button"
+                          onClick={() => requestToggleActive(selectedEmployee)}
+                          className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 focus:outline-none"
+                          style={{ backgroundColor: selectedEmployee.isActive ? '#10B981' : '#94a3b8' }}
+                          title={selectedEmployee.isActive ? 'Click to deactivate' : 'Click to reactivate'}
+                        >
+                          <span
+                            className="inline-block h-4 w-4 rounded-full bg-white shadow-md transition-transform"
+                            style={{ transform: selectedEmployee.isActive ? 'translateX(24px)' : 'translateX(4px)' }}
+                          />
+                        </button>
+
+                        <div className="flex flex-col">
+                          <div className="text-xs font-black uppercase tracking-wider" style={{ color: selectedEmployee.isActive ? '#10B981' : textMuted }}>
+                            {selectedEmployee.isActive ? 'ACTIVE MEMBER' : 'DEACTIVATED ACCOUNT'}
+                          </div>
+                          <div className="text-xs" style={{ color: textMuted }}>
+                            {selectedEmployee.isActive
+                              ? 'Member is active and has access to assigned branch operations.'
+                              : 'Member is deactivated and cannot log into the portal.'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {!isProtectedFromDelete(selectedEmployee.role) && (
+                        <button
+                          onClick={() => requestDelete(selectedEmployee)}
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all border border-red-500/30 text-red-500 hover:bg-red-500/10 active:scale-95"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                          <span>DELETE MEMBER</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
 
               </div>
             )}

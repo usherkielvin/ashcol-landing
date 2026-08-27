@@ -125,7 +125,18 @@ function isGenericUnitLabel(value: string) {
     || normalized === 'window'
 }
 
-function parseNegotiatorFromTicket(ticket: TicketLike): string {
+function parseNegotiatorFromTicket(
+  ticket: TicketLike,
+  employees: { id: string; name: string }[] = [],
+): string {
+  // The normal ticket-close flow only persists `negotiatorId` (a FK), not a display
+  // name in acDetails — resolve it against the employee directory first so backfilled
+  // archive rows don't end up with a blank negotiator for tickets that do have one set.
+  const negotiatorId = String(ticket.negotiatorId ?? ticket.negotiator_id ?? '').trim()
+  if (negotiatorId) {
+    const match = employees.find((e) => e.id === negotiatorId)
+    if (match?.name) return match.name.trim()
+  }
   const meta = parseAcMeta(ticket)
   const fromMeta = String(meta.negotiatorName || meta.negotiator || '').trim()
   if (fromMeta) return fromMeta
@@ -235,6 +246,7 @@ export function buildArchivePayloadFromTicket(
   branchFilter: string,
   lineupIndex: InstallerBranchIndexEntry[] = [],
   driverOnlyNames: string[] = [],
+  employees: { id: string; name: string }[] = [],
 ): Record<string, unknown> | null {
   const branchId = resolveTicketArchiveBranchId(ticket, lineupIndex, driverOnlyNames, branchFilter)
   if (!branchId) return null
@@ -302,7 +314,7 @@ export function buildArchivePayloadFromTicket(
     dealer: getField(ticket, 'dealer', 'sourceVendor', 'source_vendor'),
     unitBrandModel: parseBrandFromTicket(ticket) || getField(ticket, 'unitType', 'unit_type'),
     technicianName: getField(ticket, 'installerName', 'installer_name') || String(meta.installerName || meta.installer || ''),
-    negotiator: parseNegotiatorFromTicket(ticket) || undefined,
+    negotiator: parseNegotiatorFromTicket(ticket, employees) || undefined,
     amountCharged: parseFloat(String(charges)) || 0,
     paymentStatus: mode,
     jobStatus: 'COMPLETED',
@@ -338,7 +350,7 @@ export async function syncMissingTicketArchives(
   lineupIndex: InstallerBranchIndexEntry[] = [],
   driverOnlyNames: string[] = [],
   alreadySyncedTicketIds: Set<string> = new Set(),
-  options?: { maxCreate?: number },
+  options?: { maxCreate?: number; employees?: { id: string; name: string }[] },
 ): Promise<Record<string, unknown>[]> {
   const existingIds = new Set(
     existingRows.map((r) => r.ticketId).filter((id): id is string => Boolean(id)),
@@ -366,7 +378,9 @@ export async function syncMissingTicketArchives(
     if (!ticketMatchesArchiveBranchFilter(ticket, branchFilter, lineupIndex, driverOnlyNames)) continue
     if (!ticketInMonth(ticket, month)) continue
 
-    const payload = buildArchivePayloadFromTicket(ticket, branchFilter, lineupIndex, driverOnlyNames)
+    const payload = buildArchivePayloadFromTicket(
+      ticket, branchFilter, lineupIndex, driverOnlyNames, options?.employees ?? [],
+    )
     if (!payload) continue
 
     try {

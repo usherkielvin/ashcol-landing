@@ -9,6 +9,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, resolveArchivesBranchFilter, ARCHIVE_UPDATED_EVENT, fetchTicketByNumber, type InstallerBranchIndexEntry, formatBranchName } from '../utils/api'
 import { syncMissingTicketArchives } from '../utils/ticketArchive'
+import { fetchCachedEmployees } from '../utils/portalDirectoryCache'
 import { archivesCacheKey, archivesCacheIsFresh, getInitialArchivesFromCache, readArchivesCache, storedArchivesBranchId, currentArchivesMonthKey, writeArchivesCache } from '../utils/ticketTabCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
@@ -412,6 +413,7 @@ export default function DailyServiceReport() {
   const [driverOnlyNames, setDriverOnlyNames] = useState<string[]>([])
   const lineupIndexRef = useRef<InstallerBranchIndexEntry[]>([])
   const driverOnlyRef = useRef<string[]>([])
+  const employeesRef = useRef<{ id: string; name: string }[]>([])
   const syncedTicketIdsRef = useRef<Set<string>>(new Set())
   const fetchSeqRef = useRef(0)
   const hasLoadedOnceRef = useRef(initialArchives.hasCache)
@@ -642,6 +644,7 @@ export default function DailyServiceReport() {
         lineupIndexRef.current,
         driverOnlyRef.current,
         syncedTicketIdsRef.current,
+        { employees: employeesRef.current },
       )
       if (seq !== fetchSeqRef.current) return
       if (created.length === 0) return
@@ -780,6 +783,15 @@ export default function DailyServiceReport() {
       .catch(() => {
         driverOnlyRef.current = []
         setDriverOnlyNames([])
+      })
+    fetchCachedEmployees(token)
+      .then((list) => {
+        employeesRef.current = list
+          .map((u) => ({ id: String(u.id || ''), name: String(u.name || '') }))
+          .filter((u) => u.id && u.name)
+      })
+      .catch(() => {
+        employeesRef.current = []
       })
   }, [])
 
