@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
 import ReactDOM from 'react-dom'
 import {
-  CalendarDays, Upload, Edit3,
+  CalendarDays, Upload,
   X, Search, AlertTriangle, Building2, Eye,
   Check, ChevronDown, User,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, resolveArchiveWriteBranchId, resolveArchivesBranchFilter, ARCHIVE_UPDATED_EVENT, fetchTicketByNumber, type InstallerBranchIndexEntry, formatBranchName } from '../utils/api'
+import { API_BASE_URL, resolveScopedBranchId, isPortalAdmin, resolveArchivesBranchFilter, ARCHIVE_UPDATED_EVENT, fetchTicketByNumber, type InstallerBranchIndexEntry, formatBranchName } from '../utils/api'
 import { syncMissingTicketArchives } from '../utils/ticketArchive'
 import { archivesCacheKey, archivesCacheIsFresh, getInitialArchivesFromCache, readArchivesCache, storedArchivesBranchId, currentArchivesMonthKey, writeArchivesCache } from '../utils/ticketTabCache'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
@@ -64,34 +64,7 @@ interface ServiceRow {
   updatedBy?: string | null
 }
 
-const COL_FIELD: Record<string, keyof ServiceRow> = {
-  'TICKET NO.':           'ticketNumber',
-  'DATE INSTALLED':       'installedDate',
-  "CUSTOMER'S NAME":      'customerName',
-  'DESTINATION':          'customerAddress',
-  'DISTRICT':             'district',
-  'CONTACT NO.':          'customerPhone',
-  'BRAND':                'unitBrandModel',
-  'COMPLAIN/REQUEST':     'complainRequest',
-  'DLR':                  'dealer',
-  'INSTALLER':            'technicianName',
-  'NEGOTIATOR':           'negotiator',
-  'NOTE':                 'note',
-  'SERVICE':              'serviceColumn',
-  'UPDATE':               'remarks',
-  'INSTALLATION CHARGES': 'amountCharged',
-  'MODE OF PAYMENT':      'paymentStatus',
-}
-
-const EDITABLE_COLS = [
-  'TICKET NO.', 'DATE INSTALLED', "CUSTOMER'S NAME", 'DESTINATION', 'DISTRICT', 'CONTACT NO.', 'BRAND',
-  'COMPLAIN/REQUEST', 'DLR', 'INSTALLER', 'NEGOTIATOR', 'NOTE', 'SERVICE', 'UPDATE',
-  'INSTALLATION CHARGES', 'MODE OF PAYMENT',
-]
-
 interface BranchOption { id: string; name: string }
-
-const PAYMENT_MODES = ['CASH', 'BANK TRANSFER', 'GCASH', 'CHEQUE', 'PAID', 'UNPAID', 'PARTIAL', 'FREE', 'FREE INSTALL'] as const
 
 const peso = (v: number | null | undefined) =>
   (v ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -362,39 +335,6 @@ function CustomSelect({
   )
 }
 
-const blankRow = (date: string, branchId?: string | null): Partial<ServiceRow> => ({
-  reportDate: date,
-  branchId: branchId ?? null,
-  customerName: '',
-  customerAddress: '',
-  customerPhone: '',
-  district: '',
-  serviceType: 'INSTALLATION',
-  statusCode: 'I',
-  commitTerms: '',
-  dealer: '',
-  unitBrandModel: '',
-  unitSerial: '',
-  quantity: 1,
-  technicianName: '',
-  negotiator: '',
-  scheduleTime: '',
-  scheduleStatus: '',
-  timeStarted: '',
-  timeEnded: '',
-  amountCharged: 0,
-  paymentStatus: 'CASH',
-  jobStatus: 'SCHEDULED',
-  remarks: '',
-  note: '',
-  controlNumber: '',
-  serviceColumn: '',
-  papers: '',
-  costing: '',
-  relayStatus: '',
-  fifteenQuestions: '',
-})
-
 export default function DailyServiceReport() {
   const { theme } = useTheme()
   const { user } = useAuth()
@@ -501,25 +441,7 @@ export default function DailyServiceReport() {
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: ServiceRow } | null>(null)
 
-  // Inline editing states
-  const [editingCell, setEditingCell] = useState<{ rowId: string; col: string } | null>(null)
-  const [cellValue, setCellValue] = useState<string>('')
-  const inputRef = useRef<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null>(null)
 
-
-  const handleAddRow = () => {
-    if (!canEdit) return
-    let realBranchId = resolveScopedBranchId(
-      resolveArchivesBranchFilter(branchFilter, branches, user),
-    ) || null
-    if (!realBranchId) {
-      realBranchId = resolveScopedBranchId(branches[0]?.id) || null
-    }
-    const tempId = `temp-${Date.now()}`
-    const newRow = blankRow(todayLocal(), isBranchScoped ? (user?.branchId ?? null) : realBranchId) as ServiceRow
-    newRow.id = tempId
-    setRows(prev => [newRow, ...prev])
-  }
 
 
 
@@ -977,20 +899,7 @@ export default function DailyServiceReport() {
     fetchInstallerSuggestions(branchFilter)
   }, [branchFilter, fetchInstallerSuggestions])
 
-  // Focus the input after entering edit mode
-  useEffect(() => {
-    if (editingCell && inputRef.current) {
-      inputRef.current.focus()
-      if (inputRef.current instanceof HTMLInputElement || inputRef.current instanceof HTMLTextAreaElement) {
-        try {
-          const length = inputRef.current.value.length
-          inputRef.current.setSelectionRange(length, length)
-        } catch (e) {
-          // Fallback if setSelectionRange is not supported on this input type (e.g., number)
-        }
-      }
-    }
-  }, [editingCell])
+
 
   // ── Cell Display & Editing Helpers ─────────────────────────────────────────
 
@@ -1029,296 +938,17 @@ export default function DailyServiceReport() {
     }
   }
 
-  const startEdit = (row: ServiceRow, col: string) => {
-    if (!canEdit || !EDITABLE_COLS.includes(col)) return
-    const val = col === 'DATE INSTALLED'
-      ? getInstalledDateKey(row)
-      : getCellDisplay(row, col)
-    setEditingCell({ rowId: row.id, col })
-    setCellValue(val)
-    setContextMenu(null)
-  }
-
-  const saveCell = useCallback(async (rowId: string, col: string, value: string, silent = false): Promise<string | null> => {
-    console.log(`[saveCell] ENTER - rowId: ${rowId}, col: ${col}, value: "${value}", active editingCell:`, editingCell);
-
-    if (!editingCell || editingCell.rowId !== rowId || editingCell.col !== col) {
-      console.log(`[saveCell] BYPASSED - editingCell does not match active cell.`);
-      return null
-    }
-
-    const field = COL_FIELD[col]
-    if (!field) { setEditingCell(null); return null }
-    const current = rows.find(r => r.id === rowId)
-    if (!current) {
-      console.log(`[saveCell] ERROR - Row not found in state: ${rowId}`);
-      setEditingCell(null);
-      return null
-    }
-
-    const isTemp = rowId.startsWith('temp-')
-
-    // If it's a temp row and customerName is empty or being saved as empty, cancel/remove the row
-    if (isTemp && col === "CUSTOMER'S NAME" && (!value || !value.trim())) {
-      setRows(prev => prev.filter(r => r.id !== rowId))
-      setEditingCell(null)
-      setCellValue('')
-      return null
-    }
-
-    let finalValue: any = value
-    const localPatch: Partial<ServiceRow> = { [field]: value } as Partial<ServiceRow>
-
-    if (col === 'INSTALLATION CHARGES') {
-      finalValue = parseFloat(value) || 0
-      localPatch.amountCharged = finalValue
-      // Auto-complete: any charge > 0 means job is done
-      if (finalValue > 0) {
-        localPatch.jobStatus = 'COMPLETED'
-      }
-    }
-
-    if (col === 'MODE OF PAYMENT') {
-      if (value === 'FREE' || value === 'FREE INSTALL') {
-        localPatch.amountCharged = 0
-        localPatch.freeInstallation = true
-        localPatch.jobStatus = 'COMPLETED'
-      }
-    }
-
-    if (col === 'DATE INSTALLED') {
-      finalValue = value.trim() ? value.trim().slice(0, 10) : null
-      localPatch.installedDate = finalValue
-    }
-
-    // If it's a temp row and Customer Name is still not set, update locally but do not save to DB yet
-    if (isTemp) {
-      const targetCustomerName = col === "CUSTOMER'S NAME" ? value : (current.customerName || '')
-      if (!targetCustomerName || !targetCustomerName.trim()) {
-        setRows(prev => prev.map(r => r.id === rowId ? { ...r, ...localPatch } : r))
-        setEditingCell(null)
-        setCellValue('')
-        return rowId
-      }
-    }
-
-    // Optimistic UI update immediately
-    setRows(prev => prev.map(r => {
-      if (r.id !== rowId) return r
-      return { ...r, ...localPatch }
-    }))
-    setEditingCell(null)
-    setCellValue('')
-
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const mergedFields = {
-        ...current,
-        ...localPatch
-      }
-      const payload = {
-        ...mergedFields,
-        id: isTemp ? undefined : rowId,
-        branchId: resolveArchiveWriteBranchId(mergedFields.branchId) || null
-      }
-      const url = isTemp
-        ? `${API_BASE_URL}/v1/service-reports`
-        : `${API_BASE_URL}/v1/service-reports/${rowId}`
-      const method = isTemp ? 'POST' : 'PUT'
-
-      const res = await fetch(url, {
-        method,
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const updated = await res.json()
-      
-      let finalRowId = rowId
-      if (updated && updated.id) {
-        finalRowId = updated.id
-        setRows(prev => prev.map(r => r.id === rowId ? { ...r, ...updated, ...localPatch } : r))
-      }
-      return finalRowId
-    } catch (e: any) {
-      // Revert optimistic update on failure
-      fetchRows({ soft: true, force: true })
-      if (!silent) alert(`Could not save: ${e?.message || 'Unknown error'}`)
-      return null
-    }
-  }, [rows, editingCell])
-
-  const cancelEdit = () => {
-    if (editingCell) {
-      const { rowId } = editingCell
-      if (rowId.startsWith('temp-')) {
-        const current = rows.find(r => r.id === rowId)
-        if (!current || !current.customerName || !current.customerName.trim()) {
-          setRows(prev => prev.filter(r => r.id !== rowId))
-        }
-      }
-    }
-    setEditingCell(null)
-    setCellValue('')
-  }
-
-  function getAdjacentCell(rowId: string, col: string, dir: 'next' | 'prev' | 'down' | 'up') {
-    const rowIdx = visible.findIndex(r => r.id === rowId)
-    const colIdx = EDITABLE_COLS.indexOf(col)
-    if (rowIdx === -1 || colIdx === -1) return null
-
-    if (dir === 'next') {
-      const nextCol = colIdx + 1
-      if (nextCol < EDITABLE_COLS.length) return { rowId, col: EDITABLE_COLS[nextCol] }
-      const nextRow = rowIdx + 1
-      if (nextRow < visible.length) return { rowId: visible[nextRow].id, col: EDITABLE_COLS[0] }
-    }
-    if (dir === 'prev') {
-      const prevCol = colIdx - 1
-      if (prevCol >= 0) return { rowId, col: EDITABLE_COLS[prevCol] }
-      const prevRow = rowIdx - 1
-      if (prevRow >= 0) return { rowId: visible[prevRow].id, col: EDITABLE_COLS[EDITABLE_COLS.length - 1] }
-    }
-    if (dir === 'down') {
-      const nextRow = rowIdx + 1
-      if (nextRow < visible.length) return { rowId: visible[nextRow].id, col }
-    }
-    if (dir === 'up') {
-      const prevRow = rowIdx - 1
-      if (prevRow >= 0) return { rowId: visible[prevRow].id, col }
-    }
-    return null
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent, rowId: string, col: string) => {
-    const multiline = ['NOTE', 'DESTINATION'].includes(col)
-
-    if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); return }
-
-    if (e.key === 'Enter' && !multiline) {
-      e.preventDefault()
-      const next = getAdjacentCell(rowId, col, 'down')
-      saveCell(rowId, col, cellValue, true).then((finalRowId) => {
-        if (next && finalRowId) {
-          const targetRowId = next.rowId === rowId ? finalRowId : next.rowId
-          const r = visible.find(x => x.id === next.rowId)
-          if (r) startEdit({ ...r, id: targetRowId }, next.col)
-        }
-      })
-      return
-    }
-
-    if (e.key === 'Tab') {
-      e.preventDefault()
-      const dir = e.shiftKey ? 'prev' : 'next'
-      const next = getAdjacentCell(rowId, col, dir)
-      saveCell(rowId, col, cellValue, true).then((finalRowId) => {
-        if (next && finalRowId) {
-          const targetRowId = next.rowId === rowId ? finalRowId : next.rowId
-          const r = visible.find(x => x.id === next.rowId)
-          if (r) startEdit({ ...r, id: targetRowId }, next.col)
-        }
-      })
-      return
-    }
-
-    if (e.key === 'ArrowDown' && !multiline) {
-      e.preventDefault()
-      const next = getAdjacentCell(rowId, col, 'down')
-      saveCell(rowId, col, cellValue, true).then((finalRowId) => {
-        if (next && finalRowId) {
-          const targetRowId = next.rowId === rowId ? finalRowId : next.rowId
-          const r = visible.find(x => x.id === next.rowId)
-          if (r) startEdit({ ...r, id: targetRowId }, next.col)
-        }
-      })
-      return
-    }
-
-    if (e.key === 'ArrowUp' && !multiline) {
-      e.preventDefault()
-      const next = getAdjacentCell(rowId, col, 'up')
-      saveCell(rowId, col, cellValue, true).then((finalRowId) => {
-        if (next && finalRowId) {
-          const targetRowId = next.rowId === rowId ? finalRowId : next.rowId
-          const r = visible.find(x => x.id === next.rowId)
-          if (r) startEdit({ ...r, id: targetRowId }, next.col)
-        }
-      })
-      return
-    }
-  }
-
   function renderCell(r: ServiceRow, col: any, idx: number) {
     const { label } = col
-    const isThisEditing = editingCell?.rowId === r.id && editingCell?.col === label
-    const isEditable    = EDITABLE_COLS.includes(label)
-
-    if (isThisEditing) {
-      const inputClass = 'w-full text-xs rounded px-2 py-1 outline-none focus:ring-2 focus:ring-slate-400 font-medium'
-      const UPPERCASE_COLS = ['DISTRICT', 'UPDATE', 'NOTE', 'SERVICE', 'BRAND', 'COMPLAIN/REQUEST', 'DLR']
-      const shouldUppercase = UPPERCASE_COLS.includes(label)
-      const inputSt = {
-        backgroundColor: inputBg,
-        border: `1.5px solid ${inputBorder}`,
-        color: textPrimary,
-        ...(shouldUppercase ? { textTransform: 'uppercase' as const } : {}),
-      }
-
-      if (label === 'MODE OF PAYMENT') {
-        return (
-          <select
-            ref={el => { inputRef.current = el }}
-            value={cellValue}
-            onChange={e => setCellValue(e.target.value)}
-            onBlur={() => saveCell(r.id, label, cellValue)}
-            onKeyDown={e => handleKeyDown(e as any, r.id, label)}
-            className={inputClass} style={inputSt}>
-            {PAYMENT_MODES.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        )
-      }
-
-      const multiline = ['NOTE', 'DESTINATION'].includes(label)
-      if (multiline) {
-        return (
-          <textarea
-            ref={el => { inputRef.current = el as any }}
-            value={cellValue}
-            onChange={e => setCellValue(shouldUppercase ? e.target.value.toUpperCase() : e.target.value)}
-            onBlur={() => saveCell(r.id, label, cellValue)}
-            onKeyDown={e => handleKeyDown(e as any, r.id, label)}
-            rows={3}
-            className={`${inputClass} resize-none`}
-            style={inputSt} />
-        )
-      }
-
-      return (
-        <input
-          ref={el => { inputRef.current = el }}
-          type={label === 'INSTALLATION CHARGES' ? 'number' : label === 'CONTACT NO.' ? 'tel' : label === 'DATE INSTALLED' ? 'date' : 'text'}
-          list={label === 'INSTALLER' ? 'installer-options' : label === 'NEGOTIATOR' ? 'negotiator-options' : undefined}
-          value={cellValue}
-          onChange={e => setCellValue(shouldUppercase ? e.target.value.toUpperCase() : e.target.value)}
-          onBlur={() => saveCell(r.id, label, cellValue)}
-          onKeyDown={e => handleKeyDown(e, r.id, label)}
-          className={inputClass} style={inputSt} />
-      )
-    }
-
     const val = getCellDisplay(r, label)
     const isCellExpanded = expandedCells[`${r.id}:${label}`]
     const truncStyle: React.CSSProperties = (col.isExpanded || isCellExpanded)
       ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.5 }
       : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }
 
-    const editHint: React.CSSProperties = isEditable && canEdit
-      ? { cursor: 'pointer' } : {}
-
     if (label === 'TICKET NO.') {
       return (
-        <span style={{ ...truncStyle, ...editHint, fontSize: '13px', fontWeight: 800 }} title={val}>
+        <span style={{ ...truncStyle, fontSize: '13px', fontWeight: 800 }} title={val}>
           {idx + 1}. {val || '—'}
         </span>
       )
@@ -1326,7 +956,7 @@ export default function DailyServiceReport() {
 
     if (label === 'DATE INSTALLED') {
       return (
-        <span style={{ ...truncStyle, ...editHint, fontSize: '12.5px', fontWeight: 600 }} title={val} className="block text-center">
+        <span style={{ ...truncStyle, fontSize: '12.5px', fontWeight: 600 }} title={val} className="block text-center">
           {val || '—'}
         </span>
       )
@@ -1334,7 +964,7 @@ export default function DailyServiceReport() {
 
     if (label === "CUSTOMER'S NAME") {
       return (
-        <span style={{ ...truncStyle, ...editHint, fontSize: '13px', fontWeight: 700 }} title={val} className="block">
+        <span style={{ ...truncStyle, fontSize: '13px', fontWeight: 700 }} title={val} className="block">
           {val || '—'}
         </span>
       )
@@ -1351,7 +981,7 @@ export default function DailyServiceReport() {
 
     if (label === 'CONTACT NO.') {
       return (
-        <span style={{ ...truncStyle, ...editHint, fontSize: '12.5px', fontWeight: 600 }} title={val}>
+        <span style={{ ...truncStyle, fontSize: '12.5px', fontWeight: 600 }} title={val}>
           <FormatPhone raw={val} />
         </span>
       )
@@ -1379,7 +1009,7 @@ export default function DailyServiceReport() {
 
     if (label === 'INSTALLER') {
       return (
-        <span style={{ ...truncStyle, ...editHint }} title={val}>
+        <span style={{ ...truncStyle }} title={val}>
           <EmployeeNameLink nameOrId={val} />
         </span>
       )
@@ -1387,7 +1017,7 @@ export default function DailyServiceReport() {
 
     if (label === 'NEGOTIATOR') {
       return (
-        <span style={{ ...truncStyle, ...editHint }} title={val}>
+        <span style={{ ...truncStyle }} title={val}>
           <EmployeeNameLink nameOrId={val} />
         </span>
       )
@@ -1401,7 +1031,7 @@ export default function DailyServiceReport() {
       )
     }
 
-    return <span style={{ ...truncStyle, ...editHint }} title={val}>{val}</span>
+    return <span style={{ ...truncStyle }} title={val}>{val}</span>
   }
 
   // ── Detect branch from filename ───────────────────────────────────────────
@@ -1783,11 +1413,11 @@ export default function DailyServiceReport() {
 
                   return (
                     <tr key={r.id}
+                      onClick={() => handleViewDetailsPopup(r)}
                       onContextMenu={e => {
                         e.preventDefault()
                         setContextMenu({ x: e.clientX, y: e.clientY, row: r })
                       }}
-                      onDoubleClick={() => handleViewDetailsPopup(r)}
                       style={{
                         borderBottom: `1px solid ${border}`,
                         backgroundColor: rowSelectedBg,
@@ -1796,13 +1426,10 @@ export default function DailyServiceReport() {
                       className="transition-colors hover:bg-slate-50 dark:hover:bg-[#0F1A2E]">
 
                       {columns.map((col) => {
-                        const isThisEditing = editingCell?.rowId === r.id && editingCell?.col === col.label
-                        const isEditable    = EDITABLE_COLS.includes(col.label) && canEdit
                         return (
                           <td key={col.label}
                               onClick={e => {
                                 e.stopPropagation()
-                                if (isThisEditing) return
                                 setExpandedCells(prev => ({
                                   ...prev,
                                   [`${r.id}:${col.label}`]: !prev[`${r.id}:${col.label}`]
@@ -1810,28 +1437,28 @@ export default function DailyServiceReport() {
                               }}
                               onDoubleClick={e => {
                                 e.stopPropagation()
-                                if (isEditable && !isThisEditing) startEdit(r, col.label)
+                                handleViewDetailsPopup(r)
                               }}
                               style={{
-                                padding: isThisEditing ? '6px 8px' : '10px 12px',
+                                padding: '10px 12px',
                                 color: textPrimary,
                                 fontSize: '12.5px',
                                 fontWeight: 600,
                                 lineHeight: '1.4',
-                                backgroundColor: isThisEditing ? inputBg : rowSelectedBg,
+                                backgroundColor: rowSelectedBg,
                                 textAlign: (col.align as any) || 'left',
                                 borderBottom: `1px solid ${border}`,
                                 width: col.w, minWidth: 0, maxWidth: col.w,
-                                overflow: isThisEditing ? 'visible' : 'hidden',
+                                overflow: 'hidden',
                                 textOverflow: 'ellipsis',
                                 transition: 'background-color 0.1s ease',
-                                cursor: isThisEditing ? 'default' : 'pointer',
+                                cursor: 'pointer',
                                 verticalAlign: 'middle',
                                 ...(col.sticky ? {
                                   position: 'sticky' as const,
                                   left: `${col.left}%`,
                                   zIndex: 5,
-                                  backgroundColor: isThisEditing ? inputBg : (rowSelectedBg ?? cardBg),
+                                  backgroundColor: rowSelectedBg ?? cardBg,
                                 } : {}),
                               }}>
                             {renderCell(r, col, idx)}
@@ -1855,12 +1482,9 @@ export default function DailyServiceReport() {
                       ? `No records match “${searchQuery.trim()}”${rows.length > 0 ? ` (${rows.length} loaded)` : ''}`
                       : `No service records for ${viewMode === 'weekly' ? weekRange.label : 'this month'}`}
                   </p>
-                  {searchQuery.trim() ? (
+                  {searchQuery.trim() && (
                     <button type="button" onClick={() => setSearchQuery('')}
                       className="text-xs font-bold hover:underline" style={{ color: textPrimary }}>Clear search</button>
-                  ) : canEdit && (
-                    <button onClick={handleAddRow}
-                      className="text-xs font-bold hover:underline" style={{ color: textPrimary }}>+ Add the first one</button>
                   )}
                 </div>
               ) : (
@@ -1958,15 +1582,6 @@ export default function DailyServiceReport() {
               onClick={() => handleViewDetailsPopup(contextMenu.row)}>
               <Eye className="w-3.5 h-3.5" style={{ color: textMuted }} /> View details
             </button>
-            {canEdit && (
-              <button className="flex items-center gap-3 w-full px-4 py-2.5 text-xs font-semibold text-left transition-colors"
-                style={{ color: textPrimary }}
-                onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.backgroundColor = inputBg}
-                onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'}
-                onClick={() => { startEdit(contextMenu.row, columns[0].label); setContextMenu(null) }}>
-                <Edit3 className="w-3.5 h-3.5" style={{ color: textMuted }} /> Edit row
-              </button>
-            )}
           </div>
         </div>
       )}
@@ -2072,7 +1687,7 @@ export default function DailyServiceReport() {
           isLight={isLight}
           isMyTickets={false}
           isTaguigServices={false}
-          canEdit={canEdit}
+          canEdit={false}
           branchEmployees={[]}
           activeBranchId={branchFilter}
           user={user}
@@ -2084,7 +1699,7 @@ export default function DailyServiceReport() {
           onClose={() => setDetailTicket(null)}
           onToggleHistory={() => {}}
           onHideHistory={() => {}}
-          onEdit={() => setDetailTicket(null)}
+          onEdit={undefined}
           onDelete={undefined}
           onUpdateTicket={(updated) => setDetailTicket(updated as Ticket)}
         />

@@ -142,7 +142,6 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
     technicianOptions = [],
 
     editOriginalDate = '',
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onMergeTargetChange,
     onMerge,
     onClose,

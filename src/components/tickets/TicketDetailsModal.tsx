@@ -103,7 +103,7 @@ export function TicketDetailsModal({
   onClose: () => void
   onToggleHistory: () => void
   onHideHistory: () => void
-  onEdit: () => void
+  onEdit?: () => void
   onDelete?: () => void
   onUpdateTicket?: (updatedTicket: Ticket) => void
 }) {

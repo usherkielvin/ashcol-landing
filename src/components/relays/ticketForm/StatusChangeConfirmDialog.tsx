@@ -1,6 +1,6 @@
 import ReactDOM from 'react-dom'
 import { X } from 'lucide-react'
-import { normalizeStatusLabel } from './StatusGrid'
+import { normalizeStatusLabel } from './statusOptions'
 
 export type StatusConfirmState = {
   type: 'status' | 'discard'
