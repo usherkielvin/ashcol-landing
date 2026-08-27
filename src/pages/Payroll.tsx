@@ -107,6 +107,12 @@ const rowTotal = (r: PayrollRow) =>
 const installerTotal = (installerRows: PayrollRow[]) =>
   installerRows.reduce((sum, r) => sum + rowTotal(r), 0)
 
+// Counts only actually-completed installs (schedule status "DONE INSTALL") — not cleanings,
+// surveys, or manually added rows of some other job type. installerRows is already scoped to
+// the active date-range filter, so this is automatically "within the selected range" too.
+const installedUnitsCount = (installerRows: PayrollRow[]) =>
+  installerRows.filter(r => r.installationUpload.trim().toUpperCase() === 'DONE INSTALL').length
+
 // Every field a manually added row needs, defaulted blank — used by the "Add Job" form so a
 // payroll officer can key in a day's job order without it having come from a synced ticket.
 const emptyPayrollRow = (): PayrollRow => ({
@@ -119,6 +125,7 @@ const emptyPayrollRow = (): PayrollRow => ({
   systemReprocessLabor: '', drainPumpInstallation: '', scaffoldingInstallation: '',
   flushingOldPipe: '', sterneBracket: '', breakerInstallationLabor: '', chargingOfFreon: '',
   materialsReturn: '', installationChecklist: '', videoUpload: '', remarks: '', audited: '',
+  status: 'PENDING',
 })
 
 // Money owed BACK to the branch — parses the free-text remit field ("2,000 CASH", "FREE")
@@ -354,16 +361,28 @@ export default function Payroll() {
   const installerFullNames = useMemo(() => {
     const map: Record<string, string> = {}
     for (const t of branchTechnicians) {
-      const firstWord = t.name.split(/\s+/)[0]?.toUpperCase()
-      // First match wins — if two technicians at the same branch share a first name/nickname,
-      // this can't disambiguate and falls back to showing the short ticket-derived form.
-      if (firstWord && !map[firstWord]) map[firstWord] = t.name
+      // Index every word in their real name, not just the first — techs are often keyed on
+      // tickets by a middle/nickname (e.g. "JHON PATRICK PRIZA" goes by "PATRICK" there).
+      // First match wins if two technicians share a word; falls back to the short form.
+      for (const word of t.name.split(/\s+/)) {
+        const key = word.toUpperCase()
+        if (key && !map[key]) map[key] = t.name
+      }
     }
     return map
   }, [branchTechnicians])
   const displayInstallerName = (shortName: string) => {
-    const key = shortName.trim().split(/\s+/)[0]?.toUpperCase()
-    return (key && installerFullNames[key]) || shortName
+    const trimmed = shortName.trim()
+    // Whole-string match first (handles single hyphenated names like "JHAY-AR" intact).
+    const whole = installerFullNames[trimmed.toUpperCase()]
+    if (whole) return whole
+    // Otherwise try each word — covers "PATRICK" alone or a stray "MARIANO-PATRICK" ticket
+    // artifact where the first segment is the real match.
+    for (const word of trimmed.split(/[\s-]+/)) {
+      const match = installerFullNames[word.toUpperCase()]
+      if (match) return match
+    }
+    return shortName
   }
 
   // Drag-to-resize column widths — shared across every installer table, persisted so a
@@ -507,6 +526,7 @@ export default function Payroll() {
         videoUpload: r.videoUpload || null,
         remarks: r.remarks || null,
         audited: r.audited || null,
+        status: r.status || 'PENDING',
       }))
       const res = await fetch(`${API_BASE_URL}/v1/payroll`, {
         method: 'PUT',
@@ -598,6 +618,7 @@ export default function Payroll() {
             videoUpload: e.videoUpload || '',
             remarks: e.remarks || '',
             audited: e.audited || '',
+            status: e.status || 'PENDING',
           }))
         }
 
@@ -682,6 +703,17 @@ export default function Payroll() {
     })
   }
 
+  // Summary-row fields (Remarks/Audited/Payroll Status) apply to the installer's whole period,
+  // not one job — so editing them writes the same value across every row grouped under that
+  // installer's name, rather than a single row's field.
+  const updateInstallerRows = (installerName: string, patch: Partial<PayrollRow>) => {
+    setRows(prev => {
+      const updated = prev.map(r => resolveGroupKey(r.installerName) === installerName ? { ...r, ...patch } : r)
+      scheduleAutoSave(updated)
+      return updated
+    })
+  }
+
   const columnAccessors: Record<ColumnKey, { get: (r: PayrollRow) => string; set: (id: string, v: string) => void }> = {
     date: { get: r => r.workDate, set: (id, v) => updateRow(id, { workDate: v }) },
     ticketNumber: { get: r => r.ticketNumber, set: (id, v) => updateRow(id, { ticketNumber: v }) },
@@ -760,10 +792,27 @@ export default function Payroll() {
     })
   }, [rows, search, dateFrom, dateTo])
 
+  // A ticket's installer field occasionally shows up as a hyphenated blob like
+  // "MARIANO-PATRICK" that isn't caught by splitInstallerNames' /,&+/ delimiters (those are
+  // left alone in payrollDerive.ts since a hyphen can also be part of one real name, e.g.
+  // "JHAY-AR"). Fold it into whichever real technician it actually is instead of letting it
+  // stand as its own bogus roster entry: keep it whole if it matches a technician as-is,
+  // otherwise take just the segment before the first hyphen.
+  const resolveGroupKey = (raw: string): string => {
+    const trimmed = raw.trim()
+    if (!trimmed) return 'UNASSIGNED'
+    if (installerFullNames[trimmed.toUpperCase()]) return trimmed
+    if (trimmed.includes('-')) {
+      const before = trimmed.split('-')[0].trim()
+      if (before) return before
+    }
+    return trimmed
+  }
+
   const grouped = useMemo(() => {
     const map = new Map<string, PayrollRow[]>()
     for (const row of filteredRows) {
-      const key = row.installerName.trim() || 'UNASSIGNED'
+      const key = resolveGroupKey(row.installerName)
       if (!map.has(key)) map.set(key, [])
       map.get(key)!.push(row)
     }
@@ -777,7 +826,8 @@ export default function Payroll() {
       })
     }
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]))
-  }, [filteredRows])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredRows, installerFullNames])
 
   const grandTotal = useMemo(() => grouped.reduce((sum, [, r]) => sum + installerTotal(r), 0), [grouped])
   const globalBaseInstallTotal = useMemo(() => baseInstallTotal(filteredRows), [filteredRows])
@@ -1505,66 +1555,103 @@ export default function Payroll() {
           })}
         </div>
       ) : (
-        // Roster — a big-row table list, one installer per row. Click a row (or its
-        // "View Payroll" pill) to open that installer's table.
+        // Roster / summary table — one row per installer, covering the whole selected period
+        // (not a single job). Remarks/Payroll Due/Audited/Status live here, not in an
+        // installer's own per-job table. Click "View Payroll" to open that job-level table.
         <div className="flex flex-col gap-4 -mx-5 md:-mx-8">
-          <div className="overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}`, borderBottom: `1px solid ${border}` }}>
-            <div
-              className="hidden md:grid items-center px-5 py-2.5"
-              style={{ gridTemplateColumns: '1fr 140px 200px 160px', backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}
-            >
-              <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Installer</span>
-              <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Jobs</span>
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-right" style={{ color: textMuted }}>Net Payout</span>
-              <span />
-            </div>
+          <div className="overflow-x-auto" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}`, borderBottom: `1px solid ${border}` }}>
+            <div style={{ minWidth: 980 }}>
+              <div
+                className="grid items-center px-5 py-2.5"
+                style={{ gridTemplateColumns: '1.3fr 70px 1fr 130px 150px 130px 140px', backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}
+              >
+                <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Installer</span>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Installed Units</span>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Remarks</span>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-right" style={{ color: textMuted }}>Payroll Due</span>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Audited By</span>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Status</span>
+                <span />
+              </div>
 
-            {grouped.map(([installerName, installerRows], idx) => {
-              const total = installerTotal(installerRows)
-              const rowBg = idx % 2 === 1 ? zebraBg : 'transparent'
-              return (
-                <button
-                  key={installerName}
-                  type="button"
-                  onClick={() => setSelectedInstaller(installerName)}
-                  className="group w-full flex flex-wrap md:grid items-center gap-x-4 gap-y-2 px-5 py-5 text-left transition-colors"
-                  style={{
-                    gridTemplateColumns: '1fr 140px 200px 160px',
-                    backgroundColor: rowBg,
-                    borderBottom: idx < grouped.length - 1 ? `1px solid ${border}` : 'none',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.backgroundColor = rowHoverBg }}
-                  onMouseLeave={e => { e.currentTarget.style.backgroundColor = rowBg }}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div
-                      className="w-12 h-12 rounded-xl flex items-center justify-center text-sm font-extrabold text-white shrink-0"
-                      style={{ background: avatarGradient(installerName) }}
-                    >
-                      {getInitials(installerName)}
-                    </div>
-                    <span className="text-base font-extrabold truncate" style={{ color: textPrimary }}>{displayInstallerName(installerName)}</span>
-                  </div>
-
-                  <span className="text-sm font-semibold" style={{ color: textMuted }}>
-                    {installerRows.length} job{installerRows.length !== 1 ? 's' : ''}
-                  </span>
-
-                  <div className="text-right">
-                    <div className="md:hidden text-[9px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Net Payout</div>
-                    <div className="text-lg font-extrabold tabular-nums" style={{ color: '#10B981' }}>₱{peso(total)}</div>
-                  </div>
-
-                  <span
-                    className="flex items-center justify-center gap-1 px-3 py-2 rounded-full text-xs font-bold transition-transform group-hover:translate-x-0.5 shrink-0 ml-auto md:ml-0"
-                    style={{ color: '#10B981', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.14)' }}
+              {grouped.map(([installerName, installerRows], idx) => {
+                const total = installerTotal(installerRows)
+                const rowBg = idx % 2 === 1 ? zebraBg : 'transparent'
+                const isComplete = installerRows.length > 0 && installerRows.every(r => r.status === 'COMPLETE')
+                const summaryRemarks = installerRows[0]?.remarks || ''
+                const summaryAudited = installerRows[0]?.audited || ''
+                const fieldCls = "w-full rounded-lg border px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                return (
+                  <div
+                    key={installerName}
+                    className="grid items-center gap-x-4 px-5 py-5 transition-colors"
+                    style={{
+                      gridTemplateColumns: '1.3fr 70px 1fr 130px 150px 130px 140px',
+                      backgroundColor: rowBg,
+                      borderBottom: idx < grouped.length - 1 ? `1px solid ${border}` : 'none',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = rowHoverBg }}
+                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = rowBg }}
                   >
-                    View Payroll
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </span>
-                </button>
-              )
-            })}
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className="w-12 h-12 rounded-xl flex items-center justify-center text-sm font-extrabold text-white shrink-0"
+                        style={{ background: avatarGradient(installerName) }}
+                      >
+                        {getInitials(installerName)}
+                      </div>
+                      <span className="text-base font-extrabold truncate" style={{ color: textPrimary }}>{displayInstallerName(installerName)}</span>
+                    </div>
+
+                    <span className="text-sm font-extrabold tabular-nums" style={{ color: textPrimary }}>
+                      {installedUnitsCount(installerRows)}
+                    </span>
+
+                    <input
+                      type="text"
+                      defaultValue={summaryRemarks}
+                      placeholder="—"
+                      onBlur={e => { if (e.target.value !== summaryRemarks) updateInstallerRows(installerName, { remarks: e.target.value }) }}
+                      className={fieldCls}
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                    />
+
+                    <div className="text-lg font-extrabold tabular-nums text-right" style={{ color: '#10B981' }}>₱{peso(total)}</div>
+
+                    <input
+                      type="text"
+                      defaultValue={summaryAudited}
+                      placeholder="Name"
+                      onBlur={e => { if (e.target.value !== summaryAudited) updateInstallerRows(installerName, { audited: e.target.value }) }}
+                      className={fieldCls}
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                    />
+
+                    <select
+                      value={isComplete ? 'COMPLETE' : 'PENDING'}
+                      onChange={e => updateInstallerRows(installerName, { status: e.target.value })}
+                      className="rounded-full border px-3 py-1.5 text-[11px] font-bold text-center appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                      style={isComplete
+                        ? { color: '#10B981', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.14)', borderColor: '#10B98160' }
+                        : { color: '#B45309', backgroundColor: isLight ? '#FFFBEB' : 'rgba(245,158,11,0.14)', borderColor: '#F59E0B60' }}
+                    >
+                      <option value="PENDING">Pending</option>
+                      <option value="COMPLETE">Complete</option>
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedInstaller(installerName)}
+                      className="group flex items-center justify-center gap-1 px-3 py-2 rounded-full text-xs font-bold transition-transform hover:translate-x-0.5 shrink-0"
+                      style={{ color: '#10B981', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.14)' }}
+                    >
+                      View Payroll
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
           </div>
 
           {/* SUMMARY — global breakdown only; each row above already shows its own installer's total. */}

@@ -70,6 +70,8 @@ export interface PayrollRow {
   videoUpload: string
   remarks: string
   audited: string
+  /** PENDING until the payroll officer reviews and finalizes the row, then COMPLETE. */
+  status: string
 }
 
 export interface PayrollRates {
@@ -207,6 +209,7 @@ export function mapTicketToPayrollRows(ticket: Ticket, branchName: string, rates
     videoUpload: '',
     remarks: '',
     audited: '',
+    status: 'PENDING',
   }))
 }
 
