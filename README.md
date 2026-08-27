@@ -1,83 +1,82 @@
-# 🌬️ Ashcol Airconditioning Services - Web Portal
+# ❄️ Ashcol ServiceHub — Enterprise Web Portal
 
-A professional, full-featured web portal for **Ashcol Airconditioning Corporation**. This platform streamlines service management, connecting customers with technical experts for air conditioning installation, maintenance, and repair.
+> **Proprietary & Confidential**  
+> *Production Operations & Enterprise Service Management Platform for **Ashcol Airconditioning Corporation**.*
 
 ---
 
-## 🚀 Tech Stack
+## 📌 Overview
 
-- **Frontend:** [React 19](https://react.dev/) with [TypeScript](https://www.typescriptlang.org/)
-- **Build Tool:** [Vite 8](https://vitejs.dev/)
-- **Styling:** [Tailwind CSS 3](https://tailwindcss.com/)
-- **Icons:** [Lucide React](https://lucide.dev/)
-- **Authentication:** Google OAuth 2.0 & JWT
-- **Deployment:** [Vercel](https://vercel.com/)
+**Ashcol ServiceHub** is the central digital operating system for Ashcol Airconditioning Corporation. It unifies field dispatch, multi-branch HVAC service coordination, installer logistics, warranty registration, customer ticketing, and operational finance into an interconnected, real-time web portal.
 
-## ✨ Key Features
+Designed for high reliability and multi-branch scalability, the platform coordinates nationwide branch operations across **Taguig (Sales & Services)**, **Calauan**, **Silang**, **Dasmarinas**, **Pampanga**, **Bulacan**, **Rizal**, and **Candelaria**.
 
-### 👤 User Roles
-- **Customers:** Book services, track ticket status, and manage their AC units.
-- **Staff/Employees:** View assigned tasks, update ticket progress, and manage service details.
-- **Admin/Managers:** Full system oversight, branch management, and analytics.
+---
 
-### 🎫 Service Management
-- **Smart Ticketing System:** Create detailed service requests for Cleaning, Maintenance, Repair, or Installation.
-- **Unit Tracking:** Detailed tracking of AC units including brand, HP, technology (Inverter/Non-inverter), and age.
-- **Real-time Status:** Track tickets through `PENDING`, `ASSIGNED`, `IN_PROGRESS`, and `COMPLETED` states.
+## ⚡ Core Operational Capabilities
 
-### 🏢 Multi-Branch Support
-- Management of multiple branches including **Head Office (Makati/Taguig)**, **Pampanga**, **Bulacan**, **Rizal**, **Candelaria**, **Dasmarinas**, and **Sta. Rosa**.
-- Branch-specific contact information and service handling.
+### 1. 📋 Service Relays & Smart Ticketing
+- **Live Ticket Lifecycle**: Full tracking across Intake, Scheduled, Dispatched, In-Progress, and Completed workflows.
+- **Multi-Service Handling**: Native support for Survey & Installation, Cleaning/PMS, Checkup, Repair, Backjob, Dismantling, and Mounting.
+- **Store & Dealer Management**: Searchable store catalog with strict duplicate prevention and encoded-by audit trails.
+- **Warranty Registration**: Direct integration linking installation tickets with warranty activation records.
 
-### 🛡️ Security & UX
-- **Google OAuth Integration:** Quick and secure login options.
-- **Dark/Light Mode:** Full theme support for comfortable viewing in any environment.
-- **Responsive Design:** Fully optimized for desktop, tablet, and mobile devices.
+### 2. 🚛 Line-Up & Field Logistics Planner
+- **Fleet Dispatch Engine**: Vehicle trip planner mapping drivers, service technicians, and route districts.
+- **Smart Roster Derivation**: Dynamic employee resolution extracting technician rosters scoped strictly to their respective branches.
+- **One-Click Showcase & Exports**: High-definition presentation modal and instant PDF schedule generation for daily field briefings.
 
-## 📁 Project Structure
+### 3. 📦 Permanent Historical Archives
+- **Immutable Service Records**: Protected audit logs capturing completed installations and repairs with zero accidental data loss.
+- **Multi-Status Backfilling**: Automatic aggregation of all completed service types, collection details, and mode of payments.
+- **Granular Branch Filtering**: Instant lookup across active and historical monthly accounting periods.
 
-- `src/pages/` - Main application views (Dashboard, Tickets, Profile, Branches, etc.)
-- `src/components/` - Reusable UI components (Modals, Address Pickers, Calendar Pickers).
-- `src/contexts/` - Global state management for Authentication and Theme.
-- `src/data/` - Static data structures (Philippine addresses, service constants).
-- `src/layouts/` - Shared UI structures like the Dashboard Layout.
+### 4. 👥 Workforce & Enterprise Operations
+- **Branch Scope Isolation**: Strict segregation between commercial Sales departments and technical Services divisions.
+- **Integrated Operations Forms**: Digital intake for surveys, repair authorizations, and client satisfaction certificates.
+- **Role-Based Access Control (RBAC)**: Fine-grained permissions for Administrators, Branch Managers, Officers-in-Charge (OIC), Coordinators, and Technicians.
 
-## 🛠️ Getting Started
+---
 
-### Prerequisites
-- [Node.js](https://nodejs.org/) (v18 or higher recommended)
-- [npm](https://www.npmjs.com/)
+## 🛠️ Architecture & Tech Stack
 
-### Installation
+| Layer | Technology |
+| :--- | :--- |
+| **Framework** | [React 19](https://react.dev/) with [TypeScript 5](https://www.typescriptlang.org/) |
+| **Build System** | [Vite 8](https://vitejs.dev/) with SWC compiler optimization |
+| **Styling & Design System** | Tailored Modern Glassmorphism & High-Contrast Dark/Light Themes via [Tailwind CSS](https://tailwindcss.com/) |
+| **Iconography** | [Lucide React](https://lucide.dev/) |
+| **Security & Auth** | JWT Authentication, Enterprise RBAC & Google Identity Services |
+| **Data Synchronization** | Multi-tier Local Cache + Broadcast Channels for cross-tab realtime updates |
+| **Document Generation** | [jsPDF](https://github.com/parallax/jsPDF) & [jspdf-autotable](https://github.com/simonbengtsson/jsPDF-AutoTable) |
 
-1. **Clone the repository:**
-   ```bash
-   git clone [repository-url]
-   ```
+---
 
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
+## 🔒 Security & Data Integrity
 
-3. **Environment Setup:**
-   Copy `.env.example` to `.env` (the real `.env` is not committed). Then set:
-   ```env
-   VITE_API_BASE_URL=http://localhost:8080/api
-   VITE_GOOGLE_CLIENT_ID=your_google_client_id
-   ```
+- **Environment Protection**: All sensitive endpoints, API secrets, and encryption keys are isolated in secure production environment stores.
+- **Sanitized Data Pipelines**: Strict input validation and text sanitization against script injection and formatting corruption.
+- **Audit Trails**: Real-time user attribution on all critical actions (record encoding, schedule modifications, and status transitions).
 
-4. **Run Development Server:**
-   ```bash
-   npm run dev
-   ```
+---
 
-## 🏗️ Building for Production
+## 🚀 Deployment & Operations
 
+### Build Pipeline
 ```bash
+# Install dependencies
+npm ci
+
+# Type-check and produce optimized production bundle
 npm run build
 ```
-The production-ready files will be in the `dist/` directory.
+
+The production bundle is compiled into `/dist` with tree-shaking, vendor chunking, and asset minification.
 
 ---
-© 2026 Ashcol Airconditioning Corporation. All rights reserved.
+
+## 🏢 Enterprise Support & Licensing
+
+This software and associated documentation files are the proprietary and confidential property of **Ashcol Airconditioning Corporation**. Unauthorized copying, distribution, or commercial use without prior written consent is strictly prohibited.
+
+*© 2026 Ashcol Airconditioning Corporation. All Rights Reserved.*
