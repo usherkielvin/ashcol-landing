@@ -7,12 +7,12 @@ import {
   Building2, Trash2, MapPin,
   ChevronDown, Plus, CheckCircle2, AlertCircle, Package, CalendarDays,
   Eye, Phone, LayoutGrid, List, CheckSquare, Square, Edit3, Clock, Check,
-  Store, UserRound, Wind, MessageSquare, Users, Settings, Truck, CreditCard
+  Store
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, readApiError, resolvePortalWriteBranchId, fetchTicketsPage, parseCreatedTicketResponse, formatFetchError, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, isTaguigServiceTicket, DEALERS_UPDATED_EVENT, notifyDealersUpdated, canMemberAccessRelaysAndTicketCreation } from '../utils/api'
-import { deriveRosterFromEmployees } from '../utils/branchRoster'
+import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, isSameBaseBranch, filterBranchNegotiators, isNegotiatorCandidate, isAccountActive, readApiError, resolvePortalWriteBranchId, fetchTicketsPage, parseCreatedTicketResponse, formatFetchError, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, isTaguigServiceTicket, DEALERS_UPDATED_EVENT, notifyDealersUpdated, canMemberAccessRelaysAndTicketCreation } from '../utils/api'
+import { deriveRosterFromEmployees, isInstallerEmployee, employeeMatchesBranchScope } from '../utils/branchRoster'
 import { readTabCache, readTabCacheEntry, relaysCacheKey, writeTabCache, isTabCacheFresh, type RelaysTabCache, clearWarrantyCache, clearRelayScheduleCaches, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
 import {
   hasRelayLeftQueue,
@@ -24,6 +24,7 @@ import {
 } from '../utils/relayScheduleSync'
 import { fetchCachedBranches, fetchCachedEmployees } from '../utils/portalDirectoryCache'
 import { formatBrandCapacityLabel, parseBrandFromAcDetails } from '../utils/warrantyTicketDisplay'
+import { formatInstallerLabel } from '../utils/ticketDisplay'
 import { resolveScheduleStatusFields } from '../constants/ticketCategories'
 import { RelayEditTicketModal } from '../components/relays/RelayEditTicketModal'
 import { extractRelayTicketsFromExcel, type ExtractedRelayTicket } from '../utils/excelRelayExtraction'
@@ -31,9 +32,22 @@ import { matchExcelDealers, type DealerParseResult } from '../utils/excelBranchM
 import { resetTicketTableScroll } from '../utils/tabSwitch'
 import type { RelayEditDraft } from '../components/relays/relayEditForm'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
-import { DealerSelect } from '../components/DealerSelect'
 import { ROBINSON_APPLIANCES_RE } from '../utils/dealer'
 import { guessDistrict } from '../utils/districtGuesser'
+import { derivePaymentSummary } from '../utils/ticketPayment'
+import {
+  StatusGrid,
+  resolveEffectiveStatusForGrid,
+  DealerSection,
+  CustomerDetailsSection,
+  AirconDetailsSection,
+  BranchNegotiatorSection,
+  SchedulingSection,
+  DispatchSection,
+  PaymentSection,
+  RemarksSection,
+  type RelayFormTheme,
+} from '../components/relays/ticketForm'
 import {
   parseAcMeta,
   getEffectiveScheduleDateKey,
@@ -44,56 +58,6 @@ import {
   getScheduleStatusBadgeStyle,
   formatSpecificDoneStatus,
 } from '../utils/ticketHelpers'
-import type { ReactNode } from 'react'
-
-function RelayFormField({
-  label,
-  required,
-  compact,
-  className = '',
-  children,
-}: {
-  label: string
-  required?: boolean
-  compact?: boolean
-  className?: string
-  children: ReactNode
-}) {
-  return (
-    <div className={className}>
-      <label className={`font-bold uppercase tracking-wide block text-slate-500 dark:text-slate-400 ${compact ? 'text-[10.5px] mb-1.5' : 'text-[11px] mb-1.5'}`}>
-        {label}{required ? <span className="text-emerald-500 ml-0.5">*</span> : null}
-      </label>
-      {children}
-    </div>
-  )
-}
-
-function RelayFormSectionHead({
-  title,
-  subtitle,
-  step,
-  icon: Icon,
-}: {
-  title: string
-  subtitle?: string
-  step?: number
-  icon?: ReactNode
-}) {
-  return (
-    <div className="flex items-center gap-2.5 pt-0.5 pb-2.5 border-b border-slate-200 dark:border-slate-700 mb-4">
-      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-500/10 text-emerald-500 shrink-0">
-        {Icon ?? <span className="text-[11px] font-black">{step}</span>}
-      </div>
-      <div className="min-w-0">
-        <p className="text-[11.5px] font-black uppercase tracking-wider text-emerald-600 leading-tight">{title}</p>
-        {subtitle && <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 leading-tight mt-0.5">{subtitle}</p>}
-      </div>
-    </div>
-  )
-}
-
-
 
 interface Ticket {
   id: string
@@ -129,6 +93,7 @@ interface Ticket {
   installerName?: string
   driverName?: string
   serviceVehicle?: string
+  remarks?: string
   remarksUpdate?: string
   installationCharges?: number
   modeOfPayment?: string
@@ -246,33 +211,6 @@ const FormatPhone = ({ raw }: { raw: string | null | undefined }): React.ReactNo
       ))}
     </div>
   )
-}
-
-function formatPhilippinePhoneInput(raw: string): string {
-  let digits = raw.replace(/\D/g, '')
-  if (digits.startsWith('63')) {
-    digits = `0${digits.slice(2)}`
-  } else if (digits.startsWith('9') && !digits.startsWith('09')) {
-    digits = `0${digits}`
-  }
-  digits = digits.slice(0, 11)
-  if (digits.length <= 4) return digits
-  if (digits.length <= 7) return `${digits.slice(0, 4)} ${digits.slice(4)}`
-  return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`
-}
-
-/** Splits a pasted blob like "0917 869 4260   0946 735 5566" (or comma/newline separated) into
- *  separate phone numbers. Only tokens with >=10 digits count as a distinct number, so pasting a
- *  single already-spaced number ("0917 869 4260") still yields one token, not three. */
-function extractPhoneNumbers(raw: string): string[] {
-  const tokens = raw.split(/[,;\n/]+|\s{2,}/).map(t => t.trim()).filter(Boolean)
-  const candidates = tokens.length > 1 ? tokens : raw.trim().split(/\s+/)
-  const numbers: string[] = []
-  for (const tok of candidates) {
-    const digits = tok.replace(/\D/g, '')
-    if (digits.length >= 10) numbers.push(tok)
-  }
-  return numbers
 }
 
 const parseAcDetails = (ticket: Ticket) => {
@@ -1008,7 +946,7 @@ export default function Relays() {
 
   // Manual & Scan Add Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
-  const [dealers, setDealers] = useState<{ id: string; name: string }[]>([])
+  const [dealers, setDealers] = useState<{ id: string; name: string; createdBy?: string; createdByName?: string; createdAt?: string }[]>([])
 
   // Excel Import State. Every extracted row becomes an independent draft so changing one
   // ticket's schedule, branch, or negotiator never changes the other imported tickets.
@@ -1804,12 +1742,106 @@ export default function Relays() {
   const [settingsNewDealerName, setSettingsNewDealerName] = useState('')
   const [settingsEditingDealerIndex, setSettingsEditingDealerIndex] = useState<number | null>(null)
   const [settingsEditDealerName, setSettingsEditDealerName] = useState('')
+  const [deletingDealer, setDeletingDealer] = useState<{ id: string; name: string } | null>(null)
+  const [isDeletingDealer, setIsDeletingDealer] = useState(false)
+  const [settingsStoreSearch, setSettingsStoreSearch] = useState('')
+  const [selectedStoreIds, setSelectedStoreIds] = useState<Set<string>>(new Set())
+  const [isBulkDeletingStores, setIsBulkDeletingStores] = useState(false)
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
+
+  const filteredModalDealers = useMemo(() => {
+    if (!settingsStoreSearch.trim()) return dealers
+    const q = settingsStoreSearch.toLowerCase()
+    return dealers.filter(d => d.name.toLowerCase().includes(q))
+  }, [dealers, settingsStoreSearch])
+
+  const handleToggleSelectAllStores = () => {
+    if (filteredModalDealers.length === 0) return
+    const allFilteredSelected = filteredModalDealers.every(d => selectedStoreIds.has(d.id))
+    setSelectedStoreIds(prev => {
+      const next = new Set(prev)
+      if (allFilteredSelected) {
+        filteredModalDealers.forEach(d => next.delete(d.id))
+      } else {
+        filteredModalDealers.forEach(d => next.add(d.id))
+      }
+      return next
+    })
+  }
+
+  const handleToggleSelectStore = (id: string) => {
+    setSelectedStoreIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const handleExecuteBulkDelete = async () => {
+    if (selectedStoreIds.size === 0) return
+    setIsBulkDeletingStores(true)
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/dealers/bulk-delete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(Array.from(selectedStoreIds))
+      })
+      if (res.ok) {
+        fetchDealers()
+        notifyDealersUpdated()
+        setSelectedStoreIds(new Set())
+        setShowBulkDeleteConfirm(false)
+      } else {
+        // Fallback: delete one by one
+        const deletePromises = Array.from(selectedStoreIds).map(id =>
+          fetch(`${API_BASE_URL}/dealers/${id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` }
+          })
+        )
+        await Promise.all(deletePromises)
+        fetchDealers()
+        notifyDealersUpdated()
+        setSelectedStoreIds(new Set())
+        setShowBulkDeleteConfirm(false)
+      }
+    } catch (err) {
+      console.error('Error bulk deleting dealers:', err)
+    } finally {
+      setIsBulkDeletingStores(false)
+    }
+  }
+
+  const similarDealerMatch = useMemo(() => {
+    const inputTrimmed = settingsNewDealerName.trim().toUpperCase()
+    if (!inputTrimmed) return null
+    const inputNorm = inputTrimmed.replace(/[^A-Z0-9]/g, '')
+
+    // Exact match
+    const exact = dealers.find(d => d.name.trim().toUpperCase() === inputTrimmed)
+    if (exact) return { type: 'exact' as const, name: exact.name }
+
+    // Normalized similarity match (e.g. S & R vs S&R, ANSONS vs ANSON'S)
+    if (inputNorm) {
+      const similar = dealers.find(d => d.name.trim().toUpperCase().replace(/[^A-Z0-9]/g, '') === inputNorm)
+      if (similar) return { type: 'similar' as const, name: similar.name }
+    }
+
+    return null
+  }, [dealers, settingsNewDealerName])
 
   const handleSettingsAddDealer = async () => {
     const name = settingsNewDealerName.trim().toUpperCase()
     if (!name) return
-    if (dealers.some(d => d.name.toUpperCase() === name)) {
-      alert('Dealer already exists')
+    if (similarDealerMatch) {
+      alert(similarDealerMatch.type === 'exact'
+        ? `Store "${similarDealerMatch.name}" already exists in store lists.`
+        : `Cannot add: store name is too similar to existing "${similarDealerMatch.name}". Please avoid duplicate entries.`)
       return
     }
     try {
@@ -1869,8 +1901,8 @@ export default function Relays() {
     }
   }
 
-  const handleSettingsDeleteDealer = async (dealerId: string, name: string) => {
-    if (!window.confirm(`Are you sure you want to delete dealer "${name}"?`)) return
+  const handleExecuteDeleteDealer = async (dealerId: string) => {
+    setIsDeletingDealer(true)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const res = await fetch(`${API_BASE_URL}/dealers/${dealerId}`, {
@@ -1880,11 +1912,15 @@ export default function Relays() {
       if (res.ok) {
         fetchDealers()
         notifyDealersUpdated()
+        setDeletingDealer(null)
       } else {
-        alert('Failed to delete dealer')
+        const errMsg = await res.text()
+        alert(errMsg || 'Failed to delete dealer')
       }
     } catch (err) {
       console.error('Error deleting dealer:', err)
+    } finally {
+      setIsDeletingDealer(false)
     }
   }
 
@@ -2000,7 +2036,7 @@ export default function Relays() {
     const selected = resolveBranch(scoped)
     const matched = employees.filter((emp) => {
       if (!isNegotiatorCandidate(emp)) return false
-      if (!emp.branchId?.trim()) return true
+      if (!emp.branchId?.trim()) return false
       if (branchScopesMatch(emp.branchId, scoped, emp.email)) return true
       const empBranch = resolveBranch(emp.branchId)
       return !!(selected && empBranch && selected.id === empBranch.id)
@@ -2068,6 +2104,54 @@ export default function Relays() {
     () => deriveRosterFromEmployees(employees, addForm.branchId || resolveRelayDefaultBranchId() || ''),
     [employees, addForm.branchId, resolveRelayDefaultBranchId],
   )
+
+  /** All installer/technician-tagged staff for the selected branch or across branches (first name only) */
+  const allInstallerOptions = useMemo(() => {
+    const targetBranch = addForm.branchId || resolveRelayDefaultBranchId() || ''
+    const activeInstallers = employees
+      .filter(isAccountActive)
+      .filter(isInstallerEmployee)
+
+    if (targetBranch) {
+      const branchMatched = activeInstallers.filter(emp =>
+        employeeMatchesBranchScope(emp as any, targetBranch) ||
+        branchScopesMatch(emp.branchId, targetBranch, emp.email) ||
+        (emp.branchId && targetBranch && isSameBaseBranch(emp.branchId, targetBranch))
+      )
+      if (branchMatched.length > 0) {
+        return branchMatched
+          .map(emp => {
+            const label = formatInstallerLabel(emp as any)
+            return { id: emp.id, name: emp.name, label }
+          })
+          .sort((a, b) => a.label.localeCompare(b.label))
+      }
+    }
+
+    return activeInstallers
+      .map(emp => {
+        const label = formatInstallerLabel(emp as any)
+        return { id: emp.id, name: emp.name, label }
+      })
+      .filter(opt => opt.name)
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [employees, addForm.branchId, resolveRelayDefaultBranchId])
+
+  useEffect(() => {
+    if (!isAddModalOpen) return
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    if (!token) return
+    void fetchCachedEmployees(token, undefined, { force: true }).then(list => {
+      const eList = list.map((e: any) => ({
+        ...e,
+        branchId: e.branchId || e.branch_id || '',
+        jobTitle: e.jobTitle || e.job_title || '',
+      }))
+      if (eList.length > 0) {
+        setEmployees(eList)
+      }
+    }).catch(() => {})
+  }, [isAddModalOpen])
 
   const [showNameSuggestions, setShowNameSuggestions] = useState(false)
   const [apiNameMatches, setApiNameMatches] = useState<Ticket[]>([])
@@ -3131,6 +3215,9 @@ export default function Relays() {
       rebatesReferenceNo: draft.rebatesReferenceNo || '',
       warrantyRegistrationStatus: draft.warrantyStatus || '',
       warrantyRegisteredBy: draft.warrantyRegisteredBy || '',
+      ...(Array.isArray(draft.paymentBreakdown) && draft.paymentBreakdown.length > 0
+        ? { paymentBreakdown: draft.paymentBreakdown.filter(p => p.amount > 0 || (p.mode && p.mode !== 'NO_PAYMENT')) }
+        : {}),
     }
     payload.acDetails = JSON.stringify(acDetailsObj)
     payload.negotiatorId = draft.assignTechId || ''
@@ -3165,6 +3252,7 @@ export default function Relays() {
       commitType: draft.commitType || selectedTicket.commitType,
       installerName: installerName || undefined,
       serviceVehicle: draft.serviceVehicle || selectedTicket.serviceVehicle,
+      remarks: newRemark || selectedTicket.remarks || selectedTicket.remarksUpdate,
       remarksUpdate: newRemark || selectedTicket.remarksUpdate,
       installationCharges: Number(draft.installationCharges),
       modeOfPayment: draft.modeOfPayment || selectedTicket.modeOfPayment,
@@ -3834,16 +3922,17 @@ export default function Relays() {
           {/* Right: Action buttons */}
           {(isAdmin || canMemberAccessRelaysAndTicketCreation(user)) && (
             <div className="flex items-center gap-1.5 shrink-0 relative justify-end md:justify-end">
-              {/* Settings icon */}
+              {/* Store Lists button */}
               {(isAdmin || canMemberAccessRelaysAndTicketCreation(user)) && (
                 <button
                   type="button"
                   onClick={() => setIsSettingsModalOpen(true)}
-                  className="w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full border transition-all hover:opacity-80 active:scale-90"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
-                  title="Manage Dealer Settings"
+                  className="flex items-center gap-1.5 md:gap-2 h-8 md:h-10 px-3 md:px-4 rounded-full font-bold text-[12px] md:text-[13px] hover:opacity-90 active:scale-95 transition-all shrink-0 shadow-xs border"
+                  style={{ background: isLight ? '#f8fafc' : '#1e293b', borderColor: border, color: textPrimary }}
+                  title="Manage Store Lists & Dealers"
                 >
-                  <Settings className="w-4 h-4 md:w-4.5 md:h-4.5" />
+                  <Store className="w-3.5 h-3.5 md:w-4 md:h-4 text-emerald-500" />
+                  <span className="tracking-wider uppercase">STORE LISTS</span>
                 </button>
               )}
               {/* Excel Import — admin/management only */}
@@ -4473,6 +4562,7 @@ export default function Relays() {
           parseStoreVendor={parseDealer}
           resolveBranch={resolveBranch}
           negotiatorsForBranch={negotiatorsForBranch}
+          technicianOptions={allInstallerOptions}
           mergeCandidates={mergeCandidates}
           mergeTargetId={mergeTargetId}
           merging={merging}
@@ -5251,6 +5341,13 @@ export default function Relays() {
           textTransform: 'none' as const,
         })
         const addInput = 'w-full border rounded-xl px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 normal-case'
+        const relayFormTheme: RelayFormTheme = {
+          isLight, cardBg, border, textPrimary, textMuted, inputBg, inputBorder,
+          inputClassName: addInput,
+          getInputStyle: fieldStyle,
+        }
+        const selectedNegotiatorEmp = addModalNegotiators.find(emp => emp.id === addForm.assignedTo)
+        const addFormNegotiatorPhone = selectedNegotiatorEmp?.phone || ''
 
         return (
         <div
@@ -5299,162 +5396,57 @@ export default function Relays() {
               <div className="flex-1 overflow-y-auto px-5 sm:px-7 py-5 space-y-6">
 
                 <div className="flex flex-col gap-5 pb-6 border-b" style={{ borderColor: border }}>
-                  <div className="flex flex-col gap-5">
-                    {(() => {
-                      const renderStatusButton = (st: { value: string, label: string }) => {
-                         const isSelected = addForm.status === st.value
-                         return (
-                           <button
-                             key={st.value}
-                             type="button"
-                             onClick={() => {
-                               if (!isSelected) {
-                                 if (window.confirm(`Are you sure you want to set the status to ${st.label}?`)) {
-                                   setAddForm(prev => ({
-                                     ...prev,
-                                     status: st.value,
-                                     serviceType: st.value,
-                                     ticketCategory: resolveScheduleStatusFields(st.value).ticketCategory || 'INSTALLATION'
-                                   }))
-                                 }
-                               }
-                             }}
-                             className="flex items-center justify-center py-3 px-2 rounded-xl border font-black text-[11px] uppercase tracking-wide transition-all duration-150 select-none cursor-pointer"
-                             style={isSelected ? {
-                               backgroundColor: '#10B981',
-                               borderColor: '#10B981',
-                               color: 'white',
-                               boxShadow: '0 2px 8px rgba(16,185,129,0.3)'
-                             } : {
-                               backgroundColor: isLight ? '#f8fafc' : 'rgba(255,255,255,0.02)',
-                               borderColor: border,
-                               color: textMuted
-                             }}
-                           >
-                             {st.label}
-                           </button>
-                         )
-                      }
-                      
-                      return (
-                        <>
-                          <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider mb-2" style={{ color: textMuted }}>Pending</p>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                              {[
-                                { value: 'INSTALL', label: 'INSTALL' },
-                                { value: 'SURVEY', label: 'SURVEY' },
-                                { value: 'CLEANING', label: 'CLEANING' },
-                                { value: 'CHECKUP', label: 'CHECKUP' },
-                                { value: 'BACKJOB', label: 'BACKJOB' },
-                                { value: 'SERVICE', label: 'SERVICE' },
-                                { value: 'MOUNTING', label: 'MOUNTING' },
-                                { value: 'RESCHED', label: 'RESCHED' },
-                                { value: 'CONTINUATION', label: 'CONTINUATION' },
-                                { value: 'FOR APPROVAL', label: 'FOR QUOTATION' },
-                                { value: 'SYSTEM_REPROCESS', label: 'SYSTEM REPROCESS' },
-                                { value: 'DISMANTLE', label: 'DISMANTLE' },
-                              ].map(renderStatusButton)}
-                            </div>
-                          </div>
-                          <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider mb-2" style={{ color: textMuted }}>Closing</p>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                              {[
-                                { value: 'DONE_INSTALLED', label: 'DONE INSTALL' },
-                                { value: 'DONE_CLEANING', label: 'DONE CLEANING' },
-                                { value: 'DONE_SURVEY', label: 'DONE SURVEY' },
-                                { value: 'DONE_CHECKUP', label: 'DONE CHECKUP' },
-                                { value: 'DONE_BACKJOB', label: 'DONE BACKJOB' },
-                                { value: 'DONE_SERVICE', label: 'DONE SERVICE' },
-                                { value: 'DONE_MOUNTING', label: 'DONE MOUNTING' },
-                                { value: 'DONE_SYSTEM_REPROCESS', label: 'DONE SYSTEM REPROCESS' },
-                                { value: 'DONE_DISMANTLE', label: 'DONE DISMANTLE' },
-                                { value: 'DONE_QUOTATION', label: 'DONE QUOTATION' },
-                                { value: 'CANCELLED', label: 'CANCELLED' },
-                              ].map(renderStatusButton)}
-                            </div>
-                          </div>
-                        </>
-                      )
-                    })()}
-                  </div>
+                  <StatusGrid
+                    currentStatus={resolveEffectiveStatusForGrid(addForm.status, addForm.serviceType)}
+                    onRequestChange={(st) => {
+                      setAddForm(prev => ({
+                        ...prev,
+                        status: st.value,
+                        serviceType: st.value,
+                        ticketCategory: resolveScheduleStatusFields(st.value).ticketCategory || 'INSTALLATION',
+                      }))
+                    }}
+                    isLight={isLight}
+                    border={border}
+                    textMuted={textMuted}
+                  />
                 </div>
 
                 {/* 1. Dealer & Transaction */}
-                <section>
-                  <RelayFormSectionHead step={1} icon={<Store className="w-3.5 h-3.5" />} title="Dealer" subtitle="Where the relay came from" />
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
-                    <RelayFormField label="Dealer" compact className="md:col-span-4">
-                      <DealerSelect
-                        value={addForm.dealer}
-                        dealers={dealers}
-                        onChange={(name) => setAddForm(prev => ({ ...prev, dealer: name }))}
-                        onDealersChanged={fetchDealers}
-                        isLight={isLight}
-                        inputBg={inputBg}
-                        inputBorder={inputBorder}
-                        textPrimary={textPrimary}
-                        textMuted={textMuted}
-                      />
-                    </RelayFormField>
-                    <RelayFormField label="Dealer Branch" compact className="md:col-span-4">
-                      <input
-                        type="text"
-                        value={addForm.dealerBranch}
-                        onChange={e => setAddForm(prev => ({ ...prev, dealerBranch: e.target.value.toUpperCase() }))}
-                        placeholder="Branch"
-                        className={`${addInput} uppercase`}
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
-                      />
-                    </RelayFormField>
-                    <RelayFormField label="Diser" compact className="md:col-span-4">
-                      <input
-                        type="text"
-                        value={addForm.diser}
-                        onChange={e => setAddForm(prev => ({ ...prev, diser: e.target.value }))}
-                        placeholder="Dealer's sales rep name"
-                        className={addInput}
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                      />
-                    </RelayFormField>
-                    {ROBINSON_APPLIANCES_RE.test(addForm.dealer || '') && (
-                      <RelayFormField label="Transaction ID" compact className="md:col-span-4">
-                        <input type="text" value={addForm.controlNumber} onChange={e => setAddForm(prev => ({ ...prev, controlNumber: e.target.value }))} placeholder="Robinsons Transaction ID" className={addInput} style={fieldStyle(addForm.controlNumber)} />
-                      </RelayFormField>
-                    )}
-                  </div>
-                </section>
+                <DealerSection
+                  step={1}
+                  dealer={addForm.dealer}
+                  onDealerChange={(name) => setAddForm(prev => ({ ...prev, dealer: name }))}
+                  dealerBranch={addForm.dealerBranch}
+                  onDealerBranchChange={(v) => setAddForm(prev => ({ ...prev, dealerBranch: v }))}
+                  diser={addForm.diser}
+                  onDiserChange={(v) => setAddForm(prev => ({ ...prev, diser: v }))}
+                  transactionId={addForm.controlNumber}
+                  onTransactionIdChange={(v) => setAddForm(prev => ({ ...prev, controlNumber: v }))}
+                  dealers={dealers}
+                  onDealersChanged={fetchDealers}
+                  theme={relayFormTheme}
+                />
 
                 {/* 2. Customer details */}
-                <section>
-                  <RelayFormSectionHead step={2} icon={<UserRound className="w-3.5 h-3.5" />} title="Customer Details" subtitle="Who and where to deliver service" />
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
-                    <RelayFormField label="Customer Name" required compact className="md:col-span-5">
-                      <div className="relative">
-                        <input
-                          type="text"
-                          required
-                          value={addForm.customerName}
-                          onChange={e => {
-                            setAddForm(prev => ({ ...prev, customerName: e.target.value }))
-                            setShowNameSuggestions(true)
-                          }}
-                          onFocus={() => setShowNameSuggestions(true)}
-                          onBlur={() => {
-                            // Delay hiding to allow click on suggestions
-                            setTimeout(() => setShowNameSuggestions(false), 250)
-                          }}
-                          onKeyDown={e => {
-                            if (e.key === 'Escape') {
-                              setShowNameSuggestions(false)
-                            }
-                          }}
-                          placeholder="Full name"
-                          className={addInput}
-                          style={fieldStyle(addForm.customerName)}
-                        />
-
+                <CustomerDetailsSection
+                  step={2}
+                  customerName={addForm.customerName}
+                  onCustomerNameChange={(v) => { setAddForm(prev => ({ ...prev, customerName: v })); setShowNameSuggestions(true) }}
+                  onCustomerNameFocus={() => setShowNameSuggestions(true)}
+                  onCustomerNameBlur={() => { setTimeout(() => setShowNameSuggestions(false), 250) }}
+                  onCustomerNameKeyDown={e => { if (e.key === 'Escape') setShowNameSuggestions(false) }}
+                  phoneNumbers={addPhoneNumbers}
+                  onPhoneNumbersChange={setAddPhoneNumbers}
+                  address={addForm.locationRaw}
+                  district={addForm.district}
+                  onLocationChange={({ location, district }) => setAddForm(prev => ({ ...prev, locationRaw: location, district: district ?? prev.district }))}
+                  onDistrictChange={(v) => setAddForm(prev => ({ ...prev, district: v }))}
+                  landmark={addForm.landmarks}
+                  onLandmarkChange={(v) => setAddForm(prev => ({ ...prev, landmarks: v }))}
+                  theme={relayFormTheme}
+                  nameFieldExtra={(
+                    <>
                         {/* Existing Ticket Match Popup Dropdown */}
                         {showNameSuggestions && (addFormNameMatches.length > 0 || nameSearchLoading) && (
                           <div
@@ -5573,397 +5565,149 @@ export default function Relays() {
                             )}
                           </div>
                         )}
-                      </div>
-                    </RelayFormField>
-                    {addFormSyncTarget && (
-                      <div className="md:col-span-12 border rounded-xl px-3.5 py-3 flex flex-col gap-1"
-                        style={{ backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.08)', borderColor: isLight ? '#a7f3d0' : 'rgba(16,185,129,0.25)' }}>
-                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                          Will sync to existing ticket {getTicketNumber(addFormSyncTarget as Ticket)}
-                        </span>
-                        <p className="text-[11px] font-semibold" style={{ color: textMuted }}>
-                          A scheduled ticket already exists for this customer
-                          {parseAcDetails(addFormSyncTarget as Ticket).scheduledDate
-                            ? ` (${parseAcDetails(addFormSyncTarget as Ticket).scheduledDate})`
-                            : (addFormSyncTarget as Ticket).preferredDate
-                              ? ` (${String((addFormSyncTarget as Ticket).preferredDate).slice(0, 10)})`
-                              : ''}.
-                          Relay details will be merged into that ticket number.
-                        </p>
-                      </div>
-                    )}
-                    {addFormDuplicate && !addFormSyncTarget && (
-                      <div className="md:col-span-12 border rounded-xl px-3.5 py-3 flex flex-col gap-1"
-                        style={{ backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.06)', borderColor: isLight ? '#fde68a' : 'rgba(251,191,36,0.2)' }}>
-                        <span className="text-xs font-bold text-amber-600 dark:amber-400 flex items-center gap-1.5">
-                          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                          Duplicate customer on Relays
-                        </span>
-                        <p className="text-[11px] font-semibold" style={{ color: textMuted }}>
-                          Ticket {getTicketNumber(addFormDuplicate)} already exists for this customer
-                          {parseAcDetails(addFormDuplicate).finalDate ? ` (scheduled ${parseAcDetails(addFormDuplicate).finalDate})` : ''}.
-                          Creating a new ticket is blocked — open or merge the existing row.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsAddModalOpen(false)
-                            openDrawer(addFormDuplicate)
-                          }}
-                          className="self-start text-[11px] font-bold text-emerald-600 hover:text-emerald-500 underline"
-                        >
-                          Open existing ticket {getTicketNumber(addFormDuplicate)}
-                        </button>
-                      </div>
-                    )}
-                    <RelayFormField label="Contact Number" compact className="md:col-span-7">
-                      <div className="flex flex-col gap-2">
-                        {addPhoneNumbers.map((phone, pIdx) => (
-                          <div key={pIdx} className="flex gap-2 items-center">
-                            <input
-                              type="tel"
-                              inputMode="tel"
-                              value={phone}
-                              onChange={e => {
-                                const formatted = formatPhilippinePhoneInput(e.target.value)
-                                setAddPhoneNumbers(prev => {
-                                  const next = [...prev]
-                                  next[pIdx] = formatted
-                                  return next
-                                })
-                              }}
-                              onPaste={e => {
-                                const pasted = e.clipboardData.getData('text')
-                                const numbers = extractPhoneNumbers(pasted)
-                                if (numbers.length < 2) return
-                                e.preventDefault()
-                                setAddPhoneNumbers(prev => {
-                                  const next = [...prev]
-                                  next[pIdx] = formatPhilippinePhoneInput(numbers[0])
-                                  next.splice(pIdx + 1, 0, ...numbers.slice(1).map(formatPhilippinePhoneInput))
-                                  return next
-                                })
-                              }}
-                              placeholder="0917 869 4260"
-                              className={`${addInput} font-mono tracking-wide`}
-                              style={fieldStyle(phone)}
-                            />
-                            {pIdx === 0 ? (
-                              <button
-                                type="button"
-                                onClick={() => setAddPhoneNumbers(prev => [...prev, ''])}
-                                className="px-3 py-2 rounded-lg text-xs font-bold text-white shrink-0"
-                                style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
-                              >
-                                Add
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => setAddPhoneNumbers(prev => prev.filter((_, idx) => idx !== pIdx))}
-                                className="px-3 py-2 rounded-lg text-xs font-bold text-white bg-red-500 hover:bg-red-600 shrink-0"
-                              >
-                                Remove
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </RelayFormField>
-                    <RelayFormField label="Address" required compact className="md:col-span-8">
-                      <textarea
-                        required
-                        value={addForm.locationRaw}
-                        onChange={e => {
-                          const val = e.target.value
-                          setAddForm(prev => {
-                            const guessed = guessDistrict(val)
-                            return { ...prev, locationRaw: val, district: guessed || prev.district }
-                          })
-                        }}
-                        placeholder="Complete installation address"
-                        rows={2}
-                        className={`${addInput} resize-none`}
-                        style={fieldStyle(addForm.locationRaw)}
-                      />
-                    </RelayFormField>
-                    <RelayFormField label="District" compact className="md:col-span-2">
-                      <input type="text" value={addForm.district} onChange={e => setAddForm(prev => ({ ...prev, district: e.target.value }))} placeholder="Area" className={addInput} style={fieldStyle(addForm.district)} />
-                    </RelayFormField>
-                    <RelayFormField label="Landmark" compact className="md:col-span-2">
-                      <input type="text" value={addForm.landmarks} onChange={e => setAddForm(prev => ({ ...prev, landmarks: e.target.value }))} placeholder="Nearest landmark" className={addInput} style={fieldStyle(addForm.landmarks)} />
-                    </RelayFormField>
-                  </div>
-                </section>
+                    </>
+                  )}
+                  belowNameBanners={(
+                    <>
+                      {addFormSyncTarget && (
+                        <div className="border rounded-xl px-3.5 py-3 flex flex-col gap-1"
+                          style={{ backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.08)', borderColor: isLight ? '#a7f3d0' : 'rgba(16,185,129,0.25)' }}>
+                          <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                            Will sync to existing ticket {getTicketNumber(addFormSyncTarget as Ticket)}
+                          </span>
+                          <p className="text-[11px] font-semibold" style={{ color: textMuted }}>
+                            A scheduled ticket already exists for this customer
+                            {parseAcDetails(addFormSyncTarget as Ticket).scheduledDate
+                              ? ` (${parseAcDetails(addFormSyncTarget as Ticket).scheduledDate})`
+                              : (addFormSyncTarget as Ticket).preferredDate
+                                ? ` (${String((addFormSyncTarget as Ticket).preferredDate).slice(0, 10)})`
+                                : ''}.
+                            Relay details will be merged into that ticket number.
+                          </p>
+                        </div>
+                      )}
+                      {addFormDuplicate && !addFormSyncTarget && (
+                        <div className="border rounded-xl px-3.5 py-3 flex flex-col gap-1"
+                          style={{ backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.06)', borderColor: isLight ? '#fde68a' : 'rgba(251,191,36,0.2)' }}>
+                          <span className="text-xs font-bold text-amber-600 dark:amber-400 flex items-center gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                            Duplicate customer on Relays
+                          </span>
+                          <p className="text-[11px] font-semibold" style={{ color: textMuted }}>
+                            Ticket {getTicketNumber(addFormDuplicate)} already exists for this customer
+                            {parseAcDetails(addFormDuplicate).finalDate ? ` (scheduled ${parseAcDetails(addFormDuplicate).finalDate})` : ''}.
+                            Creating a new ticket is blocked — open or merge the existing row.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsAddModalOpen(false)
+                              openDrawer(addFormDuplicate)
+                            }}
+                            className="self-start text-[11px] font-bold text-emerald-600 hover:text-emerald-500 underline"
+                          >
+                            Open existing ticket {getTicketNumber(addFormDuplicate)}
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                />
 
                 {/* 3. Aircon / unit details */}
-                <section>
-                  <RelayFormSectionHead step={3} icon={<Wind className="w-3.5 h-3.5" />} title="Aircon Details" subtitle="Unit being serviced or installed" />
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
-                    <RelayFormField label="Brand" compact className="md:col-span-3">
-                      <input type="text" value={addForm.brand} onChange={e => setAddForm(prev => ({ ...prev, brand: e.target.value }))} placeholder="Brand" className={addInput} style={fieldStyle(addForm.brand)} />
-                    </RelayFormField>
-                    <RelayFormField label="Capacity" compact className="md:col-span-2">
-                      <input type="text" value={addForm.capacity} onChange={e => setAddForm(prev => ({ ...prev, capacity: e.target.value }))} placeholder="1.5 HP" className={addInput} style={fieldStyle(addForm.capacity)} />
-                    </RelayFormField>
-                    <RelayFormField label="SKU" compact className="md:col-span-3">
-                      <input type="text" value={addForm.sku} onChange={e => setAddForm(prev => ({ ...prev, sku: e.target.value }))} placeholder="SKU" className={addInput} style={fieldStyle(addForm.sku)} />
-                    </RelayFormField>
-                    <RelayFormField label="Serial No." compact className="md:col-span-4">
-                      <input type="text" value={addForm.serialNumber} onChange={e => setAddForm(prev => ({ ...prev, serialNumber: e.target.value }))} placeholder="Serial" className={addInput} style={fieldStyle(addForm.serialNumber)} />
-                    </RelayFormField>
-                    <RelayFormField label="Commit / Promo" compact className="md:col-span-12">
-                      <input type="text" value={addForm.commitType} onChange={e => setAddForm(prev => ({ ...prev, commitType: e.target.value }))} placeholder="Promo terms" className={addInput} style={fieldStyle(addForm.commitType)} />
-                    </RelayFormField>
-                  </div>
-                </section>
+                <AirconDetailsSection
+                  step={3}
+                  brand={addForm.brand}
+                  onBrandChange={(v) => setAddForm(prev => ({ ...prev, brand: v }))}
+                  capacity={addForm.capacity}
+                  onCapacityChange={(v) => setAddForm(prev => ({ ...prev, capacity: v }))}
+                  sku={addForm.sku}
+                  onSkuChange={(v) => setAddForm(prev => ({ ...prev, sku: v }))}
+                  serialNumber={addForm.serialNumber}
+                  onSerialNumberChange={(v) => setAddForm(prev => ({ ...prev, serialNumber: v }))}
+                  commitType={addForm.commitType}
+                  onCommitTypeChange={(v) => setAddForm(prev => ({ ...prev, commitType: v }))}
+                  theme={relayFormTheme}
+                />
 
                 {/* 4. Ashcol branch & assignment */}
-                <section>
-                  <RelayFormSectionHead step={4} icon={<Users className="w-3.5 h-3.5" />} title="Branch & Assignment" subtitle="Which Ashcol branch & negotiator owns this" />
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
-                    <RelayFormField label="Branch Zone" compact className="md:col-span-5">
-                      <select
-                        value={addForm.branchId}
-                        onChange={e => setAddForm(prev => ({ ...prev, branchId: e.target.value, assignedTo: '' }))}
-                        className={addInput}
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                      >
-                        <option value="">Select branch...</option>
-                        {branches.map(b => <option key={b.id} value={b.id}>{formatBranchName(b.name)}</option>)}
-                      </select>
-                    </RelayFormField>
-                    <RelayFormField label="Negotiator" required compact className="md:col-span-7">
-                      <select
-                        required
-                        value={addForm.assignedTo || ''}
-                        onChange={e => {
-                          const val = e.target.value
-                          const foundEmp = addModalNegotiators.find(emp => emp.id === val)
-                          setAddForm(prev => ({
-                            ...prev,
-                            assignedTo: val,
-                            // Installer is field crew, assigned later on Schedules — never the
-                            // negotiator/office-staff account picked here. Leave it untouched
-                            // (empty until someone explicitly sets it) so it doesn't overlap with
-                            // the negotiator's own name.
-                            branchId: (foundEmp && foundEmp.branchId) ? foundEmp.branchId : prev.branchId,
-                            // Only promote PENDING to ASSIGNED — don't clobber a status/service-type already
-                            // chosen via the status buttons above (SURVEY, INSTALL, CONTINUATION, etc).
-                            status: (val && prev.status === 'PENDING') ? 'ASSIGNED' : prev.status,
-                          }))
-                        }}
-                        className={addInput}
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                      >
-                        <option value="">Select negotiator...</option>
-                        {addModalNegotiators.map(emp => {
-                          const branchRaw = emp.branchId ? (resolveBranch(emp.branchId)?.name || '') : ''
-                          const branchName = formatBranchName(branchRaw)
-                          const firstName = (emp.name || '').split(' ')[0]
-                          const nameWithBranch = branchName ? `${firstName} - ${branchName}` : firstName
-                          return (
-                            <option key={emp.id} value={emp.id}>{nameWithBranch.toUpperCase()}</option>
-                          )
-                        })}
-                      </select>
-                    </RelayFormField>
-                  </div>
-                </section>
+                <BranchNegotiatorSection
+                  step={4}
+                  title="Branch & Assignment"
+                  subtitle="Which Ashcol branch & negotiator owns this"
+                  branchId={addForm.branchId}
+                  onBranchChange={(v) => setAddForm(prev => ({ ...prev, branchId: v, assignedTo: '' }))}
+                  branches={branches}
+                  negotiatorId={addForm.assignedTo || ''}
+                  onNegotiatorChange={(val, foundEmp) => {
+                    setAddForm(prev => ({
+                      ...prev,
+                      assignedTo: val,
+                      // Installer is field crew, assigned later on Schedules — never the
+                      // negotiator/office-staff account picked here. Leave it untouched
+                      // (empty until someone explicitly sets it) so it doesn't overlap with
+                      // the negotiator's own name.
+                      branchId: (foundEmp && foundEmp.branchId) ? foundEmp.branchId : prev.branchId,
+                      // Only promote PENDING to ASSIGNED — don't clobber a status/service-type already
+                      // chosen via the status buttons above (SURVEY, INSTALL, CONTINUATION, etc).
+                      status: (val && prev.status === 'PENDING') ? 'ASSIGNED' : prev.status,
+                    }))
+                  }}
+                  negotiators={addModalNegotiators}
+                  resolveBranchName={(branchId) => resolveBranch(branchId)?.name || ''}
+                  negotiatorPhone={addFormNegotiatorPhone}
+                  theme={relayFormTheme}
+                />
 
                 {/* 5. Scheduling */}
-                <section>
-                  <RelayFormSectionHead
-                    step={5}
-                    icon={<CalendarDays className="w-3.5 h-3.5" />}
-                    title="Scheduling"
-                    subtitle="Requested, schedule & installed date details"
-                  />
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
-                    {/* Requested Date */}
-                    <RelayFormField label="Requested Date" compact className="md:col-span-4">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          const input = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
-                          if (input && input.showPicker) input.showPicker();
-                        }}
-                        className={`${addInput} font-bold text-center relative flex flex-col items-center justify-center`}
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }}
-                      >
-                        {addForm.preferredDate ? new Date(addForm.preferredDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase() : 'ADD DATE'}
-                        <input type="date" value={addForm.preferredDate} onChange={e => setAddForm(prev => ({ ...prev, preferredDate: e.target.value }))} className="absolute opacity-0 pointer-events-none w-0 h-0" style={{ pointerEvents: 'none' }} />
-                      </button>
-                    </RelayFormField>
-                    {/* Schedule Date */}
-                    <RelayFormField label="Schedule Date" compact className="md:col-span-4">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          const input = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
-                          if (input && input.showPicker) input.showPicker();
-                        }}
-                        className={`${addInput} font-bold text-center relative flex flex-col items-center justify-center`}
-                        style={{
-                          backgroundColor: addForm.finalDate ? (isLight ? '#f0fdf4' : 'rgba(22,163,74,0.08)') : inputBg,
-                          borderColor: addForm.finalDate ? (isLight ? '#86efac' : 'rgba(22,163,74,0.4)') : inputBorder,
-                          color: addForm.finalDate ? '#10B981' : textPrimary,
-                          colorScheme: isLight ? 'light' : 'dark',
-                          fontWeight: addForm.finalDate ? 700 : undefined,
-                        }}
-                      >
-                        {addForm.finalDate ? new Date(addForm.finalDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase() : 'ADD DATE'}
-                        <input
-                          type="date"
-                          value={addForm.finalDate}
-                          onChange={e => setAddForm(prev => ({ ...prev, finalDate: e.target.value }))}
-                          className="absolute opacity-0 pointer-events-none w-0 h-0"
-                          style={{ pointerEvents: 'none' }}
-                        />
-                      </button>
-                    </RelayFormField>
-                    {/* Installed Date */}
-                    <RelayFormField label="Installed Date" compact className="md:col-span-4">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          const input = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
-                          if (input && input.showPicker) input.showPicker();
-                        }}
-                        className={`${addInput} font-bold text-center relative flex flex-col items-center justify-center`}
-                        style={{
-                          backgroundColor: addForm.installedDate ? (isLight ? '#eff6ff' : 'rgba(59,130,246,0.08)') : inputBg,
-                          borderColor: addForm.installedDate ? (isLight ? '#93c5fd' : 'rgba(59,130,246,0.4)') : inputBorder,
-                          color: addForm.installedDate ? '#3B82F6' : textPrimary,
-                          colorScheme: isLight ? 'light' : 'dark',
-                          fontWeight: addForm.installedDate ? 700 : undefined,
-                        }}
-                      >
-                        {addForm.installedDate ? new Date(addForm.installedDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase() : 'ADD DATE'}
-                        <input
-                          type="date"
-                          value={addForm.installedDate}
-                          onChange={e => setAddForm(prev => ({ ...prev, installedDate: e.target.value }))}
-                          className="absolute opacity-0 pointer-events-none w-0 h-0"
-                          style={{ pointerEvents: 'none' }}
-                        />
-                      </button>
-                    </RelayFormField>
-                  </div>
-                </section>
+                <SchedulingSection
+                  step={5}
+                  relayedDate={addForm.relayedDate}
+                  onRelayedDateChange={(v) => setAddForm(prev => ({ ...prev, relayedDate: v }))}
+                  requestedDate={addForm.preferredDate}
+                  onRequestedDateChange={(v) => setAddForm(prev => ({ ...prev, preferredDate: v }))}
+                  scheduleDate={addForm.finalDate}
+                  onScheduleDateChange={(v) => setAddForm(prev => ({ ...prev, finalDate: v }))}
+                  installedDate={addForm.installedDate}
+                  onInstalledDateChange={(v) => setAddForm(prev => ({ ...prev, installedDate: v }))}
+                  theme={relayFormTheme}
+                />
 
-                {/* 6. Payment Details */}
-                <section>
-                  <RelayFormSectionHead step={6} icon={<CreditCard className="w-3.5 h-3.5" />} title="Payment Details" subtitle="Mode of payment and amount" />
-                  <div className="space-y-2">
-                    {addPayments.map((payment, pIdx) => (
-                      <div key={`pay-${pIdx}`} className="grid grid-cols-12 gap-2 items-end">
-                        <RelayFormField label={pIdx === 0 ? 'Mode of Payment' : ''} compact className="col-span-5">
-                          <select
-                            value={payment.mode}
-                            onChange={e => { const next = [...addPayments]; next[pIdx] = { ...next[pIdx], mode: e.target.value }; setAddPayments(next); setAddForm(prev => ({ ...prev, modeOfPayment: next.map(p => p.mode).filter(Boolean).join(' / ') })) }}
-                            className={addInput}
-                            style={fieldStyle(payment.mode)}
-                          >
-                            <option value="">Select...</option>
-                            <option value="CASH">CASH</option>
-                            <option value="GCASH">GCASH</option>
-                            <option value="BANK TRANSFER">BANK TRANSFER</option>
-                            <option value="CHEQUE">CHEQUE</option>
-                            <option value="FOR COLLECTION">FOR COLLECTION</option>
-                            <option value="NO_PAYMENT">NO PAYMENT / FREE</option>
-                          </select>
-                        </RelayFormField>
-                        <RelayFormField label={pIdx === 0 ? 'Amount (₱)' : ''} compact className="col-span-4">
-                          <input
-                            type="number"
-                            value={payment.amount || ''}
-                            onChange={e => { const next = [...addPayments]; next[pIdx] = { ...next[pIdx], amount: Number(e.target.value) || 0 }; setAddPayments(next); setAddForm(prev => ({ ...prev, installationCharges: next.reduce((sum, p) => sum + p.amount, 0) })) }}
-                            placeholder="0"
-                            className={addInput}
-                            style={fieldStyle(payment.amount ? String(payment.amount) : '')}
-                          />
-                        </RelayFormField>
-                        <div className="col-span-3 flex gap-1 pb-[2px]">
-                          {pIdx === addPayments.length - 1 && (
-                            <button type="button" onClick={() => { setAddPayments(prev => [...prev, { mode: '', amount: 0 }]); setAddForm(prev => ({ ...prev, modeOfPayment: 'HYBRID' })) }} className="px-2.5 py-2 rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 font-bold text-xs">+</button>
-                          )}
-                          {addPayments.length > 1 && (
-                            <button type="button" onClick={() => { const next = addPayments.filter((_, i) => i !== pIdx); setAddPayments(next); setAddForm(prev => ({ ...prev, modeOfPayment: next.map(p => p.mode).filter(Boolean).join(' / '), installationCharges: next.reduce((sum, p) => sum + p.amount, 0) })) }} className="px-2.5 py-2 rounded-lg text-white bg-red-600 hover:bg-red-700 font-bold text-xs">−</button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                    {addPayments.length > 1 && (
-                      <p className="text-[10px] font-bold mt-1" style={{ color: '#10B981' }}>
-                        Total: ₱{addPayments.reduce((sum, p) => sum + p.amount, 0).toLocaleString()}
-                      </p>
-                    )}
-                  </div>
-                </section>
+                {/* 6. Dispatch — optional, can also be set later on Schedules */}
+                <DispatchSection
+                  step={6}
+                  idPrefix="add-ticket"
+                  installerName={addForm.installerName}
+                  onInstallerChange={(v) => setAddForm(prev => ({ ...prev, installerName: v }))}
+                  installerOptions={allInstallerOptions}
+                  driverName={addForm.driverName}
+                  onDriverChange={(v) => setAddForm(prev => ({ ...prev, driverName: v }))}
+                  driverRoster={addModalRoster.drivers}
+                  vehicle={addForm.serviceVehicle}
+                  onVehicleChange={(v) => setAddForm(prev => ({ ...prev, serviceVehicle: v }))}
+                  theme={relayFormTheme}
+                />
 
-                {/* 7. Dispatch — optional, can also be set later on Schedules */}
-                <section>
-                  <RelayFormSectionHead step={7} icon={<Truck className="w-3.5 h-3.5" />} title="Dispatch" subtitle="Optional — vehicle, driver & installer assignment" />
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
-                    <RelayFormField label="Driver" compact className="md:col-span-4">
-                      <input
-                        type="text"
-                        value={addForm.driverName || ''}
-                        list="add-ticket-driver-roster"
-                        placeholder={addModalRoster.drivers.length ? 'Select or type driver…' : 'Driver name'}
-                        onChange={e => setAddForm(prev => ({ ...prev, driverName: e.target.value }))}
-                        className={addInput}
-                        style={fieldStyle(addForm.driverName)}
-                      />
-                      <datalist id="add-ticket-driver-roster">
-                        {addModalRoster.drivers.map(name => <option key={name} value={name} />)}
-                      </datalist>
-                    </RelayFormField>
-                    <RelayFormField label="Vehicle" compact className="md:col-span-4">
-                      <input
-                        type="text"
-                        value={addForm.serviceVehicle || ''}
-                        placeholder="e.g. FB19, T2, T3"
-                        onChange={e => setAddForm(prev => ({ ...prev, serviceVehicle: e.target.value }))}
-                        className={addInput}
-                        style={fieldStyle(addForm.serviceVehicle)}
-                      />
-                    </RelayFormField>
-                    <RelayFormField label="Installer / Technician" compact className="md:col-span-4">
-                      <input
-                        type="text"
-                        value={addForm.installerName || ''}
-                        list="add-ticket-installer-roster"
-                        placeholder={addModalRoster.installers.length ? 'Select or type installer…' : 'Installer name'}
-                        onChange={e => setAddForm(prev => ({ ...prev, installerName: e.target.value }))}
-                        className={addInput}
-                        style={fieldStyle(addForm.installerName)}
-                      />
-                      <datalist id="add-ticket-installer-roster">
-                        {addModalRoster.installers.map(name => <option key={name} value={name} />)}
-                      </datalist>
-                    </RelayFormField>
-                  </div>
-                </section>
+                {/* 7. Remarks */}
+                <RemarksSection
+                  step={7}
+                  primaryValue={addForm.description}
+                  onPrimaryChange={(v) => setAddForm(prev => ({ ...prev, description: v, remarksUpdate: v }))}
+                  theme={relayFormTheme}
+                />
 
-                {/* 8. Remarks */}
-                <section>
-                  <RelayFormSectionHead step={8} icon={<MessageSquare className="w-3.5 h-3.5" />} title="Remarks" subtitle="Notes or special instructions" />
-                  <div className="grid grid-cols-1 gap-3.5">
-                    <RelayFormField label="Remarks" compact>
-                      <textarea
-                        value={addForm.description}
-                        onChange={e => setAddForm(prev => ({ ...prev, description: e.target.value, remarksUpdate: e.target.value }))}
-                        placeholder="Notes or special instructions"
-                        rows={3}
-                        className={`${addInput} resize-none`}
-                        style={fieldStyle(addForm.description)}
-                      />
-                    </RelayFormField>
-                  </div>
-                </section>
+                {/* 8. Payment Details */}
+                <PaymentSection
+                  step={8}
+                  payments={addPayments}
+                  onPaymentsChange={(next) => {
+                    setAddPayments(next)
+                    const summary = derivePaymentSummary(next)
+                    setAddForm(prev => ({ ...prev, modeOfPayment: summary.modeOfPayment || '', installationCharges: summary.installationCharges }))
+                  }}
+                  theme={relayFormTheme}
+                />
               </div>
 
               {/* Footer */}
@@ -6034,8 +5778,8 @@ export default function Relays() {
             {/* Header */}
             <div className="px-6 py-4 flex items-center justify-between border-b" style={{ borderColor: border }}>
               <div className="flex items-center gap-2">
-                <Settings className="w-5 h-5 text-emerald-500" />
-                <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>Masterlist Settings</h3>
+                <Store className="w-5 h-5 text-emerald-500" />
+                <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>Store Lists & Dealers</h3>
               </div>
               <button onClick={() => setIsSettingsModalOpen(false)} style={{ color: textMuted }} className="hover:opacity-85">
                 <X className="w-4 h-4" />
@@ -6059,8 +5803,26 @@ export default function Relays() {
             {/* Tab Content */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
               {/* Add New Dealer */}
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Add New Custom Dealer</label>
+              <div className="space-y-2.5">
+                {/* Red Guidelines Banner */}
+                <div className="rounded-xl border p-3.5 flex flex-col gap-2 shadow-xs" style={{ backgroundColor: isLight ? '#fff1f2' : 'rgba(244,63,94,0.08)', borderColor: isLight ? '#fecdd3' : 'rgba(244,63,94,0.25)' }}>
+                  <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span className="text-xs font-black uppercase tracking-wider">Store Masterlist Guidelines</span>
+                  </div>
+                  <div className="text-[11px] font-semibold text-red-700 dark:text-red-300 leading-relaxed pl-6 space-y-1">
+                    <p className="flex items-center gap-1.5">
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                      <span><strong>DO:</strong> Enter <u>only</u> the core store or dealer brand name (e.g. <em>ANSON'S, S&R, ALLHOME, SM APPLIANCE</em>).</span>
+                    </p>
+                    <p className="flex items-center gap-1.5">
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                      <span><strong>DO NOT INCLUDE:</strong> Branch locations (e.g. <em>LIPA, BALINTAWAK</em>), Diser/Promodiser names, or customer names. Branch and staff info are entered separately on individual tickets.</span>
+                    </p>
+                  </div>
+                </div>
+
+                <label className="text-[10px] font-black uppercase tracking-wider block pt-1" style={{ color: textMuted }}>Add New Custom Dealer</label>
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -6079,89 +5841,234 @@ export default function Relays() {
                   <button
                     type="button"
                     onClick={handleSettingsAddDealer}
-                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all shrink-0"
+                    disabled={!settingsNewDealerName.trim() || similarDealerMatch !== null}
+                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0 shadow-xs"
                   >
                     Add Dealer
                   </button>
                 </div>
+
+                {/* Live Duplicate / Similarity Warning */}
+                {similarDealerMatch && (
+                  <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl border text-[11px] font-bold text-amber-600 dark:text-amber-400 animate-in fade-in" style={{ backgroundColor: isLight ? '#fffbeb' : 'rgba(245,158,11,0.1)', borderColor: isLight ? '#fde68a' : 'rgba(245,158,11,0.3)' }}>
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-500" />
+                    <span>
+                      {similarDealerMatch.type === 'exact'
+                        ? `Store "${similarDealerMatch.name}" already exists in the masterlist.`
+                        : `Similar store name "${similarDealerMatch.name}" already exists. Please avoid duplicate variations.`}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* List of Dealers */}
               <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Manage Active Dealers</label>
-                  <span className="text-[10px] font-bold" style={{ color: textMuted }}>{dealers.length} Total</span>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2.5">
+                    <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Manage Active Dealers</label>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border" style={{ borderColor: inputBorder, color: textMuted }}>
+                      {filteredModalDealers.length} of {dealers.length} Total
+                    </span>
+                  </div>
+                  
+                  {/* Search filter in Store Lists */}
+                  <div className="relative flex-1 sm:max-w-xs">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: textMuted }} />
+                    <input
+                      type="text"
+                      placeholder="Filter stores..."
+                      value={settingsStoreSearch}
+                      onChange={e => setSettingsStoreSearch(e.target.value)}
+                      className="w-full border rounded-xl pl-8 pr-3 py-1.5 text-xs outline-none uppercase placeholder:normal-case font-semibold"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                    />
+                  </div>
                 </div>
+
+                {/* Bulk Select Header Bar */}
+                <div className="flex items-center justify-between px-3 py-2 rounded-xl border text-xs font-bold" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0e1726' }}>
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={filteredModalDealers.length > 0 && filteredModalDealers.every(d => selectedStoreIds.has(d.id))}
+                      onChange={handleToggleSelectAllStores}
+                      className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <span style={{ color: textPrimary }} className="text-[11px] uppercase tracking-wider">
+                      {selectedStoreIds.size > 0 ? `${selectedStoreIds.size} Selected` : 'Select All'}
+                    </span>
+                  </label>
+
+                  {selectedStoreIds.size > 0 && !showBulkDeleteConfirm && (
+                    <button
+                      type="button"
+                      onClick={() => setShowBulkDeleteConfirm(true)}
+                      className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-black text-white bg-red-600 hover:bg-red-700 shadow-xs transition-all active:scale-95"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete Selected ({selectedStoreIds.size})</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Bulk Delete Confirmation Banner */}
+                {showBulkDeleteConfirm && selectedStoreIds.size > 0 && (
+                  <div className="p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in zoom-in-95 duration-100" style={{ backgroundColor: isLight ? '#fef2f2' : 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.35)' }}>
+                    <div className="flex items-center gap-2">
+                      <Trash2 className="w-4 h-4 text-red-500 shrink-0" />
+                      <span className="text-xs font-black text-red-600 dark:text-red-400">
+                        Permanently delete {selectedStoreIds.size} selected store{selectedStoreIds.size > 1 ? 's' : ''}?
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleExecuteBulkDelete}
+                        disabled={isBulkDeletingStores}
+                        className="px-3.5 py-1.5 rounded-lg text-xs font-black text-white bg-red-600 hover:bg-red-700 active:scale-95 shadow-xs transition-all flex items-center gap-1.5"
+                      >
+                        {isBulkDeletingStores ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                        <span>Confirm Bulk Delete</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowBulkDeleteConfirm(false)}
+                        disabled={isBulkDeletingStores}
+                        className="px-2.5 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-500/15"
+                        style={{ color: textMuted }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
                 
-                <div className="border rounded-xl divide-y overflow-hidden" style={{ borderColor: border }}>
-                  {/* Custom Dealers */}
-                  {dealers.map((dealer, index) => {
-                    const store = dealer.name
-                    const isEditing = settingsEditingDealerIndex === index
-                    return (
-                      <div key={dealer.id} className="flex justify-between items-center p-3 text-xs font-semibold">
-                        {isEditing ? (
-                          <div className="flex gap-2 flex-1 mr-4">
-                            <input
-                              type="text"
-                              value={settingsEditDealerName}
-                              onChange={e => setSettingsEditDealerName(e.target.value)}
-                              onKeyDown={e => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault()
-                                  handleSettingsSaveRename(index)
-                                }
-                              }}
-                              className="flex-1 border rounded-lg px-2 py-1.5 text-xs outline-none uppercase"
-                              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
-                              autoFocus
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleSettingsSaveRename(index)}
-                              className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700"
-                            >
-                              Save
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setSettingsEditingDealerIndex(null)}
-                              className="px-3 py-1.5 rounded-lg text-xs font-bold border"
-                              style={{ borderColor: inputBorder, color: textPrimary }}
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <span style={{ color: textPrimary, textTransform: 'uppercase' }}>{store}</span>
-                            <div className="flex items-center gap-1.5 shrink-0">
+                <div className="border rounded-xl divide-y overflow-hidden max-h-[380px] overflow-y-auto" style={{ borderColor: border }}>
+                  {filteredModalDealers.length === 0 ? (
+                    <div className="p-6 text-center text-xs" style={{ color: textMuted }}>
+                      {settingsStoreSearch.trim() ? `No stores matching "${settingsStoreSearch}"` : 'No stores registered yet.'}
+                    </div>
+                  ) : (
+                    filteredModalDealers.map((dealer, index) => {
+                      const store = dealer.name
+                      const isEditing = settingsEditingDealerIndex === index
+                      const isChecked = selectedStoreIds.has(dealer.id)
+                      return (
+                        <div
+                          key={dealer.id}
+                          className="flex justify-between items-center p-3 text-xs font-semibold transition-colors"
+                          style={{ backgroundColor: isChecked ? (isLight ? '#f0fdf4' : 'rgba(16,185,129,0.08)') : 'transparent' }}
+                        >
+                          {isEditing ? (
+                            <div className="flex gap-2 flex-1 mr-4">
+                              <input
+                                type="text"
+                                value={settingsEditDealerName}
+                                onChange={e => setSettingsEditDealerName(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault()
+                                    handleSettingsSaveRename(index)
+                                  }
+                                }}
+                                className="flex-1 border rounded-lg px-2 py-1.5 text-xs outline-none uppercase"
+                                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary, textTransform: 'uppercase' }}
+                                autoFocus
+                              />
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setSettingsEditingDealerIndex(index)
-                                  setSettingsEditDealerName(store)
-                                }}
-                                className="p-1.5 rounded-lg hover:bg-slate-500/15"
-                                style={{ color: textMuted }}
-                                title="Rename"
+                                onClick={() => handleSettingsSaveRename(index)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700"
                               >
-                                <Edit3 className="w-3.5 h-3.5" />
+                                Save
                               </button>
                               <button
                                 type="button"
-                                onClick={() => handleSettingsDeleteDealer(dealer.id, store)}
-                                className="p-1.5 rounded-lg text-red-500 hover:bg-red-500/10"
-                                title="Delete"
+                                onClick={() => setSettingsEditingDealerIndex(null)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold border"
+                                style={{ borderColor: inputBorder, color: textPrimary }}
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                Cancel
                               </button>
                             </div>
-                          </>
-                        )}
-                      </div>
-                    )
-                  })}
+                          ) : (
+                            <>
+                              <div className="flex items-center gap-3 min-w-0 flex-1 mr-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => handleToggleSelectStore(dealer.id)}
+                                  className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer shrink-0"
+                                />
+                                <div className="group/dealer relative inline-flex items-center gap-1.5 min-w-0">
+                                  <span
+                                    style={{ color: textPrimary, textTransform: 'uppercase' }}
+                                    className="truncate font-semibold cursor-default hover:text-emerald-500 transition-colors"
+                                    title={isAdmin ? `Encoded by: ${dealer.createdByName || dealer.createdBy || 'SYSTEM'}${dealer.createdAt ? ` on ${new Date(dealer.createdAt).toLocaleDateString()}` : ''}` : undefined}
+                                  >
+                                    {store}
+                                  </span>
+                                  {isAdmin && (
+                                    <span className="hidden sm:inline-block opacity-0 group-hover/dealer:opacity-100 transition-all duration-150 pointer-events-none absolute left-0 -top-8 z-40 px-2.5 py-1 rounded-lg text-[10px] font-bold shadow-xl border whitespace-nowrap" style={{ backgroundColor: isLight ? '#0f172a' : '#1e293b', borderColor: isLight ? '#334155' : '#475569', color: '#f8fafc' }}>
+                                      Encoded by: {dealer.createdByName || dealer.createdBy || 'SYSTEM'} {dealer.createdAt ? `• ${new Date(dealer.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {deletingDealer?.id === dealer.id ? (
+                                <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl border animate-in fade-in zoom-in-95 duration-100 shrink-0" style={{ backgroundColor: isLight ? '#fef2f2' : 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.35)' }}>
+                                  <span className="text-[11px] font-black text-red-600 dark:text-red-400 uppercase tracking-tight">Delete store?</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleExecuteDeleteDealer(dealer.id)}
+                                    disabled={isDeletingDealer}
+                                    className="px-2.5 py-1 rounded-lg text-[11px] font-black text-white bg-red-600 hover:bg-red-700 active:scale-95 shadow-xs transition-all flex items-center gap-1"
+                                  >
+                                    {isDeletingDealer ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Yes, Delete'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeletingDealer(null)}
+                                    disabled={isDeletingDealer}
+                                    className="px-2 py-1 rounded-lg text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-500/15"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSettingsEditingDealerIndex(index)
+                                      setSettingsEditDealerName(store)
+                                      setDeletingDealer(null)
+                                    }}
+                                    className="p-1.5 rounded-lg hover:bg-slate-500/15"
+                                    style={{ color: textMuted }}
+                                    title="Rename"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSettingsEditingDealerIndex(null)
+                                      setDeletingDealer({ id: dealer.id, name: store })
+                                    }}
+                                    className="p-1.5 rounded-lg text-red-500 hover:bg-red-500/10 transition-colors"
+                                    title="Delete"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )
+                    })
+                  )}
                 </div>
               </div>
             </div>
