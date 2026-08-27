@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, isSameBaseBranch, filterBranchNegotiators, isNegotiatorCandidate, isAccountActive, readApiError, resolvePortalWriteBranchId, fetchTicketsPage, parseCreatedTicketResponse, formatFetchError, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, isTaguigServiceTicket, DEALERS_UPDATED_EVENT, notifyDealersUpdated, canMemberAccessRelaysAndTicketCreation } from '../utils/api'
+import { API_BASE_URL, formatBranchName, isPortalAdmin, branchScopesMatch, filterBranchNegotiators, isNegotiatorCandidate, isAccountActive, readApiError, resolvePortalWriteBranchId, fetchTicketsPage, parseCreatedTicketResponse, formatFetchError, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, isTaguigServiceTicket, DEALERS_UPDATED_EVENT, notifyDealersUpdated, canMemberAccessRelaysAndTicketCreation } from '../utils/api'
 import { deriveRosterFromEmployees, isInstallerEmployee, employeeMatchesBranchScope } from '../utils/branchRoster'
 import { readTabCache, readTabCacheEntry, relaysCacheKey, writeTabCache, isTabCacheFresh, type RelaysTabCache, clearWarrantyCache, clearRelayScheduleCaches, TAB_CACHE_UPDATED, syncTicketAcrossTabCaches } from '../utils/ticketTabCache'
 import {
@@ -2112,20 +2112,17 @@ export default function Relays() {
       .filter(isAccountActive)
       .filter(isInstallerEmployee)
 
-    if (targetBranch) {
+    if (targetBranch && targetBranch !== 'ALL_BRANCHES') {
       const branchMatched = activeInstallers.filter(emp =>
         employeeMatchesBranchScope(emp as any, targetBranch) ||
-        branchScopesMatch(emp.branchId, targetBranch, emp.email) ||
-        (emp.branchId && targetBranch && isSameBaseBranch(emp.branchId, targetBranch))
+        branchScopesMatch(emp.branchId, targetBranch, emp.email)
       )
-      if (branchMatched.length > 0) {
-        return branchMatched
-          .map(emp => {
-            const label = formatInstallerLabel(emp as any)
-            return { id: emp.id, name: emp.name, label }
-          })
-          .sort((a, b) => a.label.localeCompare(b.label))
-      }
+      return branchMatched
+        .map(emp => {
+          const label = formatInstallerLabel(emp as any)
+          return { id: emp.id, name: emp.name, label }
+        })
+        .sort((a, b) => a.label.localeCompare(b.label))
     }
 
     return activeInstallers

@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, isNegotiatorCandidate, isAccountActive, isSameBaseBranch, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, isPortalAdmin, isCoordinatorOrOicUser, getActivePortalBranchId, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, DEALERS_UPDATED_EVENT, notifyDealersUpdated, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, isNegotiatorCandidate, isAccountActive, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, isPortalAdmin, isCoordinatorOrOicUser, getActivePortalBranchId, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, DEALERS_UPDATED_EVENT, notifyDealersUpdated, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import {
   cacheTicketsByNumber,
   cacheTicketByNumber,
@@ -32,6 +32,7 @@ import {
   fetchAllBranchRosters,
   isCoordinatorEmployee,
   isInstallerEmployee,
+  employeeMatchesBranchScope,
   type BranchRoster,
 } from '../utils/branchRoster'
 import { resetTicketTableScroll } from '../utils/tabSwitch'
@@ -1129,16 +1130,18 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       .filter(isAccountActive)
       .filter(emp => isInstallerEmployee(emp))
       .filter(emp => {
-        const bid = (emp.branchId || '').trim()
-        if (!bid) return false
-        return filterBranch ? (isBranchMatch(bid, filterBranch) || isSameBaseBranch(bid, filterBranch)) : true
+        if (!filterBranch || filterBranch === 'ALL_BRANCHES') return true
+        return (
+          employeeMatchesBranchScope(emp, filterBranch) ||
+          branchScopesMatch(emp.branchId, filterBranch, emp.email)
+        )
       })
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
       .map(emp => {
         const label = formatInstallerLabel(emp)
         return { id: emp.id, name: (emp.name || '').trim(), label, branchId: emp.branchId }
       })
-  }, [branchEmployees, resolveSchedulesNegotiatorBranch, isBranchMatch, user?.branchId, user?.email, user?.jobTitle]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [branchEmployees, resolveSchedulesNegotiatorBranch, user?.branchId, user?.email, user?.jobTitle])
 
   const addModalTechnicians = useMemo(
     () => techniciansForBranch(activeBranchId),
