@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo, type FocusEvent, type MouseEvent as ReactMouseEvent, type CSSProperties } from 'react'
 import { NumericFormat } from 'react-number-format'
-import { Search, Building2, Calendar, CheckCircle2, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, SlidersHorizontal, Plus, X } from 'lucide-react'
+import { Search, Building2, Calendar, CheckCircle2, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, SlidersHorizontal, Plus, X, Users, Package, Wallet, FileText } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatBranchName, isPortalAdmin } from '../utils/api'
@@ -260,6 +260,11 @@ export default function Payroll() {
   const role = (user?.role || '').toLowerCase()
   const isAdmin = isPortalAdmin(role)
 
+  const userFirstName = useMemo(() => {
+    const raw = (user as any)?.firstName || user?.name || (user as any)?.username || 'ADMIN'
+    return String(raw).trim().split(/\s+/)[0].toUpperCase()
+  }, [user])
+
   const [rows, setRows] = useState<PayrollRow[]>([])
   const [initialLoading, setInitialLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
@@ -269,6 +274,8 @@ export default function Payroll() {
   // null = the roster (list of installers); a name = that installer's own table.
   const [selectedInstaller, setSelectedInstaller] = useState<string | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null)
+  const [completeModalFor, setCompleteModalFor] = useState<string | null>(null)
+  const [completeRemarks, setCompleteRemarks] = useState('')
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [rawSearch, setRawSearch] = useState('')
@@ -336,10 +343,9 @@ export default function Payroll() {
 
   // Schedule tickets only ever carry an installer's first name/nickname (see
   // cleanInstallerName in schedulePrefill.ts — that's what payrollDerive.ts groups rows by),
-  // so the payroll page shows that short form unless we look up the real full name. Fetches
-  // every EMPLOYEE tagged INSTALLER or TECHNICIAN for the selected branch and maps
-  // "first word of their real name" → their full name, purely for display.
-  const [branchTechnicians, setBranchTechnicians] = useState<{ id: string; name: string; jobTitle: string }[]>([])
+  // so the payroll page has to resolve that short form back to the real technician. Fetches
+  // every EMPLOYEE tagged INSTALLER or TECHNICIAN for the selected branch.
+  const [branchTechnicians, setBranchTechnicians] = useState<{ id: string; name: string; nickname: string; jobTitle: string }[]>([])
   useEffect(() => {
     if (!branchFilter) { setBranchTechnicians([]); return }
     let cancelled = false
@@ -351,19 +357,21 @@ export default function Payroll() {
         const filtered = list
           .filter(u => u.branchId === branchFilter)
           .filter(u => /INSTALLER|TECHNICIAN/i.test(u.jobTitle || ''))
-          .map(u => ({ id: u.id, name: String(u.name || '').trim(), jobTitle: u.jobTitle || '' }))
+          .map(u => ({ id: u.id, name: String(u.name || '').trim(), nickname: String(u.nickname || '').trim(), jobTitle: u.jobTitle || '' }))
         setBranchTechnicians(filtered)
       })
       .catch(() => {})
     return () => { cancelled = true }
   }, [branchFilter])
 
-  const installerFullNames = useMemo(() => {
+  // Exact aliases only — the account's own `nickname` field (set by hand for cases like
+  // "RYAN" for "MARCYAN ZANTUA" that have zero textual relationship to the real name — see
+  // scripts/postgres/set_installer_nicknames.sql) plus every word of their real name (covers
+  // "JHON PATRICK PRIZA" going by "PATRICK" on tickets). First match wins on a collision.
+  const installerAliases = useMemo(() => {
     const map: Record<string, string> = {}
     for (const t of branchTechnicians) {
-      // Index every word in their real name, not just the first — techs are often keyed on
-      // tickets by a middle/nickname (e.g. "JHON PATRICK PRIZA" goes by "PATRICK" there).
-      // First match wins if two technicians share a word; falls back to the short form.
+      if (t.nickname && !map[t.nickname.toUpperCase()]) map[t.nickname.toUpperCase()] = t.name
       for (const word of t.name.split(/\s+/)) {
         const key = word.toUpperCase()
         if (key && !map[key]) map[key] = t.name
@@ -371,19 +379,40 @@ export default function Payroll() {
     }
     return map
   }, [branchTechnicians])
-  const displayInstallerName = (shortName: string) => {
-    const trimmed = shortName.trim()
-    // Whole-string match first (handles single hyphenated names like "JHAY-AR" intact).
-    const whole = installerFullNames[trimmed.toUpperCase()]
-    if (whole) return whole
-    // Otherwise try each word — covers "PATRICK" alone or a stray "MARIANO-PATRICK" ticket
-    // artifact where the first segment is the real match.
-    for (const word of trimmed.split(/[\s-]+/)) {
-      const match = installerFullNames[word.toUpperCase()]
-      if (match) return match
+
+  // Fuzzy fallback for shortened-but-related nicknames ("CRIS" for "CRISANTO") that aren't
+  // worth a manual nickname entry — only kicks in once the exact alias map above has no hit,
+  // and only for a >=4-char prefix so it doesn't over-match short/common fragments.
+  const resolvePrefixAlias = (word: string): string | null => {
+    if (word.length < 4) return null
+    for (const t of branchTechnicians) {
+      for (const real of t.name.split(/\s+/)) {
+        if (real.length > word.length && real.toUpperCase().startsWith(word.toUpperCase())) return t.name
+      }
     }
-    return shortName
+    return null
   }
+
+  /** The one true name-resolution function — used both to LABEL a roster group and to decide
+   *  which group a row belongs to in the first place (resolveGroupKey below), so "CRIS" and
+   *  "CRISANTO" collapse into the same installer instead of showing as two separate rows. */
+  const resolveInstallerIdentity = (raw: string): string => {
+    const trimmed = raw.trim()
+    if (!trimmed) return trimmed
+    // Uppercased throughout — matches how every ticket-derived short name already arrives
+    // (payrollDerive.ts uppercases those) and the table's own all-caps styling, regardless of
+    // whatever casing the account's real name was typed in ("Allan Bellen" → "ALLAN BELLEN").
+    const whole = installerAliases[trimmed.toUpperCase()]
+    if (whole) return whole.toUpperCase()
+    for (const word of trimmed.split(/[\s-]+/)) {
+      const exact = installerAliases[word.toUpperCase()]
+      if (exact) return exact.toUpperCase()
+      const fuzzy = resolvePrefixAlias(word)
+      if (fuzzy) return fuzzy.toUpperCase()
+    }
+    return trimmed
+  }
+  const displayInstallerName = (shortName: string) => resolveInstallerIdentity(shortName)
 
   // Drag-to-resize column widths — shared across every installer table, persisted so a
   // widened column stays widened next visit.
@@ -792,21 +821,20 @@ export default function Payroll() {
     })
   }, [rows, search, dateFrom, dateTo])
 
-  // A ticket's installer field occasionally shows up as a hyphenated blob like
-  // "MARIANO-PATRICK" that isn't caught by splitInstallerNames' /,&+/ delimiters (those are
-  // left alone in payrollDerive.ts since a hyphen can also be part of one real name, e.g.
-  // "JHAY-AR"). Fold it into whichever real technician it actually is instead of letting it
-  // stand as its own bogus roster entry: keep it whole if it matches a technician as-is,
-  // otherwise take just the segment before the first hyphen.
+  // The grouping key IS the resolved identity now (not the raw ticket text), so "CRIS" and
+  // "CRISANTO" — or any other alias of the same technician — collapse into one roster row
+  // instead of showing as separate bogus entries. A hyphenated blob like "MARIANO-PATRICK"
+  // (not caught by splitInstallerNames' /,&+/ delimiters — those are left alone in
+  // payrollDerive.ts since a hyphen can also be part of one real name, e.g. "JHAY-AR") is
+  // folded to its first segment before resolution, unless the whole string is itself a real
+  // alias.
   const resolveGroupKey = (raw: string): string => {
     const trimmed = raw.trim()
     if (!trimmed) return 'UNASSIGNED'
-    if (installerFullNames[trimmed.toUpperCase()]) return trimmed
-    if (trimmed.includes('-')) {
-      const before = trimmed.split('-')[0].trim()
-      if (before) return before
-    }
-    return trimmed
+    const folded = (!installerAliases[trimmed.toUpperCase()] && trimmed.includes('-'))
+      ? (trimmed.split('-')[0].trim() || trimmed)
+      : trimmed
+    return resolveInstallerIdentity(folded)
   }
 
   const grouped = useMemo(() => {
@@ -827,12 +855,21 @@ export default function Payroll() {
     }
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredRows, installerFullNames])
+  }, [filteredRows, installerAliases])
 
   const grandTotal = useMemo(() => grouped.reduce((sum, [, r]) => sum + installerTotal(r), 0), [grouped])
   const globalBaseInstallTotal = useMemo(() => baseInstallTotal(filteredRows), [filteredRows])
   const globalRemittanceTotal = useMemo(() => remittanceTotal(filteredRows), [filteredRows])
   const globalAddOnTotal = grandTotal - globalBaseInstallTotal
+
+  const totalAirconUnitsCount = useMemo(() => {
+    return grouped.reduce((sum, [, rows]) => sum + installedUnitsCount(rows), 0)
+  }, [grouped])
+
+  const pendingInstallersCount = useMemo(() => {
+    return grouped.filter(([, rows]) => rows.length === 0 || !rows.every(r => r.status === 'COMPLETE')).length
+  }, [grouped])
+
   const currentBranchDisplay = branchFilter
     ? formatBranchName(branches.find(b => b.id === branchFilter)?.name || user?.branchId || '')
     : ''
@@ -1201,18 +1238,22 @@ export default function Payroll() {
             />
           </div>
 
-          {/* Sync Latest — icon-only, save status conveyed by its own spin/color state */}
-          <button
-            type="button"
-            onClick={() => void loadAndSync(true)}
-            disabled={syncing || !branchFilter}
-            title="Sync latest from Schedules"
-            aria-label="Sync latest from Schedules"
-            className="flex items-center justify-center w-9 h-9 rounded-xl border transition-all hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 cursor-pointer shrink-0"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: '#10B981' }}
+          {/* Auto-Sync Indicator */}
+          <div
+            className="flex items-center gap-2 px-3 py-1.5 md:py-2 rounded-xl border text-[11px] font-extrabold uppercase shrink-0 select-none transition-all shadow-xs"
+            style={{
+              backgroundColor: isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)',
+              borderColor: '#10B98150',
+              color: '#10B981',
+            }}
+            title="Auto-synced with scheduled dates (DONE CLEANING / DONE INSTALL)"
           >
-            <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-          </button>
+            <span className="relative flex h-2 w-2">
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 ${syncing ? 'duration-500' : 'duration-1000'}`}></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span>{syncing ? 'SYNCING...' : 'AUTO-SYNCED'}</span>
+          </div>
       </div>
 
       {/* Branded per-branch payroll header — mirrors the branch's own printed weekly
@@ -1280,36 +1321,35 @@ export default function Payroll() {
             return (
               <div key={installerName} className="overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}`, borderBottom: `1px solid ${border}` }}>
                 <div
-                  className="flex items-center justify-between px-4 py-3"
+                  className="flex items-center justify-between px-5 py-3.5"
                   style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-extrabold" style={{ color: textPrimary }}>{displayInstallerName(installerName)}</span>
-                    <span className="text-[11px] font-semibold" style={{ color: textMuted }}>
-                      {installerRows.length} job{installerRows.length !== 1 ? 's' : ''}
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg md:text-xl font-black uppercase tracking-wide" style={{ color: textPrimary }}>
+                      {displayInstallerName(installerName)}
+                    </span>
+                    <span
+                      className="px-2.5 py-1 rounded-full text-[11px] font-black uppercase tracking-wider border"
+                      style={{
+                        backgroundColor: isLight ? '#f1f5f9' : '#0d1520',
+                        borderColor: border,
+                        color: textMuted,
+                      }}
+                    >
+                      {installedUnitsCount(installerRows)} AIRCON UNITS
                     </span>
                     <button
                       type="button"
                       onClick={() => openColumnManager(installerName)}
                       title="Show/hide columns"
-                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-colors"
-                      style={{ color: textMuted, backgroundColor: isLight ? '#eef2f7' : '#111d33' }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all border shadow-xs hover:border-emerald-500/50"
+                      style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
                     >
-                      <SlidersHorizontal className="w-3 h-3" />
-                      Columns
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openAddJob(installerName)}
-                      title="Key in a day's job order by hand"
-                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-colors"
-                      style={{ color: '#10B981', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.14)' }}
-                    >
-                      <Plus className="w-3 h-3" />
-                      Add Job
+                      <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-500" />
+                      COLUMNS
                     </button>
                   </div>
-                  <span className="text-sm font-extrabold" style={{ color: '#10B981' }}>₱{peso(installerTotal(installerRows))}</span>
+                  <span className="text-base md:text-lg font-black tabular-nums" style={{ color: '#10B981' }}>₱{peso(installerTotal(installerRows))}</span>
                 </div>
 
                   <div className="hidden md:block w-full overflow-x-auto">
@@ -1560,18 +1600,16 @@ export default function Payroll() {
         // installer's own per-job table. Click "View Payroll" to open that job-level table.
         <div className="flex flex-col gap-4 -mx-5 md:-mx-8">
           <div className="overflow-x-auto" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}`, borderBottom: `1px solid ${border}` }}>
-            <div style={{ minWidth: 980 }}>
+            <div style={{ minWidth: 860 }}>
               <div
-                className="grid items-center px-5 py-2.5"
-                style={{ gridTemplateColumns: '1.3fr 70px 1fr 130px 150px 130px 140px', backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}
+                className="grid items-center px-6 py-3.5"
+                style={{ gridTemplateColumns: 'minmax(240px, 2fr) 140px 180px 170px 220px', backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}
               >
-                <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Installer</span>
-                <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Installed Units</span>
-                <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Remarks</span>
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-right" style={{ color: textMuted }}>Payroll Due</span>
-                <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Audited By</span>
-                <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Status</span>
-                <span />
+                <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: textMuted }}>INSTALLER</span>
+                <span className="text-[11px] font-black uppercase tracking-wider text-center" style={{ color: textMuted }}>AIRCON UNITS</span>
+                <span className="text-[11px] font-black uppercase tracking-wider text-right" style={{ color: textMuted }}>PAYROLL AMOUNT</span>
+                <span className="text-[11px] font-black uppercase tracking-wider text-center" style={{ color: textMuted }}>ACTION</span>
+                <span className="text-[11px] font-black uppercase tracking-wider text-center" style={{ color: textMuted }}>PAYROLL STATUS</span>
               </div>
 
               {grouped.map(([installerName, installerRows], idx) => {
@@ -1580,74 +1618,109 @@ export default function Payroll() {
                 const isComplete = installerRows.length > 0 && installerRows.every(r => r.status === 'COMPLETE')
                 const summaryRemarks = installerRows[0]?.remarks || ''
                 const summaryAudited = installerRows[0]?.audited || ''
-                const fieldCls = "w-full rounded-lg border px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
                 return (
                   <div
                     key={installerName}
-                    className="grid items-center gap-x-4 px-5 py-5 transition-colors"
+                    className="grid items-center gap-x-4 px-6 py-5 transition-colors"
                     style={{
-                      gridTemplateColumns: '1.3fr 70px 1fr 130px 150px 130px 140px',
+                      gridTemplateColumns: 'minmax(240px, 2fr) 140px 180px 170px 220px',
                       backgroundColor: rowBg,
                       borderBottom: idx < grouped.length - 1 ? `1px solid ${border}` : 'none',
                     }}
                     onMouseEnter={e => { e.currentTarget.style.backgroundColor = rowHoverBg }}
                     onMouseLeave={e => { e.currentTarget.style.backgroundColor = rowBg }}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    {/* 1. INSTALLER */}
+                    <div className="flex items-center gap-3.5 min-w-0">
                       <div
-                        className="w-12 h-12 rounded-xl flex items-center justify-center text-sm font-extrabold text-white shrink-0"
+                        className="w-12 h-12 rounded-2xl flex items-center justify-center text-sm font-black text-white shrink-0 shadow-xs"
                         style={{ background: avatarGradient(installerName) }}
                       >
                         {getInitials(installerName)}
                       </div>
-                      <span className="text-base font-extrabold truncate" style={{ color: textPrimary }}>{displayInstallerName(installerName)}</span>
+                      <span className="text-base md:text-lg font-black uppercase tracking-wide truncate" style={{ color: textPrimary }}>
+                        {displayInstallerName(installerName)}
+                      </span>
                     </div>
 
-                    <span className="text-sm font-extrabold tabular-nums" style={{ color: textPrimary }}>
-                      {installedUnitsCount(installerRows)}
-                    </span>
+                    {/* 2. AIRCON UNITS (BIG COUNTER ONLY) */}
+                    <div className="flex flex-col items-center justify-center">
+                      <span className="text-2xl md:text-3xl font-black tabular-nums tracking-tight leading-none" style={{ color: textPrimary }}>
+                        {installedUnitsCount(installerRows)}
+                      </span>
+                      <span className="text-[9px] font-black uppercase tracking-widest mt-1 opacity-60" style={{ color: textMuted }}>
+                        UNITS
+                      </span>
+                    </div>
 
-                    <input
-                      type="text"
-                      defaultValue={summaryRemarks}
-                      placeholder="—"
-                      onBlur={e => { if (e.target.value !== summaryRemarks) updateInstallerRows(installerName, { remarks: e.target.value }) }}
-                      className={fieldCls}
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                    />
+                    {/* 3. PAYROLL AMOUNT */}
+                    <div className="flex flex-col items-end justify-center">
+                      <span className="text-lg md:text-xl font-black tabular-nums text-right tracking-tight" style={{ color: '#10B981' }}>
+                        ₱{peso(total)}
+                      </span>
+                      <span className="text-[9px] font-black uppercase tracking-widest mt-0.5 opacity-60" style={{ color: textMuted }}>
+                        ESTIMATED
+                      </span>
+                    </div>
 
-                    <div className="text-lg font-extrabold tabular-nums text-right" style={{ color: '#10B981' }}>₱{peso(total)}</div>
+                    {/* 4. ACTION (VIEW PAYROLL) */}
+                    <div className="flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedInstaller(installerName)}
+                        className="group flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all hover:scale-102 active:scale-98 shadow-xs"
+                        style={{ color: '#10B981', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.14)' }}
+                      >
+                        <span>VIEW PAYROLL</span>
+                        <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                      </button>
+                    </div>
 
-                    <input
-                      type="text"
-                      defaultValue={summaryAudited}
-                      placeholder="Name"
-                      onBlur={e => { if (e.target.value !== summaryAudited) updateInstallerRows(installerName, { audited: e.target.value }) }}
-                      className={fieldCls}
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                    />
-
-                    <select
-                      value={isComplete ? 'COMPLETE' : 'PENDING'}
-                      onChange={e => updateInstallerRows(installerName, { status: e.target.value })}
-                      className="rounded-full border px-3 py-1.5 text-[11px] font-bold text-center appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-                      style={isComplete
-                        ? { color: '#10B981', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.14)', borderColor: '#10B98160' }
-                        : { color: '#B45309', backgroundColor: isLight ? '#FFFBEB' : 'rgba(245,158,11,0.14)', borderColor: '#F59E0B60' }}
-                    >
-                      <option value="PENDING">Pending</option>
-                      <option value="COMPLETE">Complete</option>
-                    </select>
-
-                    <button
-                      type="button"
-                      onClick={() => setSelectedInstaller(installerName)}
-                      className="group flex items-center justify-center gap-1 px-3 py-2 rounded-full text-xs font-bold transition-transform hover:translate-x-0.5 shrink-0"
-                      style={{ color: '#10B981', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.14)' }}
-                    >
-                      View Payroll
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
+                    {/* 5. STATUS (LAST COLUMN TO THE RIGHT) */}
+                    <div className="flex justify-center">
+                      {isComplete ? (
+                        <div
+                          className="w-full flex flex-col items-center justify-center px-3.5 py-2 rounded-xl border text-center select-none shadow-xs"
+                          style={{
+                            color: '#10B981',
+                            backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.14)',
+                            borderColor: '#10B98160',
+                          }}
+                          title={summaryRemarks ? `REMARKS: ${summaryRemarks}` : undefined}
+                        >
+                          <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide max-w-full">
+                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
+                            <span className="truncate">COMPLETED BY {(summaryAudited || userFirstName).toUpperCase()}</span>
+                          </div>
+                          <span className="text-[9px] font-black uppercase tracking-wider mt-0.5 opacity-70">
+                            {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}
+                          </span>
+                          {summaryRemarks && (
+                            <span className="text-[9px] font-bold uppercase truncate max-w-full mt-0.5 px-1 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                              {summaryRemarks}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCompleteModalFor(installerName)
+                            setCompleteRemarks(summaryRemarks)
+                          }}
+                          title="Click to complete payroll"
+                          className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border text-xs font-black uppercase tracking-wider transition-all shadow-xs hover:scale-102 active:scale-98 cursor-pointer"
+                          style={{
+                            color: '#D97706',
+                            backgroundColor: isLight ? '#FFFBEB' : 'rgba(245,158,11,0.14)',
+                            borderColor: '#F59E0B60',
+                          }}
+                        >
+                          <span>⏱</span>
+                          <span>PENDING</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )
               })}
@@ -1924,6 +1997,102 @@ export default function Payroll() {
                 style={{ background: '#10B981' }}
               >
                 Add Job
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {completeModalFor && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => setCompleteModalFor(null)}
+        >
+          <div
+            className="w-full rounded-2xl shadow-2xl flex flex-col overflow-hidden border animate-in zoom-in-95 duration-150"
+            style={{ maxWidth: 460, backgroundColor: cardBg, borderColor: border }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                <h2 className="text-sm font-black uppercase tracking-wide" style={{ color: textPrimary }}>
+                  COMPLETE PAYROLL — {displayInstallerName(completeModalFor)}
+                </h2>
+              </div>
+              <button type="button" onClick={() => setCompleteModalFor(null)} className="p-1.5 rounded-lg hover:bg-slate-500/10 transition-colors">
+                <X className="w-4 h-4" style={{ color: textMuted }} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-5 flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
+                  COMPLETED BY
+                </span>
+                <div
+                  className="w-full rounded-xl border px-3 py-2 text-xs font-black uppercase tracking-wider select-none opacity-90"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: '#10B981' }}
+                >
+                  {userFirstName}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
+                  DATE SUBMITTED
+                </span>
+                <div
+                  className="w-full rounded-xl border px-3 py-2 text-xs font-bold uppercase tracking-wider select-none"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                >
+                  {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
+                  REMARKS (OPTIONAL)
+                </span>
+                <textarea
+                  rows={3}
+                  placeholder="ADD ANY REMARKS OR AUDIT NOTES..."
+                  value={completeRemarks}
+                  onChange={e => setCompleteRemarks(e.target.value.toUpperCase())}
+                  className="w-full rounded-xl border p-3 text-xs font-bold uppercase focus:outline-none focus:ring-2 focus:ring-emerald-500/40 resize-none"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-2 px-5 py-3.5 shrink-0 border-t" style={{ borderColor: border }}>
+              <button
+                type="button"
+                onClick={() => setCompleteModalFor(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold uppercase transition-colors"
+                style={{ color: textMuted, backgroundColor: isLight ? '#f1f5f9' : '#0d1520' }}
+              >
+                CANCEL
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!completeModalFor) return
+                  const upperRemarks = completeRemarks.trim().toUpperCase()
+                  updateInstallerRows(completeModalFor, {
+                    status: 'COMPLETE',
+                    audited: userFirstName,
+                    remarks: upperRemarks,
+                  })
+                  setCompleteModalFor(null)
+                }}
+                className="px-5 py-2 rounded-xl text-xs font-black uppercase text-white shadow-md active:scale-95 transition-all"
+                style={{ backgroundColor: '#10B981' }}
+              >
+                SAVE &amp; COMPLETE
               </button>
             </div>
           </div>
