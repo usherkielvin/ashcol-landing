@@ -1,4 +1,4 @@
-# ❄️ Ashcol ServiceHub — Enterprise Web Portal
+# ❄️ ASHCOL PORTAL — Enterprise Web Operations Platform
 
 > **Proprietary & Confidential**  
 > *Production Operations & Enterprise Service Management Platform for **Ashcol Airconditioning Corporation**.*
@@ -7,7 +7,7 @@
 
 ## 📌 Overview
 
-**Ashcol ServiceHub** is the central digital operating system for Ashcol Airconditioning Corporation. It unifies field dispatch, multi-branch HVAC service coordination, installer logistics, warranty registration, customer ticketing, and operational finance into an interconnected, real-time web portal.
+**ASHCOL PORTAL** is the central digital operating system for Ashcol Airconditioning Corporation. It unifies field dispatch, multi-branch HVAC service coordination, installer logistics, warranty registration, customer ticketing, and operational finance into an interconnected, real-time web platform.
 
 Designed for high reliability and multi-branch scalability, the platform coordinates nationwide branch operations across **Taguig (Sales & Services)**, **Calauan**, **Silang**, **Dasmarinas**, **Pampanga**, **Bulacan**, **Rizal**, and **Candelaria**.
 
