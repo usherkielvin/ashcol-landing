@@ -5885,34 +5885,36 @@ export default function Relays() {
                   </div>
                 </div>
 
-                {/* Bulk Select Header Bar */}
-                <div className="flex items-center justify-between px-3 py-2 rounded-xl border text-xs font-bold" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0e1726' }}>
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={filteredModalDealers.length > 0 && filteredModalDealers.every(d => selectedStoreIds.has(d.id))}
-                      onChange={handleToggleSelectAllStores}
-                      className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-                    />
-                    <span style={{ color: textPrimary }} className="text-[11px] uppercase tracking-wider">
-                      {selectedStoreIds.size > 0 ? `${selectedStoreIds.size} Selected` : 'Select All'}
-                    </span>
-                  </label>
+                {/* Bulk Select Header Bar (Admin Only) */}
+                {isAdmin && (
+                  <div className="flex items-center justify-between px-3 py-2 rounded-xl border text-xs font-bold" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0e1726' }}>
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={filteredModalDealers.length > 0 && filteredModalDealers.every(d => selectedStoreIds.has(d.id))}
+                        onChange={handleToggleSelectAllStores}
+                        className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                      />
+                      <span style={{ color: textPrimary }} className="text-[11px] uppercase tracking-wider">
+                        {selectedStoreIds.size > 0 ? `${selectedStoreIds.size} Selected` : 'Select All'}
+                      </span>
+                    </label>
 
-                  {selectedStoreIds.size > 0 && !showBulkDeleteConfirm && (
-                    <button
-                      type="button"
-                      onClick={() => setShowBulkDeleteConfirm(true)}
-                      className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-black text-white bg-red-600 hover:bg-red-700 shadow-xs transition-all active:scale-95"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Delete Selected ({selectedStoreIds.size})</span>
-                    </button>
-                  )}
-                </div>
+                    {selectedStoreIds.size > 0 && !showBulkDeleteConfirm && (
+                      <button
+                        type="button"
+                        onClick={() => setShowBulkDeleteConfirm(true)}
+                        className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-black text-white bg-red-600 hover:bg-red-700 shadow-xs transition-all active:scale-95"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete Selected ({selectedStoreIds.size})</span>
+                      </button>
+                    )}
+                  </div>
+                )}
 
-                {/* Bulk Delete Confirmation Banner */}
-                {showBulkDeleteConfirm && selectedStoreIds.size > 0 && (
+                {/* Bulk Delete Confirmation Banner (Admin Only) */}
+                {isAdmin && showBulkDeleteConfirm && selectedStoreIds.size > 0 && (
                   <div className="p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in zoom-in-95 duration-100" style={{ backgroundColor: isLight ? '#fef2f2' : 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.35)' }}>
                     <div className="flex items-center gap-2">
                       <Trash2 className="w-4 h-4 text-red-500 shrink-0" />
@@ -5951,13 +5953,13 @@ export default function Relays() {
                   ) : (
                     filteredModalDealers.map((dealer, index) => {
                       const store = dealer.name
-                      const isEditing = settingsEditingDealerIndex === index
+                      const isEditing = isAdmin && settingsEditingDealerIndex === index
                       const isChecked = selectedStoreIds.has(dealer.id)
                       return (
                         <div
                           key={dealer.id}
                           className="flex justify-between items-center p-3 text-xs font-semibold transition-colors"
-                          style={{ backgroundColor: isChecked ? (isLight ? '#f0fdf4' : 'rgba(16,185,129,0.08)') : 'transparent' }}
+                          style={{ backgroundColor: (isAdmin && isChecked) ? (isLight ? '#f0fdf4' : 'rgba(16,185,129,0.08)') : 'transparent' }}
                         >
                           {isEditing ? (
                             <div className="flex gap-2 flex-1 mr-4">
@@ -5994,12 +5996,14 @@ export default function Relays() {
                           ) : (
                             <>
                               <div className="flex items-center gap-3 min-w-0 flex-1 mr-2">
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() => handleToggleSelectStore(dealer.id)}
-                                  className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer shrink-0"
-                                />
+                                {isAdmin && (
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => handleToggleSelectStore(dealer.id)}
+                                    className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer shrink-0"
+                                  />
+                                )}
                                 <div className="group/dealer relative inline-flex items-center gap-1.5 min-w-0">
                                   <span
                                     style={{ color: textPrimary, textTransform: 'uppercase' }}
@@ -6015,53 +6019,55 @@ export default function Relays() {
                                   )}
                                 </div>
                               </div>
-                              {deletingDealer?.id === dealer.id ? (
-                                <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl border animate-in fade-in zoom-in-95 duration-100 shrink-0" style={{ backgroundColor: isLight ? '#fef2f2' : 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.35)' }}>
-                                  <span className="text-[11px] font-black text-red-600 dark:text-red-400 uppercase tracking-tight">Delete store?</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleExecuteDeleteDealer(dealer.id)}
-                                    disabled={isDeletingDealer}
-                                    className="px-2.5 py-1 rounded-lg text-[11px] font-black text-white bg-red-600 hover:bg-red-700 active:scale-95 shadow-xs transition-all flex items-center gap-1"
-                                  >
-                                    {isDeletingDealer ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Yes, Delete'}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setDeletingDealer(null)}
-                                    disabled={isDeletingDealer}
-                                    className="px-2 py-1 rounded-lg text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-500/15"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSettingsEditingDealerIndex(index)
-                                      setSettingsEditDealerName(store)
-                                      setDeletingDealer(null)
-                                    }}
-                                    className="p-1.5 rounded-lg hover:bg-slate-500/15"
-                                    style={{ color: textMuted }}
-                                    title="Rename"
-                                  >
-                                    <Edit3 className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSettingsEditingDealerIndex(null)
-                                      setDeletingDealer({ id: dealer.id, name: store })
-                                    }}
-                                    className="p-1.5 rounded-lg text-red-500 hover:bg-red-500/10 transition-colors"
-                                    title="Delete"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
+                              {isAdmin && (
+                                deletingDealer?.id === dealer.id ? (
+                                  <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl border animate-in fade-in zoom-in-95 duration-100 shrink-0" style={{ backgroundColor: isLight ? '#fef2f2' : 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.35)' }}>
+                                    <span className="text-[11px] font-black text-red-600 dark:text-red-400 uppercase tracking-tight">Delete store?</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleExecuteDeleteDealer(dealer.id)}
+                                      disabled={isDeletingDealer}
+                                      className="px-2.5 py-1 rounded-lg text-[11px] font-black text-white bg-red-600 hover:bg-red-700 active:scale-95 shadow-xs transition-all flex items-center gap-1"
+                                    >
+                                      {isDeletingDealer ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Yes, Delete'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setDeletingDealer(null)}
+                                      disabled={isDeletingDealer}
+                                      className="px-2 py-1 rounded-lg text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-500/15"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSettingsEditingDealerIndex(index)
+                                        setSettingsEditDealerName(store)
+                                        setDeletingDealer(null)
+                                      }}
+                                      className="p-1.5 rounded-lg hover:bg-slate-500/15"
+                                      style={{ color: textMuted }}
+                                      title="Rename"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSettingsEditingDealerIndex(null)
+                                        setDeletingDealer({ id: dealer.id, name: store })
+                                      }}
+                                      className="p-1.5 rounded-lg text-red-500 hover:bg-red-500/10 transition-colors"
+                                      title="Delete"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                )
                               )}
                             </>
                           )}
