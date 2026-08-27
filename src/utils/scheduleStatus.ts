@@ -174,20 +174,26 @@ export function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | n
   const stat = String(ticket.status || '').toUpperCase()
   const svc = String(ticket.serviceType || (ticket as any).service_type || '').toLowerCase()
   const cat = String(ticket.ticketCategory || (ticket as any).ticket_category || '').toLowerCase()
-  const textBlob = `${svc} ${cat} ${remarks}`
+
+  const matchOutcomeText = (text: string): ScheduleOutcome | null => {
+    if (/clean/i.test(text)) return 'DONE_CLEANING'
+    if (/checkup|check-up/i.test(text)) return 'DONE_CHECKUP'
+    if (/backjob|back-job|back job/i.test(text)) return 'DONE_BACKJOB'
+    if (/survey/i.test(text)) return 'DONE_SURVEY'
+    if (/mount/i.test(text)) return 'DONE_MOUNTING'
+    if (/dismantle/i.test(text)) return 'DONE_DISMANTLE'
+    if (/quotation/i.test(text)) return 'DONE_QUOTATION'
+    if (/system.*reprocess|reprocess/i.test(text)) return 'DONE_SYSTEM_REPROCESS'
+    if (/repair|service|maintenance/i.test(text)) return 'DONE_SERVICE'
+    if (/install|s[\/_]?i/i.test(text)) return 'DONE_INSTALLED'
+    return null
+  }
 
   if (isInstalledWorkflowStatus(stat) || stat.startsWith('DONE') || stat === 'COMPLETED' || stat === 'COMPLETE') {
-    if (/clean/i.test(textBlob)) return 'DONE_CLEANING'
-    if (/checkup|check-up/i.test(textBlob)) return 'DONE_CHECKUP'
-    if (/backjob|back-job|back job/i.test(textBlob)) return 'DONE_BACKJOB'
-    if (/survey/i.test(textBlob)) return 'DONE_SURVEY'
-    if (/mount/i.test(textBlob)) return 'DONE_MOUNTING'
-    if (/dismantle/i.test(textBlob)) return 'DONE_DISMANTLE'
-    if (/quotation/i.test(textBlob)) return 'DONE_QUOTATION'
-    if (/system.*reprocess|reprocess/i.test(textBlob)) return 'DONE_SYSTEM_REPROCESS'
-    if (/repair|service|maintenance/i.test(textBlob)) return 'DONE_SERVICE'
-    if (/install|s[\/_]?i/i.test(textBlob)) return 'DONE_INSTALLED'
-    return 'DONE_SERVICE'
+    // Remarks reflect what the staff actually did just now — check them before falling back to
+    // the ticket's service type/category, which can still say "SURVEY" on a combo "Survey &
+    // Install" ticket even after the install leg is the one that got completed.
+    return matchOutcomeText(remarks) || matchOutcomeText(`${svc} ${cat}`) || 'DONE_SERVICE'
   }
   if (stat === 'SURVEY' && /done.*survey|survey.*done|surveyed/i.test(remarks)) return 'DONE_SURVEY'
   if (stat === 'DONE_SYSTEM_REPROCESS') return 'DONE_SYSTEM_REPROCESS'
