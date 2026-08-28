@@ -716,6 +716,20 @@ export function canMemberAccessDdrm(user?: PortalUserLike | null): boolean {
   return isDdrmMember(user.jobTitle)
 }
 
+/** Matches "PAYROLL", "Payroll", "Payroll Officer", or any job title containing "payroll". */
+export function isPayrollMember(jobTitle?: string | null): boolean {
+  if (!jobTitle) return false
+  const lower = jobTitle.toLowerCase()
+  return lower.includes('payroll')
+}
+
+export function canMemberAccessPayroll(user?: PortalUserLike | null): boolean {
+  if (!user) return false
+  const role = (user.role || '').toLowerCase()
+  if (role === 'admin' || role === 'management' || role === 'administrator') return true
+  return isPayrollMember(user.jobTitle)
+}
+
 
 export function notifyEmployeesDirectoryUpdated(): void {
   try {
