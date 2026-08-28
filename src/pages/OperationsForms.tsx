@@ -31,6 +31,7 @@ interface OtEntry {
 interface CashAdvance {
   id: string
   employeeId: string
+  employeeName?: string
   amount: number
   purpose: string
   status: string
@@ -184,6 +185,7 @@ export default function OperationsForms() {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
 
   // Cash advance form
+  const [caMemberName, setCaMemberName] = useState('')
   const [caAmount, setCaAmount] = useState('')
   const [caPurpose, setCaPurpose] = useState('')
   const [caBranchId, setCaBranchId] = useState('')
@@ -355,7 +357,7 @@ export default function OperationsForms() {
       amount: a.amount,
       detail: a.purpose || '—',
       branchLabel: resolveBranchLabel(null, a.branchId, a.employeeId),
-      requesterName: getRequesterName(a.employeeId),
+      requesterName: a.employeeName || getRequesterName(a.employeeId),
       raw: a,
     }))
     const bud = budgetRequests.map((b): UnifiedRow => ({
@@ -477,6 +479,7 @@ export default function OperationsForms() {
   const resetForms = useCallback(() => {
     const defaultBranchId = userAssignedBranchId || (branches.length > 0 ? branches[0].id : '')
     const defaultBranchName = userAssignedBranchName || (branches.length > 0 ? branches[0].name.toUpperCase() : '')
+    setCaMemberName(user?.name || '')
     setCaAmount('')
     setCaPurpose('')
     setCaBranchId(defaultBranchId)
@@ -527,6 +530,7 @@ export default function OperationsForms() {
     setFormErrors({})
     if (type === 'cash-advance') {
       const r = record as CashAdvance
+      setCaMemberName(r.employeeName || getRequesterName(r.employeeId) || user?.name || '')
       setCaAmount(String(r.amount ?? ''))
       setCaPurpose(r.purpose || '')
       setCaBranchId(r.branchId || userAssignedBranchId || user?.branchId || '')
@@ -588,6 +592,9 @@ export default function OperationsForms() {
     setFormErrors({})
     setError(null)
     const errs: Record<string, string> = {}
+    if (!caMemberName || !caMemberName.trim()) {
+      errs.name = 'Member Name is required.'
+    }
     const branch = caBranchId || userAssignedBranchId
     if (!branch || !branch.trim()) {
       errs.branch = 'Branch is required. Please select your assigned branch.'
@@ -614,6 +621,7 @@ export default function OperationsForms() {
           method: isEdit ? 'PUT' : 'POST',
           headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            employeeName: caMemberName.trim(),
             amount: amtNum,
             purpose: caPurpose.trim(),
             repaymentTermMonths: 1,
@@ -1813,12 +1821,21 @@ export default function OperationsForms() {
                   />
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                    <FormField label="Member Name">
+                    <FormField label="Member Name" required error={formErrors.name}>
                       <input
                         className={`${inputCls} uppercase`}
-                        style={istyle}
-                        value={(modal.record ? getRequesterName(modal.record.employeeId) : (user?.name || '')).toUpperCase()}
-                        readOnly
+                        style={{
+                          ...istyle,
+                          ...(formErrors.name ? { borderColor: '#ef4444', borderWidth: 2 } : {}),
+                        }}
+                        value={caMemberName}
+                        onChange={e => {
+                          setCaMemberName(e.target.value)
+                          setFormErrors(prev => ({ ...prev, name: '' }))
+                        }}
+                        placeholder="Enter member / requester name…"
+                        readOnly={disabled}
+                        required
                       />
                     </FormField>
 
