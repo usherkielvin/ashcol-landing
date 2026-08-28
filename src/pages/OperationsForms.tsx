@@ -421,7 +421,14 @@ export default function OperationsForms() {
             fetchAll()
           } else {
             const errText = await res.text().catch(() => '')
-            setError(errText || 'Failed to delete request.')
+            let message = 'Failed to delete request.'
+            try {
+              const json = JSON.parse(errText)
+              message = json.message || json.error || errText
+            } catch {
+              if (errText) message = errText
+            }
+            setError(message)
           }
         } catch (err: any) {
           setError(err?.message || 'Failed to delete request.')
