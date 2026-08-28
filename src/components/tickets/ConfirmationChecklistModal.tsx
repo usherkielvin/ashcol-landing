@@ -234,7 +234,7 @@ export function ConfirmationChecklistModal({
             <div className="flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
               <span>Client: <strong className="font-extrabold uppercase text-sm" style={{ color: textPrimary }}>{custName}</strong></span>
               <span>•</span>
-              <span>Ticket #: <strong className="font-extrabold text-sm" style={{ color: textPrimary }}>{ticketNo}</strong></span>
+              <span>Ticket: <strong className="font-extrabold text-sm" style={{ color: textPrimary }}>{ticketNo}</strong></span>
               {contactPhone && (
                 <>
                   <span>•</span>

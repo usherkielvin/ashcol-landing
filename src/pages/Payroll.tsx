@@ -1,6 +1,11 @@
-import { useState, useEffect, useCallback, useRef, useMemo, type FocusEvent, type MouseEvent as ReactMouseEvent, type CSSProperties } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, type FocusEvent, type MouseEvent as ReactMouseEvent, type CSSProperties, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { NumericFormat } from 'react-number-format'
-import { Search, Building2, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, SlidersHorizontal, X } from 'lucide-react'
+import {
+  Search, Building2, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
+  SlidersHorizontal, Plus, X, RotateCcw, RefreshCw, Save, Loader2,
+  Stethoscope, Lightbulb, HardHat, PiggyBank, Wind, Recycle, ArrowBigDownDash, Snowflake,
+} from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatBranchName, isPortalAdmin } from '../utils/api'
@@ -9,7 +14,9 @@ import {
   fetchAndMapPayroll,
   deduplicateAndMergePayroll,
   DEFAULT_PAYROLL_RATES,
+  STANDARD_RATE_TABLE,
   type PayrollRow,
+  type PayrollRates,
 } from '../utils/payrollDerive'
 
 const peso = (v: number | string | null | undefined) => {
@@ -136,18 +143,22 @@ type ColumnKey =
 // while the fee columns scroll, and read-only for synced rows (see readOnlyWhenSynced below).
 const STICKY_LEFT_KEYS: ColumnKey[] = ['date', 'ticketNumber', 'customerName']
 
-type ColumnCategory = 'standard' | 'piping' | 'electrical' | 'structural' | 'admin'
+type ColumnCategory = 'standard' | 'piping' | 'electrical' | 'structural' | 'masonry' | 'admin'
 
 const CATEGORY_META: Record<ColumnCategory, { label: string; blurb: string }> = {
   standard: { label: 'Standard Add-ons', blurb: 'Shown by default — the usual per-job extras' },
   piping: { label: 'Piping & Copper', blurb: 'Copper tube and flushing-related fees' },
   electrical: { label: 'Electrical & Power', blurb: 'Wiring, breakers, and power supply labor' },
   structural: { label: 'Structural Work', blurb: 'Brackets, scaffolding, hauling, relocation' },
+  masonry: { label: 'Masonry & Labor', blurb: 'Chipping and other masonry-type labor fees' },
   admin: { label: 'Admin & Notes', blurb: 'Paperwork, uploads, and remarks' },
 }
 
 interface ColumnDef {
-  key: ColumnKey
+  // Widened to `string` (not just ColumnKey) so branch-created custom columns — which have no
+  // fixed field on PayrollRow, just a generated key into row.customFields — can be described
+  // with this same shape. See CustomColumnDef/customColumnDefs below.
+  key: string
   label: string
   width: number
   align: 'left' | 'right'
@@ -170,7 +181,7 @@ interface ColumnDef {
 // default (see DEFAULT_HIDDEN_COLUMNS) so staff unhide only what that sheet actually needs.
 const COLUMN_DEFS: ColumnDef[] = [
   { key: 'date', label: 'Date', width: 128, align: 'left', pinned: true, readOnlyWhenSynced: true },
-  { key: 'ticketNumber', label: 'Ticket #', width: 110, align: 'left', pinned: true, readOnlyWhenSynced: true },
+  { key: 'ticketNumber', label: 'Ticket', width: 110, align: 'left', pinned: true, readOnlyWhenSynced: true },
   { key: 'customerName', label: 'Customer Name', width: 220, align: 'left', pinned: true, readOnlyWhenSynced: true },
   { key: 'brandCapacity', label: 'Brand', width: 150, align: 'left', pinned: true },
   { key: 'remit', label: 'Remit', width: 120, align: 'right', pinned: true },
@@ -190,7 +201,7 @@ const COLUMN_DEFS: ColumnDef[] = [
   { key: 'chargingOfFreon', label: 'Charging of Freon', width: 110, align: 'right', category: 'electrical', isMoney: true },
   { key: 'hauling', label: 'Hauling', width: 100, align: 'right', category: 'structural', isMoney: true },
   { key: 'dismantling', label: 'Dismantling', width: 100, align: 'right', category: 'structural', isMoney: true },
-  { key: 'chippingWorks', label: 'Chipping Works', width: 110, align: 'right', category: 'structural', isMoney: true },
+  { key: 'chippingWorks', label: 'Chipping Works', width: 110, align: 'right', category: 'masonry', isMoney: true },
   { key: 'specialBracketCatwalk', label: 'Bracket w/ Catwalk', width: 120, align: 'right', category: 'structural', isMoney: true },
   { key: 'specialBracketWelding', label: 'Bracket Welding', width: 110, align: 'right', category: 'structural', isMoney: true },
   { key: 'sterneBracket', label: 'Sterne Bracket', width: 110, align: 'right', category: 'structural', isMoney: true },
@@ -217,18 +228,28 @@ const COLUMN_PRESETS: { label: string; cats: ColumnCategory[] }[] = [
 // since most are blank for any given installer/job (see COLUMN_DEFS comment above).
 const DEFAULT_HIDDEN_COLUMNS: ColumnKey[] = COLUMN_DEFS
   .filter(c => !c.pinned && c.category !== 'standard')
-  .map(c => c.key)
+  .map(c => c.key as ColumnKey)
 
 const HIDDEN_COLUMNS_KEY = 'ashcol-payroll-hidden-columns'
 const COLUMN_WIDTHS_KEY = 'ashcol-payroll-column-widths'
+const CUSTOM_COLUMNS_KEY = 'ashcol-payroll-custom-columns'
 const MIN_COLUMN_WIDTH = 70
 
 // Widths default to COLUMN_DEFS but are user-adjustable (drag the header edge) and shared
 // across every installer table — a resize is a layout preference, not per-installer state.
 const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = COLUMN_DEFS.reduce((acc, c) => {
-  acc[c.key] = c.width
+  acc[c.key as ColumnKey] = c.width
   return acc
 }, {} as Record<ColumnKey, number>)
+
+// A column a branch adds by hand from the "Manage Columns" modal — no fixed field on
+// PayrollRow, its values live in row.customFields keyed by `key`. Always money-type (a fee),
+// always visible once created (no per-installer hide/show or resize in this first pass), and
+// removable from the same modal.
+interface CustomColumnDef {
+  key: string
+  label: string
+}
 
 export default function Payroll() {
   const { theme } = useTheme()
@@ -266,7 +287,7 @@ export default function Payroll() {
   const [rawSearch, setRawSearch] = useState('')
   const [search, setSearch] = useState('')
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
+  const [branches, setBranches] = useState<{ id: string; name: string; payrollRates?: string | null }[]>([])
   const defaultWeek = useMemo(() => getFridayToFriday(new Date()), [])
   const [dateFrom, setDateFrom] = useState(() => defaultWeek.from)
   const [dateTo, setDateTo] = useState(() => defaultWeek.to)
@@ -278,13 +299,64 @@ export default function Payroll() {
   const [branchFilter, setBranchFilter] = useState(() => {
     if (isAdmin) {
       const activeBranch = localStorage.getItem('ashcol-global-branch-id')
-      return activeBranch && activeBranch !== 'ALL_BRANCHES' ? activeBranch : ''
+      if (activeBranch && activeBranch !== 'ALL_BRANCHES') return activeBranch
+      return 'BR-TAGUIG-SALES'
     }
-    return user?.branchId || ''
+    return user?.branchId || 'BR-TAGUIG-SALES'
   })
 
-  // No UI to edit these anymore — sync always uses the standard defaults.
-  const rates = DEFAULT_PAYROLL_RATES
+  // Per-branch override of the standard rates (e.g. SILANG's cleaning fee differs from other
+  // branches) — parsed from Branch.payrollRates (see "Payroll Settings" modal below), falling
+  // back to the app-wide defaults for any branch with no override saved, or a corrupt value.
+  const rates = useMemo<PayrollRates>(() => {
+    const raw = branches.find(b => b.id === branchFilter)?.payrollRates
+    if (!raw) return DEFAULT_PAYROLL_RATES
+    try {
+      return { ...DEFAULT_PAYROLL_RATES, ...JSON.parse(raw) }
+    } catch {
+      return DEFAULT_PAYROLL_RATES
+    }
+  }, [branches, branchFilter])
+
+  const [ratesModalOpen, setRatesModalOpen] = useState(false)
+  const [ratesSearch, setRatesSearch] = useState('')
+  const [draftRates, setDraftRates] = useState<PayrollRates>(DEFAULT_PAYROLL_RATES)
+  const [savingRates, setSavingRates] = useState(false)
+  const openRatesModal = () => {
+    const initialOverrides: Record<string, number> = {}
+    STANDARD_RATE_TABLE.forEach(item => {
+      initialOverrides[item.key] = rates.lineItemOverrides?.[item.key] ?? item.defaultRate
+    })
+    setDraftRates({
+      ...rates,
+      dailyAllowance: rates.dailyAllowance ?? DEFAULT_PAYROLL_RATES.dailyAllowance,
+      earthGrounding: rates.earthGrounding ?? DEFAULT_PAYROLL_RATES.earthGrounding,
+      survey: rates.survey ?? DEFAULT_PAYROLL_RATES.survey,
+      rescheduled: rates.rescheduled ?? DEFAULT_PAYROLL_RATES.rescheduled,
+      lineItemOverrides: initialOverrides,
+    })
+    setRatesSearch('')
+    setRatesModalOpen(true)
+  }
+  const saveRates = async () => {
+    if (!branchFilter) return
+    setSavingRates(true)
+    try {
+      const res = await fetch(`${API_BASE_URL}/branches/${branchFilter}/payroll-rates`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payrollRates: JSON.stringify(draftRates) }),
+      })
+      if (res.ok) {
+        setBranches(prev => prev.map(b => b.id === branchFilter ? { ...b, payrollRates: JSON.stringify(draftRates) } : b))
+        setRatesModalOpen(false)
+      }
+    } catch (e) {
+      console.error('Failed to save branch payroll rates:', e)
+    } finally {
+      setSavingRates(false)
+    }
+  }
 
   // Keyed by installer name — column visibility is per-installer-table, not shared globally.
   const [hiddenColumnsByInstaller, setHiddenColumnsByInstaller] = useState<Record<string, Set<ColumnKey>>>(() => {
@@ -310,6 +382,35 @@ export default function Payroll() {
     hiddenColumnsByInstaller[installerName] ?? new Set(DEFAULT_HIDDEN_COLUMNS)
   const [columnManagerFor, setColumnManagerFor] = useState<string | null>(null)
   const [columnSearch, setColumnSearch] = useState('')
+
+  // Branch-created custom columns, shared across every installer table (a new column applies
+  // everywhere, not just one installer's sheet) and persisted so it survives a reload.
+  const [customColumnDefs, setCustomColumnDefs] = useState<CustomColumnDef[]>(() => {
+    try {
+      const raw = localStorage.getItem(CUSTOM_COLUMNS_KEY)
+      return raw ? JSON.parse(raw) : []
+    } catch {
+      return []
+    }
+  })
+  useEffect(() => {
+    localStorage.setItem(CUSTOM_COLUMNS_KEY, JSON.stringify(customColumnDefs))
+  }, [customColumnDefs])
+  const [newColumnName, setNewColumnName] = useState('')
+  const addCustomColumn = () => {
+    const label = newColumnName.trim()
+    if (!label) return
+    const slug = label.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+    let key = `custom_${slug || 'column'}`
+    // Guarantee uniqueness even if two columns slugify to the same thing.
+    let n = 2
+    while (customColumnDefs.some(c => c.key === key)) { key = `custom_${slug || 'column'}_${n}`; n++ }
+    setCustomColumnDefs(prev => [...prev, { key, label }])
+    setNewColumnName('')
+  }
+  const removeCustomColumn = (key: string) => {
+    setCustomColumnDefs(prev => prev.filter(c => c.key !== key))
+  }
 
   // Schedule tickets only ever carry an installer's first name/nickname (see
   // cleanInstallerName in schedulePrefill.ts — that's what payrollDerive.ts groups rows by),
@@ -399,7 +500,9 @@ export default function Payroll() {
   useEffect(() => {
     localStorage.setItem(COLUMN_WIDTHS_KEY, JSON.stringify(columnWidths))
   }, [columnWidths])
-  const widthFor = (key: ColumnKey) => columnWidths[key] ?? DEFAULT_COLUMN_WIDTHS[key] ?? 100
+  // Custom columns aren't resizable in this first pass (no entry in columnWidths/
+  // DEFAULT_COLUMN_WIDTHS, both still strictly ColumnKey-keyed) — they just get a fixed width.
+  const widthFor = (key: string) => columnWidths[key as ColumnKey] ?? DEFAULT_COLUMN_WIDTHS[key as ColumnKey] ?? 120
 
   const resizingRef = useRef<{ key: ColumnKey; startX: number; startWidth: number } | null>(null)
   const [resizingKey, setResizingKey] = useState<ColumnKey | null>(null)
@@ -526,6 +629,7 @@ export default function Payroll() {
         remarks: r.remarks || null,
         audited: r.audited || null,
         status: r.status || 'PENDING',
+        customFields: r.customFields && Object.keys(r.customFields).length > 0 ? JSON.stringify(r.customFields) : null,
       }))
       const res = await fetch(`${API_BASE_URL}/v1/payroll`, {
         method: 'PUT',
@@ -618,6 +722,9 @@ export default function Payroll() {
             remarks: e.remarks || '',
             audited: e.audited || '',
             status: e.status || 'PENDING',
+            customFields: (() => {
+              try { return e.customFields ? JSON.parse(e.customFields) : {} } catch { return {} }
+            })(),
           }))
         }
 
@@ -651,8 +758,16 @@ export default function Payroll() {
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data) return
-        const list = (data?.data || data || []).map((b: any) => ({ id: b.id, name: b.name }))
-        setBranches(list.sort((a: any, b: any) => a.name.localeCompare(b.name)))
+        const list = (data?.data || data || []).map((b: any) => ({ id: b.id, name: b.name, payrollRates: b.payrollRates }))
+        const sorted = list.sort((a: any, b: any) => a.name.localeCompare(b.name))
+        setBranches(sorted)
+
+        setBranchFilter(prev => {
+          if (prev && sorted.some((b: any) => b.id === prev)) return prev
+          const taguigSales = sorted.find((b: any) => /TAGUIG.*SALES/i.test(b.name))
+            || sorted.find((b: any) => /TAGUIG/i.test(b.name))
+          return taguigSales ? taguigSales.id : (sorted[0]?.id || '')
+        })
       })
       .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -702,7 +817,7 @@ export default function Payroll() {
     })
   }
 
-  const columnAccessors: Record<ColumnKey, { get: (r: PayrollRow) => string; set: (id: string, v: string) => void }> = {
+  const columnAccessors: Record<string, { get: (r: PayrollRow) => string; set: (id: string, v: string) => void }> = {
     date: { get: r => r.workDate, set: (id, v) => updateRow(id, { workDate: v }) },
     ticketNumber: { get: r => r.ticketNumber, set: (id, v) => updateRow(id, { ticketNumber: v }) },
     customerName: { get: r => r.customerName, set: (id, v) => updateRow(id, { customerName: v }) },
@@ -738,6 +853,14 @@ export default function Payroll() {
     remarks: { get: r => r.remarks, set: (id, v) => updateRow(id, { remarks: v }) },
     audited: { get: r => r.audited, set: (id, v) => updateRow(id, { audited: v }) },
   }
+  // Custom columns read/write row.customFields[key], merging so setting one custom value
+  // never clobbers another custom value already on that row.
+  for (const cc of customColumnDefs) {
+    columnAccessors[cc.key] = {
+      get: r => r.customFields?.[cc.key] || '',
+      set: (id, v) => updateRow(id, { customFields: { ...(rows.find(r => r.id === id)?.customFields || {}), [cc.key]: v } }),
+    }
+  }
 
   const toggleColumn = (key: ColumnKey) => {
     if (!columnManagerFor) return
@@ -758,7 +881,7 @@ export default function Payroll() {
   // hiddenColumnsByInstaller state the per-checkbox toggles use, so it's fully undoable.
   const applyColumnPreset = (cats: ColumnCategory[]) => {
     if (!columnManagerFor) return
-    const toHide = COLUMN_DEFS.filter(c => !c.pinned && !cats.includes(c.category as ColumnCategory)).map(c => c.key)
+    const toHide = COLUMN_DEFS.filter(c => !c.pinned && !cats.includes(c.category as ColumnCategory)).map(c => c.key as ColumnKey)
     setHiddenColumnsByInstaller(prev => ({ ...prev, [columnManagerFor]: new Set(toHide) }))
   }
 
@@ -840,9 +963,14 @@ export default function Payroll() {
   const inputCls = "w-full h-full px-3 py-3 text-sm font-semibold uppercase bg-transparent border-0 outline-none focus:outline-none focus:ring-0"
   // No text-align baked in — alignment is set per-column (numeric columns go right-aligned).
   const thCls = "px-3 py-3 text-[11px] font-extrabold uppercase tracking-wider whitespace-nowrap overflow-hidden text-ellipsis"
-  const visibleColumnsFor = (installerName: string) => {
+  const visibleColumnsFor = (installerName: string): ColumnDef[] => {
     const hidden = hiddenColumnsFor(installerName)
-    return COLUMN_DEFS.filter(c => c.pinned || !hidden.has(c.key))
+    const fixed = COLUMN_DEFS.filter(c => c.pinned || !hidden.has(c.key as ColumnKey))
+    // Custom columns always show, right after the fixed set — no per-installer hide/show yet.
+    const custom: ColumnDef[] = customColumnDefs.map(cc => ({
+      key: cc.key, label: cc.label, width: 120, align: 'right', isMoney: true,
+    }))
+    return [...fixed, ...custom]
   }
   const cellBorder = { borderRight: `1px solid ${border}` }
   const cellFocusBg = isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)'
@@ -880,8 +1008,8 @@ export default function Payroll() {
 
   /** Date / Ticket # / Customer Name stay glued to the left edge — needs an explicit opaque
    *  background since sticky content would otherwise show whatever scrolls underneath it. */
-  const stickyCellStyle = (colKey: ColumnKey, opaqueBg: string): CSSProperties => {
-    const leftOffset = stickyLeftOffsets[colKey]
+  const stickyCellStyle = (colKey: string, opaqueBg: string): CSSProperties => {
+    const leftOffset = stickyLeftOffsets[colKey as ColumnKey]
     if (leftOffset !== undefined) {
       return { position: 'sticky', left: leftOffset, zIndex: 2, backgroundColor: opaqueBg }
     }
@@ -1189,22 +1317,39 @@ export default function Payroll() {
             />
           </div>
 
-          {/* Auto-Sync Indicator */}
-          <div
-            className="flex items-center gap-2 px-3 py-1.5 md:py-2 rounded-xl border text-[11px] font-extrabold uppercase shrink-0 select-none transition-all shadow-xs"
-            style={{
-              backgroundColor: isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)',
-              borderColor: '#10B98150',
-              color: '#10B981',
-            }}
-            title="Auto-synced with scheduled dates (DONE CLEANING / DONE INSTALL)"
-          >
-            <span className="relative flex h-2 w-2">
-              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 ${syncing ? 'duration-500' : 'duration-1000'}`}></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            <span>{syncing ? 'SYNCING...' : 'AUTO-SYNCED'}</span>
-          </div>
+          {/* Sync Latest Button */}
+          {branchFilter && (
+            <button
+              type="button"
+              onClick={() => void loadAndSync(true)}
+              disabled={syncing || initialLoading}
+              className="flex items-center gap-2 px-3.5 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all shadow-xs disabled:opacity-50 cursor-pointer hover:border-emerald-500/50 active:scale-95"
+              style={{
+                backgroundColor: isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)',
+                borderColor: '#10B98150',
+                color: '#10B981',
+              }}
+              title="Sync latest updated tickets from Schedules (DONE CLEANING / DONE INSTALL)"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+              <span>{syncing ? 'Syncing…' : 'Sync Latest'}</span>
+            </button>
+          )}
+
+          {/* Payroll Settings — per-branch rate presets (e.g. SILANG's cleaning fee differs
+              from other branches). Only meaningful once a branch is selected. */}
+          {isAdmin && branchFilter && (
+            <button
+              type="button"
+              onClick={openRatesModal}
+              className="flex items-center gap-1.5 px-3 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all hover:border-emerald-500/50"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+              title="Set this branch's payroll rates"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-500" />
+              <span className="hidden md:inline">Payroll Settings</span>
+            </button>
+          )}
       </div>
 
       {/* Branded per-branch payroll header — mirrors the branch's own printed weekly
@@ -1325,15 +1470,18 @@ export default function Payroll() {
                               }}
                             >
                               {col.label}
-                              {/* Drag to resize; double-click resets to default width. */}
-                              <span
-                                onMouseDown={handleResizeStart(col.key)}
-                                onDoubleClick={handleResizeDoubleClick(col.key)}
-                                onClick={e => e.stopPropagation()}
-                                title="Drag to resize"
-                                className="absolute top-0 right-0 h-full w-2 cursor-col-resize z-10 hover:bg-emerald-500/40"
-                                style={resizingKey === col.key ? { backgroundColor: 'rgba(16,185,129,0.6)' } : undefined}
-                              />
+                              {/* Drag to resize; double-click resets to default width. Custom
+                                  columns aren't resizable yet, so no handle for those. */}
+                              {COLUMN_DEFS.some(c => c.key === col.key) && (
+                                <span
+                                  onMouseDown={handleResizeStart(col.key as ColumnKey)}
+                                  onDoubleClick={handleResizeDoubleClick(col.key as ColumnKey)}
+                                  onClick={e => e.stopPropagation()}
+                                  title="Drag to resize"
+                                  className="absolute top-0 right-0 h-full w-2 cursor-col-resize z-10 hover:bg-emerald-500/40"
+                                  style={resizingKey === col.key ? { backgroundColor: 'rgba(16,185,129,0.6)' } : undefined}
+                                />
+                              )}
                             </div>
                           )
                         })}
@@ -1473,7 +1621,7 @@ export default function Payroll() {
                                   {row.customerName || 'No customer'}
                                 </div>
                                 <div className="text-[11px] font-semibold" style={{ color: textMuted }}>
-                                  {row.workDate ? shortDate(row.workDate) : 'No date'} &middot; {row.ticketNumber || 'No ticket #'}
+                                  {row.workDate ? shortDate(row.workDate) : 'No date'} &middot; {row.ticketNumber || 'No ticket'}
                                 </div>
                               </>
                             ) : (
@@ -1496,7 +1644,7 @@ export default function Payroll() {
                                   />
                                   <input
                                     type="text"
-                                    placeholder="Ticket #"
+                                    placeholder="Ticket"
                                     value={row.ticketNumber}
                                     onChange={e => updateRow(row.id, { ticketNumber: e.target.value })}
                                     className="text-[11px] font-semibold bg-transparent border-0 outline-none w-20"
@@ -1737,6 +1885,54 @@ export default function Payroll() {
               ))}
             </div>
 
+            {/* New custom column — no fixed field, just a name; values live in row.customFields.
+                Applies to every installer's table, not just this one. */}
+            <div className="flex flex-col gap-2 px-5 py-3 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
+              <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>New Custom Column</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g. Roof Access Fee"
+                  value={newColumnName}
+                  onChange={e => setNewColumnName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomColumn() } }}
+                  className="flex-1 rounded-xl border px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                />
+                <button
+                  type="button"
+                  onClick={addCustomColumn}
+                  disabled={!newColumnName.trim()}
+                  className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                  style={{ background: '#10B981' }}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add
+                </button>
+              </div>
+              {customColumnDefs.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {customColumnDefs.map(cc => (
+                    <span
+                      key={cc.key}
+                      className="flex items-center gap-1 pl-2.5 pr-1.5 py-1 rounded-full text-[11px] font-bold"
+                      style={{ color: '#10B981', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.14)' }}
+                    >
+                      {cc.label}
+                      <button
+                        type="button"
+                        onClick={() => removeCustomColumn(cc.key)}
+                        className="p-0.5 rounded-full hover:bg-red-500/20"
+                        title="Remove this column (from every installer's table)"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Search + bulk actions */}
             <div className="flex items-center gap-2 px-5 py-3 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
               <div className="relative flex-1">
@@ -1761,7 +1957,7 @@ export default function Payroll() {
               </button>
               <button
                 type="button"
-                onClick={() => setHiddenColumnsByInstaller(prev => ({ ...prev, [columnManagerFor]: new Set(COLUMN_DEFS.filter(c => !c.pinned).map(c => c.key)) }))}
+                onClick={() => setHiddenColumnsByInstaller(prev => ({ ...prev, [columnManagerFor]: new Set(COLUMN_DEFS.filter(c => !c.pinned).map(c => c.key as ColumnKey)) }))}
                 className="px-3 py-2 rounded-xl text-[11px] font-bold whitespace-nowrap"
                 style={{ color: textMuted, backgroundColor: isLight ? '#f1f5f9' : '#0d1520' }}
               >
@@ -1777,7 +1973,7 @@ export default function Payroll() {
                   const cols = COLUMN_DEFS.filter(c => c.category === cat && c.label.toLowerCase().includes(columnSearch.trim().toLowerCase()))
                   if (cols.length === 0) return null
                   const meta = CATEGORY_META[cat]
-                  const visibleCount = cols.filter(c => !hidden.has(c.key)).length
+                  const visibleCount = cols.filter(c => !hidden.has(c.key as ColumnKey)).length
                   return (
                     <div key={cat} className="rounded-xl overflow-hidden" style={{ border: `1px solid ${border}` }}>
                       <div className="px-3 py-2 flex items-center justify-between" style={{ backgroundColor: headerBg }}>
@@ -1792,7 +1988,7 @@ export default function Payroll() {
                       <div>
                         {cols.map(col => (
                           <label key={col.key} className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold cursor-pointer" style={{ color: textPrimary }}>
-                            <input type="checkbox" checked={!hidden.has(col.key)} onChange={() => toggleColumn(col.key)} />
+                            <input type="checkbox" checked={!hidden.has(col.key as ColumnKey)} onChange={() => toggleColumn(col.key as ColumnKey)} />
                             {col.label}
                           </label>
                         ))}
@@ -1816,6 +2012,411 @@ export default function Payroll() {
             </div>
           </div>
         </div>
+      )}
+
+      {ratesModalOpen && createPortal(
+        (() => {
+          const headerBgColor = isLight ? '#f8fafc' : '#0F1A2E'
+          const overrideCount = Object.entries(draftRates.lineItemOverrides || {}).filter(([k, v]) => {
+            const std = STANDARD_RATE_TABLE.find(item => item.key === k)
+            return std ? v !== std.defaultRate : false
+          }).length + (
+            (draftRates.dailyAllowance !== DEFAULT_PAYROLL_RATES.dailyAllowance ? 1 : 0) +
+            (draftRates.earthGrounding !== DEFAULT_PAYROLL_RATES.earthGrounding ? 1 : 0) +
+            (draftRates.survey !== DEFAULT_PAYROLL_RATES.survey ? 1 : 0) +
+            (draftRates.rescheduled !== DEFAULT_PAYROLL_RATES.rescheduled ? 1 : 0)
+          )
+
+          const renderRateItemRow = (item: typeof STANDARD_RATE_TABLE[0]) => {
+            const currentVal = draftRates.lineItemOverrides?.[item.key] ?? item.defaultRate
+            const overridden = currentVal !== item.defaultRate
+            return (
+              <div
+                key={item.key}
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4 px-5 py-3.5 transition-colors hover:bg-slate-500/5"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-bold leading-relaxed" style={{ color: textPrimary }}>
+                    {item.label}
+                  </div>
+                  <div className="text-[10px] font-medium flex items-center flex-wrap gap-x-1.5 gap-y-1 mt-1" style={{ color: textMuted }}>
+                    <span>Head Office default: ₱{item.defaultRate.toLocaleString('en-PH')}</span>
+                    {overridden && (
+                      <span className="text-[9px] font-black text-emerald-500 uppercase px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">
+                        Custom
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="relative w-32 sm:w-36">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold pointer-events-none text-slate-400">₱</span>
+                    <NumericFormat
+                      thousandSeparator=","
+                      decimalScale={2}
+                      allowNegative={false}
+                      placeholder={String(item.defaultRate)}
+                      value={currentVal}
+                      onValueChange={values => setDraftRates(prev => ({
+                        ...prev,
+                        lineItemOverrides: { ...prev.lineItemOverrides, [item.key]: values.floatValue ?? item.defaultRate },
+                      }))}
+                      className="w-full pl-7 pr-3 py-2 rounded-xl text-xs font-bold border text-right focus:outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all"
+                      style={{
+                        backgroundColor: inputBg,
+                        borderColor: overridden ? '#10B981' : inputBorder,
+                        color: textPrimary,
+                      }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDraftRates(prev => ({
+                      ...prev,
+                      lineItemOverrides: { ...prev.lineItemOverrides, [item.key]: item.defaultRate },
+                    }))}
+                    disabled={!overridden}
+                    title="Reset to Head Office default"
+                    className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-500/10 disabled:opacity-0 cursor-pointer transition-colors shrink-0"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )
+          }
+
+          /** Colored icon chip used for every card header — a small gradient badge keeps the
+           *  category glanceable without competing with the (now-unabbreviated) row labels. */
+          const iconChip = (icon: ReactNode, from: string, to: string) => (
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: `linear-gradient(135deg, ${from}, ${to})` }}
+            >
+              {icon}
+            </div>
+          )
+
+          return (
+            <div
+              className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-md animate-in fade-in duration-200"
+            >
+              <div
+                className="w-full rounded-2xl shadow-2xl flex flex-col overflow-hidden border animate-in zoom-in-95 duration-200"
+                style={{
+                  maxWidth: '1060px',
+                  height: 'min(86vh, 840px)',
+                  maxHeight: '90vh',
+                  backgroundColor: cardBg,
+                  borderColor: border,
+                  boxShadow: isLight
+                    ? '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+                    : '0 25px 50px -12px rgba(0, 0, 0, 0.8)',
+                }}
+                onClick={e => e.stopPropagation()}
+              >
+                {/* Modal Header */}
+                <div
+                  className="flex items-center justify-between gap-4 px-8 py-5 shrink-0"
+                  style={{
+                    backgroundColor: isLight ? '#ffffff' : '#0B1324',
+                    borderBottom: `1px solid ${border}`,
+                  }}
+                >
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div
+                      className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-sm"
+                      style={{ background: 'linear-gradient(135deg, #10B981, #0EA5E9)' }}
+                    >
+                      <SlidersHorizontal className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <h2 className="text-base font-extrabold tracking-tight" style={{ color: textPrimary }}>
+                          Payroll Rate Settings
+                        </h2>
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                          {currentBranchDisplay || 'Branch'}
+                        </span>
+                      </div>
+                      <p className="text-xs font-semibold mt-1 leading-snug" style={{ color: textMuted }}>
+                        Configure standard branch rates and automatic schedule-match defaults
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setRatesModalOpen(false)}
+                      className="p-2.5 rounded-xl hover:bg-rose-500/10 hover:text-rose-500 transition-colors cursor-pointer"
+                      style={{ color: textMuted }}
+                      title="Close"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Info & Search Toolbar */}
+                <div
+                  className="px-8 py-4 shrink-0 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3.5"
+                  style={{
+                    backgroundColor: isLight ? 'rgba(241, 245, 249, 0.7)' : 'rgba(15, 26, 46, 0.7)',
+                    borderBottom: `1px solid ${border}`,
+                  }}
+                >
+                  <div className="flex items-center gap-3 text-xs font-medium min-w-0 flex-1" style={{ color: textMuted }}>
+                    <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
+                      <Lightbulb className="w-4 h-4 text-amber-500" />
+                    </div>
+                    <span className="leading-relaxed">
+                      Install and General Cleaning fees auto-fill on sync based on capacity. Everything else uses the Head Office default until you set your own.
+                    </span>
+                  </div>
+
+                  <div className="relative w-full md:w-80 shrink-0">
+                    <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="Search rate items (e.g. 3.0 TR, Split, Freon)…"
+                      value={ratesSearch}
+                      onChange={e => setRatesSearch(e.target.value)}
+                      className="w-full pl-10 pr-9 py-2 rounded-xl text-xs font-semibold outline-none border focus:ring-2 focus:ring-emerald-500/30 transition-all placeholder:text-slate-400"
+                      style={{
+                        backgroundColor: inputBg,
+                        borderColor: inputBorder,
+                        color: textPrimary,
+                      }}
+                    />
+                    {ratesSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setRatesSearch('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-slate-500/10 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Modal Body: 2-Column Responsive Layout */}
+                <div className="flex-1 min-h-0 overflow-y-auto px-8 py-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start pb-8">
+                    {/* Column 1 (Left): Installation & Other Standard Allowances */}
+                    <div className="flex flex-col gap-6">
+                      {/* Installation Rates Card */}
+                      {(() => {
+                        const group = 'Installation'
+                        const items = STANDARD_RATE_TABLE.filter(item =>
+                          item.group === group &&
+                          (!ratesSearch || item.label.toLowerCase().includes(ratesSearch.toLowerCase()))
+                        )
+                        if (items.length === 0) return null
+                        return (
+                          <div className="rounded-2xl overflow-hidden shadow-xs border" style={{ borderColor: border, backgroundColor: cardBg }}>
+                            <div className="px-5 py-3.5 flex items-center justify-between border-b" style={{ backgroundColor: headerBgColor, borderColor: border }}>
+                              <div className="flex items-center gap-3">
+                                {iconChip(<HardHat className="w-4 h-4 text-white" />, '#10B981', '#0EA5E9')}
+                                <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>{group} Rates</span>
+                              </div>
+                              <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-500 shrink-0">
+                                {items.length} items
+                              </span>
+                            </div>
+                            <div className="divide-y" style={{ borderColor: border }}>
+                              {items.map(item => renderRateItemRow(item))}
+                            </div>
+                          </div>
+                        )
+                      })()}
+
+                      {/* Other Rates Card (Survey, Rescheduled, Earth Grounding, Daily Allowance) */}
+                      {(() => {
+                        const otherRatesList = [
+                          { key: 'dailyAllowance', label: 'Daily Allowance', defaultVal: DEFAULT_PAYROLL_RATES.dailyAllowance },
+                          { key: 'earthGrounding', label: 'Earth Grounding', defaultVal: DEFAULT_PAYROLL_RATES.earthGrounding },
+                          { key: 'survey', label: 'Survey Standard Fee', defaultVal: DEFAULT_PAYROLL_RATES.survey },
+                          { key: 'rescheduled', label: 'Rescheduled Fee', defaultVal: DEFAULT_PAYROLL_RATES.rescheduled },
+                        ] as const
+                        const filteredOther = otherRatesList.filter(item =>
+                          !ratesSearch || item.label.toLowerCase().includes(ratesSearch.toLowerCase())
+                        )
+                        if (filteredOther.length === 0) return null
+                        return (
+                          <div className="rounded-2xl overflow-hidden shadow-xs border" style={{ borderColor: border, backgroundColor: cardBg }}>
+                            <div className="px-5 py-3.5 flex items-center justify-between border-b" style={{ backgroundColor: headerBgColor, borderColor: border }}>
+                              <div className="flex items-center gap-3">
+                                {iconChip(<PiggyBank className="w-4 h-4 text-white" />, '#6366F1', '#A855F7')}
+                                <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>Other Standard Allowances & Fees</span>
+                              </div>
+                              <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-500 shrink-0">
+                                {filteredOther.length} items
+                              </span>
+                            </div>
+                            <div className="divide-y" style={{ borderColor: border }}>
+                              {filteredOther.map(item => {
+                                const val = draftRates[item.key]
+                                const isOverridden = val !== item.defaultVal
+                                return (
+                                  <div
+                                    key={item.key}
+                                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4 px-5 py-3.5 transition-colors hover:bg-slate-500/5"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <div className="text-xs font-bold leading-relaxed" style={{ color: textPrimary }}>
+                                        {item.label}
+                                      </div>
+                                      <div className="text-[10px] font-medium flex items-center flex-wrap gap-x-1.5 gap-y-1 mt-1" style={{ color: textMuted }}>
+                                        <span>Head Office default: ₱{item.defaultVal.toLocaleString('en-PH')}</span>
+                                        {isOverridden && (
+                                          <span className="text-[9px] font-black text-emerald-500 uppercase px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">
+                                            Custom
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <div className="relative w-32 sm:w-36">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold pointer-events-none text-slate-400">₱</span>
+                                        <NumericFormat
+                                          thousandSeparator=","
+                                          decimalScale={2}
+                                          allowNegative={false}
+                                          placeholder={String(item.defaultVal)}
+                                          value={draftRates[item.key]}
+                                          onValueChange={values => setDraftRates(prev => ({ ...prev, [item.key]: values.floatValue ?? 0 }))}
+                                          className="w-full pl-7 pr-3 py-2 rounded-xl text-xs font-bold border text-right focus:outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all"
+                                          style={{
+                                            backgroundColor: inputBg,
+                                            borderColor: isOverridden ? '#10B981' : inputBorder,
+                                            color: textPrimary,
+                                          }}
+                                        />
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => setDraftRates(prev => ({ ...prev, [item.key]: item.defaultVal }))}
+                                        disabled={!isOverridden}
+                                        title="Reset to Head Office default"
+                                        className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-500/10 disabled:opacity-0 cursor-pointer transition-colors shrink-0"
+                                      >
+                                        <RotateCcw className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )
+                      })()}
+                    </div>
+
+                    {/* Column 2 (Right): General Cleaning, System Reprocess, Check Up, Pull Down, Other Service Fees */}
+                    <div className="flex flex-col gap-6">
+                      {['General Cleaning', 'System Reprocess', 'Check Up', 'Pull Down Cleaning', 'Other Service Fees'].map(group => {
+                        const items = STANDARD_RATE_TABLE.filter(item =>
+                          item.group === group &&
+                          (!ratesSearch || item.label.toLowerCase().includes(ratesSearch.toLowerCase()))
+                        )
+                        if (items.length === 0) return null
+
+                        const [groupIcon, chipFrom, chipTo] = group === 'General Cleaning' ? [<Wind className="w-4 h-4 text-white" key="i" />, '#06B6D4', '#0EA5E9']
+                          : group === 'System Reprocess' ? [<Recycle className="w-4 h-4 text-white" key="i" />, '#F59E0B', '#EAB308']
+                          : group === 'Check Up' ? [<Stethoscope className="w-4 h-4 text-white" key="i" />, '#3B82F6', '#6366F1']
+                          : group === 'Pull Down Cleaning' ? [<ArrowBigDownDash className="w-4 h-4 text-white" key="i" />, '#A855F7', '#EC4899']
+                          : [<Snowflake className="w-4 h-4 text-white" key="i" />, '#38BDF8', '#818CF8']
+
+                        return (
+                          <div key={group} className="rounded-2xl overflow-hidden shadow-xs border" style={{ borderColor: border, backgroundColor: cardBg }}>
+                            <div className="px-5 py-3.5 flex items-center justify-between border-b" style={{ backgroundColor: headerBgColor, borderColor: border }}>
+                              <div className="flex items-center gap-3">
+                                {iconChip(groupIcon, chipFrom, chipTo)}
+                                <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>{group}</span>
+                              </div>
+                              <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-slate-500/10 shrink-0" style={{ color: textMuted }}>
+                                {items.length} items
+                              </span>
+                            </div>
+                            <div className="divide-y" style={{ borderColor: border }}>
+                              {items.map(item => renderRateItemRow(item))}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Modal Footer */}
+                <div
+                  className="flex items-center justify-between flex-wrap gap-4 px-8 py-5 shrink-0 border-t shadow-xs"
+                  style={{
+                    backgroundColor: isLight ? '#f8fafc' : '#0B1324',
+                    borderColor: border,
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const defaults: Record<string, number> = {}
+                        STANDARD_RATE_TABLE.forEach(item => { defaults[item.key] = item.defaultRate })
+                        setDraftRates({
+                          dailyAllowance: DEFAULT_PAYROLL_RATES.dailyAllowance,
+                          earthGrounding: DEFAULT_PAYROLL_RATES.earthGrounding,
+                          survey: DEFAULT_PAYROLL_RATES.survey,
+                          rescheduled: DEFAULT_PAYROLL_RATES.rescheduled,
+                          lineItemOverrides: defaults,
+                        })
+                      }}
+                      disabled={overrideCount === 0}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all disabled:opacity-30 cursor-pointer border hover:border-rose-500/40 hover:text-rose-500"
+                      style={{
+                        borderColor: border,
+                        backgroundColor: inputBg,
+                        color: textMuted,
+                      }}
+                      title="Reset all branch rates to Head Office defaults"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Reset All to Defaults</span>
+                    </button>
+                    {overrideCount > 0 && (
+                      <span className="text-[11px] font-extrabold text-emerald-500 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                        {overrideCount} custom {overrideCount === 1 ? 'override' : 'overrides'} active
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setRatesModalOpen(false)}
+                      className="px-6 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer hover:opacity-80 active:scale-95"
+                      style={{ borderColor: border, color: textMuted, backgroundColor: inputBg }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveRates}
+                      disabled={savingRates}
+                      className="flex items-center gap-2 px-7 py-2.5 rounded-xl text-xs font-black text-white transition-all shadow-md hover:shadow-lg active:scale-95 disabled:opacity-50 cursor-pointer"
+                      style={{ background: '#10B981' }}
+                    >
+                      {savingRates ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      <span>{savingRates ? 'Saving Rates…' : 'Save Rates'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        })(),
+        document.body
       )}
 
       {completeModalFor && (

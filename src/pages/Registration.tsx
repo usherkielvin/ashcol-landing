@@ -470,8 +470,8 @@ export default function Registration() {
           <thead className="sticky top-0 z-10">
             <tr style={{ backgroundColor: theadBg, color: textMuted, borderBottom: `1px solid ${border}` }} className="text-xs uppercase tracking-wider font-bold select-none">
               <th className="px-2 py-2.5 text-[10px] font-black uppercase tracking-[0.06em]" style={{ color: textMuted }}>
-                <button type="button" onClick={() => handleSort('ticketNumber')} className="group inline-flex items-center gap-1 hover:text-emerald-500 transition-colors select-none" title="Sort by Ticket #">
-                  <span>Ticket #</span>
+                <button type="button" onClick={() => handleSort('ticketNumber')} className="group inline-flex items-center gap-1 hover:text-emerald-500 transition-colors select-none" title="Sort by Ticket">
+                  <span>Ticket</span>
                   {renderSortIcon('ticketNumber')}
                 </button>
               </th>
