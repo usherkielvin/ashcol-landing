@@ -57,6 +57,7 @@ import { TicketDetailsModal } from '../components/tickets/TicketDetailsModal'
 import { TicketStatusPickerPopover } from '../components/tickets/TicketStatusPickerPopover'
 import { TicketScheduleDetailsPopover } from '../components/tickets/TicketScheduleDetailsPopover'
 import { TicketFinalDatePickerPopover } from '../components/tickets/TicketFinalDatePickerPopover'
+import { TableCustomSelectDropdown } from '../components/tickets/TableCustomSelectDropdown'
 import { AssignDriversModal } from '../components/tickets/AssignDriversModal'
 import { ExcelImportResultsModal } from '../components/tickets/ExcelImportResultsModal'
 import { ConfirmationChecklistModal } from '../components/tickets/ConfirmationChecklistModal'
@@ -5235,10 +5236,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       const ticketBranchId = resolveTicketScheduleBranchId(ticket, installerLineupIndex, driverOnlyNames) || activeBranchId
       const options = negotiatorsForBranch(ticketBranchId)
       const current = editingCell.value
-      // The stored cell value is sometimes a short/partial name (e.g. "ROMMEL" from an old
-      // import) rather than the full roster name ("ROMMEL NEIL LAURENTE"). Match loosely
-      // (case-insensitive, either-direction substring) so it resolves to the real employee
-      // instead of rendering a second, confusingly-duplicate "ROMMEL" option below.
       const currentLower = current.trim().toLowerCase()
       const matchedOption = currentLower
         ? options.find(emp => {
@@ -5247,28 +5244,53 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           })
         : undefined
       const selectValue = matchedOption ? matchedOption.name : current
+
+      const dropdownOptions = options.map(emp => {
+        const fullName = (emp.name || '').trim()
+        const nick = (emp.nickname || '').trim().toUpperCase()
+        const firstName = fullName.split(/\s+/)[0]?.toUpperCase()
+        const cleanLabel = nick || firstName || fullName.toUpperCase()
+        const branchName = getBranchDisplayName(emp.branchId || null)
+        return {
+          id: emp.id,
+          value: emp.name,
+          label: cleanLabel,
+          subLabel: fullName !== cleanLabel ? fullName : undefined,
+          badge: branchName ? branchName.toUpperCase() : undefined,
+        }
+      })
+
+      if (current && !matchedOption && !options.some(emp => emp.name === current)) {
+        dropdownOptions.push({
+          id: 'custom-nego-current',
+          value: current,
+          label: current.toUpperCase(),
+        })
+      }
+
       return wrapEditingCell(
-        <select
-          autoFocus
-          disabled={isSaving}
+        <TableCustomSelectDropdown
           value={selectValue}
-          onChange={e => syncDraftValue(e.target.value)}
-          onBlur={onBlur}
-          onClick={e => e.stopPropagation()}
-          onMouseDown={e => e.stopPropagation()}
-          onKeyDown={onKeyDown}
-          className="w-full rounded-md outline-none cursor-pointer"
-          style={{ ...inputStyle, paddingRight: 4 }}
-        >
-          <option value="">{EMPTY_CELL} Select negotiator {EMPTY_CELL}</option>
-          {options.map(emp => (
-            // Display first name only — full name is stored as value for data integrity
-            <option key={emp.id} value={emp.name}>{formatNegotiatorLabel(emp, false, true)}</option>
-          ))}
-          {current && !matchedOption && !options.some(emp => emp.name === current) && (
-            <option value={current}>{formatNegotiatorLabel({ name: current, branchId: null }, false, true)}</option>
-          )}
-        </select>,
+          options={dropdownOptions}
+          placeholder="Select negotiator…"
+          searchPlaceholder="Search negotiator…"
+          emptyLabel="No negotiators found"
+          clearLabel="— Clear Negotiator —"
+          isLight={isLight}
+          isSaving={isSaving}
+          onSelect={(val) => {
+            if (cellEditBlurTimer.current) {
+              clearTimeout(cellEditBlurTimer.current)
+              cellEditBlurTimer.current = null
+            }
+            cellEditDraftRef.current = null
+            setEditingCell(null)
+            saveCellEdit(ticket, colLabel, val)
+          }}
+          onClose={() => {
+            discardCellEdit()
+          }}
+        />,
         colLabel,
       )
     }
@@ -5290,28 +5312,54 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             })
           : undefined
         const selectValue = matchedOption ? matchedOption.name : current
+
+        const dropdownOptions = techOptions.map(t => {
+          const emp = branchEmployees.find(e => e.id === t.id || (e.name && e.name.toLowerCase() === t.name.toLowerCase()))
+          const fullName = (emp?.name || t.name || '').trim()
+          const nick = (emp?.nickname || '').trim().toUpperCase()
+          const firstName = fullName.split(/\s+/)[0]?.toUpperCase()
+          const cleanLabel = nick || firstName || fullName.toUpperCase()
+          const branchName = getBranchDisplayName(t.branchId || emp?.branchId || null)
+          return {
+            id: t.id,
+            value: t.name,
+            label: cleanLabel,
+            subLabel: fullName !== cleanLabel ? fullName : undefined,
+            badge: branchName ? branchName.toUpperCase() : undefined,
+          }
+        })
+
+        if (current && !matchedOption && !techOptions.some(t => t.name === current)) {
+          dropdownOptions.push({
+            id: 'custom-tech-current',
+            value: current,
+            label: current.toUpperCase(),
+          })
+        }
+
         return wrapEditingCell(
-          <select
-            autoFocus
-            disabled={isSaving}
+          <TableCustomSelectDropdown
             value={selectValue}
-            onChange={e => syncDraftValue(e.target.value)}
-            onBlur={onBlur}
-            onClick={e => e.stopPropagation()}
-            onMouseDown={e => e.stopPropagation()}
-            onKeyDown={onKeyDown}
-            className="w-full rounded-md outline-none cursor-pointer"
-            style={{ ...inputStyle, paddingRight: 4 }}
-          >
-            <option value="">{EMPTY_CELL} {isTaguigServices ? 'Select technician' : 'Select installer'} {EMPTY_CELL}</option>
-            {techOptions.map(t => (
-              <option key={t.id} value={t.name}>{t.label || (t.name || '').trim().split(/\s+/)[0]?.toUpperCase() || t.name}</option>
-            ))}
-            {/* preserve existing value if it doesn't match any account */}
-            {current && !matchedOption && !techOptions.some(t => t.name === current) && (
-              <option value={current}>{current}</option>
-            )}
-          </select>,
+            options={dropdownOptions}
+            placeholder={isTaguigServices ? 'Select technician…' : 'Select installer…'}
+            searchPlaceholder={isTaguigServices ? 'Search technician…' : 'Search installer…'}
+            emptyLabel={isTaguigServices ? 'No technicians found' : 'No installers found'}
+            clearLabel={isTaguigServices ? '— Clear Technician —' : '— Clear Installer —'}
+            isLight={isLight}
+            isSaving={isSaving}
+            onSelect={(val) => {
+              if (cellEditBlurTimer.current) {
+                clearTimeout(cellEditBlurTimer.current)
+                cellEditBlurTimer.current = null
+              }
+              cellEditDraftRef.current = null
+              setEditingCell(null)
+              saveCellEdit(ticket, colLabel, val)
+            }}
+            onClose={() => {
+              discardCellEdit()
+            }}
+          />,
           colLabel,
         )
       }

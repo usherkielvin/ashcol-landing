@@ -1,5 +1,6 @@
-import React from 'react'
-import { Download, Copy, Check, X, Loader2 } from 'lucide-react'
+import React, { useEffect } from 'react'
+import { createPortal } from 'react-dom'
+import { Download, Copy, Check, X, Loader2, Maximize2 } from 'lucide-react'
 import type { LineUpRow, WPersonSchedule, BranchTheme, WDayStatus } from './types'
 import {
   wFormatWeekLabel,
@@ -71,33 +72,51 @@ export const ShowcaseModal: React.FC<ShowcaseModalProps> = ({
   handleExportShowcasePng,
   handleCopyShowcaseImage,
 }) => {
+  useEffect(() => {
+    if (!showcaseOpen) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setShowcaseOpen(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [showcaseOpen, setShowcaseOpen])
+
   if (!showcaseOpen) return null
 
-  return (
+  return createPortal(
     <div
-      className="lineup-showcase-overlay fixed inset-0 z-[10000] overflow-auto w-full h-full"
+      className="lineup-showcase-overlay fixed inset-0 z-[999999] overflow-auto w-full h-full"
       style={{ backgroundColor: isLight ? '#f8fafc' : '#030712' }}
     >
       <div className="min-h-screen flex flex-col">
         <div
-          className="no-print sticky top-0 z-10 flex items-center justify-between gap-3 px-5 py-3"
+          className="no-print sticky top-0 z-50 flex items-center justify-between gap-3 px-5 py-3 shadow-md"
           style={{
-            backgroundColor: isLight ? 'rgba(248,250,252,0.94)' : 'rgba(3,7,18,0.94)',
+            backgroundColor: isLight ? 'rgba(255,255,255,0.96)' : 'rgba(15,23,42,0.96)',
             borderBottom: `1px solid ${border}`,
-            backdropFilter: 'blur(10px)',
+            backdropFilter: 'blur(12px)',
           }}
         >
-          <div className="min-w-0">
-            <div className="text-xs font-black uppercase tracking-widest" style={{ color: currentTheme.accent }}>
-              {activeTab === 'weekly' ? 'Weekly Schedule Showcase' : 'Daily Schedule Showcase'}
+          <div className="min-w-0 flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: currentTheme.accent }} />
+              <div className="text-xs sm:text-sm font-black uppercase tracking-wider" style={{ color: currentTheme.accent }}>
+                {activeTab === 'weekly' ? 'Weekly Schedule Showcase' : 'Daily Schedule Showcase'}
+              </div>
             </div>
+            <span className="hidden md:inline text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-500/10 text-slate-400">
+              Fullscreen Mode
+            </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={handleExportShowcasePng}
               disabled={exportingPng}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-50 shadow-sm"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-all hover:opacity-90 active:scale-95 disabled:opacity-50 shadow-sm cursor-pointer"
               style={{ backgroundColor: currentTheme.accent }}
               title="Download schedule table as PNG image"
             >
@@ -108,9 +127,9 @@ export const ShowcaseModal: React.FC<ShowcaseModalProps> = ({
               type="button"
               onClick={handleCopyShowcaseImage}
               disabled={copyingImage}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all border shadow-sm hover:opacity-90 disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border shadow-sm hover:opacity-90 active:scale-95 disabled:opacity-50 cursor-pointer"
               style={{
-                backgroundColor: isLight ? '#ffffff' : '#0f172a',
+                backgroundColor: isLight ? '#ffffff' : '#1e293b',
                 borderColor: isLight ? '#cbd5e1' : '#334155',
                 color: textPrimary,
               }}
@@ -122,10 +141,13 @@ export const ShowcaseModal: React.FC<ShowcaseModalProps> = ({
             <button
               type="button"
               onClick={() => setShowcaseOpen(false)}
-              className="flex items-center gap-1 px-3 py-1.5 rounded text-xs font-bold transition-colors cursor-pointer"
-              style={{ backgroundColor: isLight ? '#e2e8f0' : '#1e293b', color: textPrimary }}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold text-white transition-all shadow-sm active:scale-95 cursor-pointer hover:bg-red-600"
+              style={{ backgroundColor: '#ef4444' }}
+              title="Exit Showcase (Press ESC)"
             >
-              <X className="w-4 h-4" /> Close
+              <X className="w-4 h-4" />
+              <span>Exit Showcase</span>
+              <kbd className="hidden sm:inline ml-1 px-1 py-0.5 text-[9px] font-mono bg-black/20 rounded">ESC</kbd>
             </button>
           </div>
         </div>
@@ -566,6 +588,7 @@ export const ShowcaseModal: React.FC<ShowcaseModalProps> = ({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

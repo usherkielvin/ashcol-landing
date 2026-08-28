@@ -1646,7 +1646,7 @@ export default function LineUpPage() {
   }
 
   return (
-    <div style={{ minHeight: '100%', backgroundColor: pageBg }}>
+    <div style={{ minHeight: '100%', backgroundColor: pageBg }} className="px-4 md:px-8 pt-2 pb-10">
       <LineUpHeader
         activeTab={activeTab}
         setActiveTab={setActiveTab}

@@ -1,7 +1,17 @@
 import React from 'react'
-import { X, Save, Edit3, Trash2 } from 'lucide-react'
+import { X, Save, Edit3, Trash2, ChevronDown } from 'lucide-react'
 import type { LineUpRow, BranchTheme } from './types'
 import { englishLabel, parseTimeInput } from './types'
+import { TableCustomSelectDropdown } from '../../components/tickets/TableCustomSelectDropdown'
+
+function formatSimpleName(val: string): string {
+  if (!val) return ''
+  if (val.includes('/')) {
+    return val.split('/').map(v => formatSimpleName(v.trim())).filter(Boolean).join(' / ')
+  }
+  const clean = val.trim().replace(/\s*\([^)]*\)\s*/g, '').replace(/^(sir|ma'am|maam|mr|ms|mrs|engr)\.?\s+/i, '').trim()
+  return clean.split(/\s+/)[0]?.toUpperCase() || clean.toUpperCase()
+}
 
 interface EditableTableProps {
   rows: LineUpRow[]
@@ -255,15 +265,24 @@ export const EditableTable: React.FC<EditableTableProps> = ({
           ) : field === 'remarks' && /\b(DONE|INSTALL|INSTALLED)\b/i.test(value) ? (
             <span style={{ color: '#16a34a', fontWeight: 800 }}>{value}</span>
           ) : (
-            value || '—'
+            (field === 'installerName' || field === 'negotiator') ? formatSimpleName(value) || '—' : (value || '—')
           )}
         </td>
       )
     }
 
+    const isDropdownField = selectOnly || field === 'installerName' || field === 'negotiator'
+    const displayValue = (field === 'installerName' || field === 'negotiator') ? formatSimpleName(value) : value
+
     if (isEditing) {
       const datalistId = `list-${field}-${row.id}`
-      if (selectOnly) {
+      if (isDropdownField) {
+        const dropdownOptions = options.map(opt => ({
+          id: opt,
+          value: opt,
+          label: formatSimpleName(opt),
+        }))
+
         return (
           <td
             style={{
@@ -272,29 +291,26 @@ export const EditableTable: React.FC<EditableTableProps> = ({
               ...style,
               boxShadow: 'inset 0 0 0 2px #10B981',
               backgroundColor: isLight ? 'rgba(16,185,129,0.02)' : 'rgba(16,185,129,0.05)',
+              userSelect: 'none',
             }}
           >
-            <select
+            <TableCustomSelectDropdown
               value={tempValue}
-              autoFocus
-              onChange={e => {
-                setTempValue(e.target.value)
-                void saveCell(row, field, e.target.value)
+              options={dropdownOptions}
+              placeholder={placeholder}
+              searchPlaceholder={`Search ${field === 'installerName' ? (isTaguigServices ? 'technician' : 'installer') : field === 'negotiator' ? 'negotiator' : 'option'}…`}
+              emptyLabel="No options found"
+              clearLabel="— Clear Selection —"
+              isLight={isLight}
+              onSelect={(val) => {
+                setTempValue(val)
+                setEditingCell(null)
+                void saveCell(row, field, val)
               }}
-              onBlur={handleBlur}
-              className="w-full px-2 py-1.5 rounded border-none bg-transparent outline-none"
-              style={{
-                color: textPrimary,
-                textAlign: style.textAlign,
-                fontWeight: style.fontWeight,
-                fontSize: style.fontSize,
+              onClose={() => {
+                setEditingCell(null)
               }}
-            >
-              <option value="">{placeholder}</option>
-              {options.map(opt => (
-                <option key={opt} value={opt}>{opt}</option>
-              ))}
-            </select>
+            />
           </td>
         )
       }
@@ -342,32 +358,52 @@ export const EditableTable: React.FC<EditableTableProps> = ({
 
     return (
       <td
-        onClick={() => {
+        onClick={(e) => {
           setSelectedRowId(row.id)
+          if (canEdit && isDropdownField) {
+            e.stopPropagation()
+            setEditingCell({ rowId: row.id, field })
+            setTempValue(value)
+          }
         }}
-        onDoubleClick={() => {
+        onDoubleClick={(e) => {
+          if (!canEdit) return
+          e.stopPropagation()
           setEditingCell({ rowId: row.id, field })
           setTempValue(value)
         }}
-        title="Double-click to edit"
-        className="cursor-pointer transition-colors"
-        style={{ border: '1px solid #000000', padding: '12px 16px', ...style }}
+        title={canEdit ? (isDropdownField ? 'Click to select' : 'Double-click to edit') : undefined}
+        className={`cursor-pointer transition-colors select-none ${isDropdownField ? 'hover:bg-emerald-500/5' : ''}`}
+        style={{
+          border: '1px solid #000000',
+          padding: isDropdownField ? '10px 14px' : '12px 16px',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+          ...style,
+        }}
       >
-        {field === 'service' ? (
-          <div className="flex flex-col items-center">
-            <span>{value || <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>—</span>}</span>
+        {isDropdownField ? (
+          <div className="flex items-center justify-between gap-1 w-full select-none" style={{ userSelect: 'none' }}>
+            <span className="font-black uppercase tracking-wide truncate select-none" style={{ userSelect: 'none' }}>
+              {displayValue || <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px', fontWeight: 600 }}>—</span>}
+            </span>
+            {canEdit && <ChevronDown className="w-3.5 h-3.5 opacity-40 shrink-0" />}
+          </div>
+        ) : field === 'service' ? (
+          <div className="flex flex-col items-center select-none" style={{ userSelect: 'none' }}>
+            <span className="select-none">{value || <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>—</span>}</span>
             {getVehiclePlate(value) && (
               <>
-                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5">
+                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5 select-none">
                   {getVehiclePlate(value)}
                 </span>
                 {getVehicleCodingStatus(value, row.driverTime || row.installerTime)?.isCodingToday && (
                   getVehicleCodingStatus(value, row.driverTime || row.installerTime)?.isRestricted ? (
-                    <span className="bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 px-1.5 py-0.5 rounded text-[8px] font-black tracking-wider uppercase mt-1 inline-flex items-center gap-0.5 border border-rose-200/50 dark:border-rose-900/30 animate-pulse">
+                    <span className="bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 px-1.5 py-0.5 rounded text-[8px] font-black tracking-wider uppercase mt-1 inline-flex items-center gap-0.5 border border-rose-200/50 dark:border-rose-900/30 animate-pulse select-none">
                       ⚠️ Coding
                     </span>
                   ) : (
-                    <span className="bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-400 px-1.5 py-0.5 rounded text-[8px] font-black tracking-wider uppercase mt-1 inline-flex items-center gap-0.5 border border-sky-200/50 dark:border-sky-900/30">
+                    <span className="bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-400 px-1.5 py-0.5 rounded text-[8px] font-black tracking-wider uppercase mt-1 inline-flex items-center gap-0.5 border border-sky-200/50 dark:border-sky-900/30 select-none">
                       Coding (10AM+)
                     </span>
                   )
@@ -376,9 +412,11 @@ export const EditableTable: React.FC<EditableTableProps> = ({
             )}
           </div>
         ) : field === 'remarks' && /\b(DONE|INSTALL|INSTALLED)\b/i.test(value) ? (
-          <span style={{ color: '#16a34a', fontWeight: 800 }}>{value}</span>
+          <span style={{ color: '#16a34a', fontWeight: 800, userSelect: 'none' }} className="select-none">{value}</span>
         ) : (
-          value || <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>—</span>
+          <span className="select-none" style={{ userSelect: 'none' }}>
+            {value || <span style={{ color: textMuted, fontStyle: 'italic', fontSize: '11px' }}>—</span>}
+          </span>
         )}
       </td>
     )

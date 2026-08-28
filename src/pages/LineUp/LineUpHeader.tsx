@@ -69,9 +69,16 @@ export const LineUpHeader: React.FC<LineUpHeaderProps> = ({
   return (
     <>
       {/* ── Single-line header: tabs + (Daily only) date/Showcase/Sync/Add Row ── */}
-      <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
+      <div
+        className="sticky top-0 z-30 flex items-center justify-between flex-wrap gap-3 pb-3 pt-2 mb-4"
+        style={{
+          backgroundColor: isLight ? 'rgba(248,250,252,0.95)' : 'rgba(15,23,42,0.95)',
+          backdropFilter: 'blur(10px)',
+          borderBottom: `1px solid ${isLight ? 'rgba(226,232,240,0.8)' : 'rgba(30,41,59,0.8)'}`,
+        }}
+      >
         <div
-          className="inline-flex p-1.5 rounded-xl shadow-inner gap-1 max-w-full overflow-x-auto no-scrollbar"
+          className="inline-flex p-1.5 rounded-xl shadow-inner gap-1 max-w-full overflow-x-auto no-scrollbar shrink-0"
           style={{ backgroundColor: isLight ? '#f1f5f9' : '#030712', border: `1px solid ${isLight ? '#e2e8f0' : '#1e293b'}` }}
         >
           {([
