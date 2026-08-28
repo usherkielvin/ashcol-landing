@@ -1028,19 +1028,19 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         if (isAll) return true
         const bid = (u.branchId || '').trim()
         if (!bid || bid.toUpperCase() === 'ALL' || bid.toUpperCase() === 'ALL_BRANCHES') return false
-        return isBranchMatch(bid, filterBranch)
+        return branchScopesMatch(bid, filterBranch, u.email)
       })
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     // Include signed-in user only when they belong to this branch
     if (
       currentNegotiatorOption
       && currentNegotiatorOption.branchId
-      && (isAll || isBranchMatch(currentNegotiatorOption.branchId, filterBranch))
+      && (isAll || branchScopesMatch(currentNegotiatorOption.branchId, filterBranch, currentNegotiatorOption.email))
     ) {
       return appendCurrentNegotiator(matched, currentNegotiatorOption)
     }
     return matched
-  }, [branchEmployees, resolveSchedulesNegotiatorBranch, currentNegotiatorOption, user?.branchId, user?.email, user?.jobTitle, isBranchMatch])
+  }, [branchEmployees, resolveSchedulesNegotiatorBranch, currentNegotiatorOption, user?.branchId, user?.email, user?.jobTitle])
 
   const addModalNegotiators = useMemo(
     () => negotiatorsForBranch(activeBranchId),
@@ -1612,7 +1612,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       }
       const negoBranchRaw = (selectedNegotiator.branchId || '').trim()
       const isAllBranches = !activeBranchId || activeBranchId === 'ALL' || activeBranchId === 'ALL_BRANCHES'
-      if (!isAllBranches && negoBranchRaw && !isBranchMatch(negoBranchRaw, activeWriteBranch)) {
+      if (!isAllBranches && negoBranchRaw && !branchScopesMatch(negoBranchRaw, activeWriteBranch, selectedNegotiator.email)) {
         throw new Error(
           `${selectedNegotiator.name} is not assigned to ${getBranchDisplayName(activeWriteBranch)}. `
           + 'Pick a negotiator from this branch.',
