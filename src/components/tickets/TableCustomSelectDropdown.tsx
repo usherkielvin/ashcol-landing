@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import ReactDOM from 'react-dom'
-import { ChevronDown, Search, Check, X, User } from 'lucide-react'
+import { ChevronDown, Search, Check, X } from 'lucide-react'
 
 export interface DropdownOption {
   id: string | number
@@ -167,11 +167,8 @@ export function TableCustomSelectDropdown({
   // Styles
   const cardBg = isLight ? '#ffffff' : '#0f172a'
   const cardBorder = isLight ? '#e2e8f0' : '#1e293b'
-  const inputBg = isLight ? '#f8fafc' : '#080e1a'
-  const inputBorder = isLight ? '#cbd5e1' : '#334155'
   const textPrimary = isLight ? '#0f172a' : '#f8fafc'
   const textMuted = isLight ? '#64748b' : '#94a3b8'
-  const green = '#16a34a'
 
   return (
     <>
@@ -181,7 +178,7 @@ export function TableCustomSelectDropdown({
         onClick={(e) => {
           e.stopPropagation()
         }}
-        className="w-full flex items-center justify-between gap-1.5 px-2 py-1 cursor-pointer select-none text-[11px] font-bold uppercase tracking-wide"
+        className={`w-full flex items-center justify-between gap-1.5 px-2 py-1 cursor-pointer select-none text-[11px] font-bold uppercase tracking-wide ${isSaving ? 'opacity-60 pointer-events-none' : ''}`}
         style={{ color: textPrimary }}
       >
         <span className="truncate">

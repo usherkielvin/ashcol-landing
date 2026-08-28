@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Download, Copy, Check, X, Loader2, Maximize2 } from 'lucide-react'
+import { Download, Copy, Check, X, Loader2 } from 'lucide-react'
 import type { LineUpRow, WPersonSchedule, BranchTheme, WDayStatus } from './types'
 import {
   wFormatWeekLabel,

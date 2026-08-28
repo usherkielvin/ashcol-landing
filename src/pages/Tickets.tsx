@@ -57,7 +57,7 @@ import { TicketDetailsModal } from '../components/tickets/TicketDetailsModal'
 import { TicketStatusPickerPopover } from '../components/tickets/TicketStatusPickerPopover'
 import { TicketScheduleDetailsPopover } from '../components/tickets/TicketScheduleDetailsPopover'
 import { TicketFinalDatePickerPopover } from '../components/tickets/TicketFinalDatePickerPopover'
-import { TableCustomSelectDropdown } from '../components/tickets/TableCustomSelectDropdown'
+import { TableCustomSelectDropdown, type DropdownOption } from '../components/tickets/TableCustomSelectDropdown'
 import { AssignDriversModal } from '../components/tickets/AssignDriversModal'
 import { ExcelImportResultsModal } from '../components/tickets/ExcelImportResultsModal'
 import { ConfirmationChecklistModal } from '../components/tickets/ConfirmationChecklistModal'
@@ -5245,7 +5245,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         : undefined
       const selectValue = matchedOption ? matchedOption.name : current
 
-      const dropdownOptions = options.map(emp => {
+      const dropdownOptions: DropdownOption[] = options.map(emp => {
         const fullName = (emp.name || '').trim()
         const nick = (emp.nickname || '').trim().toUpperCase()
         const firstName = fullName.split(/\s+/)[0]?.toUpperCase()
@@ -5313,7 +5313,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           : undefined
         const selectValue = matchedOption ? matchedOption.name : current
 
-        const dropdownOptions = techOptions.map(t => {
+        const dropdownOptions: DropdownOption[] = techOptions.map(t => {
           const emp = branchEmployees.find(e => e.id === t.id || (e.name && e.name.toLowerCase() === t.name.toLowerCase()))
           const fullName = (emp?.name || t.name || '').trim()
           const nick = (emp?.nickname || '').trim().toUpperCase()
