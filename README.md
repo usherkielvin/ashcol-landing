@@ -3,16 +3,16 @@
 </p>
 
 <h1 align="center">ASHCOL PORTAL</h1>
-<p align="center"><strong>Enterprise Operations & HVAC Service Management Platform</strong></p>
-<p align="center"><em>Ashcol Airconditioning Corporation • Proprietary & Confidential</em></p>
+<p align="center"><strong>Enterprise Field Operations & Service Management Platform</strong></p>
+<p align="center"><em>Ashcol Airconditioning Corporation • Capstone Project</em></p>
 
 ---
 
 ## 📌 Overview
 
-**ASHCOL PORTAL** is the central digital operating system for Ashcol Airconditioning Corporation. It unifies field dispatch, multi-branch HVAC service coordination, installer logistics, warranty registration, customer ticketing, and operational finance into an interconnected, real-time web platform.
+**ASHCOL PORTAL** is the central digital operating system for **Ashcol Airconditioning Corporation**. It unifies field dispatch, multi-branch service coordination, installer logistics, warranty registration, customer ticketing, and operational records into an interconnected, real-time web platform.
 
-Designed for high reliability and multi-branch scalability, the platform coordinates nationwide branch operations across **Taguig (Sales & Services)**, **Calauan**, **Silang**, **Dasmarinas**, **Pampanga**, **Bulacan**, **Rizal**, and **Candelaria**.
+Designed for high reliability and multi-branch scalability, the platform coordinates nationwide branch operations across **Taguig (Sales & Services)**, **Calauan**, **Silang**, **Dasmariñas**, **Pampanga**, **Bulacan**, **Rizal**, and **Candelaria**.
 
 ---
 
@@ -47,7 +47,7 @@ Designed for high reliability and multi-branch scalability, the platform coordin
 | :--- | :--- |
 | **Framework** | [React 19](https://react.dev/) with [TypeScript 5](https://www.typescriptlang.org/) |
 | **Build System** | [Vite 8](https://vitejs.dev/) with SWC compiler optimization |
-| **Styling & Design System** | Tailored Modern Glassmorphism & High-Contrast Dark/Light Themes via [Tailwind CSS](https://tailwindcss.com/) |
+| **Styling & Design System** | Modern Glassmorphism & High-Contrast Dark/Light Themes via [Tailwind CSS](https://tailwindcss.com/) |
 | **Iconography** | [Lucide React](https://lucide.dev/) |
 | **Security & Auth** | JWT Authentication, Enterprise RBAC & Google Identity Services |
 | **Data Synchronization** | Multi-tier Local Cache + Broadcast Channels for cross-tab realtime updates |
@@ -55,31 +55,23 @@ Designed for high reliability and multi-branch scalability, the platform coordin
 
 ---
 
-## 🔒 Security & Data Integrity
-
-- **Environment Protection**: All sensitive endpoints, API secrets, and encryption keys are isolated in secure production environment stores.
-- **Sanitized Data Pipelines**: Strict input validation and text sanitization against script injection and formatting corruption.
-- **Audit Trails**: Real-time user attribution on all critical actions (record encoding, schedule modifications, and status transitions).
-
----
-
 ## 🚀 Deployment & Operations
 
-### Build Pipeline
 ```bash
 # Install dependencies
-npm ci
+npm install
 
-# Type-check and produce optimized production bundle
+# Start development server
+npm run dev
+
+# Build production bundle
 npm run build
 ```
 
-The production bundle is compiled into `/dist` with tree-shaking, vendor chunking, and asset minification.
-
 ---
 
-## 🏢 Enterprise Support & Licensing
+## 🏢 Project Collaboration & Licensing
 
-This software and associated documentation files are the proprietary and confidential property of **Ashcol Airconditioning Corporation**. Unauthorized copying, distribution, or commercial use without prior written consent is strictly prohibited.
+Developed for **Ashcol Airconditioning Corporation** as an academic Capstone Project. All rights reserved.
 
-*© 2026 Ashcol Airconditioning Corporation. All Rights Reserved.*
+*© 2026 Ashcol Airconditioning Corporation.*
