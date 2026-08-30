@@ -1353,14 +1353,6 @@ export default function Employees() {
                             {e.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
                           </div>
                         )}
-                        {/* Status Dot */}
-                        <div
-                          className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2"
-                          style={{
-                            backgroundColor: e.isActive ? '#10B981' : '#94a3b8',
-                            borderColor: cardBg,
-                          }}
-                        />
                       </div>
 
                       {/* Name & Email */}
@@ -1546,14 +1538,6 @@ export default function Employees() {
                               {e.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
                             </div>
                           )}
-                          {/* Active status dot */}
-                          <div
-                            className="absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full border-2"
-                            style={{
-                              backgroundColor: e.isActive ? '#10B981' : '#94a3b8',
-                              borderColor: cardBg,
-                            }}
-                          />
                         </div>
                         <div className="min-w-0">
                           <div className="text-sm font-bold truncate max-w-[220px]" style={{ color: textPrimary }}>{e.name.toUpperCase()}</div>
@@ -2128,7 +2112,7 @@ export default function Employees() {
                         <div className="text-xs mt-0.5 flex items-center gap-1" style={{ color: textMuted }}>
                           <span>Last login:</span>
                           <span className="font-semibold truncate" style={{ color: textPrimary }}>
-                            {selectedEmployee.lastLoginAt ? new Date(selectedEmployee.lastLoginAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Never logged in'}
+                            {selectedEmployee.lastLoginAt ? new Date(selectedEmployee.lastLoginAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Account not yet activated'}
                           </span>
                         </div>
                       </div>

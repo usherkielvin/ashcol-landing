@@ -38,9 +38,9 @@ export default function PresenceStatus({ lastActiveAt, lastLoginAt, textMuted }:
     <span className="text-[11px] flex items-center gap-1.5" style={{ color: isOnline ? '#10B981' : textMuted }}>
       <span
         className="w-1.5 h-1.5 rounded-full shrink-0"
-        style={{ backgroundColor: isOnline ? '#10B981' : textMuted }}
+        style={{ backgroundColor: isOnline ? '#10B981' : hasReference ? textMuted : 'rgba(148, 163, 184, 0.6)' }}
       />
-      {isOnline ? 'Online now' : hasReference ? `Last seen ${timeAgo(referenceDate!, now)}` : 'Never logged in'}
+      {isOnline ? 'Online now' : hasReference ? `Last seen ${timeAgo(referenceDate!, now)}` : 'Account not yet activated'}
     </span>
   )
 }

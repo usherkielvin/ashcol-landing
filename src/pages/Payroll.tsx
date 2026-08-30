@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { NumericFormat } from 'react-number-format'
 import {
   Search, Building2, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
-  SlidersHorizontal, Plus, X, RotateCcw, RefreshCw, Save, Loader2,
+  SlidersHorizontal, Plus, X, RotateCcw, RefreshCw, Save, Loader2, EyeOff, Trash2,
   Stethoscope, Lightbulb, HardHat, PiggyBank, Wind, Recycle, ArrowBigDownDash, Snowflake,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -382,6 +382,9 @@ export default function Payroll() {
     hiddenColumnsByInstaller[installerName] ?? new Set(DEFAULT_HIDDEN_COLUMNS)
   const [columnManagerFor, setColumnManagerFor] = useState<string | null>(null)
   const [columnSearch, setColumnSearch] = useState('')
+  // { x, y } = screen coords of right-click; col = which header was right-clicked;
+  // installerName = which installer table it belongs to (for per-installer hide toggle).
+  const [colCtxMenu, setColCtxMenu] = useState<{ x: number; y: number; col: ColumnDef; installerName: string } | null>(null)
 
   // Branch-created custom columns, shared across every installer table (a new column applies
   // everywhere, not just one installer's sheet) and persisted so it survives a reload.
@@ -547,6 +550,18 @@ export default function Payroll() {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
+
+  // Close the column right-click context menu on any click or scroll outside it.
+  useEffect(() => {
+    if (!colCtxMenu) return
+    const close = () => setColCtxMenu(null)
+    document.addEventListener('click', close, true)
+    document.addEventListener('scroll', close, true)
+    return () => {
+      document.removeEventListener('click', close, true)
+      document.removeEventListener('scroll', close, true)
+    }
+  }, [colCtxMenu])
 
   const openDateRange = () => {
     setDraftDateFrom(dateFrom)
@@ -862,16 +877,21 @@ export default function Payroll() {
     }
   }
 
-  const toggleColumn = (key: ColumnKey) => {
-    if (!columnManagerFor) return
+  // Shared helper — used both by the column manager checkboxes (via toggleColumn) and the
+  // right-click context menu (which knows the installer name directly, without the modal).
+  const toggleColumnForInstaller = (installerName: string, key: ColumnKey) => {
     if (COLUMN_DEFS.find(c => c.key === key)?.pinned) return
     setHiddenColumnsByInstaller(prev => {
-      const current = prev[columnManagerFor] ?? new Set(DEFAULT_HIDDEN_COLUMNS)
+      const current = prev[installerName] ?? new Set(DEFAULT_HIDDEN_COLUMNS)
       const next = new Set(current)
       if (next.has(key)) next.delete(key)
       else next.add(key)
-      return { ...prev, [columnManagerFor]: next }
+      return { ...prev, [installerName]: next }
     })
+  }
+  const toggleColumn = (key: ColumnKey) => {
+    if (!columnManagerFor) return
+    toggleColumnForInstaller(columnManagerFor, key)
   }
   const openColumnManager = (installerName: string) => {
     setColumnSearch('')
@@ -1462,11 +1482,16 @@ export default function Payroll() {
                           return (
                             <div
                               key={col.key}
-                              className={`${thCls} ${col.align === 'right' ? 'text-right' : 'text-left'} relative`}
+                              className={`${thCls} ${col.align === 'right' ? 'text-right' : 'text-left'} relative select-none cursor-default`}
+                              title={col.label}
                               style={{
                                 ...(i < groupVisibleColumns.length - 1 ? cellBorder : {}),
                                 ...stickyCellStyle(col.key, headerBg),
                                 ...(isRemit ? { backgroundColor: remitTint, color: remitAccent } : {}),
+                              }}
+                              onContextMenu={(e) => {
+                                e.preventDefault()
+                                setColCtxMenu({ x: e.clientX, y: e.clientY, col, installerName })
                               }}
                             >
                               {col.label}
@@ -1847,8 +1872,8 @@ export default function Payroll() {
 
       {columnManagerFor && (
         <div
-          className="fixed inset-0 z-40 flex items-center justify-center p-4"
-          style={{ backgroundColor: 'rgba(8,12,20,0.55)' }}
+          className="fixed inset-0 z-[99999] flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(8,12,20,0.60)' }}
           onClick={() => setColumnManagerFor(null)}
         >
           <div
@@ -1885,14 +1910,28 @@ export default function Payroll() {
               ))}
             </div>
 
-            {/* New custom column — no fixed field, just a name; values live in row.customFields.
-                Applies to every installer's table, not just this one. */}
-            <div className="flex flex-col gap-2 px-5 py-3 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
-              <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>New Custom Column</span>
+            {/* Custom Columns — branch-defined extra fee columns added to every installer table.
+                Values live in row.customFields[key]; no fixed PayrollRow field exists for them. */}
+            <div className="flex flex-col gap-3 px-5 py-4 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
+              {/* Section heading + live count badge */}
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
+                <span className="text-[11px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Custom Columns</span>
+                {customColumnDefs.length > 0 && (
+                  <span
+                    className="text-[10px] font-black px-2 py-0.5 rounded-full"
+                    style={{ backgroundColor: '#10B981', color: 'white' }}
+                  >
+                    {customColumnDefs.length}
+                  </span>
+                )}
+              </div>
+
+              {/* Add-new input row */}
               <div className="flex items-center gap-2">
                 <input
                   type="text"
-                  placeholder="e.g. Roof Access Fee"
+                  placeholder="Column name, e.g. Roof Access Fee"
                   value={newColumnName}
                   onChange={e => setNewColumnName(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomColumn() } }}
@@ -1903,32 +1942,70 @@ export default function Payroll() {
                   type="button"
                   onClick={addCustomColumn}
                   disabled={!newColumnName.trim()}
-                  className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                   style={{ background: '#10B981' }}
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  Add
+                  Add Column
                 </button>
               </div>
-              {customColumnDefs.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {customColumnDefs.map(cc => (
-                    <span
+
+              {/* Custom columns list — proper table */}
+              {customColumnDefs.length > 0 ? (
+                <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${border}` }}>
+                  <div
+                    className="grid px-3 py-2 text-[10px] font-black uppercase tracking-wider"
+                    style={{
+                      gridTemplateColumns: '1fr auto auto',
+                      backgroundColor: headerBg,
+                      borderBottom: `1px solid ${border}`,
+                      color: textMuted,
+                    }}
+                  >
+                    <span>Column Name</span>
+                    <span className="pr-2">Field Key</span>
+                    <span className="text-center w-8">Del</span>
+                  </div>
+                  {customColumnDefs.map((cc, idx) => (
+                    <div
                       key={cc.key}
-                      className="flex items-center gap-1 pl-2.5 pr-1.5 py-1 rounded-full text-[11px] font-bold"
-                      style={{ color: '#10B981', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.14)' }}
+                      className="grid items-center px-3 py-2.5 transition-colors hover:bg-emerald-500/5"
+                      style={{
+                        gridTemplateColumns: '1fr auto auto',
+                        borderBottom: idx < customColumnDefs.length - 1 ? `1px solid ${border}` : 'none',
+                        gap: '8px',
+                      }}
                     >
-                      {cc.label}
-                      <button
-                        type="button"
-                        onClick={() => removeCustomColumn(cc.key)}
-                        className="p-0.5 rounded-full hover:bg-red-500/20"
-                        title="Remove this column (from every installer's table)"
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: '#10B981' }} />
+                        <span className="text-xs font-bold truncate" style={{ color: textPrimary }}>{cc.label}</span>
+                      </div>
+                      <span
+                        className="text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 truncate max-w-[120px]"
+                        title={cc.key}
+                        style={{ backgroundColor: isLight ? '#f1f5f9' : '#0d1520', color: textMuted }}
                       >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
+                        {cc.key}
+                      </span>
+                      <div className="flex justify-center w-8">
+                        <button
+                          type="button"
+                          onClick={() => removeCustomColumn(cc.key)}
+                          className="p-1.5 rounded-lg hover:bg-red-500/15 transition-colors"
+                          title={`Delete "${cc.label}" from all installer tables`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                        </button>
+                      </div>
+                    </div>
                   ))}
+                </div>
+              ) : (
+                <div
+                  className="text-xs font-medium text-center py-3 rounded-xl border border-dashed"
+                  style={{ color: textMuted, borderColor: border }}
+                >
+                  No custom columns yet — type a name above and click Add Column.
                 </div>
               )}
             </div>
@@ -2012,6 +2089,121 @@ export default function Payroll() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Column right-click context menu — portal-rendered so it always clears the header. */}
+      {colCtxMenu && createPortal(
+        <div
+          className="fixed z-[999999] rounded-xl shadow-2xl overflow-hidden"
+          style={{
+            left: Math.min(colCtxMenu.x + 2, window.innerWidth - 224),
+            top: Math.min(colCtxMenu.y + 2, window.innerHeight - 230),
+            backgroundColor: cardBg,
+            border: `1px solid ${border}`,
+            minWidth: 204,
+            boxShadow: isLight ? '0 16px 48px rgba(0,0,0,0.16)' : '0 16px 48px rgba(0,0,0,0.7)',
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Column identity header */}
+          <div className="px-3.5 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
+            <div className="text-[9px] font-black uppercase tracking-widest mb-0.5" style={{ color: textMuted }}>Column</div>
+            <div className="text-xs font-extrabold truncate" style={{ color: textPrimary, maxWidth: 180 }}>
+              {colCtxMenu.col.label}
+            </div>
+          </div>
+
+          {/* Hide — only for non-pinned columns */}
+          {!colCtxMenu.col.pinned && (
+            <button
+              type="button"
+              onClick={() => {
+                toggleColumnForInstaller(colCtxMenu.installerName, colCtxMenu.col.key as ColumnKey)
+                setColCtxMenu(null)
+              }}
+              className="flex items-center gap-2.5 w-full px-3.5 py-2 text-xs font-semibold text-left transition-colors hover:bg-red-500/10"
+              style={{ color: '#f87171' }}
+            >
+              <EyeOff className="w-3.5 h-3.5" />
+              Hide this column
+            </button>
+          )}
+
+          {/* Delete — only for user-created custom columns */}
+          {customColumnDefs.some(c => c.key === colCtxMenu.col.key) && (
+            <button
+              type="button"
+              onClick={() => {
+                removeCustomColumn(colCtxMenu.col.key)
+                setColCtxMenu(null)
+              }}
+              className="flex items-center gap-2.5 w-full px-3.5 py-2 text-xs font-semibold text-left transition-colors hover:bg-red-500/10"
+              style={{ color: '#f87171' }}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete custom column
+            </button>
+          )}
+
+          {/* Width controls — only for standard (resizable) columns */}
+          {COLUMN_DEFS.some(c => c.key === colCtxMenu.col.key) && (
+            <>
+              <div style={{ borderTop: `1px solid ${border}` }} />
+              <button
+                type="button"
+                onClick={() => {
+                  setColumnWidths(prev => ({ ...prev, [colCtxMenu.col.key as ColumnKey]: Math.min(widthFor(colCtxMenu.col.key) + 40, 420) }))
+                  setColCtxMenu(null)
+                }}
+                className="flex items-center gap-2.5 w-full px-3.5 py-2 text-xs font-semibold text-left transition-colors hover:bg-emerald-500/10"
+                style={{ color: textPrimary }}
+              >
+                <ChevronRight className="w-3.5 h-3.5 text-emerald-500" />
+                Expand column
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setColumnWidths(prev => ({ ...prev, [colCtxMenu.col.key as ColumnKey]: Math.max(widthFor(colCtxMenu.col.key) - 40, MIN_COLUMN_WIDTH) }))
+                  setColCtxMenu(null)
+                }}
+                className="flex items-center gap-2.5 w-full px-3.5 py-2 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10"
+                style={{ color: textPrimary }}
+              >
+                <ChevronLeft className="w-3.5 h-3.5 text-slate-400" />
+                Shrink column
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setColumnWidths(prev => ({ ...prev, [colCtxMenu.col.key as ColumnKey]: DEFAULT_COLUMN_WIDTHS[colCtxMenu.col.key as ColumnKey] }))
+                  setColCtxMenu(null)
+                }}
+                className="flex items-center gap-2.5 w-full px-3.5 py-2 text-xs font-semibold text-left transition-colors hover:bg-slate-500/10"
+                style={{ color: textMuted }}
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Reset width
+              </button>
+            </>
+          )}
+
+          {/* Open full column manager */}
+          <div style={{ borderTop: `1px solid ${border}` }} />
+          <button
+            type="button"
+            onClick={() => {
+              openColumnManager(colCtxMenu.installerName)
+              setColCtxMenu(null)
+            }}
+            className="flex items-center gap-2.5 w-full px-3.5 py-2 text-xs font-semibold text-left transition-colors hover:bg-emerald-500/10"
+            style={{ color: '#10B981' }}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            Manage all columns…
+          </button>
+        </div>,
+        document.body
       )}
 
       {ratesModalOpen && createPortal(
