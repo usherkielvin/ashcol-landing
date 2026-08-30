@@ -3,16 +3,18 @@ import { useNavigate } from 'react-router-dom'
 import {
   Search, X, Loader2, ClipboardCheck, QrCode, ArrowRightCircle, Ban,
   Phone, MapPin, Calendar, Wrench, CheckCircle2,
-  Clock, AlertCircle, Copy, Check
+  Clock, AlertCircle, Copy, Check, MessageCircle, Send, Building2, Mail
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { API_BASE_URL } from '../utils/api'
+import { fetchCachedBranches } from '../utils/portalDirectoryCache'
 import BookingQrModal from '../components/BookingQrModal'
 
 export interface Booking {
   id: string
   customerName: string
   contactPhone: string
+  customerEmail?: string
   region?: string
   city?: string
   barangay?: string
@@ -22,13 +24,43 @@ export interface Booking {
   capacity?: string
   requestedDate?: string
   issueDescription?: string
+  serviceType?: string
+  airconType?: string
+  unitQuantity?: number
+  preferredTimeSlot?: 'MORNING' | 'AFTERNOON' | 'ANYTIME' | string
+  photoUrl1?: string
+  photoUrl2?: string
+  branchId?: string
+  outOfServiceArea?: boolean
   status: 'NEW' | 'CONTACTED' | 'CONVERTED' | 'DISMISSED'
   convertedTicketId?: string | null
+  dismissalReason?: string
   createdAt: string
+}
+
+const DISMISSAL_REASONS = [
+  { value: 'OUT_OF_SERVICE_AREA', label: 'Out of Service Area' },
+  { value: 'UNREACHABLE', label: 'Unreachable' },
+  { value: 'CUSTOMER_CANCELLED', label: 'Customer Cancelled' },
+  { value: 'DUPLICATE', label: 'Duplicate' },
+] as const
+
+const TIME_SLOT_LABELS: Record<string, string> = {
+  MORNING: 'Morning',
+  AFTERNOON: 'Afternoon',
+  ANYTIME: 'Anytime',
 }
 
 function authToken(): string {
   return localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+}
+
+function smsHref(phone: string): string {
+  return `sms:${phone}`
+}
+
+function viberHref(phone: string): string {
+  return `viber://chat?number=${encodeURIComponent(phone.replace(/[^\d+]/g, ''))}`
 }
 
 function errMsg(err: unknown, fallback: string): string {
@@ -79,10 +111,27 @@ export default function Bookings() {
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'NEW' | 'CONTACTED' | 'CONVERTED' | 'DISMISSED'>('ALL')
+  const [branchFilter, setBranchFilter] = useState<string>('ALL')
+  const [branchNames, setBranchNames] = useState<Record<string, string>>({})
   const [showQr, setShowQr] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [dismissTargetId, setDismissTargetId] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchCachedBranches(authToken())
+      .then(list => {
+        const map: Record<string, string> = {}
+        for (const b of list) {
+          const id = String(b.id ?? '')
+          const name = String(b.name ?? b.location ?? id)
+          if (id) map[id] = name
+        }
+        setBranchNames(map)
+      })
+      .catch(() => setBranchNames({}))
+  }, [])
 
   const loadBookings = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -119,14 +168,25 @@ export default function Bookings() {
   }, [bookings])
 
   const visible = useMemo(() => {
+    let rows = bookings
+    if (branchFilter !== 'ALL') {
+      rows = branchFilter === 'UNASSIGNED'
+        ? rows.filter(b => !b.branchId)
+        : rows.filter(b => b.branchId === branchFilter)
+    }
     const q = search.trim().toLowerCase()
-    if (!q) return bookings
-    return bookings.filter(b => {
+    if (!q) return rows
+    return rows.filter(b => {
       const blob = [b.customerName, b.contactPhone, formatAddress(b), b.brand, b.capacity, b.issueDescription]
         .filter(Boolean).join(' ').toLowerCase()
       return blob.includes(q)
     })
-  }, [bookings, search])
+  }, [bookings, search, branchFilter])
+
+  const branchTabs = useMemo(() => {
+    const ids = Array.from(new Set(bookings.map(b => b.branchId).filter(Boolean))) as string[]
+    return ids.map(id => ({ id, label: branchNames[id] || 'Unknown Branch' }))
+  }, [bookings, branchNames])
 
   const patchBooking = useCallback(async (id: string, body: Record<string, unknown>) => {
     setBusyId(id)
@@ -150,10 +210,16 @@ export default function Bookings() {
     }
   }, [selectedBooking])
 
-  const dismissBooking = useCallback((id: string, e?: React.MouseEvent) => {
+  const openDismissPicker = useCallback((id: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
-    void patchBooking(id, { status: 'DISMISSED' })
-  }, [patchBooking])
+    setDismissTargetId(id)
+  }, [])
+
+  const confirmDismiss = useCallback((reason: string) => {
+    if (!dismissTargetId) return
+    void patchBooking(dismissTargetId, { status: 'DISMISSED', dismissalReason: reason })
+    setDismissTargetId(null)
+  }, [dismissTargetId, patchBooking])
 
   const markContacted = useCallback((id: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
@@ -289,6 +355,23 @@ export default function Bookings() {
           })}
         </div>
 
+        {/* Branch Filter */}
+        {branchTabs.length > 0 && (
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Building2 className="w-3.5 h-3.5" style={{ color: textMuted }} />
+            <select
+              value={branchFilter}
+              onChange={e => setBranchFilter(e.target.value)}
+              className="text-xs font-semibold rounded-lg border px-2 py-1.5 outline-none"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+            >
+              <option value="ALL">All Branches</option>
+              {branchTabs.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+              <option value="UNASSIGNED">Unassigned / Out of Area</option>
+            </select>
+          </div>
+        )}
+
         {/* Search Bar */}
         <div className="relative flex-1 sm:max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: textMuted }} />
@@ -332,9 +415,10 @@ export default function Bookings() {
                 style={{ backgroundColor: panelBg, borderColor: border, color: textMuted }}
               >
                 <th className="px-5 py-3.5">Customer & Contact</th>
+                <th className="px-5 py-3.5">Quick Contact</th>
                 <th className="px-5 py-3.5">Aircon Unit</th>
                 <th className="px-5 py-3.5">Issue</th>
-                <th className="px-5 py-3.5">Location</th>
+                <th className="px-5 py-3.5">Location / Branch</th>
                 <th className="px-5 py-3.5">Requested Visit</th>
                 <th className="px-5 py-3.5">Status</th>
               </tr>
@@ -342,14 +426,14 @@ export default function Bookings() {
             <tbody className="divide-y text-xs" style={{ borderColor: border }}>
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-20 text-center" style={{ color: textMuted }}>
+                  <td colSpan={7} className="px-6 py-20 text-center" style={{ color: textMuted }}>
                     <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-500" />
                     <p className="font-semibold text-sm">Loading bookings...</p>
                   </td>
                 </tr>
               ) : visible.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-20 text-center" style={{ color: textMuted }}>
+                  <td colSpan={7} className="px-6 py-20 text-center" style={{ color: textMuted }}>
                     <ClipboardCheck className="w-10 h-10 mx-auto mb-3 opacity-30" />
                     <p className="font-bold text-sm text-slate-400">No bookings found</p>
                     <p className="text-xs mt-1">Try adjusting your status filter or search query.</p>
@@ -394,11 +478,27 @@ export default function Bookings() {
                       </div>
                     </td>
 
+                    {/* Quick Contact */}
+                    <td className="px-5 py-4" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center gap-1.5">
+                        <a href={`tel:${b.contactPhone}`} title="Call" className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 transition-colors">
+                          <Phone className="w-3.5 h-3.5" />
+                        </a>
+                        <a href={smsHref(b.contactPhone)} title="SMS" className="p-1.5 rounded-lg bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 transition-colors">
+                          <MessageCircle className="w-3.5 h-3.5" />
+                        </a>
+                        <a href={viberHref(b.contactPhone)} title="Viber" className="p-1.5 rounded-lg bg-purple-500/10 text-purple-500 hover:bg-purple-500/20 transition-colors">
+                          <Send className="w-3.5 h-3.5" />
+                        </a>
+                      </div>
+                    </td>
+
                     {/* Aircon Unit */}
                     <td className="px-5 py-4 whitespace-nowrap">
                       <span className="text-xs font-bold uppercase tracking-wide" style={{ color: textPrimary }}>
                         {unitParts || <span className="italic font-medium normal-case text-slate-400">Not specified</span>}
                       </span>
+                      {b.serviceType && <div className="text-[10px] mt-0.5" style={{ color: textMuted }}>{b.serviceType}</div>}
                     </td>
 
                     {/* Issue */}
@@ -408,11 +508,14 @@ export default function Bookings() {
                       </p>
                     </td>
 
-                    {/* Location */}
+                    {/* Location / Branch */}
                     <td className="px-5 py-4 max-w-[200px]">
                       <span className="text-xs line-clamp-2 leading-relaxed" style={{ color: textPrimary }} title={addressStr}>
                         {addressStr || <span className="text-slate-400 italic">Not provided</span>}
                       </span>
+                      <div className="text-[10px] mt-0.5 font-semibold" style={{ color: b.branchId ? textMuted : '#F59E0B' }}>
+                        {b.branchId ? (branchNames[b.branchId] || 'Branch assigned') : 'Unassigned / Out of area'}
+                      </div>
                     </td>
 
                     {/* Requested Visit Date */}
@@ -458,7 +561,7 @@ export default function Bookings() {
                               </button>
                               <button
                                 type="button"
-                                onClick={(e) => dismissBooking(b.id, e)}
+                                onClick={(e) => openDismissPicker(b.id, e)}
                                 className="text-[11px] font-bold uppercase tracking-wide hover:underline text-red-500"
                               >
                                 Dismiss
@@ -534,9 +637,27 @@ export default function Bookings() {
               </div>
 
               {/* Location */}
-              <span className="text-xs leading-relaxed" style={{ color: textMuted }}>
-                {addressStr || <span className="italic text-slate-400">Not provided</span>}
-              </span>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs leading-relaxed" style={{ color: textMuted }}>
+                  {addressStr || <span className="italic text-slate-400">Not provided</span>}
+                </span>
+                <span className="text-[10px] font-semibold shrink-0" style={{ color: b.branchId ? textMuted : '#F59E0B' }}>
+                  {b.branchId ? (branchNames[b.branchId] || 'Assigned') : 'Unassigned'}
+                </span>
+              </div>
+
+              {/* Quick contact */}
+              <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                <a href={`tel:${b.contactPhone}`} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-bold bg-emerald-500/10 text-emerald-500">
+                  <Phone className="w-3 h-3" /> Call
+                </a>
+                <a href={smsHref(b.contactPhone)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-bold bg-blue-500/10 text-blue-500">
+                  <MessageCircle className="w-3 h-3" /> SMS
+                </a>
+                <a href={viberHref(b.contactPhone)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-bold bg-purple-500/10 text-purple-500">
+                  <Send className="w-3 h-3" /> Viber
+                </a>
+              </div>
 
               {/* Requested visit */}
               <div className="flex items-center justify-between text-xs pt-2 border-t" style={{ borderColor: border }}>
@@ -569,7 +690,7 @@ export default function Bookings() {
                   </button>
                   <button
                     type="button"
-                    onClick={(e) => dismissBooking(b.id, e)}
+                    onClick={(e) => openDismissPicker(b.id, e)}
                     className="text-[11px] font-bold uppercase tracking-wide hover:underline text-red-500"
                   >
                     Dismiss
@@ -636,13 +757,27 @@ export default function Bookings() {
                     </h3>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <a 
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <a
                     href={`tel:${selectedBooking.contactPhone}`}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors"
                   >
                     <Phone className="w-3.5 h-3.5" />
                     {selectedBooking.contactPhone}
+                  </a>
+                  <a
+                    href={smsHref(selectedBooking.contactPhone)}
+                    title="SMS"
+                    className="p-1.5 rounded-lg bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 border border-blue-500/20 transition-colors"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                  </a>
+                  <a
+                    href={viberHref(selectedBooking.contactPhone)}
+                    title="Viber"
+                    className="p-1.5 rounded-lg bg-purple-500/10 text-purple-500 hover:bg-purple-500/20 border border-purple-500/20 transition-colors"
+                  >
+                    <Send className="w-3.5 h-3.5" />
                   </a>
                   <button
                     type="button"
@@ -656,12 +791,38 @@ export default function Bookings() {
                 </div>
               </div>
 
+              {selectedBooking.customerEmail && (
+                <div className="p-3.5 rounded-xl border flex items-start gap-3" style={{ backgroundColor: panelBg, borderColor: border }}>
+                  <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500 shrink-0">
+                    <Mail className="w-4 h-4" />
+                  </div>
+                  <div className="text-xs flex-1 min-w-0">
+                    <span className="text-[11px] font-medium" style={{ color: textMuted }}>Email (confirmation sent here)</span>
+                    <p className="font-semibold text-sm mt-0.5" style={{ color: textPrimary }}>
+                      {selectedBooking.customerEmail}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Service Request Info Grid */}
               <div className="space-y-2">
                 <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
                   Service & Equipment Details
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div className="p-3.5 rounded-xl border flex flex-col justify-center" style={{ backgroundColor: panelBg, borderColor: border }}>
+                    <span className="text-[11px] font-medium" style={{ color: textMuted }}>Service Type</span>
+                    <p className="text-sm font-bold mt-0.5" style={{ color: textPrimary }}>
+                      {selectedBooking.serviceType || <span className="italic font-normal text-slate-400">Not specified</span>}
+                    </p>
+                  </div>
+                  <div className="p-3.5 rounded-xl border flex flex-col justify-center" style={{ backgroundColor: panelBg, borderColor: border }}>
+                    <span className="text-[11px] font-medium" style={{ color: textMuted }}>Aircon Type / Units</span>
+                    <p className="text-sm font-bold mt-0.5" style={{ color: textPrimary }}>
+                      {selectedBooking.airconType || 'Not specified'}{selectedBooking.unitQuantity ? ` · ${selectedBooking.unitQuantity} unit${selectedBooking.unitQuantity > 1 ? 's' : ''}` : ''}
+                    </p>
+                  </div>
                   <div className="p-3.5 rounded-xl border flex flex-col justify-center" style={{ backgroundColor: panelBg, borderColor: border }}>
                     <span className="text-[11px] font-medium" style={{ color: textMuted }}>Brand / Model</span>
                     <p className="text-sm font-bold mt-0.5" style={{ color: textPrimary }}>
@@ -675,6 +836,15 @@ export default function Bookings() {
                     </p>
                   </div>
                 </div>
+                {(selectedBooking.photoUrl1 || selectedBooking.photoUrl2) && (
+                  <div className="flex gap-2">
+                    {[selectedBooking.photoUrl1, selectedBooking.photoUrl2].filter(Boolean).map((url, idx) => (
+                      <a key={idx} href={`${API_BASE_URL.replace(/\/api$/, '')}${url}`} target="_blank" rel="noreferrer" className="w-20 h-20 rounded-xl overflow-hidden border shrink-0" style={{ borderColor: border }}>
+                        <img src={`${API_BASE_URL.replace(/\/api$/, '')}${url}`} alt="Unit photo" className="w-full h-full object-cover" />
+                      </a>
+                    ))}
+                  </div>
+                )}
 
                 {/* Issue Description */}
                 <div className="p-3.5 rounded-xl border space-y-1.5" style={{ backgroundColor: panelBg, borderColor: border }}>
@@ -725,6 +895,28 @@ export default function Bookings() {
                     <Clock className="w-4 h-4" />
                   </div>
                   <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>Preferred Time</span>
+                    <p className="text-xs font-bold" style={{ color: textPrimary }}>
+                      {(selectedBooking.preferredTimeSlot && TIME_SLOT_LABELS[selectedBooking.preferredTimeSlot]) || 'Any time'}
+                    </p>
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl border flex items-center gap-3" style={{ backgroundColor: panelBg, borderColor: border }}>
+                  <div className="p-2 rounded-lg bg-amber-500/10 text-amber-500 shrink-0">
+                    <Building2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>Routed Branch</span>
+                    <p className="text-xs font-bold" style={{ color: textPrimary }}>
+                      {selectedBooking.branchId ? (branchNames[selectedBooking.branchId] || 'Assigned') : 'Unassigned / out of area'}
+                    </p>
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl border flex items-center gap-3" style={{ backgroundColor: panelBg, borderColor: border }}>
+                  <div className="p-2 rounded-lg bg-slate-500/10 text-slate-400 shrink-0">
+                    <Clock className="w-4 h-4" />
+                  </div>
+                  <div>
                     <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>Date Submitted</span>
                     <p className="text-xs font-bold" style={{ color: textPrimary }}>
                       {formatDate(selectedBooking.createdAt) || 'Recent'}
@@ -732,6 +924,11 @@ export default function Bookings() {
                   </div>
                 </div>
               </div>
+              {selectedBooking.status === 'DISMISSED' && selectedBooking.dismissalReason && (
+                <div className="px-3.5 py-2.5 rounded-xl text-xs font-semibold" style={{ backgroundColor: 'rgba(100,116,139,0.1)', color: textMuted }}>
+                  Dismissal reason: {DISMISSAL_REASONS.find(r => r.value === selectedBooking.dismissalReason)?.label || selectedBooking.dismissalReason}
+                </div>
+              )}
             </div>
 
             {/* Modal Footer Actions */}
@@ -748,7 +945,7 @@ export default function Bookings() {
                 <div className="flex items-center justify-between gap-2.5 w-full">
                   <button
                     type="button"
-                    onClick={() => dismissBooking(selectedBooking.id)}
+                    onClick={() => openDismissPicker(selectedBooking.id)}
                     className="px-4 py-2.5 rounded-xl text-xs font-bold border text-red-500 hover:bg-red-500/10 transition-colors"
                     style={{ borderColor: inputBorder }}
                   >
@@ -783,6 +980,44 @@ export default function Bookings() {
       )}
 
       {showQr && <BookingQrModal isLight={isLight} onClose={() => setShowQr(false)} />}
+
+      {/* Dismissal Reason Picker */}
+      {dismissTargetId && (
+        <div
+          className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setDismissTargetId(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border shadow-2xl p-5 animate-in zoom-in-95 duration-200"
+            style={{ backgroundColor: cardBg, borderColor: border }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="text-sm font-bold mb-1" style={{ color: textPrimary }}>Dismiss booking</h3>
+            <p className="text-xs mb-4" style={{ color: textMuted }}>Select a reason for operational reporting.</p>
+            <div className="flex flex-col gap-2">
+              {DISMISSAL_REASONS.map(r => (
+                <button
+                  key={r.value}
+                  type="button"
+                  onClick={() => confirmDismiss(r.value)}
+                  className="text-left px-3.5 py-2.5 rounded-xl text-xs font-semibold border hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/30 transition-colors"
+                  style={{ borderColor: inputBorder, color: textPrimary }}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setDismissTargetId(null)}
+              className="w-full mt-3 py-2 rounded-xl text-xs font-semibold"
+              style={{ color: textMuted }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
