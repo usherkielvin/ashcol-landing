@@ -613,7 +613,10 @@ export function parseHistorySpecifics(rawNote?: string | null): {
   controlNo?: string
 } {
   if (!rawNote || !rawNote.trim()) return { title: 'Ticket updated' }
-  const lines = rawNote.split('\n').map(l => l.trim()).filter(Boolean)
+  // Strip legacy "[previous_status=X] [new_status=Y]" audit tags a status change sometimes
+  // appends into the freeform note text — noise for display, not meant to be read by staff.
+  const cleanedNote = rawNote.replace(/\s*\[[^\]]+\]/g, '').trim()
+  const lines = cleanedNote.split('\n').map(l => l.trim()).filter(Boolean)
   const specifics: any = { title: lines[0] || 'Ticket updated' }
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i]

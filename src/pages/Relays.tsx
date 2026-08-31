@@ -6658,7 +6658,12 @@ export default function Relays() {
                             month: 'short', day: 'numeric', year: 'numeric',
                             hour: 'numeric', minute: '2-digit', hour12: true
                           })
-                          const note = String(h.changeNote || '').toLowerCase()
+                          // Strip legacy "[previous_status=X] [new_status=Y]" audit tags a status change
+                          // sometimes appended into changeNote's freeform text — noise for display, not
+                          // meant to be read by staff (see TicketHistoryGraphModal's parseCommitMessage,
+                          // which does the same cleanup).
+                          const displayChangeNote = String(h.changeNote || '').replace(/\s*\[[^\]]+\]/g, '').trim()
+                          const note = displayChangeNote.toLowerCase()
                           const isSubmission = note.includes('submitted') || note.includes('created') || note.includes('excel import')
                           const isAssignment = note.includes('assigned to')
                           const isRemarkEntry = Boolean(h.isRemarkEntry) || (
@@ -6683,7 +6688,7 @@ export default function Relays() {
                               <div className="text-xs">
                                 <div className="flex items-start justify-between gap-2">
                                   <span className="font-extrabold leading-tight" style={{ color: textPrimary }}>
-                                    {h.changeNote || 'Ticket details updated'}
+                                    {displayChangeNote || 'Ticket details updated'}
                                   </span>
                                   <span className="text-[9px] font-semibold opacity-60 shrink-0 mt-0.5" style={{ color: textMuted }}>
                                     {dt}
