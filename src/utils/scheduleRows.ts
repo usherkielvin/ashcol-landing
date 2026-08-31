@@ -114,6 +114,14 @@ export function isCompletedGhostOnDate(ticket: Ticket, dateKey: string): boolean
 
 export function isRescheduledGhostOnDate(ticket: Ticket, dateKey: string): boolean {
   if (!dateKey) return false
+  // A closed ticket (completed under any outcome, or cancelled) has no live pending reschedule
+  // anymore — without this guard, a stale entry in rescheduleHistoryDates (e.g. a "move to
+  // tomorrow" note logged shortly before the ticket was actually closed on a different date)
+  // keeps rendering a RESCHED ghost on that old target date forever, even though the ticket is
+  // long since done. isCompletedGhostOnDate/isCancelledScheduleGhost (checked before this in
+  // getScheduleGhostKind) are the only ghosts a closed ticket should still produce.
+  const stat = String(ticket.status || '').toUpperCase()
+  if (isInstalledWorkflowStatus(stat) || stat.startsWith('DONE') || stat === 'CANCELLED') return false
   const currentKey = getEffectiveScheduleDateKey(ticket)
   if (currentKey && currentKey === dateKey) return false
   return getRescheduleHistoryDates(ticket).includes(dateKey)
