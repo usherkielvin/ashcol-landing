@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
+import { useArctic } from '../contexts/ArcticContext'
 import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, isNegotiatorCandidate, isAccountActive, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, isPortalAdmin, isCoordinatorOrOicUser, getActivePortalBranchId, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, DEALERS_UPDATED_EVENT, notifyDealersUpdated, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import {
   cacheTicketsByNumber,
@@ -172,6 +173,7 @@ function AutoFitText({ text, style, title, minScale = 0.55, align = 'center' }: 
 export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const { theme, toggleTheme } = useTheme()
   const { user } = useAuth()
+  const { openArctic, setDataContext, setPageContext } = useArctic()
   const navigate = useNavigate()
   const pathname = pathnameForSurface(surface)
   const isMyTickets = surface === 'my-tickets'
@@ -3931,6 +3933,34 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     return list
   }, [filtered, sortConfig, isMyTickets, branchEmployees, activeBranchId, vehicleTripLabels, monthViewActive])
 
+  // Ground Arctic in the actual rows on screen and the active date/branch
+  useEffect(() => {
+    if (surface !== 'schedules') return
+    const dateLabel = dateFilter ? formatDateKeyLabel(dateFilter) : 'All Dates'
+    const branchName = activeBranchLabel || activeBranchId || 'All Branches'
+    setPageContext(`Page: Schedules | Branch: ${branchName} | Date: ${dateLabel}`)
+
+    const CAP = 25
+    if (visible.length === 0) {
+      setDataContext(`Schedule table (${dateLabel} | ${branchName}): no tickets currently shown for this date/branch/filter.`)
+    } else {
+      const rows = visible.slice(0, CAP).map(t => {
+        const ticketNo = getF(t, 'ticketNumber', 'ticket_number') || t.id
+        const customer = getF(t, 'customerName', 'customer_name') || 'Unknown customer'
+        const status = getScheduleStatusDisplay(t)
+        const commit = getF(t, 'commitType', 'commit_type')
+        const installer = getInstallerDisplay(t, branchEmployees, activeBranchId)
+        const negotiator = resolveNegotiatorDisplayName(t, branchEmployees)
+        return `- ${ticketNo} | ${customer} | Status: ${status}${commit ? ` | Commit: ${commit}` : ''}${installer ? ` | Installer: ${installer}` : ''}${negotiator ? ` | Negotiator: ${negotiator}` : ''}`
+      })
+      const overflow = visible.length > CAP ? `\n…and ${visible.length - CAP} more ticket(s) not listed here.` : ''
+      setDataContext(`Schedule table (${dateLabel} | ${branchName}) — ${visible.length} ticket(s) currently shown:\n${rows.join('\n')}${overflow}`)
+    }
+    return () => {
+      setDataContext(null)
+    }
+  }, [surface, visible, branchEmployees, activeBranchId, activeBranchLabel, dateFilter, setDataContext, setPageContext])
+
   /** Exports exactly what's on screen — same rows, same order, as whatever filters
    *  (negotiator, Pending/Closing, date/month, search) are currently active. */
   const handleExportExcel = useCallback(() => {
@@ -6806,6 +6836,24 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   >
                     <Maximize2 className="w-4 h-4 shrink-0" />
                     <span>{showcaseOpen ? 'Active' : 'Showcase'}</span>
+                  </button>
+                )}
+
+                {/* Ask Arctic — contextual, this page's branch/date is already known to Arctic */}
+                {surface === 'schedules' && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); openArctic() }}
+                    className="flex items-center gap-1.5 h-10 px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-all hover:opacity-90 active:scale-95"
+                    style={{
+                      backgroundColor: inputBg,
+                      border: `1px solid ${inputBorder}`,
+                      color: textPrimary,
+                    }}
+                    title="Ask Arctic about this schedule"
+                  >
+                    <span className="text-[15px] leading-none shrink-0">🦊</span>
+                    <span>Ask Arctic</span>
                   </button>
                 )}
               </div>

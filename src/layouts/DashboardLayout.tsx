@@ -48,9 +48,9 @@ import MessagesDropdown from '../components/MessagesDropdown'
 import NotificationsDropdown from '../components/NotificationsDropdown'
 import FloatingChatWindow from '../components/FloatingChatWindow'
 import { HEADER_MENU_OPENED_EVENT, broadcastHeaderMenuOpen } from '../utils/headerMenuCoordination'
-
-
-// import AIChatBot from '../components/AIChatBot'
+import ArcticButton from '../components/arctic/ArcticButton'
+import ArcticDrawer from '../components/arctic/ArcticDrawer'
+import { useArctic } from '../contexts/ArcticContext'
 import logoImg from '../assets/ash-logo.jpg'
 
 const normalizeBranchDisplayName = (branchId?: string | null, branchName?: string | null) => {
@@ -198,6 +198,7 @@ export default function DashboardLayout() {
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
   const { user, logout } = useAuth()
+  const { openArctic, setPageContext } = useArctic()
   const isLight = theme === 'light'
   const [branchLabel, setBranchLabel] = useState<string | null>(null)
 
@@ -482,6 +483,15 @@ export default function DashboardLayout() {
       : 'Dashboard')
   const navGroups = buildNavGroups(navLinks)
   const collapsedNavItems = buildCollapsedNavItems(navLinks)
+
+  // Ground Arctic in whatever the user is currently looking at.
+  useEffect(() => {
+    if (location.pathname === '/schedules' || location.pathname === '/audit-report' || location.pathname === '/daily-report') return
+    const parts = [`Page: ${currentPage}`]
+    if (branchLabel) parts.push(`Branch: ${branchLabel}`)
+    parts.push(`Date: ${new Date().toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}`)
+    setPageContext(parts.join(' | '))
+  }, [currentPage, branchLabel, location.pathname, setPageContext])
 
   // Keep the group for the current page open; don't fight manual collapse until route changes.
   useEffect(() => {
@@ -801,6 +811,38 @@ export default function DashboardLayout() {
 
         </nav>
 
+        {/* ── Arctic — separated from operational navigation ──────── */}
+        <div className="shrink-0 px-2 pt-2 pb-3" style={{ borderTop: '1px solid rgba(255,255,255,0.14)' }}>
+          {navVisible ? (
+            <button
+              onClick={() => { openArctic(); setSidebarOpen(false) }}
+              title="Ask Arctic — ASHCOL AI"
+              className="group flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150 w-full"
+              style={{ color: '#ffffff' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = sidebarHoverBg}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
+            >
+              <span className="text-base shrink-0 leading-none">🦊</span>
+              <span className="flex-1 truncate text-left">Arctic</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => { openArctic(); setSidebarOpen(false) }}
+              title="Ask Arctic — ASHCOL AI"
+              className="flex items-center justify-center w-11 h-11 mx-auto rounded-xl text-base transition-all duration-150"
+              style={{
+                color: sidebarIconColor,
+                opacity: showCollapsedIcons ? 1 : 0,
+                pointerEvents: showCollapsedIcons ? 'auto' : 'none',
+                transition: 'opacity 120ms ease',
+              }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = sidebarHoverBg}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
+            >
+              🦊
+            </button>
+          )}
+        </div>
 
       </aside>
     </div>
@@ -904,6 +946,7 @@ export default function DashboardLayout() {
 
             {/* Right: Actions */}
             <div className="flex items-center gap-1.5 shrink-0">
+              <ArcticButton />
               <MessagesDropdown />
               <NotificationsDropdown />
 
@@ -1080,7 +1123,7 @@ export default function DashboardLayout() {
       </div>
 
       {/* ── Global Agentic Chat UI ────────────────────── */}
-      {/* <AIChatBot /> */}
+      <ArcticDrawer />
 
       <FloatingChatWindow />
     </div>

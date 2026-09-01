@@ -42,6 +42,7 @@ import { NotificationProvider } from './contexts/NotificationContext'
 import { MessagingProvider } from './contexts/MessagingContext'
 import { FloatingChatProvider } from './contexts/FloatingChatContext'
 import { EmployeeDetailsProvider } from './contexts/EmployeeDetailsContext'
+import { ArcticProvider } from './contexts/ArcticContext'
 import { getPortalHomePath } from './utils/api'
 import AutoUpdateWatcher from './components/AutoUpdateWatcher'
 
@@ -144,12 +145,14 @@ export default function App() {
           <MessagingProvider>
             <FloatingChatProvider>
               <EmployeeDetailsProvider>
-                <AutoUpdateWatcher />
-                {GOOGLE_OAUTH_ENABLED ? (
-                  <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>{routes}</GoogleOAuthProvider>
-                ) : (
-                  routes
-                )}
+                <ArcticProvider>
+                  <AutoUpdateWatcher />
+                  {GOOGLE_OAUTH_ENABLED ? (
+                    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>{routes}</GoogleOAuthProvider>
+                  ) : (
+                    routes
+                  )}
+                </ArcticProvider>
               </EmployeeDetailsProvider>
             </FloatingChatProvider>
           </MessagingProvider>

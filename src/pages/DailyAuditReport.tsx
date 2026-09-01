@@ -15,6 +15,7 @@ import { API_BASE_URL, formatDisplayUserLabel, formatBranchName, isSameBaseBranc
 import DTR_Form from './DTR_Form'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import { exportDtrReportToPdf } from '../utils/pdfExport'
+import { useArctic } from '../contexts/ArcticContext'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -149,6 +150,7 @@ const remarksBadgeStyle = (remarks: string, noRecord: boolean, isAbove: boolean)
 export default function DailyAuditReport() {
   const { theme } = useTheme()
   const { user } = useAuth()
+  const { setPageContext, setDataContext } = useArctic()
   const location = useLocation()
   const navigate = useNavigate()
   const isLight = theme === 'light'
@@ -593,6 +595,41 @@ export default function DailyAuditReport() {
   }, [])
 
   const isCustomAuditDate = viewMode === 'single' && date !== '' && !weeklyDayTabs.some(t => t.key === date)
+
+  // Ground Arctic in the active Daily Transaction date, KPI totals, and branch breakdown table
+  useEffect(() => {
+    const branchName = formatBranchName(globalBranchId || user?.branchId || 'All Branches')
+    setPageContext(`Page: Daily Transaction | Branch: ${branchName} | Date: ${mobileDateLabel}`)
+
+    if (activeTab === 'submit') {
+      setDataContext(`Daily Transaction — Submit DTR Form view for ${branchName} (${mobileDateLabel})`)
+      return
+    }
+
+    if (loading) {
+      setDataContext(`Daily Transaction (${mobileDateLabel}): Loading report data…`)
+      return
+    }
+
+    if (visibleRows.length === 0) {
+      setDataContext(`Daily Transaction (${mobileDateLabel}): No transaction records found for this date.`)
+      return
+    }
+
+    const summaryText = [
+      `Daily Transaction Summary (${mobileDateLabel} | ${branchName}):`,
+      `Totals: Gross Sales: ₱${peso(totals.grossSales)} | Net Sales: ₱${peso(totals.netSales)} | Cash Collected: ₱${peso(totals.totalCashCollection)} | Online Collected: ₱${peso(totals.totalOnlineCollection)} | Total Expenses: ₱${peso(totals.totalExpenses)} | Total Purchases: ₱${peso(totals.totalForPurchase)} | For Collection: ₱${peso(totals.forCollection)}`,
+      `\nBranch Breakdown (${visibleRows.length} branches):`,
+      ...visibleRows.map(r => {
+        const net = computeNetSales(r)
+        return `- ${r.branchName}: Gross Sales: ₱${peso(r.grossSales)}, Net Sales: ₱${peso(net)}, Cash: ₱${peso(r.totalCashCollection)}, Online: ₱${peso(r.totalOnlineCollection)}, Expenses: ₱${peso(r.totalExpenses)}, Target: ₱${peso(r.targetDailyQuota)}, Diff: ₱${peso(r.difference)}, Remarks: ${r.remarks || r.status}`
+      })
+    ].join('\n')
+
+    setDataContext(summaryText)
+
+    return () => setDataContext(null)
+  }, [activeTab, mobileDateLabel, globalBranchId, user?.branchId, loading, visibleRows, totals, setDataContext, setPageContext])
 
   return (
     <div className="flex flex-col gap-4 pb-8 md:pb-8">
