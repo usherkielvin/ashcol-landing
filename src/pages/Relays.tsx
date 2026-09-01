@@ -2112,24 +2112,31 @@ export default function Relays() {
       .filter(isAccountActive)
       .filter(isInstallerEmployee)
 
+    // The <select>'s option value must be a non-empty name — technician accounts sometimes
+    // have no `name` set (nickname-only), and an empty value collides with the placeholder
+    // option's value="", making the option look pickable but silently no-op on select.
+    const toOption = (emp: (typeof activeInstallers)[number]) => {
+      const nick = (emp.nickname || '').trim().toUpperCase()
+      const fullName = (emp.name || '').trim()
+      const firstName = fullName.split(/\s+/)[0]?.toUpperCase() || ''
+      const name = nick || firstName || fullName
+      const label = formatInstallerLabel(emp as any)
+      return { id: emp.id, name, label }
+    }
+
     if (targetBranch && targetBranch !== 'ALL_BRANCHES') {
       const branchMatched = activeInstallers.filter(emp =>
         employeeMatchesBranchScope(emp as any, targetBranch) ||
         branchScopesMatch(emp.branchId, targetBranch, emp.email)
       )
       return branchMatched
-        .map(emp => {
-          const label = formatInstallerLabel(emp as any)
-          return { id: emp.id, name: emp.name, label }
-        })
+        .map(toOption)
+        .filter(opt => opt.name)
         .sort((a, b) => a.label.localeCompare(b.label))
     }
 
     return activeInstallers
-      .map(emp => {
-        const label = formatInstallerLabel(emp as any)
-        return { id: emp.id, name: emp.name, label }
-      })
+      .map(toOption)
       .filter(opt => opt.name)
       .sort((a, b) => a.label.localeCompare(b.label))
   }, [employees, addForm.branchId, resolveRelayDefaultBranchId])

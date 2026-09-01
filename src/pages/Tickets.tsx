@@ -1140,8 +1140,16 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
       .map(emp => {
         const label = formatInstallerLabel(emp)
-        return { id: emp.id, name: (emp.name || '').trim(), label, branchId: emp.branchId }
+        // The <select>'s option value must be a non-empty name — technician accounts sometimes
+        // have no `name` set (nickname-only), and an empty value collides with the placeholder
+        // option's value="", making the option look pickable but silently no-op on select.
+        const nick = (emp.nickname || '').trim().toUpperCase()
+        const fullName = (emp.name || '').trim()
+        const firstName = fullName.split(/\s+/)[0]?.toUpperCase() || ''
+        const name = nick || firstName || fullName
+        return { id: emp.id, name, label, branchId: emp.branchId }
       })
+      .filter(t => t.name)
   }, [branchEmployees, resolveSchedulesNegotiatorBranch, user?.branchId, user?.email, user?.jobTitle])
 
   const addModalTechnicians = useMemo(
