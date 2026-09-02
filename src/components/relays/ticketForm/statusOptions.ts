@@ -13,6 +13,7 @@ export const PENDING_STATUS_OPTIONS: StatusOption[] = [
   { value: 'FOR APPROVAL', label: 'FOR QUOTATION' },
   { value: 'SYSTEM_REPROCESS', label: 'SYSTEM REPROCESS' },
   { value: 'DISMANTLE', label: 'DISMANTLE' },
+  { value: 'RELOCATION', label: 'RELOCATION' },
 ]
 
 export const CLOSING_STATUS_OPTIONS: StatusOption[] = [
@@ -25,6 +26,7 @@ export const CLOSING_STATUS_OPTIONS: StatusOption[] = [
   { value: 'DONE_MOUNTING', label: 'DONE MOUNTING' },
   { value: 'DONE_SYSTEM_REPROCESS', label: 'DONE SYSTEM REPROCESS' },
   { value: 'DONE_DISMANTLE', label: 'DONE DISMANTLE' },
+  { value: 'DONE_RELOCATED', label: 'DONE RELOCATED' },
   { value: 'DONE_QUOTATION', label: 'DONE QUOTATION' },
   { value: 'CANCELLED', label: 'CANCELLED' },
 ]

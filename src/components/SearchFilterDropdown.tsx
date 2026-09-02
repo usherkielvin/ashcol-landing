@@ -15,7 +15,7 @@ const FILTER_DATA = [
   },
   {
     title: 'Tickets',
-    options: ['Installation', 'Cleaning', 'Repair', 'Maintenance', 'Dismantle', 'Warranty'],
+    options: ['Installation', 'Cleaning', 'Repair', 'Maintenance', 'Dismantle', 'Relocation', 'Warranty'],
   },
   {
     title: 'People',

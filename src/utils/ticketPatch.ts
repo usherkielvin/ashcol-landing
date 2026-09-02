@@ -158,6 +158,11 @@ export function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string):
     body.scheduleOutcome = 'DONE_DISMANTLE'
     acUpdates.scheduleOutcome = 'DONE_DISMANTLE'
     acUpdates.schedulePhase = ''
+  } else if (val === 'DONE_RELOCATED') {
+    body.status = 'DONE_RELOCATED'
+    body.scheduleOutcome = 'DONE_RELOCATED'
+    acUpdates.scheduleOutcome = 'DONE_RELOCATED'
+    acUpdates.schedulePhase = ''
   } else if (val === 'DONE_QUOTATION') {
     setClosing('DONE_QUOTATION')
   } else if (val === 'SYSTEM_REPROCESS') {
@@ -172,6 +177,12 @@ export function applyScheduleStatusPatch(ticket: Ticket, scheduleValue: string):
     body.serviceType = 'DISMANTLE'
     acUpdates.scheduleOutcome = ''
     acUpdates.schedulePhase = 'DISMANTLE'
+  } else if (val === 'RELOCATION') {
+    body.status = 'RELOCATION'
+    body.ticketCategory = 'SERVICES'
+    body.serviceType = 'RELOCATION'
+    acUpdates.scheduleOutcome = ''
+    acUpdates.schedulePhase = 'RELOCATION'
   } else if (val === 'FOR_QUOTATION') {
     body.status = 'FOR_APPROVAL'
     acUpdates.scheduleOutcome = ''
@@ -307,7 +318,7 @@ export function preserveLocalScheduleFields(local: Ticket, server: Ticket): Tick
   const normalizedServer = normalizeRelayScheduleTicket(server)
   let next = mergeTicketPatch(local, normalizedServer as unknown as Record<string, unknown>)
 
-  const TERMINAL_STATUSES = new Set(['INSTALLED', 'COMPLETED', 'DONE_DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'CANCELLED'])
+  const TERMINAL_STATUSES = new Set(['INSTALLED', 'COMPLETED', 'DONE_DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'DONE_RELOCATED', 'CANCELLED'])
   const localStatus = String(local.status || '').toUpperCase()
   const mergedStatus = String(next.status || '').toUpperCase()
   if (TERMINAL_STATUSES.has(localStatus) && !TERMINAL_STATUSES.has(mergedStatus)) {
@@ -526,7 +537,7 @@ export function sanitizeTicketPatchBody(body: Record<string, unknown>): Record<s
     }
   }
 
-  if (status !== 'INSTALLED' && status !== 'COMPLETED' && status !== 'DONE_DISMANTLE' && status !== 'DONE_SYSTEM_REPROCESS' && !next.scheduleOutcome) {
+  if (status !== 'INSTALLED' && status !== 'COMPLETED' && status !== 'DONE_DISMANTLE' && status !== 'DONE_SYSTEM_REPROCESS' && status !== 'DONE_RELOCATED' && !next.scheduleOutcome) {
     if (typeof next.acDetails === 'string') {
       next.acDetails = mergeAcMeta(
         { acDetails: next.acDetails } as Ticket,
@@ -648,6 +659,7 @@ export function resolveClosingStatusForOutcome(outcome: string, incomingStatus?:
   const o = (outcome || '').toUpperCase()
   const incoming = (incomingStatus || '').toUpperCase()
   if (o === 'DONE_DISMANTLE' || incoming === 'DONE_DISMANTLE') return 'DONE_DISMANTLE'
+  if (o === 'DONE_RELOCATED' || incoming === 'DONE_RELOCATED') return 'DONE_RELOCATED'
   if (o === 'DONE_SYSTEM_REPROCESS' || incoming === 'DONE_SYSTEM_REPROCESS') return 'DONE_SYSTEM_REPROCESS'
   if (o === 'DONE_INSTALLED' || incoming === 'INSTALLED') return 'INSTALLED'
   return 'COMPLETED'

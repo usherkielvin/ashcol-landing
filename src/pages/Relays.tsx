@@ -394,6 +394,8 @@ const getRelayStatusLabel = (ticket: Ticket) => {
   if (status === 'DONE_SYSTEM_REPROCESS') return 'Done System Reprocess'
   if (status === 'DISMANTLE') return 'Dismantle'
   if (status === 'DONE_DISMANTLE') return 'Done Dismantle'
+  if (status === 'RELOCATION') return 'Relocation'
+  if (status === 'DONE_RELOCATED') return 'Done Relocated'
   if (status === 'IN_PROGRESS') return 'In Progress'
   if (status === 'ON_THE_WAY') return 'On the Way'
   

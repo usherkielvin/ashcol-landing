@@ -330,6 +330,7 @@ export const normalizeRemarksString = (str: string): string => {
     .replace(/\bDONE_BACKJOB\b/gi, 'BACKJOB')
     .replace(/\bDONE_SERVICE\b/gi, 'SERVICE')
     .replace(/\bDONE_DISMANTLE\b/gi, 'DISMANTLE')
+    .replace(/\bDONE_RELOCATED\b/gi, 'RELOCATION')
     .replace(/\bDONE_QUOTATION\b/gi, 'QUOTATION')
     .replace(/\bDONE_NEGOTIATION\b/gi, 'NEGOTIATION')
     .replace(/\bDONE_SYSTEM_REPROCESS\b/gi, 'SYSTEM REPROCESS')
@@ -339,6 +340,7 @@ export const getRemarkBadge = (row: LineUpRow, currentTheme: BranchTheme, isLigh
   const txt = (row.remarks + ' ' + row.route).toUpperCase()
   if (/BACK\s*JOB/i.test(txt)) return { label: 'BACK JOB', color: '#EF4444', bg: 'rgba(239,68,68,0.1)' }
   if (/DISMANTLE/i.test(txt)) return { label: 'DISMANTLE', color: '#F43F5E', bg: 'rgba(244,63,94,0.1)' }
+  if (/RELOCAT/i.test(txt)) return { label: 'RELOCATION', color: '#EA580C', bg: 'rgba(234,88,12,0.1)' }
   if (/SURVEY/i.test(txt)) return { label: 'SURVEY', color: '#F59E0B', bg: 'rgba(245,158,11,0.1)' }
   const m = txt.match(/\((\d+)\s*UNIT/i)
   if (m) return { label: `${m[1]} UNIT${parseInt(m[1]) > 1 ? 'S' : ''}`, color: currentTheme.accent, bg: isLight ? currentTheme.accentLight : `${currentTheme.accent}20` }

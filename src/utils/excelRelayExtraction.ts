@@ -93,6 +93,7 @@ const TICKET_TYPE_MAP: Record<string, string> = {
   'BACKJOB': 'BACKJOB', 'SERVICE': 'SERVICE',
   'RESCHED': 'RESCHED', 'RESCHEDULE': 'RESCHED',
   'CONTINUATION': 'CONTINUATION', 'DISMANTLE': 'DISMANTLE',
+  'RELOCATION': 'RELOCATION', 'DONE RELOCATED': 'DONE_RELOCATED', 'DONE RELOCATION': 'DONE_RELOCATED',
 }
 
 const PAYMENT_MAP: Record<string, string> = {
@@ -463,8 +464,12 @@ function mapTicketType(update: string, status: string): { serviceType: string; t
   if (up.includes('DONE'))
     return { serviceType: 'DONE_SERVICE', ticketStatus: 'Closing' }
 
-  // ── 3. Dismantle detection ──────────────────────────────────────────────────
-  // Explicit DISMANTLE keyword takes priority over other status signals
+  // ── 3. Dismantle & Relocation detection ─────────────────────────────────────
+  // Explicit DISMANTLE / RELOCATION keyword takes priority over other status signals
+  if (up.includes('DONE RELOCAT') || st.includes('DONE RELOCAT'))
+    return { serviceType: 'DONE_RELOCATED', ticketStatus: 'Closing' }
+  if (up.includes('RELOCAT') || st.includes('RELOCAT'))
+    return { serviceType: 'RELOCATION', ticketStatus: 'Pending' }
   if (up.includes('DISMANTLE') || st.includes('DISMANTLE'))
     return { serviceType: 'DISMANTLE', ticketStatus: 'Pending' }
 
@@ -500,6 +505,7 @@ function mapTicketType(update: string, status: string): { serviceType: string; t
   if (st === 'S/I') return { serviceType: 'S/I', ticketStatus: 'Pending' }
   if (st.includes('CHECK UP') || st.includes('CHECKUP')) return { serviceType: 'CHECKUP', ticketStatus: 'Pending' }
   if (st.includes('DISMANTLE')) return { serviceType: 'DISMANTLE', ticketStatus: 'Pending' }
+  if (st.includes('RELOCAT')) return { serviceType: 'RELOCATION', ticketStatus: 'Pending' }
   if (st.includes('RESCHED') || st.includes('RESCHEDULE')) return { serviceType: 'RESCHED', ticketStatus: 'Pending' }
   if (/\bCONT\b/.test(st) || st.includes('CONTINUATION')) return { serviceType: 'CONTINUATION', ticketStatus: 'Pending' }
   if (st.includes('CANCEL') || /\bC\/O\b/.test(st)) return { serviceType: 'CANCELLED', ticketStatus: 'Cancelled' }

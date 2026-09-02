@@ -36,6 +36,8 @@ export function importRowMatchesTicket(row: ImportUnmatchedRow, ticket: Ticket):
     || status === 'INSTALLED'
     || status === 'DONE_SYSTEM_REPROCESS'
     || status === 'DONE_DISMANTLE'
+    || status === 'DONE_MOUNTING'
+    || status === 'DONE_RELOCATED'
   ) return false
 
   const rowCtrl = (row.controlNo || '').trim().toLowerCase()

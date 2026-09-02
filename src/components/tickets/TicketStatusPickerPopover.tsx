@@ -91,7 +91,7 @@ export function TicketStatusPickerPopover({
       onOpenContinuationDialog(pickerTicket)
       return
     }
-    if (value === 'DONE_INSTALLED' || value === 'DONE_CLEANING' || value === 'DONE_DISMANTLE') {
+    if (value === 'DONE_INSTALLED' || value === 'DONE_CLEANING' || value === 'DONE_DISMANTLE' || value === 'DONE_RELOCATED') {
       if (!ticketHasPaymentInfo(pickerTicket)) {
         onOpenPaymentPrompt(pickerTicket, value)
         return

@@ -537,6 +537,7 @@ export default function LineUpPage() {
       .replace(/\bDONE_BACKJOB\b/gi, 'BACKJOB')
       .replace(/\bDONE_SERVICE\b/gi, 'SERVICE')
       .replace(/\bDONE_DISMANTLE\b/gi, 'DISMANTLE')
+      .replace(/\bDONE_RELOCATED\b/gi, 'RELOCATION')
       .replace(/\bDONE_QUOTATION\b/gi, 'QUOTATION')
       .replace(/\bDONE_NEGOTIATION\b/gi, 'NEGOTIATION')
       .replace(/\bDONE_SYSTEM_REPROCESS\b/gi, 'SYSTEM REPROCESS')

@@ -125,6 +125,7 @@ export type ScheduleOutcome =
   | 'DONE_NEGOTIATION'
   | 'DONE_SYSTEM_REPROCESS'
   | 'DONE_DISMANTLE'
+  | 'DONE_RELOCATED'
   | 'DONE_QUOTATION'
 
 export type ScheduleStatusGroup = 'pending' | 'closing'

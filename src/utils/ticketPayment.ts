@@ -89,7 +89,7 @@ export function resolveTicketPayment(ticket: Ticket): { mode: string; amount: nu
   }
 
   const st = getScheduleStatusValue(ticket)
-  const isCheckupStatus = st === 'DONE_CHECKUP' || st === 'DONE_BACKJOB' || st === 'DONE_SYSTEM_REPROCESS' || st === 'DONE_DISMANTLE'
+  const isCheckupStatus = st === 'DONE_CHECKUP' || st === 'DONE_BACKJOB' || st === 'DONE_SYSTEM_REPROCESS' || st === 'DONE_DISMANTLE' || st === 'DONE_RELOCATED'
   if (isCheckupStatus && (!amount || amount <= 0)) {
     return { mode: mode || 'NO PAYMENT', amount: 0 }
   }

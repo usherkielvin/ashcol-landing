@@ -117,12 +117,16 @@ export function resolveScheduleStatusFields(rawValue: string): ResolvedScheduleS
       return { status: 'DONE_SYSTEM_REPROCESS', ticketCategory: 'SERVICES', scheduleOutcome: 'DONE_SYSTEM_REPROCESS', schedulePhase: '' }
     case 'DONE_DISMANTLE':
       return { status: 'DONE_DISMANTLE', ticketCategory: 'SERVICES', scheduleOutcome: 'DONE_DISMANTLE', schedulePhase: '' }
+    case 'DONE_RELOCATED':
+      return { status: 'DONE_RELOCATED', ticketCategory: 'SERVICES', scheduleOutcome: 'DONE_RELOCATED', schedulePhase: '' }
     case 'DONE_QUOTATION':
       return { status: 'COMPLETED', scheduleOutcome: 'DONE_QUOTATION', schedulePhase: '' }
     case 'SYSTEM_REPROCESS':
       return { status: 'SYSTEM_REPROCESS', ticketCategory: 'SERVICES', serviceType: 'SYSTEM REPROCESS', scheduleOutcome: '', schedulePhase: 'SYSTEM_REPROCESS' }
     case 'DISMANTLE':
       return { status: 'DISMANTLE', ticketCategory: 'SERVICES', serviceType: 'DISMANTLE', scheduleOutcome: '', schedulePhase: 'DISMANTLE' }
+    case 'RELOCATION':
+      return { status: 'RELOCATION', ticketCategory: 'SERVICES', serviceType: 'RELOCATION', scheduleOutcome: '', schedulePhase: 'RELOCATION' }
     case 'FOR_QUOTATION':
       return { status: 'FOR_APPROVAL', scheduleOutcome: '' }
     case 'CLEANING':

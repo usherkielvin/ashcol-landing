@@ -163,7 +163,7 @@ export function TicketDetailsModal({
   // pair isInstalledWorkflowStatus checks — DONE_DISMANTLE/DONE_SYSTEM_REPROCESS/DONE_MOUNTING
   // are also closing statuses (see Tickets.tsx's alreadyClosed list) and were being hidden here.
   const isCompleted = isInstalledWorkflowStatus(t.status)
-    || ['DONE_DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'DONE_MOUNTING'].includes((t.status || '').toUpperCase())
+    || ['DONE_DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'DONE_MOUNTING', 'DONE_RELOCATED'].includes((t.status || '').toUpperCase())
   const paymentAmt = formatPaymentAmount(t)
   const paymentMode = getPaymentMode(t)
   const archivedSched = formatDateKeyLabel(getArchivedScheduleDate(t))
@@ -175,6 +175,7 @@ export function TicketDetailsModal({
     || scheduleStatusValue === 'DONE_MOUNTING'
     || scheduleStatusValue === 'DONE_SYSTEM_REPROCESS'
     || scheduleStatusValue === 'DONE_DISMANTLE'
+    || scheduleStatusValue === 'DONE_RELOCATED'
     ? (isLight ? '#1d4ed8' : '#93c5fd')
     : green
   const branchName = formatAssignedBranchLabel(t.branchId || t.branch_id)

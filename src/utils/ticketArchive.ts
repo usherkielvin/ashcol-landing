@@ -282,6 +282,9 @@ export function buildArchivePayloadFromTicket(
   } else if (outcome === 'DONE_DISMANTLE' || /dismantle/i.test(serviceTypeRaw) || /dismantle/i.test(rawRemarks)) {
     serviceType = 'DISMANTLE'
     statusCode = 'S'
+  } else if (outcome === 'DONE_RELOCATED' || /relocat/i.test(serviceTypeRaw) || /relocat/i.test(rawRemarks)) {
+    serviceType = 'RELOCATION'
+    statusCode = 'S'
   } else if (outcome === 'DONE_MOUNTING' || /mounting/i.test(serviceTypeRaw) || /mounting/i.test(rawRemarks)) {
     serviceType = 'MOUNTING'
     statusCode = 'S'

@@ -12,7 +12,8 @@ import {
 export const STATUS_OPTS = [
   'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'RESCHED', 'FOR_APPROVAL', 'SURVEY',
   'INSTALLED', 'COMPLETED', 'CONTINUATION',
-  'SYSTEM_REPROCESS', 'DONE_SYSTEM_REPROCESS', 'DISMANTLE', 'DONE_DISMANTLE', 'PENDING_APPROVAL',
+  'SYSTEM_REPROCESS', 'DONE_SYSTEM_REPROCESS', 'DISMANTLE', 'DONE_DISMANTLE',
+  'MOUNTING', 'DONE_MOUNTING', 'RELOCATION', 'DONE_RELOCATED', 'PENDING_APPROVAL',
   'FOR_NEGOTIATION', 'DONE_NEGOTIATION', 'FOR_COLLECTION',
 ]
 
@@ -40,6 +41,7 @@ export const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: Schedu
   { value: 'FOR_COLLECTION', label: 'FOR COLLECTION', group: 'pending' },
   { value: 'SYSTEM_REPROCESS', label: 'SYSTEM REPROCESS', group: 'pending' },
   { value: 'DISMANTLE', label: 'DISMANTLE', group: 'pending' },
+  { value: 'RELOCATION', label: 'RELOCATION', group: 'pending' },
   // Closing
   { value: 'DONE_INSTALLED', label: 'DONE INSTALL', group: 'closing' },
   { value: 'DONE_CLEANING', label: 'DONE CLEANING', group: 'closing' },
@@ -51,6 +53,7 @@ export const SCHEDULE_STATUS_OPTS: { value: string; label: string; group: Schedu
   { value: 'DONE_NEGOTIATION', label: 'DONE NEGOTIATION', group: 'closing' },
   { value: 'DONE_SYSTEM_REPROCESS', label: 'DONE SYSTEM REPROCESS', group: 'closing' },
   { value: 'DONE_DISMANTLE', label: 'DONE DISMANTLE', group: 'closing' },
+  { value: 'DONE_RELOCATED', label: 'DONE RELOCATED', group: 'closing' },
   { value: 'DONE_QUOTATION', label: 'DONE QUOTATION', group: 'closing' },
   { value: 'CANCELLED', label: 'CANCELLED', group: 'closing' },
 ]
@@ -59,7 +62,7 @@ export const SCHEDULE_PENDING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group ==
 export const SCHEDULE_CLOSING_OPTS = SCHEDULE_STATUS_OPTS.filter(o => o.group === 'closing')
 export const CLOSING_SCHEDULE_STATUSES = new Set([
   'DONE_INSTALLED', 'DONE_CLEANING', 'DONE_SURVEY', 'DONE_CHECKUP', 'DONE_BACKJOB', 'DONE_SERVICE', 'DONE_MOUNTING',
-  'DONE_NEGOTIATION', 'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE', 'DONE_QUOTATION',
+  'DONE_NEGOTIATION', 'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE', 'DONE_RELOCATED', 'DONE_QUOTATION',
 ])
 export const SCHEDULE_PENDING_STATUS_VALUES = new Set(SCHEDULE_PENDING_OPTS.map(o => o.value))
 export const SCHEDULE_CLOSING_STATUS_VALUES = new Set(SCHEDULE_CLOSING_OPTS.map(o => o.value))
@@ -99,6 +102,9 @@ export function getScheduleStatusBadgeStyle(value: string, isLight: boolean, isO
   }
   if (normalized === 'DISMANTLE' || normalized === 'DONE_DISMANTLE') {
     return { color: isLight ? '#be123c' : '#fb7185', backgroundColor: isLight ? '#ffe4e6' : 'rgba(244,63,94,0.16)', borderColor: isLight ? '#fb7185' : 'rgba(244,63,94,0.35)' }
+  }
+  if (normalized === 'RELOCATION' || normalized === 'DONE_RELOCATED') {
+    return { color: isLight ? '#c2410c' : '#fb923c', backgroundColor: isLight ? '#fff7ed' : 'rgba(234,88,12,0.16)', borderColor: isLight ? '#fdba74' : 'rgba(234,88,12,0.35)' }
   }
   if (normalized === 'SURVEY') {
     return { color: isLight ? '#6d28d9' : '#c4b5fd', backgroundColor: isLight ? '#ede9fe' : 'rgba(139,92,246,0.18)', borderColor: isLight ? '#c4b5fd' : 'rgba(139,92,246,0.35)' }
@@ -166,6 +172,7 @@ export function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | n
     || explicit === 'DONE_NEGOTIATION'
     || explicit === 'DONE_SYSTEM_REPROCESS'
     || explicit === 'DONE_DISMANTLE'
+    || explicit === 'DONE_RELOCATED'
     || explicit === 'DONE_QUOTATION'
   ) {
     return explicit as ScheduleOutcome
@@ -182,6 +189,7 @@ export function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | n
     if (/survey/i.test(text)) return 'DONE_SURVEY'
     if (/mount/i.test(text)) return 'DONE_MOUNTING'
     if (/dismantle/i.test(text)) return 'DONE_DISMANTLE'
+    if (/relocat/i.test(text)) return 'DONE_RELOCATED'
     if (/quotation/i.test(text)) return 'DONE_QUOTATION'
     if (/system.*reprocess|reprocess/i.test(text)) return 'DONE_SYSTEM_REPROCESS'
     if (/repair|service|maintenance/i.test(text)) return 'DONE_SERVICE'
@@ -198,6 +206,7 @@ export function getScheduleOutcome(ticket: Partial<Ticket>): ScheduleOutcome | n
   if (stat === 'SURVEY' && /done.*survey|survey.*done|surveyed/i.test(remarks)) return 'DONE_SURVEY'
   if (stat === 'DONE_SYSTEM_REPROCESS') return 'DONE_SYSTEM_REPROCESS'
   if (stat === 'DONE_DISMANTLE') return 'DONE_DISMANTLE'
+  if (stat === 'DONE_RELOCATED') return 'DONE_RELOCATED'
   if (stat === 'DONE_NEGOTIATION') return 'DONE_NEGOTIATION'
   return null
 }
@@ -216,6 +225,7 @@ export function formatSpecificDoneStatus(ticket: Partial<Ticket> | any): string 
     if (explicit === 'DONE_MOUNTING') return 'DONE MOUNTING'
     if (explicit === 'DONE_SURVEY') return 'DONE SURVEY'
     if (explicit === 'DONE_DISMANTLE') return 'DONE DISMANTLE'
+    if (explicit === 'DONE_RELOCATED') return 'DONE RELOCATED'
     if (explicit === 'DONE_QUOTATION') return 'DONE QUOTATION'
     if (explicit === 'DONE_SYSTEM_REPROCESS') return 'DONE SYSTEM REPROCESS'
     if (explicit === 'DONE_NEGOTIATION') return 'DONE NEGOTIATION'
@@ -237,6 +247,7 @@ export function formatSpecificDoneStatus(ticket: Partial<Ticket> | any): string 
     if (combined.includes('BACKJOB') || combined.includes('BACK JOB') || combined.includes('BACK-JOB')) return 'DONE BACKJOB'
     if (combined.includes('MOUNT')) return 'DONE MOUNTING'
     if (combined.includes('DISMANTLE')) return 'DONE DISMANTLE'
+    if (combined.includes('RELOCAT')) return 'DONE RELOCATED'
     if (combined.includes('SURVEY')) return 'DONE SURVEY'
     if (combined.includes('QUOTATION')) return 'DONE QUOTATION'
     if (combined.includes('REPROCESS')) return 'DONE SYSTEM REPROCESS'
@@ -251,6 +262,7 @@ export function formatSpecificDoneStatus(ticket: Partial<Ticket> | any): string 
   if (rawStat === 'FOR_APPROVAL' || rawStat === 'FOR QUOTATION') return 'FOR QUOTATION'
   if (rawStat === 'SYSTEM_REPROCESS') return 'SYSTEM REPROCESS'
   if (rawStat === 'DISMANTLE') return 'DISMANTLE'
+  if (rawStat === 'RELOCATION') return 'RELOCATION'
   if (combined.includes('CLEAN')) return 'CLEANING'
   if (combined.includes('CHECK')) return 'CHECKUP'
   if (combined.includes('BACKJOB') || combined.includes('BACK JOB')) return 'BACKJOB'
@@ -277,6 +289,7 @@ export function getScheduleStatusValue(ticket: Ticket): string {
   if (phase === 'MOUNTING') return 'MOUNTING'
   if (phase === 'SYSTEM_REPROCESS') return 'SYSTEM_REPROCESS'
   if (phase === 'DISMANTLE') return 'DISMANTLE'
+  if (phase === 'RELOCATION') return 'RELOCATION'
   if (phase === 'PENDING_APPROVAL') return 'PENDING_APPROVAL'
   if (phase === 'FOR_NEGOTIATION') return 'FOR_NEGOTIATION'
   if (phase === 'DONE_NEGOTIATION') return 'DONE_NEGOTIATION'
@@ -298,6 +311,8 @@ export function getScheduleStatusValue(ticket: Ticket): string {
   if (stat === 'DONE_SYSTEM_REPROCESS') return 'DONE_SYSTEM_REPROCESS'
   if (stat === 'DISMANTLE') return 'DISMANTLE'
   if (stat === 'DONE_DISMANTLE') return 'DONE_DISMANTLE'
+  if (stat === 'RELOCATION') return 'RELOCATION'
+  if (stat === 'DONE_RELOCATED') return 'DONE_RELOCATED'
   if (stat === 'CANCELLED') return 'CANCELLED'
   if (stat === 'INSTALLED' || stat === 'COMPLETED') return 'DONE_INSTALLED'
 
@@ -385,6 +400,9 @@ export function statusColor(s: string, light: boolean): { text: string; bg: stri
     case 'MOUNTING':
     case 'DONE_MOUNTING':
       return { text: '#0D9488', bg: light ? '#f0fdfa' : 'rgba(13,148,136,0.15)', b: 'rgba(13,148,136,0.4)' }
+    case 'RELOCATION':
+    case 'DONE_RELOCATED':
+      return { text: '#EA580C', bg: light ? '#fff7ed' : 'rgba(234,88,12,0.15)', b: 'rgba(234,88,12,0.4)' }
     default: return { text: '#94A3B8', bg: 'transparent', b: 'rgba(148,163,184,0.3)' }
   }
 }
@@ -399,6 +417,7 @@ export function getOverviewStatusBadge(ticket: Ticket): { value: string; label: 
     'FOR_APPROVAL', 'FOR_QUOTATION', 'CANCELLED', 'COMPLETED', 'INSTALLED',
     'CONTINUATION', 'SURVEY',
     'SYSTEM_REPROCESS', 'DONE_SYSTEM_REPROCESS', 'DISMANTLE', 'DONE_DISMANTLE',
+    'MOUNTING', 'DONE_MOUNTING', 'RELOCATION', 'DONE_RELOCATED',
   ])
   if (workflowStatuses.has(workflow)) {
     const norm = workflow === 'FOR_QUOTATION' ? 'FOR_APPROVAL' : workflow

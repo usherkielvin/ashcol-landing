@@ -280,6 +280,7 @@ export function isOverduePendingScheduleTicket(
     'DONE_SERVICE',
     'DONE_SYSTEM_REPROCESS',
     'DONE_DISMANTLE',
+    'DONE_RELOCATED',
     'DONE_QUOTATION',
   ])
   if (EXEMPT_STATUSES.has(rawStat) || EXEMPT_STATUSES.has(resolvedStatus)) return false
@@ -311,6 +312,7 @@ export function shouldArchiveCompletedSchedule(ticket: Ticket, body: Record<stri
     || outcome === 'DONE_BACKJOB'
     || outcome === 'DONE_SYSTEM_REPROCESS'
     || outcome === 'DONE_DISMANTLE'
+    || outcome === 'DONE_RELOCATED'
   ) return false
   if (outcome === 'DONE_INSTALLED') return true
   return qualifiesForInstallComplete(ticket, body as Partial<Ticket>)
@@ -376,6 +378,13 @@ export function getScheduleRowColors(
         baseBg: isLight ? '#ffe4e6' : 'rgba(244,63,94,0.22)',
         hoverBg: isLight ? '#fecdd3' : 'rgba(244,63,94,0.34)',
         accent: '#F43F5E',
+      }
+    }
+    if (outcome === 'DONE_RELOCATED') {
+      return {
+        baseBg: isLight ? '#ffedd5' : 'rgba(234,88,12,0.22)',
+        hoverBg: isLight ? '#fed7aa' : 'rgba(234,88,12,0.34)',
+        accent: '#EA580C',
       }
     }
     if (outcome === 'DONE_MOUNTING') {
@@ -468,6 +477,14 @@ export function getScheduleRowColors(
       baseBg: isLight ? '#fff1f2' : 'rgba(244,63,94,0.28)',
       hoverBg: isLight ? '#fecdd3' : 'rgba(244,63,94,0.38)',
       accent: '#F43F5E',
+    }
+  }
+
+  if (outcome === 'DONE_RELOCATED') {
+    return {
+      baseBg: isLight ? '#fff7ed' : 'rgba(234,88,12,0.28)',
+      hoverBg: isLight ? '#ffedd5' : 'rgba(234,88,12,0.38)',
+      accent: '#EA580C',
     }
   }
 

@@ -2387,12 +2387,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           : {}),
       })
 
-      if (['COMPLETED', 'DONE_DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'DONE_MOUNTING', 'INSTALLED'].includes(String(body.status || '').toUpperCase())) {
+      if (['COMPLETED', 'DONE_DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'DONE_MOUNTING', 'DONE_RELOCATED', 'INSTALLED'].includes(String(body.status || '').toUpperCase())) {
         const outcome = (statusOutcome || String(statusAcMeta.scheduleOutcome || '') || (
           String(body.status || '').toUpperCase() === 'DONE_DISMANTLE' ? 'DONE_DISMANTLE'
             : String(body.status || '').toUpperCase() === 'DONE_SYSTEM_REPROCESS' ? 'DONE_SYSTEM_REPROCESS'
               : String(body.status || '').toUpperCase() === 'DONE_MOUNTING' ? 'DONE_MOUNTING'
-                : 'DONE_INSTALLED'
+                : String(body.status || '').toUpperCase() === 'DONE_RELOCATED' ? 'DONE_RELOCATED'
+                  : 'DONE_INSTALLED'
         )) as ScheduleOutcome
         body.scheduleOutcome = outcome
         body.acDetails = mergeAcMeta({ ...activeForm, acDetails: body.acDetails } as Ticket, {
@@ -2401,7 +2402,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         })
       }
 
-      const alreadyClosed = ['COMPLETED', 'INSTALLED', 'DONE_DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'DONE_MOUNTING']
+      const alreadyClosed = ['COMPLETED', 'INSTALLED', 'DONE_DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'DONE_MOUNTING', 'DONE_RELOCATED']
         .includes((originalTicket?.status || '').toUpperCase())
       const shouldComplete = Boolean(
         originalTicket
@@ -3835,7 +3836,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         || getContinuationDates(t).length > 0
       const isScheduledOrActive = [
         'SCHEDULED', 'RESCHED', 'IN_PROGRESS', 'ON_THE_WAY', 'FOR_APPROVAL', 'SURVEY', 'CONTINUATION',
-        'SYSTEM_REPROCESS', 'DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE', 'PENDING_APPROVAL',
+        'SYSTEM_REPROCESS', 'DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'DONE_DISMANTLE',
+        'MOUNTING', 'DONE_MOUNTING', 'RELOCATION', 'DONE_RELOCATED', 'PENDING_APPROVAL',
         'FOR_NEGOTIATION', 'DONE_NEGOTIATION', 'FOR_COLLECTION',
       ].includes(stat)
       if (!hasScheduleDate && !isScheduledOrActive) return false
@@ -3850,10 +3852,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       const isCleaning = scheduleValue === 'CLEANING' || scheduleValue === 'DONE_CLEANING'
       const isSystemReprocess = scheduleValue === 'SYSTEM_REPROCESS' || scheduleValue === 'DONE_SYSTEM_REPROCESS'
       const isDismantle = scheduleValue === 'DISMANTLE' || scheduleValue === 'DONE_DISMANTLE'
+      const isRelocation = scheduleValue === 'RELOCATION' || scheduleValue === 'DONE_RELOCATED'
       const isInstallation = scheduleValue === 'INSTALLATION' || scheduleValue === 'SERVICES' || scheduleValue === 'DONE_INSTALLED' || scheduleValue === 'DONE_CHECKUP' || scheduleValue === 'DONE_BACKJOB' || scheduleValue === 'DONE_MOUNTING'
       const isActiveSchedule = ['SCHEDULED', 'PENDING', 'ASSIGNED', 'IN_PROGRESS', 'ON_THE_WAY'].includes(stat) || hasScheduleDate
 
-      return isInstallation || isCleaning || isSystemReprocess || isDismantle || isResched || isContinuation || isForApproval || isForNegotiation || isForCollection || isSurvey || isActiveSchedule
+      return isInstallation || isCleaning || isSystemReprocess || isDismantle || isRelocation || isResched || isContinuation || isForApproval || isForNegotiation || isForCollection || isSurvey || isActiveSchedule
     })
     if (!isMyTickets) {
       if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES') {
@@ -4868,6 +4871,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       || (body.status as string | undefined)?.toUpperCase() === 'DONE_DISMANTLE'
       || (body.status as string | undefined)?.toUpperCase() === 'DONE_SYSTEM_REPROCESS'
       || (body.status as string | undefined)?.toUpperCase() === 'DONE_MOUNTING'
+      || (body.status as string | undefined)?.toUpperCase() === 'DONE_RELOCATED'
     ) {
       finalBody = enrichCompletePatchBody(body, liveTicket, schedKey)
     }
@@ -4877,9 +4881,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     setFinalDatePicker(null)
     setFinalDateCalMonth(null)
 
-    // After marking DONE INSTALL / DONE CLEANING / DONE DISMANTLE, put the caret in REMARKS.
+    // After marking DONE INSTALL / DONE CLEANING / DONE DISMANTLE / DONE RELOCATED, put the caret in REMARKS.
     const focusRemarksAfterStatus = colLabel === 'STATUS'
-      && (normalizedStatus === 'DONE_INSTALLED' || normalizedStatus === 'DONE_CLEANING' || normalizedStatus === 'DONE_DISMANTLE')
+      && (normalizedStatus === 'DONE_INSTALLED' || normalizedStatus === 'DONE_CLEANING' || normalizedStatus === 'DONE_DISMANTLE' || normalizedStatus === 'DONE_RELOCATED')
 
     const shouldArchive = shouldArchiveCompletedSchedule(liveTicket, finalBody)
       || (
@@ -5717,6 +5721,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             return (
               <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#be123c' : '#fb7185' }} title="Done Dismantle">
                 DONE DISMANTLE
+              </span>
+            )
+          }
+          if (outcome === 'DONE_RELOCATED') {
+            return (
+              <span style={{ ...truncStyle, fontWeight: 700, color: isLight ? '#c2410c' : '#fb923c' }} title="Done Relocated">
+                DONE RELOCATED
               </span>
             )
           }
@@ -9269,20 +9280,25 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         const hybridTotal = hybridCashNum + hybridGcashNum
         const isDoneCleaning = nextStatus === 'DONE_CLEANING'
         const isDoneDismantle = nextStatus === 'DONE_DISMANTLE'
+        const isDoneRelocated = nextStatus === 'DONE_RELOCATED'
         const paymentPromptHint = updateOnly
           ? 'Update the payment mode and amount for this ticket'
           : isDoneCleaning
           ? 'Set payment to mark this cleaning ticket done'
           : isDoneDismantle
             ? 'Set payment to mark this dismantle ticket done'
-            : 'Set payment to complete and archive this ticket'
+            : isDoneRelocated
+              ? 'Set payment to mark this relocation ticket done'
+              : 'Set payment to complete and archive this ticket'
         const paymentSubmitLabel = updateOnly
           ? 'Update Payment'
           : isDoneCleaning
           ? 'Complete Cleaning'
           : isDoneDismantle
             ? 'Complete Dismantle'
-            : 'Complete & Archive'
+            : isDoneRelocated
+              ? 'Complete Relocation'
+              : 'Complete & Archive'
         const handleSubmit = (e: React.FormEvent) => {
           e.preventDefault()
           if (updateOnly) {
