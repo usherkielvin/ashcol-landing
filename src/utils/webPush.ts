@@ -26,12 +26,15 @@ export function isPushSupported(): boolean {
   return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
 }
 
-/** iOS can technically support push (16.4+) but only once running as an installed PWA. */
+/** iOS can technically support push (16.4+) but only once running as an installed PWA — outside
+ *  standalone mode, Safari doesn't even expose PushManager/Notification, so this check must come
+ *  before the generic isPushSupported() one below, or iOS users just see "not supported" instead
+ *  of the actual fix. */
 export function pushBlockedReason(): string | null {
-  if (!isPushSupported()) return 'Push notifications aren’t supported in this browser.'
   if (isIos() && !isStandalone()) {
     return 'On iPhone, add ASHCOL to your Home Screen first (Share → Add to Home Screen), then open it from there to enable notifications.'
   }
+  if (!isPushSupported()) return 'Push notifications aren’t supported in this browser.'
   return null
 }
 
