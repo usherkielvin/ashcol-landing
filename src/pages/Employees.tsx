@@ -68,6 +68,7 @@ interface Employee {
   skills?: string
   dateHired?: string
   birthDate?: string
+  viewBranchIds?: string
   createdAt?: string
   updatedAt?: string
   lastLoginAt?: string
@@ -422,6 +423,7 @@ export default function Employees() {
     dateHired: '',
     birthDate: '',
     profileImage: '',
+    viewBranchIds: '',
   })
   const [showPass, setShowPass] = useState(false)
   const [saving,   setSaving]   = useState(false)
@@ -753,6 +755,8 @@ export default function Employees() {
       street: s.street || '',
       landmark: s.landmark || '',
       dateHired: s.dateHired || '',
+      birthDate: s.birthDate || '',
+      viewBranchIds: s.viewBranchIds || '',
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
     }
@@ -783,6 +787,7 @@ export default function Employees() {
       dateHired: emp.dateHired || '',
       birthDate: emp.birthDate || '',
       profileImage: emp.profileImage || '',
+      viewBranchIds: emp.viewBranchIds || '',
     })
     setFormErr('')
     setShowPass(false)
@@ -811,6 +816,7 @@ export default function Employees() {
         dateHired: editForm.dateHired || null,
         birthDate: editForm.birthDate || null,
         profileImage: editForm.profileImage,
+        viewBranchIds: editForm.viewBranchIds ? editForm.viewBranchIds.trim() : null,
       }
       if (editForm.newPassword.trim()) payload.password = editForm.newPassword.trim()
 
@@ -1766,6 +1772,24 @@ export default function Employees() {
                     </span>
                   )}
 
+                  {/* View-Only Branches Badge */}
+                  {selectedEmployee.viewBranchIds && (
+                    <span
+                      className="text-[11px] font-semibold px-2.5 py-0.5 rounded-lg flex items-center gap-1.5 border"
+                      style={{
+                        backgroundColor: 'rgba(245,158,11,0.1)',
+                        borderColor: 'rgba(245,158,11,0.3)',
+                        color: '#D97706',
+                      }}
+                      title="Read-only schedule view branches"
+                    >
+                      <Eye className="w-3 h-3 text-amber-500 shrink-0" />
+                      <span>
+                        View: {selectedEmployee.viewBranchIds.split(',').map(id => branches.find(b => b.id === id.trim())?.name || id.trim()).join(', ')}
+                      </span>
+                    </span>
+                  )}
+
                   {/* Combined Active Status & Live Login / Presence */}
                   <div
                     className="text-[11px] font-semibold px-2.5 py-0.5 rounded-lg flex items-center gap-1.5 border shadow-xs"
@@ -2347,6 +2371,52 @@ export default function Employees() {
                           {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
                         </select>
                       </Field>
+                    )}
+                    {isAdmin && editForm.role === 'EMPLOYEE' && (
+                      <div className="col-span-1 sm:col-span-2">
+                        <Field label="SCHEDULE VIEW ACCESS (READ-ONLY BRANCHES)" labelColor={textMuted}>
+                          <div className="flex flex-col gap-2 p-3 rounded-xl border" style={{ backgroundColor: inputBg, borderColor: border }}>
+                            <p className="text-[11px] font-medium" style={{ color: textMuted }}>
+                              Grant this member read-only schedule viewing access to additional branches (e.g. Taguig – Sales for a Taguig – Services member).
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                              {branches
+                                .filter(b => b.id !== editForm.branchId)
+                                .map(b => {
+                                  const selectedIds = (editForm.viewBranchIds || '').split(',').map(s => s.trim()).filter(Boolean)
+                                  const isChecked = selectedIds.includes(b.id)
+                                  return (
+                                    <label
+                                      key={b.id}
+                                      className={`flex items-center gap-2.5 p-2 rounded-lg border text-xs font-semibold cursor-pointer transition-colors select-none ${
+                                        isChecked
+                                          ? 'bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400'
+                                          : 'hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-600 dark:text-slate-300'
+                                      }`}
+                                      style={{ borderColor: isChecked ? '#10B981' : border }}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={e => {
+                                          const next = e.target.checked
+                                            ? [...selectedIds, b.id]
+                                            : selectedIds.filter(id => id !== b.id)
+                                          setEditForm(p => ({ ...p, viewBranchIds: next.join(',') }))
+                                        }}
+                                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4"
+                                      />
+                                      <span className="truncate">{b.name.toUpperCase()}</span>
+                                      <span className="text-[9px] px-1 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-black ml-auto shrink-0">
+                                        VIEW ONLY
+                                      </span>
+                                    </label>
+                                  )
+                                })}
+                            </div>
+                          </div>
+                        </Field>
+                      </div>
                     )}
                     {ROLE_META[editForm.role as AssignableRole]?.hint && (
                       <p className="col-span-1 sm:col-span-2 text-[11px] leading-relaxed" style={{ color: textMuted }}>

@@ -11,7 +11,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useArctic } from '../contexts/ArcticContext'
-import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, isNegotiatorCandidate, isAccountActive, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, isPortalAdmin, isCoordinatorOrOicUser, getActivePortalBranchId, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, DEALERS_UPDATED_EVENT, notifyDealersUpdated, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, isNegotiatorCandidate, isAccountActive, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, isPortalAdmin, isCoordinatorOrOicUser, getActivePortalBranchId, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, DEALERS_UPDATED_EVENT, notifyDealersUpdated, getUserViewBranchIds, isBranchReadOnlyForUser, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import {
   cacheTicketsByNumber,
   cacheTicketByNumber,
@@ -316,7 +316,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const isAdmin = isPortalAdmin(role)
   const isManager = role === 'manager'
   const isEmployee = ['employee', 'oic', 'staff'].includes(role)
-  const canEdit = isAdmin || isManager || isEmployee
 
   // ─────────────────────────────────────────────────────────────
   const [globalBranchId, setGlobalBranchId] = useState<string | null>(
@@ -329,21 +328,24 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   }, [])
 
   const activeBranchId = (() => {
-    // Only branch-switcher-capable roles honor the shared global branch
-    // selection — plain employees must always stay scoped to their own
-    // branch, otherwise a stale selection left by another user on the same
-    // device silently overrides their Schedules/My Tickets branch.
+    const viewBranches = getUserViewBranchIds(user)
     if (isAdmin || isCoordinatorOrOicUser(user)) {
       if (globalBranchId && globalBranchId !== 'ALL_BRANCHES') return globalBranchId
       if (isAdmin) {
         const fromSidebar = getActivePortalBranchId(user)
         if (fromSidebar && fromSidebar !== 'ALL_BRANCHES') return fromSidebar
       }
+    } else if (viewBranches.length > 0 && globalBranchId) {
+      if (branchScopesMatch(globalBranchId, user?.branchId) || viewBranches.some(vb => branchScopesMatch(vb, globalBranchId))) {
+        return globalBranchId
+      }
     }
     return user?.branchId || ''
   })()
   const isTaguig = isTaguigBranchRef(activeBranchId)
   const isTaguigServices = isTaguigServicesScope(activeBranchId, user?.email, user?.jobTitle)
+  const isReadOnlySchedule = isBranchReadOnlyForUser(activeBranchId, user)
+  const canEdit = (isAdmin || isManager || isEmployee) && !isReadOnlySchedule
 
   // ─────────────────────────────────────────────────────────────
   const cardBg = isLight ? '#ffffff' : '#0f172a'
@@ -6728,6 +6730,12 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
               {/* Desktop Filters & Dates ribbon — hidden on mobile screens */}
               <div className="hidden md:flex flex-nowrap items-center gap-2.5 overflow-x-auto no-scrollbar w-full pb-1 md:pb-0 flex-1 order-2 md:order-1">
+                {isReadOnlySchedule && (
+                  <div className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-xs font-black shrink-0">
+                    <Eye className="w-3.5 h-3.5 shrink-0" />
+                    <span>READ ONLY SCHEDULE</span>
+                  </div>
+                )}
                 {/* Segmented weekly date pills */}
                 <div className="flex items-center gap-1 bg-slate-100 dark:bg-[#030712] p-1 rounded-lg shrink-0">
                   {weeklyTabs.map(tab => {

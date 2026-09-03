@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Search, X, Loader2, MapPin, Moon, Sun, Menu, AlertTriangle } from 'lucide-react'
+import { Search, X, Loader2, MapPin, Moon, Sun, Menu, AlertTriangle, SlidersHorizontal, Building2, CalendarDays } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { API_BASE_URL } from '../utils/api'
 import { useOutletContext } from 'react-router-dom'
@@ -38,14 +38,62 @@ export default function SearchTab() {
   const [overviewLoading, setOverviewLoading] = useState(false)
   const [selectedResult, setSelectedResult] = useState<any | null>(null)
 
+  // Filter state
+  const [filterBranchId, setFilterBranchId] = useState<string>('')
+  const [filterDate, setFilterDate] = useState<string>('')
+  const [showFilters, setShowFilters] = useState<boolean>(false)
+  const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
+
   const cardBg = isLight ? '#ffffff' : '#0A1120'
   const border = isLight ? '#e2e8f0' : '#1E2D48'
   const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
   const textMuted = isLight ? '#64748b' : '#7A95B8'
   const green = '#10B981'
 
-  const fetchOverviewTickets = useCallback(async (query: string) => {
-    if (!query.trim()) {
+  // Load available branches
+  useEffect(() => {
+    const loadBranches = async () => {
+      try {
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const res = await fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
+        if (!res.ok) return
+        const data = await res.json()
+        const list = data?.data || []
+        const newList: { id: string; name: string }[] = []
+        for (const b of list) {
+          const cleanName = b.name.replace(/^(ashcol\s+)/i, '').toUpperCase()
+          if (b.id === 'BR-TAGUIG-SALES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') {
+            if (!newList.some(item => item.id === 'BR-TAGUIG-SALES')) {
+              newList.push({ id: 'BR-TAGUIG-SALES', name: 'TAGUIG - SALES' })
+            }
+            if (!newList.some(item => item.id === 'BR-TAGUIG-SERVICES')) {
+              newList.push({ id: 'BR-TAGUIG-SERVICES', name: 'TAGUIG - SERVICES' })
+            }
+          } else if (b.id === 'BR-TAGUIG-SERVICES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-services' || b.id === 'BR-TAGUIG-SALES-services') {
+            if (!newList.some(item => item.id === 'BR-TAGUIG-SERVICES')) {
+              newList.push({ id: 'BR-TAGUIG-SERVICES', name: 'TAGUIG - SERVICES' })
+            }
+          } else if (cleanName.includes('TAGUIG')) {
+            // skip
+          } else {
+            newList.push({ id: b.id, name: cleanName })
+          }
+        }
+        newList.sort((a, b) => a.name.localeCompare(b.name))
+        setBranches(newList)
+      } catch (err) {
+        console.error('Failed to load branches:', err)
+      }
+    }
+    loadBranches()
+  }, [])
+
+  const fetchOverviewTickets = useCallback(async (query: string, branch: string, date: string) => {
+    const hasQuery = Boolean(query.trim())
+    const hasBranch = Boolean(branch.trim())
+    const hasDate = Boolean(date.trim())
+
+    if (!hasQuery && !hasBranch && !hasDate) {
       setOverviewResults([])
       return
     }
@@ -53,7 +101,13 @@ export default function SearchTab() {
     try {
       const tokenStr = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const headers = { Authorization: `Bearer ${tokenStr}` }
-      const url = `${API_BASE_URL}/tickets?q=${encodeURIComponent(query)}&size=100`
+      const params = new URLSearchParams()
+      if (hasQuery) params.append('q', query.trim())
+      if (hasBranch && branch !== 'ALL_BRANCHES') params.append('branchId', branch.trim())
+      if (hasDate) params.append('date', date.trim())
+      params.append('size', '100')
+
+      const url = `${API_BASE_URL}/tickets?${params.toString()}`
       const res = await fetch(url, { headers })
       if (res.ok) {
         const data = await res.json()
@@ -71,17 +125,12 @@ export default function SearchTab() {
 
   useEffect(() => {
     const trimmed = overviewSearchInput.trim()
-    if (!trimmed) {
-      setOverviewResults([])
-      return
-    }
-
     const timer = setTimeout(() => {
-      void fetchOverviewTickets(trimmed)
+      void fetchOverviewTickets(trimmed, filterBranchId, filterDate)
     }, 300)
 
     return () => clearTimeout(timer)
-  }, [overviewSearchInput, fetchOverviewTickets])
+  }, [overviewSearchInput, filterBranchId, filterDate, fetchOverviewTickets])
 
   const highlightMatch = (text: string, query: string) => {
     if (!query.trim()) return text
@@ -149,60 +198,193 @@ export default function SearchTab() {
       </div>
 
       {/* Main Search Panel */}
-      <div className={`flex-1 flex flex-col min-h-0 px-3 md:px-8 bg-transparent transition-all duration-300 ${overviewSearchInput || overviewResults.length > 0 ? 'overflow-y-auto justify-start' : 'overflow-hidden justify-center py-4 md:py-6'}`}>
-        <div className={`max-w-4xl w-full mx-auto flex flex-col animate-in fade-in transition-all duration-500 ease-out ${overviewSearchInput || overviewResults.length > 0 ? '' : 'pb-[15vh] gap-6 md:gap-8'}`}>
+      {(() => {
+        const hasActiveSearch = Boolean(overviewSearchInput.trim() || filterBranchId || filterDate || overviewResults.length > 0)
+        return (
+          <div className={`flex-1 flex flex-col min-h-0 px-3 md:px-8 bg-transparent transition-all duration-300 ${hasActiveSearch ? 'overflow-y-auto justify-start' : 'overflow-hidden justify-center py-4 md:py-6'}`}>
+            <div className={`max-w-4xl w-full mx-auto flex flex-col animate-in fade-in transition-all duration-500 ease-out ${hasActiveSearch ? '' : 'pb-[15vh] gap-6 md:gap-8'}`}>
 
-          {/* Logo + Input Container */}
-          <div
-            className={overviewSearchInput || overviewResults.length > 0
-              ? 'sticky top-0 z-10 -mx-3 px-3 md:mx-0 md:px-0 pt-4 pb-3 md:pt-6 md:pb-4 flex flex-col gap-3 md:gap-4'
-              : 'flex flex-col gap-6 md:gap-8'}
-            style={overviewSearchInput || overviewResults.length > 0 ? { backgroundColor: isLight ? '#f1f5f9' : '#060B18' } : undefined}
-          >
-            {/* Big Google-style logo */}
-            <div className="flex flex-col items-center justify-center text-center">
-              <h1
-                className={`font-black tracking-tighter transition-all duration-500 ease-out ${overviewSearchInput || overviewResults.length > 0 ? 'text-2xl md:text-3xl mb-0 opacity-80' : 'text-5xl md:text-7xl mb-2 opacity-100'}`}
+              {/* Logo + Input Container */}
+              <div
+                className={hasActiveSearch
+                  ? 'sticky top-0 z-10 -mx-3 px-3 md:mx-0 md:px-0 pt-4 pb-3 md:pt-6 md:pb-4 flex flex-col gap-3 md:gap-4'
+                  : 'flex flex-col gap-6 md:gap-8'}
+                style={hasActiveSearch ? { backgroundColor: isLight ? '#f1f5f9' : '#060B18' } : undefined}
               >
-                <span style={{ color: green }}>ASHCOL</span>
-                <span style={{ color: textPrimary }} className="ml-2 md:ml-3">PORTAL</span>
-              </h1>
-            </div>
+                {/* Big Google-style logo */}
+                <div className="flex flex-col items-center justify-center text-center">
+                  <h1
+                    className={`font-black tracking-tighter transition-all duration-500 ease-out ${hasActiveSearch ? 'text-2xl md:text-3xl mb-0 opacity-80' : 'text-5xl md:text-7xl mb-2 opacity-100'}`}
+                  >
+                    <span style={{ color: green }}>ASHCOL</span>
+                    <span style={{ color: textPrimary }} className="ml-2 md:ml-3">PORTAL</span>
+                  </h1>
+                </div>
 
-            {/* Input Box */}
-            <div
-              className="flex items-center gap-3 px-8 py-5 md:px-10 md:py-6 rounded-full shadow-md border-2 transition-all duration-200"
-              style={{
-                backgroundColor: cardBg,
-                borderColor: overviewSearchFocused ? green : border,
-                boxShadow: overviewSearchFocused ? `0 0 0 4px ${green}15` : 'none'
-              }}
-            >
-              <Search className="w-5 h-5 shrink-0" style={{ color: green }} />
-              <input
-                type="text"
-                placeholder="Search tickets, customers, or contacts..."
-                value={overviewSearchInput}
-                onChange={e => setOverviewSearchInput(e.target.value)}
-                onFocus={() => setOverviewSearchFocused(true)}
-                onBlur={() => setOverviewSearchFocused(false)}
-                enterKeyHint="search"
-                autoComplete="off"
-                className="bg-transparent outline-none text-base flex-1 min-w-0 font-medium"
-                style={{ color: textPrimary }}
-              />
-              {overviewSearchInput && (
-                <button
-                  type="button"
-                  onClick={() => { setOverviewSearchInput(''); setOverviewResults([]); }}
-                  style={{ color: textMuted }}
-                  className="hover:scale-110 transition-transform p-1"
+                {/* Input Box */}
+                <div
+                  className="flex items-center gap-3 px-6 py-4 md:px-8 md:py-5 rounded-full shadow-md border-2 transition-all duration-200"
+                  style={{
+                    backgroundColor: cardBg,
+                    borderColor: overviewSearchFocused ? green : border,
+                    boxShadow: overviewSearchFocused ? `0 0 0 4px ${green}15` : 'none'
+                  }}
                 >
-                  <X className="w-5 h-5" />
-                </button>
-              )}
-            </div>
-          </div>
+                  <Search className="w-5 h-5 shrink-0" style={{ color: green }} />
+                  <input
+                    type="text"
+                    placeholder="Search tickets, customers, or contacts..."
+                    value={overviewSearchInput}
+                    onChange={e => setOverviewSearchInput(e.target.value)}
+                    onFocus={() => setOverviewSearchFocused(true)}
+                    onBlur={() => setOverviewSearchFocused(false)}
+                    enterKeyHint="search"
+                    autoComplete="off"
+                    className="bg-transparent outline-none text-base flex-1 min-w-0 font-medium"
+                    style={{ color: textPrimary }}
+                  />
+                  {overviewSearchInput && (
+                    <button
+                      type="button"
+                      onClick={() => { setOverviewSearchInput(''); setOverviewResults([]); }}
+                      style={{ color: textMuted }}
+                      className="hover:scale-110 transition-transform p-1"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  )}
+
+                  {/* Filter Toggle Button */}
+                  <button
+                    type="button"
+                    onClick={() => setShowFilters(prev => !prev)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold transition-all shrink-0 select-none ${
+                      showFilters || filterBranchId || filterDate
+                        ? 'bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400'
+                        : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500'
+                    }`}
+                    style={{
+                      borderColor: (showFilters || filterBranchId || filterDate) ? green : border,
+                    }}
+                    title="Filter by branch or date"
+                  >
+                    <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden sm:inline">Filters</span>
+                    {(Boolean(filterBranchId) || Boolean(filterDate)) && (
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                    )}
+                  </button>
+                </div>
+
+                {/* Collapsible Filter Panel */}
+                {showFilters && (
+                  <div
+                    className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-4 rounded-2xl border shadow-sm animate-in fade-in slide-in-from-top-2 duration-200"
+                    style={{ backgroundColor: cardBg, borderColor: border }}
+                  >
+                    {/* Branch Filter */}
+                    <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border" style={{ backgroundColor: isLight ? '#f8fafc' : '#060B18', borderColor: border }}>
+                      <Building2 className="w-4 h-4 shrink-0" style={{ color: green }} />
+                      <select
+                        value={filterBranchId}
+                        onChange={e => setFilterBranchId(e.target.value)}
+                        className="bg-transparent outline-none text-xs font-semibold flex-1 cursor-pointer"
+                        style={{ color: textPrimary }}
+                      >
+                        <option value="" style={{ backgroundColor: isLight ? '#ffffff' : '#0F172A', color: textPrimary }}>ALL BRANCHES</option>
+                        {branches.map(b => (
+                          <option key={b.id} value={b.id} style={{ backgroundColor: isLight ? '#ffffff' : '#0F172A', color: textPrimary }}>
+                            {b.name.toUpperCase()}
+                          </option>
+                        ))}
+                      </select>
+                      {filterBranchId && (
+                        <button
+                          type="button"
+                          onClick={() => setFilterBranchId('')}
+                          className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                          title="Clear branch filter"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Date Filter */}
+                    <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border" style={{ backgroundColor: isLight ? '#f8fafc' : '#060B18', borderColor: border }}>
+                      <CalendarDays className="w-4 h-4 shrink-0" style={{ color: green }} />
+                      <input
+                        type="date"
+                        value={filterDate}
+                        onChange={e => setFilterDate(e.target.value)}
+                        className="bg-transparent outline-none text-xs font-semibold flex-1 cursor-pointer"
+                        style={{ color: textPrimary }}
+                      />
+                      {filterDate ? (
+                        <button
+                          type="button"
+                          onClick={() => setFilterDate('')}
+                          className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                          title="Clear date filter"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const today = new Date().toISOString().split('T')[0]
+                            setFilterDate(today)
+                          }}
+                          className="text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 shrink-0"
+                          title="Set to today"
+                        >
+                          Today
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Reset Button */}
+                    {(filterBranchId || filterDate) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFilterBranchId('')
+                          setFilterDate('')
+                        }}
+                        className="px-3 py-2 rounded-xl border text-xs font-bold text-slate-500 hover:text-rose-500 hover:border-rose-500/30 transition-colors shrink-0"
+                        style={{ borderColor: border }}
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Active Filter Chips */}
+                {(filterBranchId || filterDate) && (
+                  <div className="flex items-center gap-2 flex-wrap px-1">
+                    {filterBranchId && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                        <Building2 className="w-3 h-3 shrink-0" />
+                        <span>{branches.find(b => b.id === filterBranchId)?.name || filterBranchId}</span>
+                        <button type="button" onClick={() => setFilterBranchId('')} className="hover:opacity-75">
+                          <X className="w-3 h-3 shrink-0" />
+                        </button>
+                      </span>
+                    )}
+                    {filterDate && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                        <CalendarDays className="w-3 h-3 shrink-0" />
+                        <span>{new Date(filterDate + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                        <button type="button" onClick={() => setFilterDate('')} className="hover:opacity-75">
+                          <X className="w-3 h-3 shrink-0" />
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
 
           {/* Results Grid / Statuses */}
           {overviewLoading ? (
@@ -296,18 +478,32 @@ export default function SearchTab() {
                 })}
               </div>
             </div>
-          ) : overviewSearchInput.trim() ? (
+          ) : (overviewSearchInput.trim() || filterBranchId || filterDate) ? (
             <div className="flex flex-col items-center justify-center py-16 text-center animate-in fade-in">
               <AlertTriangle className="w-10 h-10 mb-3" style={{ color: textMuted }} />
-              <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>No results found</h3>
+              <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>No tickets found</h3>
               <p className="text-xs max-w-sm mt-2" style={{ color: textMuted }}>
-                We couldn't find any tickets matching "{overviewSearchInput}". Try adjusting your search term.
+                We couldn't find any tickets matching the selected query or filters. Try adjusting your search term, branch, or date.
               </p>
+              {(filterBranchId || filterDate) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterBranchId('')
+                    setFilterDate('')
+                  }}
+                  className="mt-4 px-3 py-1.5 rounded-lg border text-xs font-bold text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/10 transition-colors"
+                >
+                  Clear Filters
+                </button>
+              )}
             </div>
           ) : null}
 
-        </div>
-      </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Floating Theme Button (Bottom Right) */}
       <div className="absolute bottom-6 right-6 z-50">

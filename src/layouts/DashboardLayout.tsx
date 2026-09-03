@@ -42,7 +42,7 @@ import {
 } from 'react-icons/md'
 import { FiMinus, FiPlus } from 'react-icons/fi'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortalAdmin, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry, formatBranchName, canMemberAccessRelaysAndTicketCreation, canMemberAccessDdrm, canMemberAccessPayroll, isSystemAdmin, isPortalStaffUser, isWarrantyRegistrar } from '../utils/api'
+import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortalAdmin, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry, formatBranchName, canMemberAccessRelaysAndTicketCreation, canMemberAccessDdrm, canMemberAccessPayroll, isSystemAdmin, isPortalStaffUser, isWarrantyRegistrar, getUserViewBranchIds, isBranchReadOnlyForUser, branchScopesMatch } from '../utils/api'
 import UserAvatar from '../components/UserAvatar'
 import MessagesDropdown from '../components/MessagesDropdown'
 import NotificationsDropdown from '../components/NotificationsDropdown'
@@ -249,6 +249,8 @@ export default function DashboardLayout() {
   }
 
   const isPortalAdminUser = isPortalAdmin(user?.role)
+  const userViewBranches = getUserViewBranchIds(user)
+  const hasBranchSwitcher = isPortalAdminUser || userViewBranches.length > 0
   const [globalBranchId, setGlobalBranchId] = useState<string | null>(() => localStorage.getItem('ashcol-global-branch-id'))
   const [adminBranches, setAdminBranches] = useState<BranchOption[]>([])
 
@@ -281,8 +283,8 @@ export default function DashboardLayout() {
   }, [])
 
   useEffect(() => {
-    if (!isPortalAdminUser) return
-    const loadAdminBranches = async () => {
+    if (!hasBranchSwitcher) return
+    const loadBranches = async () => {
       try {
         const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
         const res = await fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
@@ -290,7 +292,7 @@ export default function DashboardLayout() {
         const data = await res.json()
         const list = data?.data || []
 
-        const newList: BranchOption[] = []
+        const allList: BranchOption[] = []
         for (const b of list) {
           const cleanName = b.name.replace(/^(ashcol\s+)/i, '').toUpperCase()
           const isTaguigRow = (b.id || '').toLowerCase().includes('taguig')
@@ -299,30 +301,46 @@ export default function DashboardLayout() {
           // Taguig (Sales/Services) is always available; other inactive branches are hidden.
           if (b.isActive === false && !isTaguigRow) continue
           if (b.id === 'BR-TAGUIG-SALES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') {
-            if (!newList.some(item => item.id === 'BR-TAGUIG-SALES')) {
-              newList.push({ id: 'BR-TAGUIG-SALES', name: 'TAGUIG - SALES' })
+            if (!allList.some(item => item.id === 'BR-TAGUIG-SALES')) {
+              allList.push({ id: 'BR-TAGUIG-SALES', name: 'TAGUIG - SALES' })
             }
-            if (!newList.some(item => item.id === 'BR-TAGUIG-SERVICES')) {
-              newList.push({ id: 'BR-TAGUIG-SERVICES', name: 'TAGUIG - SERVICES' })
+            if (!allList.some(item => item.id === 'BR-TAGUIG-SERVICES')) {
+              allList.push({ id: 'BR-TAGUIG-SERVICES', name: 'TAGUIG - SERVICES' })
             }
           } else if (b.id === 'BR-TAGUIG-SERVICES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-services' || b.id === 'BR-TAGUIG-SALES-services') {
-            if (!newList.some(item => item.id === 'BR-TAGUIG-SERVICES')) {
-              newList.push({ id: 'BR-TAGUIG-SERVICES', name: 'TAGUIG - SERVICES' })
+            if (!allList.some(item => item.id === 'BR-TAGUIG-SERVICES')) {
+              allList.push({ id: 'BR-TAGUIG-SERVICES', name: 'TAGUIG - SERVICES' })
             }
           } else if (cleanName.includes('TAGUIG')) {
             // skip other taguig variants
           } else {
-            newList.push({ id: b.id, name: cleanName })
+            allList.push({ id: b.id, name: cleanName })
           }
         }
-        newList.sort((a, b) => a.name.localeCompare(b.name))
-        setAdminBranches(newList)
+        allList.sort((a, b) => a.name.localeCompare(b.name))
+
+        let availableBranches = allList
+        if (!isPortalAdminUser) {
+          const primaryBranch = user?.branchId || ''
+          availableBranches = allList.filter(b =>
+            branchScopesMatch(primaryBranch, b.id) || userViewBranches.some(vb => branchScopesMatch(vb, b.id))
+          ).map(b => {
+            const isReadOnly = isBranchReadOnlyForUser(b.id, user)
+            return {
+              ...b,
+              isReadOnly,
+            }
+          })
+        }
+
+        setAdminBranches(availableBranches)
         
         const stored = localStorage.getItem('ashcol-global-branch-id')
-        const storedEntry = stored ? findBranchListEntry(stored, newList) : undefined
-        if (!storedEntry && newList.length > 0) {
-          localStorage.setItem('ashcol-global-branch-id', newList[0].id)
-          setGlobalBranchId(newList[0].id)
+        const storedEntry = stored ? findBranchListEntry(stored, availableBranches) : undefined
+        if (!storedEntry && availableBranches.length > 0) {
+          const defaultBranch = availableBranches.find(b => branchScopesMatch(user?.branchId, b.id)) || availableBranches[0]
+          localStorage.setItem('ashcol-global-branch-id', defaultBranch.id)
+          setGlobalBranchId(defaultBranch.id)
           window.dispatchEvent(new Event('ashcol-global-branch-change'))
         } else if (storedEntry && stored !== storedEntry.id) {
           localStorage.setItem('ashcol-global-branch-id', storedEntry.id)
@@ -330,21 +348,22 @@ export default function DashboardLayout() {
           window.dispatchEvent(new Event('ashcol-global-branch-change'))
         }
       } catch (err) {
-        console.error('Error loading admin branches:', err)
+        console.error('Error loading branches:', err)
       }
     }
-    loadAdminBranches()
-  }, [isPortalAdminUser])
+    loadBranches()
+  }, [hasBranchSwitcher, isPortalAdminUser, user?.branchId, user?.viewBranchIds])
 
   useEffect(() => {
-    if (!isPortalAdminUser) return
+    if (!hasBranchSwitcher) return
     const syncLabel = () => {
       const gId = localStorage.getItem('ashcol-global-branch-id')
       setGlobalBranchId(gId)
       if (gId && adminBranches.length > 0) {
         const found = findBranchListEntry(gId, adminBranches) || adminBranches.find(b => b.id === gId)
         if (found) {
-          setBranchLabel(found.name)
+          const isReadOnly = isBranchReadOnlyForUser(found.id, user)
+          setBranchLabel(isReadOnly ? `${found.name} (VIEW ONLY)` : found.name)
         }
       } else {
         setBranchLabel(null)
@@ -353,7 +372,7 @@ export default function DashboardLayout() {
     syncLabel()
     window.addEventListener('ashcol-global-branch-change', syncLabel)
     return () => window.removeEventListener('ashcol-global-branch-change', syncLabel)
-  }, [isPortalAdminUser, adminBranches])
+  }, [hasBranchSwitcher, adminBranches, user])
 
   const handleGlobalBranchChange = (val: string) => {
     localStorage.setItem('ashcol-global-branch-id', val)
@@ -362,8 +381,8 @@ export default function DashboardLayout() {
   }
 
   useEffect(() => {
-    if (isPortalAdminUser || !user?.branchId) {
-      if (!isPortalAdminUser) {
+    if (hasBranchSwitcher || !user?.branchId) {
+      if (!hasBranchSwitcher) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setBranchLabel(null)
       }
@@ -906,7 +925,7 @@ export default function DashboardLayout() {
                       {currentPage}
                     </span>
                     {branchLabel ? (
-                      isPortalAdminUser && adminBranches.length > 0 ? (
+                      hasBranchSwitcher && adminBranches.length > 0 ? (
                         <div ref={headerBranchRef} className="relative">
                           <button
                             onClick={() => setHeaderBranchDropdownOpen(prev => !prev)}
@@ -919,7 +938,7 @@ export default function DashboardLayout() {
                           </button>
                           {headerBranchDropdownOpen && (
                               <div
-                                className="absolute z-50 w-56 rounded-xl shadow-2xl overflow-hidden top-[calc(100%+8px)] left-0"
+                                className="absolute z-50 w-60 rounded-xl shadow-2xl overflow-hidden top-[calc(100%+8px)] left-0"
                                 style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0' }}
                               >
                                 <div className="px-4 py-3 text-xs font-black uppercase tracking-wider text-slate-400" style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -936,7 +955,14 @@ export default function DashboardLayout() {
                                           isSelected ? 'bg-emerald-50 text-slate-900' : 'text-slate-600 hover:bg-emerald-50 hover:text-slate-900'
                                         }`}
                                       >
-                                        <span>{formatBranchName(b.name)}</span>
+                                        <div className="flex items-center gap-2 truncate mr-2">
+                                          <span className="truncate">{formatBranchName(b.name)}</span>
+                                          {b.isReadOnly && (
+                                            <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-800 shrink-0">
+                                              READ ONLY
+                                            </span>
+                                          )}
+                                        </div>
                                         {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />}
                                       </button>
                                     )

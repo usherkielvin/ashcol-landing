@@ -23,6 +23,8 @@ export interface AuthUser {
   /** User's official job title (e.g. "Sales Coordinator") */
   jobTitle?: string | null
   birthDate?: string | null
+  /** Comma-separated branch IDs the member has read-only schedule viewing access to */
+  viewBranchIds?: string | null
   lastLoginAt?: string | null
   lastActiveAt?: string | null
 }

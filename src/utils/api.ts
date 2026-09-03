@@ -854,6 +854,7 @@ type PortalUserLike = {
   role?: string | null
   branchId?: string | null
   jobTitle?: string | null
+  viewBranchIds?: string | null
 }
 
 const normalizeUserValue = (value?: string | null) => (value || '').trim().toLowerCase()
@@ -873,10 +874,41 @@ export function isPortalAdminUser(user?: PortalUserLike | null): boolean {
   return isPortalAdmin(user?.role)
 }
 
-/** Active branch for portal admin / management — sidebar switcher value. */
+/** Get list of view-only branch IDs for a member. */
+export function getUserViewBranchIds(user?: { viewBranchIds?: string | null } | null): string[] {
+  if (!user?.viewBranchIds) return []
+  return user.viewBranchIds
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+/** Checks whether a given branch is view-only (read-only) for the current user. */
+export function isBranchReadOnlyForUser(
+  branchId?: string | null,
+  user?: PortalUserLike | null,
+): boolean {
+  if (!user || !branchId || branchId === 'ALL_BRANCHES') return false
+  if (isPortalAdmin(user.role) || (user.role || '').toLowerCase() === 'manager') return false
+  const primaryBranch = user.branchId || ''
+  if (primaryBranch && branchScopesMatch(primaryBranch, branchId)) return false
+  const viewBranches = getUserViewBranchIds(user)
+  return viewBranches.some((vb) => branchScopesMatch(vb, branchId))
+}
+
+/** Active branch for portal admin / management or members with view branches — sidebar switcher value. */
 export function getActivePortalBranchId(user?: PortalUserLike | null): string | null {
-  if (!isPortalAdmin(user?.role)) return user?.branchId ?? null
-  return localStorage.getItem('ashcol-global-branch-id') || user?.branchId || null
+  if (isPortalAdmin(user?.role)) {
+    return localStorage.getItem('ashcol-global-branch-id') || user?.branchId || null
+  }
+  const viewBranches = getUserViewBranchIds(user)
+  if (viewBranches.length > 0) {
+    const stored = localStorage.getItem('ashcol-global-branch-id')
+    if (stored && (branchScopesMatch(stored, user?.branchId) || viewBranches.some((vb) => branchScopesMatch(vb, stored)))) {
+      return stored
+    }
+  }
+  return user?.branchId ?? null
 }
 
 /** May DTR correction window — all assigned employees may edit their branch reports. */
