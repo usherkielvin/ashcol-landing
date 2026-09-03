@@ -4,8 +4,9 @@ import { useAuth, getInitials } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import {
   User, Shield, History, ClipboardCheck,
-  KeyRound, Trash2, X, AlertTriangle, Lock, Eye, EyeOff
+  KeyRound, Trash2, X, AlertTriangle, Lock, Eye, EyeOff, Bell
 } from 'lucide-react'
+import { getCurrentSubscription, subscribeToPush, unsubscribeFromPush, pushBlockedReason } from '../utils/webPush'
 import ImageCropModal from '../components/ImageCropModal'
 import TicketHistoryTable from '../components/TicketHistoryTable'
 import PresenceStatus from '../components/PresenceStatus'
@@ -115,6 +116,39 @@ export default function Profile() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false)
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+
+  // ── Browser push notification state ────────────────────────────────────────
+  const [pushEnabled, setPushEnabled]       = useState(false)
+  const [pushLoading, setPushLoading]       = useState(false)
+  const [pushErr, setPushErr]               = useState('')
+  const [pushCheckedOnce, setPushCheckedOnce] = useState(false)
+
+  useEffect(() => {
+    getCurrentSubscription()
+      .then(sub => setPushEnabled(!!sub))
+      .catch(() => {})
+      .finally(() => setPushCheckedOnce(true))
+  }, [])
+
+  const handleTogglePush = async () => {
+    setPushErr('')
+    setPushLoading(true)
+    try {
+      if (pushEnabled) {
+        await unsubscribeFromPush()
+        setPushEnabled(false)
+      } else {
+        const result = await subscribeToPush()
+        if (result.ok) {
+          setPushEnabled(true)
+        } else {
+          setPushErr(result.error || 'Could not enable notifications.')
+        }
+      }
+    } finally {
+      setPushLoading(false)
+    }
+  }
 
   // ── User management state (admin only) ────────────────────────────────────
   const [users, setUsers]                   = useState<any[]>([])
@@ -347,6 +381,7 @@ export default function Profile() {
 
   const sidebarLinks: { key: Tab; label: string; icon: any }[] = [
     { key: 'profile' as Tab, label: 'Profile', icon: User },
+    { key: 'notifications' as Tab, label: 'Notifications', icon: Bell },
     ...(isStaffUser ? [{ key: 'history' as Tab, label: 'Ticket History', icon: History }] : []),
     ...(isRegistrar ? [{ key: 'registrations' as Tab, label: 'Registered Tickets', icon: ClipboardCheck }] : []),
     ...(isSystemAdmin(user?.role) ? [{ key: 'users' as Tab, label: 'User Management', icon: Shield }] : []),
@@ -829,15 +864,31 @@ export default function Profile() {
                   <h3 className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: textMuted }}>Push Notifications</h3>
 
                   {/* Browser push */}
-                  <div className="flex items-center justify-between py-3" style={{ borderBottom: `1px solid ${border}` }}>
-                    <div>
-                      <p className="text-sm font-semibold" style={{ color: textPrimary }}>Browser Notifications</p>
-                      <p className="text-xs mt-0.5" style={{ color: textMuted }}>Show browser push notifications</p>
+                  <div className="py-3" style={{ borderBottom: `1px solid ${border}` }}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold" style={{ color: textPrimary }}>Browser Notifications</p>
+                        <p className="text-xs mt-0.5" style={{ color: textMuted }}>
+                          Get notified on this device even when the portal isn't open
+                        </p>
+                      </div>
+                      <label className={`relative inline-flex items-center ${pushLoading || !pushCheckedOnce ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}`}>
+                        <input
+                          type="checkbox"
+                          className="sr-only peer"
+                          checked={pushEnabled}
+                          onChange={handleTogglePush}
+                          disabled={pushLoading || !pushCheckedOnce}
+                        />
+                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#10B981]"></div>
+                      </label>
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input type="checkbox" className="sr-only peer" defaultChecked />
-                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#10B981]"></div>
-                    </label>
+                    {pushErr && (
+                      <p className="text-xs mt-2 px-3 py-2 rounded-lg bg-red-500/10 text-red-400">{pushErr}</p>
+                    )}
+                    {!pushErr && !pushEnabled && pushBlockedReason() && (
+                      <p className="text-xs mt-2" style={{ color: textMuted }}>{pushBlockedReason()}</p>
+                    )}
                   </div>
 
                   {/* Sound alerts */}
