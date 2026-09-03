@@ -46,6 +46,8 @@ import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortal
 import UserAvatar from '../components/UserAvatar'
 import MessagesDropdown from '../components/MessagesDropdown'
 import NotificationsDropdown from '../components/NotificationsDropdown'
+import NotificationDetailModal from '../components/NotificationDetailModal'
+import { useNotifications } from '../contexts/NotificationContext'
 import FloatingChatWindow from '../components/FloatingChatWindow'
 import { HEADER_MENU_OPENED_EVENT, broadcastHeaderMenuOpen } from '../utils/headerMenuCoordination'
 import ArcticButton from '../components/arctic/ArcticButton'
@@ -199,6 +201,19 @@ export default function DashboardLayout() {
   const { theme, toggleTheme } = useTheme()
   const { user, logout } = useAuth()
   const { openArctic, setPageContext } = useArctic()
+  const { openNotificationDetail } = useNotifications()
+
+  // Deep-link from a push notification click with nowhere else to go — see sw.js/WebPushService.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const notificationId = params.get('notification')
+    if (!notificationId) return
+    openNotificationDetail(notificationId)
+    params.delete('notification')
+    const nextSearch = params.toString()
+    navigate({ pathname: location.pathname, search: nextSearch ? `?${nextSearch}` : '' }, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search])
   const isLight = theme === 'light'
   const [branchLabel, setBranchLabel] = useState<string | null>(null)
 
@@ -1124,6 +1139,8 @@ export default function DashboardLayout() {
 
       {/* ── Global Agentic Chat UI ────────────────────── */}
       <ArcticDrawer />
+
+      <NotificationDetailModal />
 
       <FloatingChatWindow />
     </div>

@@ -25,7 +25,7 @@ export default function NotificationsDropdown() {
   const navigate = useNavigate()
   const { theme } = useTheme()
   const isLight = theme === 'light'
-  const { notifications, unreadCount, markRead, markAllRead } = useNotifications()
+  const { notifications, unreadCount, markRead, markAllRead, openNotificationDetail } = useNotifications()
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -54,6 +54,7 @@ export default function NotificationsDropdown() {
     setOpen(false)
     if (link) navigate(link)
     else if (ticketId) navigate(`/my-tickets?ticket=${ticketId}`)
+    else openNotificationDetail(id)
   }
 
   return (

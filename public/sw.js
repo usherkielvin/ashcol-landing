@@ -20,11 +20,13 @@ self.addEventListener('push', event => {
   }
 
   const title = payload.title || 'ASHCOL'
+  // No link (e.g. a plain announcement) — deep-link to the notification's own detail popup instead.
+  const link = payload.link || (payload.id ? `/?notification=${payload.id}` : '/')
   const options = {
     body: payload.body || '',
     icon: '/icon-192.png',
     badge: '/icon-192.png',
-    data: { link: payload.link || '/' },
+    data: { link },
   }
 
   event.waitUntil(self.registration.showNotification(title, options))

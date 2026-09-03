@@ -20,6 +20,12 @@ interface NotificationContextType {
   fetchNotifications: () => Promise<void>
   markRead: (id: string) => Promise<void>
   markAllRead: () => Promise<void>
+  /** Notification currently shown in the full-detail popup, if any. */
+  viewingNotification: AppNotification | null
+  /** Opens the detail popup for this id once it's available (retries against the list until found —
+   *  covers a cold push-notification click before the list has finished its first fetch). */
+  openNotificationDetail: (id: string) => void
+  closeNotificationDetail: () => void
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined)
@@ -32,6 +38,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [loading, setLoading] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [viewingNotification, setViewingNotification] = useState<AppNotification | null>(null)
+  const pendingViewIdRef = useRef<string | null>(null)
 
   const fetchNotifications = useCallback(async () => {
     if (!getToken()) return
@@ -98,6 +106,33 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
   }, [fetchNotifications])
 
+  const openNotificationDetail = useCallback((id: string) => {
+    const found = notifications.find(n => n.id === id)
+    if (found) {
+      setViewingNotification(found)
+      pendingViewIdRef.current = null
+    } else {
+      // Not loaded yet (e.g. a fresh push notification click before the list has fetched) —
+      // the effect below opens it as soon as fetchNotifications brings it in.
+      pendingViewIdRef.current = id
+    }
+  }, [notifications])
+
+  const closeNotificationDetail = useCallback(() => {
+    setViewingNotification(null)
+    pendingViewIdRef.current = null
+  }, [])
+
+  // Resolve a pending detail-view request once the list catches up with it.
+  useEffect(() => {
+    if (!pendingViewIdRef.current) return
+    const found = notifications.find(n => n.id === pendingViewIdRef.current)
+    if (found) {
+      setViewingNotification(found)
+      pendingViewIdRef.current = null
+    }
+  }, [notifications])
+
   useEffect(() => {
     if (!user) {
       setNotifications([])
@@ -128,7 +163,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const unreadCount = notifications.filter(n => !n.isRead).length
 
   return (
-    <NotificationContext.Provider value={{ notifications, unreadCount, loading, fetchNotifications, markRead, markAllRead }}>
+    <NotificationContext.Provider value={{
+      notifications, unreadCount, loading, fetchNotifications, markRead, markAllRead,
+      viewingNotification, openNotificationDetail, closeNotificationDetail,
+    }}>
       {children}
     </NotificationContext.Provider>
   )
