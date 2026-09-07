@@ -7391,11 +7391,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                       </div>
                                     </div>
                                   )}
-                                  {isPendingRow && (
-                                    <div className="pending-row-highlight-bar">
-                                      <div className="pending-row-highlight-beam" />
-                                    </div>
-                                  )}
                                 </td>
                               )
                             })}
