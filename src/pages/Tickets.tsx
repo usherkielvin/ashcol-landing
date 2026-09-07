@@ -7214,7 +7214,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                         const isHovered = hoveredRow === ticket.id
                         const ghostKind = dateFilter ? getScheduleGhostKind(ticket, dateFilter) : null
                         const isGhost = Boolean(ghostKind)
-                        const isPendingRow = isOverduePendingScheduleTicket(ticket, ghostKind, dateFilter)
                         const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(getCustomerDisplayName(ticket)))
                         const rowColors = getScheduleRowColors(ticket, ghostKind, isLight, idx, rowEven, rowOdd, isDuplicateName)
                         const baseBg = rowColors.baseBg

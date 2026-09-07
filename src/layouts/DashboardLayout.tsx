@@ -200,7 +200,7 @@ export default function DashboardLayout() {
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
   const { user, logout } = useAuth()
-  const { openArctic, setPageContext } = useArctic()
+  const { setPageContext } = useArctic()
   const { openNotificationDetail } = useNotifications()
 
   // Deep-link from a push notification click with nowhere else to go — see sw.js/WebPushService.
@@ -777,7 +777,7 @@ export default function DashboardLayout() {
                               }`}
                             >
                               {isSubActive && (
-                                <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-white rounded-full" />
+                                <div className="absolute -left-4 top-0 bottom-0 w-[3px] bg-white rounded-full" />
                               )}
                               <span className={`shrink-0 transition-opacity ${isSubActive ? 'opacity-100' : 'opacity-70'}`}>
                                 {sub.icon}
@@ -846,38 +846,7 @@ export default function DashboardLayout() {
 
         </nav>
 
-        {/* ── Arctic — separated from operational navigation ──────── */}
-        <div className="shrink-0 px-2 pt-2 pb-3" style={{ borderTop: '1px solid rgba(255,255,255,0.14)' }}>
-          {navVisible ? (
-            <button
-              onClick={() => { openArctic(); setSidebarOpen(false) }}
-              title="Ask Arctic — ASHCOL AI"
-              className="group flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150 w-full"
-              style={{ color: '#ffffff' }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = sidebarHoverBg}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
-            >
-              <span className="text-base shrink-0 leading-none">🦊</span>
-              <span className="flex-1 truncate text-left">Arctic</span>
-            </button>
-          ) : (
-            <button
-              onClick={() => { openArctic(); setSidebarOpen(false) }}
-              title="Ask Arctic — ASHCOL AI"
-              className="flex items-center justify-center w-11 h-11 mx-auto rounded-xl text-base transition-all duration-150"
-              style={{
-                color: sidebarIconColor,
-                opacity: showCollapsedIcons ? 1 : 0,
-                pointerEvents: showCollapsedIcons ? 'auto' : 'none',
-                transition: 'opacity 120ms ease',
-              }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = sidebarHoverBg}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
-            >
-              🦊
-            </button>
-          )}
-        </div>
+
 
       </aside>
     </div>
