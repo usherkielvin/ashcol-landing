@@ -119,7 +119,7 @@ export function parseGlobalBranchScope(
     return {
       branchId: isServices ? 'BR-TAGUIG-SERVICES' : 'BR-TAGUIG-SALES',
       auditLine: isServices ? 'TAGUIG_SERVICE' : 'TAGUIG_SALES',
-      branchName: isServices ? 'TAGUIG SERVICES' : 'TAGUIG-SALES',
+      branchName: isServices ? 'TAGUIG SERVICES' : 'TAGUIG SALES',
     }
   }
 
@@ -191,7 +191,7 @@ export function getCleanBranchName(name?: string | null): string {
     upper = upper.slice(7).trim()
   }
   if (upper === 'TAGUIG') {
-    return 'TAGUIG-SALES'
+    return 'TAGUIG SALES'
   }
   if (upper === 'TAGUIG - SERVICES' || upper === 'TAGUIG-SERVICES' || upper === 'TAGUIG SERVICES' || upper === 'TAGUIG - SERVICE') {
     return 'TAGUIG SERVICES'
@@ -802,7 +802,7 @@ const BRANCH_DISPLAY_BY_ID: Record<string, string> = {
   'BR-PAMPANGA': 'PAMPANGA',
   'BR-RIZAL': 'RIZAL',
   'BR-SILANG': 'SILANG',
-  'BR-TAGUIG-SALES': 'TAGUIG-SALES',
+  'BR-TAGUIG-SALES': 'TAGUIG SALES',
   'BR-TAGUIG-SERVICES': 'TAGUIG SERVICES',
   'BR-VALENZUELA': 'VALENZUELA',
 }
@@ -825,7 +825,7 @@ export function formatBranchName(name?: string | null, branchId?: string | null)
     return 'TAGUIG SERVICES'
   }
   if (id.includes('TAGUIG') || upper.includes('TAGUIG') || upper.includes('HEAD OFFICE')) {
-    return 'TAGUIG-SALES'
+    return 'TAGUIG SALES'
   }
   if (upper.includes('SILANG') || upper.includes('STA ROSA') || upper.includes('STA. ROSA') || upper.includes('STO ROSA') || upper.includes('STO. ROSA')) {
     return 'SILANG'

@@ -224,7 +224,7 @@ export const wDefaultPeople = (kind: WScheduleKind, days: string[], suggestionsD
       : []
   }
   if (names.length === 0) {
-    names = kind === 'drivers' ? ['WILLIAM PRADO','GEREMIE COLOSO'] : ['ROMMEL ABECHUELA','GILBERT COLOSO']
+    return []
   }
   return names.map((name,index) => ({
     id: `${kind}-${index+1}`, name, roleNote:'IN-HOUSE', photoUrl:'',

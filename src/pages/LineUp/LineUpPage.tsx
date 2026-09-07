@@ -341,10 +341,16 @@ export default function LineUpPage() {
     return [...new Set([...suggestions.services.map(s => s.toUpperCase()), ...dynamicNames, ...VEHICLE_OPTIONS])].sort()
   }, [suggestions.services, vehicles])
 
-  const finalDriverOptions = useMemo(() =>
-    [...new Set([...suggestions.drivers.map(d => d.toUpperCase()), ...DRIVER_OPTIONS])].sort(),
-    [suggestions.drivers]
-  )
+  const finalDriverOptions = useMemo(() => {
+    const formatFirst = (str: string) => {
+      const clean = str.trim().replace(/\s*\([^)]*\)\s*/g, '').replace(/^(sir|ma'am|maam|mr|ms|mrs|engr)\.?\s+/i, '').trim()
+      return clean.split(/\s+/)[0].toUpperCase()
+    }
+    const rosterNames = branchStaffRoster.drivers.map(formatFirst).filter(Boolean)
+    const suggested = suggestions.drivers.map(formatFirst).filter(Boolean)
+    if (rosterNames.length > 0) return [...new Set(rosterNames)].sort()
+    return [...new Set([...suggested, ...DRIVER_OPTIONS])].sort()
+  }, [branchStaffRoster.drivers, suggestions.drivers])
 
   const finalInstallerOptions = useMemo(() => {
     const formatFirst = (str: string) => {
@@ -1403,8 +1409,8 @@ export default function LineUpPage() {
   const wDays = useMemo(() => wGetWeekDays(wAnchorDate), [wAnchorDate])
   const wWeekKey = wDays[0]
 
-  const [wDrivers, setWDrivers] = useState<WPersonSchedule[]>(() => wLoadSchedule('drivers', wGetWeekDays(wToDateKey(new Date()))[0], wGetWeekDays(wToDateKey(new Date())), branchId))
-  const [wInstallers, setWInstallers] = useState<WPersonSchedule[]>(() => wLoadSchedule('installers', wGetWeekDays(wToDateKey(new Date()))[0], wGetWeekDays(wToDateKey(new Date())), branchId))
+  const [wDrivers, setWDrivers] = useState<WPersonSchedule[]>(() => wLoadSchedule('drivers', wGetWeekDays(wToDateKey(new Date()))[0], wGetWeekDays(wToDateKey(new Date())), branchId, branchStaffRoster.drivers, branchStaffRoster.installers))
+  const [wInstallers, setWInstallers] = useState<WPersonSchedule[]>(() => wLoadSchedule('installers', wGetWeekDays(wToDateKey(new Date()))[0], wGetWeekDays(wToDateKey(new Date())), branchId, branchStaffRoster.drivers, branchStaffRoster.installers))
   const [wDriversRecord, setWDriversRecord] = useState<LineUpRow | null>(null)
   const [wInstallersRecord, setWInstallersRecord] = useState<LineUpRow | null>(null)
   const [loadingWeekly, setLoadingWeekly] = useState(false)
@@ -1416,12 +1422,22 @@ export default function LineUpPage() {
     wSaveSchedule(wKind, wWeekKey, next, branchId)
   }
 
+  // Reset weekly schedule state whenever the active branch changes to avoid cross-branch bleeding
+  useEffect(() => {
+    setWDriversRecord(null)
+    setWInstallersRecord(null)
+    setWDrivers(wLoadSchedule('drivers', wWeekKey, wDays, branchId, branchStaffRoster.drivers, branchStaffRoster.installers))
+    setWInstallers(wLoadSchedule('installers', wWeekKey, wDays, branchId, branchStaffRoster.drivers, branchStaffRoster.installers))
+  }, [branchId, wWeekKey, wDays, branchStaffRoster.drivers, branchStaffRoster.installers])
+
   const wReloadWeek = (nextDate: string) => {
     const nd = wGetWeekDays(nextDate)
     const nw = nd[0]
     setWAnchorDate(nextDate)
-    setWDrivers(wLoadSchedule('drivers', nw, nd, branchId))
-    setWInstallers(wLoadSchedule('installers', nw, nd, branchId))
+    setWDriversRecord(null)
+    setWInstallersRecord(null)
+    setWDrivers(wLoadSchedule('drivers', nw, nd, branchId, branchStaffRoster.drivers, branchStaffRoster.installers))
+    setWInstallers(wLoadSchedule('installers', nw, nd, branchId, branchStaffRoster.drivers, branchStaffRoster.installers))
   }
 
   const fetchWeeklySchedule = useCallback(async () => {
@@ -1438,7 +1454,7 @@ export default function LineUpPage() {
         setSavedWeeks(Array.isArray(data.savedWeeks) ? data.savedWeeks : [])
         const driversRec = data.weeklyDrivers as LineUpRow | null | undefined
         const installersRec = data.weeklyInstallers as LineUpRow | null | undefined
-        if (driversRec?.remarks) {
+        if (driversRec?.remarks && (!driversRec.branchId || driversRec.branchId === lineupApiBranchId)) {
           setWDriversRecord(driversRec)
           try {
             const parsed = JSON.parse(driversRec.remarks)
@@ -1451,9 +1467,9 @@ export default function LineUpPage() {
           }
         } else {
           setWDriversRecord(null)
-          setWDrivers(wLoadSchedule('drivers', wWeekKey, wDays, branchId))
+          setWDrivers(wLoadSchedule('drivers', wWeekKey, wDays, branchId, branchStaffRoster.drivers, branchStaffRoster.installers))
         }
-        if (installersRec?.remarks) {
+        if (installersRec?.remarks && (!installersRec.branchId || installersRec.branchId === lineupApiBranchId)) {
           setWInstallersRecord(installersRec)
           try {
             const parsed = JSON.parse(installersRec.remarks)
@@ -1466,7 +1482,7 @@ export default function LineUpPage() {
           }
         } else {
           setWInstallersRecord(null)
-          setWInstallers(wLoadSchedule('installers', wWeekKey, wDays, branchId))
+          setWInstallers(wLoadSchedule('installers', wWeekKey, wDays, branchId, branchStaffRoster.drivers, branchStaffRoster.installers))
         }
       }
     } catch (e) {
@@ -1474,7 +1490,7 @@ export default function LineUpPage() {
     } finally {
       setLoadingWeekly(false)
     }
-  }, [wWeekKey, lineupApiBranchId, wDays, branchId])
+  }, [wWeekKey, lineupApiBranchId, wDays, branchId, branchStaffRoster.drivers, branchStaffRoster.installers])
 
   useEffect(() => {
     void fetchWeeklySchedule()
@@ -1494,17 +1510,27 @@ export default function LineUpPage() {
         `${API_BASE_URL}/v1/lineup/week?weekStart=${wWeekKey}&branchId=${encodeURIComponent(lineupApiBranchId)}`,
         { headers: { Authorization: `Bearer ${token}` } },
       )
-      let dbDriversRec = wDriversRecord
-      let dbInstallersRec = wInstallersRecord
+      let dbDriversRec: LineUpRow | null = null
+      let dbInstallersRec: LineUpRow | null = null
       if (checkRes.ok) {
         const data = await checkRes.json()
-        if (data.weeklyDrivers) dbDriversRec = data.weeklyDrivers as LineUpRow
-        if (data.weeklyInstallers) dbInstallersRec = data.weeklyInstallers as LineUpRow
+        if (data.weeklyDrivers && (!data.weeklyDrivers.branchId || data.weeklyDrivers.branchId === lineupApiBranchId)) {
+          dbDriversRec = data.weeklyDrivers as LineUpRow
+        }
+        if (data.weeklyInstallers && (!data.weeklyInstallers.branchId || data.weeklyInstallers.branchId === lineupApiBranchId)) {
+          dbInstallersRec = data.weeklyInstallers as LineUpRow
+        }
         if (Array.isArray(data.savedWeeks)) setSavedWeeks(data.savedWeeks)
+      }
+      if (!dbDriversRec && wDriversRecord && wDriversRecord.branchId === lineupApiBranchId) {
+        dbDriversRec = wDriversRecord
+      }
+      if (!dbInstallersRec && wInstallersRecord && wInstallersRecord.branchId === lineupApiBranchId) {
+        dbInstallersRec = wInstallersRecord
       }
 
       const driversDataStr = JSON.stringify(wDrivers)
-      const isNewDrivers = !dbDriversRec || !dbDriversRec.id
+      const isNewDrivers = !dbDriversRec || !dbDriversRec.id || (dbDriversRec.branchId && dbDriversRec.branchId !== lineupApiBranchId)
       const driversPayload: LineUpRow = {
         id: isNewDrivers ? `w-drivers-${Date.now()}` : dbDriversRec!.id,
         lineupDate: wWeekKey,
@@ -1521,7 +1547,7 @@ export default function LineUpPage() {
       }
 
       const installersDataStr = JSON.stringify(wInstallers)
-      const isNewInstallers = !dbInstallersRec || !dbInstallersRec.id
+      const isNewInstallers = !dbInstallersRec || !dbInstallersRec.id || (dbInstallersRec.branchId && dbInstallersRec.branchId !== lineupApiBranchId)
       const installersPayload: LineUpRow = {
         id: isNewInstallers ? `w-installers-${Date.now()}` : dbInstallersRec!.id,
         lineupDate: wWeekKey,

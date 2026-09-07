@@ -62,7 +62,7 @@ const normalizeBranchDisplayName = (branchId?: string | null, branchName?: strin
 
   const isServices = id.includes('SERVICE') || id.includes('SERVICES') || name.toUpperCase().includes('SERVICE')
   if (id.includes('TAGUIG') || name.toUpperCase().includes('TAGUIG')) {
-    return isServices ? 'TAGUIG SERVICES' : 'TAGUIG-SALES'
+    return isServices ? 'TAGUIG SERVICES' : 'TAGUIG SALES'
   }
 
   return formatBranchName(name || id)
@@ -363,7 +363,8 @@ export default function DashboardLayout() {
         const found = findBranchListEntry(gId, adminBranches) || adminBranches.find(b => b.id === gId)
         if (found) {
           const isReadOnly = isBranchReadOnlyForUser(found.id, user)
-          setBranchLabel(isReadOnly ? `${found.name} (VIEW ONLY)` : found.name)
+          const displayName = normalizeBranchDisplayName(found.id, found.name) || found.name
+          setBranchLabel(isReadOnly ? `${displayName} (VIEW ONLY)` : displayName)
         }
       } else {
         setBranchLabel(null)
@@ -639,7 +640,7 @@ export default function DashboardLayout() {
             className="flex-1 min-w-0 ml-3 transition-all duration-200"
             style={{ opacity: sidebarCollapsed ? 0 : 1, width: sidebarCollapsed ? 0 : undefined, overflow: 'hidden', whiteSpace: 'nowrap' }}
           >
-            <div className="text-[15px] font-black tracking-wide text-white">ASHCOL</div>
+            <div className="text-[15px] font-black tracking-wide text-white font-['Poppins',sans-serif]">ASHCOL</div>
             <div className="text-[9px] font-bold tracking-[3px] text-green-400 uppercase">Portal</div>
           </div>
 
@@ -679,7 +680,7 @@ export default function DashboardLayout() {
                     key={link.name}
                     to={link.path}
                     onClick={() => setSidebarOpen(false)}
-                    className="group flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150 relative overflow-hidden"
+                    className="group flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150 relative"
                     style={isActive
                       ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.15)' }
                       : { color: '#ffffff' }}
@@ -776,7 +777,7 @@ export default function DashboardLayout() {
                               }`}
                             >
                               {isSubActive && (
-                                <div className="absolute -left-5 top-0 bottom-0 w-[3px] bg-white rounded-full" />
+                                <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-white rounded-full" />
                               )}
                               <span className={`shrink-0 transition-opacity ${isSubActive ? 'opacity-100' : 'opacity-70'}`}>
                                 {sub.icon}
@@ -796,7 +797,7 @@ export default function DashboardLayout() {
           {/* ══ COLLAPSED ICON RAIL — rendered only when navVisible is false ══ */}
           {!navVisible && (
             <div
-              className="w-full py-1 flex flex-col gap-1 items-center"
+              className="w-full py-1.5 flex flex-col gap-2 items-center"
               style={{
                 opacity: showCollapsedIcons ? 1 : 0,
                 transition: 'opacity 120ms ease',
@@ -921,7 +922,7 @@ export default function DashboardLayout() {
                   </h1>
                 ) : (
                   <>
-                    <span className="text-[10px] font-extrabold uppercase tracking-widest leading-none mb-1 opacity-70" style={{ color: textMuted }}>
+                    <span className="text-[10px] font-extrabold uppercase tracking-widest leading-none mb-1" style={{ color: textMuted }}>
                       {currentPage}
                     </span>
                     {branchLabel ? (
@@ -938,20 +939,20 @@ export default function DashboardLayout() {
                           </button>
                           {headerBranchDropdownOpen && (
                               <div
-                                className="absolute z-50 w-60 rounded-xl shadow-2xl overflow-hidden top-[calc(100%+8px)] left-0"
+                                className="absolute z-50 w-[420px] max-w-[calc(100vw-2rem)] rounded-xl shadow-2xl overflow-hidden top-[calc(100%+8px)] left-0"
                                 style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0' }}
                               >
                                 <div className="px-4 py-3 text-xs font-black uppercase tracking-wider text-slate-400" style={{ borderBottom: '1px solid #f1f5f9' }}>
                                   Active Branch
                                 </div>
-                                <div className="py-1.5 max-h-72 overflow-y-auto no-scrollbar">
+                                <div className="p-1.5 grid grid-cols-2 gap-1 max-h-80 overflow-y-auto no-scrollbar">
                                   {adminBranches.map((b) => {
                                     const isSelected = b.id === globalBranchId
                                     return (
                                       <button
                                         key={b.id}
                                         onClick={() => { handleGlobalBranchChange(b.id); setHeaderBranchDropdownOpen(false) }}
-                                        className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-semibold transition-colors text-left ${
+                                        className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors text-left ${
                                           isSelected ? 'bg-emerald-50 text-slate-900' : 'text-slate-600 hover:bg-emerald-50 hover:text-slate-900'
                                         }`}
                                       >
@@ -1151,7 +1152,7 @@ export default function DashboardLayout() {
           {!isLight && (
             <div className="pointer-events-none fixed top-0 right-0 w-[500px] h-[500px] opacity-[0.06]"
                  style={{
-                   background: 'radial-gradient(circle, #3B82F6 0%, transparent 70%)',
+                   background: 'radial-gradient(circle, #10B981 0%, transparent 70%)',
                    filter: 'blur(80px)',
                    zIndex: 0,
                  }} />

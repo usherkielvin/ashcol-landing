@@ -19,28 +19,8 @@ interface PersonSchedule {
 const LS_KEY = 'ashcol_weekly_field_schedule_v1'
 const STATUS_OPTIONS: DayStatus[] = ['WITH SCHED', 'NO SCHED', 'CANCEL', 'ABSENT', 'ON LEAVE', 'DAY OFF', 'SURVEY', 'PENDING']
 
-const defaultPeople = (kind: ScheduleKind, days: string[]): PersonSchedule[] => {
-  const names = kind === 'drivers'
-    ? ['WILLIAM PRADO', 'GEREMIE COLOSO']
-    : ['ROMMEL ABECHUELA', 'GILBERT COLOSO']
-
-  return names.map((name, index) => ({
-    id: `${kind}-${index + 1}`,
-    name,
-    roleNote: 'IN-HOUSE',
-    photoUrl: '',
-    days: Object.fromEntries(days.map((day, dayIndex) => [
-      day,
-      {
-        status: dayIndex < 3 ? 'WITH SCHED' : dayIndex < 5 ? (index === 0 ? 'WITH SCHED' : 'NO SCHED') : 'DAY OFF',
-        note: kind === 'installers' && index === 0 && dayIndex === 1 ? 'DAY 2 - INSTALLATION OF PIPING ONLY' : '',
-        units: dayIndex < 5 && (index === 0 || dayIndex < 3) ? '1' : '0',
-      }
-    ])) as PersonSchedule['days'],
-    totalUnitsTeamWork: '',
-    totalUnitsCleaning: '',
-    remarks: '',
-  }))
+const defaultPeople = (_kind: ScheduleKind, _days: string[]): PersonSchedule[] => {
+  return []
 }
 
 const toDateKey = (date: Date) =>

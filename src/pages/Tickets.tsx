@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom'
 import ReactDOM from 'react-dom'
 import {
   Plus, Search, X, Edit3, AlertTriangle, CalendarDays,
-  Eye, Loader2, Pencil, Moon, Sun,
+  Eye, Loader2, Pencil,
   ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Maximize2,
   UsersRound, ChevronDown, SlidersHorizontal, CalendarRange,
   TrendingUp, Receipt, Radio, Download, MessageSquare,
@@ -171,7 +171,7 @@ function AutoFitText({ text, style, title, minScale = 0.55, align = 'center' }: 
 }
 
 export default function Tickets({ surface }: { surface: TicketsSurface }) {
-  const { theme, toggleTheme } = useTheme()
+  const { theme } = useTheme()
   const { user } = useAuth()
   const { openArctic, setDataContext, setPageContext } = useArctic()
   const navigate = useNavigate()
@@ -5590,7 +5590,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     const showExpanded = cellExpanded
     const truncStyle: React.CSSProperties = showExpanded
       ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.45, display: 'block', paddingRight: '4px', color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: label !== 'UPDATE' ? 'uppercase' : undefined }
-      : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', maxWidth: '100%', color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: label !== 'UPDATE' ? 'uppercase' : undefined }
+      : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', maxWidth: '100%', lineHeight: 1.3, color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: label !== 'UPDATE' ? 'uppercase' : undefined }
 
     if (label === 'DESTINATION') {
       const fullAddress = formatAddress(ticket.location)
@@ -5843,7 +5843,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             type="button"
             onMouseDown={e => e.stopPropagation()}
             onClick={e => { e.stopPropagation(); startCellEdit(ticket, label, e.currentTarget as HTMLElement, rowIndex) }}
-            className="inline-flex items-center justify-center gap-1.5 px-3 py-1 rounded-full text-[10.5px] font-extrabold uppercase tracking-wider transition-all duration-150 active:scale-95 shadow-sm"
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-1 rounded-full text-[11.5px] font-extrabold uppercase tracking-wider transition-colors duration-150 active:scale-95 shadow-sm"
             style={{
               color: isPendingRow ? '#ffffff' : (isLight ? '#15803D' : '#6EE7B7'),
               borderColor: isPendingRow ? 'rgba(255,255,255,0.45)' : (isLight ? 'rgba(22,163,74,0.30)' : 'rgba(110,231,183,0.30)'),
@@ -6189,7 +6189,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
               const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
               startCellEdit(ticket, label, cell, rowIndex)
             }}
-            className="inline-flex items-center justify-center gap-1.5 px-3 py-1 rounded-full text-[10.5px] font-extrabold uppercase tracking-wider transition-all duration-150 active:scale-95 shadow-sm"
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-1 rounded-full text-[11.5px] font-extrabold uppercase tracking-wider transition-colors duration-150 active:scale-95 shadow-sm"
             style={{
               color: isPendingRow ? '#ffffff' : (isLight ? '#15803d' : '#4ade80'),
               backgroundColor: isPendingRow ? 'rgba(255, 255, 255, 0.18)' : (isLight ? 'rgba(22, 163, 74, 0.10)' : 'rgba(74, 222, 128, 0.12)'),
@@ -6245,7 +6245,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                 const cell = (e.currentTarget.closest('[data-cell-key]') as HTMLElement | null)
                 startCellEdit(ticket, label, cell, rowIndex)
               }}
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-1 rounded-full text-[10.5px] font-extrabold uppercase tracking-wider transition-all duration-150 active:scale-95 shadow-sm"
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-1 rounded-full text-[11.5px] font-extrabold uppercase tracking-wider transition-colors duration-150 active:scale-95 shadow-sm"
               style={{
                 color: isPendingRow ? '#ffffff' : (isLight ? '#15803d' : '#4ade80'),
                 backgroundColor: isPendingRow ? 'rgba(255, 255, 255, 0.18)' : (isLight ? 'rgba(22, 163, 74, 0.10)' : 'rgba(74, 222, 128, 0.12)'),
@@ -6720,7 +6720,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   <button
                     type="button"
                     onClick={() => handleDateFilterChange(todayDateKey())}
-                    className="h-9 px-2.5 rounded-xl border text-[11px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/20 active:scale-95 transition-all cursor-pointer shrink-0"
+                    className="h-9 px-2.5 rounded-xl border text-[11px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/20 active:scale-95 transition-colors duration-150 cursor-pointer shrink-0"
                     title="Reset to today"
                   >
                     Today
@@ -6745,7 +6745,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                         type="button"
                         key={tab.key}
                         onClick={() => handleDateFilterChange(tab.key)}
-                        className="h-8 px-3 rounded-md text-[12px] font-semibold whitespace-nowrap shrink-0 transition-all active:scale-95"
+                        className="h-8 px-3 rounded-md text-[12px] font-semibold whitespace-nowrap shrink-0 transition-colors duration-150 active:scale-95"
                         style={{
                           backgroundColor: isActive ? green : 'transparent',
                           color: isActive ? '#ffffff' : textMuted,
@@ -6768,12 +6768,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       setCustomDateCalMonth({ year: validDate.getFullYear(), month: validDate.getMonth() })
                       setCustomDatePickerOpen(true)
                     }}
-                    className="relative flex items-center gap-2 h-10 min-w-[10.5rem] px-3 lg:px-4 rounded-full border shrink-0 cursor-pointer transition-all hover:opacity-90 active:scale-[0.98] select-none"
+                    className="relative flex items-center gap-2 h-10 min-w-[10.5rem] px-3 lg:px-4 rounded-full border shrink-0 cursor-pointer transition-[background-color,color,border-color] duration-150 hover:opacity-90 active:scale-[0.98] select-none"
                     style={{
                       backgroundColor: isCustomSelected ? green : inputBg,
                       borderColor: isCustomSelected ? green : inputBorder,
                       color: isCustomSelected ? '#ffffff' : textPrimary,
-                      boxShadow: isCustomSelected ? '0 2px 8px rgba(16,185,129,0.35)' : 'none',
                     }}
                     title="Pick a custom schedule date"
                   >
@@ -6803,7 +6802,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); setMonthFilterModalOpen(true) }}
-                    className="flex items-center gap-1.5 h-10 px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-all hover:opacity-90 active:scale-95"
+                    className="flex items-center gap-1.5 h-10 px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-[background-color,color,border-color] duration-150 hover:opacity-90 active:scale-95"
                     style={{
                       backgroundColor: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? green : inputBg,
                       border: `1px solid ${(monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? green : inputBorder}`,
@@ -6822,7 +6821,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     type="button"
                     id="bulk-assign-driver-btn"
                     onClick={(e) => { e.stopPropagation(); setBulkAssignOpen(true) }}
-                    className="flex items-center gap-1.5 h-10 px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-all hover:opacity-90 active:scale-95"
+                    className="flex items-center gap-1.5 h-10 px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-[background-color,color,border-color] duration-150 hover:opacity-90 active:scale-95"
                     style={{
                       backgroundColor: inputBg,
                       border: `1px solid ${inputBorder}`,
@@ -6844,12 +6843,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       persistSchedulesSnapshot()
                       setShowcaseOpen(true)
                     }}
-                    className="flex items-center gap-1.5 h-10 px-3 rounded-full text-[12px] xl:text-[13px] font-bold transition-all shrink-0 active:scale-95"
+                    className="flex items-center gap-1.5 h-10 px-3 rounded-full text-[12px] xl:text-[13px] font-bold transition-[background-color,color] duration-150 shrink-0 active:scale-95"
                     style={{
                       backgroundColor: showcaseOpen ? 'transparent' : green,
                       border: `1.5px solid ${green}`,
                       color: showcaseOpen ? green : '#ffffff',
-                      boxShadow: showcaseOpen ? 'none' : '0 2px 8px rgba(16,185,129,0.3)',
                     }}
                     title="Open fullscreen schedule showcase for print / PDF"
                   >
@@ -6863,7 +6861,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); openArctic() }}
-                    className="flex items-center gap-1.5 h-10 px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-all hover:opacity-90 active:scale-95"
+                    className="flex items-center gap-1.5 h-10 px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-[background-color,color,border-color] duration-150 hover:opacity-90 active:scale-95"
                     style={{
                       backgroundColor: inputBg,
                       border: `1px solid ${inputBorder}`,
@@ -6880,7 +6878,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
               {/* Search bar — full width on mobile (stacks first), fixed-width and
                   right-aligned on desktop */}
               <div
-                className="order-1 md:order-2 md:ml-auto w-full md:w-[280px] flex items-center gap-2 h-10 px-3 rounded-2xl border transition-all shrink-0"
+                className="order-1 md:order-2 md:ml-auto w-full md:w-[280px] flex items-center gap-2 h-10 px-3 rounded-2xl border transition-colors duration-150 shrink-0"
                 style={{ backgroundColor: inputBg, borderColor: inputBorder }}
               >
                 <Search className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
@@ -6984,8 +6982,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       )}
 
       {/* Ã¢â€â‚¬Ã¢â€â‚¬ Table card Ã¢â€â‚¬Ã¢â€â‚¬ */}
-      <div className="flex flex-col flex-1 min-h-0 overflow-hidden md:mx-4 md:mt-4 md:mb-4 md:rounded-xl md:border shadow-sm"
-        style={{ backgroundColor: cardBg, borderColor: tableBorder }}
+      <div className={`flex flex-col flex-1 min-h-0 overflow-hidden${activeTab === 'overview' ? '' : ' md:mx-4 md:mt-4 md:mb-4 md:rounded-xl md:border shadow-sm'}`}
+        style={activeTab === 'overview' ? undefined : { backgroundColor: cardBg, borderColor: border }}
         onClick={e => e.stopPropagation()}>
         {activeTab === 'schedules' ? (
           loading && !hasHydratedOnce && !initialSchedulesReady && tickets.length === 0 ? (
@@ -7116,7 +7114,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                               fontWeight: 700, whiteSpace: 'nowrap',
                               borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`,
                               borderRight: isLastCol ? 'none' : (isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`),
-                              fontSize: '10px', letterSpacing: '0.08em',
+                              fontSize: '11px', letterSpacing: '0.06em',
                               width: col.w, minWidth: 0,
                               overflow: 'hidden', textOverflow: 'ellipsis',
                               backgroundColor: isMyTickets ? myTicketsTheadBg : schedTheadBg,
@@ -7445,10 +7443,10 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                       <tfoot style={{ position: 'relative' }}>
                         <tr>
                           <td colSpan={columns.length - 2} style={{ border: 'none', background: 'transparent' }}></td>
-                          <td className="px-3 py-2 text-right font-black" style={{ backgroundColor: '#16a34a', color: '#fff', border: `1px solid ${tableBorder}` }}>
+                          <td className="px-3 py-2 text-right font-black" style={{ backgroundColor: '#15803d', color: '#fff', border: `1px solid ${tableBorder}` }}>
                             TOTAL COLLECTION
                           </td>
-                          <td className="px-3 py-2 text-right font-black tracking-wide" style={{ backgroundColor: '#16a34a', color: '#fff', border: `1px solid ${tableBorder}` }}>
+                          <td className="px-3 py-2 text-right font-black tracking-wide" style={{ backgroundColor: '#15803d', color: '#fff', border: `1px solid ${tableBorder}` }}>
                             {totalEstimated.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                         </tr>
@@ -7812,7 +7810,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
                     return (
                       <div className="mt-3 p-3 rounded-xl border flex flex-col gap-2 shadow-sm" style={{ backgroundColor: cardBg, borderColor: border }}>
-                        <div className="flex items-center justify-between px-3 py-2 rounded-lg font-black" style={{ backgroundColor: '#16a34a', color: '#fff' }}>
+                        <div className="flex items-center justify-between px-3 py-2 rounded-lg font-black" style={{ backgroundColor: '#15803d', color: '#fff' }}>
                           <span className="text-[11px] uppercase tracking-wider">TOTAL COLLECTION</span>
                           <span className="text-xs font-black tracking-wide">
                             ₱{totalEstimated.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -7873,31 +7871,26 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           )) : (
           /* Render Overview Search Panel */
           <div className="flex-1 flex flex-col min-h-0 w-full h-full overflow-hidden relative" style={{ backgroundColor: isLight ? '#f1f5f9' : '#060B18' }}>
-            {/* Branches Showcase */}
-            <div className="flex items-center justify-center py-2 px-4 md:px-6 w-full shrink-0 z-20 relative" style={{ borderBottom: `1px solid ${border}` }}>
-              <div
-                className="flex items-center justify-start overflow-x-auto hide-scrollbar py-1 w-full max-w-full"
-                style={{ WebkitOverflowScrolling: 'touch', maskImage: 'linear-gradient(to right, transparent, black 2%, black 98%, transparent)', WebkitMaskImage: 'linear-gradient(to right, transparent, black 2%, black 98%, transparent)' }}
-              >
-                <div className="flex items-center justify-center gap-4 px-4 mx-auto w-max">
-                  {[
-                    "BATANGAS", "BULACAN", "CANDELARIA", "DASMA, CAVITE",
-                    "GENTRI, CAVITE", "LAGUNA", "PAMPANGA", "RIZAL",
-                    "SILANG, CAVITE", "TAGUIG", "VALENZUELA"
-                  ].map((branch, idx, arr) => (
-                    <div key={branch} className="flex items-center gap-4 shrink-0">
-                      <span
-                        className="text-[12px] md:text-[14px] font-black uppercase tracking-[0.15em]"
-                        style={{ color: idx % 2 === 0 ? green : textPrimary }}
-                      >
-                        {branch}
-                      </span>
-                      {idx < arr.length - 1 && (
-                        <span className="text-[10px] opacity-40" style={{ color: textMuted }}>&bull;</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
+            {/* Branches Showcase — live auto-scrolling marquee, same pattern as the login page */}
+            <div className="flex items-center justify-center py-2.5 w-full shrink-0 z-20 relative marquee-viewport" style={{ borderBottom: `1px solid ${border}` }}>
+              <div className="marquee-track" style={{ animationDuration: '32s' }}>
+                {[
+                  "BATANGAS", "BULACAN", "CANDELARIA", "DASMA, CAVITE",
+                  "GENTRI, CAVITE", "LAGUNA", "PAMPANGA", "RIZAL",
+                  "SILANG, CAVITE", "TAGUIG", "VALENZUELA",
+                ].concat(["BATANGAS", "BULACAN", "CANDELARIA", "DASMA, CAVITE",
+                  "GENTRI, CAVITE", "LAGUNA", "PAMPANGA", "RIZAL",
+                  "SILANG, CAVITE", "TAGUIG", "VALENZUELA"]).map((branch, idx) => (
+                  <div key={`${branch}-${idx}`} className="flex items-center gap-4 shrink-0">
+                    <span
+                      className="text-[12px] md:text-[14px] font-black uppercase tracking-[0.15em] whitespace-nowrap"
+                      style={{ color: idx % 2 === 0 ? green : textPrimary }}
+                    >
+                      {branch}
+                    </span>
+                    <span className="text-[10px] opacity-40" style={{ color: textMuted }}>&bull;</span>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -7923,7 +7916,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   {/* Big Logo / Name (Google Style) */}
                   <div className="flex flex-col items-center justify-center text-center w-full">
                     <h1
-                      className={`font-black tracking-tighter ${overviewSearchInput || overviewResults.length > 0 ? 'text-2xl md:text-3xl mb-0 opacity-80' : 'text-5xl md:text-7xl mb-2 opacity-100'}`}
+                      className={`font-black tracking-tighter font-['Poppins',sans-serif] ${overviewSearchInput || overviewResults.length > 0 ? 'text-2xl md:text-3xl mb-0 opacity-80' : 'text-5xl md:text-7xl mb-2 opacity-100'}`}
                     >
                       <span style={{ color: green }}>ASHCOL</span>
                       <span style={{ color: textPrimary }} className="ml-2 md:ml-3">PORTAL</span>
@@ -7972,7 +7965,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                           key={link.to}
                           type="button"
                           onClick={() => navigate(link.to)}
-                          className="flex items-center gap-1.5 px-3.5 py-2 md:px-4 md:py-2.5 rounded-full border text-xs md:text-sm font-semibold transition-all hover:-translate-y-0.5 hover:shadow-sm active:scale-95"
+                          className="flex items-center gap-1.5 px-3.5 py-2 md:px-4 md:py-2.5 rounded-full border text-xs md:text-sm font-semibold transition-[transform,box-shadow,background-color,border-color] duration-150 hover:-translate-y-0.5 hover:shadow-sm active:scale-95"
                           style={{ backgroundColor: cardBg, borderColor: border, color: textPrimary }}
                         >
                           <link.icon className="w-3.5 h-3.5 md:w-4 md:h-4" style={{ color: green }} />
@@ -8161,23 +8154,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
               </div>
             </div>
 
-            {/* Dark Mode Toggle - Bottom Right Floating (Hidden when search result rows exist) */}
-            {overviewResults.length === 0 && (
-              <div className="fixed sm:absolute bottom-6 right-6 z-50">
-                <button
-                  onClick={toggleTheme}
-                  title={isLight ? 'Switch to Dark' : 'Switch to Light'}
-                  className="flex items-center justify-center w-12 h-12 rounded-full shadow-lg transition-transform hover:scale-110 active:scale-95"
-                  style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
-                >
-                  {isLight ? (
-                    <Moon className="w-5 h-5" style={{ color: textMuted }} />
-                  ) : (
-                    <Sun className="w-5 h-5" style={{ color: '#F59E0B' }} />
-                  )}
-                </button>
-              </div>
-            )}
           </div>
         )}
       </div>
