@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import ReactDOM from 'react-dom'
 import { ChevronDown, History as HistoryIcon, X } from 'lucide-react'
 import { API_BASE_URL } from '../utils/api'
 import { EmployeeNameLink } from './EmployeeNameLink'
@@ -17,7 +18,11 @@ const ACTION_META: Record<string, { label: string; bg: string; text: string }> =
   CREATED: { label: 'Created', bg: 'rgba(16,185,129,0.12)', text: '#059669' },
   EDITED: { label: 'Edited', bg: 'rgba(245,158,11,0.14)', text: '#B45309' },
   AUDIT_SAVE: { label: 'Audit Save', bg: 'rgba(59,130,246,0.14)', text: '#1D4ED8' },
+  BASELINE: { label: 'Baseline', bg: 'rgba(100,116,139,0.14)', text: '#475569' },
 }
+
+/** Actions with no real "before" state to diff against — the field before it started being tracked, or its creation. */
+const NO_PREVIOUS_ACTIONS = new Set(['CREATED', 'BASELINE'])
 
 /** Every DTR create/edit/audit-save button (DTR_Form, DailyAuditReport) opens this same panel. */
 export function DtrHistoryModal({
@@ -65,7 +70,10 @@ export function DtrHistoryModal({
 
   if (!open) return null
 
-  return (
+  // Portaled straight to <body> so `fixed inset-0` always covers the real viewport and stacks
+  // above every other modal, regardless of any transformed/scrolling ancestor this button lives
+  // inside (e.g. the row-details modal in DailyAuditReport, itself portaled).
+  return ReactDOM.createPortal(
     <div
       className="fixed inset-0 z-[10000] flex items-center justify-center p-4"
       style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
@@ -110,7 +118,8 @@ export function DtrHistoryModal({
                     key,
                     before: previousValues[key],
                     after: newValues[key],
-                    changed: String(previousValues[key] ?? '') !== String(newValues[key] ?? ''),
+                    changed: !NO_PREVIOUS_ACTIONS.has(entry.action)
+                      && String(previousValues[key] ?? '') !== String(newValues[key] ?? ''),
                   }))
                   .filter(row => (row.before !== null && row.before !== '' && row.before !== undefined)
                     || (row.after !== null && row.after !== '' && row.after !== undefined))
@@ -150,7 +159,7 @@ export function DtrHistoryModal({
                         <div className="grid gap-1 mt-1.5" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
                           <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>Field</span>
                           <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
-                            {entry.action === 'CREATED' ? '—' : 'Previous'}
+                            {NO_PREVIOUS_ACTIONS.has(entry.action) ? '—' : 'Previous'}
                           </span>
                           <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>Revised To</span>
                           {diffRows.map(({ key, before, after, changed }) => (
@@ -180,6 +189,7 @@ export function DtrHistoryModal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
