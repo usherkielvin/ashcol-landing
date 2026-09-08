@@ -61,7 +61,11 @@ export function mapRelayDraftToScheduleEditForm(
   const resolvedDealer = combineDealerForSave(draft.dealerName, draft.dealerBranch)
 
   const contactPhone = (draft.phoneNumbers[0] || '').trim()
-  const remarksCombined = (draft.remarks || draft.remarksUpdate || '').trim()
+  // draft.remarksUpdate is the "Add New Remark" field the user actually types a fresh update
+  // into; draft.remarks is just a read-only mirror of the ticket's last-saved remark shown for
+  // context. Preferring draft.remarks here silently discarded every new remark/reschedule reason
+  // whenever the ticket already had prior remark text (i.e. almost always).
+  const remarksCombined = (draft.remarksUpdate || draft.remarks || '').trim()
 
   return {
     ...base,
