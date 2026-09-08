@@ -7,7 +7,8 @@ import {
   ArrowUp, ArrowDown,
   MoreVertical,
   Loader2,
-  Trash2, ClipboardList, Upload, Check, FileEdit
+  Trash2, ClipboardList, Upload, Check, FileEdit,
+  History as HistoryIcon
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -15,6 +16,7 @@ import { API_BASE_URL, formatDisplayUserLabel, formatBranchName, isSameBaseBranc
 import DTR_Form from './DTR_Form'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import { exportDtrReportToPdf } from '../utils/pdfExport'
+import { DtrHistoryModal } from '../components/DtrHistoryModal'
 import { useArctic } from '../contexts/ArcticContext'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -248,6 +250,7 @@ export default function DailyAuditReport() {
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null)
 
   const [isExportingPdf, setIsExportingPdf] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   const handleExportPdf = async () => {
     if (isExportingPdf || !selectedRow) return
@@ -1644,6 +1647,18 @@ export default function DailyAuditReport() {
                   Export PDF
                 </button>
 
+                {selectedRow.id && (
+                  <button
+                    type="button"
+                    onClick={() => setHistoryOpen(true)}
+                    className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 border"
+                    style={{ borderColor: border, color: textMuted }}
+                  >
+                    <HistoryIcon className="w-3.5 h-3.5" />
+                    History
+                  </button>
+                )}
+
                 {showEditButton && (
                   <a
                     href={selectedRow.id
@@ -2084,6 +2099,16 @@ export default function DailyAuditReport() {
           </div>,
           document.body
       )}
+
+      <DtrHistoryModal
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        reportId={selectedRow?.id}
+        isLight={isLight}
+        border={border}
+        textPrimary={textPrimary}
+        textMuted={textMuted}
+      />
 
       {/* ── Confirm Modal ── */}
       {confirmModal && (
