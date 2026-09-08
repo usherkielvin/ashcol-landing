@@ -112,8 +112,13 @@ const resolveCanEditExistingReport = (
     )
   }
 
+  // "DTR OVERRIDE" job-title subrole (see Employees admin edit) — lets a non-admin member edit
+  // any of their own branch's DTR forms every day, bypassing the 24h window and the audited-report
+  // lock below. Branch scoping further down still applies.
+  const hasDtrLockdownOverride = (ctx.user?.jobTitle || '').toLowerCase().includes('dtr override')
+
   // 24-hour edit window enforcement for non-admin users (members / OIC)
-  if (report.submittedAt) {
+  if (!hasDtrLockdownOverride && report.submittedAt) {
     const submittedMs = new Date(report.submittedAt).getTime()
     if (!isNaN(submittedMs) && Date.now() - submittedMs > 24 * 60 * 60 * 1000) {
       return false
@@ -121,7 +126,7 @@ const resolveCanEditExistingReport = (
   }
 
   const role = ctx.role
-  const mayEmployeeEdit = isEmployeePortalRole(role) && isMayDtrEditWindow(report.reportDate)
+  const mayEmployeeEdit = hasDtrLockdownOverride || (isEmployeePortalRole(role) && isMayDtrEditWindow(report.reportDate))
   const mayCorrectionEdit = mayEmployeeEdit || (ctx.isManager && isMayDtrEditWindow(report.reportDate))
   const reportStatus = report.status || 'SUBMITTED'
 
