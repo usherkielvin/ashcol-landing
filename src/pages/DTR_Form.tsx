@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import { NumericFormat } from 'react-number-format'
-import { Plus, Trash2, Check, Receipt, Send, Edit, CalendarDays, ChevronDown } from 'lucide-react'
+import { Plus, Trash2, Check, Receipt, Send, Edit, CalendarDays, ChevronDown, History as HistoryIcon, X } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -36,6 +36,16 @@ interface OrderRow     { id: string; customer: string; description: string; amou
 interface ExpenseRow   { id: string; name: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 interface IncentiveRow { id: string; customer: string; company: string; hp: string; promodiser: string; amount: string; collectionResolved?: boolean }
 interface CashAdvanceRow { id: string; memberName: string; details: string; amount: string }
+
+// One revision of a DTR — GET /v1/reports/branch-daily/{id}/history, newest first
+interface DtrHistoryEntry {
+  id: string
+  action: 'CREATED' | 'EDITED' | 'AUDIT_SAVE' | string
+  editedBy?: string | null
+  createdAt: string
+  previousSnapshot?: string | null
+  newSnapshot?: string | null
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -425,6 +435,10 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const [reportStatus, setReportStatus] = useState<string | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null)
   const [checkingExistingReport, setCheckingExistingReport] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyEntries, setHistoryEntries] = useState<DtrHistoryEntry[]>([])
+  const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null)
   const trNoExample = branchName && reportDate
     ? `${getTrNoPrefix(branchName, selectedAuditLine)}-${getTrNoDateCode(reportDate)}`
     : 'DAS-260604'
@@ -1291,6 +1305,27 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       const msg = err instanceof Error ? err.message : 'Error loading existing DTR report details.'
       setError(msg)
       return null
+    }
+  }
+
+  const openHistory = async () => {
+    if (!reportId) return
+    setHistoryOpen(true)
+    setHistoryLoading(true)
+    setExpandedHistoryId(null)
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const res = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/${reportId}/history`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`Failed to load history (HTTP ${res.status})`)
+      const data = await res.json()
+      setHistoryEntries(Array.isArray(data) ? data : [])
+    } catch (err) {
+      console.error('[openHistory] Error:', err)
+      setHistoryEntries([])
+    } finally {
+      setHistoryLoading(false)
     }
   }
 
@@ -2300,7 +2335,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         </div>
 
         {/* Submission info — only visible when viewing an existing report */}
-        {!!reportId && (submittedAt || lastUpdatedAt || lastUpdatedBy) && (
+        {!!reportId && (
           <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-x-6 gap-y-2 items-center">
             {submittedAt && (
               <div className="flex items-center gap-1.5">
@@ -2332,6 +2367,15 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                 </span>
               </div>
             )}
+            <button
+              type="button"
+              onClick={openHistory}
+              className="flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border transition-colors hover:bg-slate-500/10"
+              style={{ borderColor: border, color: textMuted }}
+            >
+              <HistoryIcon className="w-3 h-3" />
+              View History
+            </button>
           </div>
         )}
       </div>
@@ -3412,6 +3456,129 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           resetReportDateInput()
         }}
       />
+
+      {historyOpen && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+          onClick={() => setHistoryOpen(false)}
+        >
+          <div
+            className="w-full max-w-lg max-h-[80vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden"
+            style={{ backgroundColor: isLight ? '#ffffff' : '#0B1524', borderColor: border }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: border }}>
+              <div className="flex items-center gap-2">
+                <HistoryIcon className="w-4 h-4" style={{ color: textMuted }} />
+                <h3 className="text-sm font-black uppercase tracking-wide" style={{ color: textPrimary }}>Revision History</h3>
+              </div>
+              <button type="button" onClick={() => setHistoryOpen(false)} className="p-1 rounded-lg hover:bg-slate-500/10">
+                <X className="w-4 h-4" style={{ color: textMuted }} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              {historyLoading ? (
+                <p className="text-xs font-semibold text-center py-6" style={{ color: textMuted }}>Loading history…</p>
+              ) : historyEntries.length === 0 ? (
+                <p className="text-xs font-semibold text-center py-6" style={{ color: textMuted }}>No revisions recorded for this DTR yet.</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {historyEntries.map(entry => {
+                    const actionMeta: Record<string, { label: string; bg: string; text: string }> = {
+                      CREATED: { label: 'Created', bg: 'rgba(16,185,129,0.12)', text: '#059669' },
+                      EDITED: { label: 'Edited', bg: 'rgba(245,158,11,0.14)', text: '#B45309' },
+                      AUDIT_SAVE: { label: 'Audit Save', bg: 'rgba(59,130,246,0.14)', text: '#1D4ED8' },
+                    }
+                    const meta = actionMeta[entry.action] || { label: entry.action, bg: 'rgba(100,116,139,0.14)', text: '#475569' }
+                    const isExpanded = expandedHistoryId === entry.id
+                    let previousValues: Record<string, unknown> = {}
+                    let newValues: Record<string, unknown> = {}
+                    try {
+                      if (entry.previousSnapshot) previousValues = JSON.parse(entry.previousSnapshot)
+                    } catch { /* ignore malformed snapshot */ }
+                    try {
+                      if (entry.newSnapshot) newValues = JSON.parse(entry.newSnapshot)
+                    } catch { /* ignore malformed snapshot */ }
+                    const fieldKeys = Array.from(new Set([...Object.keys(previousValues), ...Object.keys(newValues)]))
+                    const diffRows = fieldKeys
+                      .map(key => ({
+                        key,
+                        before: previousValues[key],
+                        after: newValues[key],
+                        changed: String(previousValues[key] ?? '') !== String(newValues[key] ?? ''),
+                      }))
+                      .filter(row => (row.before !== null && row.before !== '' && row.before !== undefined)
+                        || (row.after !== null && row.after !== '' && row.after !== undefined))
+                    const hasDiff = diffRows.length > 0
+                    return (
+                      <div key={entry.id} className="rounded-xl border" style={{ borderColor: border }}>
+                        <button
+                          type="button"
+                          onClick={() => hasDiff && setExpandedHistoryId(isExpanded ? null : entry.id)}
+                          className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left ${hasDiff ? 'cursor-pointer hover:bg-slate-500/5' : 'cursor-default'}`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0"
+                              style={{ backgroundColor: meta.bg, color: meta.text }}
+                            >
+                              {meta.label}
+                            </span>
+                            <span className="text-[11px] font-semibold truncate" style={{ color: textPrimary }}>
+                              {entry.editedBy ? <EmployeeNameLink nameOrId={entry.editedBy} /> : 'Unknown'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-[10px] font-semibold" style={{ color: textMuted }}>
+                              {new Date(entry.createdAt).toLocaleString('en-PH', {
+                                month: 'short', day: '2-digit', year: 'numeric',
+                                hour: '2-digit', minute: '2-digit', hour12: true,
+                              })}
+                            </span>
+                            {hasDiff && (
+                              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} style={{ color: textMuted }} />
+                            )}
+                          </div>
+                        </button>
+                        {isExpanded && hasDiff && (
+                          <div className="px-3 pb-3 pt-1 border-t" style={{ borderColor: border }}>
+                            <div className="grid gap-1 mt-1.5" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
+                              <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>Field</span>
+                              <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
+                                {entry.action === 'CREATED' ? '—' : 'Previous'}
+                              </span>
+                              <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>Revised To</span>
+                              {diffRows.map(({ key, before, after, changed }) => (
+                                <div key={key} className="contents">
+                                  <span className="text-[10.5px] font-semibold truncate py-0.5" style={{ color: textMuted }}>{key}</span>
+                                  <span
+                                    className="text-[10.5px] font-bold truncate py-0.5"
+                                    style={{ color: changed ? '#B45309' : textPrimary }}
+                                  >
+                                    {before !== null && before !== undefined && before !== '' ? String(before) : '—'}
+                                  </span>
+                                  <span
+                                    className="text-[10.5px] font-bold truncate py-0.5"
+                                    style={{ color: changed ? '#059669' : textPrimary }}
+                                  >
+                                    {after !== null && after !== undefined && after !== '' ? String(after) : '—'}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )

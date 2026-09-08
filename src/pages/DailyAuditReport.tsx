@@ -134,17 +134,17 @@ const formatRemarksLabel = (remarks: string, compact: boolean) => {
   return remarks
 }
 
-const remarksBadgeStyle = (remarks: string, noRecord: boolean, isAbove: boolean) => {
+const remarksBadgeStyle = (remarks: string, noRecord: boolean, isAbove: boolean, isLight: boolean) => {
   if (remarks === 'PENDING') {
     return { backgroundColor: 'rgba(245,158,11,0.15)', color: '#F59E0B' }
   }
   if (isNoTransactionRemarks(remarks) || noRecord) {
-    return { backgroundColor: 'rgba(239,68,68,0.12)', color: '#EF4444' }
+    return { backgroundColor: 'rgba(239,68,68,0.12)', color: isLight ? '#DC2626' : '#F87171' }
   }
   if (isAbove) {
-    return { backgroundColor: 'rgba(16,185,129,0.12)', color: '#10B981' }
+    return { backgroundColor: 'rgba(16,185,129,0.12)', color: isLight ? '#047857' : '#34D399' }
   }
-  return { backgroundColor: 'rgba(239,68,68,0.12)', color: '#EF4444' }
+  return { backgroundColor: 'rgba(239,68,68,0.12)', color: isLight ? '#DC2626' : '#F87171' }
 }
 
 export default function DailyAuditReport() {
@@ -704,7 +704,7 @@ export default function DailyAuditReport() {
             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
             {(['single', 'range'] as const).map(m => (
               <button key={m} type="button" onClick={() => setViewMode(m)} className="px-3 py-1.5"
-                style={{ backgroundColor: viewMode === m ? '#10B981' : 'transparent', color: viewMode === m ? '#fff' : textMuted }}>
+                style={{ backgroundColor: viewMode === m ? '#047857' : 'transparent', color: viewMode === m ? '#fff' : textMuted }}>
                 {m === 'single' ? 'Daily' : 'Range'}
               </button>
             ))}
@@ -718,8 +718,8 @@ export default function DailyAuditReport() {
                     onClick={() => setDate(tab.key)}
                     className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
                     style={{
-                      backgroundColor: isActive ? '#10B981' : 'transparent',
-                      borderColor: isActive ? '#10B981' : inputBorder,
+                      backgroundColor: isActive ? '#047857' : 'transparent',
+                      borderColor: isActive ? '#047857' : inputBorder,
                       color: isActive ? '#ffffff' : textMuted,
                     }}
                   >
@@ -732,7 +732,7 @@ export default function DailyAuditReport() {
                 <button type="button"
                   onClick={() => openDatePicker(mobileDateRef.current)}
                   className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0"
-                  style={{ backgroundColor: '#10B981', borderColor: '#10B981', color: '#ffffff' }}
+                  style={{ backgroundColor: '#047857', borderColor: '#047857', color: '#ffffff' }}
                 >
                   {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
                 </button>
@@ -766,14 +766,14 @@ export default function DailyAuditReport() {
         {!loading && rows.length > 0 && (
           <div className="flex overflow-x-auto gap-2 no-scrollbar pb-1">
             {[
-              { label: 'Gross',     value: `₱${peso(totals.grossSales)}`,           color: '#10B981' },
-              { label: 'Net',       value: `₱${peso(totals.netSales)}`,             color: totals.netSales >= 0 ? '#10B981' : '#EF4444' },
-              { label: 'Cash',      value: `₱${peso(totals.totalCashCollection)}`,  color: '#10B981' },
-              { label: 'Online',    value: `₱${peso(totals.totalOnlineCollection)}`,color: '#10B981' },
-              { label: 'Expenses',  value: `₱${peso(totals.totalExpenses)}`,        color: '#EF4444' },
+              { label: 'Gross',     value: `₱${peso(totals.grossSales)}`,           color: isLight ? '#047857' : '#34D399' },
+              { label: 'Net',       value: `₱${peso(totals.netSales)}`,             color: totals.netSales >= 0 ? (isLight ? '#047857' : '#34D399') : (isLight ? '#DC2626' : '#F87171') },
+              { label: 'Cash',      value: `₱${peso(totals.totalCashCollection)}`,  color: isLight ? '#047857' : '#34D399' },
+              { label: 'Online',    value: `₱${peso(totals.totalOnlineCollection)}`,color: isLight ? '#047857' : '#34D399' },
+              { label: 'Expenses',  value: `₱${peso(totals.totalExpenses)}`,        color: isLight ? '#DC2626' : '#F87171' },
               { label: 'Purchases', value: `₱${peso(totals.totalForPurchase)}`,     color: textPrimary },
               { label: 'For Coll.', value: `₱${peso(totals.forCollection)}`,        color: textPrimary },
-              { label: 'Rebates',   value: `₱${peso(totals.rebatesForCollection)}`, color: '#10B981' },
+              { label: 'Rebates',   value: `₱${peso(totals.rebatesForCollection)}`, color: isLight ? '#047857' : '#34D399' },
             ].map(k => (
               <div key={k.label} className="min-w-[110px] p-3 border rounded-xl shrink-0 flex flex-col gap-1 bg-white dark:bg-[#0A1120]" style={{ borderColor: border }}>
                 <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{k.label}</span>
@@ -793,7 +793,7 @@ export default function DailyAuditReport() {
             <button
               type="button"
               onClick={() => setActiveTab('submit')}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm text-white shadow-md transition-colors hover:opacity-90 focus:outline-none bg-[#10B981]"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm text-white shadow-md transition-colors hover:opacity-90 focus:outline-none bg-[#047857]"
             >
               <FileEdit className="w-4 h-4" /> Submit Daily Report
             </button>
@@ -814,7 +814,7 @@ export default function DailyAuditReport() {
             style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
             {(['single','range'] as const).map(m => (
               <button key={m} type="button" onClick={() => setViewMode(m)} className="px-4 py-2 transition-colors"
-                style={{ backgroundColor: viewMode===m ? '#10B981' : 'transparent', color: viewMode===m ? '#fff' : textMuted }}>
+                style={{ backgroundColor: viewMode===m ? '#047857' : 'transparent', color: viewMode===m ? '#fff' : textMuted }}>
                 {m === 'single' ? 'Daily' : 'Range'}
               </button>
             ))}
@@ -830,8 +830,8 @@ export default function DailyAuditReport() {
                     onClick={() => setDate(tab.key)}
                     className="px-3 py-2 rounded-lg text-xs font-semibold border whitespace-nowrap shrink-0 transition-colors"
                     style={{
-                      backgroundColor: isActive ? '#10B981' : 'transparent',
-                      borderColor: isActive ? '#10B981' : inputBorder,
+                      backgroundColor: isActive ? '#047857' : 'transparent',
+                      borderColor: isActive ? '#047857' : inputBorder,
                       color: isActive ? '#ffffff' : textMuted,
                     }}
                   >
@@ -844,7 +844,7 @@ export default function DailyAuditReport() {
                 <button type="button"
                   onClick={(e) => openCustomDatePicker('single', e)}
                   className="px-3 py-2 rounded-lg text-xs font-semibold border whitespace-nowrap shrink-0"
-                  style={{ backgroundColor: '#10B981', borderColor: '#10B981', color: '#ffffff' }}
+                  style={{ backgroundColor: '#047857', borderColor: '#047857', color: '#ffffff' }}
                 >
                   {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
                 </button>
@@ -960,13 +960,13 @@ export default function DailyAuditReport() {
                       onClick={() => handleCalendarDayClick(day)}
                       className="h-8 rounded-lg text-xs font-bold transition-all relative"
                       style={{
-                        color: isSelected ? '#ffffff' : isToday ? '#10B981' : textPrimary,
-                        backgroundColor: isSelected ? '#10B981' : 'transparent',
+                        color: isSelected ? '#ffffff' : isToday ? (isLight ? '#047857' : '#34D399') : textPrimary,
+                        backgroundColor: isSelected ? '#047857' : 'transparent',
                       }}
                     >
                       {day}
                       {isToday && !isSelected && (
-                        <span className="absolute left-1/2 -translate-x-1/2 bottom-0.5 w-1 h-1 rounded-full" style={{ backgroundColor: '#10B981' }} />
+                        <span className="absolute left-1/2 -translate-x-1/2 bottom-0.5 w-1 h-1 rounded-full" style={{ backgroundColor: isLight ? '#047857' : '#34D399' }} />
                       )}
                     </button>
                   )
@@ -986,14 +986,14 @@ export default function DailyAuditReport() {
       {!loading && rows.length > 0 && (
         <div className="hidden md:grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 px-4 py-3 border-b" style={{ borderColor: border }}>
           {[
-            { label: 'Gross Sales',      value: peso(totals.grossSales),           color: '#10B981' },
-            { label: 'Net Sales',        value: peso(totals.netSales),             color: totals.netSales >= 0 ? '#10B981' : '#EF4444' },
-            { label: 'Cash Collected',   value: peso(totals.totalCashCollection),  color: '#10B981' },
-            { label: 'Online Collected', value: peso(totals.totalOnlineCollection),color: '#10B981' },
-            { label: 'Total Expenses',   value: peso(totals.totalExpenses),        color: '#EF4444' },
+            { label: 'Gross Sales',      value: peso(totals.grossSales),           color: isLight ? '#047857' : '#34D399' },
+            { label: 'Net Sales',        value: peso(totals.netSales),             color: totals.netSales >= 0 ? (isLight ? '#047857' : '#34D399') : (isLight ? '#DC2626' : '#F87171') },
+            { label: 'Cash Collected',   value: peso(totals.totalCashCollection),  color: isLight ? '#047857' : '#34D399' },
+            { label: 'Online Collected', value: peso(totals.totalOnlineCollection),color: isLight ? '#047857' : '#34D399' },
+            { label: 'Total Expenses',   value: peso(totals.totalExpenses),        color: isLight ? '#DC2626' : '#F87171' },
             { label: 'Total Purchases',  value: peso(totals.totalForPurchase),     color: textPrimary },
             { label: 'For Collection',   value: peso(totals.forCollection),        color: textPrimary },
-            { label: 'Rebates',          value: peso(totals.rebatesForCollection), color: '#10B981' },
+            { label: 'Rebates',          value: peso(totals.rebatesForCollection), color: isLight ? '#047857' : '#34D399' },
           ].map((k, i) => (
             <div key={i}
               className="flex flex-col p-3.5 rounded-xl border bg-white dark:bg-[#0A1120] shadow-sm transition-all hover:border-emerald-500/40"
@@ -1016,13 +1016,13 @@ export default function DailyAuditReport() {
         return (
           <div className="flex items-center gap-2.5 flex-wrap px-4 py-2.5 rounded-xl border no-print hidden md:flex"
             style={{ backgroundColor: cardBg, borderColor: border }}>
-            <span className="font-semibold uppercase tracking-wider text-[10px]" style={{ color: '#10B981' }}>Above Quota:</span>
+            <span className="font-semibold uppercase tracking-wider text-[11px]" style={{ color: isLight ? '#047857' : '#34D399' }}>Above Quota:</span>
             <div className="flex flex-wrap gap-2">
               {aboveQuotaBranches.map((branch) => (
                 <div key={branch.branchName} className="flex items-center gap-2 px-3 py-1 rounded-full border text-xs"
                   style={{ backgroundColor: inputBg, borderColor: border }}>
                   <span className="font-semibold" style={{ color: textPrimary }}>{formatBranchName(branch.branchName)}</span>
-                  <span className="font-semibold text-[11px]" style={{ color: '#10B981' }}>+₱{peso(branch.difference)}</span>
+                  <span className="font-semibold text-[11px]" style={{ color: isLight ? '#047857' : '#34D399' }}>+₱{peso(branch.difference)}</span>
                 </div>
               ))}
             </div>
@@ -1234,10 +1234,10 @@ export default function DailyAuditReport() {
                             display: 'inline-block',
                             padding: compactView ? '1px 5px' : '2px 7px',
                             borderRadius: 4,
-                            fontSize: compactView ? 9 : 10,
+                            fontSize: compactView ? 9 : 11,
                             fontWeight: 700,
                             whiteSpace: 'nowrap',
-                            ...remarksBadgeStyle(row.remarks, noRecord, isAbove),
+                            ...remarksBadgeStyle(row.remarks, noRecord, isAbove, isLight),
                           }}>
                             {formatRemarksLabel(row.remarks, compactView)}
                           </span>
@@ -1447,7 +1447,7 @@ export default function DailyAuditReport() {
                       <span className="text-xs" style={{ color: textMuted }}>{formatLocalTime(row.createdAt, row.timeUploaded)}</span>
                     )}
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase"
-                      style={remarksBadgeStyle(row.remarks, noRecord, isAbove)}>
+                      style={remarksBadgeStyle(row.remarks, noRecord, isAbove, isLight)}>
                       {formatRemarksLabel(row.remarks, false)}
                     </span>
                   </div>
