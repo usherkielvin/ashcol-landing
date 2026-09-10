@@ -50,9 +50,6 @@ import NotificationDetailModal from '../components/NotificationDetailModal'
 import { useNotifications } from '../contexts/NotificationContext'
 import FloatingChatWindow from '../components/FloatingChatWindow'
 import { HEADER_MENU_OPENED_EVENT, broadcastHeaderMenuOpen } from '../utils/headerMenuCoordination'
-import ArcticButton from '../components/arctic/ArcticButton'
-import ArcticDrawer from '../components/arctic/ArcticDrawer'
-import { useArctic } from '../contexts/ArcticContext'
 import logoImg from '../assets/ash-logo.jpg'
 
 const normalizeBranchDisplayName = (branchId?: string | null, branchName?: string | null) => {
@@ -957,7 +954,6 @@ export default function DashboardLayout() {
 
             {/* Right: Actions */}
             <div className="flex items-center gap-1.5 shrink-0">
-              <ArcticButton />
               <MessagesDropdown />
               <NotificationsDropdown />
 
@@ -1132,9 +1128,6 @@ export default function DashboardLayout() {
           </div>
         </main>
       </div>
-
-      {/* ── Global Agentic Chat UI ────────────────────── */}
-      <ArcticDrawer />
 
       <NotificationDetailModal />
 

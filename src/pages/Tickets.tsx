@@ -6854,24 +6854,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     <span>{showcaseOpen ? 'Active' : 'Showcase'}</span>
                   </button>
                 )}
-
-                {/* Ask Arctic — contextual, this page's branch/date is already known to Arctic */}
-                {surface === 'schedules' && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); openArctic() }}
-                    className="flex items-center gap-1.5 h-10 px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-[background-color,color,border-color] duration-150 hover:opacity-90 active:scale-95"
-                    style={{
-                      backgroundColor: inputBg,
-                      border: `1px solid ${inputBorder}`,
-                      color: textPrimary,
-                    }}
-                    title="Ask Arctic about this schedule"
-                  >
-                    <span className="text-[15px] leading-none shrink-0">🦊</span>
-                    <span>Ask Arctic</span>
-                  </button>
-                )}
               </div>
 
               {/* Search bar — full width on mobile (stacks first), fixed-width and
