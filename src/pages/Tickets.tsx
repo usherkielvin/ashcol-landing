@@ -6670,33 +6670,23 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             <>
               {/* Mobile Native Date Picker — Whole Element is interactive button */}
               <div className="flex md:hidden items-center gap-2 w-fit self-start order-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const el = document.getElementById('mobile-native-date-picker-input') as HTMLInputElement | null
-                    if (el) {
-                      if (typeof (el as any).showPicker === 'function') {
-                        try {
-                          (el as any).showPicker()
-                        } catch {
-                          el.focus()
-                          el.click()
-                        }
-                      } else {
-                        el.focus()
-                        el.click()
-                      }
-                    }
-                  }}
-                  className="relative inline-flex items-center gap-2 h-9 px-3 rounded-xl border font-bold text-xs shadow-xs transition-all active:scale-[0.98] cursor-pointer"
+                {/* Plain div, not <button>: iOS Safari (and many Android WebViews) only opens the
+                    native date-picker UI for a genuine, direct tap ON the <input type="date">
+                    itself — a synthetic .click()/.showPicker() call forwarded from a sibling
+                    button's onClick is silently ignored there, which is why this control used to
+                    be dead on mobile. The input now sits on top (pointer-events enabled, last in
+                    DOM + absolutely positioned) so the real tap lands on it directly; the visual
+                    chrome underneath is pointer-events-none so it never intercepts the tap. */}
+                <div
+                  className="relative inline-flex items-center gap-2 h-9 px-3 rounded-xl border font-bold text-xs shadow-xs transition-all active:scale-[0.98]"
                   style={{
                     backgroundColor: inputBg,
                     borderColor: dateFilter && dateFilter !== todayDateKey() ? green : inputBorder,
                     color: textPrimary,
                   }}
                 >
-                  <CalendarDays className="w-3.5 h-3.5 shrink-0" style={{ color: green }} strokeWidth={2.2} />
-                  <span className="text-xs font-black uppercase tracking-wide whitespace-nowrap">
+                  <CalendarDays className="w-3.5 h-3.5 shrink-0 pointer-events-none" style={{ color: green }} strokeWidth={2.2} />
+                  <span className="text-xs font-black uppercase tracking-wide whitespace-nowrap pointer-events-none">
                     {dateFilter === todayDateKey()
                       ? `Today · ${formatDisplayDate(dateFilter, '')}`
                       : dateFilter
@@ -6708,9 +6698,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                           }).toUpperCase()
                         : "TODAY'S SCHEDULE"}
                   </span>
-                  <ChevronDown className="w-3.5 h-3.5 opacity-50 shrink-0 ml-0.5" style={{ color: textMuted }} />
+                  <ChevronDown className="w-3.5 h-3.5 opacity-50 shrink-0 ml-0.5 pointer-events-none" style={{ color: textMuted }} />
 
-                  {/* Native Date Picker Input */}
+                  {/* Native Date Picker Input — receives the tap directly, see comment above */}
                   <input
                     id="mobile-native-date-picker-input"
                     type="date"
@@ -6720,10 +6710,10 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                         handleDateFilterChange(e.target.value)
                       }
                     }}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer pointer-events-none"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     aria-label="Pick schedule date"
                   />
-                </button>
+                </div>
 
                 {dateFilter && dateFilter !== todayDateKey() && (
                   <button
