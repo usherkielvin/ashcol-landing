@@ -2428,9 +2428,21 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
       let finalBody: Record<string, any> = body
       if (shouldComplete && originalTicket) {
-        const schedKey = oldDateKey || resolveScheduleCompletionDateKey(originalTicket, dateFilter)
-        const ticketWithEdits = { ...originalTicket, ...body, acDetails: body.acDetails }
-        finalBody = enrichCompletePatchBody({ ...body }, ticketWithEdits, schedKey)
+        // resolveScheduleCompletionDateKey first: for a CONTINUATION ticket, oldDateKey
+        // (captured when this modal was opened, from the ticket's own finalDate/preferredDate)
+        // is frozen on the original day no matter which continuation-day row was actually
+        // clicked to get here — preferring it unconditionally attributed every completion made
+        // from this modal to that stale day. resolveScheduleCompletionDateKey already falls back
+        // to that same ticket-grounded date (via getEffectiveScheduleDateKey) whenever dateFilter
+        // isn't a date this ticket actually belongs on, so this is a no-op for the common case.
+        const schedKey = resolveScheduleCompletionDateKey(originalTicket, dateFilter) || oldDateKey
+        // Pass originalTicket (pre-edit), not a copy pre-merged with the new status — enrichCompletePatchBody
+        // re-applies `body` on top internally regardless (so the inferred outcome is unaffected),
+        // but buildArchiveAcMeta's own status check inside it needs to see the ticket's status as
+        // it was BEFORE this save to recognize a CONTINUATION ticket being closed out and fold its
+        // origin day into continuationDates. Passing an already-status-overwritten ticket here
+        // made that check never fire for a completion made from this modal.
+        finalBody = enrichCompletePatchBody({ ...body }, originalTicket, schedKey)
       } else if (alreadyClosed && originalTicket) {
         // Ticket was already marked done before this edit — "Scheduled Date"/"Installed Date"
         // on the read-only view are a one-time snapshot taken at first completion (see
@@ -2466,7 +2478,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       const archiveFinalBody = finalBody
       const archiveBody = body
       const needsArchive = shouldComplete && shouldArchiveCompletedSchedule(originalTicket, finalBody)
-      const schedKey = oldDateKey || resolveScheduleCompletionDateKey(originalTicket, dateFilter) || todayDateKey()
+      // Same precedence as the schedKey above — must agree with it, since this feeds the
+      // Archives report entry for the same completion.
+      const schedKey = resolveScheduleCompletionDateKey(originalTicket, dateFilter) || oldDateKey || todayDateKey()
 
       void queueTicketPatch(
         originalTicket,
