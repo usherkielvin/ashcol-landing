@@ -2112,7 +2112,12 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         preferredDate: isReschedStatus && activeForm.reschedulePending
           ? (oldDateKey || activeForm.preferredDate?.split('T')[0]?.trim() || undefined)
           : newDateKey,
-        actualCompletion: activeForm.actualCompletion?.trim() || undefined,
+        // '' here means "user cleared Installed Date" and must reach the backend as an explicit
+        // blank (now handled there as clear-to-null) rather than collapsing to undefined, which
+        // gets dropped from the outgoing JSON entirely and silently keeps the old value.
+        actualCompletion: activeForm.actualCompletion !== undefined
+          ? activeForm.actualCompletion.trim()
+          : undefined,
         dealer: activeForm.dealer?.trim() || 'Direct',
         diser: activeForm.diser?.trim() || undefined,
         district: activeForm.district?.trim() || undefined,
