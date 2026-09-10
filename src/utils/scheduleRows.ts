@@ -129,21 +129,24 @@ export function isRescheduledGhostOnDate(ticket: Ticket, dateKey: string): boole
 
 export function isContinuationGhostOnDate(ticket: Ticket, dateKey: string): boolean {
   if (!dateKey) return false
-  // A ticket that has since closed out (installed/done/cancelled) no longer needs its old
-  // continuation days called out — isCompletedGhostOnDate/isCancelledScheduleGhost (checked
-  // before this in getScheduleGhostKind) already cover those dates.
+  if (isCancelledTicket(ticket)) return false
+  if (!getContinuationDates(ticket).includes(dateKey)) return false
   const stat = String(ticket.status || '').toUpperCase()
-  if (isInstalledWorkflowStatus(stat) || stat.startsWith('DONE') || stat === 'CANCELLED') return false
   // While status is still CONTINUATION the ticket is actively spanning every date in
   // continuationDates — those render as live rows (see ticketBelongsOnScheduleDate), not ghosts.
-  // Once the ticket moves on (e.g. rescheduled to a new date), this keeps every date it was
-  // previously marked CONTINUATION on from silently losing that record.
   if (stat === 'CONTINUATION') return false
+  // A ticket can close out (INSTALLED/DONE_*) on only one of its several continuation days —
+  // that specific day already renders as a 'completed' ghost via isCompletedGhostOnDate
+  // (checked first in getScheduleGhostKind); every OTHER day it spanned still needs its
+  // "Continuation" record kept alive here, or the board silently loses that history the moment
+  // status moves off CONTINUATION (this used to bail out for any closed ticket entirely, which
+  // dropped every continuation day except the one that happened to match the final archive date).
+  if (isCompletedGhostOnDate(ticket, dateKey)) return false
   // If the ticket has since been rescheduled back onto a date that also happens to be in
   // continuationDates, that date is the current live row, not a ghost of the old one.
   const currentKey = getEffectiveScheduleDateKey(ticket)
   if (currentKey && currentKey === dateKey) return false
-  return getContinuationDates(ticket).includes(dateKey)
+  return true
 }
 
 export function isCancelledTicket(ticket: Partial<Ticket> | null | undefined): boolean {
@@ -261,16 +264,34 @@ export function buildArchiveAcMeta(ticket: Ticket, scheduleDateKey: string, outc
   archivedScheduleDate: string
   installedDate: string
   scheduleOutcome: string
+  continuationDates?: string[]
 } {
   const existing = parseAcMeta(ticket)
   const prevDates: string[] = Array.isArray(existing.previousScheduleDates) ? [...existing.previousScheduleDates] : []
   const sched = (scheduleDateKey || getPreferredDateKey(ticket)).split('T')[0].split(' ')[0].trim()
   if (sched && !prevDates.includes(sched)) prevDates.push(sched)
+
+  // `ticket` here is the pre-close snapshot, so if it was still CONTINUATION its effective date
+  // is still the day the span started on (that field never advances while status stays
+  // CONTINUATION — see commitInlineContinuation). That origin day only lives in continuationDates
+  // today if the user happened to include it when picking days in the dialog; fold it in here
+  // unconditionally so closing the ticket on a later continuation day can't silently drop the
+  // first day's record.
+  let continuationDates: string[] | undefined
+  if (String(ticket.status || '').toUpperCase() === 'CONTINUATION') {
+    const existingContinuation = getContinuationDates(ticket)
+    const originDate = getEffectiveScheduleDateKey(ticket)
+    continuationDates = (originDate && !existingContinuation.includes(originDate))
+      ? [...existingContinuation, originDate]
+      : existingContinuation
+  }
+
   return {
     previousScheduleDates: prevDates,
     archivedScheduleDate: sched,
     installedDate: sched,
     scheduleOutcome: outcome || 'DONE_INSTALLED',
+    ...(continuationDates ? { continuationDates } : {}),
   }
 }
 

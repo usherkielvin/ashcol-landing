@@ -39,7 +39,11 @@ export function resolveScheduleCompletionDateKey(ticket: Ticket, activeDateKey?:
     const cancelledScheduleDate = String(meta.cancelledScheduleDate || '').split('T')[0].split(' ')[0].trim()
     const finalDate = !isResched ? getFinalDateKey(ticket) : ''
     const matches = [finalDate, preferred, scheduledDate, archived, cancelledScheduleDate].includes(active)
-    if (matches || getPreviousScheduleDates(ticket).includes(active)) {
+    // A CONTINUATION ticket's preferredDate never advances past its original day (see
+    // commitInlineContinuation), so completing it while actually viewing/working a later
+    // continuation day wouldn't otherwise match anything above and would silently fall back
+    // to that stale original date — misattributing the completion to the wrong day.
+    if (matches || getPreviousScheduleDates(ticket).includes(active) || getContinuationDates(ticket).includes(active)) {
       return active
     }
   }

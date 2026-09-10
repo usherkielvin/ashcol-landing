@@ -681,12 +681,24 @@ export function enrichCompletePatchBody(
     outcome,
     String(body.status || ticket.status || ''),
   )
+  // A CONTINUATION ticket's preferredDate/finalDate never advance past its original day (see
+  // commitInlineContinuation) — closing it on a later continuation day would otherwise leave
+  // getEffectiveScheduleDateKey() pointing at that stale original date forever, which makes the
+  // schedule board keep treating the original day as "the live row" (showing the ticket's real
+  // final status there) while the actual completion day quietly renders as a mere ghost. Syncing
+  // both to the resolved completion date is what the reschedule flow already does for its own
+  // "current date" fields — this is a no-op for the common case where they already agree.
+  const currentEffectiveKey = getEffectiveScheduleDateKey(ticket)
+  const dateSync = (schedKey && schedKey !== currentEffectiveKey)
+    ? { preferredDate: schedKey, finalDate: schedKey }
+    : {}
   return {
     ...body,
     ...(remarksUpdate !== undefined ? { remarksUpdate, remarks: remarksUpdate } : {}),
     status: closeStatus,
     scheduleOutcome: outcome,
     actualCompletion: toApiDateTimeForDateKey(schedKey),
+    ...dateSync,
     acDetails: mergeAcMeta(
       { ...ticket, acDetails: baseAc } as Ticket,
       {
