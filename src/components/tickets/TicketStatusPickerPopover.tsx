@@ -62,6 +62,16 @@ export function TicketStatusPickerPopover({
 
   const executeStatusChange = (value: string) => {
     onClose()
+    // CONTINUATION has no equivalent in-modal fields the way RESCHED has its own Final
+    // Date/reschedulePending inputs — setting it as a bare edit-form status value here always
+    // produced a broken half-state (status left as literal "CONTINUATION" with no date to
+    // continue to, since only the dedicated dialog below actually resolves which day it moves
+    // to). Route to that dialog unconditionally, even when this picker was opened from inside
+    // the full Edit modal.
+    if (value === 'CONTINUATION') {
+      onOpenContinuationDialog(pickerTicket)
+      return
+    }
     if (pickerMode === 'edit-form') {
       onSetEditFormStatus(value)
       return
@@ -85,10 +95,6 @@ export function TicketStatusPickerPopover({
       } else {
         onOpenReschedDialog(pickerTicket)
       }
-      return
-    }
-    if (value === 'CONTINUATION') {
-      onOpenContinuationDialog(pickerTicket)
       return
     }
     if (value === 'DONE_INSTALLED' || value === 'DONE_CLEANING' || value === 'DONE_DISMANTLE' || value === 'DONE_RELOCATED') {

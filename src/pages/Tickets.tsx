@@ -5122,9 +5122,40 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     if (!continuationDialog) return
     const { ticket } = continuationDialog
 
-    const body: Record<string, unknown> = { status: 'CONTINUATION' }
+    const selected = Array.from(new Set(continuationSelectedDates.filter(Boolean))).sort()
+    if (selected.length === 0) {
+      alert('Pick at least one date.')
+      return
+    }
+
+    // Continuation behaves like a mini-reschedule, not a status that lingers across every day
+    // it spans: the FURTHEST selected date becomes the ticket's new live/editable occurrence
+    // (a normal pending status, e.g. "INSTALL" — not a "CONTINUATION" badge), and every earlier
+    // date (the day it was on before this, plus any other selected day short of the furthest
+    // one) becomes a read-only "Continuation" ghost via continuationDates. This reuses the exact
+    // same ghost machinery isContinuationGhostOnDate already applies once a ticket closes out on
+    // a later continuation day — it works here too because it keys off "status isn't literally
+    // CONTINUATION and dateKey isn't the ticket's current date", both true immediately after this.
+    const oldDateKey = getFinalDateKey(ticket) || getPreferredDateKey(ticket)
+    const newDateKey = selected[selected.length - 1]
+    const earlierSelected = selected.slice(0, -1)
+    const existingContinuation = getContinuationDates(ticket)
+    const continuationGhostDates = Array.from(new Set([
+      ...existingContinuation,
+      ...(oldDateKey && oldDateKey !== newDateKey ? [oldDateKey] : []),
+      ...earlierSelected,
+    ]))
+
+    const body: Record<string, unknown> = {
+      status: 'SCHEDULED',
+      preferredDate: newDateKey,
+      finalDate: newDateKey,
+    }
     const acUpdates: Record<string, unknown> = {
-      continuationDates: continuationSelectedDates
+      continuationDates: continuationGhostDates,
+      finalDate: newDateKey,
+      scheduledDate: newDateKey,
+      scheduleOutcome: '',
     }
     body.acDetails = mergeAcMeta(ticket, acUpdates)
 
