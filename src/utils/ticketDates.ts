@@ -74,7 +74,7 @@ export function shouldBlankReschedGhostPayment(
   ghostKind?: ScheduleGhostKind,
 ): boolean {
   if (!dateKey) return false
-  return ghostKind === 'resched'
+  return ghostKind === 'resched' || ghostKind === 'continuation'
 }
 
 export function getContinuationDates(ticket: Ticket): string[] {

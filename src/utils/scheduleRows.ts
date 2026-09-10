@@ -127,6 +127,25 @@ export function isRescheduledGhostOnDate(ticket: Ticket, dateKey: string): boole
   return getRescheduleHistoryDates(ticket).includes(dateKey)
 }
 
+export function isContinuationGhostOnDate(ticket: Ticket, dateKey: string): boolean {
+  if (!dateKey) return false
+  // A ticket that has since closed out (installed/done/cancelled) no longer needs its old
+  // continuation days called out — isCompletedGhostOnDate/isCancelledScheduleGhost (checked
+  // before this in getScheduleGhostKind) already cover those dates.
+  const stat = String(ticket.status || '').toUpperCase()
+  if (isInstalledWorkflowStatus(stat) || stat.startsWith('DONE') || stat === 'CANCELLED') return false
+  // While status is still CONTINUATION the ticket is actively spanning every date in
+  // continuationDates — those render as live rows (see ticketBelongsOnScheduleDate), not ghosts.
+  // Once the ticket moves on (e.g. rescheduled to a new date), this keeps every date it was
+  // previously marked CONTINUATION on from silently losing that record.
+  if (stat === 'CONTINUATION') return false
+  // If the ticket has since been rescheduled back onto a date that also happens to be in
+  // continuationDates, that date is the current live row, not a ghost of the old one.
+  const currentKey = getEffectiveScheduleDateKey(ticket)
+  if (currentKey && currentKey === dateKey) return false
+  return getContinuationDates(ticket).includes(dateKey)
+}
+
 export function isCancelledTicket(ticket: Partial<Ticket> | null | undefined): boolean {
   return (ticket?.status || '').toUpperCase() === 'CANCELLED'
 }
@@ -156,6 +175,7 @@ export function getScheduleGhostKind(ticket: Ticket, dateKey: string): ScheduleG
   if (isCompletedGhostOnDate(ticket, dateKey)) return 'completed'
   if (isCancelledScheduleGhost(ticket, dateKey)) return 'cancelled'
   if (isRescheduledGhostOnDate(ticket, dateKey)) return 'resched'
+  if (isContinuationGhostOnDate(ticket, dateKey)) return 'continuation'
   if (isHistoricalScheduleTicket(ticket, dateKey)) return 'historical'
   return null
 }
@@ -163,6 +183,7 @@ export function getScheduleGhostKind(ticket: Ticket, dateKey: string): ScheduleG
 export function isScheduleGhostOnDate(ticket: Ticket, dateKey: string): boolean {
   return isRescheduledGhostOnDate(ticket, dateKey)
     || isCompletedGhostOnDate(ticket, dateKey)
+    || isContinuationGhostOnDate(ticket, dateKey)
     || getScheduleGhostKind(ticket, dateKey) === 'cancelled'
 }
 
@@ -226,6 +247,11 @@ export function formatGhostRemarks(
     const normalizedBase = dedupeMovedToRemark(base)
     if (normalizedBase === suffix || isMovedToRescheduleRemark(normalizedBase)) return normalizedBase
     return `${normalizedBase} · ${suffix}`
+  }
+  if (ghostKind === 'continuation') {
+    const suffix = 'Continuation'
+    if (!base) return suffix
+    return base.toLowerCase().includes('continuation') ? base : `${base} · ${suffix}`
   }
   return base
 }
@@ -413,6 +439,14 @@ export function getScheduleRowColors(
       baseBg: isLight ? '#fef9c3' : 'rgba(251,191,36,0.28)',
       hoverBg: isLight ? '#fde68a' : 'rgba(251,191,36,0.38)',
       accent: '#fbbf24',
+    }
+  }
+
+  if (ghostKind === 'continuation') {
+    return {
+      baseBg: isLight ? '#f3e8ff' : 'rgba(124,58,237,0.22)',
+      hoverBg: isLight ? '#e9d5ff' : 'rgba(124,58,237,0.32)',
+      accent: '#7C3AED',
     }
   }
 

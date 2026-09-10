@@ -130,7 +130,7 @@ export type ScheduleOutcome =
 
 export type ScheduleStatusGroup = 'pending' | 'closing'
 
-export type ScheduleGhostKind = 'completed' | 'resched' | 'cancelled' | 'historical' | null
+export type ScheduleGhostKind = 'completed' | 'resched' | 'cancelled' | 'historical' | 'continuation' | null
 
 export type PaymentBreakdownEntry = { mode: string; amount: number }
 

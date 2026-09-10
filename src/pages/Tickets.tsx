@@ -5585,7 +5585,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         ? (ghostKind === 'completed' ? (isLight ? '#166534' : '#86efac')
           : ghostKind === 'resched' ? (isLight ? '#a16207' : '#fbbf24')
             : ghostKind === 'cancelled' ? (isLight ? '#dc2626' : '#f87171')
-              : textMuted)
+              : ghostKind === 'continuation' ? (isLight ? '#7c3aed' : '#c084fc')
+                : textMuted)
         : textPrimary)
     const showExpanded = cellExpanded
     const truncStyle: React.CSSProperties = showExpanded
@@ -5766,6 +5767,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
               title={`Historical Record — ${display}`}
             >
               {displayLabel}
+            </span>
+          )
+        }
+        if (ghostKind === 'continuation') {
+          return (
+            <span style={{ ...truncStyle, fontWeight: 700, fontStyle: 'italic', color: isLight ? '#7c3aed' : '#c084fc' }} title="Continuation">
+              CONTINUATION
             </span>
           )
         }
@@ -5985,7 +5993,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         const isCompletedGhost = ghostKind === 'completed' || isCompletedGhostOnDate(ticket, dateFilter)
         const ghostRemarkColor = isCompletedGhost
           ? (isLight ? '#15803d' : '#86efac')
-          : ghostKind === 'cancelled' ? (isLight ? '#dc2626' : '#f87171') : (isLight ? '#a16207' : '#fbbf24')
+          : ghostKind === 'cancelled' ? (isLight ? '#dc2626' : '#f87171')
+            : ghostKind === 'continuation' ? (isLight ? '#7c3aed' : '#c084fc') : (isLight ? '#a16207' : '#fbbf24')
         return (
           <>
             <div className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: textMuted }}>Remarks</div>
