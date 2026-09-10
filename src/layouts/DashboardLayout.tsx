@@ -197,7 +197,6 @@ export default function DashboardLayout() {
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
   const { user, logout } = useAuth()
-  const { setPageContext } = useArctic()
   const { openNotificationDetail } = useNotifications()
 
   // Deep-link from a push notification click with nowhere else to go — see sw.js/WebPushService.
@@ -515,15 +514,6 @@ export default function DashboardLayout() {
       : 'Dashboard')
   const navGroups = buildNavGroups(navLinks)
   const collapsedNavItems = buildCollapsedNavItems(navLinks)
-
-  // Ground Arctic in whatever the user is currently looking at.
-  useEffect(() => {
-    if (location.pathname === '/schedules' || location.pathname === '/audit-report' || location.pathname === '/daily-report') return
-    const parts = [`Page: ${currentPage}`]
-    if (branchLabel) parts.push(`Branch: ${branchLabel}`)
-    parts.push(`Date: ${new Date().toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}`)
-    setPageContext(parts.join(' | '))
-  }, [currentPage, branchLabel, location.pathname, setPageContext])
 
   // Keep the group for the current page open; don't fight manual collapse until route changes.
   useEffect(() => {
