@@ -173,7 +173,7 @@ function AutoFitText({ text, style, title, minScale = 0.55, align = 'center' }: 
 export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const { theme } = useTheme()
   const { user } = useAuth()
-  const { openArctic, setDataContext, setPageContext } = useArctic()
+  const { setDataContext, setPageContext } = useArctic()
   const navigate = useNavigate()
   const pathname = pathnameForSurface(surface)
   const isMyTickets = surface === 'my-tickets'
