@@ -740,7 +740,7 @@ export default function Bookings() {
           onClick={() => setSelectedBooking(null)}
         >
           <div 
-            className="w-full max-w-xl max-h-[90vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+            className="w-full max-w-3xl max-h-[92vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
             style={{ backgroundColor: cardBg, borderColor: border }}
             onClick={e => e.stopPropagation()}
           >
@@ -868,9 +868,9 @@ export default function Bookings() {
                   </div>
                 </div>
                 {(selectedBooking.photoUrl1 || selectedBooking.photoUrl2) && (
-                  <div className="flex gap-2">
+                  <div className="grid grid-cols-2 gap-3">
                     {[selectedBooking.photoUrl1, selectedBooking.photoUrl2].filter(Boolean).map((url, idx) => (
-                      <a key={idx} href={`${API_BASE_URL.replace(/\/api$/, '')}${url}`} target="_blank" rel="noreferrer" className="w-20 h-20 rounded-xl overflow-hidden border shrink-0" style={{ borderColor: border }}>
+                      <a key={idx} href={`${API_BASE_URL.replace(/\/api$/, '')}${url}`} target="_blank" rel="noreferrer" className="block aspect-square rounded-xl overflow-hidden border hover:opacity-90 transition-opacity" style={{ borderColor: border }}>
                         <img src={`${API_BASE_URL.replace(/\/api$/, '')}${url}`} alt="Unit photo" className="w-full h-full object-cover" />
                       </a>
                     ))}
