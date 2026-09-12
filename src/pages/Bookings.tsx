@@ -414,11 +414,11 @@ export default function Bookings() {
                 className="text-[11px] font-bold uppercase tracking-wider select-none border-b sticky top-0 z-10"
                 style={{ backgroundColor: panelBg, borderColor: border, color: textMuted }}
               >
-                <th className="px-5 py-3.5">Customer & Contact</th>
-                <th className="px-5 py-3.5">Quick Contact</th>
+                <th className="px-5 py-3.5">Customer</th>
+                <th className="px-5 py-3.5">Contact Number</th>
                 <th className="px-5 py-3.5">Aircon Unit</th>
                 <th className="px-5 py-3.5">Issue</th>
-                <th className="px-5 py-3.5">Location / Branch</th>
+                <th className="px-5 py-3.5">Location</th>
                 <th className="px-5 py-3.5">Requested Visit</th>
                 <th className="px-5 py-3.5">Status</th>
               </tr>
@@ -460,37 +460,24 @@ export default function Bookings() {
                       if (!isSelected) el.currentTarget.style.backgroundColor = 'transparent'
                     }}
                   >
-                    {/* Customer & Contact */}
+                    {/* Customer */}
                     <td className="px-5 py-4">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="font-bold text-sm group-hover:text-emerald-500 transition-colors" style={{ color: textPrimary }}>
-                          {b.customerName}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => copyPhone(b.id, b.contactPhone, e)}
-                          title="Click to copy"
-                          className="w-fit text-left text-sm font-semibold tracking-normal"
-                          style={{ color: copiedId === b.id ? green : textMuted }}
-                        >
-                          {copiedId === b.id ? 'COPIED' : b.contactPhone}
-                        </button>
-                      </div>
+                      <span className="font-bold text-sm group-hover:text-emerald-500 transition-colors" style={{ color: textPrimary }}>
+                        {b.customerName}
+                      </span>
                     </td>
 
-                    {/* Quick Contact */}
-                    <td className="px-5 py-4" onClick={e => e.stopPropagation()}>
-                      <div className="flex items-center gap-1.5">
-                        <a href={`tel:${b.contactPhone}`} title="Call" className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 transition-colors">
-                          <Phone className="w-3.5 h-3.5" />
-                        </a>
-                        <a href={smsHref(b.contactPhone)} title="SMS" className="p-1.5 rounded-lg bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 transition-colors">
-                          <MessageCircle className="w-3.5 h-3.5" />
-                        </a>
-                        <a href={viberHref(b.contactPhone)} title="Viber" className="p-1.5 rounded-lg bg-purple-500/10 text-purple-500 hover:bg-purple-500/20 transition-colors">
-                          <Send className="w-3.5 h-3.5" />
-                        </a>
-                      </div>
+                    {/* Contact Number */}
+                    <td className="px-5 py-4 whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={(e) => copyPhone(b.id, b.contactPhone, e)}
+                        title="Click to copy"
+                        className="w-fit text-left text-sm font-semibold tracking-normal"
+                        style={{ color: copiedId === b.id ? green : textMuted }}
+                      >
+                        {copiedId === b.id ? 'COPIED' : b.contactPhone}
+                      </button>
                     </td>
 
                     {/* Aircon Unit */}
@@ -508,14 +495,11 @@ export default function Bookings() {
                       </p>
                     </td>
 
-                    {/* Location / Branch */}
-                    <td className="px-5 py-4 max-w-[200px]">
+                    {/* Location */}
+                    <td className="px-5 py-4 max-w-[220px]">
                       <span className="text-xs line-clamp-2 leading-relaxed" style={{ color: textPrimary }} title={addressStr}>
                         {addressStr || <span className="text-slate-400 italic">Not provided</span>}
                       </span>
-                      <div className="text-[10px] mt-0.5 font-semibold" style={{ color: b.branchId ? textMuted : '#F59E0B' }}>
-                        {b.branchId ? (branchNames[b.branchId] || 'Branch assigned') : 'Unassigned / Out of area'}
-                      </div>
                     </td>
 
                     {/* Requested Visit Date */}
@@ -637,27 +621,9 @@ export default function Bookings() {
               </div>
 
               {/* Location */}
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs leading-relaxed" style={{ color: textMuted }}>
-                  {addressStr || <span className="italic text-slate-400">Not provided</span>}
-                </span>
-                <span className="text-[10px] font-semibold shrink-0" style={{ color: b.branchId ? textMuted : '#F59E0B' }}>
-                  {b.branchId ? (branchNames[b.branchId] || 'Assigned') : 'Unassigned'}
-                </span>
-              </div>
-
-              {/* Quick contact */}
-              <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                <a href={`tel:${b.contactPhone}`} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-bold bg-emerald-500/10 text-emerald-500">
-                  <Phone className="w-3 h-3" /> Call
-                </a>
-                <a href={smsHref(b.contactPhone)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-bold bg-blue-500/10 text-blue-500">
-                  <MessageCircle className="w-3 h-3" /> SMS
-                </a>
-                <a href={viberHref(b.contactPhone)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-bold bg-purple-500/10 text-purple-500">
-                  <Send className="w-3 h-3" /> Viber
-                </a>
-              </div>
+              <span className="text-xs leading-relaxed" style={{ color: textMuted }}>
+                {addressStr || <span className="italic text-slate-400">Not provided</span>}
+              </span>
 
               {/* Requested visit */}
               <div className="flex items-center justify-between text-xs pt-2 border-t" style={{ borderColor: border }}>

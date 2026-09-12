@@ -1576,72 +1576,92 @@ export default function DailyAuditReport() {
       {/* ── Row Details Modal ───────────────────────────────────────── */}
       {selectedRow && ReactDOM.createPortal(
         <div
-          className="fixed inset-0 left-0 md:left-[220px] lg:left-[240px] z-[9999] flex items-center justify-center p-2 sm:p-3 backdrop-blur-md safe-area-top safe-area-bottom"
-          style={{ backgroundColor: 'rgba(15,23,42,0.65)', backdropFilter: 'blur(6px)' }}
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4 safe-area-top safe-area-bottom"
+          style={{ backgroundColor: 'rgba(6,10,20,0.82)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}
+          onClick={() => setSelectedRow(null)}
         >
           <div
             className="rounded-2xl overflow-hidden shadow-2xl w-full max-w-6xl xl:max-w-7xl h-[96vh] flex flex-col animate-in fade-in zoom-in-95 duration-150"
-            style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '96vh' }}
+            style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '96vh', boxShadow: '0 25px 70px -15px rgba(0,0,0,0.55)' }}
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-6 py-4 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
-              <div className="flex items-start justify-between w-full sm:w-auto">
-                <div>
-                  <h4 className="font-black text-base" style={{ color: textPrimary }}>{formatBranchName(selectedRow.branchName)}</h4>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs">
-                    <span className="text-[11px]" style={{ color: textMuted }}>
-                      {viewMode === 'single'
-                        ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-                        : `${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} – ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
-                    </span>
-                    <span className="text-slate-300 dark:text-slate-700">•</span>
-                    <span className="flex items-center gap-1.5 font-bold">
-                      <span style={{
-                        display: 'inline-block', width: '7px', height: '7px', borderRadius: '50%',
-                        backgroundColor: selectedRow.remarks === 'PENDING' ? '#F59E0B'
-                          : (selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT' || selectedRow.status === 'NO SCHED' ? '#EF4444' : '#10B981')
-                      }} />
-                      <span style={{ color: selectedRow.remarks === 'PENDING' ? '#F59E0B' : (selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT' || selectedRow.status === 'NO SCHED' ? '#EF4444' : '#10B981') }}>
-                        {selectedRow.remarks === 'PENDING' ? 'PENDING'
-                          : isNoTransactionRemarks(selectedRow.remarks) || selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT'
-                            ? 'NO TRANSACTION' : selectedRow.status}
-                      </span>
-                    </span>
-                    {rowExpenses?.createdAt ? (
-                      <span style={{ color: textMuted }}>
-                        Submitted: <span style={{ color: textPrimary, fontWeight: 600 }}>{formatDateTime(rowExpenses.createdAt)}</span>
-                        {rowExpenses.receivedBy && <> by <span style={{ color: textPrimary, fontWeight: 600 }}><EmployeeNameLink nameOrId={formatDisplayUserLabel(rowExpenses.receivedBy)} /></span></>}
-                      </span>
-                    ) : (
-                      <>
-                        {selectedRow.timeUploaded && (
-                          <span style={{ color: textMuted }}>Time: <span style={{ color: textPrimary, fontWeight: 600 }}>{selectedRow.timeUploaded}</span></span>
-                        )}
-                        {rowExpenses?.receivedBy && (
-                          <span style={{ color: textMuted }}>Submitted by: <span style={{ color: textPrimary, fontWeight: 600 }}><EmployeeNameLink nameOrId={formatDisplayUserLabel(rowExpenses.receivedBy)} /></span></span>
-                        )}
-                      </>
-                    )}
-                    {rowExpenses?.updatedAt && rowExpenses.updatedAt !== rowExpenses.createdAt && (
-                      <span style={{ color: '#F59E0B' }}>
-                        Last Edited: <span style={{ fontWeight: 600 }}>{formatDateTime(rowExpenses.updatedAt)}</span>
-                        {rowExpenses.updatedBy && <> by <span style={{ fontWeight: 600 }}><EmployeeNameLink nameOrId={formatDisplayUserLabel(rowExpenses.updatedBy)} /></span></>}
-                      </span>
-                    )}
-                  </div>
+            <div className="flex flex-col gap-3 px-4 sm:px-6 py-4 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <h4 className="font-black text-lg truncate" style={{ color: textPrimary }}>{formatBranchName(selectedRow.branchName)}</h4>
+                  <span
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide shrink-0"
+                    style={{
+                      backgroundColor: selectedRow.remarks === 'PENDING' ? 'rgba(245,158,11,0.12)'
+                        : (selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT' || selectedRow.status === 'NO SCHED' ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.12)'),
+                      color: selectedRow.remarks === 'PENDING' ? '#F59E0B'
+                        : (selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT' || selectedRow.status === 'NO SCHED' ? '#EF4444' : '#10B981')
+                    }}
+                  >
+                    <span style={{
+                      display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%',
+                      backgroundColor: 'currentColor'
+                    }} />
+                    {selectedRow.remarks === 'PENDING' ? 'PENDING'
+                      : isNoTransactionRemarks(selectedRow.remarks) || selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT'
+                        ? 'NO TRANSACTION' : selectedRow.status}
+                  </span>
                 </div>
                 <button onClick={() => setSelectedRow(null)}
-                  className="sm:hidden p-1.5 rounded-lg transition-colors hover:bg-slate-500/10" style={{ color: textMuted }} aria-label="Close details dialog">
-                  <X size={22} />
+                  className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-slate-500/10 shrink-0" style={{ color: textMuted }} aria-label="Close details dialog">
+                  <X size={18} />
                 </button>
               </div>
-              <div className="flex items-center gap-2 w-full sm:w-auto justify-end sm:justify-start flex-wrap sm:flex-nowrap">
+
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs" style={{ color: textMuted }}>
+                <span className="font-medium">
+                  {viewMode === 'single'
+                    ? new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+                    : `${new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} – ${new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`}
+                </span>
+
+                {rowExpenses?.createdAt ? (
+                  <>
+                    <span className="opacity-40">•</span>
+                    <span>
+                      Submitted <span style={{ color: textPrimary, fontWeight: 600 }}>{formatDateTime(rowExpenses.createdAt)}</span>
+                      {rowExpenses.receivedBy && <> by <span style={{ color: textPrimary, fontWeight: 600 }}><EmployeeNameLink nameOrId={formatDisplayUserLabel(rowExpenses.receivedBy)} /></span></>}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    {selectedRow.timeUploaded && (
+                      <>
+                        <span className="opacity-40">•</span>
+                        <span>Time <span style={{ color: textPrimary, fontWeight: 600 }}>{selectedRow.timeUploaded}</span></span>
+                      </>
+                    )}
+                    {rowExpenses?.receivedBy && (
+                      <>
+                        <span className="opacity-40">•</span>
+                        <span>Submitted by <span style={{ color: textPrimary, fontWeight: 600 }}><EmployeeNameLink nameOrId={formatDisplayUserLabel(rowExpenses.receivedBy)} /></span></span>
+                      </>
+                    )}
+                  </>
+                )}
+                {rowExpenses?.updatedAt && rowExpenses.updatedAt !== rowExpenses.createdAt && (
+                  <>
+                    <span className="opacity-40">•</span>
+                    <span style={{ color: '#F59E0B' }}>
+                      Edited <span style={{ fontWeight: 600 }}>{formatDateTime(rowExpenses.updatedAt)}</span>
+                      {rowExpenses.updatedBy && <> by <span style={{ fontWeight: 600 }}><EmployeeNameLink nameOrId={formatDisplayUserLabel(rowExpenses.updatedBy)} /></span></>}
+                    </span>
+                  </>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   type="button"
                   onClick={handleExportPdf}
                   disabled={isExportingPdf}
-                  className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition-all flex items-center justify-center gap-1.5 shadow-sm border-none disabled:opacity-50"
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition-all flex items-center justify-center gap-1.5 shadow-sm border-none disabled:opacity-50"
                 >
                   {isExportingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                   Export PDF
@@ -1651,7 +1671,7 @@ export default function DailyAuditReport() {
                   <button
                     type="button"
                     onClick={() => setHistoryOpen(true)}
-                    className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 border"
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 border"
                     style={{ borderColor: border, color: textMuted }}
                   >
                     <HistoryIcon className="w-3.5 h-3.5" />
@@ -1665,20 +1685,12 @@ export default function DailyAuditReport() {
                       ? `/audit-report?tab=submit&id=${selectedRow.id}`
                       : `/audit-report?tab=submit&branchId=${selectedRow.branchId}&date=${date}&auditLine=${selectedRow.auditLine || ''}`
                     }
-                    className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 transition-all flex items-center justify-center gap-1.5 shadow-sm border-none"
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 transition-all flex items-center justify-center gap-1.5 shadow-sm border-none"
                   >
                     <FileEdit className="w-3.5 h-3.5" />
                     {selectedRow.id ? 'Edit Report' : 'Create Report'}
                   </a>
                 )}
-
-                <button
-                  onClick={() => setSelectedRow(null)}
-                  className="hidden sm:flex items-center justify-center p-2 rounded-xl transition-colors hover:bg-slate-500/10 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                  aria-label="Close details dialog"
-                >
-                  <X size={20} />
-                </button>
               </div>
             </div>
 
@@ -1786,82 +1798,65 @@ export default function DailyAuditReport() {
                 return (
                   <>
 
-                    {/* Main metrics — 4 clean separated columns */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4" style={{ borderBottom: `1px solid ${border}` }}>
+                    {/* Main metrics — 4 clean separated cards */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 px-5 py-5" style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0a1120' }}>
 
-                      {/* 1. Sales & Target */}
-                      <div className="px-5 py-5" style={{ borderRight: `1px solid ${border}` }}>
-                        <p className="text-xs font-black uppercase tracking-wider mb-3.5 text-blue-600 dark:text-blue-400">Sales &amp; Target</p>
-                        <div className="flex flex-col gap-2.5">
-                          {[
+                      {[
+                        {
+                          key: 'sales', title: 'Sales & Target', dot: '#3B82F6',
+                          rows: [
                             { label: 'Gross Sales', value: `₱${peso(selectedRow.grossSales)}`, color: textPrimary, bold: true },
                             { label: 'Net Sales', value: `₱${peso(computeNetSales(selectedRow))}`, color: '#2563EB', bold: true },
                             { label: 'Target Quota', value: `₱${peso(selectedRow.targetDailyQuota)}`, color: textMuted },
                             { label: 'Difference', value: `${selectedRow.remarks === 'ABOVE QUOTA' ? '+' : ''}₱${peso(selectedRow.difference)}`, color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : '#EF4444', bold: true },
                             { label: 'Remarks', value: formatRemarksLabel(selectedRow.remarks, false), color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : selectedRow.remarks === 'PENDING' ? '#F59E0B' : isNoTransactionRemarks(selectedRow.remarks) ? textMuted : '#EF4444', bold: true },
-                          ].map(r => (
-                            <div key={r.label} className="flex items-center justify-between gap-2">
-                              <span className="text-xs sm:text-sm font-medium" style={{ color: textMuted }}>{r.label}</span>
-                              <span className={`text-xs sm:text-sm tabular-nums ${r.bold ? 'font-bold' : 'font-semibold'}`} style={{ color: r.color }}>{r.value}</span>
-                            </div>
-                          ))}
+                          ],
+                        },
+                        {
+                          key: 'expenses', title: 'Expenses & Payables', dot: '#F43F5E',
+                          rows: [
+                            { label: 'Total Expenses', value: `₱${peso(selectedRow.totalExpenses)}`, color: textPrimary, bold: true },
+                            { label: 'Total Payables', value: `₱${peso(selectedRow.totalPayables || 0)}`, color: textPrimary, bold: true },
+                            { label: 'Total Purchases', value: `₱${peso(selectedRow.totalForPurchase || 0)}`, color: textPrimary, bold: false },
+                            { label: 'Incentives', value: `₱${peso(totalIncentives)}`, color: textPrimary, bold: false },
+                            { label: 'Commission Expenses (Paid)', value: `₱${peso(selectedRow.paidCommissionExpenses ?? totalPaidCommissionExpenses)}`, color: textPrimary, bold: false },
+                          ],
+                        },
+                        {
+                          key: 'cashflow', title: 'Cash Flow (COH/CFD)', dot: '#10B981',
+                          rows: [
+                            { label: 'COH Prev Day', value: `₱${peso(selectedRow.cohPreviousDay)}`, color: textPrimary, bold: false },
+                            { label: 'Fund from HO', value: `₱${peso(selectedRow.fundFromHo || 0)}`, color: textPrimary, bold: false },
+                            { label: 'Cash Returns', value: `₱${peso(selectedRow.cashReturns)}`, color: textPrimary, bold: false },
+                            { label: 'Total COH/CFD', value: `₱${peso(selectedRow.totalCohCfd)}`, color: textPrimary, bold: true },
+                          ],
+                        },
+                        {
+                          key: 'collections', title: 'Collections & Rebates', dot: '#6366F1',
+                          rows: [
+                            { label: 'Cash Collection', value: `₱${peso(selectedRow.totalCashCollection)}`, color: textPrimary, bold: true },
+                            { label: 'Online Collection', value: `₱${peso(selectedRow.totalOnlineCollection)}`, color: textPrimary, bold: true },
+                            { label: 'For Collection', value: `₱${peso(selectedRow.forCollection)}`, color: textPrimary, bold: false },
+                            { label: 'Rebates', value: `₱${peso(selectedRow.rebatesForCollection)}`, color: textPrimary, bold: false },
+                          ],
+                        },
+                      ].map(card => (
+                        <div key={card.key} className="rounded-xl px-4 py-4 flex flex-col"
+                          style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                          <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider mb-3" style={{ color: textMuted }}>
+                            <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: card.dot }} />
+                            {card.title}
+                          </p>
+                          <div className="flex flex-col gap-2.5">
+                            {card.rows.map(r => (
+                              <div key={r.label} className="flex items-center justify-between gap-2">
+                                <span className="text-xs font-medium" style={{ color: textMuted }}>{r.label}</span>
+                                <span className={`text-xs tabular-nums text-right ${r.bold ? 'font-bold' : 'font-semibold'}`} style={{ color: r.color }}>{r.value}</span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-
-                      {/* 2. Expenses & Deductions */}
-                      <div className="px-5 py-5" style={{ borderRight: `1px solid ${border}` }}>
-                        <p className="text-xs font-black uppercase tracking-wider mb-3.5 text-rose-600 dark:text-rose-400">Expenses &amp; Payables</p>
-                        <div className="flex flex-col gap-2.5">
-                          {[
-                            { label: 'Total Expenses', value: `₱${peso(selectedRow.totalExpenses)}`, bold: true },
-                            { label: 'Total Payables', value: `₱${peso(selectedRow.totalPayables || 0)}`, bold: true },
-                            { label: 'Total Purchases', value: `₱${peso(selectedRow.totalForPurchase || 0)}`, bold: false },
-                            { label: 'Incentives', value: `₱${peso(totalIncentives)}`, bold: false },
-                            { label: 'Commission Expenses (Paid)', value: `₱${peso(selectedRow.paidCommissionExpenses ?? totalPaidCommissionExpenses)}`, bold: false },
-                          ].map(r => (
-                            <div key={r.label} className="flex items-center justify-between gap-2">
-                              <span className="text-xs sm:text-sm font-medium" style={{ color: textMuted }}>{r.label}</span>
-                              <span className={`text-xs sm:text-sm tabular-nums ${r.bold ? 'font-bold' : 'font-semibold'}`} style={{ color: textPrimary }}>{r.value}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* 3. Cash Flow */}
-                      <div className="px-5 py-5" style={{ borderRight: `1px solid ${border}` }}>
-                        <p className="text-xs font-black uppercase tracking-wider mb-3.5 text-emerald-600 dark:text-emerald-400">Cash Flow (COH/CFD)</p>
-                        <div className="flex flex-col gap-2.5">
-                          {[
-                            { label: 'COH Prev Day', value: `₱${peso(selectedRow.cohPreviousDay)}`, bold: false },
-                            { label: 'Fund from HO', value: `₱${peso(selectedRow.fundFromHo || 0)}`, bold: false },
-                            { label: 'Cash Returns', value: `₱${peso(selectedRow.cashReturns)}`, bold: false },
-                            { label: 'Total COH/CFD', value: `₱${peso(selectedRow.totalCohCfd)}`, bold: true },
-                          ].map(r => (
-                            <div key={r.label} className="flex items-center justify-between gap-2">
-                              <span className="text-xs sm:text-sm font-medium" style={{ color: textMuted }}>{r.label}</span>
-                              <span className={`text-xs sm:text-sm tabular-nums ${r.bold ? 'font-bold' : 'font-semibold'}`} style={{ color: textPrimary }}>{r.value}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* 4. Collections */}
-                      <div className="px-5 py-5">
-                        <p className="text-xs font-black uppercase tracking-wider mb-3.5 text-indigo-600 dark:text-indigo-400">Collections &amp; Rebates</p>
-                        <div className="flex flex-col gap-2.5">
-                          {[
-                            { label: 'Cash Collection', value: `₱${peso(selectedRow.totalCashCollection)}`, bold: true },
-                            { label: 'Online Collection', value: `₱${peso(selectedRow.totalOnlineCollection)}`, bold: true },
-                            { label: 'For Collection', value: `₱${peso(selectedRow.forCollection)}`, bold: false },
-                            { label: 'Rebates', value: `₱${peso(selectedRow.rebatesForCollection)}`, bold: false },
-                          ].map(r => (
-                            <div key={r.label} className="flex items-center justify-between gap-2">
-                              <span className="text-xs sm:text-sm font-medium" style={{ color: textMuted }}>{r.label}</span>
-                              <span className={`text-xs sm:text-sm tabular-nums ${r.bold ? 'font-bold' : 'font-semibold'}`} style={{ color: textPrimary }}>{r.value}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                      ))}
                     </div>
 
                     {/* Detailed Lists */}
