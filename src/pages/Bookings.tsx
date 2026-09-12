@@ -177,7 +177,16 @@ export default function Bookings() {
     const q = search.trim().toLowerCase()
     if (!q) return rows
     return rows.filter(b => {
-      const blob = [b.customerName, b.contactPhone, formatAddress(b), b.brand, b.capacity, b.issueDescription]
+      const blob = [
+        b.customerName,
+        b.contactPhone,
+        formatAddress(b),
+        b.serviceType,
+        b.airconType,
+        b.brand,
+        b.capacity,
+        b.issueDescription,
+      ]
         .filter(Boolean).join(' ').toLowerCase()
       return blob.includes(q)
     })
@@ -246,6 +255,44 @@ export default function Bookings() {
       case 'CONVERTED': return green
       case 'DISMISSED': return isLight ? '#94A3B8' : '#64748B'
     }
+  }
+
+  const serviceTypeBadge = (serviceType?: string) => {
+    if (!serviceType) {
+      return <span className="italic text-slate-400 font-normal">Not specified</span>
+    }
+    const clean = serviceType.toUpperCase()
+    let badgeColor = isLight
+      ? 'bg-blue-50 text-blue-700 border-blue-200'
+      : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+
+    if (clean.includes('CLEAN')) {
+      badgeColor = isLight
+        ? 'bg-cyan-50 text-cyan-700 border-cyan-200'
+        : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20'
+    } else if (clean.includes('INSTALL')) {
+      badgeColor = isLight
+        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+        : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+    } else if (clean.includes('REPAIR') || clean.includes('CHECK')) {
+      badgeColor = isLight
+        ? 'bg-amber-50 text-amber-700 border-amber-200'
+        : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+    } else if (clean.includes('SURVEY')) {
+      badgeColor = isLight
+        ? 'bg-purple-50 text-purple-700 border-purple-200'
+        : 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+    } else if (clean.includes('DISMANTLE') || clean.includes('RELOCAT')) {
+      badgeColor = isLight
+        ? 'bg-rose-50 text-rose-700 border-rose-200'
+        : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+    }
+
+    return (
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${badgeColor}`}>
+        {serviceType}
+      </span>
+    )
   }
 
   const statusBadge = (status: Booking['status']) => {
@@ -408,7 +455,7 @@ export default function Bookings() {
         style={{ backgroundColor: cardBg, borderColor: border }}
       >
         <div className="overflow-auto flex-1 h-full min-h-0">
-          <table className="w-full text-left border-collapse min-w-[960px]">
+          <table className="w-full text-left border-collapse min-w-[1040px]">
             <thead>
               <tr 
                 className="text-[11px] font-bold uppercase tracking-wider select-none border-b sticky top-0 z-10"
@@ -416,6 +463,7 @@ export default function Bookings() {
               >
                 <th className="px-5 py-3.5">Customer</th>
                 <th className="px-5 py-3.5">Contact Number</th>
+                <th className="px-5 py-3.5">Service Type</th>
                 <th className="px-5 py-3.5">Aircon Unit</th>
                 <th className="px-5 py-3.5">Issue</th>
                 <th className="px-5 py-3.5">Location</th>
@@ -426,14 +474,14 @@ export default function Bookings() {
             <tbody className="divide-y text-xs" style={{ borderColor: border }}>
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-20 text-center" style={{ color: textMuted }}>
+                  <td colSpan={8} className="px-6 py-20 text-center" style={{ color: textMuted }}>
                     <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-500" />
                     <p className="font-semibold text-sm">Loading bookings...</p>
                   </td>
                 </tr>
               ) : visible.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-20 text-center" style={{ color: textMuted }}>
+                  <td colSpan={8} className="px-6 py-20 text-center" style={{ color: textMuted }}>
                     <ClipboardCheck className="w-10 h-10 mx-auto mb-3 opacity-30" />
                     <p className="font-bold text-sm text-slate-400">No bookings found</p>
                     <p className="text-xs mt-1">Try adjusting your status filter or search query.</p>
@@ -480,12 +528,21 @@ export default function Bookings() {
                       </button>
                     </td>
 
+                    {/* Service Type */}
+                    <td className="px-5 py-4 whitespace-nowrap">
+                      {serviceTypeBadge(b.serviceType)}
+                    </td>
+
                     {/* Aircon Unit */}
                     <td className="px-5 py-4 whitespace-nowrap">
                       <span className="text-xs font-bold uppercase tracking-wide" style={{ color: textPrimary }}>
                         {unitParts || <span className="italic font-medium normal-case text-slate-400">Not specified</span>}
                       </span>
-                      {b.serviceType && <div className="text-[10px] mt-0.5" style={{ color: textMuted }}>{b.serviceType}</div>}
+                      {b.airconType && (
+                        <div className="text-[11px] mt-0.5" style={{ color: textMuted }}>
+                          {b.airconType}{b.unitQuantity && b.unitQuantity > 1 ? ` (${b.unitQuantity} units)` : ''}
+                        </div>
+                      )}
                     </td>
 
                     {/* Issue */}
@@ -610,11 +667,19 @@ export default function Bookings() {
                 )}
               </div>
 
-              {/* Unit + Issue */}
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-bold uppercase tracking-wide" style={{ color: textPrimary }}>
-                  {unitParts || <span className="italic font-medium normal-case text-slate-400">Not specified</span>}
-                </span>
+              {/* Unit & Service Type + Issue */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-xs font-bold uppercase tracking-wide" style={{ color: textPrimary }}>
+                    {unitParts || <span className="italic font-medium normal-case text-slate-400">Not specified</span>}
+                  </span>
+                  {b.serviceType && serviceTypeBadge(b.serviceType)}
+                </div>
+                {b.airconType && (
+                  <span className="text-[11px]" style={{ color: textMuted }}>
+                    {b.airconType}{b.unitQuantity && b.unitQuantity > 1 ? ` · ${b.unitQuantity} units` : ''}
+                  </span>
+                )}
                 <p className="text-xs leading-relaxed line-clamp-2" style={{ color: textMuted }}>
                   {b.issueDescription || <span className="italic text-slate-400">No description</span>}
                 </p>

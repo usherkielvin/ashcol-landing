@@ -5,6 +5,7 @@ import {
   Search, Building2, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   SlidersHorizontal, Plus, X, RotateCcw, RefreshCw, Save, Loader2, EyeOff, Trash2,
   Stethoscope, Lightbulb, HardHat, PiggyBank, Wind, Recycle, ArrowBigDownDash, Snowflake,
+  Wallet, HandCoins, Layers, BadgeCheck, Users,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -43,17 +44,13 @@ const getInitials = (name: string) => {
   if (words.length === 1) return words[0].slice(0, 2).toUpperCase()
   return (words[0][0] + words[1][0]).toUpperCase()
 }
-// A handful of deterministic gradient pairs so each installer's avatar reads as a distinct
+// A handful of deterministic flat colors so each installer's avatar reads as a distinct
 // person at a glance, without storing per-user color state anywhere.
-const AVATAR_GRADIENTS: [string, string][] = [
-  ['#10B981', '#0EA5E9'], ['#F59E0B', '#EF4444'], ['#8B5CF6', '#EC4899'],
-  ['#06B6D4', '#3B82F6'], ['#84CC16', '#10B981'], ['#F97316', '#EAB308'],
-]
-const avatarGradient = (name: string) => {
+const AVATAR_COLORS: string[] = ['#10B981', '#F59E0B', '#8B5CF6', '#0EA5E9', '#84CC16', '#F97316', '#EC4899', '#06B6D4']
+const avatarColor = (name: string) => {
   let hash = 0
   for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0
-  const [from, to] = AVATAR_GRADIENTS[hash % AVATAR_GRADIENTS.length]
-  return `linear-gradient(135deg, ${from}, ${to})`
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length]
 }
 
 function getFridayToFriday(d: Date = new Date()): { from: string; to: string } {
@@ -1093,7 +1090,7 @@ export default function Payroll() {
     <div className="flex flex-col gap-4 pb-4 md:pb-4 h-full min-h-0">
       {/* Toolbar — branch, date, range, and search filters plus a sync action. */}
       <div
-        className="relative z-30 -mx-5 md:mx-0 rounded-none md:rounded-2xl p-2.5 md:p-3 flex items-center gap-1.5 md:gap-2 overflow-visible"
+        className="relative z-30 -mx-5 md:mx-0 rounded-none md:rounded-2xl p-2.5 md:p-3.5 flex items-center gap-1.5 md:gap-2.5 overflow-visible shadow-xs"
         style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}`, borderBottom: `1px solid ${border}`, borderLeft: `1px solid ${border}`, borderRight: `1px solid ${border}` }}
       >
           {/* Branch filter */}
@@ -1373,28 +1370,49 @@ export default function Payroll() {
       </div>
 
       {/* Branded per-branch payroll header — mirrors the branch's own printed weekly
-          payroll & allowance sheet, so this page reads as the same official document. */}
+          payroll & allowance sheet, so this page reads as the same official document. Flat
+          card with a colored left accent, no gradients — matches the roster cards below. */}
       {branchFilter && (
-        <div className="rounded-2xl overflow-hidden shadow-sm" style={{ border: `1px solid ${border}` }}>
-          <div
-            className="px-5 py-2.5 text-center"
-            style={{
-              background: isLight
-                ? 'linear-gradient(90deg, rgba(16,185,129,0.16), rgba(14,165,233,0.16))'
-                : 'linear-gradient(90deg, rgba(16,185,129,0.22), rgba(14,165,233,0.22))',
-              borderBottom: `1px solid ${border}`,
-            }}
-          >
-            <div className="text-sm font-extrabold uppercase tracking-wide" style={{ color: isLight ? '#065f46' : '#6EE7B7' }}>
-              {currentBranchDisplay || 'Branch'} Installer&rsquo;s Payroll &amp; Allowance
+        <div
+          className="rounded-2xl shadow-xs"
+          style={{
+            border: `1px solid ${border}`,
+            borderLeft: '3px solid #10B981',
+            backgroundColor: cardBg,
+          }}
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 sm:px-6 py-4">
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div
+                className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0"
+                style={{ backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.14)' }}
+              >
+                <Wallet className="w-5 h-5 text-emerald-500" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-base font-extrabold tracking-tight truncate" style={{ color: textPrimary }}>
+                  {currentBranchDisplay || 'Branch'} Installer&rsquo;s Payroll
+                </div>
+                <div className="text-xs font-semibold" style={{ color: textMuted }}>
+                  Weekly payroll &amp; allowance summary
+                </div>
+              </div>
             </div>
+
+            {(dateFrom || dateTo) && (
+              <div
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold shrink-0 self-start sm:self-auto"
+                style={{
+                  backgroundColor: inputBg,
+                  border: `1px solid ${border}`,
+                  color: textPrimary,
+                }}
+              >
+                <Calendar className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                <span>{dateFrom ? longDate(dateFrom) : '—'} – {dateTo ? longDate(dateTo) : '—'}</span>
+              </div>
+            )}
           </div>
-          {(dateFrom || dateTo) && (
-            <div className="px-5 py-2 flex items-center justify-center gap-2 text-xs font-bold" style={{ backgroundColor: cardBg, color: textMuted }}>
-              <Calendar className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-              Period Covered: {dateFrom ? longDate(dateFrom) : '—'} – {dateTo ? longDate(dateTo) : '—'}
-            </div>
-          )}
         </div>
       )}
 
@@ -1719,46 +1737,54 @@ export default function Payroll() {
           })}
         </div>
       ) : (
-        // Roster / summary table — one row per installer, covering the whole selected period
-        // (not a single job). Remarks/Payroll Due/Audited/Status live here, not in an
-        // installer's own per-job table. Click "View Payroll" to open that job-level table.
-        <div className="flex flex-col gap-4 -mx-5 md:-mx-8">
-          <div className="overflow-x-auto" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}`, borderBottom: `1px solid ${border}` }}>
-            <div style={{ minWidth: 860 }}>
-              <div
-                className="grid items-center px-6 py-3.5"
-                style={{ gridTemplateColumns: 'minmax(240px, 2fr) 140px 180px 170px 220px', backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}
-              >
-                <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: textMuted }}>INSTALLER</span>
-                <span className="text-[11px] font-black uppercase tracking-wider text-center" style={{ color: textMuted }}>AIRCON UNITS</span>
-                <span className="text-[11px] font-black uppercase tracking-wider text-right" style={{ color: textMuted }}>PAYROLL AMOUNT</span>
-                <span className="text-[11px] font-black uppercase tracking-wider text-center" style={{ color: textMuted }}>ACTION</span>
-                <span className="text-[11px] font-black uppercase tracking-wider text-center" style={{ color: textMuted }}>PAYROLL STATUS</span>
-              </div>
+        // Roster / summary — one card per installer, covering the whole selected period (not a
+        // single job). Remarks/Payroll Due/Audited/Status live here, not in an installer's own
+        // per-job table. Click "View Payroll" to open that job-level table.
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2.5">
+            {/* Slim column-label row for scannability — the cards below carry no header of their own. */}
+            <div
+              className="hidden md:grid items-center px-5"
+              style={{ gridTemplateColumns: 'minmax(240px, 2fr) 130px 170px 170px 220px' }}
+            >
+              <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Installer</span>
+              <span className="text-[10px] font-black uppercase tracking-wider text-center" style={{ color: textMuted }}>Aircon Units</span>
+              <span className="text-[10px] font-black uppercase tracking-wider text-right" style={{ color: textMuted }}>Payroll Amount</span>
+              <span className="text-[10px] font-black uppercase tracking-wider text-center" style={{ color: textMuted }}>Action</span>
+              <span className="text-[10px] font-black uppercase tracking-wider text-center" style={{ color: textMuted }}>Payroll Status</span>
+            </div>
 
-              {grouped.map(([installerName, installerRows], idx) => {
-                const total = installerTotal(installerRows)
-                const rowBg = idx % 2 === 1 ? zebraBg : 'transparent'
-                const isComplete = installerRows.length > 0 && installerRows.every(r => r.status === 'COMPLETE')
-                const summaryRemarks = installerRows[0]?.remarks || ''
-                const summaryAudited = installerRows[0]?.audited || ''
-                return (
-                  <div
-                    key={installerName}
-                    className="grid items-center gap-x-4 px-6 py-5 transition-colors"
-                    style={{
-                      gridTemplateColumns: 'minmax(240px, 2fr) 140px 180px 170px 220px',
-                      backgroundColor: rowBg,
-                      borderBottom: idx < grouped.length - 1 ? `1px solid ${border}` : 'none',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = rowHoverBg }}
-                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = rowBg }}
-                  >
+            {grouped.map(([installerName, installerRows]) => {
+              const total = installerTotal(installerRows)
+              const isComplete = installerRows.length > 0 && installerRows.every(r => r.status === 'COMPLETE')
+              const summaryRemarks = installerRows[0]?.remarks || ''
+              const summaryAudited = installerRows[0]?.audited || ''
+              const statusAccent = isComplete ? '#10B981' : '#F59E0B'
+              return (
+                <div
+                  key={installerName}
+                  className="grid items-center gap-x-4 gap-y-3 px-5 md:px-6 py-4 md:py-5 rounded-2xl border transition-all duration-200"
+                  style={{
+                    gridTemplateColumns: 'minmax(240px, 2fr) 130px 170px 170px 220px',
+                    backgroundColor: cardBg,
+                    borderColor: border,
+                    borderLeft: `3px solid ${statusAccent}`,
+                    boxShadow: isLight ? '0 1px 2px rgba(15,23,42,0.05)' : '0 1px 2px rgba(0,0,0,0.25)',
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.boxShadow = isLight ? '0 12px 24px -8px rgba(15,23,42,0.14)' : '0 12px 24px -8px rgba(0,0,0,0.55)'
+                    e.currentTarget.style.borderColor = isLight ? '#cbd5e1' : '#2c3e5c'
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.boxShadow = isLight ? '0 1px 2px rgba(15,23,42,0.05)' : '0 1px 2px rgba(0,0,0,0.25)'
+                    e.currentTarget.style.borderColor = border
+                  }}
+                >
                     {/* 1. INSTALLER */}
                     <div className="flex items-center gap-3.5 min-w-0">
                       <div
                         className="w-12 h-12 rounded-2xl flex items-center justify-center text-sm font-black text-white shrink-0 shadow-xs"
-                        style={{ background: avatarGradient(installerName) }}
+                        style={{ background: avatarColor(installerName) }}
                       >
                         {getInitials(installerName)}
                       </div>
@@ -1845,26 +1871,44 @@ export default function Payroll() {
                         </button>
                       )}
                     </div>
-                  </div>
-                )
-              })}
-            </div>
+                </div>
+              )
+            })}
           </div>
 
-          {/* SUMMARY — global breakdown only; each row above already shows its own installer's total. */}
-          <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-            <div className="px-4 py-3 flex items-center gap-2" style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}>
-              <div className="w-1.5 h-4 rounded-full" style={{ background: 'linear-gradient(180deg,#10B981,#0EA5E9)' }} />
+          {/* SUMMARY — global breakdown only; each card above already shows its own installer's total. */}
+          <div>
+            <div className="flex items-center gap-2 px-1 mb-3">
+              <Users className="w-4 h-4 text-emerald-500" />
               <span className="text-sm font-extrabold" style={{ color: textPrimary }}>Summary</span>
               <span className="text-[11px] font-semibold" style={{ color: textMuted }}>
                 {grouped.length} installer{grouped.length !== 1 ? 's' : ''}
               </span>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4">
-              {footerTile('Total Remittance Collected', globalRemittanceTotal, remitAccent)}
-              {footerTile('Base Install Total', globalBaseInstallTotal, textPrimary)}
-              {footerTile('Total Add-on Pay', globalAddOnTotal, textPrimary)}
-              {footerTile('Net Payout Due', grandTotal, '#10B981')}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {([
+                { label: 'Total Remittance Collected', value: globalRemittanceTotal, icon: HandCoins, accent: '#0EA5E9', bgLight: 'rgba(14,165,233,0.12)', bgDark: 'rgba(14,165,233,0.16)', color: remitAccent },
+                { label: 'Base Install Total', value: globalBaseInstallTotal, icon: HardHat, accent: '#64748B', bgLight: 'rgba(100,116,139,0.12)', bgDark: 'rgba(148,163,184,0.16)', color: textPrimary },
+                { label: 'Total Add-on Pay', value: globalAddOnTotal, icon: Layers, accent: '#A855F7', bgLight: 'rgba(168,85,247,0.12)', bgDark: 'rgba(168,85,247,0.18)', color: textPrimary },
+                { label: 'Net Payout Due', value: grandTotal, icon: BadgeCheck, accent: '#10B981', bgLight: '#ecfdf5', bgDark: 'rgba(16,185,129,0.14)', color: '#10B981' },
+              ] as const).map(tile => (
+                <div
+                  key={tile.label}
+                  className="rounded-2xl p-4 flex flex-col gap-3 shadow-xs"
+                  style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+                >
+                  <div
+                    className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                    style={{ backgroundColor: isLight ? tile.bgLight : tile.bgDark }}
+                  >
+                    <tile.icon className="w-4 h-4" style={{ color: tile.accent }} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-extrabold uppercase tracking-wider truncate" style={{ color: textMuted }}>{tile.label}</div>
+                    <div className="text-lg font-black tabular-nums tracking-tight" style={{ color: tile.color }}>₱{peso(tile.value)}</div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -2278,12 +2322,12 @@ export default function Payroll() {
             )
           }
 
-          /** Colored icon chip used for every card header — a small gradient badge keeps the
+          /** Flat colored icon chip used for every card header — a light tinted square keeps the
            *  category glanceable without competing with the (now-unabbreviated) row labels. */
-          const iconChip = (icon: ReactNode, from: string, to: string) => (
+          const iconChip = (icon: ReactNode, bgLight: string, bgDark: string) => (
             <div
               className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-              style={{ background: `linear-gradient(135deg, ${from}, ${to})` }}
+              style={{ backgroundColor: isLight ? bgLight : bgDark }}
             >
               {icon}
             </div>
@@ -2317,10 +2361,10 @@ export default function Payroll() {
                 >
                   <div className="flex items-center gap-4 min-w-0">
                     <div
-                      className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-sm"
-                      style={{ background: 'linear-gradient(135deg, #10B981, #0EA5E9)' }}
+                      className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0"
+                      style={{ backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.14)' }}
                     >
-                      <SlidersHorizontal className="w-5 h-5 text-white" />
+                      <SlidersHorizontal className="w-5 h-5 text-emerald-500" />
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2.5 flex-wrap">
@@ -2410,7 +2454,7 @@ export default function Payroll() {
                           <div className="rounded-2xl overflow-hidden shadow-xs border" style={{ borderColor: border, backgroundColor: cardBg }}>
                             <div className="px-5 py-3.5 flex items-center justify-between border-b" style={{ backgroundColor: headerBgColor, borderColor: border }}>
                               <div className="flex items-center gap-3">
-                                {iconChip(<HardHat className="w-4 h-4 text-white" />, '#10B981', '#0EA5E9')}
+                                {iconChip(<HardHat className="w-4 h-4 text-emerald-500" />, '#ecfdf5', 'rgba(16,185,129,0.14)')}
                                 <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>{group} Rates</span>
                               </div>
                               <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-500 shrink-0">
@@ -2440,7 +2484,7 @@ export default function Payroll() {
                           <div className="rounded-2xl overflow-hidden shadow-xs border" style={{ borderColor: border, backgroundColor: cardBg }}>
                             <div className="px-5 py-3.5 flex items-center justify-between border-b" style={{ backgroundColor: headerBgColor, borderColor: border }}>
                               <div className="flex items-center gap-3">
-                                {iconChip(<PiggyBank className="w-4 h-4 text-white" />, '#6366F1', '#A855F7')}
+                                {iconChip(<PiggyBank className="w-4 h-4 text-indigo-500" />, 'rgba(99,102,241,0.12)', 'rgba(99,102,241,0.18)')}
                                 <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>Other Standard Allowances & Fees</span>
                               </div>
                               <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-500 shrink-0">
@@ -2515,17 +2559,17 @@ export default function Payroll() {
                         )
                         if (items.length === 0) return null
 
-                        const [groupIcon, chipFrom, chipTo] = group === 'General Cleaning' ? [<Wind className="w-4 h-4 text-white" key="i" />, '#06B6D4', '#0EA5E9']
-                          : group === 'System Reprocess' ? [<Recycle className="w-4 h-4 text-white" key="i" />, '#F59E0B', '#EAB308']
-                          : group === 'Check Up' ? [<Stethoscope className="w-4 h-4 text-white" key="i" />, '#3B82F6', '#6366F1']
-                          : group === 'Pull Down Cleaning' ? [<ArrowBigDownDash className="w-4 h-4 text-white" key="i" />, '#A855F7', '#EC4899']
-                          : [<Snowflake className="w-4 h-4 text-white" key="i" />, '#38BDF8', '#818CF8']
+                        const [groupIcon, chipBgLight, chipBgDark] = group === 'General Cleaning' ? [<Wind className="w-4 h-4 text-cyan-500" key="i" />, 'rgba(6,182,212,0.12)', 'rgba(6,182,212,0.18)']
+                          : group === 'System Reprocess' ? [<Recycle className="w-4 h-4 text-amber-500" key="i" />, 'rgba(245,158,11,0.12)', 'rgba(245,158,11,0.18)']
+                          : group === 'Check Up' ? [<Stethoscope className="w-4 h-4 text-blue-500" key="i" />, 'rgba(59,130,246,0.12)', 'rgba(59,130,246,0.18)']
+                          : group === 'Pull Down Cleaning' ? [<ArrowBigDownDash className="w-4 h-4 text-purple-500" key="i" />, 'rgba(168,85,247,0.12)', 'rgba(168,85,247,0.18)']
+                          : [<Snowflake className="w-4 h-4 text-sky-500" key="i" />, 'rgba(56,189,248,0.12)', 'rgba(56,189,248,0.18)']
 
                         return (
                           <div key={group} className="rounded-2xl overflow-hidden shadow-xs border" style={{ borderColor: border, backgroundColor: cardBg }}>
                             <div className="px-5 py-3.5 flex items-center justify-between border-b" style={{ backgroundColor: headerBgColor, borderColor: border }}>
                               <div className="flex items-center gap-3">
-                                {iconChip(groupIcon, chipFrom, chipTo)}
+                                {iconChip(groupIcon, chipBgLight, chipBgDark)}
                                 <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>{group}</span>
                               </div>
                               <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-slate-500/10 shrink-0" style={{ color: textMuted }}>
