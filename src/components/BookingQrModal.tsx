@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Download, Loader2, Copy, Check } from 'lucide-react'
 import QRCode from 'qrcode'
 import logoImg from '../assets/ash-logo.jpg'
@@ -175,7 +176,7 @@ export default function BookingQrModal({ isLight, onClose }: Props) {
     }
   }
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
       style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
@@ -235,6 +236,7 @@ export default function BookingQrModal({ isLight, onClose }: Props) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

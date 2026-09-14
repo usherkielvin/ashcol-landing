@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
   Search, X, Loader2, ClipboardCheck, QrCode, ArrowRightCircle, Ban,
@@ -734,7 +735,7 @@ export default function Bookings() {
       </div>
 
       {/* Booking Details Modal (Centered & Redesigned) */}
-      {selectedBooking && (
+      {selectedBooking && typeof document !== 'undefined' && createPortal(
         <div 
           className="fixed inset-0 z-[999] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
           onClick={() => setSelectedBooking(null)}
@@ -1007,13 +1008,14 @@ export default function Bookings() {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {showQr && <BookingQrModal isLight={isLight} onClose={() => setShowQr(false)} />}
 
       {/* Dismissal Reason Picker */}
-      {dismissTargetId && (
+      {dismissTargetId && typeof document !== 'undefined' && createPortal(
         <div
           className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
           onClick={() => setDismissTargetId(null)}
@@ -1047,7 +1049,8 @@ export default function Bookings() {
               Cancel
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
