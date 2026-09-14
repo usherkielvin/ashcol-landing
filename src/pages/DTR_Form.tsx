@@ -30,7 +30,7 @@ interface CashTxRow    { id: string; ticketNumber?: string; customer: string; in
 interface CashRetRow   { id: string; name: string; amount: string }
 interface OnlineTxRow  { id: string; ticketNumber?: string; installer: string; customer: string; bank: string; amount: string }
 interface CheckRow     { id: string; ticketNumber?: string; installer: string; customer: string; bank: string; amount: string }
-interface PartsSaleRow { id: string; customer: string; description: string; capital: string; salePrice: string }
+interface PartsSaleRow { id: string; customer: string; description: string; capital: string; salePrice: string; paymentMethod: 'CASH' | 'ONLINE' }
 interface ForCollRow   { id: string; ticketNumber?: string; installer: string; customer: string; amount: string; collectionResolved?: boolean }
 interface RebateRow    { id: string; ticketNumber: string; customer: string; company: string; raNumber: string; hp: string; amount: string }
 interface OrderRow     { id: string; customer: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
@@ -242,7 +242,7 @@ const mkCash = (): CashTxRow   => ({ id: uid(), ticketNumber: '', customer: '', 
 const mkRet  = (): CashRetRow  => ({ id: uid(), name: '', amount: '' })
 const mkOnl  = (): OnlineTxRow => ({ id: uid(), ticketNumber: '', installer: '', customer: '', bank: '', amount: '' })
 const mkChk  = (): CheckRow    => ({ id: uid(), ticketNumber: '', installer: '', customer: '', bank: '', amount: '' })
-const mkPart = (): PartsSaleRow => ({ id: uid(), customer: '', description: '', capital: '', salePrice: '' })
+const mkPart = (): PartsSaleRow => ({ id: uid(), customer: '', description: '', capital: '', salePrice: '', paymentMethod: 'CASH' })
 const mkColl = (): ForCollRow  => ({ id: uid(), ticketNumber: '', installer: '', customer: '', amount: '', collectionResolved: false })
 const mkReb  = (): RebateRow   => ({ id: uid(), ticketNumber: '', customer: '', company: '', raNumber: '', hp: '', amount: '' })
 
@@ -1078,7 +1078,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                 customer: parts[1] || '',
                 description: parts[2] || '',
                 capital: '',
-                salePrice: amt
+                salePrice: amt,
+                paymentMethod: 'CASH'
               })
             } else if (desc.startsWith('RETURN|')) {
               cashReturnsList.push({
@@ -1095,7 +1096,17 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
               })
             }
           } else if (type === 'ONLINE_SALE') {
-            if (desc.startsWith('CHECK|')) {
+            if (desc.startsWith('PARTS|')) {
+              const parts = desc.split('|')
+              partsSalesList.push({
+                id: uid(),
+                customer: parts[1] || '',
+                description: parts[2] || '',
+                capital: '',
+                salePrice: amt,
+                paymentMethod: 'ONLINE'
+              })
+            } else if (desc.startsWith('CHECK|')) {
               checkRemList.push({
                 id: uid(),
                 installer: formatDisplayUserLabel(desc.replace('CHECK|', '')),
@@ -1741,6 +1752,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const totalCashCollection  = sumArr(cashTx.map(r => r.amount))
   const totalCashReturns     = sumArr(cashRet.map(r => r.amount))
   const totalOnline          = sumArr(onlineTx.map(r => r.amount))
+  const totalPartsCash       = sumArr(partsSales.filter(r => r.paymentMethod !== 'ONLINE').map(r => r.salePrice))
+  const totalPartsOnline     = sumArr(partsSales.filter(r => r.paymentMethod === 'ONLINE').map(r => r.salePrice))
   const totalCheck           = sumArr(checkRem.map(r => r.amount))
   const totalForColl         = sumArr(forColl.map(r => r.amount))
   const totalRebates         = rebates.reduce((s, r) => s + num(r.amount), 0)
@@ -1756,7 +1769,10 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   // Cash Advance IS a real cash outflow (unlike Rebates/Commission/Payables, which are
   // informational-only totals), so it belongs in the deduction alongside the Expenses sections.
   const grandTotalExpenses   = totalExpReceipt + totalExpPurch + totalCashAdvance
-  const totalFundReceived    = num(cashOnHand) + num(fundFromHo) + totalCashCollection + totalCashReturns
+  // Parts sales paid in cash are real cash the branch is holding, same as any other cash
+  // transaction — they must add to Cash on Hand. Parts sold online settle to the bank, not
+  // the branch's physical cash, so only the CASH-tagged rows belong here.
+  const totalFundReceived    = num(cashOnHand) + num(fundFromHo) + totalCashCollection + totalCashReturns + totalPartsCash
   const totalCashOnHand      = totalFundReceived - grandTotalExpenses
 
   // ── Submit handler ───────────────────────────────────────────────
@@ -1782,7 +1798,9 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           type: 'ONLINE_SALE', description: `CHECK|${r.installer}`, customer: r.customer, bank: r.bank, amount: parseFloat(r.amount) || 0
         })),
         ...partsSales.filter(r => r.customer || r.salePrice).map(r => ({
-          type: 'CASH_SALE', description: `PARTS|${r.customer}|${r.description}`, amount: parseFloat(r.salePrice) || 0
+          type: r.paymentMethod === 'ONLINE' ? 'ONLINE_SALE' : 'CASH_SALE',
+          description: `PARTS|${r.customer}|${r.description}`,
+          amount: parseFloat(r.salePrice) || 0
         })),
         ...expReceipt.filter(r => r.name || r.amount).map(r => ({
           type: 'EXPENSE',
@@ -2648,6 +2666,12 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           {/* Parts Sales / Unit Sales */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Parts Sales / Unit Sales" total={sumArr(partsSales.map(r => r.salePrice))} variant="income" />
+            {(totalPartsCash > 0 || totalPartsOnline > 0) && (
+              <div className="px-4 py-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-50/70 dark:bg-slate-900/30 border-b border-slate-100 dark:border-slate-800/40 flex gap-4">
+                <span>Cash: {php(totalPartsCash)}</span>
+                <span>Online: {php(totalPartsOnline)}</span>
+              </div>
+            )}
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -2656,6 +2680,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                     <th className={tableTh}>Description</th>
                     <th className={tableTh + ' text-right w-24'}>Capital</th>
                     <th className={tableTh + ' text-right w-24'}>Sale Price</th>
+                    <th className={tableTh + ' w-28'}>Paid Via</th>
                     {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
                   </tr>
                 </thead>
@@ -2681,6 +2706,25 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.salePrice}
                           onValueChange={(values) => setPartsSales(p => p.map(r => r.id === row.id ? { ...r, salePrice: values.value } : r))}
                           className={flushInputNumber} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        <div className="flex rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden text-[11px] font-bold">
+                          {(['CASH', 'ONLINE'] as const).map(method => (
+                            <button
+                              key={method}
+                              type="button"
+                              disabled={isFormDisabled}
+                              onClick={() => setPartsSales(p => p.map(r => r.id === row.id ? { ...r, paymentMethod: method } : r))}
+                              className={`flex-1 py-1 px-1.5 transition-colors ${
+                                row.paymentMethod === method
+                                  ? 'bg-emerald-500 text-white'
+                                  : 'bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                              } disabled:cursor-not-allowed disabled:hover:bg-transparent`}
+                            >
+                              {method === 'CASH' ? 'Cash' : 'Online'}
+                            </button>
+                          ))}
+                        </div>
                       </td>
                       {canSubmit && !reviewMode && (
                         <td className={tableTd + ' text-center'}>
