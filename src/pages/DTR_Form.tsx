@@ -30,7 +30,7 @@ interface CashTxRow    { id: string; ticketNumber?: string; customer: string; in
 interface CashRetRow   { id: string; name: string; amount: string }
 interface OnlineTxRow  { id: string; ticketNumber?: string; installer: string; customer: string; bank: string; amount: string }
 interface CheckRow     { id: string; ticketNumber?: string; installer: string; customer: string; bank: string; amount: string }
-interface PartsSaleRow { id: string; customer: string; description: string; capital: string; salePrice: string; paymentMethod: 'CASH' | 'ONLINE' }
+interface PartsSaleRow { id: string; customer: string; description: string; amount: string; paymentMethod: 'CASH' | 'ONLINE' }
 interface ForCollRow   { id: string; ticketNumber?: string; installer: string; customer: string; amount: string; collectionResolved?: boolean }
 interface RebateRow    { id: string; ticketNumber: string; customer: string; company: string; raNumber: string; hp: string; amount: string }
 interface OrderRow     { id: string; customer: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
@@ -242,7 +242,7 @@ const mkCash = (): CashTxRow   => ({ id: uid(), ticketNumber: '', customer: '', 
 const mkRet  = (): CashRetRow  => ({ id: uid(), name: '', amount: '' })
 const mkOnl  = (): OnlineTxRow => ({ id: uid(), ticketNumber: '', installer: '', customer: '', bank: '', amount: '' })
 const mkChk  = (): CheckRow    => ({ id: uid(), ticketNumber: '', installer: '', customer: '', bank: '', amount: '' })
-const mkPart = (): PartsSaleRow => ({ id: uid(), customer: '', description: '', capital: '', salePrice: '', paymentMethod: 'CASH' })
+const mkPart = (): PartsSaleRow => ({ id: uid(), customer: '', description: '', amount: '', paymentMethod: 'CASH' })
 const mkColl = (): ForCollRow  => ({ id: uid(), ticketNumber: '', installer: '', customer: '', amount: '', collectionResolved: false })
 const mkReb  = (): RebateRow   => ({ id: uid(), ticketNumber: '', customer: '', company: '', raNumber: '', hp: '', amount: '' })
 
@@ -1077,8 +1077,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                 id: uid(),
                 customer: parts[1] || '',
                 description: parts[2] || '',
-                capital: '',
-                salePrice: amt,
+                amount: amt,
                 paymentMethod: 'CASH'
               })
             } else if (desc.startsWith('RETURN|')) {
@@ -1102,8 +1101,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                 id: uid(),
                 customer: parts[1] || '',
                 description: parts[2] || '',
-                capital: '',
-                salePrice: amt,
+                amount: amt,
                 paymentMethod: 'ONLINE'
               })
             } else if (desc.startsWith('CHECK|')) {
@@ -1752,8 +1750,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const totalCashCollection  = sumArr(cashTx.map(r => r.amount))
   const totalCashReturns     = sumArr(cashRet.map(r => r.amount))
   const totalOnline          = sumArr(onlineTx.map(r => r.amount))
-  const totalPartsCash       = sumArr(partsSales.filter(r => r.paymentMethod !== 'ONLINE').map(r => r.salePrice))
-  const totalPartsOnline     = sumArr(partsSales.filter(r => r.paymentMethod === 'ONLINE').map(r => r.salePrice))
+  const totalPartsCash       = sumArr(partsSales.filter(r => r.paymentMethod !== 'ONLINE').map(r => r.amount))
+  const totalPartsOnline     = sumArr(partsSales.filter(r => r.paymentMethod === 'ONLINE').map(r => r.amount))
   const totalCheck           = sumArr(checkRem.map(r => r.amount))
   const totalForColl         = sumArr(forColl.map(r => r.amount))
   const totalRebates         = rebates.reduce((s, r) => s + num(r.amount), 0)
@@ -1797,10 +1795,10 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         ...checkRem.filter(r => r.installer || r.amount).map(r => ({
           type: 'ONLINE_SALE', description: `CHECK|${r.installer}`, customer: r.customer, bank: r.bank, amount: parseFloat(r.amount) || 0
         })),
-        ...partsSales.filter(r => r.customer || r.salePrice).map(r => ({
+        ...partsSales.filter(r => r.customer || r.amount).map(r => ({
           type: r.paymentMethod === 'ONLINE' ? 'ONLINE_SALE' : 'CASH_SALE',
           description: `PARTS|${r.customer}|${r.description}`,
-          amount: parseFloat(r.salePrice) || 0
+          amount: parseFloat(r.amount) || 0
         })),
         ...expReceipt.filter(r => r.name || r.amount).map(r => ({
           type: 'EXPENSE',
@@ -1995,7 +1993,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     const hasCashRet = cashRet.some(r => r.name.trim() || r.amount.trim())
     const hasOnline = onlineTx.some(r => r.customer.trim() || r.installer.trim() || r.bank.trim() || r.amount.trim() || r.ticketNumber?.trim())
     const hasCheck = checkRem.some(r => r.customer.trim() || r.installer.trim() || r.bank.trim() || r.amount.trim() || r.ticketNumber?.trim())
-    const hasParts = partsSales.some(r => r.customer.trim() || r.description.trim() || r.salePrice.trim())
+    const hasParts = partsSales.some(r => r.customer.trim() || r.description.trim() || r.amount.trim())
     const hasForColl = forColl.some(r => r.customer.trim() || r.installer.trim() || r.amount.trim() || r.ticketNumber?.trim())
     const hasRebates = rebates.some(r => r.ticketNumber.trim() || r.customer.trim() || r.company.trim() || r.amount.trim() || r.raNumber?.trim())
     const hasOrders = orders.some(r => r.customer.trim() || r.description.trim() || r.amount.trim())
@@ -2665,7 +2663,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
 
           {/* Parts Sales / Unit Sales */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="Parts Sales / Unit Sales" total={sumArr(partsSales.map(r => r.salePrice))} variant="income" />
+            <SectionHeader label="Parts Sales / Unit Sales" total={sumArr(partsSales.map(r => r.amount))} variant="income" />
             {(totalPartsCash > 0 || totalPartsOnline > 0) && (
               <div className="px-4 py-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-50/70 dark:bg-slate-900/30 border-b border-slate-100 dark:border-slate-800/40 flex gap-4">
                 <span>Cash: {php(totalPartsCash)}</span>
@@ -2678,8 +2676,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                   <tr>
                     <th className={tableTh}>Customer</th>
                     <th className={tableTh}>Description</th>
-                    <th className={tableTh + ' text-right w-24'}>Capital</th>
-                    <th className={tableTh + ' text-right w-24'}>Sale Price</th>
+                    <th className={tableTh + ' text-right w-24'}>Amount</th>
                     <th className={tableTh + ' w-28'}>Paid Via</th>
                     {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
                   </tr>
@@ -2698,13 +2695,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                           className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.capital}
-                          onValueChange={(values) => setPartsSales(p => p.map(r => r.id === row.id ? { ...r, capital: values.value } : r))}
-                          className={flushInputNumber} disabled={isFormDisabled} />
-                      </td>
-                      <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.salePrice}
-                          onValueChange={(values) => setPartsSales(p => p.map(r => r.id === row.id ? { ...r, salePrice: values.value } : r))}
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
+                          onValueChange={(values) => setPartsSales(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
                           className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
