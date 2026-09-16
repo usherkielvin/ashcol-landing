@@ -24,6 +24,22 @@ const SORTED_PUBLIC_BRANCHES = [...PUBLIC_BRANCHES].sort((a, b) =>
   branchDisplayName(a).localeCompare(branchDisplayName(b))
 )
 
+function encodeStoredPassword(pwd: string): string {
+  try {
+    return btoa(encodeURIComponent(pwd))
+  } catch {
+    return pwd
+  }
+}
+
+function decodeStoredPassword(stored: string): string {
+  try {
+    return decodeURIComponent(atob(stored))
+  } catch {
+    return stored
+  }
+}
+
 export default function Login() {
   const prefillEmail = (import.meta.env.VITE_LOGIN_PREFILL_EMAIL || '').trim()
   const prefillPassword = import.meta.env.VITE_LOGIN_PREFILL_PASSWORD || ''
@@ -31,15 +47,24 @@ export default function Login() {
   const [password, setPassword] = useState(prefillPassword)
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
+  const [isPresavedPassword, setIsPresavedPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const { user, setUser } = useAuth()
   const navigate = useNavigate()
 
   useEffect(() => {
-    const saved = localStorage.getItem('ashcol-remembered-email')
-    if (saved && !prefillEmail) {
-      setEmail(saved)
+    const savedEmail = localStorage.getItem('ashcol-remembered-email')
+    const savedPwdRaw = localStorage.getItem('ashcol-remembered-password')
+
+    if (savedEmail && !prefillEmail) {
+      setEmail(savedEmail)
+      setRememberMe(true)
+    }
+
+    if (savedPwdRaw && !prefillPassword) {
+      setPassword(decodeStoredPassword(savedPwdRaw))
+      setIsPresavedPassword(true)
       setRememberMe(true)
     } else if (prefillEmail || prefillPassword) {
       setRememberMe(true)
@@ -72,6 +97,18 @@ export default function Login() {
       html.style.removeProperty('--app-height')
     }
   }, [])
+
+  const handleToggleRememberMe = () => {
+    setRememberMe((prev) => {
+      const next = !prev
+      if (!next) {
+        localStorage.removeItem('ashcol-remembered-email')
+        localStorage.removeItem('ashcol-remembered-password')
+        setIsPresavedPassword(false)
+      }
+      return next
+    })
+  }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -114,6 +151,7 @@ export default function Login() {
         localStorage.setItem('ashcol-token', appToken)
         localStorage.setItem('ashcol-user', JSON.stringify(userPayload))
         localStorage.setItem('ashcol-remembered-email', appUser.email)
+        localStorage.setItem('ashcol-remembered-password', encodeStoredPassword(password))
         sessionStorage.setItem('ashcol-token', appToken)
         sessionStorage.setItem('ashcol-user', JSON.stringify(userPayload))
       } else {
@@ -122,6 +160,7 @@ export default function Login() {
         localStorage.removeItem('ashcol-token')
         localStorage.removeItem('ashcol-user')
         localStorage.removeItem('ashcol-remembered-email')
+        localStorage.removeItem('ashcol-remembered-password')
       }
 
       setUser(userPayload)
@@ -208,6 +247,9 @@ export default function Login() {
             setShowPassword={setShowPassword}
             rememberMe={rememberMe}
             setRememberMe={setRememberMe}
+            onToggleRememberMe={handleToggleRememberMe}
+            isPresavedPassword={isPresavedPassword}
+            setIsPresavedPassword={setIsPresavedPassword}
             loading={loading}
             error={error}
             handleLogin={handleLogin}
@@ -273,6 +315,9 @@ export default function Login() {
             setShowPassword={setShowPassword}
             rememberMe={rememberMe}
             setRememberMe={setRememberMe}
+            onToggleRememberMe={handleToggleRememberMe}
+            isPresavedPassword={isPresavedPassword}
+            setIsPresavedPassword={setIsPresavedPassword}
             loading={loading}
             error={error}
             handleLogin={handleLogin}
@@ -307,6 +352,9 @@ type LoginCardProps = {
   setShowPassword: (v: boolean | ((p: boolean) => boolean)) => void
   rememberMe: boolean
   setRememberMe: (v: boolean | ((p: boolean) => boolean)) => void
+  onToggleRememberMe?: () => void
+  isPresavedPassword?: boolean
+  setIsPresavedPassword?: (v: boolean) => void
   loading: boolean
   error: string
   handleLogin: (e: React.FormEvent) => void
@@ -322,6 +370,9 @@ function LoginCard({
   setShowPassword,
   rememberMe,
   setRememberMe,
+  onToggleRememberMe,
+  isPresavedPassword = false,
+  setIsPresavedPassword,
   loading,
   error,
   handleLogin,
@@ -362,7 +413,13 @@ function LoginCard({
               name="email"
               autoComplete="username"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value)
+                if (isPresavedPassword) {
+                  setPassword('')
+                  if (setIsPresavedPassword) setIsPresavedPassword(false)
+                }
+              }}
               required
               className={`w-full rounded-xl pl-10 pr-3 text-sm text-slate-900 placeholder:text-slate-400 bg-white border border-slate-200 focus:outline-none focus:ring-4 focus:ring-emerald-500/15 focus:border-emerald-500 transition-all ${
                 compact ? 'min-h-[46px]' : 'min-h-[50px]'
@@ -386,32 +443,70 @@ function LoginCard({
           <div className="relative">
             <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-[17px] h-[17px] text-slate-400" />
             <input
-              type={showPassword ? 'text' : 'password'}
+              type={showPassword && !isPresavedPassword ? 'text' : 'password'}
               name="password"
               autoComplete="current-password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onClick={() => {
+                if (isPresavedPassword) {
+                  setPassword('')
+                  if (setIsPresavedPassword) setIsPresavedPassword(false)
+                }
+              }}
+              onKeyDown={(e) => {
+                if (isPresavedPassword) {
+                  if (e.key === 'Backspace' || e.key === 'Delete') {
+                    e.preventDefault()
+                    setPassword('')
+                    if (setIsPresavedPassword) setIsPresavedPassword(false)
+                  } else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    e.preventDefault()
+                    setPassword(e.key)
+                    if (setIsPresavedPassword) setIsPresavedPassword(false)
+                  }
+                }
+              }}
+              onPaste={(e) => {
+                if (isPresavedPassword) {
+                  e.preventDefault()
+                  const pasted = e.clipboardData.getData('text')
+                  setPassword(pasted)
+                  if (setIsPresavedPassword) setIsPresavedPassword(false)
+                }
+              }}
+              onChange={(e) => {
+                if (isPresavedPassword) {
+                  setPassword('')
+                  if (setIsPresavedPassword) setIsPresavedPassword(false)
+                } else {
+                  setPassword(e.target.value)
+                }
+              }}
               required
-              className={`w-full rounded-xl pl-10 pr-11 text-sm text-slate-900 placeholder:text-slate-400 bg-white border border-slate-200 focus:outline-none focus:ring-4 focus:ring-emerald-500/15 focus:border-emerald-500 transition-all ${
+              className={`w-full rounded-xl pl-10 ${
+                isPresavedPassword ? 'pr-3.5' : 'pr-11'
+              } text-sm text-slate-900 placeholder:text-slate-400 bg-white border border-slate-200 focus:outline-none focus:ring-4 focus:ring-emerald-500/15 focus:border-emerald-500 transition-all ${
                 compact ? 'min-h-[46px]' : 'min-h-[50px]'
               }`}
               placeholder="Enter your password"
             />
-            <button
-              type="button"
-              onClick={() => setShowPassword((v) => !v)}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-emerald-600 transition-colors"
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
-            >
-              {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
-            </button>
+            {!isPresavedPassword && (
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-emerald-600 transition-colors"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
+            )}
           </div>
         </div>
 
         <div className="flex items-center gap-2.5">
           <button
             type="button"
-            onClick={() => setRememberMe((r) => !r)}
+            onClick={onToggleRememberMe || (() => setRememberMe((r) => !r))}
             className="relative flex-shrink-0 w-[18px] h-[18px] rounded-md border-2 transition-all flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-emerald-500/35"
             style={{
               backgroundColor: rememberMe ? GREEN : 'transparent',
@@ -427,7 +522,7 @@ function LoginCard({
           </button>
           <span
             className="text-sm font-medium text-slate-900 select-none cursor-pointer"
-            onClick={() => setRememberMe((r) => !r)}
+            onClick={onToggleRememberMe || (() => setRememberMe((r) => !r))}
           >
             Remember me
           </span>

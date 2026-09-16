@@ -40,8 +40,11 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 const SESSION_KEY = 'ashcol-user'
 const TOKEN_KEY = 'ashcol-token'
-/** Keep "remember email" across logout — not a credential. */
-const KEEP_ON_LOGOUT = new Set(['ashcol-remembered-email'])
+/** Keep remembered email and password across logout when Remember Me is enabled. */
+const KEEP_ON_LOGOUT = new Set([
+  'ashcol-remembered-email',
+  'ashcol-remembered-password',
+])
 
 const AUTH_PUBLIC_PATHS = new Set([
   '/',
