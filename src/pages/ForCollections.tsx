@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { 
-  ClipboardList, Search, CheckCircle2, 
-  Loader2, Building2, Eye, X, ChevronDown, Pencil, Calendar, Download, FileEdit
+import {
+  ClipboardList, Search, CheckCircle2,
+  Loader2, Building2, Eye, X, ChevronDown, Pencil, Calendar, Download, FileEdit, AlertTriangle, User
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -52,6 +52,22 @@ const formatDateTime = (value?: string | null) => {
   } catch {
     return value || ''
   }
+}
+
+// Some legacy "For Collection" rows got pipe-delimited codes (e.g. "REBATE|COMPANY|1.5")
+// pasted into the free-text Installer field instead of an actual installer name — those
+// values belong to the Rebate/Commission/Incentive/Payable line-item format, not this column.
+// Strip the tag so the table never renders raw internal codes, and flag the row for correction.
+const INTERNAL_TAG_PREFIXES = ['REBATE', 'COMMISSION', 'INCENTIVE', 'CHECK', 'PARTS', 'ORDER', 'PAYABLE']
+const parseInstallerLabel = (description?: string): { label: string; malformed: boolean } => {
+  const trimmed = (description || '').trim()
+  if (!trimmed) return { label: '', malformed: false }
+  const match = trimmed.match(/^([A-Z_]+)\|(.*)$/)
+  if (match && INTERNAL_TAG_PREFIXES.includes(match[1])) {
+    const rest = match[2].split('|').map(s => s.trim()).filter(Boolean)
+    return { label: rest[0] || match[1], malformed: true }
+  }
+  return { label: trimmed, malformed: false }
 }
 
 const isNoTransactionRemarks = (remarks: string) =>
@@ -287,19 +303,15 @@ export default function ForCollections() {
   const [search, setSearch] = useState('')
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'RESOLVED'>('PENDING')
+  // Admins default to "All Branches" here, scoped only by this page's own Branch filter —
+  // deliberately NOT tied to the app's global active-branch switcher (that switcher drives
+  // other pages, but Collections/Rebates/Incentives should stay independent of it).
   const [branchFilter, setBranchFilter] = useState(() => {
     const role = (user?.role || '').toLowerCase()
-    if (isPortalAdmin(role)) {
-      const activeBranch = localStorage.getItem('ashcol-global-branch-id')
-      if (activeBranch && activeBranch !== 'ALL_BRANCHES') {
-        return activeBranch.replace(/-(sales|services|service)$/i, '')
-      }
-      return ''
-    } else {
-      return user?.branchId
-        ? user.branchId.replace(/-(sales|services|service)$/i, '')
-        : ''
-    }
+    if (isPortalAdmin(role)) return ''
+    return user?.branchId
+      ? user.branchId.replace(/-(sales|services|service)$/i, '')
+      : ''
   })
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   // Date filters — monthFilter = 'YYYY-MM'
@@ -308,22 +320,6 @@ export default function ForCollections() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })
 
-  // Sync branchFilter for Admin from active branch
-  useEffect(() => {
-    const role = (user?.role || '').toLowerCase()
-    if (!isPortalAdmin(role)) return
-
-    const sync = () => {
-      const activeBranch = localStorage.getItem('ashcol-global-branch-id')
-      if (activeBranch && activeBranch !== 'ALL_BRANCHES') {
-        setBranchFilter(activeBranch.replace(/-(sales|services|service)$/i, ''))
-      } else {
-        setBranchFilter('')
-      }
-    }
-    window.addEventListener('ashcol-global-branch-change', sync)
-    return () => window.removeEventListener('ashcol-global-branch-change', sync)
-  }, [user])
 
   const [confirmItem, setConfirmItem] = useState<CollectionItem | null>(null)
   const [notesText, setNotesText] = useState('')
@@ -859,11 +855,14 @@ export default function ForCollections() {
                   return (
                     <tr
                       key={item.id}
+                      className="transition-colors"
                       style={{
                         borderBottom: idx < filteredItems.length - 1 ? `1px solid ${border}` : 'none',
                         color: textPrimary,
                         backgroundColor: resolved ? (isLight ? 'rgba(16,185,129,0.03)' : 'rgba(16,185,129,0.04)') : 'transparent'
                       }}
+                      onMouseEnter={e => { e.currentTarget.style.backgroundColor = isLight ? '#f8fafc' : '#0d1520' }}
+                      onMouseLeave={e => { e.currentTarget.style.backgroundColor = resolved ? (isLight ? 'rgba(16,185,129,0.03)' : 'rgba(16,185,129,0.04)') : 'transparent' }}
                     >
                       {/* TR No. / Date — idx shown as inline badge */}
                       <td className="px-3 py-3">
@@ -905,7 +904,33 @@ export default function ForCollections() {
 
                           {/* Installer / Tech */}
                           <td className="px-3 py-3">
-                            <EmployeeNameLink nameOrId={formatDisplayUserLabel(item.description)} />
+                            {(() => {
+                              const { label, malformed } = parseInstallerLabel(item.description)
+                              if (!label) return <span style={{ color: textMuted }}>—</span>
+                              return (
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className="flex items-center justify-center rounded-full shrink-0"
+                                    style={{
+                                      width: 22, height: 22,
+                                      backgroundColor: isLight ? '#eef2ff' : 'rgba(99,102,241,0.15)',
+                                      color: '#6366f1'
+                                    }}
+                                  >
+                                    <User size={11} />
+                                  </span>
+                                  <EmployeeNameLink nameOrId={formatDisplayUserLabel(label)} />
+                                  {malformed && (
+                                    <span
+                                      title="This looks like it was pasted from the wrong field (Rebates/Commission format). Please correct the installer name via Edit Report."
+                                      style={{ color: '#F59E0B', display: 'inline-flex', cursor: 'help' }}
+                                    >
+                                      <AlertTriangle size={12} />
+                                    </span>
+                                  )}
+                                </div>
+                              )
+                            })()}
                           </td>
                         </>
                       ) : activeTab === 'rebates' ? (
@@ -998,8 +1023,18 @@ export default function ForCollections() {
                       </td>
 
                       {/* Status */}
-                      <td className="px-3 py-3 text-center" style={{ fontSize: '11px', fontWeight: 500 }}>
-                        <span style={{ color: resolved ? textPrimary : '#F59E0B' }}>
+                      <td className="px-3 py-3 text-center">
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full"
+                          style={{
+                            fontSize: '10px', fontWeight: 700, padding: '3px 9px', letterSpacing: '0.03em',
+                            color: resolved ? '#10B981' : '#F59E0B',
+                            backgroundColor: resolved
+                              ? (isLight ? 'rgba(16,185,129,0.1)' : 'rgba(16,185,129,0.14)')
+                              : (isLight ? 'rgba(245,158,11,0.1)' : 'rgba(245,158,11,0.14)')
+                          }}
+                        >
+                          <span style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: 'currentColor' }} />
                           {resolved ? tc.resolvedLabel : 'Pending'}
                         </span>
                       </td>

@@ -11,6 +11,7 @@ import {
 import logoImg from '../assets/ash-logo.jpg'
 import qrCodeImg from '../assets/774593213_882421038029027_3452067891567596325_n.png'
 import { PUBLIC_BRANCHES } from '../data/branches'
+import AirconToolsSection from '../components/tools/AirconToolsSection'
 
 
 // ─── Motion Primitives ───────────────────────────────────────────────────────
@@ -260,7 +261,7 @@ export default function Landing() {
             </button>
 
             <div className="nav-element hidden md:flex items-center justify-center gap-8 absolute left-1/2 transform -translate-x-1/2">
-              {[{id: 'hero', l: 'Home'}, {id: 'how-it-works', l: 'How It Works'}, {id: 'services', l: 'Services'}, {id: 'about', l: 'Why Us'}, {id: 'clients', l: 'Clients'}, {id: 'branches', l: 'Branches'}].map(nav => (
+              {[{id: 'hero', l: 'Home'}, {id: 'how-it-works', l: 'How It Works'}, {id: 'services', l: 'Services'}, {id: 'tools', l: 'AC Tools'}, {id: 'about', l: 'Why Us'}, {id: 'clients', l: 'Clients'}, {id: 'branches', l: 'Branches'}].map(nav => (
                 <button key={nav.id} onClick={() => scrollTo(nav.id)} className="relative text-sm font-semibold transition-colors py-1 hover:opacity-80" style={{ color: activeSection === nav.id ? '#10B981' : '#CBD5E1' }}>
                   {nav.l}
                 </button>
@@ -278,7 +279,7 @@ export default function Landing() {
         <AnimatePresence>
           {mobileMenuOpen && (
             <motion.div className="fixed left-0 w-full bg-[#0F172A] border-b border-slate-800 rounded-b-[2rem] shadow-2xl p-6 pt-12 flex flex-col gap-5 z-[90] md:hidden pointer-events-auto" style={{ top: isScrolled ? 38 : 88 }} initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
-              {[{id: 'hero', l: 'Home'}, {id: 'how-it-works', l: 'How It Works'}, {id: 'services', l: 'Services'}, {id: 'about', l: 'Why Us'}, {id: 'clients', l: 'Clients'}, {id: 'branches', l: 'Branches'}].map((nav) => (
+              {[{id: 'hero', l: 'Home'}, {id: 'how-it-works', l: 'How It Works'}, {id: 'services', l: 'Services'}, {id: 'tools', l: 'AC Tools'}, {id: 'about', l: 'Why Us'}, {id: 'clients', l: 'Clients'}, {id: 'branches', l: 'Branches'}].map((nav) => (
                 <button
                   key={nav.id}
                   onClick={() => {
@@ -505,6 +506,9 @@ export default function Landing() {
             </div>
           </div>
         </section>
+
+        {/* ── 3.5 SMART AC TOOLS & DIAGNOSTIC SUITE ────────────────────────── */}
+        <AirconToolsSection />
 
         {/* ── 4. WHAT DRIVES US (Restored Values Layout) ────────────────────── */}
         <section id="about" className="flex w-full min-h-screen bg-[#ECFDF5] justify-center overflow-hidden">
@@ -837,8 +841,8 @@ export default function Landing() {
                 <div className="flex flex-col items-start gap-3 md:gap-5">
                   <h4 className="font-sans text-[16px] font-bold text-white uppercase tracking-wider">Navigate</h4>
                   <ul className="flex flex-col items-start gap-2 md:gap-3">
-                    {["Services", "About Us", "Branches", "Clients", "FAQs"].map((link) => (
-                      <li key={link}><button onClick={() => scrollTo(link === 'About Us' ? 'about' : link === 'FAQs' ? 'faq' : link.toLowerCase())} className="font-sans text-[13px] md:text-[15px] font-medium text-white/70 hover:text-[#10B981] transition-colors">{link}</button></li>
+                    {["Services", "AC Tools", "About Us", "Branches", "Clients", "FAQs"].map((link) => (
+                      <li key={link}><button onClick={() => scrollTo(link === 'About Us' ? 'about' : link === 'AC Tools' ? 'tools' : link === 'FAQs' ? 'faq' : link.toLowerCase())} className="font-sans text-[13px] md:text-[15px] font-medium text-white/70 hover:text-[#10B981] transition-colors">{link}</button></li>
                     ))}
                     <li><Link to="/booking" className="font-sans text-[13px] md:text-[15px] font-medium text-[#10B981] hover:underline transition-colors">Book a Service</Link></li>
                   </ul>
