@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import ReactDOM from 'react-dom'
 import {
   ClipboardList, Search, CheckCircle2,
-  Loader2, Building2, Eye, X, ChevronDown, Pencil, Calendar, Download, FileEdit, AlertTriangle, User
+  Loader2, Eye, X, ChevronDown, Pencil, Calendar, Download, FileEdit, AlertTriangle, User
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -313,7 +314,6 @@ export default function ForCollections() {
       ? user.branchId.replace(/-(sales|services|service)$/i, '')
       : ''
   })
-  const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   // Date filters — monthFilter = 'YYYY-MM'
   const [monthFilter, setMonthFilter] = useState(() => {
     const now = new Date()
@@ -413,19 +413,9 @@ export default function ForCollections() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [branchFilter, statusFilter, activeTab, monthFilter])
 
-  // Parallel initial fetch — branches and collections at the same time
+  // Initial fetch
   useEffect(() => {
-    const token = getToken()
-    const branchReq = fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (!data) return
-        const list = (data?.data || data || []).map((b: any) => ({ id: b.id, name: b.name }))
-        setBranches(list.sort((a: any, b: any) => a.name.localeCompare(b.name)))
-      })
-      .catch(() => {})
-    const colReq = fetchCollections()
-    Promise.all([branchReq, colReq])
+    fetchCollections()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -669,34 +659,6 @@ export default function ForCollections() {
             />
           </div>
 
-          {/* Branch filter — admins can switch, non-admins see a locked badge */}
-          {isAdmin ? (
-            <div className="relative min-w-[180px]">
-              <Building2 className="absolute left-3 w-4 h-4 top-1/2 -translate-y-1/2" style={{ color: textMuted }} />
-              <select
-                value={branchFilter}
-                onChange={e => setBranchFilter(e.target.value)}
-                className="w-full pl-9 pr-8 py-2 rounded-xl text-xs font-semibold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#10B981]/50 border transition-all"
-                style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
-                aria-label="Filter by Branch"
-              >
-                <option value="">All Branches</option>
-                {branches.map(b => (
-                  <option key={b.id} value={b.id}>{formatBranchName(b.name)}</option>
-                ))}
-              </select>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-              <Building2 className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
-              <span className="truncate max-w-[160px]">
-                {branches.find(b => b.id === branchFilter)?.name
-                  ? formatBranchName(branches.find(b => b.id === branchFilter)!.name)
-                  : formatBranchName(user?.branchId || 'My Branch')}
-              </span>
-            </div>
-          )}
-
           {/* Status filter */}
           <div className="relative min-w-[140px]">
             <ClipboardList className="absolute left-3 w-4 h-4 top-1/2 -translate-y-1/2" style={{ color: textMuted }} />
@@ -797,7 +759,7 @@ export default function ForCollections() {
                   {activeTab === 'collections' ? (
                     <>
                       <th className="px-3 py-3">Customer</th>
-                      <th className="px-3 py-3">Installer / Tech</th>
+                      <th className="px-3 py-3">Installer</th>
                     </>
                   ) : activeTab === 'rebates' ? (
                     <>
@@ -902,7 +864,7 @@ export default function ForCollections() {
                             {item.customer || <span style={{ color: textMuted, fontWeight: 400 }}>—</span>}
                           </td>
 
-                          {/* Installer / Tech */}
+                          {/* Installer */}
                           <td className="px-3 py-3">
                             {(() => {
                               const { label, malformed } = parseInstallerLabel(item.description)
@@ -1178,10 +1140,11 @@ export default function ForCollections() {
           )
         }
 
-        return (
+        return ReactDOM.createPortal(
           <div
-            className="fixed inset-0 left-0 md:left-[220px] lg:left-[240px] z-[9999] flex items-center justify-center p-2 sm:p-3 backdrop-blur-md safe-area-top safe-area-bottom"
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-3 backdrop-blur-md safe-area-top safe-area-bottom"
             style={{ backgroundColor: 'rgba(15,23,42,0.65)', backdropFilter: 'blur(6px)' }}
+            onClick={() => setSelectedRow(null)}
           >
             <div
               className="rounded-2xl overflow-hidden shadow-2xl w-full max-w-6xl xl:max-w-7xl h-[96vh] flex flex-col animate-in fade-in zoom-in-95 duration-150"
@@ -1609,7 +1572,8 @@ export default function ForCollections() {
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )
       })()}
 
