@@ -196,6 +196,19 @@ export default function Branches() {
   const [newInstallerName, setNewInstallerName] = useState('')
   const [saving, setSaving] = useState(false)
 
+  // Add Branch modal state
+  const [showAddBranch, setShowAddBranch] = useState(false)
+  const [addForm, setAddForm] = useState({
+    name: '',
+    location: '',
+    address: '',
+    phone: '',
+    email: '',
+    targetDailyQuota: '',
+  })
+  const [addError, setAddError] = useState<string | null>(null)
+  const [addSaving, setAddSaving] = useState(false)
+
   // Performance data for the selected branch
   const [branchPerfData, setBranchPerfData] = useState<AuditRow | null>(null)
   const [branchPerfLoading, setBranchPerfLoading] = useState(false)
@@ -677,6 +690,50 @@ export default function Branches() {
     }
   }
 
+  const handleOpenAddBranch = () => {
+    setAddForm({ name: '', location: '', address: '', phone: '', email: '', targetDailyQuota: '' })
+    setAddError(null)
+    setShowAddBranch(true)
+  }
+
+  const handleAddBranchSubmit = async () => {
+    setAddError(null)
+    if (!addForm.name.trim()) { setAddError('Branch name is required.'); return }
+    if (!addForm.location.trim()) { setAddError('Location is required.'); return }
+    if (!addForm.phone.trim()) { setAddError('Phone number is required.'); return }
+    if (!addForm.email.trim()) { setAddError('Email is required.'); return }
+    setAddSaving(true)
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
+      const quotaNum = parseFloat(addForm.targetDailyQuota)
+      const payload = {
+        name: addForm.name.trim(),
+        location: addForm.location.trim(),
+        address: addForm.address.trim(),
+        phone: addForm.phone.trim(),
+        email: addForm.email.trim(),
+        isActive: true,
+        targetDailyQuota: !isNaN(quotaNum) && quotaNum > 0 ? quotaNum : null,
+      }
+      const res = await fetch(`${apiUrl}/branches`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        throw new Error(body?.message || 'Failed to create branch')
+      }
+      setShowAddBranch(false)
+      await fetchAllData()
+    } catch (err) {
+      setAddError(err instanceof Error ? err.message : 'Failed to create branch')
+    } finally {
+      setAddSaving(false)
+    }
+  }
+
 
 
 
@@ -738,6 +795,17 @@ export default function Branches() {
             View branch details, assigned OIC, drivers, installers, technicians, and contact information.
           </p>
         </div>
+        {isRoleAdmin && (
+          <button
+            id="add-branch-btn"
+            onClick={handleOpenAddBranch}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider text-white hover:opacity-90 active:scale-95 transition-all shrink-0 shadow-sm"
+            style={{ backgroundColor: '#10B981' }}
+          >
+            <Plus className="w-4 h-4" />
+            Add Branch
+          </button>
+        )}
       </div>
 
       {/* ── Error Banner ─────────────────────────────────── */}
@@ -1747,6 +1815,168 @@ export default function Branches() {
                 disabled={saving}
               >
                 {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Add Branch Modal (Admin only) ──────────────────── */}
+      {showAddBranch && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowAddBranch(false) }}
+        >
+          <div
+            className="relative w-full max-w-lg rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh' }}
+          >
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b flex items-center justify-between shrink-0" style={{ borderColor: border }}>
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(16,185,129,0.12)' }}>
+                  <Building2 className="w-4 h-4" style={{ color: '#10B981' }} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black" style={{ color: textPrimary }}>Add New Branch</h3>
+                  <p className="text-[10px] font-medium" style={{ color: textMuted }}>Create a new ASHCOL branch location</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAddBranch(false)}
+                className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                style={{ color: textMuted }}
+                disabled={addSaving}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="px-6 py-5 overflow-y-auto flex flex-col gap-4">
+              {addError && (
+                <div className="flex items-center gap-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 px-4 py-3 rounded-xl text-xs font-semibold">
+                  <XCircle className="w-4 h-4 shrink-0" />
+                  {addError}
+                </div>
+              )}
+
+              {/* Name */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Branch Name <span className="text-red-400">*</span></label>
+                <input
+                  id="add-branch-name"
+                  type="text"
+                  placeholder="e.g. ASHCOL SAN PEDRO"
+                  value={addForm.name}
+                  onChange={e => setAddForm(p => ({ ...p, name: e.target.value }))}
+                  disabled={addSaving}
+                  style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                  className="border rounded-xl px-3 py-2.5 text-xs font-semibold focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] w-full transition-all"
+                />
+              </div>
+
+              {/* Location */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Location / City <span className="text-red-400">*</span></label>
+                <input
+                  id="add-branch-location"
+                  type="text"
+                  placeholder="e.g. San Pedro, Laguna"
+                  value={addForm.location}
+                  onChange={e => setAddForm(p => ({ ...p, location: e.target.value }))}
+                  disabled={addSaving}
+                  style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                  className="border rounded-xl px-3 py-2.5 text-xs font-semibold focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] w-full transition-all"
+                />
+              </div>
+
+              {/* Address */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Full Address</label>
+                <textarea
+                  id="add-branch-address"
+                  placeholder="Building, street, barangay, city, province"
+                  value={addForm.address}
+                  onChange={e => setAddForm(p => ({ ...p, address: e.target.value }))}
+                  disabled={addSaving}
+                  rows={2}
+                  style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                  className="border rounded-xl px-3 py-2.5 text-xs font-semibold focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] w-full transition-all resize-none"
+                />
+              </div>
+
+              {/* Phone + Email (2 col) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Phone <span className="text-red-400">*</span></label>
+                  <input
+                    id="add-branch-phone"
+                    type="tel"
+                    placeholder="09XX XXX XXXX"
+                    value={addForm.phone}
+                    onChange={e => setAddForm(p => ({ ...p, phone: e.target.value }))}
+                    disabled={addSaving}
+                    style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                    className="border rounded-xl px-3 py-2.5 text-xs font-semibold focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] w-full transition-all"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Email <span className="text-red-400">*</span></label>
+                  <input
+                    id="add-branch-email"
+                    type="email"
+                    placeholder="branch@ashcol.com.ph"
+                    value={addForm.email}
+                    onChange={e => setAddForm(p => ({ ...p, email: e.target.value }))}
+                    disabled={addSaving}
+                    style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                    className="border rounded-xl px-3 py-2.5 text-xs font-semibold focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] w-full transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* Daily Quota */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Target Daily Quota (₱)</label>
+                <input
+                  id="add-branch-quota"
+                  type="number"
+                  min="0"
+                  step="1000"
+                  placeholder="e.g. 50000"
+                  value={addForm.targetDailyQuota}
+                  onChange={e => setAddForm(p => ({ ...p, targetDailyQuota: e.target.value }))}
+                  disabled={addSaving}
+                  style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                  className="border rounded-xl px-3 py-2.5 text-xs font-semibold focus:outline-none focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] w-full transition-all"
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t flex justify-end gap-2.5 shrink-0" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : 'rgba(15,26,46,0.6)' }}>
+              <button
+                onClick={() => setShowAddBranch(false)}
+                disabled={addSaving}
+                className="px-4 py-2 border rounded-xl text-xs font-bold transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+                style={{ color: textMuted, borderColor: border }}
+              >
+                Cancel
+              </button>
+              <button
+                id="add-branch-submit"
+                onClick={handleAddBranchSubmit}
+                disabled={addSaving}
+                className="flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider text-white hover:opacity-90 active:scale-95 transition-all"
+                style={{ backgroundColor: '#10B981' }}
+              >
+                {addSaving ? (
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Creating…</>
+                ) : (
+                  <><Plus className="w-3.5 h-3.5" /> Create Branch</>
+                )}
               </button>
             </div>
           </div>
