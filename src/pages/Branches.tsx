@@ -6,6 +6,8 @@ import { PUBLIC_BRANCHES } from '../data/branches'
 import { API_BASE_URL, isSameBaseBranch, resolveScopedBranchId, isMayDtrEditWindow, isEmployeePortalRole, isPortalAdmin, isTaguigServicesScope } from '../utils/api'
 import {
   buildBranchRoster,
+  isDriverEmployee,
+  isInstallerEmployee,
   isSalesCoordinatorEmployee,
   notifyBranchRosterUpdated,
   resolveBranchApiId,
