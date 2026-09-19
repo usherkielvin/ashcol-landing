@@ -37,6 +37,7 @@ interface OrderRow     { id: string; customer: string; description: string; amou
 interface ExpenseRow   { id: string; name: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 interface IncentiveRow { id: string; customer: string; company: string; hp: string; promodiser: string; amount: string; collectionResolved?: boolean }
 interface CashAdvanceRow { id: string; memberName: string; details: string; amount: string }
+interface DepositRow   { id: string; bank: string; referenceNo: string; amount: string; receiptImage?: string }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -252,6 +253,7 @@ const mkExp  = (): ExpenseRow  => ({ id: uid(), name: '', description: '', amoun
 const mkInc  = (): IncentiveRow => ({ id: uid(), customer: '', company: '', hp: '', promodiser: '', amount: '', collectionResolved: false })
 const mkComm = (): CommissionRow => ({ id: uid(), ticketNumber: '', store: '', diser: '', customer: '', brand: '', hp: '', dateInstalled: '', amount: '' })
 const mkCashAdv = (): CashAdvanceRow => ({ id: uid(), memberName: '', details: '', amount: '' })
+const mkDeposit = (): DepositRow => ({ id: uid(), bank: '', referenceNo: '', amount: '', receiptImage: '' })
 
 // Temporarily hidden: saving a report with INCENTIVE items crashes the production backend
 // (Jackson classpath mismatch — NoClassDefFoundError: JsonMappingException$Reference) until
@@ -683,6 +685,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const [expReceipt, setExpReceipt]     = useState<ExpenseRow[]>([mkExp()])
   // Cash Advance
   const [cashAdvances, setCashAdvances] = useState<CashAdvanceRow[]>([mkCashAdv()])
+  // Bank Deposits (cash physically dropped off at the company bank)
+  const [deposits, setDeposits] = useState<DepositRow[]>([])
   // Expenses for Purchase
   const [expPurch, setExpPurch]         = useState<ExpenseRow[]>([mkExp()])
   // Incentives
@@ -779,6 +783,19 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
             return
           }
           setCashOnHand('')
+          // No report yet for this date — prefill COH from yesterday's ending balance (already net
+          // of any bank deposit recorded that day) instead of leaving staff to retype it from memory.
+          try {
+            const { year, month, day } = getIsoDateParts(reportDate)
+            const prevDateObj = new Date(year, month - 1, day - 1)
+            const prevDateStr = `${prevDateObj.getFullYear()}-${String(prevDateObj.getMonth() + 1).padStart(2, '0')}-${String(prevDateObj.getDate()).padStart(2, '0')}`
+            const prevReport = await lookupExistingReport(prevDateStr, { skipCache: true })
+            if (prevReport?.totalCohCfd != null) {
+              setCashOnHand(String(prevReport.totalCohCfd))
+            }
+          } catch (err) {
+            console.error('[loadDateData] Failed to prefill COH from previous day:', err)
+          }
         }
 
         const lineupQueryBranchId = selectedAuditLine
@@ -1059,6 +1076,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       const checkRemList: CheckRow[] = []
       const expReceiptList: ExpenseRow[] = []
       const cashAdvancesList: CashAdvanceRow[] = []
+      const depositsList: DepositRow[] = []
       const expPurchList: ExpenseRow[] = []
       const ordersList: OrderRow[] = []
       const forCollList: ForCollRow[] = []
@@ -1142,6 +1160,14 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
               memberName: parts[0] ? formatDisplayUserLabel(parts[0]) : '',
               details: parts[1] || '',
               amount: amt
+            })
+          } else if (type === 'DEPOSIT') {
+            depositsList.push({
+              id: uid(),
+              bank: item.bank || '',
+              referenceNo: item.receiptNo || '',
+              amount: amt,
+              receiptImage: item.receiptImage || ''
             })
           } else if (type === 'PURCHASE') {
             if (desc.startsWith('ORDER|')) {
@@ -1260,6 +1286,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       }
       setExpReceipt(expReceiptList.length > 0 ? expReceiptList : [mkExp()])
       setCashAdvances(cashAdvancesList.length > 0 ? cashAdvancesList : [mkCashAdv()])
+      setDeposits(depositsList)
 
       if (expPurchList.length === 0 && data.totalForPurchase != null && Number(data.totalForPurchase) > 0) {
         expPurchList.push({
@@ -1334,6 +1361,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     setOrders([mkOrd()])
     setExpReceipt([mkExp()])
     setCashAdvances([mkCashAdv()])
+    setDeposits([])
     setExpPurch([mkExp()])
     setScheduledUnits('0')
     setSurveyOnlyUnits('0')
@@ -1760,6 +1788,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const totalPayables        = sumArr(payables.map(r => r.amount))
   const totalExpReceipt      = sumArr(expReceipt.map(r => r.amount))
   const totalCashAdvance     = sumArr(cashAdvances.map(r => r.amount))
+  const totalDeposits        = sumArr(deposits.map(r => r.amount))
   const totalExpPurch        = sumArr(expPurch.map(r => r.amount))
   const totalIncentives      = sumArr(incentives.map(r => r.amount))
   // Incentives reduce Gross Sales (applied server-side in ReportService), but they're not cash
@@ -1771,7 +1800,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   // transaction — they must add to Cash on Hand. Parts sold online settle to the bank, not
   // the branch's physical cash, so only the CASH-tagged rows belong here.
   const totalFundReceived    = num(cashOnHand) + num(fundFromHo) + totalCashCollection + totalCashReturns + totalPartsCash
-  const totalCashOnHand      = totalFundReceived - grandTotalExpenses
+  const totalCashOnHand      = totalFundReceived - grandTotalExpenses - totalDeposits
 
   // ── Submit handler ───────────────────────────────────────────────
   // ── Submit & Action Handlers ─────────────────────────────────────
@@ -1813,6 +1842,14 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         ...cashAdvances.filter(r => r.memberName || r.amount).map(r => ({
           type: 'CASH_ADVANCE',
           description: `${r.memberName}|${r.details}`,
+          amount: parseFloat(r.amount) || 0,
+        })),
+        ...deposits.filter(r => r.bank || r.referenceNo || r.amount).map(r => ({
+          type: 'DEPOSIT',
+          description: 'Bank Deposit',
+          bank: r.bank,
+          receiptNo: r.referenceNo || null,
+          receiptImage: r.receiptImage || null,
           amount: parseFloat(r.amount) || 0,
         })),
         ...expPurch.filter(r => r.name || r.amount).map(r => ({
@@ -2836,6 +2873,88 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
             </div>
           </div>
 
+          {/* Bank Deposits — cash physically dropped off at the company bank once COH crosses the
+              branch's cash-handling limit. Recorded here (with a receipt photo) so the reduction
+              in tomorrow's COH has an explanation on file instead of just showing up smaller. */}
+          <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+            <SectionHeader label="Bank Deposits" total={totalDeposits} variant="expense" />
+            <div className="p-2">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr>
+                    <th className={tableTh}>Bank</th>
+                    <th className={tableTh}>Reference / OR No.</th>
+                    <th className={tableTh + ' text-right w-28'}>Amount</th>
+                    <th className={tableTh + ' w-28'}>Receipt</th>
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {deposits.map(row => (
+                    <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Bank" value={row.bank}
+                          onChange={e => setDeposits(p => p.map(r => r.id === row.id ? { ...r, bank: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Reference / OR No." value={row.referenceNo}
+                          onChange={e => setDeposits(p => p.map(r => r.id === row.id ? { ...r, referenceNo: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
+                          onValueChange={(values) => setDeposits(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
+                          className={flushInputNumber} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd + ' text-center'}>
+                        <input type="file" accept="image/*" id={`deposit-receipt-${row.id}`} className="hidden"
+                          disabled={isFormDisabled}
+                          onChange={e => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+                            if (file.size > 2 * 1024 * 1024) {
+                              setError('Receipt image must be smaller than 2MB')
+                              return
+                            }
+                            const reader = new FileReader()
+                            reader.onloadend = () => {
+                              setDeposits(p => p.map(r => r.id === row.id ? { ...r, receiptImage: reader.result as string } : r))
+                            }
+                            reader.readAsDataURL(file)
+                          }} />
+                        {row.receiptImage ? (
+                          <div className="flex items-center justify-center gap-1.5">
+                            <img src={row.receiptImage} alt="Deposit slip" className="h-8 w-8 object-cover rounded border border-slate-300 dark:border-slate-700" />
+                            {!isFormDisabled && (
+                              <button type="button" onClick={() => setDeposits(p => p.map(r => r.id === row.id ? { ...r, receiptImage: '' } : r))}
+                                className="text-[10px] text-red-500 font-bold uppercase hover:underline">
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          !isFormDisabled && (
+                            <button type="button" onClick={() => document.getElementById(`deposit-receipt-${row.id}`)?.click()}
+                              className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 hover:underline">
+                              Upload
+                            </button>
+                          )
+                        )}
+                      </td>
+                      {canSubmit && !reviewMode && (
+                        <td className={tableTd + ' text-center'}>
+                          <DelBtn onClick={() => setDeposits(p => p.filter(r => r.id !== row.id))} />
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setDeposits(p => [...p, mkDeposit()])} label="Add row" />}
+            </div>
+          </div>
+
           {/* Expenses for Purchase */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Expenses for Purchase" total={totalExpPurch} variant="expense" />
@@ -3305,6 +3424,12 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                     <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">Grand Total Expenses</td>
                     <td className="px-3 py-2 text-right font-bold text-red-500">{php(grandTotalExpenses)}</td>
                   </tr>
+                  {totalDeposits > 0 && (
+                    <tr className="border-b border-slate-100 dark:border-slate-800/40">
+                      <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">Bank Deposits</td>
+                      <td className="px-3 py-2 text-right font-bold text-red-500">{php(totalDeposits)}</td>
+                    </tr>
+                  )}
                   {INCENTIVES_ENABLED && totalIncentives > 0 && (
                     <tr className="border-b border-slate-100 dark:border-slate-800/40">
                       <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">Incentives (affects Gross Sales only)</td>

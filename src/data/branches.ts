@@ -130,4 +130,14 @@ export const PUBLIC_BRANCHES: PublicBranch[] = [
     mapUrl: '',
     region: 'Cavite',
   },
+  {
+    name: 'ASHCOL San Pedro',
+    tag: 'San Pedro, Laguna',
+    color: '#0D9488',
+    address: 'National Highway, Brgy. Landayan, San Pedro City, Laguna',
+    phones: ['0999 990 5224'],
+    email: 'ashcolsanpedro@gmail.com',
+    mapUrl: '',
+    region: 'Laguna',
+  },
 ]

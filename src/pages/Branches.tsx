@@ -90,7 +90,13 @@ const getConciseLocationTag = (branch: Branch) => {
   if (name.includes('rizal') || name.includes('rodriguez')) {
     return 'SAN JOSE, RODRIGUEZ, RIZAL'
   }
-  if (name.includes('laguna') || name.includes('calauan')) {
+  if (name.includes('san pedro') || name.includes('sanpedro') || name.includes('pedro')) {
+    return 'LANDAYAN, SAN PEDRO, LAGUNA'
+  }
+  if (name.includes('calauan')) {
+    return 'BANGYAS, CALAUAN, LAGUNA'
+  }
+  if (name.includes('laguna')) {
     return 'BANGYAS, CALAUAN, LAGUNA'
   }
   if (name.includes('batangas') || name.includes('taal')) {
@@ -473,7 +479,20 @@ export default function Branches() {
         const pub = PUBLIC_BRANCHES.find(candidate => {
           const pubName = normalize(candidate.name)
           const pubTag = normalize(candidate.tag)
-          return pubName === apiName || pubTag === apiLocation || apiName.includes(pubTag) || apiLocation.includes(pubTag)
+          if (pubName === apiName || pubTag === apiLocation) return true
+          // If candidate is Laguna (Calauan), do not match if apiName or apiLocation is San Pedro or other specific city
+          if (candidate.name.toLowerCase().includes('laguna') || candidate.tag.toLowerCase() === 'laguna') {
+            if (apiName.includes('san pedro') || apiLocation.includes('san pedro') || apiName.includes('pedro')) {
+              return false
+            }
+            if (apiName.includes('calauan') || apiLocation.includes('calauan')) {
+              return true
+            }
+          }
+          if (pubTag === 'laguna' || pubTag === 'cavite' || pubTag === 'quezon') {
+            return false
+          }
+          return apiName.includes(pubTag) || apiLocation.includes(pubTag)
         })
 
         // Roster assignment
@@ -537,17 +556,17 @@ export default function Branches() {
           id: suffix ? `${api.id}-${suffix}` : api.id,
           name: customName || api.name,
           location: api.location || pub?.tag || '',
-          address: pub?.address || api.address || '',
-          phone: pub?.phones?.[0] || api.phone,
-          phones: pub?.phones,
-          landline: pub?.landline,
-          email: pub?.email || api.email || '',
+          address: api.address || pub?.address || '',
+          phone: api.phone || pub?.phones?.[0] || '',
+          phones: (api.phone ? [api.phone] : undefined) || pub?.phones,
+          landline: (api as any).landline || pub?.landline,
+          email: api.email || pub?.email || '',
           isActive: api.isActive ?? true,
           targetDailyQuota: api.targetDailyQuota,
-          tag: pub?.tag || api.location || '',
+          tag: api.location || pub?.tag || '',
           color: pub?.color || '#10B981',
-          mapUrl: pub?.mapUrl || api.mapUrl || '',
-          region: pub?.region || api.region || 'Luzon',
+          mapUrl: api.mapUrl || pub?.mapUrl || '',
+          region: api.region || pub?.region || 'Luzon',
           isHQ: pub?.isHQ || api.isHQ || false,
           oic: oicName,
           managerId: api.managerId,
@@ -621,19 +640,19 @@ export default function Branches() {
       targetDailyQuota: branch.targetDailyQuota != null ? String(branch.targetDailyQuota) : ''
     })
     setEditRoster({
-      drivers: [...branch.drivers],
-      installers: [...branch.installers],
+      drivers: [...(branch.drivers || [])].map((d) => d.toUpperCase()),
+      installers: [...(branch.installers || [])].map((i) => i.toUpperCase()),
     })
     setNewDriverName('')
     setNewInstallerName('')
   }
 
   const addRosterName = (kind: 'drivers' | 'installers', raw: string) => {
-    const name = raw.trim()
+    const name = raw.trim().toUpperCase()
     if (!name) return
     setEditRoster((prev) => {
       const list = prev[kind]
-      if (list.some((n) => n.toLowerCase() === name.toLowerCase())) return prev
+      if (list.some((n) => n.toUpperCase() === name)) return prev
       return { ...prev, [kind]: [...list, name] }
     })
     if (kind === 'drivers') setNewDriverName('')
@@ -703,36 +722,79 @@ export default function Branches() {
     return managers.find((m: any) => String(m.id) === String(editForm.managerId)) || null
   }, [editForm.managerId, managers])
 
-  const editBranchEmployeeOptions = useMemo(() => {
+  // Installer accounts only — filtered strictly by current branch and installer role, with name CAPSLOCKED
+  const editBranchInstallerOptions = useMemo(() => {
     if (!editingBranch?.id) return []
     const branchKey = editingBranch.id || ''
     const apiId = resolveBranchApiId(branchKey)
     const suffix = branchKey.endsWith('-services') ? 'services' : branchKey.endsWith('-sales') ? 'sales' : null
+    const branchLabel = String(editingBranch.name || '').replace(/^(ashcol\s+)/i, '').trim().toUpperCase()
 
-    const branchSpecific = employeesList
+    return employeesList
       .filter((e: any) => {
+        // Must be an installer account member — NO OTHERS!
+        if (!isInstallerEmployee(e)) return false
+
         const matches =
           e.branchId === branchKey
           || e.branchId === apiId
-          || e.branchId === `${apiId}-sales`
-          || e.branchId === `${apiId}-services`
+          || (apiId && isSameBaseBranch(e.branchId, apiId))
+          || (branchKey && isSameBaseBranch(e.branchId, branchKey))
+          || (suffix ? (e.branchId === `${apiId}-${suffix}`) : false)
         if (!matches) return false
         if (!suffix) return true
         const isServiceStaff = isTaguigServicesScope(e.branchId || apiId, e.email, e.jobTitle)
         return suffix === 'services' ? isServiceStaff : !isServiceStaff
       })
-
-    const pool = branchSpecific.length > 0 ? branchSpecific : employeesList
-
-    return pool
-      .map((e: any) => ({
-        id: String(e.id || ''),
-        name: String(e.name || ''),
-        jobTitle: e.jobTitle,
-        role: e.role,
-      }))
+      .map((e: any) => {
+        const capName = String(e.name || '').trim().toUpperCase()
+        const roleLabel = String(e.jobTitle || e.role || 'INSTALLER').trim().toUpperCase()
+        return {
+          id: String(e.id || ''),
+          name: capName,
+          label: `${capName} — ${roleLabel} (${branchLabel})`,
+          jobTitle: e.jobTitle,
+          role: e.role,
+        }
+      })
       .filter((e) => e.id && e.name)
-  }, [editingBranch?.id, employeesList])
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [editingBranch, employeesList])
+
+  // Driver accounts only — filtered strictly by current branch and driver role, with name CAPSLOCKED
+  const editBranchDriverOptions = useMemo(() => {
+    if (!editingBranch?.id) return []
+    const branchKey = editingBranch.id || ''
+    const apiId = resolveBranchApiId(branchKey)
+    const suffix = branchKey.endsWith('-services') ? 'services' : branchKey.endsWith('-sales') ? 'sales' : null
+    const branchLabel = String(editingBranch.name || '').replace(/^(ashcol\s+)/i, '').trim().toUpperCase()
+
+    return employeesList
+      .filter((e: any) => {
+        if (!isDriverEmployee(e)) return false
+        const matches =
+          e.branchId === branchKey
+          || e.branchId === apiId
+          || (apiId && isSameBaseBranch(e.branchId, apiId))
+          || (branchKey && isSameBaseBranch(e.branchId, branchKey))
+        if (!matches) return false
+        if (!suffix) return true
+        const isServiceStaff = isTaguigServicesScope(e.branchId || apiId, e.email, e.jobTitle)
+        return suffix === 'services' ? isServiceStaff : !isServiceStaff
+      })
+      .map((e: any) => {
+        const capName = String(e.name || '').trim().toUpperCase()
+        return {
+          id: String(e.id || ''),
+          name: capName,
+          label: `${capName} — DRIVER (${branchLabel})`,
+          jobTitle: e.jobTitle,
+          role: e.role,
+        }
+      })
+      .filter((e) => e.id && e.name)
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [editingBranch, employeesList])
 
   const handleSaveEdit = async () => {
     if (!editingBranch) return
@@ -764,7 +826,12 @@ export default function Branches() {
       })
       
       if (!res.ok) {
-        throw new Error('Failed to save changes')
+        let errMsg = 'Failed to save changes'
+        try {
+          const body = await res.json()
+          errMsg = body?.message || body?.error || errMsg
+        } catch {}
+        throw new Error(errMsg)
       }
 
       await saveBranchRosterToLineup(token, editingBranch.id || apiBranchId, editRoster, apiUrl)
@@ -1988,7 +2055,7 @@ export default function Branches() {
                     </div>
 
                     {/* Quick pick dropdown */}
-                    {editBranchEmployeeOptions.length > 0 && (
+                    {editBranchDriverOptions.length > 0 && (
                       <select
                         value=""
                         onChange={(e) => {
@@ -1999,9 +2066,9 @@ export default function Branches() {
                         className="border rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 w-full cursor-pointer"
                       >
                         <option value="">+ Pick from registered personnel...</option>
-                        {editBranchEmployeeOptions.map((e) => (
+                        {editBranchDriverOptions.map((e) => (
                           <option key={e.id} value={e.name}>
-                            {e.name} {e.jobTitle ? `(${e.jobTitle})` : ''}
+                            {e.label}
                           </option>
                         ))}
                       </select>
@@ -2071,7 +2138,7 @@ export default function Branches() {
                     </div>
 
                     {/* Quick pick dropdown */}
-                    {editBranchEmployeeOptions.length > 0 && (
+                    {editBranchInstallerOptions.length > 0 && (
                       <select
                         value=""
                         onChange={(e) => {
@@ -2082,9 +2149,9 @@ export default function Branches() {
                         className="border rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-500 w-full cursor-pointer"
                       >
                         <option value="">+ Pick from registered personnel...</option>
-                        {editBranchEmployeeOptions.map((e) => (
+                        {editBranchInstallerOptions.map((e) => (
                           <option key={e.id} value={e.name}>
-                            {e.name} {e.jobTitle ? `(${e.jobTitle})` : ''}
+                            {e.label}
                           </option>
                         ))}
                       </select>

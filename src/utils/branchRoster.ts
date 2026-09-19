@@ -60,9 +60,30 @@ export function isInstallerEmployee(emp: {
   role?: string | null
 }): boolean {
   const title = (emp.jobTitle || '').toLowerCase()
-  if (title.includes('driver')) return false
+  const role = (emp.role || '').toLowerCase()
+  if (title.includes('driver') || role.includes('driver')) return false
   if (isSalesCoordinatorEmployee(emp)) return false
-  return title.includes('installer') || title.includes('technician') || title.includes('helper')
+  if (
+    role === 'admin' ||
+    role === 'management' ||
+    role === 'manager' ||
+    title.includes('manager') ||
+    title.includes('admin') ||
+    title.includes('management') ||
+    title.includes('supervisor') ||
+    title.includes('office') ||
+    title.includes('accounting') ||
+    title.includes('audit')
+  ) {
+    return false
+  }
+  return (
+    title.includes('installer') ||
+    title.includes('technician') ||
+    title.includes('helper') ||
+    role === 'installer' ||
+    role === 'technician'
+  )
 }
 
 export function resolveBranchApiId(branchId?: string | null): string {
@@ -128,9 +149,6 @@ export function deriveRosterFromEmployees(
       drivers.push(firstName)
     } else if (isInstallerEmployee(emp)) {
       installers.push(firstName)
-    } else {
-      const title = (emp.jobTitle || '').toLowerCase()
-      if (!title.includes('coordinator')) installers.push(firstName)
     }
   }
   return { drivers, installers }

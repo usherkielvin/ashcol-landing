@@ -49,6 +49,9 @@ function branchAliasKey(branchId?: string | null): string | null {
     'br-dasma': 'dasma',
     '2880c5fa-581c-11f1-bf8c-74d4dd6dfc0b': 'candelaria',
     'br-candelaria': 'candelaria',
+    'a7f3ba63-f5f0-4903-a037-9f72403e50dd': 'san pedro',
+    'br-san-pedro': 'san pedro',
+    'br-sanpedro': 'san pedro',
   }
   if (aliases[id]) return aliases[id]
   if (id.startsWith('br-')) return id.slice(3)
