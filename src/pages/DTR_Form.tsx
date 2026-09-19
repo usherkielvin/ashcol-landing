@@ -687,6 +687,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const [cashAdvances, setCashAdvances] = useState<CashAdvanceRow[]>([mkCashAdv()])
   // Bank Deposits (cash physically dropped off at the company bank)
   const [deposits, setDeposits] = useState<DepositRow[]>([])
+  const [scanningDepositId, setScanningDepositId] = useState<string | null>(null)
   // Expenses for Purchase
   const [expPurch, setExpPurch]         = useState<ExpenseRow[]>([mkExp()])
   // Incentives
@@ -1398,6 +1399,41 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     }
     existingReportLookupCache.current.set(cacheKey, row)
     return row
+  }
+
+  // OCR the deposit slip photo (same Gemini Vision endpoint used for expense receipts) and
+  // prefill the row's description/reference/amount from whatever it can read off the slip.
+  const scanDepositReceipt = async (rowId: string, file: File) => {
+    setScanningDepositId(rowId)
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const formData = new FormData()
+      formData.append('image', file)
+      const res = await fetch(`${API_BASE_URL}/v1/receipts/scan`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      })
+      if (!res.ok) throw new Error(`Server error ${res.status}`)
+      const data = await res.json() as Record<string, unknown>
+      if (data.error) {
+        console.error('[scanDepositReceipt] scan error:', data.error)
+        return
+      }
+      setDeposits(p => p.map(r => {
+        if (r.id !== rowId) return r
+        const next = { ...r }
+        if (data.amount != null && !next.amount) next.amount = String(data.amount)
+        if (data.receiptNo && !next.referenceNo) next.referenceNo = String(data.receiptNo)
+        const scannedDesc = data.description || data.company
+        if (scannedDesc && !next.description) next.description = String(scannedDesc)
+        return next
+      }))
+    } catch (err) {
+      console.error('[scanDepositReceipt] Failed to scan deposit receipt:', err)
+    } finally {
+      setScanningDepositId(null)
+    }
   }
 
   const applyFreshDateChange = (newDate: string) => {
@@ -3060,11 +3096,14 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                               setDeposits(p => p.map(r => r.id === row.id ? { ...r, receiptImage: reader.result as string } : r))
                             }
                             reader.readAsDataURL(file)
+                            void scanDepositReceipt(row.id, file)
                           }} />
                         {row.receiptImage ? (
                           <div className="flex items-center justify-center gap-1.5">
                             <img src={row.receiptImage} alt="Deposit slip" className="h-8 w-8 object-cover rounded border border-slate-300 dark:border-slate-700" />
-                            {!isFormDisabled && (
+                            {scanningDepositId === row.id ? (
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">Scanning…</span>
+                            ) : !isFormDisabled && (
                               <button type="button" onClick={() => setDeposits(p => p.map(r => r.id === row.id ? { ...r, receiptImage: '' } : r))}
                                 className="text-[10px] text-red-500 font-bold uppercase hover:underline">
                                 Remove
@@ -3075,7 +3114,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                           !isFormDisabled && (
                             <button type="button" onClick={() => document.getElementById(`deposit-receipt-${row.id}`)?.click()}
                               className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 hover:underline">
-                              Upload
+                              Upload &amp; Scan
                             </button>
                           )
                         )}
