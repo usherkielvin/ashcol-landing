@@ -1,13 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Search, MapPin, Phone, Mail, Building2, ExternalLink, Edit3, X, Loader2, FileText, CheckCircle2, XCircle, Gift, Receipt, HelpCircle, Plus } from 'lucide-react'
+import { Search, MapPin, Phone, Mail, Building2, ExternalLink, Edit3, X, Loader2, FileText, CheckCircle2, XCircle, Gift, Receipt, HelpCircle, Plus, ShieldCheck, TrendingUp, Users, Check } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { PUBLIC_BRANCHES } from '../data/branches'
 import { API_BASE_URL, isSameBaseBranch, resolveScopedBranchId, isMayDtrEditWindow, isEmployeePortalRole, isPortalAdmin, isTaguigServicesScope } from '../utils/api'
 import {
   buildBranchRoster,
-  isDriverEmployee,
-  isInstallerEmployee,
   isSalesCoordinatorEmployee,
   notifyBranchRosterUpdated,
   resolveBranchApiId,
@@ -399,8 +397,9 @@ export default function Branches() {
       const headers = { Authorization: `Bearer ${token}` }
       const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
       
-      const [resB, resM, resE] = await Promise.all([
+      const [resB, resAllUsers, resM, resE] = await Promise.all([
         fetch(`${apiUrl}/branches`, { headers }),
+        fetch(`${apiUrl}/user/all`, { headers }).catch(() => null),
         fetch(`${apiUrl}/user/all?role=MANAGER`, { headers }).catch(() => null),
         fetch(`${apiUrl}/user/all?role=EMPLOYEE`, { headers }).catch(() => null)
       ])
@@ -412,19 +411,38 @@ export default function Branches() {
       const branchesData = await resB.json()
       const apiBranches = branchesData.data || branchesData || []
       
+      // Load all users to include Management (e.g. Apple Management), Admins, Managers, and Staff
+      let allUsers: any[] = []
+      if (resAllUsers && resAllUsers.ok) {
+        const payload = await resAllUsers.json()
+        allUsers = payload?.data || payload || []
+      }
+
       let managersList: any[] = []
       if (resM && resM.ok) {
         const payload = await resM.json()
         managersList = payload?.data || payload || []
       }
-      setManagers(managersList)
 
       let employeesList: any[] = []
       if (resE && resE.ok) {
         const payload = await resE.json()
         employeesList = payload?.data || payload || []
       }
-      setEmployeesList(employeesList)
+
+      // Combine users so that no one (management, admin, manager, employee) is missed
+      const combinedUsersMap = new Map<string, any>()
+      allUsers.forEach((u: any) => { if (u?.id) combinedUsersMap.set(String(u.id), u) })
+      managersList.forEach((u: any) => { if (u?.id && !combinedUsersMap.has(String(u.id))) combinedUsersMap.set(String(u.id), u) })
+      employeesList.forEach((u: any) => { if (u?.id && !combinedUsersMap.has(String(u.id))) combinedUsersMap.set(String(u.id), u) })
+      const unifiedUsers = Array.from(combinedUsersMap.values())
+
+      // Set managers to include all potential OIC users (Management, Managers, Admins, etc.)
+      setManagers(unifiedUsers)
+
+      // Employees list for roster & crew selection
+      const effectiveEmployees = employeesList.length > 0 ? employeesList : unifiedUsers
+      setEmployeesList(effectiveEmployees)
 
       const lineupByBranchId: Record<string, { drivers: string[]; installers: string[] }> = {}
       await Promise.all(
@@ -461,7 +479,7 @@ export default function Branches() {
         // Roster assignment
         // 1. OIC
         let oicName = ''
-        const branchManagers = managersList.filter((m: any) =>
+        const branchManagers = unifiedUsers.filter((m: any) =>
           m.branchId === api.id ||
           (suffix ? m.branchId === `${api.id}-${suffix}` : false) ||
           (suffix === 'sales' && m.branchId === 'BR-TAGUIG-SALES') ||
@@ -476,14 +494,15 @@ export default function Branches() {
           })
           if (matchedMgr) oicName = matchedMgr.name
         } else if (api.managerId) {
-          const foundMgr = managersList.find((m: any) => m.id === api.managerId)
+          const foundMgr = unifiedUsers.find((m: any) => String(m.id) === String(api.managerId))
           if (foundMgr) oicName = foundMgr.name
+          else if ((api as any).managerName) oicName = (api as any).managerName
         } else if (branchManagers.length > 0) {
           oicName = branchManagers[0].name
         }
 
         // 2. Employees (Drivers vs Installers)
-        let branchStaff = employeesList.filter((e: any) =>
+        let branchStaff = effectiveEmployees.filter((e: any) =>
           e.branchId === api.id ||
           e.branchId === `${api.id}-${suffix}` ||
           (suffix === 'sales' && e.branchId === 'BR-TAGUIG-SALES') ||
@@ -524,12 +543,14 @@ export default function Branches() {
           landline: pub?.landline,
           email: pub?.email || api.email || '',
           isActive: api.isActive ?? true,
+          targetDailyQuota: api.targetDailyQuota,
           tag: pub?.tag || api.location || '',
           color: pub?.color || '#10B981',
           mapUrl: pub?.mapUrl || api.mapUrl || '',
           region: pub?.region || api.region || 'Luzon',
           isHQ: pub?.isHQ || api.isHQ || false,
           oic: oicName,
+          managerId: api.managerId,
           salesCoordinator: salesCoordinator?.name,
           drivers,
           installers
@@ -582,6 +603,12 @@ export default function Branches() {
   }, [])
 
   const handleEditClick = (branch: Branch) => {
+    let initialManagerId = branch.managerId || ''
+    if (!initialManagerId && branch.oic && branch.oic !== 'Unassigned') {
+      const matched = managers.find(m => (m.name || '').trim().toLowerCase() === branch.oic.trim().toLowerCase())
+      if (matched?.id) initialManagerId = String(matched.id)
+    }
+
     setEditingBranch(branch)
     setEditForm({
       name: branch.name,
@@ -589,7 +616,7 @@ export default function Branches() {
       address: branch.address || '',
       phone: branch.phone || '',
       email: branch.email || '',
-      managerId: branch.managerId || '',
+      managerId: initialManagerId,
       isActive: branch.isActive,
       targetDailyQuota: branch.targetDailyQuota != null ? String(branch.targetDailyQuota) : ''
     })
@@ -620,13 +647,70 @@ export default function Branches() {
     }))
   }
 
+  // Group all available users for OIC assignment with special priority for Management & Leadership
+  const oicOptionsGrouped = useMemo(() => {
+    const management: any[] = []
+    const managersGroup: any[] = []
+    const admins: any[] = []
+    const others: any[] = []
+
+    const seen = new Set<string>()
+    const uniqueUsers = managers.filter((u: any) => {
+      const id = String(u?.id || '')
+      if (!id || seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
+
+    uniqueUsers.forEach((u: any) => {
+      const roleUpper = String(u.role || '').toUpperCase()
+      const jobUpper = String(u.jobTitle || '').toUpperCase()
+      const nameUpper = String(u.name || '').toUpperCase()
+
+      if (
+        roleUpper === 'MANAGEMENT' ||
+        roleUpper === 'EXECUTIVE' ||
+        jobUpper.includes('MANAGEMENT') ||
+        nameUpper.includes('MANAGEMENT')
+      ) {
+        management.push(u)
+      } else if (roleUpper === 'ADMIN' || roleUpper === 'SUPER_ADMIN') {
+        admins.push(u)
+      } else if (
+        roleUpper === 'MANAGER' ||
+        roleUpper === 'OIC' ||
+        jobUpper.includes('MANAGER') ||
+        jobUpper.includes('OIC')
+      ) {
+        managersGroup.push(u)
+      } else {
+        others.push(u)
+      }
+    })
+
+    const byName = (a: any, b: any) => String(a.name || '').localeCompare(String(b.name || ''))
+    management.sort(byName)
+    managersGroup.sort(byName)
+    admins.sort(byName)
+    others.sort(byName)
+
+    return { management, managersGroup, admins, others }
+  }, [managers])
+
+  // Get currently selected OIC user for quick profile preview badge
+  const selectedOicUser = useMemo(() => {
+    if (!editForm.managerId) return null
+    return managers.find((m: any) => String(m.id) === String(editForm.managerId)) || null
+  }, [editForm.managerId, managers])
+
   const editBranchEmployeeOptions = useMemo(() => {
     if (!editingBranch?.id) return []
-    return employeesList
+    const branchKey = editingBranch.id || ''
+    const apiId = resolveBranchApiId(branchKey)
+    const suffix = branchKey.endsWith('-services') ? 'services' : branchKey.endsWith('-sales') ? 'sales' : null
+
+    const branchSpecific = employeesList
       .filter((e: any) => {
-        const branchKey = editingBranch.id || ''
-        const apiId = resolveBranchApiId(branchKey)
-        const suffix = branchKey.endsWith('-services') ? 'services' : branchKey.endsWith('-sales') ? 'sales' : null
         const matches =
           e.branchId === branchKey
           || e.branchId === apiId
@@ -637,10 +721,15 @@ export default function Branches() {
         const isServiceStaff = isTaguigServicesScope(e.branchId || apiId, e.email, e.jobTitle)
         return suffix === 'services' ? isServiceStaff : !isServiceStaff
       })
+
+    const pool = branchSpecific.length > 0 ? branchSpecific : employeesList
+
+    return pool
       .map((e: any) => ({
         id: String(e.id || ''),
         name: String(e.name || ''),
         jobTitle: e.jobTitle,
+        role: e.role,
       }))
       .filter((e) => e.id && e.name)
   }, [editingBranch?.id, employeesList])
@@ -660,7 +749,7 @@ export default function Branches() {
         address: editForm.address,
         phone: editForm.phone,
         email: editForm.email,
-        managerId: editForm.managerId || null,
+        managerId: editForm.managerId ? editForm.managerId.trim() : '',
         isActive: editForm.isActive,
         targetDailyQuota: !isNaN(quotaNum) && quotaNum >= 0 ? quotaNum : null
       }
@@ -1517,21 +1606,39 @@ export default function Branches() {
         </div>
       )}
 
-      {/* ── Edit Branch Details Modal ────────────────────── */}
+      {/* ── Edit Branch Details Modal (Expanded & Modernized) ── */}
       {editingBranch && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/75 backdrop-blur-md">
           <div 
-            className="w-full max-w-lg rounded-2xl border overflow-hidden shadow-xl"
+            className="w-full max-w-4xl max-h-[92vh] rounded-3xl border shadow-2xl flex flex-col overflow-hidden animate-scale-in"
             style={{ backgroundColor: cardBg, borderColor: border }}
           >
-            <div className="p-5 flex justify-between items-start border-b" style={{ borderColor: border }}>
-              <div>
-                <h3 className="text-base font-black tracking-tight" style={{ color: textPrimary }}>Edit Branch Team Details</h3>
-                <p className="text-xs" style={{ color: textMuted }}>Update branch info, OIC, and field crew rosters (drivers & installers).</p>
+            {/* ── Header ── */}
+            <div className="px-6 py-5 flex items-center justify-between border-b shrink-0" style={{ borderColor: border }}>
+              <div className="flex items-center gap-3.5">
+                <div 
+                  className="w-11 h-11 rounded-2xl flex items-center justify-center font-black text-white text-sm shadow-md shrink-0"
+                  style={{ backgroundColor: editingBranch.color || '#10B981' }}
+                >
+                  {initialsFor(editForm.name || editingBranch.name)}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-black tracking-tight" style={{ color: textPrimary }}>
+                      Edit Branch Details
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-[#10B981] border border-emerald-500/20">
+                      {editingBranch.id || 'BRANCH'}
+                    </span>
+                  </div>
+                  <p className="text-xs mt-0.5" style={{ color: textMuted }}>
+                    Configure branch information, sales quota, leadership (OIC), and field crew rosters.
+                  </p>
+                </div>
               </div>
               <button 
                 onClick={() => setEditingBranch(null)} 
-                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
                 style={{ color: textMuted }}
                 disabled={saving}
               >
@@ -1539,283 +1646,520 @@ export default function Branches() {
               </button>
             </div>
 
-            <div className="p-6 flex flex-col gap-4 overflow-y-auto max-h-[65vh]">
-              {/* Branch Name */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Branch Name</label>
-                <input 
-                  type="text" 
-                  value={editForm.name}
-                  onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))}
-                  style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                  className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] w-full"
-                  disabled={saving}
-                  placeholder="e.g. ASHCOL CALAUAN"
-                />
+            {/* ── Scrollable Body with 2-Column Grid ── */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              
+              {/* Top Row: Branch Info & Address */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Branch Name */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-emerald-500" />
+                    Branch Name
+                  </label>
+                  <input 
+                    type="text" 
+                    value={editForm.name}
+                    onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                    style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                    className="border rounded-xl px-3.5 py-2.5 text-sm font-semibold focus:outline-none focus:border-[#10B981] w-full transition-colors"
+                    disabled={saving}
+                    placeholder="e.g. ASHCOL SAN PEDRO"
+                  />
+                </div>
+
+                {/* City / Location Tag */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-emerald-500" />
+                    City / Location Tag
+                  </label>
+                  <input 
+                    type="text" 
+                    value={editForm.location}
+                    onChange={e => setEditForm(prev => ({ ...prev, location: e.target.value }))}
+                    style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                    className="border rounded-xl px-3.5 py-2.5 text-sm font-semibold focus:outline-none focus:border-[#10B981] w-full transition-colors"
+                    disabled={saving}
+                    placeholder="e.g. San Pedro, Laguna"
+                  />
+                </div>
+
+                {/* Full Address */}
+                <div className="flex flex-col gap-1.5 md:col-span-2">
+                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-emerald-500" />
+                    Full Address
+                  </label>
+                  <input 
+                    type="text"
+                    value={editForm.address}
+                    onChange={e => setEditForm(prev => ({ ...prev, address: e.target.value }))}
+                    style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                    className="border rounded-xl px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:border-[#10B981] w-full transition-colors"
+                    disabled={saving}
+                    placeholder="e.g. National Highway, Brgy. Landayan, San Pedro City, Laguna"
+                  />
+                </div>
+
+                {/* Phone */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-emerald-500" />
+                    Contact Number
+                  </label>
+                  <input 
+                    type="text" 
+                    value={editForm.phone}
+                    onChange={e => setEditForm(prev => ({ ...prev, phone: e.target.value }))}
+                    style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                    className="border rounded-xl px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:border-[#10B981] w-full transition-colors"
+                    disabled={saving}
+                    placeholder="e.g. 0999 990 5224"
+                  />
+                </div>
+
+                {/* Email */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-emerald-500" />
+                    Email Address
+                  </label>
+                  <input 
+                    type="email" 
+                    value={editForm.email}
+                    onChange={e => setEditForm(prev => ({ ...prev, email: e.target.value }))}
+                    style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                    className="border rounded-xl px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:border-[#10B981] w-full transition-colors"
+                    disabled={saving}
+                    placeholder="e.g. ashcolsanpedro@gmail.com"
+                  />
+                </div>
               </div>
 
-              {/* City / Location */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">City / Location Tag</label>
-                <input 
-                  type="text" 
-                  value={editForm.location}
-                  onChange={e => setEditForm(prev => ({ ...prev, location: e.target.value }))}
-                  style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                  className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] w-full"
-                  disabled={saving}
-                  placeholder="e.g. Calauan"
-                />
-              </div>
-
-              {/* Full Address */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Full Address</label>
-                <textarea 
-                  rows={2}
-                  value={editForm.address}
-                  onChange={e => setEditForm(prev => ({ ...prev, address: e.target.value }))}
-                  style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                  className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] w-full resize-none"
-                  disabled={saving}
-                  placeholder="Purok 4, Bangyas..."
-                />
-              </div>
-
-              {/* Phone */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Contact Number</label>
-                <input 
-                  type="text" 
-                  value={editForm.phone}
-                  onChange={e => setEditForm(prev => ({ ...prev, phone: e.target.value }))}
-                  style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                  className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] w-full"
-                  disabled={saving}
-                  placeholder="e.g. 0999 990 5224"
-                />
-              </div>
-
-              {/* Email */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Email Address</label>
-                <input 
-                  type="email" 
-                  value={editForm.email}
-                  onChange={e => setEditForm(prev => ({ ...prev, email: e.target.value }))}
-                  style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                  className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] w-full"
-                  disabled={saving}
-                  placeholder="e.g. ashcolcalauan@gmail.com"
-                />
-              </div>
-
-              {/* Daily Quota */}
-              <div className="flex flex-col gap-1 p-4 rounded-xl border" style={{ borderColor: 'rgba(139,92,246,0.25)', backgroundColor: 'rgba(139,92,246,0.04)' }}>
-                <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: '#8B5CF6' }}>Daily Sales Quota (₱)</label>
-                <p className="text-[10px]" style={{ color: textMuted }}>Setting this will update the branch's daily target quota for all future DTR reports.</p>
-                <input
-                  type="number"
-                  min="0"
-                  step="100"
-                  value={editForm.targetDailyQuota}
-                  onChange={e => setEditForm(prev => ({ ...prev, targetDailyQuota: e.target.value }))}
-                  style={{ backgroundColor: inputBg, borderColor: 'rgba(139,92,246,0.3)', color: textPrimary }}
-                  className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#8B5CF6] w-full mt-1 font-bold"
-                  disabled={saving}
-                  placeholder="e.g. 50000"
-                />
-              </div>
-
-              {/* OIC Dropdown selector */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Assign Officer In Charge (OIC)</label>
-                <select
-                  value={editForm.managerId}
-                  onChange={e => setEditForm(prev => ({ ...prev, managerId: e.target.value }))}
-                  style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                  className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] w-full cursor-pointer font-semibold"
-                  disabled={saving}
+              {/* Middle Row: Quota Target & OIC Selection */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                {/* Daily Quota Card */}
+                <div 
+                  className="rounded-2xl p-4 border flex flex-col justify-between gap-3 relative overflow-hidden"
+                  style={{ 
+                    borderColor: 'rgba(139,92,246,0.3)', 
+                    backgroundColor: isLight ? 'rgba(139,92,246,0.03)' : 'rgba(139,92,246,0.06)' 
+                  }}
                 >
-                  <option value="">-- Select OIC --</option>
-                  {managers.map(mgr => (
-                    <option key={mgr.id} value={mgr.id}>{mgr.name} ({mgr.email})</option>
-                  ))}
-                </select>
-              </div>
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5" style={{ color: '#8B5CF6' }}>
+                        <TrendingUp className="w-4 h-4" />
+                        Daily Sales Quota Target
+                      </label>
+                      {editForm.targetDailyQuota && Number(editForm.targetDailyQuota) > 0 && (
+                        <span className="text-[11px] font-black px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-300">
+                          ₱{Number(editForm.targetDailyQuota).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] mt-1" style={{ color: textMuted }}>
+                      Setting this updates the branch daily target quota for all future DTR reports.
+                    </p>
+                  </div>
 
-              {/* Drivers roster */}
-              <div className="flex flex-col gap-2 border-t pt-4" style={{ borderColor: border }}>
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                  Drivers ({editRoster.drivers.length})
-                </label>
-                <div className="flex flex-wrap gap-1.5 min-h-[28px]">
-                  {editRoster.drivers.map((name) => (
-                    <span
-                      key={name}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20"
+                  <div className="relative mt-1">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-black text-purple-500">₱</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="500"
+                      value={editForm.targetDailyQuota}
+                      onChange={e => setEditForm(prev => ({ ...prev, targetDailyQuota: e.target.value }))}
+                      style={{ backgroundColor: inputBg, borderColor: 'rgba(139,92,246,0.4)', color: textPrimary }}
+                      className="border rounded-xl pl-8 pr-3 py-2.5 text-sm font-bold focus:outline-none focus:border-[#8B5CF6] w-full transition-colors"
+                      disabled={saving}
+                      placeholder="40000"
+                    />
+                  </div>
+
+                  {/* Quick Preset Buttons */}
+                  <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                    <span className="text-[10px] font-bold text-slate-400">Presets:</span>
+                    {[30000, 40000, 50000, 60000].map(val => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setEditForm(prev => ({ ...prev, targetDailyQuota: String(val) }))}
+                        className="px-2 py-0.5 rounded text-[10px] font-bold transition-all border hover:border-purple-400 hover:text-purple-500"
+                        style={{
+                          backgroundColor: Number(editForm.targetDailyQuota) === val ? 'rgba(139,92,246,0.15)' : 'transparent',
+                          borderColor: Number(editForm.targetDailyQuota) === val ? '#8B5CF6' : border,
+                          color: Number(editForm.targetDailyQuota) === val ? '#8B5CF6' : textMuted
+                        }}
+                      >
+                        ₱{(val / 1000)}k
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Officer In Charge (OIC) Card */}
+                <div 
+                  className="rounded-2xl p-4 border flex flex-col justify-between gap-3 relative overflow-hidden"
+                  style={{ 
+                    borderColor: 'rgba(16,185,129,0.3)', 
+                    backgroundColor: isLight ? 'rgba(16,185,129,0.03)' : 'rgba(16,185,129,0.06)' 
+                  }}
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5 text-[#10B981]">
+                        <ShieldCheck className="w-4 h-4" />
+                        Officer In Charge (OIC)
+                      </label>
+                      <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 text-[#10B981] border border-emerald-500/20">
+                        Leadership Assignment
+                      </span>
+                    </div>
+                    <p className="text-[11px] mt-1" style={{ color: textMuted }}>
+                      Select any Branch Manager, OIC, or <strong>Management executive (e.g. Apple Management)</strong>.
+                    </p>
+                  </div>
+
+                  <div className="mt-1">
+                    <select
+                      value={editForm.managerId}
+                      onChange={e => setEditForm(prev => ({ ...prev, managerId: e.target.value }))}
+                      style={{ backgroundColor: inputBg, borderColor: 'rgba(16,185,129,0.4)', color: textPrimary }}
+                      className="border rounded-xl px-3.5 py-2.5 text-xs font-bold focus:outline-none focus:border-[#10B981] w-full cursor-pointer transition-colors"
+                      disabled={saving}
                     >
-                      {name}
+                      <option value="">-- No OIC Assigned (Unassigned) --</option>
+                      
+                      {oicOptionsGrouped.management.length > 0 && (
+                        <optgroup label="👑 Management & Leadership">
+                          {oicOptionsGrouped.management.map(m => (
+                            <option key={m.id} value={m.id}>
+                              {m.name} — {m.jobTitle || 'Management'} ({m.email})
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+
+                      {oicOptionsGrouped.managersGroup.length > 0 && (
+                        <optgroup label="👔 Branch Managers & OICs">
+                          {oicOptionsGrouped.managersGroup.map(m => (
+                            <option key={m.id} value={m.id}>
+                              {m.name} — {m.jobTitle || m.role || 'Manager'} ({m.email})
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+
+                      {oicOptionsGrouped.admins.length > 0 && (
+                        <optgroup label="🛡️ System Administrators">
+                          {oicOptionsGrouped.admins.map(m => (
+                            <option key={m.id} value={m.id}>
+                              {m.name} — Administrator ({m.email})
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+
+                      {oicOptionsGrouped.others.length > 0 && (
+                        <optgroup label="👥 Coordinators & Staff">
+                          {oicOptionsGrouped.others.map(m => (
+                            <option key={m.id} value={m.id}>
+                              {m.name} — {m.jobTitle || m.role || 'Staff'} ({m.email})
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                  </div>
+
+                  {/* Selected OIC Preview Badge */}
+                  {selectedOicUser ? (
+                    <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-lg bg-[#10B981] text-white flex items-center justify-center font-black text-xs shrink-0">
+                          {initialsFor(selectedOicUser.name)}
+                        </div>
+                        <div className="truncate">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 truncate">{selectedOicUser.name}</span>
+                            <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/20 text-[#10B981]">
+                              {selectedOicUser.role || 'OIC'}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate">{selectedOicUser.email}</span>
+                        </div>
+                      </div>
                       <button
                         type="button"
-                        onClick={() => removeRosterName('drivers', name)}
-                        className="hover:text-red-500"
-                        disabled={saving}
-                        aria-label={`Remove ${name}`}
+                        onClick={() => setEditForm(prev => ({ ...prev, managerId: '' }))}
+                        className="text-[10px] font-bold text-slate-400 hover:text-red-500 shrink-0 ml-2 transition-colors"
+                        title="Clear OIC"
                       >
-                        <X className="w-3 h-3" />
+                        Clear
                       </button>
-                    </span>
-                  ))}
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-slate-400 italic py-1">
+                      No OIC selected for this branch.
+                    </div>
+                  )}
                 </div>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newDriverName}
-                    onChange={(e) => setNewDriverName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        addRosterName('drivers', newDriverName)
-                      }
-                    }}
-                    placeholder="Add driver name"
-                    disabled={saving}
-                    style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                    className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] flex-1"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => addRosterName('drivers', newDriverName)}
-                    disabled={saving || !newDriverName.trim()}
-                    className="px-3 py-2 rounded-xl border text-xs font-bold text-[#10B981] border-[#10B981]/30 hover:bg-[#10B981]/5 disabled:opacity-40"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                {editBranchEmployeeOptions.some((e) => isDriverEmployee(e)) && (
-                  <select
-                    value=""
-                    onChange={(e) => {
-                      if (e.target.value) addRosterName('drivers', e.target.value)
-                    }}
-                    disabled={saving}
-                    style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                    className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] w-full"
-                  >
-                    <option value="">Add from employees…</option>
-                    {editBranchEmployeeOptions
-                      .filter((e) => isDriverEmployee(e))
-                      .map((e) => (
-                        <option key={e.id} value={e.name}>{e.name}</option>
-                      ))}
-                  </select>
-                )}
               </div>
 
-              {/* Installers roster */}
-              <div className="flex flex-col gap-2 border-t pt-4" style={{ borderColor: border }}>
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                  Installers & Technicians ({editRoster.installers.length})
-                </label>
-                <div className="flex flex-wrap gap-1.5 min-h-[28px]">
-                  {editRoster.installers.map((name) => (
-                    <span
-                      key={name}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/40"
-                    >
-                      {name}
+              {/* Bottom Row: Field Crew Rosters (Side by Side) */}
+              <div className="rounded-2xl p-5 border flex flex-col gap-4" style={{ borderColor: border }}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-[#10B981]" />
+                    <h4 className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>
+                      Field Crew Lineup Rosters
+                    </h4>
+                  </div>
+                  <span className="text-[10px]" style={{ color: textMuted }}>
+                    Changes sync to branch daily dispatch & lineup suggestions
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {/* DRIVERS ROSTER */}
+                  <div className="flex flex-col gap-2.5 p-4 rounded-xl border" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1527' }}>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-black uppercase tracking-wider text-blue-500">
+                        Drivers ({editRoster.drivers.length})
+                      </label>
+                      <span className="text-[10px] text-slate-400">Delivery crew</span>
+                    </div>
+
+                    {/* Chips */}
+                    <div className="flex flex-wrap gap-1.5 min-h-[36px] p-2 rounded-lg border bg-white dark:bg-slate-900/60" style={{ borderColor: border }}>
+                      {editRoster.drivers.length === 0 ? (
+                        <span className="text-[11px] text-slate-400 italic self-center">No drivers assigned yet</span>
+                      ) : (
+                        editRoster.drivers.map((name) => (
+                          <span
+                            key={name}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20"
+                          >
+                            {name}
+                            <button
+                              type="button"
+                              onClick={() => removeRosterName('drivers', name)}
+                              className="hover:text-red-500 transition-colors"
+                              disabled={saving}
+                              aria-label={`Remove ${name}`}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Add Input */}
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newDriverName}
+                        onChange={(e) => setNewDriverName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            addRosterName('drivers', newDriverName)
+                          }
+                        }}
+                        placeholder="Type driver name & press Enter"
+                        disabled={saving}
+                        style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                        className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-blue-500 flex-1 font-medium"
+                      />
                       <button
                         type="button"
-                        onClick={() => removeRosterName('installers', name)}
-                        className="hover:text-red-500"
-                        disabled={saving}
-                        aria-label={`Remove ${name}`}
+                        onClick={() => addRosterName('drivers', newDriverName)}
+                        disabled={saving || !newDriverName.trim()}
+                        className="px-3.5 py-2 rounded-xl border text-xs font-bold text-blue-600 border-blue-500/30 hover:bg-blue-500/10 disabled:opacity-40 transition-colors flex items-center gap-1 shrink-0"
                       >
-                        <X className="w-3 h-3" />
+                        <Plus className="w-3.5 h-3.5" />
+                        Add
                       </button>
-                    </span>
-                  ))}
+                    </div>
+
+                    {/* Quick pick dropdown */}
+                    {editBranchEmployeeOptions.length > 0 && (
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          if (e.target.value) addRosterName('drivers', e.target.value)
+                        }}
+                        disabled={saving}
+                        style={{ backgroundColor: inputBg, borderColor: border, color: textMuted }}
+                        className="border rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 w-full cursor-pointer"
+                      >
+                        <option value="">+ Pick from registered personnel...</option>
+                        {editBranchEmployeeOptions.map((e) => (
+                          <option key={e.id} value={e.name}>
+                            {e.name} {e.jobTitle ? `(${e.jobTitle})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  {/* INSTALLERS ROSTER */}
+                  <div className="flex flex-col gap-2.5 p-4 rounded-xl border" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1527' }}>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-black uppercase tracking-wider text-emerald-500">
+                        Installers & Technicians ({editRoster.installers.length})
+                      </label>
+                      <span className="text-[10px] text-slate-400">Installation crew</span>
+                    </div>
+
+                    {/* Chips */}
+                    <div className="flex flex-wrap gap-1.5 min-h-[36px] p-2 rounded-lg border bg-white dark:bg-slate-900/60" style={{ borderColor: border }}>
+                      {editRoster.installers.length === 0 ? (
+                        <span className="text-[11px] text-slate-400 italic self-center">No installers assigned yet</span>
+                      ) : (
+                        editRoster.installers.map((name) => (
+                          <span
+                            key={name}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20"
+                          >
+                            {name}
+                            <button
+                              type="button"
+                              onClick={() => removeRosterName('installers', name)}
+                              className="hover:text-red-500 transition-colors"
+                              disabled={saving}
+                              aria-label={`Remove ${name}`}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Add Input */}
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newInstallerName}
+                        onChange={(e) => setNewInstallerName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            addRosterName('installers', newInstallerName)
+                          }
+                        }}
+                        placeholder="Type installer name & press Enter"
+                        disabled={saving}
+                        style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                        className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 flex-1 font-medium"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => addRosterName('installers', newInstallerName)}
+                        disabled={saving || !newInstallerName.trim()}
+                        className="px-3.5 py-2 rounded-xl border text-xs font-bold text-[#10B981] border-[#10B981]/30 hover:bg-[#10B981]/10 disabled:opacity-40 transition-colors flex items-center gap-1 shrink-0"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Add
+                      </button>
+                    </div>
+
+                    {/* Quick pick dropdown */}
+                    {editBranchEmployeeOptions.length > 0 && (
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          if (e.target.value) addRosterName('installers', e.target.value)
+                        }}
+                        disabled={saving}
+                        style={{ backgroundColor: inputBg, borderColor: border, color: textMuted }}
+                        className="border rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-500 w-full cursor-pointer"
+                      >
+                        <option value="">+ Pick from registered personnel...</option>
+                        {editBranchEmployeeOptions.map((e) => (
+                          <option key={e.id} value={e.name}>
+                            {e.name} {e.jobTitle ? `(${e.jobTitle})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newInstallerName}
-                    onChange={(e) => setNewInstallerName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        addRosterName('installers', newInstallerName)
-                      }
-                    }}
-                    placeholder="Add installer / technician"
-                    disabled={saving}
-                    style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                    className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] flex-1"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => addRosterName('installers', newInstallerName)}
-                    disabled={saving || !newInstallerName.trim()}
-                    className="px-3 py-2 rounded-xl border text-xs font-bold text-[#10B981] border-[#10B981]/30 hover:bg-[#10B981]/5 disabled:opacity-40"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                {editBranchEmployeeOptions.some((e) => isInstallerEmployee(e)) && (
-                  <select
-                    value=""
-                    onChange={(e) => {
-                      if (e.target.value) addRosterName('installers', e.target.value)
-                    }}
-                    disabled={saving}
-                    style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                    className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10B981] w-full"
-                  >
-                    <option value="">Add from employees…</option>
-                    {editBranchEmployeeOptions
-                      .filter((e) => isInstallerEmployee(e))
-                      .map((e) => (
-                        <option key={e.id} value={e.name}>{e.name}</option>
-                      ))}
-                  </select>
-                )}
               </div>
 
-              {/* Active Toggle */}
-              <div className="flex items-center justify-between border-t pt-3 mt-1" style={{ borderColor: border }}>
-                <span className="text-xs font-bold" style={{ color: textPrimary }}>Active Operation Status</span>
-                <button
-                  type="button"
-                  onClick={() => setEditForm(prev => ({ ...prev, isActive: !prev.isActive }))}
-                  disabled={saving}
-                  className={`w-10 h-6 rounded-full transition-all relative shrink-0 ${editForm.isActive ? 'bg-[#10B981]' : 'bg-slate-300 dark:bg-slate-800'}`}
-                >
-                  <div 
-                    className="w-4 h-4 rounded-full bg-white absolute top-1 transition-all"
-                    style={{ left: editForm.isActive ? '1.25rem' : '0.25rem' }}
-                  />
-                </button>
+              {/* Status Toggle Card */}
+              <div 
+                className="flex items-center justify-between p-4 rounded-2xl border"
+                style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}
+              >
+                <div>
+                  <h4 className="text-xs font-bold" style={{ color: textPrimary }}>
+                    Branch Operation Status
+                  </h4>
+                  <p className="text-[11px] mt-0.5" style={{ color: textMuted }}>
+                    {editForm.isActive 
+                      ? 'This branch is currently active and accepts daily dispatch and transactions.' 
+                      : 'This branch is marked inactive and will be hidden from daily operations.'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={`text-xs font-black uppercase tracking-wider ${editForm.isActive ? 'text-[#10B981]' : 'text-slate-400'}`}>
+                    {editForm.isActive ? 'ACTIVE' : 'INACTIVE'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setEditForm(prev => ({ ...prev, isActive: !prev.isActive }))}
+                    disabled={saving}
+                    className={`w-12 h-6 rounded-full transition-all relative shrink-0 ${editForm.isActive ? 'bg-[#10B981]' : 'bg-slate-300 dark:bg-slate-700'}`}
+                  >
+                    <div 
+                      className="w-4 h-4 rounded-full bg-white shadow-sm absolute top-1 transition-all"
+                      style={{ left: editForm.isActive ? '1.75rem' : '0.25rem' }}
+                    />
+                  </button>
+                </div>
               </div>
             </div>
 
-            <div className="px-5 py-4 border-t flex justify-end gap-2.5 shrink-0 bg-slate-50/50 dark:bg-slate-900/10" style={{ borderColor: border }}>
-              <button 
-                onClick={() => setEditingBranch(null)}
-                className="px-4 py-2 border rounded-xl text-xs font-bold transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
-                style={{ color: textMuted, borderColor: border }}
-                disabled={saving}
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={handleSaveEdit}
-                className="px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider text-white hover:opacity-90 transition-all shrink-0 flex items-center gap-1.5"
-                style={{ backgroundColor: '#10B981' }}
-                disabled={saving}
-              >
-                {saving ? 'Saving...' : 'Save Changes'}
-              </button>
+            {/* ── Modal Footer ── */}
+            <div className="px-6 py-4 border-t flex items-center justify-between gap-3 shrink-0 bg-slate-50/50 dark:bg-slate-900/40" style={{ borderColor: border }}>
+              <div className="text-xs" style={{ color: textMuted }}>
+                Editing: <span className="font-bold" style={{ color: textPrimary }}>{editingBranch.name}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => setEditingBranch(null)}
+                  className="px-5 py-2.5 border rounded-xl text-xs font-bold transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+                  style={{ color: textMuted, borderColor: border }}
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleSaveEdit}
+                  className="px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider text-white hover:opacity-90 active:scale-95 transition-all shrink-0 flex items-center gap-2 shadow-md disabled:opacity-50"
+                  style={{ backgroundColor: '#10B981' }}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Saving Changes...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      Save Changes
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
