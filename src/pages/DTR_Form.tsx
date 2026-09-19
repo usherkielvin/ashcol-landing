@@ -37,7 +37,7 @@ interface OrderRow     { id: string; customer: string; description: string; amou
 interface ExpenseRow   { id: string; name: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 interface IncentiveRow { id: string; customer: string; company: string; hp: string; promodiser: string; amount: string; collectionResolved?: boolean }
 interface CashAdvanceRow { id: string; memberName: string; details: string; amount: string }
-interface DepositRow   { id: string; bank: string; referenceNo: string; amount: string; receiptImage?: string }
+interface DepositRow   { id: string; description: string; referenceNo: string; amount: string; receiptImage?: string }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -253,7 +253,7 @@ const mkExp  = (): ExpenseRow  => ({ id: uid(), name: '', description: '', amoun
 const mkInc  = (): IncentiveRow => ({ id: uid(), customer: '', company: '', hp: '', promodiser: '', amount: '', collectionResolved: false })
 const mkComm = (): CommissionRow => ({ id: uid(), ticketNumber: '', store: '', diser: '', customer: '', brand: '', hp: '', dateInstalled: '', amount: '' })
 const mkCashAdv = (): CashAdvanceRow => ({ id: uid(), memberName: '', details: '', amount: '' })
-const mkDeposit = (): DepositRow => ({ id: uid(), bank: '', referenceNo: '', amount: '', receiptImage: '' })
+const mkDeposit = (): DepositRow => ({ id: uid(), description: '', referenceNo: '', amount: '', receiptImage: '' })
 
 // Temporarily hidden: saving a report with INCENTIVE items crashes the production backend
 // (Jackson classpath mismatch — NoClassDefFoundError: JsonMappingException$Reference) until
@@ -1164,7 +1164,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           } else if (type === 'DEPOSIT') {
             depositsList.push({
               id: uid(),
-              bank: item.bank || '',
+              description: desc || '',
               referenceNo: item.receiptNo || '',
               amount: amt,
               receiptImage: item.receiptImage || ''
@@ -1844,10 +1844,9 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           description: `${r.memberName}|${r.details}`,
           amount: parseFloat(r.amount) || 0,
         })),
-        ...deposits.filter(r => r.bank || r.referenceNo || r.amount).map(r => ({
+        ...deposits.filter(r => r.description || r.referenceNo || r.amount).map(r => ({
           type: 'DEPOSIT',
-          description: 'Bank Deposit',
-          bank: r.bank,
+          description: r.description || 'COH Deposit',
           receiptNo: r.referenceNo || null,
           receiptImage: r.receiptImage || null,
           amount: parseFloat(r.amount) || 0,
@@ -2873,88 +2872,6 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
             </div>
           </div>
 
-          {/* Bank Deposits — cash physically dropped off at the company bank once COH crosses the
-              branch's cash-handling limit. Recorded here (with a receipt photo) so the reduction
-              in tomorrow's COH has an explanation on file instead of just showing up smaller. */}
-          <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="Bank Deposits" total={totalDeposits} variant="expense" />
-            <div className="p-2">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr>
-                    <th className={tableTh}>Bank</th>
-                    <th className={tableTh}>Reference / OR No.</th>
-                    <th className={tableTh + ' text-right w-28'}>Amount</th>
-                    <th className={tableTh + ' w-28'}>Receipt</th>
-                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {deposits.map(row => (
-                    <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
-                      <td className={tableTd}>
-                        <input type="text" placeholder="Bank" value={row.bank}
-                          onChange={e => setDeposits(p => p.map(r => r.id === row.id ? { ...r, bank: e.target.value } : r))}
-                          className={flushInput} disabled={isFormDisabled} />
-                      </td>
-                      <td className={tableTd}>
-                        <input type="text" placeholder="Reference / OR No." value={row.referenceNo}
-                          onChange={e => setDeposits(p => p.map(r => r.id === row.id ? { ...r, referenceNo: e.target.value } : r))}
-                          className={flushInput} disabled={isFormDisabled} />
-                      </td>
-                      <td className={tableTd}>
-                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
-                          onValueChange={(values) => setDeposits(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                          className={flushInputNumber} disabled={isFormDisabled} />
-                      </td>
-                      <td className={tableTd + ' text-center'}>
-                        <input type="file" accept="image/*" id={`deposit-receipt-${row.id}`} className="hidden"
-                          disabled={isFormDisabled}
-                          onChange={e => {
-                            const file = e.target.files?.[0]
-                            if (!file) return
-                            if (file.size > 2 * 1024 * 1024) {
-                              setError('Receipt image must be smaller than 2MB')
-                              return
-                            }
-                            const reader = new FileReader()
-                            reader.onloadend = () => {
-                              setDeposits(p => p.map(r => r.id === row.id ? { ...r, receiptImage: reader.result as string } : r))
-                            }
-                            reader.readAsDataURL(file)
-                          }} />
-                        {row.receiptImage ? (
-                          <div className="flex items-center justify-center gap-1.5">
-                            <img src={row.receiptImage} alt="Deposit slip" className="h-8 w-8 object-cover rounded border border-slate-300 dark:border-slate-700" />
-                            {!isFormDisabled && (
-                              <button type="button" onClick={() => setDeposits(p => p.map(r => r.id === row.id ? { ...r, receiptImage: '' } : r))}
-                                className="text-[10px] text-red-500 font-bold uppercase hover:underline">
-                                Remove
-                              </button>
-                            )}
-                          </div>
-                        ) : (
-                          !isFormDisabled && (
-                            <button type="button" onClick={() => document.getElementById(`deposit-receipt-${row.id}`)?.click()}
-                              className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 hover:underline">
-                              Upload
-                            </button>
-                          )
-                        )}
-                      </td>
-                      {canSubmit && !reviewMode && (
-                        <td className={tableTd + ' text-center'}>
-                          <DelBtn onClick={() => setDeposits(p => p.filter(r => r.id !== row.id))} />
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setDeposits(p => [...p, mkDeposit()])} label="Add row" />}
-            </div>
-          </div>
-
           {/* Expenses for Purchase */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Expenses for Purchase" total={totalExpPurch} variant="expense" />
@@ -3090,6 +3007,89 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                 </tbody>
               </table>
               {canSubmit && !reviewMode && <AddRowBtn onClick={() => setOrders(p => [...p, mkOrd()])} label="Add row" />}
+            </div>
+          </div>
+
+          {/* COH Deposit — cash physically sent to the main branch/company bank once COH crosses
+              the branch's cash-handling limit. Recorded here (with a receipt photo) so the
+              reduction in tomorrow's COH has an explanation on file instead of just showing up
+              smaller. */}
+          <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+            <SectionHeader label="COH Deposit" total={totalDeposits} variant="expense" />
+            <div className="p-2">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr>
+                    <th className={tableTh}>Description</th>
+                    <th className={tableTh}>Reference / OR No.</th>
+                    <th className={tableTh + ' text-right w-28'}>Amount</th>
+                    <th className={tableTh + ' w-28'}>Receipt</th>
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {deposits.map(row => (
+                    <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/40">
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Description" value={row.description}
+                          onChange={e => setDeposits(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Reference / OR No." value={row.referenceNo}
+                          onChange={e => setDeposits(p => p.map(r => r.id === row.id ? { ...r, referenceNo: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
+                          onValueChange={(values) => setDeposits(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
+                          className={flushInputNumber} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd + ' text-center'}>
+                        <input type="file" accept="image/*" id={`deposit-receipt-${row.id}`} className="hidden"
+                          disabled={isFormDisabled}
+                          onChange={e => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+                            if (file.size > 2 * 1024 * 1024) {
+                              setError('Receipt image must be smaller than 2MB')
+                              return
+                            }
+                            const reader = new FileReader()
+                            reader.onloadend = () => {
+                              setDeposits(p => p.map(r => r.id === row.id ? { ...r, receiptImage: reader.result as string } : r))
+                            }
+                            reader.readAsDataURL(file)
+                          }} />
+                        {row.receiptImage ? (
+                          <div className="flex items-center justify-center gap-1.5">
+                            <img src={row.receiptImage} alt="Deposit slip" className="h-8 w-8 object-cover rounded border border-slate-300 dark:border-slate-700" />
+                            {!isFormDisabled && (
+                              <button type="button" onClick={() => setDeposits(p => p.map(r => r.id === row.id ? { ...r, receiptImage: '' } : r))}
+                                className="text-[10px] text-red-500 font-bold uppercase hover:underline">
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          !isFormDisabled && (
+                            <button type="button" onClick={() => document.getElementById(`deposit-receipt-${row.id}`)?.click()}
+                              className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 hover:underline">
+                              Upload
+                            </button>
+                          )
+                        )}
+                      </td>
+                      {canSubmit && !reviewMode && (
+                        <td className={tableTd + ' text-center'}>
+                          <DelBtn onClick={() => setDeposits(p => p.filter(r => r.id !== row.id))} />
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setDeposits(p => [...p, mkDeposit()])} label="Add row" />}
             </div>
           </div>
 
@@ -3426,7 +3426,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                   </tr>
                   {totalDeposits > 0 && (
                     <tr className="border-b border-slate-100 dark:border-slate-800/40">
-                      <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">Bank Deposits</td>
+                      <td className="px-3 py-2 text-slate-600 dark:text-slate-400 font-medium">COH Deposit</td>
                       <td className="px-3 py-2 text-right font-bold text-red-500">{php(totalDeposits)}</td>
                     </tr>
                   )}
