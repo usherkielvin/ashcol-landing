@@ -596,14 +596,16 @@ export default function Branches() {
         }
       }
 
-      const hasExplicitTaguigSales = apiBranches.some((api: { id?: string; name?: string }) => {
+      const hasExplicitTaguigSales = apiBranches.some((api: { id?: string; name?: string; isActive?: boolean }) => {
+        if (api.isActive === false) return false
         const cleanName = (api.name || '').replace(/^(ashcol\s+)/i, '').toUpperCase()
         const apiIdUpper = (api.id || '').toUpperCase()
         const explicitId = apiIdUpper === 'BR-TAGUIG-SALES-EXPLICIT'
         const explicitName = cleanName.includes('TAGUIG') && cleanName.includes('SALES') && apiIdUpper !== 'BR-TAGUIG-SALES'
         return explicitId || explicitName
       })
-      const hasExplicitTaguigServices = apiBranches.some((api: { id?: string; name?: string }) => {
+      const hasExplicitTaguigServices = apiBranches.some((api: { id?: string; name?: string; isActive?: boolean }) => {
+        if (api.isActive === false) return false
         const cleanName = (api.name || '').replace(/^(ashcol\s+)/i, '').toUpperCase()
         const apiIdUpper = (api.id || '').toUpperCase()
         const explicitId = apiIdUpper === 'BR-TAGUIG-SERVICES' || apiIdUpper === 'BR-TAGUIG-SERVICE'
@@ -615,8 +617,8 @@ export default function Branches() {
         const cleanName = (api.name || '').replace(/^(ashcol\s+)/i, '').toUpperCase()
         const apiIdUpper = (api.id || '').toUpperCase()
         const isTaguig = cleanName === 'TAGUIG' || cleanName === 'ASHCOL TAGUIG' || cleanName.includes('TAGUIG')
-        const isTaguigSalesExplicit = isTaguig && (apiIdUpper === 'BR-TAGUIG-SALES-EXPLICIT' || (cleanName.includes('SALES') && apiIdUpper !== 'BR-TAGUIG-SALES'))
-        const isTaguigServicesExplicit = isTaguig && (apiIdUpper === 'BR-TAGUIG-SERVICES' || apiIdUpper === 'BR-TAGUIG-SERVICE' || cleanName.includes('SERVICE'))
+        const isTaguigSalesExplicit = isTaguig && api.isActive !== false && (apiIdUpper === 'BR-TAGUIG-SALES-EXPLICIT' || (cleanName.includes('SALES') && apiIdUpper !== 'BR-TAGUIG-SALES'))
+        const isTaguigServicesExplicit = isTaguig && api.isActive !== false && (apiIdUpper === 'BR-TAGUIG-SERVICES' || apiIdUpper === 'BR-TAGUIG-SERVICE' || cleanName.includes('SERVICE'))
         if (isTaguigSalesExplicit) {
           merged.push(processBranch(api, undefined, 'TAGUIG - SALES'))
         } else if (isTaguigServicesExplicit) {
