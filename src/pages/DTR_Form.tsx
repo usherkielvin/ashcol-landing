@@ -537,12 +537,14 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         if (res.ok) {
           const data = await res.json()
           const list: { id: string; name: string; isActive?: boolean }[] = (data?.data || data || []).map((b: { id: string; name: string; isActive?: boolean }) => ({ id: b.id, name: b.name, isActive: b.isActive }))
-          const hasExplicitTaguigSales = list.some((b: { id: string; name: string }) => {
+          const hasExplicitTaguigSales = list.some((b: { id: string; name: string; isActive?: boolean }) => {
+            if (b.isActive === false) return false
             const id = b.id.toUpperCase()
             const name = b.name.toUpperCase()
             return id === 'BR-TAGUIG-SALES-EXPLICIT' || (name.includes('TAGUIG') && name.includes('SALES') && id !== 'BR-TAGUIG-SALES')
           })
-          const hasExplicitTaguigServices = list.some((b: { id: string; name: string }) => {
+          const hasExplicitTaguigServices = list.some((b: { id: string; name: string; isActive?: boolean }) => {
+            if (b.isActive === false) return false
             const id = b.id.toUpperCase()
             const name = b.name.toUpperCase()
             return id === 'BR-TAGUIG-SERVICES' || id === 'BR-TAGUIG-SERVICE' || name.includes('TAGUIG') && name.includes('SERVICE')
