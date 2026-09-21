@@ -268,18 +268,24 @@ export default function DashboardLayout() {
         const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
         const params = new URLSearchParams({ branchId: baseBranchId })
         if (auditLine) params.set('auditLine', auditLine)
-        const res = await fetch(`${API_BASE_URL}/v1/reports/current-coh?${params.toString()}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-        if (!res.ok || cancelled) return
+        const url = `${API_BASE_URL}/v1/reports/current-coh?${params.toString()}`
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+        if (!res.ok) {
+          const body = await res.text().catch(() => '')
+          console.error('[COH] fetch failed', { url, status: res.status, body })
+          if (!cancelled) setCurrentCoh(null)
+          return
+        }
         const data = await res.json()
+        console.log('[COH] fetch ok', { url, data })
         if (cancelled) return
         setCurrentCoh({
           totalCohCfd: Number(data?.totalCohCfd) || 0,
           depositThreshold: Number(data?.depositThreshold) || 5000,
           overThreshold: !!data?.overThreshold
         })
-      } catch {
+      } catch (err) {
+        console.error('[COH] fetch threw', err)
         if (!cancelled) setCurrentCoh(null)
       }
     }
