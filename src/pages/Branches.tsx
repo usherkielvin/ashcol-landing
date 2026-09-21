@@ -1298,7 +1298,7 @@ export default function Branches() {
                       </span>
                       {(() => {
                         const cohRow = findCohRowForBranch(branch, cohRows)
-                        if (!cohRow) return null
+                        if (!cohRow || !cohRow.totalCohCfd || cohRow.totalCohCfd <= 0) return null
                         const overThreshold = cohRow.totalCohCfd >= CASH_DEPOSIT_THRESHOLD
                         return (
                           <span

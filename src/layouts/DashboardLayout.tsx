@@ -1,7 +1,8 @@
 // @ts-nocheck
-import { useState, useRef, useEffect, cloneElement, isValidElement } from 'react'
+import { useState, useRef, useEffect, cloneElement, isValidElement, Suspense } from 'react'
 import { Outlet, Link, useLocation, Navigate, useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
+import AshcolLoader from '../components/AshcolLoader'
 import {
   Ticket as TicketIcon,
   Menu, LogOut, X, Sun, Moon,
@@ -50,6 +51,7 @@ import NotificationDetailModal from '../components/NotificationDetailModal'
 import { useNotifications } from '../contexts/NotificationContext'
 import FloatingChatWindow from '../components/FloatingChatWindow'
 import { HEADER_MENU_OPENED_EVENT, broadcastHeaderMenuOpen } from '../utils/headerMenuCoordination'
+import { warmUpPortalRoutes, preloadPath } from '../utils/preloadHelper'
 import logoImg from '../assets/ash-logo.jpg'
 
 const normalizeBranchDisplayName = (branchId?: string | null, branchName?: string | null) => {
@@ -210,6 +212,12 @@ export default function DashboardLayout() {
     navigate({ pathname: location.pathname, search: nextSearch ? `?${nextSearch}` : '' }, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search])
+
+  // Warm up and prefetch portal routes in background idle time so tab navigation is instant
+  useEffect(() => {
+    warmUpPortalRoutes()
+  }, [])
+
   const isLight = theme === 'light'
   const [branchLabel, setBranchLabel] = useState<string | null>(null)
 
@@ -729,6 +737,7 @@ export default function DashboardLayout() {
                   <Link
                     key={link.name}
                     to={link.path}
+                    onMouseEnter={() => preloadPath(link.path)}
                     onClick={() => setSidebarOpen(false)}
                     className="group flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150 relative"
                     style={isActive
@@ -817,6 +826,7 @@ export default function DashboardLayout() {
                             <Link
                               key={`${group.title}-${idx}`}
                               to={sub.path}
+                              onMouseEnter={() => preloadPath(sub.path)}
                               onClick={(e) => {
                                 e.stopPropagation()
                                 setActiveSubItem(sub.name)
@@ -862,6 +872,7 @@ export default function DashboardLayout() {
                   <Link
                     key={item.key}
                     to={item.path}
+                    onMouseEnter={() => preloadPath(item.path)}
                     onClick={() => {
                       setSidebarOpen(false)
                       if (item.groupPaths) setOpenAccordion(item.name)
@@ -935,7 +946,7 @@ export default function DashboardLayout() {
                   <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
                     Search
                   </h1>
-                ) : currentPage === 'Relays' || currentPage === 'Employees' || currentPage === 'Members' || currentPage === 'Registration' || currentPage === 'Request Forms' || currentPage === 'Payroll' || currentPage === 'For Collections' || location.pathname === '/payroll' || location.pathname === '/operations-forms' || location.pathname === '/collections' ? (
+                ) : currentPage === 'Relays' || currentPage === 'Employees' || currentPage === 'Members' || currentPage === 'Registration' || currentPage === 'Request Forms' || currentPage === 'Payroll' || currentPage === 'For Collections' || currentPage === 'Cash Advance' || location.pathname === '/payroll' || location.pathname === '/operations-forms' || location.pathname === '/collections' || location.pathname === '/cash-advances' ? (
                   <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
                     {currentPage}
                   </h1>
@@ -1007,7 +1018,7 @@ export default function DashboardLayout() {
 
             {/* Right: Actions */}
             <div className="flex items-center gap-1.5 shrink-0">
-              {currentCoh && (
+              {currentCoh && currentCoh.totalCohCfd > 0 && (
                 <span
                   className="inline-flex items-center px-2 sm:px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border w-fit max-w-[110px] sm:max-w-none truncate transition-colors"
                   style={{
@@ -1202,7 +1213,13 @@ export default function DashboardLayout() {
           )}
           <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'DDRM') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
             {/* Do not key Outlet by pathname — that remounts Schedules on every nav and forces a reload spinner. */}
-            <Outlet context={{ setSidebarOpen, globalBranchId }} />
+            <Suspense fallback={
+              <div className="flex items-center justify-center min-h-[50vh] w-full transition-opacity duration-200">
+                <AshcolLoader />
+              </div>
+            }>
+              <Outlet context={{ setSidebarOpen, globalBranchId }} />
+            </Suspense>
           </div>
         </main>
       </div>

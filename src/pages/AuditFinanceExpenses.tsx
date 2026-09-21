@@ -13,6 +13,7 @@ import { loadAuditExpenseCategories, saveAuditExpenseCategory, deleteAuditExpens
 import { parseAuditExpenseExcelFile } from '../utils/parseAuditExpenseExcel'
 import { parseSmartDate, dateToTime } from '../utils/smartDate'
 import AutoSuggestInput from '../components/AutoSuggestInput'
+import AshcolLoader from '../components/AshcolLoader'
 import * as XLSX from 'xlsx'
 import { uploadReceiptImage } from '../services/supabaseStorage'
 
@@ -78,6 +79,7 @@ export default function AuditFinanceExpenses() {
   const [allBranches, setAllBranches] = useState<BranchOption[]>([])
   const [branchId, setBranchId] = useState('')
   const [expenses, setExpenses] = useState<AuditExpense[]>([])
+  const [initialLoading, setInitialLoading] = useState(true)
   const [importing, setImporting] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<AuditExpense | null>(null)
@@ -107,6 +109,8 @@ export default function AuditFinanceExpenses() {
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const scanRef = useRef<HTMLInputElement>(null)
   const cameraRef = useRef<HTMLInputElement>(null)
+  const modalFileInputRef = useRef<HTMLInputElement>(null)
+  const modalCameraInputRef = useRef<HTMLInputElement>(null)
   const [branchEmployees, setBranchEmployees] = useState<string[]>([])
 
   useEffect(() => {
@@ -452,8 +456,32 @@ export default function AuditFinanceExpenses() {
     }
   }, [])
 
-  useEffect(() => { if (canAccess) void loadBranches() }, [canAccess, loadBranches])
-  useEffect(() => { void reload() }, [reload])
+  useEffect(() => {
+    let active = true
+    const startTime = Date.now()
+
+    const preloadTabDetails = async () => {
+      try {
+        const promises: Promise<any>[] = [loadAuditExpenses()]
+        if (canAccess) promises.push(loadBranches())
+        const [data] = await Promise.all(promises)
+        if (active && data) {
+          setExpenses(data)
+        }
+      } catch (err) {
+        console.error('[AuditFinanceExpenses] Preload error:', err)
+      } finally {
+        const elapsed = Date.now() - startTime
+        const remaining = Math.max(0, 2000 - elapsed)
+        setTimeout(() => {
+          if (active) setInitialLoading(false)
+        }, remaining)
+      }
+    }
+
+    preloadTabDetails()
+    return () => { active = false }
+  }, [canAccess, loadBranches])
 
 
 
@@ -646,6 +674,8 @@ export default function AuditFinanceExpenses() {
         setForm(emptyForm(resolveFormBranchId(branchId)))
         setDateRaw(formatTodayReceiptDate())
         setDateError('')
+        setScanPreview(null)
+        setUploadedReceiptUrl(null)
       } else {
         // Updating an existing receipt — close the form
         setShowForm(false); setEditing(null); setForm(emptyForm(resolveFormBranchId(branchId))); setDateRaw(formatTodayReceiptDate()); setDateError('')
@@ -728,7 +758,7 @@ export default function AuditFinanceExpenses() {
         amount,
         expenseCategory: form.expenseCategory,
         sourceOfFunds: form.sourceOfFunds.trim(),
-        receiptImageUri: uploadedReceiptUrl || editing.receiptImageUri,
+        receiptImageUri: uploadedReceiptUrl || undefined,
         updatedBy: currentUserLabel,
         updatedAt: now,
         updateHistory: [
@@ -1000,6 +1030,58 @@ export default function AuditFinanceExpenses() {
     }
   }
 
+  const handleModalImageUpload = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      alert('Please upload a valid image file.')
+      return
+    }
+    const localUrl = URL.createObjectURL(file)
+    setScanPreview(localUrl)
+    setUploadingReceipt(true)
+    try {
+      const resolvedBranchId = form.branchId || branchId
+      const resolvedBranchName = (allBranches.length > 0 ? allBranches : branches).find(b => b.id === resolvedBranchId)?.name || branchName
+      const result = await uploadReceiptImage(file, {
+        folder: 'finance',
+        branch: resolvedBranchName,
+        description: form.description || form.company,
+        filename: 'expense'
+      })
+      setUploadedReceiptUrl(result.url)
+    } catch (err) {
+      console.error('[Finance Modal] Image upload failed:', err)
+    } finally {
+      setUploadingReceipt(false)
+    }
+  }
+
+  const handleModalPaste = async () => {
+    try {
+      const items = await navigator.clipboard.read()
+      for (const item of items) {
+        const imageType = item.types.find((t) => t.startsWith('image/'))
+        if (imageType) {
+          const blob = await item.getType(imageType)
+          const file = new File([blob], 'pasted-receipt.png', { type: imageType })
+          await handleModalImageUpload(file)
+          return
+        }
+      }
+      alert('No image found in clipboard. Please copy an image first.')
+    } catch {
+      alert('Unable to paste image. Please ensure clipboard permissions are allowed or click Upload.')
+    }
+  }
+
+  const handleModalDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const files = e.dataTransfer.files
+    if (files && files[0]) {
+      handleModalImageUpload(files[0])
+    }
+  }
+
   const processImageRef = useRef(processImage)
   useEffect(() => {
     processImageRef.current = processImage
@@ -1075,6 +1157,14 @@ export default function AuditFinanceExpenses() {
 
 
   if (!canAccess) return <div className="p-8 text-center" style={{ color: textMuted }}>Expense records are available for branch employees, managers, and admins only.</div>
+
+  if (initialLoading) {
+    return (
+      <div style={{ minHeight: '80vh', backgroundColor: bg }} className="flex items-center justify-center w-full">
+        <AshcolLoader />
+      </div>
+    )
+  }
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: bg }} className="flex flex-col gap-3 px-2 py-3 md:p-6 pb-12">
@@ -1913,6 +2003,8 @@ export default function AuditFinanceExpenses() {
                   if (!isEditingInModal || window.confirm('Discard unsaved changes?')) {
                     setIsEditingInModal(false)
                     setDetailRow(null)
+                    setScanPreview(null)
+                    setUploadedReceiptUrl(null)
                   }
                 }}
                 className="w-9 h-9 rounded-full flex items-center justify-center transition-colors cursor-pointer hover:opacity-80 active:scale-95"
@@ -2069,6 +2161,183 @@ export default function AuditFinanceExpenses() {
                       />
                     )}
                   </div>
+                </div>
+
+                {/* ── Receipt Attachment in Edit Modal ── */}
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: textMuted }}>
+                      Receipt Attachment
+                    </label>
+                    {uploadingReceipt && (
+                      <span className="flex items-center gap-1.5 text-xs text-amber-500 font-medium">
+                        <Loader2 size={13} className="animate-spin" /> Uploading image to storage…
+                      </span>
+                    )}
+                    {!uploadingReceipt && (uploadedReceiptUrl || scanPreview) && (
+                      <span className="flex items-center gap-1.5 text-xs text-emerald-500 font-medium">
+                        ✓ Image attached
+                      </span>
+                    )}
+                  </div>
+
+                  <input
+                    ref={modalFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) handleModalImageUpload(file)
+                      e.target.value = ''
+                    }}
+                  />
+                  <input
+                    ref={modalCameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) handleModalImageUpload(file)
+                      e.target.value = ''
+                    }}
+                  />
+
+                  {uploadedReceiptUrl || scanPreview ? (
+                    <div
+                      className="rounded-xl border p-3.5 flex flex-col sm:flex-row items-start sm:items-center gap-4 transition-all"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                    >
+                      <div
+                        onClick={() => setPreviewImage(uploadedReceiptUrl || scanPreview)}
+                        className="relative group cursor-pointer w-24 h-24 sm:w-28 sm:h-28 rounded-lg overflow-hidden border shrink-0 flex items-center justify-center bg-black/5 dark:bg-black/30"
+                        style={{ borderColor: inputBorder }}
+                        title="Click to view full size"
+                      >
+                        <img
+                          src={uploadedReceiptUrl || scanPreview || ''}
+                          alt="Attached Receipt"
+                          className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                          <span className="opacity-0 group-hover:opacity-100 text-[10px] font-semibold px-2 py-1 rounded bg-black/75 text-white">
+                            Enlarge
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex-1 flex flex-col justify-between gap-2 w-full">
+                        <div>
+                          <p className="text-xs font-semibold" style={{ color: textPrimary }}>
+                            Receipt Document Attached
+                          </p>
+                          <p className="text-[11px] mt-0.5" style={{ color: textMuted }}>
+                            {uploadingReceipt ? 'Compressing and uploading image…' : 'This image will be saved with this expense record.'}
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewImage(uploadedReceiptUrl || scanPreview)}
+                            className="px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors hover:opacity-80 flex items-center gap-1 cursor-pointer"
+                            style={{ backgroundColor: isLight ? '#ffffff' : '#1e293b', borderColor: inputBorder, color: textPrimary }}
+                          >
+                            View
+                          </button>
+                          <button
+                            type="button"
+                            disabled={uploadingReceipt}
+                            onClick={() => modalFileInputRef.current?.click()}
+                            className="px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors hover:opacity-80 flex items-center gap-1 cursor-pointer"
+                            style={{ backgroundColor: isLight ? '#ffffff' : '#1e293b', borderColor: inputBorder, color: textPrimary }}
+                          >
+                            <Upload size={13} />
+                            Replace
+                          </button>
+                          <button
+                            type="button"
+                            disabled={uploadingReceipt}
+                            onClick={() => modalCameraInputRef.current?.click()}
+                            className="sm:hidden px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors hover:opacity-80 flex items-center gap-1 cursor-pointer"
+                            style={{ backgroundColor: isLight ? '#ffffff' : '#1e293b', borderColor: inputBorder, color: textPrimary }}
+                          >
+                            <Camera size={13} />
+                            Camera
+                          </button>
+                          <button
+                            type="button"
+                            disabled={uploadingReceipt}
+                            onClick={() => {
+                              setUploadedReceiptUrl(null)
+                              setScanPreview(null)
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-500 hover:bg-red-500/10 transition-colors flex items-center gap-1 cursor-pointer ml-auto"
+                          >
+                            <Trash2 size={13} />
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation() }}
+                      onDrop={handleModalDrop}
+                      className="border-2 border-dashed rounded-xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 transition-all"
+                      style={{ borderColor: isLight ? '#cbd5e1' : '#334155', backgroundColor: isLight ? '#f8fafc' : '#0b1324' }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                          style={{ backgroundColor: isLight ? '#e2e8f0' : '#1e293b', color: textMuted }}
+                        >
+                          <Upload size={20} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold" style={{ color: textPrimary }}>
+                            No receipt image attached
+                          </p>
+                          <p className="text-[11px]" style={{ color: textMuted }}>
+                            Upload image, take a photo, or paste from clipboard
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                        <button
+                          type="button"
+                          onClick={handleModalPaste}
+                          className="flex-1 sm:flex-initial px-3 py-2 rounded-lg text-xs font-medium border transition-all hover:opacity-80 flex items-center justify-center gap-1 cursor-pointer"
+                          style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                          title="Paste from clipboard"
+                        >
+                          <ClipboardPaste size={14} />
+                          <span>Paste</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => modalCameraInputRef.current?.click()}
+                          className="sm:hidden flex-1 px-3 py-2 rounded-lg text-xs font-semibold text-white transition-all flex items-center justify-center gap-1 cursor-pointer"
+                          style={{ backgroundColor: '#6366F1' }}
+                        >
+                          <Camera size={14} />
+                          <span>Camera</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => modalFileInputRef.current?.click()}
+                          className="flex-1 sm:flex-initial px-3 py-2 rounded-lg text-xs font-semibold text-white transition-all flex items-center justify-center gap-1 cursor-pointer"
+                          style={{ backgroundColor: editAccent }}
+                        >
+                          <Upload size={14} />
+                          <span>Upload Receipt</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Category Selection */}
@@ -2293,6 +2562,8 @@ export default function AuditFinanceExpenses() {
                       if (window.confirm('Discard unsaved changes?')) {
                         setIsEditingInModal(false)
                         setEditing(null)
+                        setScanPreview(null)
+                        setUploadedReceiptUrl(null)
                       }
                     }}
                     className="px-5 py-2.5 rounded-xl text-sm font-medium transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
@@ -2570,14 +2841,14 @@ export default function AuditFinanceExpenses() {
       {/* ── Fullscreen Receipt Image Popup Modal ── */}
       {previewImage && typeof document !== 'undefined' && createPortal(
         <div
-          className="fixed inset-0 z-[2000] flex items-center justify-center p-3 sm:p-6 bg-black/90 backdrop-blur-md transition-opacity duration-200"
+          className="fixed inset-0 z-[3000] flex items-center justify-center p-3 sm:p-6 bg-black/90 backdrop-blur-md transition-opacity duration-200"
           onClick={() => setPreviewImage(null)}
           role="dialog"
           aria-modal="true"
           aria-label="Receipt Image Fullscreen Preview"
         >
           {/* Top Bar with Close (X) Button */}
-          <div className="absolute top-4 right-4 z-[2010]">
+          <div className="absolute top-4 right-4 z-[3010]">
             <button
               type="button"
               onClick={() => setPreviewImage(null)}

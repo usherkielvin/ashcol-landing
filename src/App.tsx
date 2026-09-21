@@ -1,46 +1,47 @@
-import { lazy, Suspense } from 'react'
+import { Suspense } from 'react'
 import { BrowserRouter, Route, Routes, Navigate } from 'react-router-dom'
 import { GoogleOAuthProvider } from '@react-oauth/google'
 import AshcolLoader from './components/AshcolLoader'
+import { lazyWithPreload } from './utils/preloadHelper'
 
 // Lazy-loaded public pages
-const Landing = lazy(() => import('./pages/Landing'))
-const PublicBooking = lazy(() => import('./pages/PublicBooking'))
-const Login = lazy(() => import('./pages/Login'))
-const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
-const CreateAccount = lazy(() => import('./pages/CreateAccount'))
+const Landing = lazyWithPreload(() => import('./pages/Landing'))
+const PublicBooking = lazyWithPreload(() => import('./pages/PublicBooking'))
+const Login = lazyWithPreload(() => import('./pages/Login'))
+const ForgotPassword = lazyWithPreload(() => import('./pages/ForgotPassword'))
+const CreateAccount = lazyWithPreload(() => import('./pages/CreateAccount'))
 
 // Lazy-loaded layout & portal pages
-const DashboardLayout = lazy(() => import('./layouts/DashboardLayout'))
-const MyTickets = lazy(() => import('./pages/MyTickets'))
-const Schedules = lazy(() => import('./pages/Schedules'))
-const SearchTickets = lazy(() => import('./pages/SearchTickets'))
-const CreateTicket = lazy(() => import('./pages/CreateTicket'))
-const OfficeTasks = lazy(() => import('./pages/OfficeTasks'))
-const Employees = lazy(() => import('./pages/Employees'))
-const Vehicles = lazy(() => import('./pages/Vehicles'))
-const Profile = lazy(() => import('./pages/Profile'))
-const Branches = lazy(() => import('./pages/Branches'))
-const Relays = lazy(() => import('./pages/Relays'))
-const Bookings = lazy(() => import('./pages/Bookings'))
-const Messages = lazy(() => import('./pages/Messages'))
+const DashboardLayout = lazyWithPreload(() => import('./layouts/DashboardLayout'))
+const MyTickets = lazyWithPreload(() => import('./pages/MyTickets'))
+const Schedules = lazyWithPreload(() => import('./pages/Schedules'))
+const SearchTickets = lazyWithPreload(() => import('./pages/SearchTickets'))
+const CreateTicket = lazyWithPreload(() => import('./pages/CreateTicket'))
+const OfficeTasks = lazyWithPreload(() => import('./pages/OfficeTasks'))
+const Employees = lazyWithPreload(() => import('./pages/Employees'))
+const Vehicles = lazyWithPreload(() => import('./pages/Vehicles'))
+const Profile = lazyWithPreload(() => import('./pages/Profile'))
+const Branches = lazyWithPreload(() => import('./pages/Branches'))
+const Relays = lazyWithPreload(() => import('./pages/Relays'))
+const Bookings = lazyWithPreload(() => import('./pages/Bookings'))
+const Messages = lazyWithPreload(() => import('./pages/Messages'))
 
-const DailyAuditReport = lazy(() => import('./pages/DailyAuditReport'))
-const AuditFinanceExpenses = lazy(() => import('./pages/AuditFinanceExpenses'))
-const ForCollections = lazy(() => import('./pages/ForCollections'))
-const Commissions = lazy(() => import('./pages/Commissions'))
-const CashAdvances = lazy(() => import('./pages/CashAdvances'))
-const Payroll = lazy(() => import('./pages/Payroll'))
-const DailyServiceReport = lazy(() => import('./pages/DailyServiceReport'))
-const Registration = lazy(() => import('./pages/Registration'))
-const HappyCalls = lazy(() => import('./pages/HappyCalls'))
-const LineUp = lazy(() => import('./pages/LineUp'))
+const DailyAuditReport = lazyWithPreload(() => import('./pages/DailyAuditReport'))
+const AuditFinanceExpenses = lazyWithPreload(() => import('./pages/AuditFinanceExpenses'))
+const ForCollections = lazyWithPreload(() => import('./pages/ForCollections'))
+const Commissions = lazyWithPreload(() => import('./pages/Commissions'))
+const CashAdvances = lazyWithPreload(() => import('./pages/CashAdvances'))
+const Payroll = lazyWithPreload(() => import('./pages/Payroll'))
+const DailyServiceReport = lazyWithPreload(() => import('./pages/DailyServiceReport'))
+const Registration = lazyWithPreload(() => import('./pages/Registration'))
+const HappyCalls = lazyWithPreload(() => import('./pages/HappyCalls'))
+const LineUp = lazyWithPreload(() => import('./pages/LineUp'))
 
-const Hris = lazy(() => import('./pages/Hris'))
-const Ddrm = lazy(() => import('./pages/Ddrm'))
-const Bills = lazy(() => import('./pages/Bills'))
-const Telecom = lazy(() => import('./pages/Telecom'))
-const OperationsForms = lazy(() => import('./pages/OperationsForms'))
+const Hris = lazyWithPreload(() => import('./pages/Hris'))
+const Ddrm = lazyWithPreload(() => import('./pages/Ddrm'))
+const Bills = lazyWithPreload(() => import('./pages/Bills'))
+const Telecom = lazyWithPreload(() => import('./pages/Telecom'))
+const OperationsForms = lazyWithPreload(() => import('./pages/OperationsForms'))
 
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
