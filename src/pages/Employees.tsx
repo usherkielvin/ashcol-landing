@@ -1110,6 +1110,12 @@ export default function Employees() {
       e.branchName.toLowerCase().includes(q) ||
       e.phone.toLowerCase().includes(q)
     )
+  }).sort((a, b) => {
+    // Inactive or never-logged-in ("not yet activated") members sink to the bottom.
+    const aBelow = !a.isActive || !a.lastLoginAt
+    const bBelow = !b.isActive || !b.lastLoginAt
+    if (aBelow !== bBelow) return aBelow ? 1 : -1
+    return 0
   })
 
   const inputCls = "w-full rounded-xl px-3 py-2.5 text-sm font-normal outline-none transition-all focus:ring-2 focus:ring-emerald-500/20"
