@@ -253,13 +253,10 @@ export default function DashboardLayout() {
   // Live cash-on-hand reminder for the active branch — shown in the header so a branch is
   // never more than a glance away from knowing it's due for a company bank deposit.
   const [currentCoh, setCurrentCoh] = useState<{ totalCohCfd: number; depositThreshold: number; overThreshold: boolean } | null>(null)
-  // TEMPORARY: visible-on-page debug state for the COH badge — remove once it's confirmed working.
-  const [cohDebug, setCohDebug] = useState<string>('init')
   const activeCohBranchId = hasBranchSwitcher ? globalBranchId : (user?.branchId || null)
   useEffect(() => {
     if (!activeCohBranchId) {
       setCurrentCoh(null)
-      setCohDebug('no-branch-id (user.branchId is empty and no branch switcher)')
       return
     }
     const match = activeCohBranchId.match(/^(.*)-(sales|services)$/i)
@@ -267,7 +264,6 @@ export default function DashboardLayout() {
     const auditLine = match && match[2].toLowerCase() === 'services' ? 'TAGUIG_SERVICE' : ''
     let cancelled = false
     const loadCoh = async () => {
-      setCohDebug(`loading (branchId=${baseBranchId})`)
       try {
         const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
         const params = new URLSearchParams({ branchId: baseBranchId })
@@ -275,29 +271,18 @@ export default function DashboardLayout() {
         const url = `${API_BASE_URL}/v1/reports/current-coh?${params.toString()}`
         const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
         if (!res.ok) {
-          const body = await res.text().catch(() => '')
-          console.error('[COH] fetch failed', { url, status: res.status, body })
-          if (!cancelled) {
-            setCurrentCoh(null)
-            setCohDebug(`HTTP ${res.status}: ${body.slice(0, 150)}`)
-          }
+          if (!cancelled) setCurrentCoh(null)
           return
         }
         const data = await res.json()
-        console.log('[COH] fetch ok', { url, data })
         if (cancelled) return
         setCurrentCoh({
           totalCohCfd: Number(data?.totalCohCfd) || 0,
           depositThreshold: Number(data?.depositThreshold) || 5000,
           overThreshold: !!data?.overThreshold
         })
-        setCohDebug(`ok: ${JSON.stringify(data)}`)
-      } catch (err) {
-        console.error('[COH] fetch threw', err)
-        if (!cancelled) {
-          setCurrentCoh(null)
-          setCohDebug(`threw: ${String(err)}`)
-        }
+      } catch {
+        if (!cancelled) setCurrentCoh(null)
       }
     }
     loadCoh()
@@ -989,22 +974,27 @@ export default function DashboardLayout() {
                         </h1>
                       )
                     ) : null}
-                    <span className="text-[9px] font-mono block max-w-[260px] truncate" style={{ color: '#F59E0B' }} title={cohDebug}>
-                      COH debug: {cohDebug}
-                    </span>
                     {currentCoh && (
                       <span
-                        className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide w-fit"
+                        className="inline-flex items-center gap-1.5 mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border w-fit transition-colors"
                         style={{
-                          backgroundColor: currentCoh.overThreshold ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.1)',
-                          color: currentCoh.overThreshold ? '#EF4444' : '#10B981'
+                          backgroundColor: currentCoh.overThreshold ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)',
+                          color: currentCoh.overThreshold ? '#EF4444' : '#10B981',
+                          borderColor: currentCoh.overThreshold ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.18)'
                         }}
                         title={currentCoh.overThreshold
                           ? `Cash on hand ₱${currentCoh.totalCohCfd.toLocaleString('en-PH')} — due for deposit (limit ₱${currentCoh.depositThreshold.toLocaleString('en-PH')})`
                           : `Cash on hand ₱${currentCoh.totalCohCfd.toLocaleString('en-PH')}`}
                       >
-                        COH ₱{currentCoh.totalCohCfd.toLocaleString('en-PH')}
-                        {currentCoh.overThreshold ? ' · DEPOSIT DUE' : ''}
+                        {currentCoh.overThreshold
+                          ? <Banknote className="w-3 h-3 shrink-0" />
+                          : <Wallet className="w-3 h-3 shrink-0" />}
+                        <span className="truncate">
+                          COH ₱{currentCoh.totalCohCfd.toLocaleString('en-PH')}
+                        </span>
+                        {currentCoh.overThreshold && (
+                          <span className="hidden xs:inline shrink-0">· Deposit Due</span>
+                        )}
                       </span>
                     )}
                   </>
