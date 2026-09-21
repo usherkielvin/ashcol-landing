@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Phone, Mail } from 'lucide-react'
 import { useTheme } from './ThemeContext'
 import { formatPersonName, resolveImageUrl, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT } from '../utils/api'
@@ -227,8 +228,8 @@ export const EmployeeDetailsProvider: React.FC<{ children: React.ReactNode }> = 
       {children}
       
       {/* ── Modal Overlay — dim scrim over the current tab, not an opaque takeover ── */}
-      {isOpen && selectedEmployee && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)' }}>
+      {isOpen && selectedEmployee && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)' }}>
           {/* Backdrop click close */}
           <div className="absolute inset-0" onClick={closeEmployeeDetails} />
 
@@ -338,7 +339,8 @@ export const EmployeeDetailsProvider: React.FC<{ children: React.ReactNode }> = 
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Inject styling animations if not defined */}

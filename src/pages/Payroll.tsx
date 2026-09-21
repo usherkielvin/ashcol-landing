@@ -5,7 +5,7 @@ import {
   Search, Building2, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   SlidersHorizontal, Plus, X, RotateCcw, RefreshCw, Save, Loader2, EyeOff, Trash2,
   Stethoscope, Lightbulb, HardHat, PiggyBank, Wind, Recycle, ArrowBigDownDash, Snowflake,
-  Wallet, HandCoins, Layers, BadgeCheck, Users,
+  Users, Clock,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -44,6 +44,10 @@ const getInitials = (name: string) => {
   if (words.length === 1) return words[0].slice(0, 2).toUpperCase()
   return (words[0][0] + words[1][0]).toUpperCase()
 }
+// Display-only formatting — the underlying name stays ALL-CAPS everywhere it's used as a
+// key/lookup (grouping, aliasing, avatar color hashing); this just softens how it reads on screen.
+const titleCase = (name: string) =>
+  name.trim().toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase())
 // A handful of deterministic flat colors so each installer's avatar reads as a distinct
 // person at a glance, without storing per-user color state anywhere.
 const AVATAR_COLORS: string[] = ['#10B981', '#F59E0B', '#8B5CF6', '#0EA5E9', '#84CC16', '#F97316', '#EC4899', '#06B6D4']
@@ -979,7 +983,7 @@ export default function Payroll() {
   // spreadsheet cell. The grid line (border) lives on the cell wrapper, not the input.
   const inputCls = "w-full h-full px-3 py-3 text-sm font-semibold uppercase bg-transparent border-0 outline-none focus:outline-none focus:ring-0"
   // No text-align baked in — alignment is set per-column (numeric columns go right-aligned).
-  const thCls = "px-3 py-3 text-[11px] font-extrabold uppercase tracking-wider whitespace-nowrap overflow-hidden text-ellipsis"
+  const thCls = "px-3 py-3 text-[11px] font-semibold uppercase tracking-wider opacity-70 whitespace-nowrap overflow-hidden text-ellipsis"
   const visibleColumnsFor = (installerName: string): ColumnDef[] => {
     const hidden = hiddenColumnsFor(installerName)
     const fixed = COLUMN_DEFS.filter(c => c.pinned || !hidden.has(c.key as ColumnKey))
@@ -1036,9 +1040,9 @@ export default function Payroll() {
   // Payout breakdown tile — used both per-installer (below each table) and for the
   // all-crew total (in the Summary card), so remittance always reads as separate from payout.
   const footerTile = (label: string, value: number, color: string) => (
-    <div className="px-4 py-3 min-w-0">
-      <div className="text-[9px] font-extrabold uppercase tracking-wider truncate" style={{ color: textMuted }}>{label}</div>
-      <div className="text-sm font-extrabold tabular-nums" style={{ color }}>₱{peso(value)}</div>
+    <div className="px-4 py-3.5 min-w-0">
+      <div className="text-[10px] font-medium uppercase tracking-wider truncate opacity-60" style={{ color: textMuted }}>{label}</div>
+      <div className="text-sm font-bold tabular-nums" style={{ color }}>₱{peso(value)}</div>
     </div>
   )
 
@@ -1369,39 +1373,34 @@ export default function Payroll() {
           )}
       </div>
 
-      {/* Branded per-branch payroll header — mirrors the branch's own printed weekly
-          payroll & allowance sheet, so this page reads as the same official document. Flat
-          card with a colored left accent, no gradients — matches the roster cards below. */}
-      {branchFilter && (
+      {/* The letterhead and the roster below it read as one continuous payroll ledger — same
+          document metaphor as the branch's own printed weekly sheet — so they're fused with a
+          shared border/no gap whenever the roster table is actually what's rendered below. */}
+      {(() => {
+        const showRosterLedger = !initialLoading && !!branchFilter && grouped.length > 0 && !selectedInstaller
+        return (
+      <div className={`flex flex-col ${showRosterLedger ? 'rounded-2xl shadow-sm' : ''}`} style={{ gap: showRosterLedger ? 0 : '1rem' }}>
+      {branchFilter && !selectedInstaller && (
         <div
-          className="rounded-2xl shadow-xs"
+          className={`${showRosterLedger ? 'rounded-t-2xl border border-b-0' : 'rounded-2xl border shadow-sm'}`}
           style={{
-            border: `1px solid ${border}`,
-            borderLeft: '3px solid #10B981',
+            borderColor: border,
             backgroundColor: cardBg,
           }}
         >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 sm:px-6 py-4">
-            <div className="flex items-center gap-3.5 min-w-0">
-              <div
-                className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0"
-                style={{ backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.14)' }}
-              >
-                <Wallet className="w-5 h-5 text-emerald-500" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 sm:px-7 py-5">
+            <div className="min-w-0">
+              <div className="text-base font-bold tracking-tight truncate" style={{ color: textPrimary }}>
+                {currentBranchDisplay || 'Branch'} Installer&rsquo;s Payroll
               </div>
-              <div className="min-w-0">
-                <div className="text-base font-extrabold tracking-tight truncate" style={{ color: textPrimary }}>
-                  {currentBranchDisplay || 'Branch'} Installer&rsquo;s Payroll
-                </div>
-                <div className="text-xs font-semibold" style={{ color: textMuted }}>
-                  Weekly payroll &amp; allowance summary
-                </div>
+              <div className="text-xs font-medium opacity-70" style={{ color: textMuted }}>
+                Weekly payroll &amp; allowance summary
               </div>
             </div>
 
             {(dateFrom || dateTo) && (
               <div
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold shrink-0 self-start sm:self-auto"
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold shrink-0 self-start sm:self-auto"
                 style={{
                   backgroundColor: inputBg,
                   border: `1px solid ${border}`,
@@ -1436,12 +1435,13 @@ export default function Payroll() {
           <p className="text-sm font-semibold" style={{ color: textMuted }}>No payroll entries yet — try "Sync from Schedules".</p>
         </div>
       ) : selectedInstaller ? (
-        // Detail view — just the selected installer's own table.
-        <div className="flex flex-col gap-4 -mx-5 md:-mx-8">
+        // Detail view — just the selected installer's own table. No branch letterhead here —
+        // the installer's own name in the masthead below already says whose payroll this is.
+        <div className="flex flex-col gap-4">
           <button
             type="button"
             onClick={() => setSelectedInstaller(null)}
-            className="flex items-center gap-1.5 self-start mx-5 md:mx-8 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+            className="flex items-center gap-1.5 self-start px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
             style={{ color: textMuted, backgroundColor: isLight ? '#eef2f7' : '#111d33' }}
           >
             <ChevronLeft className="w-3.5 h-3.5" />
@@ -1453,43 +1453,42 @@ export default function Payroll() {
             const groupGridTemplate = groupVisibleColumns.map(c => `${widthFor(c.key)}px`).join(' ')
             const groupMinWidth = groupVisibleColumns.reduce((sum, c) => sum + widthFor(c.key), 0)
             return (
-              <div key={installerName} className="overflow-hidden" style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}`, borderBottom: `1px solid ${border}` }}>
+              <div key={installerName} className="rounded-2xl border shadow-sm overflow-hidden" style={{ backgroundColor: cardBg, borderColor: border }}>
                 <div
-                  className="flex items-center justify-between px-5 py-3.5"
+                  className="flex items-center justify-between px-6 py-4"
                   style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}
                 >
                   <div className="flex items-center gap-3">
-                    <span className="text-lg md:text-xl font-black uppercase tracking-wide" style={{ color: textPrimary }}>
-                      {displayInstallerName(installerName)}
+                    <span className="text-base md:text-lg font-bold" style={{ color: textPrimary }}>
+                      {titleCase(displayInstallerName(installerName))}
                     </span>
                     <span
-                      className="px-2.5 py-1 rounded-full text-[11px] font-black uppercase tracking-wider border"
+                      className="px-2.5 py-1 rounded-full text-[11px] font-medium"
                       style={{
                         backgroundColor: isLight ? '#f1f5f9' : '#0d1520',
-                        borderColor: border,
                         color: textMuted,
                       }}
                     >
-                      {installedUnitsCount(installerRows)} AIRCON UNITS
+                      {installedUnitsCount(installerRows)} aircon units
                     </span>
                     <button
                       type="button"
                       onClick={() => openColumnManager(installerName)}
                       title="Show/hide columns"
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all border shadow-xs hover:border-emerald-500/50"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50"
                       style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
                     >
                       <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-500" />
-                      COLUMNS
+                      Columns
                     </button>
                   </div>
-                  <span className="text-base md:text-lg font-black tabular-nums" style={{ color: '#10B981' }}>₱{peso(installerTotal(installerRows))}</span>
+                  <span className="text-base md:text-lg font-bold tabular-nums" style={{ color: '#10B981' }}>₱{peso(installerTotal(installerRows))}</span>
                 </div>
 
                   <div className="hidden md:block w-full overflow-x-auto">
                     <div
                       className="w-full"
-                      style={{ fontSize: '14px', color: textPrimary, minWidth: groupMinWidth, border: `1px solid ${border}`, borderTop: 'none' }}
+                      style={{ fontSize: '14px', color: textPrimary, minWidth: groupMinWidth }}
                     >
                       <div
                         className="grid sticky top-0 z-10"
@@ -1737,79 +1736,63 @@ export default function Payroll() {
           })}
         </div>
       ) : (
-        // Roster / summary — one card per installer, covering the whole selected period (not a
-        // single job). Remarks/Payroll Due/Audited/Status live here, not in an installer's own
+        // Roster / summary — one continuous ledger table covering the whole selected period (not
+        // a single job). Remarks/Payroll Due/Audited/Status live here, not in an installer's own
         // per-job table. Click "View Payroll" to open that job-level table.
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2.5">
-            {/* Slim column-label row for scannability — the cards below carry no header of their own. */}
-            <div
-              className="hidden md:grid items-center px-5"
-              style={{ gridTemplateColumns: 'minmax(240px, 2fr) 130px 170px 170px 220px' }}
-            >
-              <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Installer</span>
-              <span className="text-[10px] font-black uppercase tracking-wider text-center" style={{ color: textMuted }}>Aircon Units</span>
-              <span className="text-[10px] font-black uppercase tracking-wider text-right" style={{ color: textMuted }}>Payroll Amount</span>
-              <span className="text-[10px] font-black uppercase tracking-wider text-center" style={{ color: textMuted }}>Action</span>
-              <span className="text-[10px] font-black uppercase tracking-wider text-center" style={{ color: textMuted }}>Payroll Status</span>
-            </div>
+        <div className="rounded-b-2xl border overflow-hidden" style={{ borderColor: border, backgroundColor: cardBg }}>
+          {/* Column header row */}
+          <div
+            className="hidden md:grid items-center px-6 md:px-7 py-3.5"
+            style={{ gridTemplateColumns: 'minmax(240px, 2fr) 130px 170px 170px 220px', backgroundColor: isLight ? '#f8fafc' : '#0d1520', borderBottom: `1px solid ${border}` }}
+          >
+            <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70" style={{ color: textMuted }}>Installer</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-center opacity-70" style={{ color: textMuted }}>Aircon Units</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-right opacity-70" style={{ color: textMuted }}>Payroll Amount</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-center opacity-70" style={{ color: textMuted }}>Action</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-center opacity-70" style={{ color: textMuted }}>Payroll Status</span>
+          </div>
 
-            {grouped.map(([installerName, installerRows]) => {
-              const total = installerTotal(installerRows)
-              const isComplete = installerRows.length > 0 && installerRows.every(r => r.status === 'COMPLETE')
-              const summaryRemarks = installerRows[0]?.remarks || ''
-              const summaryAudited = installerRows[0]?.audited || ''
-              const statusAccent = isComplete ? '#10B981' : '#F59E0B'
-              return (
-                <div
-                  key={installerName}
-                  className="grid items-center gap-x-4 gap-y-3 px-5 md:px-6 py-4 md:py-5 rounded-2xl border transition-all duration-200"
-                  style={{
-                    gridTemplateColumns: 'minmax(240px, 2fr) 130px 170px 170px 220px',
-                    backgroundColor: cardBg,
-                    borderColor: border,
-                    borderLeft: `3px solid ${statusAccent}`,
-                    boxShadow: isLight ? '0 1px 2px rgba(15,23,42,0.05)' : '0 1px 2px rgba(0,0,0,0.25)',
-                  }}
-                  onMouseEnter={e => {
-                    e.currentTarget.style.boxShadow = isLight ? '0 12px 24px -8px rgba(15,23,42,0.14)' : '0 12px 24px -8px rgba(0,0,0,0.55)'
-                    e.currentTarget.style.borderColor = isLight ? '#cbd5e1' : '#2c3e5c'
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.boxShadow = isLight ? '0 1px 2px rgba(15,23,42,0.05)' : '0 1px 2px rgba(0,0,0,0.25)'
-                    e.currentTarget.style.borderColor = border
-                  }}
-                >
+          {/* Data rows — hairline dividers, no per-row cards/shadows, just a row-hover tint */}
+          {grouped.map(([installerName, installerRows], rowIndex) => {
+            const total = installerTotal(installerRows)
+            const isComplete = installerRows.length > 0 && installerRows.every(r => r.status === 'COMPLETE')
+            const summaryRemarks = installerRows[0]?.remarks || ''
+            const summaryAudited = installerRows[0]?.audited || ''
+            return (
+              <div
+                key={installerName}
+                className="grid items-center gap-x-4 gap-y-3 px-6 md:px-7 py-5 md:py-6 transition-colors"
+                style={{
+                  gridTemplateColumns: 'minmax(240px, 2fr) 130px 170px 170px 220px',
+                  borderTop: rowIndex === 0 ? 'none' : `1px solid ${border}`,
+                }}
+                onMouseEnter={e => { e.currentTarget.style.backgroundColor = isLight ? '#f8fafc' : '#0d1520' }}
+                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}
+              >
                     {/* 1. INSTALLER */}
                     <div className="flex items-center gap-3.5 min-w-0">
                       <div
-                        className="w-12 h-12 rounded-2xl flex items-center justify-center text-sm font-black text-white shrink-0 shadow-xs"
+                        className="w-11 h-11 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
                         style={{ background: avatarColor(installerName) }}
                       >
                         {getInitials(installerName)}
                       </div>
-                      <span className="text-base md:text-lg font-black uppercase tracking-wide truncate" style={{ color: textPrimary }}>
-                        {displayInstallerName(installerName)}
+                      <span className="text-sm md:text-base font-semibold truncate" style={{ color: textPrimary }}>
+                        {titleCase(displayInstallerName(installerName))}
                       </span>
                     </div>
 
-                    {/* 2. AIRCON UNITS (BIG COUNTER ONLY) */}
-                    <div className="flex flex-col items-center justify-center">
-                      <span className="text-2xl md:text-3xl font-black tabular-nums tracking-tight leading-none" style={{ color: textPrimary }}>
+                    {/* 2. AIRCON UNITS */}
+                    <div className="flex items-center justify-center">
+                      <span className="text-lg md:text-xl font-bold tabular-nums tracking-tight" style={{ color: textPrimary }}>
                         {installedUnitsCount(installerRows)}
-                      </span>
-                      <span className="text-[9px] font-black uppercase tracking-widest mt-1 opacity-60" style={{ color: textMuted }}>
-                        UNITS
                       </span>
                     </div>
 
                     {/* 3. PAYROLL AMOUNT */}
-                    <div className="flex flex-col items-end justify-center">
-                      <span className="text-lg md:text-xl font-black tabular-nums text-right tracking-tight" style={{ color: '#10B981' }}>
+                    <div className="flex items-center justify-end">
+                      <span className="text-base md:text-lg font-bold tabular-nums text-right tracking-tight" style={{ color: '#10B981' }}>
                         ₱{peso(total)}
-                      </span>
-                      <span className="text-[9px] font-black uppercase tracking-widest mt-0.5 opacity-60" style={{ color: textMuted }}>
-                        ESTIMATED
                       </span>
                     </div>
 
@@ -1818,11 +1801,11 @@ export default function Payroll() {
                       <button
                         type="button"
                         onClick={() => setSelectedInstaller(installerName)}
-                        className="group flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all hover:scale-102 active:scale-98 shadow-xs"
+                        className="group flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-colors"
                         style={{ color: '#10B981', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.14)' }}
                       >
-                        <span>VIEW PAYROLL</span>
-                        <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                        <span>View Payroll</span>
+                        <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                       </button>
                     </div>
 
@@ -1830,23 +1813,23 @@ export default function Payroll() {
                     <div className="flex justify-center">
                       {isComplete ? (
                         <div
-                          className="w-full flex flex-col items-center justify-center px-3.5 py-2 rounded-xl border text-center select-none shadow-xs"
+                          className="w-full flex flex-col items-center justify-center px-3.5 py-2 rounded-xl border text-center select-none"
                           style={{
                             color: '#10B981',
                             backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.14)',
                             borderColor: '#10B98160',
                           }}
-                          title={summaryRemarks ? `REMARKS: ${summaryRemarks}` : undefined}
+                          title={summaryRemarks ? `Remarks: ${summaryRemarks}` : undefined}
                         >
-                          <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide max-w-full">
+                          <div className="flex items-center gap-1.5 text-[11px] font-semibold max-w-full">
                             <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
-                            <span className="truncate">COMPLETED BY {(summaryAudited || userFirstName).toUpperCase()}</span>
+                            <span className="truncate">Completed by {titleCase(summaryAudited || userFirstName)}</span>
                           </div>
-                          <span className="text-[9px] font-black uppercase tracking-wider mt-0.5 opacity-70">
-                            {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}
+                          <span className="text-[10px] font-medium mt-0.5 opacity-60">
+                            {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                           </span>
                           {summaryRemarks && (
-                            <span className="text-[9px] font-bold uppercase truncate max-w-full mt-0.5 px-1 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                            <span className="text-[10px] font-medium truncate max-w-full mt-0.5 px-1 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                               {summaryRemarks}
                             </span>
                           )}
@@ -1859,60 +1842,51 @@ export default function Payroll() {
                             setCompleteRemarks(summaryRemarks)
                           }}
                           title="Click to complete payroll"
-                          className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border text-xs font-black uppercase tracking-wider transition-all shadow-xs hover:scale-102 active:scale-98 cursor-pointer"
+                          className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border text-xs font-semibold transition-colors cursor-pointer"
                           style={{
                             color: '#D97706',
                             backgroundColor: isLight ? '#FFFBEB' : 'rgba(245,158,11,0.14)',
                             borderColor: '#F59E0B60',
                           }}
                         >
-                          <span>⏱</span>
-                          <span>PENDING</span>
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>Pending</span>
                         </button>
                       )}
                     </div>
-                </div>
-              )
-            })}
-          </div>
+              </div>
+            )
+          })}
 
-          {/* SUMMARY — global breakdown only; each card above already shows its own installer's total. */}
-          <div>
-            <div className="flex items-center gap-2 px-1 mb-3">
-              <Users className="w-4 h-4 text-emerald-500" />
-              <span className="text-sm font-extrabold" style={{ color: textPrimary }}>Summary</span>
-              <span className="text-[11px] font-semibold" style={{ color: textMuted }}>
-                {grouped.length} installer{grouped.length !== 1 ? 's' : ''}
-              </span>
+          {/* Totals footer — reads as a ledger's own TOTAL line, not a KPI dashboard: no icon
+              chips, no rainbow palette, just labels-over-numbers with the net payout accented. */}
+          <div
+            className="flex flex-wrap items-center justify-between gap-x-10 gap-y-3 px-6 md:px-7 py-5"
+            style={{ backgroundColor: isLight ? '#f8fafc' : '#0d1520', borderTop: `1px solid ${border}` }}
+          >
+            <div className="flex items-center gap-1.5 text-xs font-medium opacity-60" style={{ color: textMuted }}>
+              <Users className="w-3.5 h-3.5" />
+              {grouped.length} installer{grouped.length !== 1 ? 's' : ''}
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="flex flex-wrap items-center gap-x-9 gap-y-2">
               {([
-                { label: 'Total Remittance Collected', value: globalRemittanceTotal, icon: HandCoins, accent: '#0EA5E9', bgLight: 'rgba(14,165,233,0.12)', bgDark: 'rgba(14,165,233,0.16)', color: remitAccent },
-                { label: 'Base Install Total', value: globalBaseInstallTotal, icon: HardHat, accent: '#64748B', bgLight: 'rgba(100,116,139,0.12)', bgDark: 'rgba(148,163,184,0.16)', color: textPrimary },
-                { label: 'Total Add-on Pay', value: globalAddOnTotal, icon: Layers, accent: '#A855F7', bgLight: 'rgba(168,85,247,0.12)', bgDark: 'rgba(168,85,247,0.18)', color: textPrimary },
-                { label: 'Net Payout Due', value: grandTotal, icon: BadgeCheck, accent: '#10B981', bgLight: '#ecfdf5', bgDark: 'rgba(16,185,129,0.14)', color: '#10B981' },
+                { label: 'Remittance Collected', value: globalRemittanceTotal, color: remitAccent },
+                { label: 'Base Install Total', value: globalBaseInstallTotal, color: textPrimary },
+                { label: 'Total Add-on Pay', value: globalAddOnTotal, color: textPrimary },
+                { label: 'Net Payout Due', value: grandTotal, color: '#10B981' },
               ] as const).map(tile => (
-                <div
-                  key={tile.label}
-                  className="rounded-2xl p-4 flex flex-col gap-3 shadow-xs"
-                  style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
-                >
-                  <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                    style={{ backgroundColor: isLight ? tile.bgLight : tile.bgDark }}
-                  >
-                    <tile.icon className="w-4 h-4" style={{ color: tile.accent }} />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-extrabold uppercase tracking-wider truncate" style={{ color: textMuted }}>{tile.label}</div>
-                    <div className="text-lg font-black tabular-nums tracking-tight" style={{ color: tile.color }}>₱{peso(tile.value)}</div>
-                  </div>
+                <div key={tile.label} className="flex flex-col items-end">
+                  <span className="text-[10px] font-medium uppercase tracking-wider opacity-60" style={{ color: textMuted }}>{tile.label}</span>
+                  <span className="text-sm font-bold tabular-nums" style={{ color: tile.color }}>₱{peso(tile.value)}</span>
                 </div>
               ))}
             </div>
           </div>
         </div>
       )}
+      </div>
+        )
+      })()}
 
       {columnManagerFor && (
         <div

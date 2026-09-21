@@ -13,6 +13,7 @@ import { loadAuditExpenseCategories, saveAuditExpenseCategory, deleteAuditExpens
 import { parseAuditExpenseExcelFile } from '../utils/parseAuditExpenseExcel'
 import { parseSmartDate, dateToTime } from '../utils/smartDate'
 import AutoSuggestInput from '../components/AutoSuggestInput'
+import AshcolLoader from '../components/AshcolLoader'
 import * as XLSX from 'xlsx'
 import { uploadReceiptImage } from '../services/supabaseStorage'
 
@@ -78,6 +79,7 @@ export default function AuditFinanceExpenses() {
   const [allBranches, setAllBranches] = useState<BranchOption[]>([])
   const [branchId, setBranchId] = useState('')
   const [expenses, setExpenses] = useState<AuditExpense[]>([])
+  const [initialLoading, setInitialLoading] = useState(true)
   const [importing, setImporting] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<AuditExpense | null>(null)
@@ -454,8 +456,32 @@ export default function AuditFinanceExpenses() {
     }
   }, [])
 
-  useEffect(() => { if (canAccess) void loadBranches() }, [canAccess, loadBranches])
-  useEffect(() => { void reload() }, [reload])
+  useEffect(() => {
+    let active = true
+    const startTime = Date.now()
+
+    const preloadTabDetails = async () => {
+      try {
+        const promises: Promise<any>[] = [loadAuditExpenses()]
+        if (canAccess) promises.push(loadBranches())
+        const [data] = await Promise.all(promises)
+        if (active && data) {
+          setExpenses(data)
+        }
+      } catch (err) {
+        console.error('[AuditFinanceExpenses] Preload error:', err)
+      } finally {
+        const elapsed = Date.now() - startTime
+        const remaining = Math.max(0, 2000 - elapsed)
+        setTimeout(() => {
+          if (active) setInitialLoading(false)
+        }, remaining)
+      }
+    }
+
+    preloadTabDetails()
+    return () => { active = false }
+  }, [canAccess, loadBranches])
 
 
 
@@ -1131,6 +1157,14 @@ export default function AuditFinanceExpenses() {
 
 
   if (!canAccess) return <div className="p-8 text-center" style={{ color: textMuted }}>Expense records are available for branch employees, managers, and admins only.</div>
+
+  if (initialLoading) {
+    return (
+      <div style={{ minHeight: '80vh', backgroundColor: bg }} className="flex items-center justify-center w-full">
+        <AshcolLoader />
+      </div>
+    )
+  }
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: bg }} className="flex flex-col gap-3 px-2 py-3 md:p-6 pb-12">
@@ -2807,14 +2841,14 @@ export default function AuditFinanceExpenses() {
       {/* ── Fullscreen Receipt Image Popup Modal ── */}
       {previewImage && typeof document !== 'undefined' && createPortal(
         <div
-          className="fixed inset-0 z-[2000] flex items-center justify-center p-3 sm:p-6 bg-black/90 backdrop-blur-md transition-opacity duration-200"
+          className="fixed inset-0 z-[3000] flex items-center justify-center p-3 sm:p-6 bg-black/90 backdrop-blur-md transition-opacity duration-200"
           onClick={() => setPreviewImage(null)}
           role="dialog"
           aria-modal="true"
           aria-label="Receipt Image Fullscreen Preview"
         >
           {/* Top Bar with Close (X) Button */}
-          <div className="absolute top-4 right-4 z-[2010]">
+          <div className="absolute top-4 right-4 z-[3010]">
             <button
               type="button"
               onClick={() => setPreviewImage(null)}

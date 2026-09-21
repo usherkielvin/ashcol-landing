@@ -3,44 +3,56 @@ import { BrowserRouter, Route, Routes, Navigate } from 'react-router-dom'
 import { GoogleOAuthProvider } from '@react-oauth/google'
 import AshcolLoader from './components/AshcolLoader'
 
+// Helper to guarantee a minimum 2-second loading animation so the preloader doesn't flash
+const lazyWithMinDelay = <T extends React.ComponentType<any>>(
+  factory: () => Promise<{ default: T }>,
+  minDelayMs = 2000
+) =>
+  lazy(() =>
+    Promise.all([
+      factory(),
+      new Promise((resolve) => setTimeout(resolve, minDelayMs)),
+    ]).then(([module]) => module)
+  )
+
 // Lazy-loaded public pages
-const Landing = lazy(() => import('./pages/Landing'))
-const PublicBooking = lazy(() => import('./pages/PublicBooking'))
-const Login = lazy(() => import('./pages/Login'))
-const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
-const CreateAccount = lazy(() => import('./pages/CreateAccount'))
+const Landing = lazyWithMinDelay(() => import('./pages/Landing'))
+const PublicBooking = lazyWithMinDelay(() => import('./pages/PublicBooking'))
+const Login = lazyWithMinDelay(() => import('./pages/Login'))
+const ForgotPassword = lazyWithMinDelay(() => import('./pages/ForgotPassword'))
+const CreateAccount = lazyWithMinDelay(() => import('./pages/CreateAccount'))
 
 // Lazy-loaded layout & portal pages
-const DashboardLayout = lazy(() => import('./layouts/DashboardLayout'))
-const MyTickets = lazy(() => import('./pages/MyTickets'))
-const Schedules = lazy(() => import('./pages/Schedules'))
-const SearchTickets = lazy(() => import('./pages/SearchTickets'))
-const CreateTicket = lazy(() => import('./pages/CreateTicket'))
-const OfficeTasks = lazy(() => import('./pages/OfficeTasks'))
-const Employees = lazy(() => import('./pages/Employees'))
-const Vehicles = lazy(() => import('./pages/Vehicles'))
-const Profile = lazy(() => import('./pages/Profile'))
-const Branches = lazy(() => import('./pages/Branches'))
-const Relays = lazy(() => import('./pages/Relays'))
-const Bookings = lazy(() => import('./pages/Bookings'))
-const Messages = lazy(() => import('./pages/Messages'))
+const DashboardLayout = lazyWithMinDelay(() => import('./layouts/DashboardLayout'))
+const MyTickets = lazyWithMinDelay(() => import('./pages/MyTickets'))
+const Schedules = lazyWithMinDelay(() => import('./pages/Schedules'))
+const SearchTickets = lazyWithMinDelay(() => import('./pages/SearchTickets'))
+const CreateTicket = lazyWithMinDelay(() => import('./pages/CreateTicket'))
+const OfficeTasks = lazyWithMinDelay(() => import('./pages/OfficeTasks'))
+const Employees = lazyWithMinDelay(() => import('./pages/Employees'))
+const Vehicles = lazyWithMinDelay(() => import('./pages/Vehicles'))
+const Profile = lazyWithMinDelay(() => import('./pages/Profile'))
+const Branches = lazyWithMinDelay(() => import('./pages/Branches'))
+const Relays = lazyWithMinDelay(() => import('./pages/Relays'))
+const Bookings = lazyWithMinDelay(() => import('./pages/Bookings'))
+const Messages = lazyWithMinDelay(() => import('./pages/Messages'))
 
-const DailyAuditReport = lazy(() => import('./pages/DailyAuditReport'))
-const AuditFinanceExpenses = lazy(() => import('./pages/AuditFinanceExpenses'))
-const ForCollections = lazy(() => import('./pages/ForCollections'))
-const Commissions = lazy(() => import('./pages/Commissions'))
-const CashAdvances = lazy(() => import('./pages/CashAdvances'))
-const Payroll = lazy(() => import('./pages/Payroll'))
-const DailyServiceReport = lazy(() => import('./pages/DailyServiceReport'))
-const Registration = lazy(() => import('./pages/Registration'))
-const HappyCalls = lazy(() => import('./pages/HappyCalls'))
-const LineUp = lazy(() => import('./pages/LineUp'))
+const DailyAuditReport = lazyWithMinDelay(() => import('./pages/DailyAuditReport'))
+const AuditFinanceExpenses = lazyWithMinDelay(() => import('./pages/AuditFinanceExpenses'))
+const ForCollections = lazyWithMinDelay(() => import('./pages/ForCollections'))
+const Commissions = lazyWithMinDelay(() => import('./pages/Commissions'))
+const CashAdvances = lazyWithMinDelay(() => import('./pages/CashAdvances'))
+const Payroll = lazyWithMinDelay(() => import('./pages/Payroll'))
+const DailyServiceReport = lazyWithMinDelay(() => import('./pages/DailyServiceReport'))
+const Registration = lazyWithMinDelay(() => import('./pages/Registration'))
+const HappyCalls = lazyWithMinDelay(() => import('./pages/HappyCalls'))
+const LineUp = lazyWithMinDelay(() => import('./pages/LineUp'))
 
-const Hris = lazy(() => import('./pages/Hris'))
-const Ddrm = lazy(() => import('./pages/Ddrm'))
-const Bills = lazy(() => import('./pages/Bills'))
-const Telecom = lazy(() => import('./pages/Telecom'))
-const OperationsForms = lazy(() => import('./pages/OperationsForms'))
+const Hris = lazyWithMinDelay(() => import('./pages/Hris'))
+const Ddrm = lazyWithMinDelay(() => import('./pages/Ddrm'))
+const Bills = lazyWithMinDelay(() => import('./pages/Bills'))
+const Telecom = lazyWithMinDelay(() => import('./pages/Telecom'))
+const OperationsForms = lazyWithMinDelay(() => import('./pages/OperationsForms'))
 
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
