@@ -253,10 +253,13 @@ export default function DashboardLayout() {
   // Live cash-on-hand reminder for the active branch — shown in the header so a branch is
   // never more than a glance away from knowing it's due for a company bank deposit.
   const [currentCoh, setCurrentCoh] = useState<{ totalCohCfd: number; depositThreshold: number; overThreshold: boolean } | null>(null)
+  // Only ever set on failure — surfaced in the header so a broken fetch is visible without devtools.
+  const [cohError, setCohError] = useState<string | null>(null)
   const activeCohBranchId = hasBranchSwitcher ? globalBranchId : (user?.branchId || null)
   useEffect(() => {
     if (!activeCohBranchId) {
       setCurrentCoh(null)
+      setCohError(null)
       return
     }
     const TAGUIG_UUID = '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b'
@@ -284,7 +287,10 @@ export default function DashboardLayout() {
         const url = `${API_BASE_URL}/v1/reports/current-coh?${params.toString()}`
         const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
         if (!res.ok) {
-          if (!cancelled) setCurrentCoh(null)
+          if (!cancelled) {
+            setCurrentCoh(null)
+            setCohError(`COH ${res.status}`)
+          }
           return
         }
         const data = await res.json()
@@ -294,8 +300,12 @@ export default function DashboardLayout() {
           depositThreshold: Number(data?.depositThreshold) || 5000,
           overThreshold: !!data?.overThreshold
         })
+        setCohError(null)
       } catch {
-        if (!cancelled) setCurrentCoh(null)
+        if (!cancelled) {
+          setCurrentCoh(null)
+          setCohError('COH offline')
+        }
       }
     }
     loadCoh()
@@ -1018,6 +1028,15 @@ export default function DashboardLayout() {
                   {currentCoh.overThreshold && (
                     <span className="hidden lg:inline shrink-0">· Deposit Due</span>
                   )}
+                </span>
+              )}
+              {!currentCoh && cohError && (
+                <span
+                  className="inline-flex items-center px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border"
+                  style={{ backgroundColor: 'rgba(245,158,11,0.08)', color: '#F59E0B', borderColor: 'rgba(245,158,11,0.2)' }}
+                  title="Cash-on-hand lookup failed — see this branch's row in the audit report for today's COH/CFD instead."
+                >
+                  {cohError}
                 </span>
               )}
               <MessagesDropdown />
