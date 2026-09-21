@@ -39,6 +39,11 @@ const expenseRecordHistory = (row: AuditExpense) => {
   }
   return [...fallback, ...stored].sort((a, b) => (a.at || '').localeCompare(b.at || ''))
 }
+const formatDetailsName = (raw?: string | null): string => {
+  if (!raw || !raw.trim() || raw === '-' || raw === '—') return '—'
+  const withoutRole = raw.split(/\s*[-–—]\s*/)[0]?.trim() || raw.trim()
+  return withoutRole.toUpperCase()
+}
 const emptyForm = (defaultBranchId = '') => ({ date: formatTodayReceiptDate(), company: '', description: '', receiptNo: '', amount: '', expenseCategory: 'OTHER' as AuditExpenseCategory, sourceOfFunds: '', incurredBy: '', branchId: defaultBranchId })
 
 export default function AuditFinanceExpenses() {
@@ -105,13 +110,19 @@ export default function AuditFinanceExpenses() {
   const [branchEmployees, setBranchEmployees] = useState<string[]>([])
 
   useEffect(() => {
-    if (!previewImage) return
+    if (!previewImage && !detailRow) return
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setPreviewImage(null)
+      if (e.key === 'Escape') {
+        if (previewImage) {
+          setPreviewImage(null)
+        } else if (detailRow && !isEditingInModal) {
+          setDetailRow(null)
+        }
+      }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [previewImage])
+  }, [previewImage, detailRow, isEditingInModal])
 
   // --- Tab state ---
   const activeTab = 'expenses'
@@ -1855,77 +1866,90 @@ export default function AuditFinanceExpenses() {
         </div>
       </div>
 
-      {detailRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}
-          onClick={() => { if (!isEditingInModal) setDetailRow(null) }}>
-          <div className="w-full sm:max-w-xl rounded-t-2xl sm:rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[100dvh] sm:max-h-[92vh]"
-            style={{ backgroundColor: cardBg, border: `1px solid ${isLight ? '#e2e8f0' : '#1e2d48'}`, boxShadow: '0 25px 60px rgba(0,0,0,0.4)' }}
-            onClick={(e) => e.stopPropagation()}>
-
-            {/* ── Premium Header ── */}
-            <div className="relative px-6 pt-6 pb-5 shrink-0 overflow-hidden"
-              style={{ background: isLight
-                ? 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)'
-                : 'linear-gradient(135deg, #0a1628 0%, #0e2144 100%)' }}>
-              <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 80% 20%, #10B981 0%, transparent 60%)' }} />
-              <div className="relative flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-10 h-10 rounded-xl shrink-0" style={{ background: 'rgba(16,185,129,0.18)', border: '1px solid rgba(16,185,129,0.3)' }}>
-                    <Receipt size={18} style={{ color: '#10B981' }} />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <h3 className="text-base font-black tracking-tight" style={{ color: '#fff' }}>
-                        {isEditingInModal ? 'Edit Expense Record' : 'Expense Record'}
-                      </h3>
-                      {!isEditingInModal && detailRow.expenseCategory && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: 'rgba(16,185,129,0.18)', color: '#10B981', border: '1px solid rgba(16,185,129,0.3)' }}>
-                          {detailRow.expenseCategory}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.55)' }}>
-                      {detailRow.branchName} &nbsp;·&nbsp; {detailRow.date}
-                    </p>
-                  </div>
+      {detailRow && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-[2500] flex items-center justify-center p-3 sm:p-6 md:p-8 bg-black/80 backdrop-blur-md transition-opacity duration-200"
+          onClick={() => { if (!isEditingInModal) setDetailRow(null) }}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Expense Record Details"
+        >
+          <div
+            className="w-full max-w-2xl lg:max-w-4xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh] border"
+            style={{
+              backgroundColor: cardBg,
+              borderColor: isLight ? '#e2e8f0' : '#1e293b',
+              boxShadow: isLight ? '0 25px 50px -12px rgba(0,0,0,0.25)' : '0 25px 60px -12px rgba(0,0,0,0.7)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* ── Modern Minimalist Header ── */}
+            <div
+              className="flex items-center justify-between px-6 sm:px-8 py-5 border-b shrink-0"
+              style={{ borderColor: isLight ? '#f1f5f9' : '#1e293b' }}
+            >
+              <div>
+                <h3 className="text-lg sm:text-xl font-bold tracking-tight" style={{ color: textPrimary }}>
+                  {isEditingInModal ? 'Edit Expense Record' : 'Expense Record'}
+                </h3>
+                <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm mt-0.5" style={{ color: textMuted }}>
+                  <span>{detailRow.branchName}</span>
+                  <span>·</span>
+                  <span>{detailRow.date}</span>
+                  {!isEditingInModal && detailRow.expenseCategory && (
+                    <>
+                      <span>·</span>
+                      <span className="font-medium" style={{ color: isLight ? '#475569' : '#94a3b8' }}>
+                        {detailRow.expenseCategory}
+                      </span>
+                    </>
+                  )}
                 </div>
-                <button type="button"
-                  onClick={() => { if (!isEditingInModal || window.confirm('Discard unsaved changes?')) { setIsEditingInModal(false); setDetailRow(null) } }}
-                  className="p-1.5 rounded-lg transition-colors shrink-0"
-                  style={{ color: 'rgba(255,255,255,0.5)', background: 'rgba(255,255,255,0.07)' }}
-                  aria-label="Close details modal">
-                  <X size={18} />
-                </button>
               </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isEditingInModal || window.confirm('Discard unsaved changes?')) {
+                    setIsEditingInModal(false)
+                    setDetailRow(null)
+                  }
+                }}
+                className="w-9 h-9 rounded-full flex items-center justify-center transition-colors cursor-pointer hover:opacity-80 active:scale-95"
+                style={{ color: textMuted, backgroundColor: isLight ? '#f1f5f9' : '#1e293b' }}
+                aria-label="Close details modal"
+              >
+                <X size={18} />
+              </button>
             </div>
 
             {isEditingInModal ? (
-              <div className="p-5 flex flex-col gap-4 overflow-y-auto">
-                <div className="rounded-xl p-3 flex items-start gap-2.5 text-xs border"
-                  style={{ backgroundColor: editAlertBg, borderColor: editAlertBorder, color: editAlertText }}>
-                  <Pencil size={15} className="mt-0.5 shrink-0" style={{ color: editAlertText }} />
-                  <div>
-                    <span className="font-bold block mb-0.5" style={{ color: textPrimary }}>Editing Persisted Record</span>
-                    <span style={{ color: textMuted }}>You are modifying an existing receipt. Saving changes will update the record and append to its history log.</span>
-                  </div>
+              <div className="p-6 sm:p-8 flex flex-col gap-5 overflow-y-auto">
+                <div
+                  className="rounded-xl p-3.5 text-xs border"
+                  style={{ backgroundColor: editAlertBg, borderColor: editAlertBorder, color: editAlertText }}
+                >
+                  <span className="font-bold block mb-0.5" style={{ color: textPrimary }}>Editing Persisted Record</span>
+                  <span style={{ color: textMuted }}>You are modifying an existing receipt. Saving changes will update the record and append to its history log.</span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                   {/* Date */}
                   {field(
                     'Date',
                     <div>
-                      <input value={dateRaw}
+                      <input
+                        value={dateRaw}
                         id="modal-receipt-date"
                         onChange={(e) => { setDateRaw(e.target.value); setDateError('') }}
                         onBlur={(e) => handleDateBlur(e.target.value)}
                         placeholder={latestDateStr}
-                        className="w-full rounded-lg px-2.5 py-1.5 text-base sm:text-xs outline-none transition-all animate-fade-in"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                        className="w-full rounded-lg px-3 py-2 text-sm outline-none transition-all"
+                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                      />
                       {dateError
-                        ? <p className="text-xs mt-0.5" style={{ color: danger }}>{dateError}</p>
-                        : form.date ? <p className="text-xs mt-0.5" style={{ color: accent }}>✓ {form.date}</p> : null}
+                        ? <p className="text-xs mt-1" style={{ color: danger }}>{dateError}</p>
+                        : form.date ? <p className="text-xs mt-1" style={{ color: accent }}>✓ {form.date}</p> : null}
                     </div>
                   )}
 
@@ -1937,7 +1961,7 @@ export default function AuditFinanceExpenses() {
                         value={form.branchId}
                         id="modal-receipt-branch"
                         onChange={(e) => setForm((f) => ({ ...f, branchId: e.target.value }))}
-                        className="w-full rounded-lg px-2.5 py-1.5 text-base sm:text-xs outline-none transition-all"
+                        className="w-full rounded-lg px-3 py-2 text-sm outline-none transition-all"
                         style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, colorScheme: isLight ? 'light' : 'dark' }}
                       >
                         {(allBranches.length > 0 ? allBranches : branches).map((b) => (
@@ -1950,82 +1974,99 @@ export default function AuditFinanceExpenses() {
                   {/* Incurred By */}
                   {field(
                     'Incurred By',
-                    <AutoSuggestInput value={form.incurredBy}
+                    <AutoSuggestInput
+                      value={form.incurredBy}
                       id="modal-receipt-incurredBy"
                       onChange={(v) => setForm((f) => ({ ...f, incurredBy: v }))}
-                      suggestions={suggestions.people} placeholder="Who incurred this?"
+                      suggestions={suggestions.people}
+                      placeholder="Who incurred this?"
                       {...{ inputBg, textPrimary, textMuted, accent }}
-                      inputClassName="text-base sm:text-xs"
-                      inputStyle={{ padding: '6px 10px' }}
-                      inputBorder={inputBorder} />
+                      inputClassName="text-sm"
+                      inputStyle={{ padding: '8px 12px' }}
+                      inputBorder={inputBorder}
+                    />
                   )}
 
                   {/* Company */}
                   {field(
                     'Company / Vendor',
-                    <AutoSuggestInput value={form.company}
+                    <AutoSuggestInput
+                      value={form.company}
                       id="modal-receipt-company"
                       onChange={(v) => setForm((f) => ({ ...f, company: v }))}
-                      suggestions={suggestions.companies} placeholder="Store or vendor name"
+                      suggestions={suggestions.companies}
+                      placeholder="Store or vendor name"
                       {...{ inputBg, textPrimary, textMuted, accent }}
-                      inputClassName="text-base sm:text-xs"
-                      inputStyle={{ padding: '6px 10px' }}
-                      inputBorder={inputBorder} />
+                      inputClassName="text-sm"
+                      inputStyle={{ padding: '8px 12px' }}
+                      inputBorder={inputBorder}
+                    />
                   )}
 
                   {/* Receipt No */}
                   {field(
                     'Receipt No.',
-                    <input value={form.receiptNo}
+                    <input
+                      value={form.receiptNo}
                       id="modal-receipt-receiptNo"
                       onChange={(e) => setForm((f) => ({ ...f, receiptNo: e.target.value }))}
                       placeholder="OR / SI number"
-                      className="w-full rounded-lg px-2.5 py-1.5 text-base sm:text-xs outline-none transition-all"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                      className="w-full rounded-lg px-3 py-2 text-sm outline-none transition-all font-mono"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                    />
                   )}
 
                   {/* Amount */}
                   {field(
                     'Amount (₱)',
-                    <input type="text" value={form.amount}
+                    <input
+                      type="text"
+                      value={form.amount}
                       id="modal-receipt-amount"
                       onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
                       onBlur={(e) => {
                         const numeric = parseFloat(e.target.value.replace(/,/g, ''))
                         if (!isNaN(numeric)) {
-                           setForm((f) => ({ ...f, amount: numeric.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }))
+                          setForm((f) => ({ ...f, amount: numeric.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }))
                         }
                       }}
                       placeholder="0.00"
-                      className="w-full rounded-lg px-2.5 py-1.5 text-base sm:text-xs outline-none transition-all"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+                      className="w-full rounded-lg px-3 py-2 text-sm outline-none transition-all font-semibold"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                    />
                   )}
 
                   {/* Source of Funds */}
                   {field(
                     'Source of Funds',
-                    <AutoSuggestInput value={form.sourceOfFunds}
+                    <AutoSuggestInput
+                      value={form.sourceOfFunds}
                       id="modal-receipt-sourceOfFunds"
                       onChange={(v) => setForm((f) => ({ ...f, sourceOfFunds: v }))}
-                      suggestions={suggestions.sources} placeholder="Petty cash, reimbursement…"
+                      suggestions={suggestions.sources}
+                      placeholder="Petty cash, reimbursement…"
                       {...{ inputBg, textPrimary, textMuted, accent }}
-                      inputClassName="text-base sm:text-xs"
-                      inputStyle={{ padding: '6px 10px' }}
-                      inputBorder={inputBorder} />
+                      inputClassName="text-sm"
+                      inputStyle={{ padding: '8px 12px' }}
+                      inputBorder={inputBorder}
+                    />
                   )}
 
                   {/* Description */}
                   <div className="sm:col-span-2">
                     {field(
                       'Description',
-                      <AutoSuggestInput value={form.description}
+                      <AutoSuggestInput
+                        value={form.description}
                         id="modal-receipt-description"
                         onChange={(v) => setForm((f) => ({ ...f, description: v }))}
-                        suggestions={suggestions.descs} placeholder="What was purchased?"
+                        suggestions={suggestions.descs}
+                        placeholder="What was purchased?"
                         {...{ inputBg, textPrimary, textMuted, accent }}
-                        inputClassName="text-base sm:text-xs"
-                        inputStyle={{ padding: '6px 10px' }}
-                        inputBorder={inputBorder} />
+                        inputClassName="text-sm"
+                        inputStyle={{ padding: '8px 12px' }}
+                        inputBorder={inputBorder}
+                      />
                     )}
                   </div>
                 </div>
@@ -2033,11 +2074,19 @@ export default function AuditFinanceExpenses() {
                 {/* Category Selection */}
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-wide block mb-2" style={{ color: textMuted }}>Expense Category</label>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap gap-2">
                     {allCategories.map((cat) => (
-                      <button key={cat} type="button" onClick={() => setForm((f) => ({ ...f, expenseCategory: cat as AuditExpenseCategory }))}
-                        className="px-2.5 py-1 rounded-lg text-xs font-semibold transition-all hover:scale-102"
-                        style={{ border: `1px solid ${form.expenseCategory === cat ? editAccent : inputBorder}`, backgroundColor: form.expenseCategory === cat ? `${editAccent}22` : inputBg, color: form.expenseCategory === cat ? editAccent : textMuted }}>
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setForm((f) => ({ ...f, expenseCategory: cat as AuditExpenseCategory }))}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                        style={{
+                          border: `1px solid ${form.expenseCategory === cat ? editAccent : inputBorder}`,
+                          backgroundColor: form.expenseCategory === cat ? `${editAccent}22` : inputBg,
+                          color: form.expenseCategory === cat ? editAccent : textMuted
+                        }}
+                      >
                         {cat}
                       </button>
                     ))}
@@ -2045,161 +2094,261 @@ export default function AuditFinanceExpenses() {
                 </div>
               </div>
             ) : (
-              <div className="px-6 py-5 flex flex-col gap-4 overflow-y-auto">
-
-                {/* ── Info Grid ── */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5">
-                  {[
-                    { label: 'Submitted By', value: formatDisplayUserLabel(detailRow.inputBy), isPerson: true },
-                    { label: 'Incurred By', value: detailRow.incurredBy || '—', isPerson: true },
-                    { label: 'Company / Vendor', value: detailRow.company || '—', isPerson: false },
-                    { label: 'Receipt No.', value: detailRow.receiptNo || '—', isPerson: false },
-                    { label: 'Source of Funds', value: detailRow.sourceOfFunds || '—', isPerson: false },
-                  ].map(({ label, value, isPerson }) => (
-                    <div key={label}
-                      className="rounded-xl px-3.5 py-3 flex flex-col gap-0.5"
-                      style={{ backgroundColor: isLight ? '#f8fafc' : '#0c1829', border: `1px solid ${isLight ? '#e2e8f0' : '#1a2d47'}` }}>
-                      <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: textMuted }}>{label}</span>
-                      <span className="text-sm font-semibold leading-snug break-words" style={{ color: textPrimary }}>
-                        {isPerson ? <EmployeeNameLink nameOrId={value} /> : value}
+              <div className="p-6 sm:p-8 flex flex-col gap-6 overflow-y-auto">
+                {/* ── Polished Hero Amount Strip ── */}
+                <div
+                  className="rounded-2xl p-5 sm:p-6 flex items-center justify-between gap-4 border"
+                  style={{
+                    backgroundColor: isLight ? '#f8fafc' : '#0b1324',
+                    borderColor: isLight ? '#e2e8f0' : '#1e293b'
+                  }}
+                >
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
+                      Total Amount
+                    </span>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-3xl sm:text-4xl font-extrabold tracking-tight" style={{ color: textPrimary }}>
+                        ₱{peso(detailRow.amount)}
+                      </span>
+                      <span className="text-xs font-semibold" style={{ color: textMuted }}>
+                        PHP
                       </span>
                     </div>
-                  ))}
-
-                  {/* Description spans full width */}
-                  <div className="col-span-1 sm:col-span-2 rounded-xl px-3.5 py-3"
-                    style={{ backgroundColor: isLight ? '#f8fafc' : '#0c1829', border: `1px solid ${isLight ? '#e2e8f0' : '#1a2d47'}` }}>
-                    <span className="text-[10px] font-bold uppercase tracking-widest block mb-1" style={{ color: textMuted }}>Description</span>
-                    <span className="text-sm font-semibold whitespace-pre-wrap" style={{ color: textPrimary }}>{detailRow.description || '—'}</span>
                   </div>
+
+                  {detailRow.expenseCategory && (
+                    <div className="shrink-0">
+                      <span
+                        className="text-xs font-bold uppercase tracking-wider px-3.5 py-1.5 rounded-xl border inline-block"
+                        style={{
+                          backgroundColor: isLight ? '#ffffff' : '#060d1a',
+                          borderColor: isLight ? '#e2e8f0' : '#1e293b',
+                          color: textPrimary
+                        }}
+                      >
+                        {detailRow.expenseCategory}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
-                {/* ── Amount Highlight ── */}
-                <div className="rounded-xl px-5 py-4 flex items-center justify-between"
-                  style={{ background: isLight
-                    ? 'linear-gradient(135deg, #f0fdf4, #dcfce7)'
-                    : 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(16,185,129,0.03))',
-                    border: `1px solid ${isLight ? '#bbf7d0' : 'rgba(16,185,129,0.2)'}` }}>
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-widest block" style={{ color: isLight ? '#059669' : '#34d399' }}>Total Amount</span>
-                    <span className="text-[11px] font-medium" style={{ color: isLight ? '#6ee7b7' : 'rgba(52,211,153,0.6)' }}>Philippine Peso</span>
-                  </div>
-                  <span className="text-3xl font-black" style={{ color: isLight ? '#059669' : '#10B981' }}>
-                    ₱{peso(detailRow.amount)}
-                  </span>
-                </div>
+                {/* ── Main Details Grid ── */}
+                <div className={`grid grid-cols-1 ${detailRow.receiptImageUri ? 'lg:grid-cols-12' : 'grid-cols-1'} gap-6`}>
+                  {/* Left Column: Metadata & Notes */}
+                  <div className={`${detailRow.receiptImageUri ? 'lg:col-span-7' : 'w-full'} flex flex-col gap-5`}>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-6">
+                      <div>
+                        <span className="text-[11px] font-bold uppercase tracking-wider block mb-1" style={{ color: textMuted }}>
+                          Company / Vendor
+                        </span>
+                        <span className="text-sm font-semibold break-words" style={{ color: textPrimary }}>
+                          {detailRow.company ? detailRow.company.toUpperCase() : '—'}
+                        </span>
+                      </div>
 
-                {/* ── Receipt Image ── */}
-                {detailRow.receiptImageUri && (
-                  <div className="rounded-xl px-4 py-4"
-                    style={{ backgroundColor: isLight ? '#f8fafc' : '#0c1829', border: `1px solid ${isLight ? '#e2e8f0' : '#1a2d47'}` }}>
-                    <span className="text-[10px] font-bold uppercase tracking-widest block mb-2" style={{ color: textMuted }}>Receipt Image</span>
-                    <button
-                      type="button"
-                      onClick={() => setPreviewImage(detailRow.receiptImageUri || null)}
-                      className="group cursor-pointer focus:outline-none block"
-                      title="Click to view full screen"
-                    >
-                      <img
-                        src={detailRow.receiptImageUri}
-                        alt="Receipt"
-                        style={{ maxWidth: 180, maxHeight: 240, borderRadius: 8, border: `1px solid ${isLight ? '#e2e8f0' : '#1a2d47'}`, objectFit: 'contain' }}
-                        className="group-hover:scale-105 transition-transform"
-                      />
-                    </button>
-                  </div>
-                )}
+                      <div>
+                        <span className="text-[11px] font-bold uppercase tracking-wider block mb-1" style={{ color: textMuted }}>
+                          Receipt No.
+                        </span>
+                        <span className="text-sm font-mono font-semibold" style={{ color: textPrimary }}>
+                          {detailRow.receiptNo ? detailRow.receiptNo.toUpperCase() : '—'}
+                        </span>
+                      </div>
 
-                {/* ── Timeline History ── */}
-                <div className="rounded-xl px-4 py-4"
-                  style={{ backgroundColor: isLight ? '#f8fafc' : '#0c1829', border: `1px solid ${isLight ? '#e2e8f0' : '#1a2d47'}` }}>
-                  <span className="text-[10px] font-bold uppercase tracking-widest block mb-3" style={{ color: textMuted }}>Activity History</span>
-                  <div className="relative flex flex-col gap-0">
-                    {expenseRecordHistory(detailRow).map((entry, idx, arr) => (
-                      <div key={`${entry.action}-${entry.at}-${idx}`} className="flex gap-3 relative">
-                        {/* timeline spine */}
-                        {idx < arr.length - 1 && (
-                          <div className="absolute left-[9px] top-5 bottom-0 w-px" style={{ backgroundColor: isLight ? '#e2e8f0' : '#1e2d48' }} />
-                        )}
-                        {/* dot */}
-                        <div className="mt-1 flex-shrink-0 w-[18px] h-[18px] rounded-full flex items-center justify-center"
-                          style={{
-                            backgroundColor: entry.action === 'created'
-                              ? (isLight ? '#dcfce7' : 'rgba(16,185,129,0.12)')
-                              : (isLight ? '#ede9fe' : 'rgba(99,102,241,0.12)'),
-                            border: `2px solid ${entry.action === 'created' ? '#10B981' : '#6366F1'}`
-                          }}>
-                          <div className="w-1.5 h-1.5 rounded-full"
-                            style={{ backgroundColor: entry.action === 'created' ? '#10B981' : '#6366F1' }} />
-                        </div>
-                        <div className="pb-4 flex-1 min-w-0">
-                          <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-                            <span className="text-xs font-bold" style={{ color: textPrimary }}>
-                              {entry.action === 'created' ? 'Created' : 'Updated'}
-                            </span>
-                            <span className="text-xs" style={{ color: textMuted }}>by</span>
-                            <span className="text-xs font-semibold" style={{ color: entry.action === 'created' ? '#10B981' : '#6366F1' }}>
-                              <EmployeeNameLink nameOrId={formatDisplayUserLabel(entry.by)} />
+                      <div>
+                        <span className="text-[11px] font-bold uppercase tracking-wider block mb-1" style={{ color: textMuted }}>
+                          Incurred By
+                        </span>
+                        <span className="text-sm font-semibold" style={{ color: textPrimary }}>
+                          {detailRow.incurredBy ? (
+                            <EmployeeNameLink
+                              nameOrId={formatDetailsName(detailRow.incurredBy)}
+                              displayText={formatDetailsName(detailRow.incurredBy)}
+                            />
+                          ) : '—'}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-[11px] font-bold uppercase tracking-wider block mb-1" style={{ color: textMuted }}>
+                          Submitted By
+                        </span>
+                        <span className="text-sm font-semibold" style={{ color: textPrimary }}>
+                          <EmployeeNameLink
+                            nameOrId={formatDetailsName(detailRow.inputBy)}
+                            displayText={formatDetailsName(detailRow.inputBy)}
+                          />
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-[11px] font-bold uppercase tracking-wider block mb-1" style={{ color: textMuted }}>
+                          Source of Funds
+                        </span>
+                        <span className="text-sm font-semibold" style={{ color: textPrimary }}>
+                          {detailRow.sourceOfFunds ? detailRow.sourceOfFunds.toUpperCase() : '—'}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-[11px] font-bold uppercase tracking-wider block mb-1" style={{ color: textMuted }}>
+                          Category
+                        </span>
+                        <span className="text-sm font-semibold" style={{ color: textPrimary }}>
+                          {detailRow.expenseCategory || '—'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Description */}
+                    <div className="pt-4 border-t" style={{ borderColor: isLight ? '#f1f5f9' : '#1e293b' }}>
+                      <span className="text-[11px] font-bold uppercase tracking-wider block mb-1.5" style={{ color: textMuted }}>
+                        Description
+                      </span>
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap font-medium" style={{ color: textPrimary }}>
+                        {detailRow.description || '—'}
+                      </p>
+                    </div>
+
+                    {/* Timeline Activity */}
+                    <div className="pt-4 border-t" style={{ borderColor: isLight ? '#f1f5f9' : '#1e293b' }}>
+                      <span className="text-[11px] font-bold uppercase tracking-wider block mb-2.5" style={{ color: textMuted }}>
+                        Activity Log
+                      </span>
+                      <div className="space-y-2">
+                        {expenseRecordHistory(detailRow).map((entry, idx) => (
+                          <div
+                            key={`${entry.action}-${entry.at}-${idx}`}
+                            className="flex items-center justify-between text-xs py-1"
+                            style={{ color: textMuted }}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-semibold uppercase text-[11px]" style={{ color: textPrimary }}>
+                                {entry.action === 'created' ? 'Created' : 'Updated'}
+                              </span>
+                              <span>by</span>
+                              <span className="font-semibold" style={{ color: textPrimary }}>
+                                <EmployeeNameLink
+                                  nameOrId={formatDetailsName(entry.by)}
+                                  displayText={formatDetailsName(entry.by)}
+                                />
+                              </span>
+                            </div>
+                            <span className="text-[11px] font-medium">
+                              {historyDateTime(entry.at)}
                             </span>
                           </div>
-                          <span className="text-[11px] font-medium" style={{ color: textMuted }}>
-                            {historyDateTime(entry.at)}
+                        ))}
+                        {expenseRecordHistory(detailRow).length === 0 && (
+                          <span className="text-xs" style={{ color: textMuted }}>No activity records found.</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Receipt Image */}
+                  {detailRow.receiptImageUri && (
+                    <div className="lg:col-span-5 flex flex-col">
+                      <span className="text-[11px] font-bold uppercase tracking-wider block mb-2" style={{ color: textMuted }}>
+                        Receipt Document
+                      </span>
+                      <div
+                        onClick={() => setPreviewImage(detailRow.receiptImageUri || null)}
+                        className="group relative cursor-pointer rounded-2xl overflow-hidden border flex items-center justify-center p-3 transition-all duration-200 hover:border-slate-400/50"
+                        style={{
+                          backgroundColor: isLight ? '#ffffff' : '#08111f',
+                          borderColor: isLight ? '#e2e8f0' : '#1e293b',
+                          minHeight: 280
+                        }}
+                        title="Click to view full screen"
+                      >
+                        <img
+                          src={detailRow.receiptImageUri}
+                          alt="Receipt Document"
+                          className="max-h-[350px] w-auto max-w-full object-contain rounded-lg transition-transform duration-200 group-hover:scale-[1.01]"
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center">
+                          <span className="opacity-0 group-hover:opacity-100 transition-opacity text-xs font-semibold px-3.5 py-1.5 rounded-full bg-black/80 text-white backdrop-blur-sm shadow-md">
+                            Click to enlarge
                           </span>
                         </div>
                       </div>
-                    ))}
-                    {expenseRecordHistory(detailRow).length === 0 && (
-                      <span className="text-xs" style={{ color: textMuted }}>No history available.</span>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
-
               </div>
             )}
 
-            {/* ── Footer ── */}
-            <div className="flex items-center justify-between gap-2 px-6 py-4 shrink-0"
-              style={{ borderTop: `1px solid ${isLight ? '#e2e8f0' : '#1a2d47'}` }}>
+            {/* ── Modern Minimalist Footer ── */}
+            <div
+              className="flex items-center justify-between px-6 sm:px-8 py-4 border-t shrink-0"
+              style={{ borderColor: isLight ? '#f1f5f9' : '#1e293b' }}
+            >
               {isEditingInModal ? (
                 <>
-                  <button type="button"
-                    onClick={() => { if (window.confirm('Discard unsaved changes?')) { setIsEditingInModal(false); setEditing(null) } }}
-                    className="px-4 py-2 rounded-xl text-sm font-semibold border transition-all duration-150 active:scale-95"
-                    style={{ color: textPrimary, borderColor: isLight ? '#e2e8f0' : '#1e2d48', backgroundColor: isLight ? '#f8fafc' : '#0c1829' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('Discard unsaved changes?')) {
+                        setIsEditingInModal(false)
+                        setEditing(null)
+                      }
+                    }}
+                    className="px-5 py-2.5 rounded-xl text-sm font-medium transition-colors hover:opacity-80 active:scale-95 cursor-pointer"
+                    style={{ color: textMuted, backgroundColor: isLight ? '#f1f5f9' : '#1e293b' }}
+                  >
                     Cancel
                   </button>
-                  <button type="button" onClick={submitReceipt} disabled={savingReceipt}
-                    className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold text-white shadow-lg transition-all duration-150 active:scale-95"
-                    style={{ backgroundColor: editAccent, boxShadow: '0 4px 14px rgba(99,102,241,0.35)' }}>
+                  <button
+                    type="button"
+                    onClick={submitReceipt}
+                    disabled={savingReceipt}
+                    className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-90 active:scale-95 cursor-pointer"
+                    style={{ backgroundColor: editAccent }}
+                  >
                     {savingReceipt ? <Loader2 size={14} className="animate-spin" /> : null}
                     Apply Changes
                   </button>
                 </>
               ) : (
                 <>
-                  <button type="button" onClick={() => setDetailRow(null)}
-                    className="px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-150 active:scale-95"
-                    style={{ color: textMuted, backgroundColor: isLight ? '#f1f5f9' : '#0f1c30', border: `1px solid ${isLight ? '#e2e8f0' : '#1a2d47'}` }}>
+                  <button
+                    type="button"
+                    onClick={() => setDetailRow(null)}
+                    className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-85 active:scale-95 cursor-pointer border"
+                    style={{
+                      color: textPrimary,
+                      backgroundColor: isLight ? '#ffffff' : '#0d1527',
+                      borderColor: isLight ? '#e2e8f0' : '#1e293b'
+                    }}
+                  >
                     Close
                   </button>
-                  {/* Edit / Delete — desktop only; hidden on mobile to prevent misclicks */}
-                  <div className="hidden sm:flex items-center gap-2">
-                    <button type="button" onClick={() => startEditInModal(detailRow)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white transition-all duration-150 active:scale-95"
-                      style={{ backgroundColor: '#334155', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
-                      <Pencil size={13} /> Edit
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => startEditInModal(detailRow)}
+                      className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 active:scale-95 cursor-pointer shadow-sm"
+                      style={{ backgroundColor: '#1e293b' }}
+                    >
+                      Edit
                     </button>
-                    <button type="button" onClick={() => void handleDeleteRecord(detailRow)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all duration-150 active:scale-95"
-                      style={{ color: '#fff', backgroundColor: danger, boxShadow: '0 2px 8px rgba(239,68,68,0.3)' }}>
-                      <Trash2 size={13} /> Delete
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteRecord(detailRow)}
+                      className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 active:scale-95 cursor-pointer shadow-sm"
+                      style={{ backgroundColor: danger }}
+                    >
+                      Delete
                     </button>
                   </div>
                 </>
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {duplicateModal && typeof document !== 'undefined' && createPortal(
