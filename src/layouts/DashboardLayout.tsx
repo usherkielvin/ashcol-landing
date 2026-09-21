@@ -259,9 +259,22 @@ export default function DashboardLayout() {
       setCurrentCoh(null)
       return
     }
-    const match = activeCohBranchId.match(/^(.*)-(sales|services)$/i)
-    const baseBranchId = match ? match[1] : activeCohBranchId
-    const auditLine = match && match[2].toLowerCase() === 'services' ? 'TAGUIG_SERVICE' : ''
+    const TAGUIG_UUID = '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b'
+    const upperId = activeCohBranchId.toUpperCase()
+    let baseBranchId = activeCohBranchId
+    let auditLine = ''
+    if (upperId === 'BR-TAGUIG-SALES' || upperId === TAGUIG_UUID.toUpperCase()) {
+      baseBranchId = TAGUIG_UUID
+    } else if (upperId === 'BR-TAGUIG-SERVICES' || upperId === 'BR-TAGUIG-SERVICE') {
+      baseBranchId = TAGUIG_UUID
+      auditLine = 'TAGUIG_SERVICE'
+    } else {
+      const match = activeCohBranchId.match(/^(.*)-(sales|services)$/i)
+      if (match) {
+        baseBranchId = match[1]
+        auditLine = match[2].toLowerCase() === 'services' ? 'TAGUIG_SERVICE' : ''
+      }
+    }
     let cancelled = false
     const loadCoh = async () => {
       try {
