@@ -1471,13 +1471,14 @@ export default function DailyAuditReport() {
                     )}
                   </div>
 
-                  {/* Card Row 3: Sales / Net / Quota / Diff */}
-                  <div className="grid grid-cols-4 pt-2 mt-1 border-t" style={{ borderColor: border }}>
+                  {/* Card Row 3: Sales / Net / Quota / Diff / COH */}
+                  <div className="grid grid-cols-5 pt-2 mt-1 border-t" style={{ borderColor: border }}>
                     {[
                       { label: 'Sales', value: `₱${peso(row.grossSales)}`, color: '#3B82F6' },
                       { label: 'Net', value: `₱${peso(computeNetSales(row))}`, color: textPrimary },
                       { label: 'Quota', value: `₱${peso(row.targetDailyQuota)}`, color: textMuted },
                       { label: 'Diff', value: noRecord ? '—' : `${isAbove ? '+' : ''}₱${peso(row.difference)}`, color: diffColor },
+                      { label: 'COH', value: `₱${peso(row.totalCohCfd)}`, color: row.totalCohCfd >= CASH_DEPOSIT_THRESHOLD ? (isLight ? '#DC2626' : '#F87171') : textPrimary },
                     ].map(m => (
                       <div key={m.label} className="flex flex-col gap-0.5 min-w-0">
                         <span className="text-[10px] font-medium truncate" style={{ color: textMuted }}>{m.label}</span>
