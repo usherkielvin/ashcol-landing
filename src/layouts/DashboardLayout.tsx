@@ -250,6 +250,44 @@ export default function DashboardLayout() {
   const [globalBranchId, setGlobalBranchId] = useState<string | null>(() => localStorage.getItem('ashcol-global-branch-id'))
   const [adminBranches, setAdminBranches] = useState<BranchOption[]>([])
 
+  // Live cash-on-hand reminder for the active branch — shown in the header so a branch is
+  // never more than a glance away from knowing it's due for a company bank deposit.
+  const [currentCoh, setCurrentCoh] = useState<{ totalCohCfd: number; depositThreshold: number; overThreshold: boolean } | null>(null)
+  const activeCohBranchId = hasBranchSwitcher ? globalBranchId : (user?.branchId || null)
+  useEffect(() => {
+    if (!activeCohBranchId) {
+      setCurrentCoh(null)
+      return
+    }
+    const match = activeCohBranchId.match(/^(.*)-(sales|services)$/i)
+    const baseBranchId = match ? match[1] : activeCohBranchId
+    const auditLine = match && match[2].toLowerCase() === 'services' ? 'TAGUIG_SERVICE' : ''
+    let cancelled = false
+    const loadCoh = async () => {
+      try {
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const params = new URLSearchParams({ branchId: baseBranchId })
+        if (auditLine) params.set('auditLine', auditLine)
+        const res = await fetch(`${API_BASE_URL}/v1/reports/current-coh?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        if (!res.ok || cancelled) return
+        const data = await res.json()
+        if (cancelled) return
+        setCurrentCoh({
+          totalCohCfd: Number(data?.totalCohCfd) || 0,
+          depositThreshold: Number(data?.depositThreshold) || 5000,
+          overThreshold: !!data?.overThreshold
+        })
+      } catch {
+        if (!cancelled) setCurrentCoh(null)
+      }
+    }
+    loadCoh()
+    const interval = setInterval(loadCoh, 120000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [activeCohBranchId])
+
   // Sync navVisible when sidebarCollapsed changes via the pin-toggle (logo click)
   useEffect(() => {
     if (!isHoverExpanded) {
@@ -934,6 +972,21 @@ export default function DashboardLayout() {
                         </h1>
                       )
                     ) : null}
+                    {currentCoh && (
+                      <span
+                        className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide w-fit"
+                        style={{
+                          backgroundColor: currentCoh.overThreshold ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.1)',
+                          color: currentCoh.overThreshold ? '#EF4444' : '#10B981'
+                        }}
+                        title={currentCoh.overThreshold
+                          ? `Cash on hand ₱${currentCoh.totalCohCfd.toLocaleString('en-PH')} — due for deposit (limit ₱${currentCoh.depositThreshold.toLocaleString('en-PH')})`
+                          : `Cash on hand ₱${currentCoh.totalCohCfd.toLocaleString('en-PH')}`}
+                      >
+                        COH ₱{currentCoh.totalCohCfd.toLocaleString('en-PH')}
+                        {currentCoh.overThreshold ? ' · DEPOSIT DUE' : ''}
+                      </span>
+                    )}
                   </>
                 )}
               </div>

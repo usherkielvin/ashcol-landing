@@ -79,6 +79,9 @@ interface DrilldownItem {
 const peso = (v: number | null | undefined) =>
   (v ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+/** Cash-on-hand level at which a branch is due to deposit to the company bank. */
+const CASH_DEPOSIT_THRESHOLD = 5000
+
 /** Net Sales = Gross Sales - Expenses - Payables - Purchases - paid Commission Expenses. */
 const computeNetSales = (row: Pick<AuditRow, 'grossSales' | 'totalExpenses' | 'totalPayables' | 'totalForPurchase' | 'paidCommissionExpenses'>) =>
   row.grossSales - (row.totalExpenses || 0) - (row.totalPayables || 0) - (row.totalForPurchase || 0) - (row.paidCommissionExpenses || 0)
@@ -1257,9 +1260,16 @@ export default function DailyAuditReport() {
                         {peso(row.targetDailyQuota)}
                       </td>
 
-                      {/* COH/CFD — neutral */}
-                      <td className="text-center tabular-nums font-medium" style={{ color: textPrimary, padding: p, whiteSpace: 'nowrap', borderRight: colBorder, borderBottom: colBorder }}>
+                      {/* COH/CFD — flags red once a branch is due for a company bank deposit */}
+                      <td className="text-center tabular-nums font-medium" style={{
+                        color: row.totalCohCfd >= CASH_DEPOSIT_THRESHOLD ? (isLight ? '#DC2626' : '#F87171') : textPrimary,
+                        fontWeight: row.totalCohCfd >= CASH_DEPOSIT_THRESHOLD ? 800 : 500,
+                        padding: p, whiteSpace: 'nowrap', borderRight: colBorder, borderBottom: colBorder
+                      }}
+                        title={row.totalCohCfd >= CASH_DEPOSIT_THRESHOLD ? 'Due for deposit to company bank' : undefined}
+                      >
                         {peso(row.totalCohCfd)}
+                        {row.totalCohCfd >= CASH_DEPOSIT_THRESHOLD && <span className="ml-1">⚠</span>}
                       </td>
 
                       {/* Cash Collection — positive */}
@@ -1453,6 +1463,12 @@ export default function DailyAuditReport() {
                       style={remarksBadgeStyle(row.remarks, noRecord, isAbove, isLight)}>
                       {formatRemarksLabel(row.remarks, false)}
                     </span>
+                    {row.totalCohCfd >= CASH_DEPOSIT_THRESHOLD && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase"
+                        style={{ backgroundColor: isLight ? 'rgba(220,38,38,0.1)' : 'rgba(248,113,113,0.15)', color: isLight ? '#DC2626' : '#F87171' }}>
+                        ⚠ COH ₱{peso(row.totalCohCfd)} — Deposit Due
+                      </span>
+                    )}
                   </div>
 
                   {/* Card Row 3: Sales / Net / Quota / Diff */}

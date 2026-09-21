@@ -51,6 +51,19 @@ const peso = (v: number | null | undefined) =>
 const isNoTransaction = (r: string) =>
   r === 'NO SCHED' || r === 'NO TRANSACTION' || r === 'NO RECORD' || r === 'NO REPORT'
 
+/** Cash-on-hand level at which a branch is due to deposit to the company bank. */
+const CASH_DEPOSIT_THRESHOLD = 5000
+
+/** Matches a branch card to its audit row by base branch id, disambiguating Taguig
+ *  Sales/Services when both lines share the same underlying branch record. */
+const findCohRowForBranch = (branch: Branch, rows: AuditRow[]): AuditRow | undefined => {
+  const rawId = branch.rawBranchId || branch.id
+  const candidates = rows.filter(r => r.branchId === rawId)
+  if (candidates.length <= 1) return candidates[0]
+  const cardIsServices = (branch.name || '').toUpperCase().includes('SERVICE')
+  return candidates.find(r => (r.branchName || '').toUpperCase().includes('SERVICE') === cardIsServices) || candidates[0]
+}
+
 interface Branch {
   id?: string
   rawBranchId?: string
@@ -179,6 +192,8 @@ export default function Branches() {
   const [branches, setBranches] = useState<Branch[]>([])
   const [managers, setManagers] = useState<any[]>([])
   const [employeesList, setEmployeesList] = useState<any[]>([])
+  /** Today's cash-on-hand per branch line — powers the deposit-due badge on each branch card. */
+  const [cohRows, setCohRows] = useState<AuditRow[]>([])
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -409,19 +424,22 @@ export default function Branches() {
       const headers = { Authorization: `Bearer ${token}` }
       const apiUrl = API_BASE_URL
       
-      const [resB, resAllUsers, resM, resE] = await Promise.all([
+      const today = new Date().toISOString().split('T')[0]
+      const [resB, resAllUsers, resM, resE, resCoh] = await Promise.all([
         fetch(`${apiUrl}/branches`, { headers }),
         fetch(`${apiUrl}/user/all`, { headers }).catch(() => null),
         fetch(`${apiUrl}/user/all?role=MANAGER`, { headers }).catch(() => null),
-        fetch(`${apiUrl}/user/all?role=EMPLOYEE`, { headers }).catch(() => null)
+        fetch(`${apiUrl}/user/all?role=EMPLOYEE`, { headers }).catch(() => null),
+        fetch(`${apiUrl}/v1/reports/audit-summary?date=${today}`, { headers }).catch(() => null)
       ])
-      
+
       if (!resB.ok) {
         throw new Error('Failed to load branches')
       }
-      
+
       const branchesData = await resB.json()
       const apiBranches = branchesData.data || branchesData || []
+      setCohRows(resCoh && resCoh.ok ? await resCoh.json() : [])
       
       // Load all users to include Management (e.g. Apple Management), Admins, Managers, and Staff
       let allUsers: any[] = []
@@ -1261,6 +1279,25 @@ export default function Branches() {
                         <span className={`w-1.5 h-1.5 rounded-full ${branch.isActive ? 'bg-[#10B981]' : 'bg-[#EF4444]'}`} />
                         {branch.isActive ? 'Active' : 'Inactive'}
                       </span>
+                      {(() => {
+                        const cohRow = findCohRowForBranch(branch, cohRows)
+                        if (!cohRow) return null
+                        const overThreshold = cohRow.totalCohCfd >= CASH_DEPOSIT_THRESHOLD
+                        return (
+                          <span
+                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border"
+                            style={{
+                              backgroundColor: overThreshold ? 'rgba(239,68,68,0.06)' : 'rgba(100,116,139,0.06)',
+                              color: overThreshold ? '#EF4444' : '#64748B',
+                              borderColor: overThreshold ? 'rgba(239,68,68,0.15)' : 'rgba(100,116,139,0.15)'
+                            }}
+                            title={overThreshold ? `Cash on hand ₱${peso(cohRow.totalCohCfd)} — due for deposit` : `Cash on hand ₱${peso(cohRow.totalCohCfd)}`}
+                          >
+                            COH ₱{peso(cohRow.totalCohCfd)}
+                            {overThreshold ? ' · DEPOSIT DUE' : ''}
+                          </span>
+                        )
+                      })()}
                       {branch.targetDailyQuota != null && branch.targetDailyQuota > 0 && (
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black border" style={{ backgroundColor: 'rgba(139,92,246,0.07)', color: '#8B5CF6', borderColor: 'rgba(139,92,246,0.2)' }}>
                           ₱{(branch.targetDailyQuota).toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} / day quota
