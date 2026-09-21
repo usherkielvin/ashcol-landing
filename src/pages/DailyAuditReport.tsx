@@ -57,6 +57,7 @@ interface AuditRow {
   forCollection: number
   rebatesForCollection: number
   paidCommissionExpenses?: number
+  totalDeposits?: number
 }
 
 interface DrilldownItem {
@@ -72,6 +73,8 @@ interface DrilldownItem {
   ticketNumber?: string
   promodiser?: string
   dateInstalled?: string
+  receiptNo?: string
+  receiptImage?: string
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -231,8 +234,10 @@ export default function DailyAuditReport() {
     createdAt?: string | null;
     updatedAt?: string | null;
     updatedBy?: string | null;
+    totalDeposits?: number;
   } | null>(null)
   const [rowExpensesLoading, setRowExpensesLoading] = useState(false)
+  const [previewDepositReceipt, setPreviewDepositReceipt] = useState<{ image: string; refNo?: string; desc?: string } | null>(null)
   const [hiddenBranches, setHiddenBranches] = useState<string[]>([])
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'remarks', direction: 'desc' })
   const compactView = false
@@ -466,6 +471,7 @@ export default function DailyAuditReport() {
       let createdAt = null
       let updatedAt = null
       let updatedBy = null
+      let totalDeposits = 0
       if (row.id) {
         const res = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/${row.id}`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -477,6 +483,7 @@ export default function DailyAuditReport() {
           createdAt = data.createdAt || null
           updatedAt = data.updatedAt || null
           updatedBy = data.updatedBy || null
+          totalDeposits = data.totalDeposits ?? 0
         }
       } else {
         const params = new URLSearchParams({
@@ -492,9 +499,9 @@ export default function DailyAuditReport() {
           items = await res.json()
         }
       }
-      setRowExpenses({ items, receivedBy, createdAt, updatedAt, updatedBy })
+      setRowExpenses({ items, receivedBy, createdAt, updatedAt, updatedBy, totalDeposits })
     } catch {
-      setRowExpenses({ items: [], receivedBy: '', createdAt: null, updatedAt: null, updatedBy: null })
+      setRowExpenses({ items: [], receivedBy: '', createdAt: null, updatedAt: null, updatedBy: null, totalDeposits: 0 })
     } finally {
       setRowExpensesLoading(false)
     }
@@ -560,9 +567,10 @@ export default function DailyAuditReport() {
     totalOnlineCollection:acc.totalOnlineCollection + r.totalOnlineCollection,
     totalExpenses:        acc.totalExpenses + r.totalExpenses,
     totalForPurchase:     acc.totalForPurchase + (r.totalForPurchase || 0),
+    totalDeposits:        acc.totalDeposits + (r.totalDeposits || 0),
     forCollection:        acc.forCollection + r.forCollection,
     rebatesForCollection: acc.rebatesForCollection + r.rebatesForCollection,
-  }), { grossSales:0, netSales:0, targetDailyQuota:0, totalCohCfd:0, totalCashCollection:0, totalOnlineCollection:0, totalExpenses:0, totalForPurchase:0, forCollection:0, rebatesForCollection:0 })
+  }), { grossSales:0, netSales:0, targetDailyQuota:0, totalCohCfd:0, totalCashCollection:0, totalOnlineCollection:0, totalExpenses:0, totalForPurchase:0, totalDeposits:0, forCollection:0, rebatesForCollection:0 })
 
 
 
@@ -1728,6 +1736,11 @@ export default function DailyAuditReport() {
                 const totalPaidCommissionExpenses = paidCommissionItems.reduce((sum, it) => sum + (it.amount || 0), 0)
                 // Cash Advance Breakdown
                 const cashAdvanceItems = items.filter(it => it.type === 'CASH_ADVANCE')
+                // COH Deposits Breakdown
+                const depositItems = items.filter(it => it.type === 'DEPOSIT')
+                const totalDeposits = depositItems.length > 0
+                  ? depositItems.reduce((sum, it) => sum + (it.amount || 0), 0)
+                  : (rowExpenses?.totalDeposits ?? selectedRow.totalDeposits ?? 0)
 
                 const formatHpDisplay = (raw?: any) => {
                   if (!raw || raw === '—') return '—'
@@ -1740,7 +1753,7 @@ export default function DailyAuditReport() {
                 const renderItemTable = (title: string, itemsList: any[], columns: { label: string; render: (item: any) => React.ReactNode; align?: 'left' | 'right' | 'center' }[], customTotal?: number, noBorderBottom?: boolean) => {
                   if (itemsList.length === 0) return null
                   const sumValue = customTotal !== undefined ? customTotal : itemsList.reduce((acc, it) => acc + (it.amount || 0), 0)
-                  const isExpenseType = title.includes('Expense') || title.includes('Purchase') || title.includes('Order') || title.includes('Cash Advance')
+                  const isExpenseType = title.includes('Expense') || title.includes('Purchase') || title.includes('Order') || title.includes('Cash Advance') || title.includes('Deposit')
                   
                   return (
                     <div className={`px-6 py-5 ${noBorderBottom ? '' : 'border-b'}`} style={{ borderColor: border }}>
@@ -1828,6 +1841,12 @@ export default function DailyAuditReport() {
                             { label: 'COH Prev Day', value: `₱${peso(selectedRow.cohPreviousDay)}`, color: textPrimary, bold: false },
                             { label: 'Fund from HO', value: `₱${peso(selectedRow.fundFromHo || 0)}`, color: textPrimary, bold: false },
                             { label: 'Cash Returns', value: `₱${peso(selectedRow.cashReturns)}`, color: textPrimary, bold: false },
+                            {
+                              label: 'COH Deposit',
+                              value: totalDeposits > 0 ? `-₱${peso(totalDeposits)}` : `₱${peso(0)}`,
+                              color: totalDeposits > 0 ? '#EF4444' : textMuted,
+                              bold: totalDeposits > 0
+                            },
                             { label: 'Total COH/CFD', value: `₱${peso(selectedRow.totalCohCfd)}`, color: textPrimary, bold: true },
                           ],
                         },
@@ -2007,6 +2026,31 @@ export default function DailyAuditReport() {
                           { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> },
                         ])}
 
+                        {/* COH Deposits Breakdown */}
+                        {renderItemTable('COH Deposits', depositItems, [
+                          { label: 'Description', render: (item) => <span style={{ color: textPrimary }}>{item.description || 'COH Deposit'}</span> },
+                          { label: 'Reference / OR No.', render: (item) => <span className="font-mono text-xs" style={{ color: textPrimary }}>{item.receiptNo || '—'}</span> },
+                          { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums font-bold" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> },
+                          {
+                            label: 'Receipt',
+                            align: 'center',
+                            render: (item) => item.receiptImage ? (
+                              <button
+                                type="button"
+                                onClick={() => setPreviewDepositReceipt({ image: item.receiptImage, refNo: item.receiptNo, desc: item.description })}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold hover:opacity-85 transition-all cursor-pointer shadow-xs"
+                                style={{ borderColor: border, backgroundColor: isLight ? '#f1f5f9' : '#1e293b' }}
+                                title="Click to view deposit slip receipt"
+                              >
+                                <img src={item.receiptImage} alt="Deposit slip" className="h-5 w-5 object-cover rounded border border-slate-300 dark:border-slate-700" />
+                                <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">View Slip</span>
+                              </button>
+                            ) : (
+                              <span className="text-xs" style={{ color: textMuted }}>—</span>
+                            )
+                          }
+                        ])}
+
                         {/* Unit Summary stats grid */}
                         <div className="px-6 py-5 flex flex-col gap-3" style={{ borderBottom: `1px solid ${border}` }}>
                           <div className="flex items-center justify-between gap-3 pb-2 border-b" style={{ borderColor: border }}>
@@ -2093,6 +2137,64 @@ export default function DailyAuditReport() {
             </div>
           </div>,
           document.body
+      )}
+
+      {/* ── Deposit Slip Full Image Preview Modal ── */}
+      {previewDepositReceipt && ReactDOM.createPortal(
+        <div
+          className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => setPreviewDepositReceipt(null)}
+        >
+          <div
+            className="relative max-w-2xl w-full max-h-[90vh] rounded-2xl p-5 flex flex-col items-center gap-3 overflow-hidden shadow-2xl"
+            style={{ backgroundColor: isLight ? '#ffffff' : '#0f172a', border: `1px solid ${border}` }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between pb-3 border-b" style={{ borderColor: border }}>
+              <div>
+                <h4 className="text-sm font-bold" style={{ color: textPrimary }}>Deposit Slip Receipt</h4>
+                <p className="text-xs" style={{ color: textMuted }}>
+                  {previewDepositReceipt.desc || 'COH Deposit'}
+                  {previewDepositReceipt.refNo ? ` • Ref: ${previewDepositReceipt.refNo}` : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewDepositReceipt(null)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                style={{ color: textMuted }}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 w-full overflow-auto flex items-center justify-center p-2">
+              <img
+                src={previewDepositReceipt.image}
+                alt="Deposit Slip"
+                className="max-h-[65vh] max-w-full object-contain rounded-lg shadow-sm"
+              />
+            </div>
+            <div className="w-full flex justify-end gap-2 pt-3 border-t" style={{ borderColor: border }}>
+              <a
+                href={previewDepositReceipt.image}
+                download={`DepositSlip_${previewDepositReceipt.refNo || 'receipt'}.jpg`}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all flex items-center gap-1.5 shadow-sm"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Download Slip
+              </a>
+              <button
+                type="button"
+                onClick={() => setPreviewDepositReceipt(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold transition-all border"
+                style={{ borderColor: border, color: textPrimary }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       <DtrHistoryModal
