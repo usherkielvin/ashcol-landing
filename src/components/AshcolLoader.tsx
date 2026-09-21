@@ -5,51 +5,53 @@ export default function AshcolLoader() {
   const loaderRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const q = gsap.utils.selector(loaderRef)
+    const ctx = gsap.context(() => {
+      // Flowing aircon wind animation
+      gsap.utils.toArray<SVGPathElement>('.wind-line').forEach((line, index) => {
+        const tl = gsap.timeline({ repeat: -1, delay: index * 0.25 })
 
-    // Flowing aircon wind animation
-    q<SVGPathElement>('.wind-line').forEach((line, index) => {
-      const tl = gsap.timeline({ repeat: -1, delay: index * 0.25 })
-
-      tl.fromTo(
-        line,
-        { y: -15, opacity: 0, scaleY: 0.8 },
-        { y: 5, opacity: 1, scaleY: 1, duration: 0.6, ease: 'power1.out' }
-      ).to(line, {
-        y: 30, opacity: 0, scaleY: 1.2, duration: 0.6, ease: 'power1.in',
+        tl.fromTo(
+          line,
+          { y: -15, opacity: 0, scaleY: 0.8 },
+          { y: 5, opacity: 1, scaleY: 1, duration: 0.6, ease: 'power1.out' }
+        ).to(line, {
+          y: 30, opacity: 0, scaleY: 1.2, duration: 0.6, ease: 'power1.in',
+        })
       })
-    })
 
-    // Pulsing LED indicator
-    gsap.to(q('.ac-led'), {
-      opacity: 0.2,
-      duration: 1.5,
-      yoyo: true,
-      repeat: -1,
-      ease: 'power2.inOut',
-    })
-
-    // Breathing text
-    gsap.to(q('.loading-text'), {
-      opacity: 0.5,
-      duration: 1.2,
-      yoyo: true,
-      repeat: -1,
-      ease: 'power1.inOut',
-    })
-
-    // Moving / bouncing dots (...)
-    q('.loading-dot').forEach((dot, i) => {
-      gsap.to(dot, {
-        y: -3.5,
-        opacity: 1,
-        duration: 0.45,
-        repeat: -1,
+      // Pulsing LED indicator
+      gsap.to('.ac-led', {
+        opacity: 0.2,
+        duration: 1.5,
         yoyo: true,
-        delay: i * 0.15,
+        repeat: -1,
+        ease: 'power2.inOut',
+      })
+
+      // Breathing text
+      gsap.to('.loading-text', {
+        opacity: 0.5,
+        duration: 1.2,
+        yoyo: true,
+        repeat: -1,
         ease: 'power1.inOut',
       })
-    })
+
+      // Moving / bouncing dots (...)
+      gsap.utils.toArray<HTMLElement>('.loading-dot').forEach((dot, i) => {
+        gsap.to(dot, {
+          y: -3.5,
+          opacity: 1,
+          duration: 0.45,
+          repeat: -1,
+          yoyo: true,
+          delay: i * 0.15,
+          ease: 'power1.inOut',
+        })
+      })
+    }, loaderRef)
+
+    return () => ctx.revert()
   }, [])
 
   return (
