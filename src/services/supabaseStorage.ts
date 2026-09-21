@@ -18,6 +18,10 @@ export function getSupabaseClient(): SupabaseClient | null {
 export interface UploadReceiptOptions {
   bucket?: string
   folder?: string
+  /** Branch/site name, used as a subfolder segment so files are browsable per branch. */
+  branch?: string
+  /** Free-text label (e.g. description or company) used to build a readable filename, best-effort. */
+  description?: string
   filename?: string
   maxWidth?: number
   quality?: number
@@ -68,10 +72,14 @@ export async function uploadReceiptImage(
         : Math.random().toString(36).substring(2, 10) + Date.now().toString(36)
 
       const ext = 'jpg'
-      const sanitizedName = options.filename
-        ? options.filename.replace(/[^a-zA-Z0-9_-]/g, '_')
-        : 'receipt'
-      const filePath = `${folder}/${yearMonth}/${sanitizedName}_${uniqueId}.${ext}`
+      const slugify = (value: string, maxLength: number) =>
+        value.trim().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, maxLength)
+
+      const nameSource = options.description?.trim() || options.filename || 'receipt'
+      const sanitizedName = slugify(nameSource, 40) || 'receipt'
+      const sanitizedBranch = options.branch ? slugify(options.branch, 30) : ''
+      const folderPath = sanitizedBranch ? `${folder}/${sanitizedBranch}/${yearMonth}` : `${folder}/${yearMonth}`
+      const filePath = `${folderPath}/${sanitizedName}_${uniqueId}.${ext}`
 
       const { data, error } = await supabase.storage
         .from(bucket)

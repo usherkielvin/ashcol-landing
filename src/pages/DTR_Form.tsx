@@ -3024,6 +3024,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                             try {
                               const uploadResult = await uploadReceiptImage(file, {
                                 folder: 'expenses',
+                                branch: branchName,
+                                description: row.description,
                                 filename: `expense_${row.id}`
                               })
                               setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, receiptImage: uploadResult.url } : r))
@@ -3175,6 +3177,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                             try {
                               const uploadResult = await uploadReceiptImage(file, {
                                 folder: 'expenses',
+                                branch: branchName,
+                                description: row.description,
                                 filename: `purchase_${row.id}`
                               })
                               setExpPurch(p => p.map(r => r.id === row.id ? { ...r, receiptImage: uploadResult.url } : r))
@@ -3354,6 +3358,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                             try {
                               const uploadResult = await uploadReceiptImage(file, {
                                 folder: 'deposits',
+                                branch: branchName,
+                                description: row.description,
                                 filename: `deposit_${row.id}`
                               })
                               setDeposits(p => p.map(r => r.id === row.id ? { ...r, receiptImage: uploadResult.url } : r))

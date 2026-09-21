@@ -827,7 +827,14 @@ export default function AuditFinanceExpenses() {
     // Persist the receipt image to Supabase Storage (runs alongside the OCR scan below)
     setUploadedReceiptUrl(null)
     setUploadingReceipt(true)
-    uploadReceiptImage(file, { folder: 'finance', filename: 'expense' })
+    const resolvedBranchId = form.branchId || branchId
+    const resolvedBranchName = (allBranches.length > 0 ? allBranches : branches).find(b => b.id === resolvedBranchId)?.name || branchName
+    uploadReceiptImage(file, {
+      folder: 'finance',
+      branch: resolvedBranchName,
+      description: form.description || form.company,
+      filename: 'expense'
+    })
       .then((result) => setUploadedReceiptUrl(result.url))
       .catch((err) => console.error('[Supabase Storage] Finance receipt upload failed:', err))
       .finally(() => setUploadingReceipt(false))
