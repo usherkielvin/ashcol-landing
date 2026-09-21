@@ -250,6 +250,46 @@ export default function DashboardLayout() {
   const [globalBranchId, setGlobalBranchId] = useState<string | null>(() => localStorage.getItem('ashcol-global-branch-id'))
   const [adminBranches, setAdminBranches] = useState<BranchOption[]>([])
 
+  // Live cash-on-hand reminder for the active branch — shown in the header so a branch is
+  // never more than a glance away from knowing it's due for a company bank deposit.
+  const [currentCoh, setCurrentCoh] = useState<{ totalCohCfd: number; depositThreshold: number; overThreshold: boolean } | null>(null)
+  const activeCohBranchId = hasBranchSwitcher ? globalBranchId : (user?.branchId || null)
+  useEffect(() => {
+    if (!activeCohBranchId) {
+      setCurrentCoh(null)
+      return
+    }
+    const match = activeCohBranchId.match(/^(.*)-(sales|services)$/i)
+    const baseBranchId = match ? match[1] : activeCohBranchId
+    const auditLine = match && match[2].toLowerCase() === 'services' ? 'TAGUIG_SERVICE' : ''
+    let cancelled = false
+    const loadCoh = async () => {
+      try {
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const params = new URLSearchParams({ branchId: baseBranchId })
+        if (auditLine) params.set('auditLine', auditLine)
+        const url = `${API_BASE_URL}/v1/reports/current-coh?${params.toString()}`
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+        if (!res.ok) {
+          if (!cancelled) setCurrentCoh(null)
+          return
+        }
+        const data = await res.json()
+        if (cancelled) return
+        setCurrentCoh({
+          totalCohCfd: Number(data?.totalCohCfd) || 0,
+          depositThreshold: Number(data?.depositThreshold) || 5000,
+          overThreshold: !!data?.overThreshold
+        })
+      } catch {
+        if (!cancelled) setCurrentCoh(null)
+      }
+    }
+    loadCoh()
+    const interval = setInterval(loadCoh, 120000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [activeCohBranchId])
+
   // Sync navVisible when sidebarCollapsed changes via the pin-toggle (logo click)
   useEffect(() => {
     if (!isHoverExpanded) {
@@ -944,6 +984,29 @@ export default function DashboardLayout() {
 
             {/* Right: Actions */}
             <div className="flex items-center gap-1.5 shrink-0">
+              {currentCoh && (
+                <span
+                  className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border w-fit max-w-[110px] sm:max-w-none transition-colors"
+                  style={{
+                    backgroundColor: currentCoh.overThreshold ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)',
+                    color: currentCoh.overThreshold ? '#EF4444' : '#10B981',
+                    borderColor: currentCoh.overThreshold ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.18)'
+                  }}
+                  title={currentCoh.overThreshold
+                    ? `Cash on hand ₱${currentCoh.totalCohCfd.toLocaleString('en-PH')} — due for deposit (limit ₱${currentCoh.depositThreshold.toLocaleString('en-PH')})`
+                    : `Cash on hand ₱${currentCoh.totalCohCfd.toLocaleString('en-PH')}`}
+                >
+                  {currentCoh.overThreshold
+                    ? <Banknote className="w-3 h-3 shrink-0" />
+                    : <Wallet className="w-3 h-3 shrink-0" />}
+                  <span className="truncate">
+                    COH ₱{currentCoh.totalCohCfd.toLocaleString('en-PH')}
+                  </span>
+                  {currentCoh.overThreshold && (
+                    <span className="hidden lg:inline shrink-0">· Deposit Due</span>
+                  )}
+                </span>
+              )}
               <MessagesDropdown />
               <NotificationsDropdown />
 
