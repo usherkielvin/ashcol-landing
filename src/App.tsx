@@ -1,40 +1,46 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Route, Routes, Navigate } from 'react-router-dom'
 import { GoogleOAuthProvider } from '@react-oauth/google'
-import Landing from './pages/Landing'
-import PublicBooking from './pages/PublicBooking'
-import Login from './pages/Login'
-import ForgotPassword from './pages/ForgotPassword'
-import CreateAccount from './pages/CreateAccount'
-import DashboardLayout from './layouts/DashboardLayout'
-import MyTickets from './pages/MyTickets'
-import Schedules from './pages/Schedules'
-import SearchTickets from './pages/SearchTickets'
-import CreateTicket from './pages/CreateTicket'
-import OfficeTasks from './pages/OfficeTasks'
-import Employees from './pages/Employees'
-import Vehicles from './pages/Vehicles'
-import Profile from './pages/Profile'
-import Branches from './pages/Branches'
-import Relays from './pages/Relays'
-import Bookings from './pages/Bookings'
-import Messages from './pages/Messages'
+import AshcolLoader from './components/AshcolLoader'
 
-import DailyAuditReport from './pages/DailyAuditReport'
-import AuditFinanceExpenses from './pages/AuditFinanceExpenses'
-import ForCollections from './pages/ForCollections'
-import Commissions from './pages/Commissions'
-import CashAdvances from './pages/CashAdvances'
-import Payroll from './pages/Payroll'
-import DailyServiceReport from './pages/DailyServiceReport'
-import Registration from './pages/Registration'
-import HappyCalls from './pages/HappyCalls'
-import LineUp from './pages/LineUp'
+// Lazy-loaded public pages
+const Landing = lazy(() => import('./pages/Landing'))
+const PublicBooking = lazy(() => import('./pages/PublicBooking'))
+const Login = lazy(() => import('./pages/Login'))
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
+const CreateAccount = lazy(() => import('./pages/CreateAccount'))
 
-import Hris from './pages/Hris'
-import Ddrm from './pages/Ddrm'
-import Bills from './pages/Bills'
-import Telecom from './pages/Telecom'
-import OperationsForms from './pages/OperationsForms'
+// Lazy-loaded layout & portal pages
+const DashboardLayout = lazy(() => import('./layouts/DashboardLayout'))
+const MyTickets = lazy(() => import('./pages/MyTickets'))
+const Schedules = lazy(() => import('./pages/Schedules'))
+const SearchTickets = lazy(() => import('./pages/SearchTickets'))
+const CreateTicket = lazy(() => import('./pages/CreateTicket'))
+const OfficeTasks = lazy(() => import('./pages/OfficeTasks'))
+const Employees = lazy(() => import('./pages/Employees'))
+const Vehicles = lazy(() => import('./pages/Vehicles'))
+const Profile = lazy(() => import('./pages/Profile'))
+const Branches = lazy(() => import('./pages/Branches'))
+const Relays = lazy(() => import('./pages/Relays'))
+const Bookings = lazy(() => import('./pages/Bookings'))
+const Messages = lazy(() => import('./pages/Messages'))
+
+const DailyAuditReport = lazy(() => import('./pages/DailyAuditReport'))
+const AuditFinanceExpenses = lazy(() => import('./pages/AuditFinanceExpenses'))
+const ForCollections = lazy(() => import('./pages/ForCollections'))
+const Commissions = lazy(() => import('./pages/Commissions'))
+const CashAdvances = lazy(() => import('./pages/CashAdvances'))
+const Payroll = lazy(() => import('./pages/Payroll'))
+const DailyServiceReport = lazy(() => import('./pages/DailyServiceReport'))
+const Registration = lazy(() => import('./pages/Registration'))
+const HappyCalls = lazy(() => import('./pages/HappyCalls'))
+const LineUp = lazy(() => import('./pages/LineUp'))
+
+const Hris = lazy(() => import('./pages/Hris'))
+const Ddrm = lazy(() => import('./pages/Ddrm'))
+const Bills = lazy(() => import('./pages/Bills'))
+const Telecom = lazy(() => import('./pages/Telecom'))
+const OperationsForms = lazy(() => import('./pages/OperationsForms'))
 
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
@@ -49,21 +55,38 @@ import AutoUpdateWatcher from './components/AutoUpdateWatcher'
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 const GOOGLE_OAUTH_ENABLED = !!GOOGLE_CLIENT_ID
 
-// Helper component to handle the root path ("/") based on the domain
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center min-h-[60vh] w-full">
+      <AshcolLoader />
+    </div>
+  )
+}
+
+// Helper component to handle the root path ("/") based on domain & user auth
 function RootRouter() {
   const { user } = useAuth()
+
+  // If user is already authenticated, take them directly to their portal home
+  if (user) {
+    return <Navigate to={getPortalHomePath(user)} replace />
+  }
+
+  // Allow forcing landing page via URL param
+  if (new URLSearchParams(window.location.search).get('landing') === 'true') {
+    return <Landing />
+  }
   
   // Check if we're on the portal subdomain (e.g. portal.ashcol.com.ph or portal.localhost)
-  // Also allow forcing portal mode via local environment variable or URL parameter
+  // or on a Vercel preview/production domain (e.g. *.vercel.app)
+  // or forcing portal mode via local environment variable or URL parameter
   const isPortalSubdomain = 
     window.location.hostname.startsWith('portal.') || 
+    window.location.hostname.includes('vercel.app') ||
     import.meta.env.VITE_IS_PORTAL === 'true' ||
     new URLSearchParams(window.location.search).get('portal') === 'true'
   
   if (isPortalSubdomain) {
-    if (user) {
-      return <Navigate to={getPortalHomePath(user)} replace />
-    }
     return <Navigate to="/login" replace />
   }
   
@@ -86,55 +109,58 @@ export default function App() {
 
   const routes = (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<RootRouter />} />
-        <Route path="/booking" element={<PublicBooking />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/create-account" element={<CreateAccount />} />
-        {/* Portal Routes */}
-        <Route element={<DashboardLayout />}>
-          <Route path="/dashboard" element={<DashboardRedirect />} />
-          <Route path="/search" element={<SearchTickets />} />
-          <Route path="/tickets" element={<Navigate to="/search" replace />} />
-          <Route path="/tickets/create" element={<CreateTicket />} />
-          <Route path="/create-ticket" element={<CreateTicket />} />
-          <Route path="/schedules" element={<Schedules />} />
-          <Route path="/relays" element={<Relays />} />
-          <Route path="/bookings" element={<Bookings />} />
-          <Route path="/my-tickets" element={<MyTickets />} />
-          <Route path="/office-tasks" element={<OfficeTasks />} />
-          <Route path="/branches" element={<Branches />} />
-          <Route path="/assigned-tickets" element={<Navigate to="/search" replace />} />
-          <Route path="/employees" element={<Employees />} />
-          <Route path="/employees/:id" element={<Employees />} />
-          <Route path="/vehicles" element={<Vehicles />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/messages" element={<Messages />} />
-          <Route path="/messages/new/:recipientId" element={<Messages />} />
-          <Route path="/messages/:conversationId" element={<Messages />} />
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/" element={<RootRouter />} />
+          <Route path="/landing" element={<Landing />} />
+          <Route path="/booking" element={<PublicBooking />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/create-account" element={<CreateAccount />} />
+          {/* Portal Routes */}
+          <Route element={<DashboardLayout />}>
+            <Route path="/dashboard" element={<DashboardRedirect />} />
+            <Route path="/search" element={<SearchTickets />} />
+            <Route path="/tickets" element={<Navigate to="/search" replace />} />
+            <Route path="/tickets/create" element={<CreateTicket />} />
+            <Route path="/create-ticket" element={<CreateTicket />} />
+            <Route path="/schedules" element={<Schedules />} />
+            <Route path="/relays" element={<Relays />} />
+            <Route path="/bookings" element={<Bookings />} />
+            <Route path="/my-tickets" element={<MyTickets />} />
+            <Route path="/office-tasks" element={<OfficeTasks />} />
+            <Route path="/branches" element={<Branches />} />
+            <Route path="/assigned-tickets" element={<Navigate to="/search" replace />} />
+            <Route path="/employees" element={<Employees />} />
+            <Route path="/employees/:id" element={<Employees />} />
+            <Route path="/vehicles" element={<Vehicles />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/messages" element={<Messages />} />
+            <Route path="/messages/new/:recipientId" element={<Messages />} />
+            <Route path="/messages/:conversationId" element={<Messages />} />
 
-          <Route path="/audit-report" element={<DailyAuditReport />} />
-          <Route path="/audit-expenses" element={<AuditFinanceExpenses />} />
-          {/* Redirect legacy /daily-report to the combined tab page */}
-          <Route path="/daily-report" element={<Navigate to="/audit-report?tab=submit" replace />} />
-          <Route path="/collections" element={<ForCollections />} />
-          <Route path="/commissions" element={<Commissions />} />
-          <Route path="/cash-advances" element={<CashAdvances />} />
-          <Route path="/payroll" element={<Payroll />} />
-          <Route path="/lineup" element={<LineUp />} />
-          <Route path="/weekly-field-schedule" element={<Navigate to="/lineup?tab=weekly" replace />} />
-          <Route path="/service-report" element={<DailyServiceReport />} />
-          <Route path="/registration" element={<Registration />} />
-          <Route path="/happy-calls" element={<HappyCalls />} />
+            <Route path="/audit-report" element={<DailyAuditReport />} />
+            <Route path="/audit-expenses" element={<AuditFinanceExpenses />} />
+            {/* Redirect legacy /daily-report to the combined tab page */}
+            <Route path="/daily-report" element={<Navigate to="/audit-report?tab=submit" replace />} />
+            <Route path="/collections" element={<ForCollections />} />
+            <Route path="/commissions" element={<Commissions />} />
+            <Route path="/cash-advances" element={<CashAdvances />} />
+            <Route path="/payroll" element={<Payroll />} />
+            <Route path="/lineup" element={<LineUp />} />
+            <Route path="/weekly-field-schedule" element={<Navigate to="/lineup?tab=weekly" replace />} />
+            <Route path="/service-report" element={<DailyServiceReport />} />
+            <Route path="/registration" element={<Registration />} />
+            <Route path="/happy-calls" element={<HappyCalls />} />
 
-          <Route path="/admin-hris" element={<Hris />} />
-          <Route path="/ddrm" element={<Ddrm />} />
-          <Route path="/operations-forms" element={<OperationsForms />} />
-          <Route path="/admin-bills" element={<Bills />} />
-          <Route path="/admin-telecom" element={<Telecom />} />
-        </Route>
-      </Routes>
+            <Route path="/admin-hris" element={<Hris />} />
+            <Route path="/ddrm" element={<Ddrm />} />
+            <Route path="/operations-forms" element={<OperationsForms />} />
+            <Route path="/admin-bills" element={<Bills />} />
+            <Route path="/admin-telecom" element={<Telecom />} />
+          </Route>
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   )
 
