@@ -974,29 +974,6 @@ export default function DashboardLayout() {
                         </h1>
                       )
                     ) : null}
-                    {currentCoh && (
-                      <span
-                        className="inline-flex items-center gap-1.5 mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border w-fit transition-colors"
-                        style={{
-                          backgroundColor: currentCoh.overThreshold ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)',
-                          color: currentCoh.overThreshold ? '#EF4444' : '#10B981',
-                          borderColor: currentCoh.overThreshold ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.18)'
-                        }}
-                        title={currentCoh.overThreshold
-                          ? `Cash on hand ₱${currentCoh.totalCohCfd.toLocaleString('en-PH')} — due for deposit (limit ₱${currentCoh.depositThreshold.toLocaleString('en-PH')})`
-                          : `Cash on hand ₱${currentCoh.totalCohCfd.toLocaleString('en-PH')}`}
-                      >
-                        {currentCoh.overThreshold
-                          ? <Banknote className="w-3 h-3 shrink-0" />
-                          : <Wallet className="w-3 h-3 shrink-0" />}
-                        <span className="truncate">
-                          COH ₱{currentCoh.totalCohCfd.toLocaleString('en-PH')}
-                        </span>
-                        {currentCoh.overThreshold && (
-                          <span className="hidden xs:inline shrink-0">· Deposit Due</span>
-                        )}
-                      </span>
-                    )}
                   </>
                 )}
               </div>
@@ -1007,6 +984,29 @@ export default function DashboardLayout() {
 
             {/* Right: Actions */}
             <div className="flex items-center gap-1.5 shrink-0">
+              {currentCoh && (
+                <span
+                  className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border w-fit max-w-[110px] sm:max-w-none transition-colors"
+                  style={{
+                    backgroundColor: currentCoh.overThreshold ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)',
+                    color: currentCoh.overThreshold ? '#EF4444' : '#10B981',
+                    borderColor: currentCoh.overThreshold ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.18)'
+                  }}
+                  title={currentCoh.overThreshold
+                    ? `Cash on hand ₱${currentCoh.totalCohCfd.toLocaleString('en-PH')} — due for deposit (limit ₱${currentCoh.depositThreshold.toLocaleString('en-PH')})`
+                    : `Cash on hand ₱${currentCoh.totalCohCfd.toLocaleString('en-PH')}`}
+                >
+                  {currentCoh.overThreshold
+                    ? <Banknote className="w-3 h-3 shrink-0" />
+                    : <Wallet className="w-3 h-3 shrink-0" />}
+                  <span className="truncate">
+                    COH ₱{currentCoh.totalCohCfd.toLocaleString('en-PH')}
+                  </span>
+                  {currentCoh.overThreshold && (
+                    <span className="hidden lg:inline shrink-0">· Deposit Due</span>
+                  )}
+                </span>
+              )}
               <MessagesDropdown />
               <NotificationsDropdown />
 
