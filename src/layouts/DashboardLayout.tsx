@@ -253,10 +253,13 @@ export default function DashboardLayout() {
   // Live cash-on-hand reminder for the active branch — shown in the header so a branch is
   // never more than a glance away from knowing it's due for a company bank deposit.
   const [currentCoh, setCurrentCoh] = useState<{ totalCohCfd: number; depositThreshold: number; overThreshold: boolean } | null>(null)
+  // TEMPORARY: visible-on-page debug state for the COH badge — remove once it's confirmed working.
+  const [cohDebug, setCohDebug] = useState<string>('init')
   const activeCohBranchId = hasBranchSwitcher ? globalBranchId : (user?.branchId || null)
   useEffect(() => {
     if (!activeCohBranchId) {
       setCurrentCoh(null)
+      setCohDebug('no-branch-id (user.branchId is empty and no branch switcher)')
       return
     }
     const match = activeCohBranchId.match(/^(.*)-(sales|services)$/i)
@@ -264,6 +267,7 @@ export default function DashboardLayout() {
     const auditLine = match && match[2].toLowerCase() === 'services' ? 'TAGUIG_SERVICE' : ''
     let cancelled = false
     const loadCoh = async () => {
+      setCohDebug(`loading (branchId=${baseBranchId})`)
       try {
         const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
         const params = new URLSearchParams({ branchId: baseBranchId })
@@ -273,7 +277,10 @@ export default function DashboardLayout() {
         if (!res.ok) {
           const body = await res.text().catch(() => '')
           console.error('[COH] fetch failed', { url, status: res.status, body })
-          if (!cancelled) setCurrentCoh(null)
+          if (!cancelled) {
+            setCurrentCoh(null)
+            setCohDebug(`HTTP ${res.status}: ${body.slice(0, 150)}`)
+          }
           return
         }
         const data = await res.json()
@@ -284,9 +291,13 @@ export default function DashboardLayout() {
           depositThreshold: Number(data?.depositThreshold) || 5000,
           overThreshold: !!data?.overThreshold
         })
+        setCohDebug(`ok: ${JSON.stringify(data)}`)
       } catch (err) {
         console.error('[COH] fetch threw', err)
-        if (!cancelled) setCurrentCoh(null)
+        if (!cancelled) {
+          setCurrentCoh(null)
+          setCohDebug(`threw: ${String(err)}`)
+        }
       }
     }
     loadCoh()
@@ -978,6 +989,9 @@ export default function DashboardLayout() {
                         </h1>
                       )
                     ) : null}
+                    <span className="text-[9px] font-mono block max-w-[260px] truncate" style={{ color: '#F59E0B' }} title={cohDebug}>
+                      COH debug: {cohDebug}
+                    </span>
                     {currentCoh && (
                       <span
                         className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide w-fit"
