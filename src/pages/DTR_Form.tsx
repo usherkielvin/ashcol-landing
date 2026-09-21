@@ -572,9 +572,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
               newList.push({ id: b.id, name: cleanName, isActive: b.isActive })
             }
           }
-          // Filter to active branches only (where submission isn't disabled)
-          const finalList = newList.filter(b => b.isActive !== false)
-          
+          const finalList = newList
+
           finalList.sort((a, b) => a.name.localeCompare(b.name))
           setBranchesList(finalList)
 
