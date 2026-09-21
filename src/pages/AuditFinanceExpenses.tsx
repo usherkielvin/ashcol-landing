@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Upload, Receipt, ReceiptText, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays, Camera } from 'lucide-react'
+import { Upload, Receipt, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays, Camera } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatRole, formatDisplayUserLabel, isSameBaseBranch, isPortalAdmin, resolveArchivesBranchFilter } from '../utils/api'
+import { API_BASE_URL, formatRole, formatDisplayUserLabel, isSameBaseBranch, branchAliasKey, isPortalAdmin, resolveArchivesBranchFilter } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import type { AuditExpense, AuditExpenseCategory } from '../types/auditExpense'
 import { AUDIT_EXPENSE_CATEGORIES } from '../types/auditExpense'
@@ -76,6 +76,7 @@ export default function AuditFinanceExpenses() {
   const [importing, setImporting] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<AuditExpense | null>(null)
+  const [showAddAnotherPrompt, setShowAddAnotherPrompt] = useState(false)
   const [duplicateModal, setDuplicateModal] = useState<{
     isOpen: boolean;
     existingExpense: AuditExpense;
@@ -98,9 +99,19 @@ export default function AuditFinanceExpenses() {
   const [savingReceipt, setSavingReceipt] = useState(false)
   const [uploadedReceiptUrl, setUploadedReceiptUrl] = useState<string | null>(null)
   const [uploadingReceipt, setUploadingReceipt] = useState(false)
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
   const scanRef = useRef<HTMLInputElement>(null)
   const cameraRef = useRef<HTMLInputElement>(null)
   const [branchEmployees, setBranchEmployees] = useState<string[]>([])
+
+  useEffect(() => {
+    if (!previewImage) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPreviewImage(null)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [previewImage])
 
   // --- Tab state ---
   const activeTab = 'expenses'
@@ -267,7 +278,7 @@ export default function AuditFinanceExpenses() {
       }
       
       // Base branch match (e.g. BR-DASMA vs UUID or alias)
-      if (isSameBaseBranch(e.branchId, branchId)) return true
+      if (isSameBaseBranch(e.branchId, branchId) || isSameBaseBranch(e.branchId, branchName)) return true
 
       // Cleaned branch name match (e.g. "DASMA" === "DASMA")
       if (e.branchName && branchName) {
@@ -276,12 +287,17 @@ export default function AuditFinanceExpenses() {
         if (cleanE && cleanB && cleanE === cleanB) return true
       }
 
+      // Alias keyword match (e.g. "dasma" in branchId or branchName)
+      const aliasE = branchAliasKey(e.branchId) || branchAliasKey(e.branchName)
+      const aliasSel = branchAliasKey(branchId) || branchAliasKey(branchName)
+      if (aliasE && aliasSel && aliasE === aliasSel) return true
+
       return false
     }).map(e => ({
       ...e,
       date: parseSmartDate(e.date) || e.date
     }))
-  }, [expenses, branchId])
+  }, [expenses, branchId, branchName])
 
   // Suggestions derived from past expenses (limited to current branch)
   const suggestions = useMemo(() => {
@@ -625,12 +641,24 @@ export default function AuditFinanceExpenses() {
         setScanPreview(null); setScannedFields(new Set()); setScanError(''); setUploadedReceiptUrl(null)
       }
     } else {
-      // New receipt saved — keep form open, clear fields (including date) for next entry
-      setForm({ ...emptyForm(resolveFormBranchId(branchId)), date: '' }); setDateRaw(''); setDateError('')
-      setScanPreview(null); setScannedFields(new Set()); setScanError(''); setUploadedReceiptUrl(null)
-      // Focus the first field for quick next entry
-      setTimeout(() => { document.getElementById('receipt-date')?.focus() }, 50)
+      // New receipt saved — ask whether to add another before deciding what happens to the form
+      setShowAddAnotherPrompt(true)
     }
+  }
+
+  const handleAddAnother = () => {
+    setShowAddAnotherPrompt(false)
+    // Keep form open, clear fields (including date) for next entry
+    setForm({ ...emptyForm(resolveFormBranchId(branchId)), date: '' }); setDateRaw(''); setDateError('')
+    setScanPreview(null); setScannedFields(new Set()); setScanError(''); setUploadedReceiptUrl(null)
+    // Focus the first field for quick next entry
+    setTimeout(() => { document.getElementById('receipt-date')?.focus() }, 50)
+  }
+
+  const handleDoneAdding = () => {
+    setShowAddAnotherPrompt(false)
+    setShowForm(false); setEditing(null); setForm(emptyForm(resolveFormBranchId(branchId))); setDateRaw(formatTodayReceiptDate()); setDateError('')
+    setScanPreview(null); setScannedFields(new Set()); setScanError(''); setUploadedReceiptUrl(null)
   }
 
   const confirmUpdateDuplicate = async () => {
@@ -1195,7 +1223,7 @@ export default function AuditFinanceExpenses() {
       {/* ── ENTRY FORM (PORTALED) ── */}
       {showForm && typeof document !== 'undefined' && createPortal(
         <>
-          <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm sm:flex sm:items-center sm:justify-center sm:p-6" onClick={() => { setShowForm(false); setEditing(null); setScanPreview(null) }}>
+          <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm sm:flex sm:items-center sm:justify-center sm:p-6">
           <div
           onClick={(e) => e.stopPropagation()}
           className="fixed sm:relative inset-0 sm:inset-auto z-[100] sm:z-auto rounded-none sm:rounded-2xl flex flex-col gap-5 p-5 pb-8 sm:p-6 overflow-y-auto overscroll-contain h-[100dvh] sm:h-auto sm:max-h-[90vh] sm:w-full sm:max-w-3xl sm:mx-auto"
@@ -1204,7 +1232,6 @@ export default function AuditFinanceExpenses() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 w-full pt-2 sm:pt-0 pb-4 sm:pb-3 border-b" style={{ borderColor: inputBorder }}>
             <div className="flex items-center justify-between w-full sm:w-auto">
               <h2 className="font-bold text-lg flex items-center gap-2" style={{ color: textPrimary }}>
-                <div className="rounded-lg p-2 shrink-0" style={{ backgroundColor: `${activeAccent}22` }}><ReceiptText size={18} style={{ color: activeAccent }} /></div>
                 {editing ? (
                   <span className="flex items-center gap-2 tracking-wide uppercase">
                     EDIT RECEIPT
@@ -1570,6 +1597,41 @@ export default function AuditFinanceExpenses() {
         </>, document.body
       )}
 
+      {/* ── ADD ANOTHER RECEIPT? PROMPT (shown after saving a new record) ── */}
+      {showAddAnotherPrompt && typeof document !== 'undefined' && createPortal(
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 1100, padding: '1rem'
+        }}>
+          <div style={{
+            backgroundColor: cardBg, border: `1px solid ${border}`, borderRadius: '1rem',
+            width: '100%', maxWidth: '380px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.3)',
+            padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem'
+          }}>
+            <div>
+              <h3 style={{ color: textPrimary, fontWeight: 'bold', fontSize: '1.05rem', margin: 0 }}>Receipt saved</h3>
+              <p style={{ color: textMuted, fontSize: '0.875rem', margin: '0.35rem 0 0 0' }}>Do you want to add another receipt?</p>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button type="button" onClick={handleDoneAdding}
+                className="px-4 py-2.5 text-sm rounded-lg font-semibold"
+                style={{ color: textMuted, backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+                Done
+              </button>
+              <button type="button" onClick={handleAddAnother}
+                className="px-4 py-2.5 rounded-lg text-sm font-bold text-white shadow"
+                style={{ backgroundColor: accent }}>
+                Add Another
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* ── RECEIPT TABLE / DAILY LOG / PURCHASES ── */}
       {activeTab === 'expenses' && branchId && (
         <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
@@ -1607,9 +1669,28 @@ export default function AuditFinanceExpenses() {
                     <div className="flex-1 min-w-0" onClick={() => setActionMenuRow(row)}>
                       {/* Row 1: Company + Amount */}
                       <div className="flex items-start justify-between gap-3">
-                        <span className="text-sm font-bold leading-tight truncate" style={{ color: textPrimary }}>
-                          {row.company || '—'}
-                        </span>
+                        <div className="flex items-center gap-2 min-w-0">
+                          {row.receiptImageUri && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setPreviewImage(row.receiptImageUri || null)
+                              }}
+                              className="shrink-0 focus:outline-none cursor-pointer"
+                              title="Click to view full screen"
+                            >
+                              <img
+                                src={row.receiptImageUri}
+                                alt="Receipt"
+                                className="w-8 h-8 object-cover rounded border border-slate-300 dark:border-slate-700 shadow-xs hover:scale-105 transition-transform"
+                              />
+                            </button>
+                          )}
+                          <span className="text-sm font-bold leading-tight truncate" style={{ color: textPrimary }}>
+                            {row.company || '—'}
+                          </span>
+                        </div>
                         <span className="text-sm font-bold shrink-0 tabular-nums" style={{ color: textPrimary }}>
                           ₱{peso(row.amount)}
                         </span>
@@ -1664,6 +1745,7 @@ export default function AuditFinanceExpenses() {
                       <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Description</th>
                       <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Category &amp; Source</th>
                       <th className="px-3 py-3 text-right font-bold" style={{ color: textMuted }}>Amount</th>
+                      <th className="px-3 py-3 text-center font-bold" style={{ color: textMuted }}>Receipt</th>
                       <th className="px-3 py-3"></th>
                     </tr>
                   </thead>
@@ -1699,6 +1781,27 @@ export default function AuditFinanceExpenses() {
                         <td className="px-3 py-2.5 text-right font-bold" style={{ color: textPrimary }}>
                           ₱{peso(row.amount)}
                         </td>
+                        <td className="px-3 py-2.5 text-center">
+                          {row.receiptImageUri ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setPreviewImage(row.receiptImageUri || null)
+                              }}
+                              title="Click to view attached receipt in full screen"
+                              className="inline-flex items-center justify-center group focus:outline-none cursor-pointer"
+                            >
+                              <img
+                                src={row.receiptImageUri}
+                                alt="Receipt"
+                                className="w-8 h-8 object-cover rounded border border-slate-300 dark:border-slate-700 group-hover:scale-110 group-hover:border-emerald-500 transition-all shadow-xs"
+                              />
+                            </button>
+                          ) : (
+                            <span className="text-slate-300 dark:text-slate-600 text-xs">—</span>
+                          )}
+                        </td>
                         <td className="px-3 py-2.5">
                           <div className="flex gap-2 justify-end" onClick={e => e.stopPropagation()}>
                             <button type="button" onClick={() => startEdit(row)} className="p-1 rounded hover:bg-slate-500/10"><Pencil size={13} style={{ color: textMuted }} /></button>
@@ -1712,6 +1815,7 @@ export default function AuditFinanceExpenses() {
                     <tr style={{ borderTop: `2px solid ${border}` }}>
                       <td colSpan={4} className="px-3 py-2.5 font-bold text-right" style={{ color: textMuted }}>TOTAL</td>
                       <td className="px-3 py-2.5 text-right font-bold" style={{ color: accent }}>₱{peso(totalFiltered)}</td>
+                      <td />
                       <td />
                     </tr>
                   </tfoot>
@@ -1990,13 +2094,19 @@ export default function AuditFinanceExpenses() {
                   <div className="rounded-xl px-4 py-4"
                     style={{ backgroundColor: isLight ? '#f8fafc' : '#0c1829', border: `1px solid ${isLight ? '#e2e8f0' : '#1a2d47'}` }}>
                     <span className="text-[10px] font-bold uppercase tracking-widest block mb-2" style={{ color: textMuted }}>Receipt Image</span>
-                    <a href={detailRow.receiptImageUri} target="_blank" rel="noopener noreferrer">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewImage(detailRow.receiptImageUri || null)}
+                      className="group cursor-pointer focus:outline-none block"
+                      title="Click to view full screen"
+                    >
                       <img
                         src={detailRow.receiptImageUri}
                         alt="Receipt"
                         style={{ maxWidth: 180, maxHeight: 240, borderRadius: 8, border: `1px solid ${isLight ? '#e2e8f0' : '#1a2d47'}`, objectFit: 'contain' }}
+                        className="group-hover:scale-105 transition-transform"
                       />
-                    </a>
+                    </button>
                   </div>
                 )}
 
@@ -2306,6 +2416,43 @@ export default function AuditFinanceExpenses() {
             <button type="button" onClick={() => setActionMenuRow(null)} className="w-full px-5 py-4 text-center text-sm font-bold rounded-2xl shadow-2xl transition-colors active:bg-black/5 mt-1" style={{ backgroundColor: cardBg, color: textMuted }}>Cancel</button>
           </div>
         </>, document.body
+      )}
+
+      {/* ── Fullscreen Receipt Image Popup Modal ── */}
+      {previewImage && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-[2000] flex items-center justify-center p-3 sm:p-6 bg-black/90 backdrop-blur-md transition-opacity duration-200"
+          onClick={() => setPreviewImage(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Receipt Image Fullscreen Preview"
+        >
+          {/* Top Bar with Close (X) Button */}
+          <div className="absolute top-4 right-4 z-[2010]">
+            <button
+              type="button"
+              onClick={() => setPreviewImage(null)}
+              className="w-10 h-10 rounded-full flex items-center justify-center text-white bg-white/15 hover:bg-white/25 active:scale-95 transition-all border border-white/20 cursor-pointer shadow-xl focus:outline-none"
+              title="Close preview (Esc)"
+              aria-label="Close"
+            >
+              <X size={22} />
+            </button>
+          </div>
+
+          {/* Fullscreen Image Preview */}
+          <div
+            className="relative max-w-full max-h-[92vh] flex items-center justify-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={previewImage}
+              alt="Receipt Preview"
+              className="max-w-full max-h-[92vh] w-auto h-auto object-contain rounded-xl shadow-2xl border border-white/10 select-none"
+            />
+          </div>
+        </div>,
+        document.body
       )}
 
     </div>

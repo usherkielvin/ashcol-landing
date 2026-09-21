@@ -27,7 +27,7 @@ export function isSameBaseBranch(a?: string | null, b?: string | null): boolean 
 }
 
 /** Map legacy UUID / BR-* ids to a shared branch keyword for staff matching. */
-function branchAliasKey(branchId?: string | null): string | null {
+export function branchAliasKey(branchId?: string | null): string | null {
   if (!branchId?.trim()) return null
   const id = branchId.trim().toLowerCase()
   const aliases: Record<string, string> = {

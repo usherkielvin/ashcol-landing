@@ -16,6 +16,7 @@ import PresenceStatus from '../components/PresenceStatus'
 import WarrantyRegistrationHistoryTable from '../components/WarrantyRegistrationHistoryTable'
 import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName, notifyEmployeesDirectoryUpdated, isWarrantyRegistrar } from '../utils/api'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
+import { uploadReceiptImage } from '../services/supabaseStorage'
 
 function formatDisplayDate(dateStr?: string | null): string {
   if (!dateStr) return '—'
@@ -604,44 +605,43 @@ export default function Employees() {
     const file = e.target.files?.[0]
     if (!file || !selectedEmployee) return
 
-    if (file.size > 2 * 1024 * 1024) {
-      alert("Image must be smaller than 2MB")
-      return
-    }
+    setImageUploading(true)
+    try {
+      const uploadResult = await uploadReceiptImage(file, {
+        bucket: 'avatars',
+        folder: 'profiles',
+        maxWidth: 400,
+        quality: 0.8,
+        filename: `emp_${selectedEmployee.id}`
+      })
 
-    const reader = new FileReader()
-    reader.onloadend = async () => {
-      const base64String = reader.result as string
-      setImageUploading(true)
-      try {
-        const url = isAdmin
-          ? `${API_BASE_URL}/admin/users/${selectedEmployee.id}`
-          : `${API_BASE_URL}/manager/employees/${selectedEmployee.id}`
+      const imageUrl = uploadResult.url
+      const url = isAdmin
+        ? `${API_BASE_URL}/admin/users/${selectedEmployee.id}`
+        : `${API_BASE_URL}/manager/employees/${selectedEmployee.id}`
 
-        const res = await fetch(url, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token()}`
-          },
-          body: JSON.stringify({ profileImage: base64String })
-        })
+      const res = await fetch(url, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token()}`
+        },
+        body: JSON.stringify({ profileImage: imageUrl })
+      })
 
-        if (res.ok) {
-          const updatedEmp = { ...selectedEmployee, profileImage: base64String }
-          setSelectedEmployee(updatedEmp)
-          setEmployees(prev => prev.map(emp => emp.id === selectedEmployee.id ? updatedEmp : emp))
-        } else {
-          alert("Failed to save image to server.")
-        }
-      } catch (err) {
-        console.error(err)
-        alert("Upload error occurred.")
-      } finally {
-        setImageUploading(false)
+      if (res.ok) {
+        const updatedEmp = { ...selectedEmployee, profileImage: imageUrl }
+        setSelectedEmployee(updatedEmp)
+        setEmployees(prev => prev.map(emp => emp.id === selectedEmployee.id ? updatedEmp : emp))
+      } else {
+        alert("Failed to save image to server.")
       }
+    } catch (err) {
+      console.error(err)
+      alert("Upload error occurred.")
+    } finally {
+      setImageUploading(false)
     }
-    reader.readAsDataURL(file)
   }
 
 
