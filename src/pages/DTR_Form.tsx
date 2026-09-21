@@ -21,6 +21,10 @@ import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 import { fetchAndMapTickets, fetchAndMapOnlineTickets, fetchAndMapCheckTickets, fetchAndMapForCollTickets, fetchAndMapRebateTickets, fetchAndMapCommissionTickets, fetchAndCountUnitSummary, lookupRebateRate, type CommissionRow } from '../utils/schedulePrefill'
 import { DtrHistoryModal } from '../components/DtrHistoryModal'
+import { uploadReceiptImage } from '../services/supabaseStorage'
+import { upsertAuditExpense } from '../utils/auditExpenseStorage'
+import { parseSmartDate } from '../utils/smartDate'
+import type { AuditExpenseCategory } from '../types/auditExpense'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -34,7 +38,7 @@ interface PartsSaleRow { id: string; customer: string; description: string; amou
 interface ForCollRow   { id: string; ticketNumber?: string; installer: string; customer: string; amount: string; collectionResolved?: boolean }
 interface RebateRow    { id: string; ticketNumber: string; customer: string; company: string; raNumber: string; hp: string; amount: string }
 interface OrderRow     { id: string; customer: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
-interface ExpenseRow   { id: string; name: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
+interface ExpenseRow   { id: string; name: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string; receiptImage?: string; company?: string; expenseCategory?: string; sourceOfFunds?: string }
 interface IncentiveRow { id: string; customer: string; company: string; hp: string; promodiser: string; amount: string; collectionResolved?: boolean }
 interface CashAdvanceRow { id: string; memberName: string; details: string; amount: string }
 interface DepositRow   { id: string; description: string; referenceNo: string; amount: string; receiptImage?: string }
@@ -249,7 +253,7 @@ const mkReb  = (): RebateRow   => ({ id: uid(), ticketNumber: '', customer: '', 
 
 const mkOrd  = (): OrderRow    => ({ id: uid(), customer: '', description: '', amount: '', receiptReturned: false })
 const mkPay  = (): OrderRow    => ({ id: uid(), customer: '', description: '', amount: '', receiptReturned: false })
-const mkExp  = (): ExpenseRow  => ({ id: uid(), name: '', description: '', amount: '', receiptReturned: false })
+const mkExp  = (): ExpenseRow  => ({ id: uid(), name: '', description: '', amount: '', receiptReturned: false, receiptImage: '', company: '', expenseCategory: '', sourceOfFunds: '' })
 const mkInc  = (): IncentiveRow => ({ id: uid(), customer: '', company: '', hp: '', promodiser: '', amount: '', collectionResolved: false })
 const mkComm = (): CommissionRow => ({ id: uid(), ticketNumber: '', store: '', diser: '', customer: '', brand: '', hp: '', dateInstalled: '', amount: '' })
 const mkCashAdv = (): CashAdvanceRow => ({ id: uid(), memberName: '', details: '', amount: '' })
@@ -685,6 +689,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const [payables, setPayables]         = useState<OrderRow[]>([mkPay()])
   // Expenses with Receipts
   const [expReceipt, setExpReceipt]     = useState<ExpenseRow[]>([mkExp()])
+  const [scanningExpenseId, setScanningExpenseId] = useState<string | null>(null)
   // Cash Advance
   const [cashAdvances, setCashAdvances] = useState<CashAdvanceRow[]>([mkCashAdv()])
   // Bank Deposits (cash physically dropped off at the company bank)
@@ -692,6 +697,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const [scanningDepositId, setScanningDepositId] = useState<string | null>(null)
   // Expenses for Purchase
   const [expPurch, setExpPurch]         = useState<ExpenseRow[]>([mkExp()])
+  const [scanningPurchaseId, setScanningPurchaseId] = useState<string | null>(null)
   // Incentives
   const [incentives, setIncentives]     = useState<IncentiveRow[]>([mkInc()])
   // Unit summary
@@ -1154,7 +1160,9 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
               receiptNo: item.receiptNo || '',
               receiptDate: item.receiptDate || '',
               resolvedExpenseId: item.resolvedExpenseId || '',
-              receiptStatus: item.receiptStatus || ''
+              receiptStatus: item.receiptStatus || '',
+              receiptImage: item.receiptImage || '',
+              company: item.company || ''
             })
           } else if (type === 'CASH_ADVANCE') {
             const parts = desc.split('|')
@@ -1199,7 +1207,9 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                 receiptNo: item.receiptNo || '',
                 receiptDate: item.receiptDate || '',
                 resolvedExpenseId: item.resolvedExpenseId || '',
-                receiptStatus: item.receiptStatus || ''
+                receiptStatus: item.receiptStatus || '',
+                receiptImage: item.receiptImage || '',
+                company: item.company || ''
               })
             }
           } else if (type === 'COLLECTION') {
@@ -1284,7 +1294,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           receiptNo: '',
           receiptDate: '',
           resolvedExpenseId: '',
-          receiptStatus: ''
+          receiptStatus: '',
+          receiptImage: ''
         })
       }
       setExpReceipt(expReceiptList.length > 0 ? expReceiptList : [mkExp()])
@@ -1302,7 +1313,9 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           receiptNo: '',
           receiptDate: '',
           resolvedExpenseId: '',
-          receiptStatus: ''
+          receiptStatus: '',
+          receiptImage: '',
+          company: ''
         })
       }
       setExpPurch(expPurchList.length > 0 ? expPurchList : [mkExp()])
@@ -1435,6 +1448,86 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       console.error('[scanDepositReceipt] Failed to scan deposit receipt:', err)
     } finally {
       setScanningDepositId(null)
+    }
+  }
+
+  // OCR the expense receipt photo and prefill the row's name/description/amount/receiptNo from whatever it can read off the receipt.
+  const scanExpenseReceipt = async (rowId: string, file: File) => {
+    setScanningExpenseId(rowId)
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const formData = new FormData()
+      formData.append('image', file)
+      const res = await fetch(`${API_BASE_URL}/v1/receipts/scan`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      })
+      if (!res.ok) throw new Error(`Server error ${res.status}`)
+      const data = await res.json() as Record<string, unknown>
+      if (data.error) {
+        console.error('[scanExpenseReceipt] scan error:', data.error)
+        return
+      }
+      setExpReceipt(p => p.map(r => {
+        if (r.id !== rowId) return r
+        const next = { ...r }
+        if (data.amount != null && !next.amount) next.amount = String(data.amount)
+        if (data.receiptNo) next.receiptNo = String(data.receiptNo)
+        const scannedDesc = data.description || data.company
+        if (scannedDesc && !next.description) next.description = String(scannedDesc)
+        const scannedIncurredBy = data.incurredBy || data.name
+        if (scannedIncurredBy && !next.name) next.name = String(scannedIncurredBy)
+        if (data.date) next.receiptDate = String(data.date)
+        if (data.company) next.company = String(data.company).toUpperCase()
+        if (data.expenseCategory) next.expenseCategory = String(data.expenseCategory).toUpperCase()
+        if (data.sourceOfFunds) next.sourceOfFunds = String(data.sourceOfFunds).toUpperCase()
+        return next
+      }))
+    } catch (err) {
+      console.error('[scanExpenseReceipt] Failed to scan expense receipt:', err)
+    } finally {
+      setScanningExpenseId(null)
+    }
+  }
+
+  // OCR the purchase receipt photo and prefill the row's details from whatever it can read off the receipt.
+  const scanPurchaseReceipt = async (rowId: string, file: File) => {
+    setScanningPurchaseId(rowId)
+    try {
+      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+      const formData = new FormData()
+      formData.append('image', file)
+      const res = await fetch(`${API_BASE_URL}/v1/receipts/scan`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      })
+      if (!res.ok) throw new Error(`Server error ${res.status}`)
+      const data = await res.json() as Record<string, unknown>
+      if (data.error) {
+        console.error('[scanPurchaseReceipt] scan error:', data.error)
+        return
+      }
+      setExpPurch(p => p.map(r => {
+        if (r.id !== rowId) return r
+        const next = { ...r }
+        if (data.amount != null && !next.amount) next.amount = String(data.amount)
+        if (data.receiptNo) next.receiptNo = String(data.receiptNo)
+        const scannedDesc = data.description || data.company
+        if (scannedDesc && !next.description) next.description = String(scannedDesc)
+        const scannedIncurredBy = data.incurredBy || data.name
+        if (scannedIncurredBy && !next.name) next.name = String(scannedIncurredBy)
+        if (data.date) next.receiptDate = String(data.date)
+        if (data.company) next.company = String(data.company).toUpperCase()
+        if (data.expenseCategory) next.expenseCategory = String(data.expenseCategory).toUpperCase()
+        if (data.sourceOfFunds) next.sourceOfFunds = String(data.sourceOfFunds).toUpperCase()
+        return next
+      }))
+    } catch (err) {
+      console.error('[scanPurchaseReceipt] Failed to scan purchase receipt:', err)
+    } finally {
+      setScanningPurchaseId(null)
     }
   }
 
@@ -1875,7 +1968,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           actualAmount: (r.actualAmount && !isNaN(parseFloat(r.actualAmount))) ? parseFloat(r.actualAmount) : null,
           receiptNo: r.receiptNo || null,
           receiptDate: r.receiptDate || null,
-          resolvedExpenseId: r.resolvedExpenseId || null
+          resolvedExpenseId: r.resolvedExpenseId || null,
+          receiptImage: r.receiptImage || null
         })),
         ...cashAdvances.filter(r => r.memberName || r.amount).map(r => ({
           type: 'CASH_ADVANCE',
@@ -1897,7 +1991,9 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           actualAmount: (r.actualAmount && !isNaN(parseFloat(r.actualAmount))) ? parseFloat(r.actualAmount) : null,
           receiptNo: r.receiptNo || null,
           receiptDate: r.receiptDate || null,
-          resolvedExpenseId: r.resolvedExpenseId || null
+          resolvedExpenseId: r.resolvedExpenseId || null,
+          receiptImage: r.receiptImage || null,
+          company: r.company || null
         })),
         ...orders.filter(r => r.customer || r.amount).map(r => ({
           type: 'PURCHASE',
@@ -2002,6 +2098,70 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       }
       const saved = await res.json() as { id?: string; success?: boolean; message?: string }
       invalidateLookupCache(reportDate)
+
+      // Auto-push expense rows to Audit Expenses with complete details
+      const reportIdForExpenses = saved?.id || reportId
+      if (reportIdForExpenses) {
+        const formatExpenseDate = (dateStr?: string) => {
+          if (dateStr) {
+            const parsed = parseSmartDate(dateStr)
+            if (parsed) return parsed
+          }
+          return parseSmartDate(reportDate) || reportDate
+        }
+
+        // 1. Push Expenses with Receipts
+        const expensesToPush = expReceipt.filter(r => r.name || r.amount)
+        for (const row of expensesToPush) {
+          try {
+            await upsertAuditExpense({
+              id: `dtr-${reportIdForExpenses}-exp-${row.id}`,
+              branchId: selectedBranchId,
+              branchName: branchName,
+              date: formatExpenseDate(row.receiptDate),
+              incurredBy: row.name || 'STAFF',
+              description: row.description || 'Expense with Receipt',
+              company: row.company || '',
+              receiptNo: row.receiptNo || '',
+              amount: parseFloat(row.amount) || 0,
+              expenseCategory: (row.expenseCategory as AuditExpenseCategory) || 'OTHER',
+              sourceOfFunds: row.sourceOfFunds || 'CASH',
+              receiptImageUri: row.receiptImage || '',
+              createdAt: '',
+              updatedAt: '',
+              updateHistory: []
+            })
+          } catch (err) {
+            console.error('[DTR→AuditExpenses] Failed to push expense:', err)
+          }
+        }
+
+        // 2. Push Expenses for Purchase
+        const purchasesToPush = expPurch.filter(r => r.name || r.amount)
+        for (const row of purchasesToPush) {
+          try {
+            await upsertAuditExpense({
+              id: `dtr-${reportIdForExpenses}-purch-${row.id}`,
+              branchId: selectedBranchId,
+              branchName: branchName,
+              date: formatExpenseDate(row.receiptDate),
+              incurredBy: row.name || 'STAFF',
+              description: row.description || 'Purchase with Receipt',
+              company: row.company || '',
+              receiptNo: row.receiptNo || '',
+              amount: parseFloat(row.amount) || 0,
+              expenseCategory: (row.expenseCategory as AuditExpenseCategory) || 'INSTALLATION MATERIALS',
+              sourceOfFunds: row.sourceOfFunds || 'CASH',
+              receiptImageUri: row.receiptImage || '',
+              createdAt: '',
+              updatedAt: '',
+              updateHistory: []
+            })
+          } catch (err) {
+            console.error('[DTR→AuditExpenses] Failed to push purchase expense:', err)
+          }
+        }
+      }
       setReviewMode(false)
       setReviewStartedAt(null)
       if (wasEdit) {
@@ -2820,6 +2980,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                     <th className={tableTh}>Name</th>
                     <th className={tableTh}>Description</th>
                     <th className={tableTh + ' text-right w-28'}>Amount</th>
+                    <th className={tableTh + ' text-center w-28'}>Receipt</th>
                     {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
                   </tr>
                 </thead>
@@ -2841,11 +3002,61 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                         <input type="text" placeholder="Description" value={row.description}
                           onChange={e => setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
                           className={flushInput} disabled={isFormDisabled} />
+                        {(row.company || row.receiptNo) && (
+                          <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                            {row.company && <span className="truncate max-w-[130px]" title={row.company}>🏢 {row.company}</span>}
+                            {row.company && row.receiptNo && <span>•</span>}
+                            {row.receiptNo && <span>OR: {row.receiptNo}</span>}
+                          </div>
+                        )}
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
                           onValueChange={(values) => setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
                           className={flushInputNumber} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd + ' text-center'}>
+                        <input type="file" accept="image/*" id={`expense-receipt-${row.id}`} className="hidden"
+                          disabled={isFormDisabled}
+                          onChange={async e => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+                            try {
+                              const uploadResult = await uploadReceiptImage(file, {
+                                folder: 'expenses',
+                                filename: `expense_${row.id}`
+                              })
+                              setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, receiptImage: uploadResult.url } : r))
+                              void scanExpenseReceipt(row.id, file)
+                            } catch (err) {
+                              console.error('Failed to process receipt image:', err)
+                              setError('Failed to process receipt image')
+                            }
+                          }} />
+                        {row.receiptImage ? (
+                          <div className="flex items-center justify-center gap-1.5">
+                            <a href={row.receiptImage} target="_blank" rel="noopener noreferrer" title="View receipt">
+                              <img src={row.receiptImage} alt="Receipt" className="h-8 w-8 object-cover rounded border border-slate-300 dark:border-slate-700 hover:opacity-80 transition cursor-pointer" />
+                            </a>
+                            {scanningExpenseId === row.id ? (
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 animate-pulse">Scanning…</span>
+                            ) : !isFormDisabled && (
+                              <button type="button" onClick={() => setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, receiptImage: '' } : r))}
+                                className="text-[10px] text-red-500 font-bold uppercase hover:underline">
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          !isFormDisabled ? (
+                            <button type="button" onClick={() => document.getElementById(`expense-receipt-${row.id}`)?.click()}
+                              className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 hover:underline">
+                              Upload &amp; Scan
+                            </button>
+                          ) : (
+                            <span className="text-xs text-slate-400">—</span>
+                          )
+                        )}
                       </td>
                       {canSubmit && !reviewMode && (
                         <td className={tableTd + ' text-center'}>
@@ -2920,6 +3131,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                     <th className={tableTh}>Name</th>
                     <th className={tableTh}>Description</th>
                     <th className={tableTh + ' text-right w-28'}>Amount</th>
+                    <th className={tableTh + ' text-center w-28'}>Receipt</th>
                     {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
                   </tr>
                 </thead>
@@ -2941,11 +3153,61 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                         <input type="text" placeholder="Description" value={row.description}
                           onChange={e => setExpPurch(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
                           className={flushInput} disabled={isFormDisabled} />
+                        {(row.company || row.receiptNo) && (
+                          <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                            {row.company && <span className="truncate max-w-[130px]" title={row.company}>🏢 {row.company}</span>}
+                            {row.company && row.receiptNo && <span>•</span>}
+                            {row.receiptNo && <span>OR: {row.receiptNo}</span>}
+                          </div>
+                        )}
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
                           onValueChange={(values) => setExpPurch(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
                           className={flushInputNumber} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd + ' text-center'}>
+                        <input type="file" accept="image/*" id={`purchase-receipt-${row.id}`} className="hidden"
+                          disabled={isFormDisabled}
+                          onChange={async e => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+                            try {
+                              const uploadResult = await uploadReceiptImage(file, {
+                                folder: 'expenses',
+                                filename: `purchase_${row.id}`
+                              })
+                              setExpPurch(p => p.map(r => r.id === row.id ? { ...r, receiptImage: uploadResult.url } : r))
+                              void scanPurchaseReceipt(row.id, file)
+                            } catch (err) {
+                              console.error('Failed to process receipt image:', err)
+                              setError('Failed to process receipt image')
+                            }
+                          }} />
+                        {row.receiptImage ? (
+                          <div className="flex items-center justify-center gap-1.5">
+                            <a href={row.receiptImage} target="_blank" rel="noopener noreferrer" title="View receipt">
+                              <img src={row.receiptImage} alt="Receipt" className="h-8 w-8 object-cover rounded border border-slate-300 dark:border-slate-700 hover:opacity-80 transition cursor-pointer" />
+                            </a>
+                            {scanningPurchaseId === row.id ? (
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 animate-pulse">Scanning…</span>
+                            ) : !isFormDisabled && (
+                              <button type="button" onClick={() => setExpPurch(p => p.map(r => r.id === row.id ? { ...r, receiptImage: '' } : r))}
+                                className="text-[10px] text-red-500 font-bold uppercase hover:underline">
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          !isFormDisabled ? (
+                            <button type="button" onClick={() => document.getElementById(`purchase-receipt-${row.id}`)?.click()}
+                              className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 hover:underline">
+                              Upload &amp; Scan
+                            </button>
+                          ) : (
+                            <span className="text-xs text-slate-400">—</span>
+                          )
+                        )}
                       </td>
                       {canSubmit && !reviewMode && (
                         <td className={tableTd + ' text-center'}>
@@ -3086,19 +3348,20 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                       <td className={tableTd + ' text-center'}>
                         <input type="file" accept="image/*" id={`deposit-receipt-${row.id}`} className="hidden"
                           disabled={isFormDisabled}
-                          onChange={e => {
+                          onChange={async e => {
                             const file = e.target.files?.[0]
                             if (!file) return
-                            if (file.size > 2 * 1024 * 1024) {
-                              setError('Receipt image must be smaller than 2MB')
-                              return
+                            try {
+                              const uploadResult = await uploadReceiptImage(file, {
+                                folder: 'deposits',
+                                filename: `deposit_${row.id}`
+                              })
+                              setDeposits(p => p.map(r => r.id === row.id ? { ...r, receiptImage: uploadResult.url } : r))
+                              void scanDepositReceipt(row.id, file)
+                            } catch (err) {
+                              console.error('Failed to process receipt image:', err)
+                              setError('Failed to process receipt image')
                             }
-                            const reader = new FileReader()
-                            reader.onloadend = () => {
-                              setDeposits(p => p.map(r => r.id === row.id ? { ...r, receiptImage: reader.result as string } : r))
-                            }
-                            reader.readAsDataURL(file)
-                            void scanDepositReceipt(row.id, file)
                           }} />
                         {row.receiptImage ? (
                           <div className="flex items-center justify-center gap-1.5">

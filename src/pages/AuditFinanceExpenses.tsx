@@ -14,6 +14,7 @@ import { parseAuditExpenseExcelFile } from '../utils/parseAuditExpenseExcel'
 import { parseSmartDate, dateToTime } from '../utils/smartDate'
 import AutoSuggestInput from '../components/AutoSuggestInput'
 import * as XLSX from 'xlsx'
+import { uploadReceiptImage } from '../services/supabaseStorage'
 
 interface BranchOption { id: string; name: string }
 
@@ -95,6 +96,8 @@ export default function AuditFinanceExpenses() {
   const [scannedFields, setScannedFields] = useState<Set<string>>(new Set())
   const [scanError, setScanError] = useState('')
   const [savingReceipt, setSavingReceipt] = useState(false)
+  const [uploadedReceiptUrl, setUploadedReceiptUrl] = useState<string | null>(null)
+  const [uploadingReceipt, setUploadingReceipt] = useState(false)
   const scanRef = useRef<HTMLInputElement>(null)
   const cameraRef = useRef<HTMLInputElement>(null)
   const [branchEmployees, setBranchEmployees] = useState<string[]>([])
@@ -263,6 +266,16 @@ export default function AuditFinanceExpenses() {
         }
       }
       
+      // Base branch match (e.g. BR-DASMA vs UUID or alias)
+      if (isSameBaseBranch(e.branchId, branchId)) return true
+
+      // Cleaned branch name match (e.g. "DASMA" === "DASMA")
+      if (e.branchName && branchName) {
+        const cleanE = e.branchName.replace(/^(ashcol\s+)/i, '').trim().toUpperCase()
+        const cleanB = branchName.replace(/^(ashcol\s+)/i, '').trim().toUpperCase()
+        if (cleanE && cleanB && cleanE === cleanB) return true
+      }
+
       return false
     }).map(e => ({
       ...e,
@@ -609,12 +622,12 @@ export default function AuditFinanceExpenses() {
       } else {
         // Updating an existing receipt — close the form
         setShowForm(false); setEditing(null); setForm(emptyForm(resolveFormBranchId(branchId))); setDateRaw(formatTodayReceiptDate()); setDateError('')
-        setScanPreview(null); setScannedFields(new Set()); setScanError('')
+        setScanPreview(null); setScannedFields(new Set()); setScanError(''); setUploadedReceiptUrl(null)
       }
     } else {
       // New receipt saved — keep form open, clear fields (including date) for next entry
       setForm({ ...emptyForm(resolveFormBranchId(branchId)), date: '' }); setDateRaw(''); setDateError('')
-      setScanPreview(null); setScannedFields(new Set()); setScanError('')
+      setScanPreview(null); setScannedFields(new Set()); setScanError(''); setUploadedReceiptUrl(null)
       // Focus the first field for quick next entry
       setTimeout(() => { document.getElementById('receipt-date')?.focus() }, 50)
     }
@@ -676,6 +689,7 @@ export default function AuditFinanceExpenses() {
         amount,
         expenseCategory: form.expenseCategory,
         sourceOfFunds: form.sourceOfFunds.trim(),
+        receiptImageUri: uploadedReceiptUrl || editing.receiptImageUri,
         updatedBy: currentUserLabel,
         updatedAt: now,
         updateHistory: [
@@ -695,6 +709,7 @@ export default function AuditFinanceExpenses() {
         amount,
         expenseCategory: form.expenseCategory,
         sourceOfFunds: form.sourceOfFunds.trim(),
+        receiptImageUri: uploadedReceiptUrl || undefined,
         inputBy: currentUserLabel,
         createdBy: currentUserLabel,
         updatedBy: currentUserLabel,
@@ -772,7 +787,8 @@ export default function AuditFinanceExpenses() {
 
   const startEdit = (row: AuditExpense) => {
     setDetailRow(null)
-    setEditing(row); setDateRaw(row.date); setDateError(''); setScanPreview(null)
+    setEditing(row); setDateRaw(row.date); setDateError(''); setScanPreview(row.receiptImageUri || null)
+    setUploadedReceiptUrl(row.receiptImageUri || null)
     const resolvedBranchId = resolveFormBranchId(row.branchId)
     setForm({ date: row.date, company: row.company, description: row.description, receiptNo: row.receiptNo, amount: String(row.amount), expenseCategory: row.expenseCategory, sourceOfFunds: row.sourceOfFunds, incurredBy: row.incurredBy, branchId: resolvedBranchId })
     setShowForm(true)
@@ -782,7 +798,8 @@ export default function AuditFinanceExpenses() {
     setEditing(row)
     setDateRaw(row.date)
     setDateError('')
-    setScanPreview(null)
+    setScanPreview(row.receiptImageUri || null)
+    setUploadedReceiptUrl(row.receiptImageUri || null)
     const resolvedBranchId = resolveFormBranchId(row.branchId)
     setForm({ date: row.date, company: row.company, description: row.description, receiptNo: row.receiptNo, amount: String(row.amount), expenseCategory: row.expenseCategory, sourceOfFunds: row.sourceOfFunds, incurredBy: row.incurredBy, branchId: resolvedBranchId })
     setIsEditingInModal(true)
@@ -806,6 +823,15 @@ export default function AuditFinanceExpenses() {
     setScanning(true)
     setScanError('')
     setScannedFields(new Set())
+
+    // Persist the receipt image to Supabase Storage (runs alongside the OCR scan below)
+    setUploadedReceiptUrl(null)
+    setUploadingReceipt(true)
+    uploadReceiptImage(file, { folder: 'finance', filename: 'expense' })
+      .then((result) => setUploadedReceiptUrl(result.url))
+      .catch((err) => console.error('[Supabase Storage] Finance receipt upload failed:', err))
+      .finally(() => setUploadingReceipt(false))
+
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
       const formData = new FormData()
@@ -1266,7 +1292,13 @@ export default function AuditFinanceExpenses() {
                 {!scanning && scanError && (
                   <p className="text-xs mt-2" style={{ color: danger }}>❌ {scanError}</p>
                 )}
-                <button type="button" onClick={() => { setScanPreview(null); setScannedFields(new Set()); setScanError('') }} className="text-xs mt-2" style={{ color: textMuted }}>× Clear</button>
+                {uploadingReceipt && (
+                  <p className="text-xs mt-2 flex items-center gap-1" style={{ color: textMuted }}><Loader2 size={11} className="animate-spin" /> Saving image to storage…</p>
+                )}
+                {!uploadingReceipt && uploadedReceiptUrl && (
+                  <p className="text-xs mt-2" style={{ color: accent }}>✓ Image saved to storage</p>
+                )}
+                <button type="button" onClick={() => { setScanPreview(null); setScannedFields(new Set()); setScanError(''); setUploadedReceiptUrl(null) }} className="text-xs mt-2" style={{ color: textMuted }}>× Clear</button>
               </div>
             )}
 
@@ -1945,6 +1977,21 @@ export default function AuditFinanceExpenses() {
                     ₱{peso(detailRow.amount)}
                   </span>
                 </div>
+
+                {/* ── Receipt Image ── */}
+                {detailRow.receiptImageUri && (
+                  <div className="rounded-xl px-4 py-4"
+                    style={{ backgroundColor: isLight ? '#f8fafc' : '#0c1829', border: `1px solid ${isLight ? '#e2e8f0' : '#1a2d47'}` }}>
+                    <span className="text-[10px] font-bold uppercase tracking-widest block mb-2" style={{ color: textMuted }}>Receipt Image</span>
+                    <a href={detailRow.receiptImageUri} target="_blank" rel="noopener noreferrer">
+                      <img
+                        src={detailRow.receiptImageUri}
+                        alt="Receipt"
+                        style={{ maxWidth: 180, maxHeight: 240, borderRadius: 8, border: `1px solid ${isLight ? '#e2e8f0' : '#1a2d47'}`, objectFit: 'contain' }}
+                      />
+                    </a>
+                  </div>
+                )}
 
                 {/* ── Timeline History ── */}
                 <div className="rounded-xl px-4 py-4"
