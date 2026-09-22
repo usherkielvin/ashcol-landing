@@ -1984,6 +1984,19 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
 
+      // Stamp a stable audit-expense id on every expense row BEFORE building the payload, so it
+      // rides along in the report item's resolvedExpenseId. Row ids are regenerated (uid()) each
+      // time the form reloads, so an id derived from them at push time would differ on every
+      // re-save and make the backend insert a new audit_expenses row instead of updating the
+      // existing one — that's what produced duplicate entries in the Expenses table.
+      const expenseBranchKey = selectedBranchId || user?.branchId || 'branch'
+      const expReceiptForSave = expReceipt.map(r =>
+        (r.name || r.amount || r.receiptImage || r.receiptNo) && !r.resolvedExpenseId
+          ? { ...r, resolvedExpenseId: `dtr-${expenseBranchKey}-${reportDate}-exp-${r.id}` }
+          : r
+      )
+      setExpReceipt(expReceiptForSave)
+
       // Build unified items array from all DTR sections
       const dtrItems: object[] = [
         ...cashTx.filter(r => r.customer || r.installer || r.amount).map(r => ({
@@ -2003,7 +2016,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           description: `PARTS|${r.customer}|${r.description}`,
           amount: parseFloat(r.amount) || 0
         })),
-        ...expReceipt.filter(r => r.name || r.amount).map(r => ({
+        ...expReceiptForSave.filter(r => r.name || r.amount).map(r => ({
           type: 'EXPENSE',
           description: `${r.name}|${r.description}`,
           amount: parseFloat(r.amount) || 0,
@@ -2153,15 +2166,17 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           return parseSmartDate(reportDate) || reportDate
         }
 
-        // 1. Push Expenses with Receipts
-        const expensesToPush = expReceipt.filter(r => r.name || r.amount || r.receiptImage || r.receiptNo)
+        // 1. Push Expenses with Receipts — reuses the id stamped above (and persisted on the
+        // report item), so re-saving an existing DTR updates its expense rows instead of
+        // inserting duplicates.
+        const expensesToPush = expReceiptForSave.filter(r => r.name || r.amount || r.receiptImage || r.receiptNo)
         for (const row of expensesToPush) {
           try {
             const rawAmt = row.amount
             const numAmt = typeof rawAmt === 'string'
               ? (parseFloat(rawAmt.replace(/,/g, '')) || 0)
               : (Number(rawAmt) || 0)
-            const expenseId = row.resolvedExpenseId || `dtr-${selectedBranchId || 'branch'}-${reportDate}-exp-${row.id}`
+            const expenseId = row.resolvedExpenseId || `dtr-${expenseBranchKey}-${reportDate}-exp-${row.id}`
             await upsertAuditExpense({
               id: expenseId,
               branchId: selectedBranchId || user?.branchId || '',
