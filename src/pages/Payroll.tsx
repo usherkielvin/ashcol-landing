@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatBranchName, isPortalAdmin } from '../utils/api'
+import { API_BASE_URL, formatBranchName, isPortalAdmin, isPayrollMember } from '../utils/api'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 import {
   fetchAndMapPayroll,
@@ -265,7 +265,10 @@ export default function Payroll() {
   const inputBorder = isLight ? '#cbd5e1'  : '#243452'
 
   const role = (user?.role || '').toLowerCase()
-  const isAdmin = isPortalAdmin(role)
+  // Admins and members carrying a payroll job title get the same payroll toolset: the
+  // all-branch dropdown, saving/autosave, and Payroll Settings. Without this a payroll-tagged
+  // member was pinned to their own branch and their edits were silently never saved.
+  const canManagePayroll = isPortalAdmin(role) || isPayrollMember(user?.jobTitle)
 
   const userFirstName = useMemo(() => {
     const raw = (user as any)?.firstName || user?.name || (user as any)?.username || 'ADMIN'
@@ -298,7 +301,7 @@ export default function Payroll() {
   const dateRangeRef = useRef<HTMLDivElement>(null)
 
   const [branchFilter, setBranchFilter] = useState(() => {
-    if (isAdmin) {
+    if (canManagePayroll) {
       const activeBranch = localStorage.getItem('ashcol-global-branch-id')
       if (activeBranch && activeBranch !== 'ALL_BRANCHES') return activeBranch
       return 'BR-TAGUIG-SALES'
@@ -535,14 +538,14 @@ export default function Payroll() {
   }
 
   useEffect(() => {
-    if (!isAdmin) return
+    if (!canManagePayroll) return
     const sync = () => {
       const activeBranch = localStorage.getItem('ashcol-global-branch-id')
       setBranchFilter(activeBranch && activeBranch !== 'ALL_BRANCHES' ? activeBranch : '')
     }
     window.addEventListener('ashcol-global-branch-change', sync)
     return () => window.removeEventListener('ashcol-global-branch-change', sync)
-  }, [isAdmin])
+  }, [canManagePayroll])
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -752,7 +755,7 @@ export default function Payroll() {
         }
 
         // Auto-save merged state if new schedule entries were discovered
-        if (isAdmin && merged.length > savedRows.length) {
+        if (canManagePayroll && merged.length > savedRows.length) {
           void savePayrollToBackend(merged, branchFilter, mKey)
         }
 
@@ -766,7 +769,7 @@ export default function Payroll() {
       setInitialLoading(false)
       setSyncing(false)
     }
-  }, [branchFilter, monthsToFetch, branches, rates, isAdmin, savePayrollToBackend])
+  }, [branchFilter, monthsToFetch, branches, rates, canManagePayroll, savePayrollToBackend])
 
   useEffect(() => {
     const token = getToken()
@@ -799,7 +802,7 @@ export default function Payroll() {
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     setSaveStatus('saving')
     autoSaveTimer.current = setTimeout(() => {
-      if (isAdmin && branchFilter) {
+      if (canManagePayroll && branchFilter) {
         const monthGroups = new Map<string, PayrollRow[]>()
         for (const r of updated) {
           const m = r.workDate ? r.workDate.slice(0, 7) : (dateFrom ? dateFrom.slice(0, 7) : new Date().toISOString().slice(0, 7))
@@ -1098,7 +1101,7 @@ export default function Payroll() {
         style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}`, borderBottom: `1px solid ${border}`, borderLeft: `1px solid ${border}`, borderRight: `1px solid ${border}` }}
       >
           {/* Branch filter */}
-          {isAdmin ? (
+          {canManagePayroll ? (
             <div className="relative w-36 md:w-48 lg:w-52 shrink-0">
               <Building2 className="absolute left-3 w-4 h-4 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
               <select
@@ -1359,7 +1362,7 @@ export default function Payroll() {
 
           {/* Payroll Settings — per-branch rate presets (e.g. SILANG's cleaning fee differs
               from other branches). Only meaningful once a branch is selected. */}
-          {isAdmin && branchFilter && (
+          {canManagePayroll && branchFilter && (
             <button
               type="button"
               onClick={openRatesModal}
