@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, type FocusEvent, type MouseEvent as ReactMouseEvent, type CSSProperties, type ReactNode } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { NumericFormat } from 'react-number-format'
 import {
@@ -140,10 +140,6 @@ type ColumnKey =
   | 'scaffoldingInstallation' | 'flushingOldPipe' | 'sterneBracket' | 'breakerInstallationLabor'
   | 'chargingOfFreon' | 'materialsReturn' | 'installationChecklist' | 'videoUpload' | 'remarks' | 'audited'
 
-// Date / Ticket # / Customer Name are fetched from the schedule ticket — glued to the left edge
-// while the fee columns scroll, and read-only for synced rows (see readOnlyWhenSynced below).
-const STICKY_LEFT_KEYS: ColumnKey[] = ['date', 'ticketNumber', 'customerName']
-
 type ColumnCategory = 'standard' | 'piping' | 'electrical' | 'structural' | 'masonry' | 'admin'
 
 const CATEGORY_META: Record<ColumnCategory, { label: string; blurb: string }> = {
@@ -219,6 +215,10 @@ const COLUMN_DEFS: ColumnDef[] = [
   { key: 'audited', label: 'Audited', width: 90, align: 'left', pinned: true },
 ]
 
+// Desktop list columns: Date | Ticket | Customer | Brand | Install Fee | Add-ons | Total | Audited.
+// The full per-job fee breakdown lives in the row popup, not in the list itself.
+const LIST_GRID_TEMPLATE = '110px 110px minmax(180px, 1.6fr) minmax(110px, 1fr) 110px 110px 120px 90px'
+
 const COLUMN_PRESETS: { label: string; cats: ColumnCategory[] }[] = [
   { label: 'Standard', cats: ['standard'] },
   { label: 'Electrical Heavy', cats: ['standard', 'electrical'] },
@@ -283,6 +283,8 @@ export default function Payroll() {
   const [, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   // null = the roster (list of installers); a name = that installer's own table.
   const [selectedInstaller, setSelectedInstaller] = useState<string | null>(null)
+  // The job row whose full fee breakdown is open in the popup (desktop list view).
+  const [detailRow, setDetailRow] = useState<PayrollRow | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null)
   const [completeModalFor, setCompleteModalFor] = useState<string | null>(null)
   const [completeRemarks, setCompleteRemarks] = useState('')
@@ -507,35 +509,9 @@ export default function Payroll() {
   useEffect(() => {
     localStorage.setItem(COLUMN_WIDTHS_KEY, JSON.stringify(columnWidths))
   }, [columnWidths])
-  // Custom columns aren't resizable in this first pass (no entry in columnWidths/
-  // DEFAULT_COLUMN_WIDTHS, both still strictly ColumnKey-keyed) — they just get a fixed width.
+  // Custom columns have no entry in columnWidths/DEFAULT_COLUMN_WIDTHS (both strictly
+  // ColumnKey-keyed) — they fall back to a fixed width.
   const widthFor = (key: string) => columnWidths[key as ColumnKey] ?? DEFAULT_COLUMN_WIDTHS[key as ColumnKey] ?? 120
-
-  const resizingRef = useRef<{ key: ColumnKey; startX: number; startWidth: number } | null>(null)
-  const [resizingKey, setResizingKey] = useState<ColumnKey | null>(null)
-  const handleResizeMove = (e: MouseEvent) => {
-    const r = resizingRef.current
-    if (!r) return
-    const next = Math.max(MIN_COLUMN_WIDTH, r.startWidth + (e.clientX - r.startX))
-    setColumnWidths(prev => ({ ...prev, [r.key]: next }))
-  }
-  const handleResizeEnd = () => {
-    resizingRef.current = null
-    setResizingKey(null)
-    document.removeEventListener('mousemove', handleResizeMove)
-    document.removeEventListener('mouseup', handleResizeEnd)
-  }
-  const handleResizeStart = (key: ColumnKey) => (e: ReactMouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    resizingRef.current = { key, startX: e.clientX, startWidth: widthFor(key) }
-    setResizingKey(key)
-    document.addEventListener('mousemove', handleResizeMove)
-    document.addEventListener('mouseup', handleResizeEnd)
-  }
-  const handleResizeDoubleClick = (key: ColumnKey) => () => {
-    setColumnWidths(prev => ({ ...prev, [key]: DEFAULT_COLUMN_WIDTHS[key] }))
-  }
 
   useEffect(() => {
     if (!canManagePayroll) return
@@ -982,11 +958,6 @@ export default function Payroll() {
   }, [grouped, selectedInstaller])
 
 
-  // Cell input: no box of its own — it fills its grid cell edge-to-edge like a
-  // spreadsheet cell. The grid line (border) lives on the cell wrapper, not the input.
-  const inputCls = "w-full h-full px-3 py-3 text-sm font-semibold uppercase bg-transparent border-0 outline-none focus:outline-none focus:ring-0"
-  // No text-align baked in — alignment is set per-column (numeric columns go right-aligned).
-  const thCls = "px-3 py-3 text-[11px] font-semibold uppercase tracking-wider opacity-70 whitespace-nowrap overflow-hidden text-ellipsis"
   const visibleColumnsFor = (installerName: string): ColumnDef[] => {
     const hidden = hiddenColumnsFor(installerName)
     const fixed = COLUMN_DEFS.filter(c => c.pinned || !hidden.has(c.key as ColumnKey))
@@ -996,49 +967,15 @@ export default function Payroll() {
     }))
     return [...fixed, ...custom]
   }
-  const cellBorder = { borderRight: `1px solid ${border}` }
-  const cellFocusBg = isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)'
-  const onCellFocus = (e: FocusEvent<HTMLInputElement>) => { e.currentTarget.style.backgroundColor = cellFocusBg }
-  const onCellBlur = (e: FocusEvent<HTMLInputElement>) => { e.currentTarget.style.backgroundColor = 'transparent' }
-  // Sticky cells can't blur back to 'transparent' — with position:sticky, transparent would let
-  // scrolled-under content show through. They reset to their own row's real (opaque) background.
-  const onCellBlurBg = (bg: string) => (e: FocusEvent<HTMLInputElement>) => { e.currentTarget.style.backgroundColor = bg }
   const zebraBg = isLight ? '#f8fafc' : '#0c1420'
   const rowHoverBg = isLight ? '#eef2f7' : '#111d33'
   const headerBg = isLight ? '#f8fafc' : '#0d1520'
-  const numericStyle = { textAlign: 'right' as const }
 
   // Amount + Method live in one free-text `remit` field today — tinted distinctly from the
   // Technician Labor & Add-ons columns so remittance (money owed BACK to the branch) never
   // reads as part of the crew's payout.
   const remitTint = isLight ? '#F0F9FF' : 'rgba(56,189,248,0.10)'
   const remitAccent = isLight ? '#0369A1' : '#7DD3FC'
-  const remitFocusBg = isLight ? 'rgba(2,132,199,0.14)' : 'rgba(56,189,248,0.22)'
-  const onRemitFocus = (e: FocusEvent<HTMLInputElement>) => { e.currentTarget.style.backgroundColor = remitFocusBg }
-  const onRemitBlur = (e: FocusEvent<HTMLInputElement>) => { e.currentTarget.style.backgroundColor = remitTint }
-
-  // Sticky-left columns are all `pinned: true` and never hidden, so their cumulative left
-  // offset only changes when one of them is resized — recomputed from live widths.
-  const stickyLeftOffsets = useMemo(() => {
-    const offsets: Partial<Record<ColumnKey, number>> = {}
-    let running = 0
-    for (const key of STICKY_LEFT_KEYS) {
-      offsets[key] = running
-      running += widthFor(key)
-    }
-    return offsets
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columnWidths])
-
-  /** Date / Ticket # / Customer Name stay glued to the left edge — needs an explicit opaque
-   *  background since sticky content would otherwise show whatever scrolls underneath it. */
-  const stickyCellStyle = (colKey: string, opaqueBg: string): CSSProperties => {
-    const leftOffset = stickyLeftOffsets[colKey as ColumnKey]
-    if (leftOffset !== undefined) {
-      return { position: 'sticky', left: leftOffset, zIndex: 2, backgroundColor: opaqueBg }
-    }
-    return {}
-  }
 
   // Payout breakdown tile — used both per-installer (below each table) and for the
   // all-crew total (in the Summary card), so remittance always reads as separate from payout.
@@ -1453,8 +1390,6 @@ export default function Payroll() {
 
           {grouped.filter(([name]) => name === selectedInstaller).map(([installerName, installerRows]) => {
             const groupVisibleColumns = visibleColumnsFor(installerName)
-            const groupGridTemplate = groupVisibleColumns.map(c => `${widthFor(c.key)}px`).join(' ')
-            const groupMinWidth = groupVisibleColumns.reduce((sum, c) => sum + widthFor(c.key), 0)
             return (
               <div key={installerName} className="rounded-2xl border shadow-sm overflow-hidden" style={{ backgroundColor: cardBg, borderColor: border }}>
                 <div
@@ -1488,163 +1423,63 @@ export default function Payroll() {
                   <span className="text-base md:text-lg font-bold tabular-nums" style={{ color: '#10B981' }}>₱{peso(installerTotal(installerRows))}</span>
                 </div>
 
-                  <div className="hidden md:block w-full overflow-x-auto">
+                  {/* Desktop list view — one compact line per job. The full fee breakdown
+                      (every column the column manager leaves visible) opens in a popup on row
+                      click, instead of a wide horizontally-scrolling worksheet. */}
+                  <div className="hidden md:block w-full">
                     <div
-                      className="w-full"
-                      style={{ fontSize: '14px', color: textPrimary, minWidth: groupMinWidth }}
+                      className="grid px-6 py-2.5 text-[11px] font-bold uppercase tracking-wide sticky top-0 z-10"
+                      style={{ gridTemplateColumns: LIST_GRID_TEMPLATE, borderBottom: `2px solid ${border}`, color: textMuted, backgroundColor: headerBg }}
                     >
-                      <div
-                        className="grid sticky top-0 z-10"
-                        style={{ gridTemplateColumns: groupGridTemplate, borderBottom: `2px solid ${border}`, color: textMuted, backgroundColor: headerBg }}
-                      >
-                        {groupVisibleColumns.map((col, i) => {
-                          const isRemit = col.key === 'remit'
-                          return (
-                            <div
-                              key={col.key}
-                              className={`${thCls} ${col.align === 'right' ? 'text-right' : 'text-left'} relative select-none cursor-default`}
-                              title={col.label}
-                              style={{
-                                ...(i < groupVisibleColumns.length - 1 ? cellBorder : {}),
-                                ...stickyCellStyle(col.key, headerBg),
-                                ...(isRemit ? { backgroundColor: remitTint, color: remitAccent } : {}),
-                              }}
-                              onContextMenu={(e) => {
-                                e.preventDefault()
-                                setColCtxMenu({ x: e.clientX, y: e.clientY, col, installerName })
-                              }}
-                            >
-                              {col.label}
-                              {/* Drag to resize; double-click resets to default width. Custom
-                                  columns aren't resizable yet, so no handle for those. */}
-                              {COLUMN_DEFS.some(c => c.key === col.key) && (
-                                <span
-                                  onMouseDown={handleResizeStart(col.key as ColumnKey)}
-                                  onDoubleClick={handleResizeDoubleClick(col.key as ColumnKey)}
-                                  onClick={e => e.stopPropagation()}
-                                  title="Drag to resize"
-                                  className="absolute top-0 right-0 h-full w-2 cursor-col-resize z-10 hover:bg-emerald-500/40"
-                                  style={resizingKey === col.key ? { backgroundColor: 'rgba(16,185,129,0.6)' } : undefined}
-                                />
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                      {installerRows.map((row, idx) => {
-                        const rowBg = idx % 2 === 1 ? zebraBg : 'transparent'
-                        // Sticky cells need a real (non-'transparent') background — this is
-                        // what they show instead so scrolled-under content never bleeds through.
-                        const rowOpaqueBg = idx % 2 === 1 ? zebraBg : cardBg
-                        return (
-                          <div
-                            key={row.id}
-                            className="grid"
-                            style={{ gridTemplateColumns: groupGridTemplate, borderBottom: `1px solid ${border}`, backgroundColor: rowBg }}
-                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = rowHoverBg }}
-                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = rowBg }}
-                          >
-                            {groupVisibleColumns.map((col, i) => {
-                              const cellStyle = {
-                                ...(i < groupVisibleColumns.length - 1 ? cellBorder : {}),
-                                ...(col.align === 'right' ? numericStyle : {}),
-                              }
-                              const sticky = stickyCellStyle(col.key, rowOpaqueBg)
-
-                              // Date / Ticket # / Customer Name — fetched from the schedule ticket,
-                              // read-only once synced (manually added rows with no ticketId stay editable).
-                              if (col.readOnlyWhenSynced) {
-                                const isReadOnly = !!row.ticketId
-                                const readOnlyStyle = { ...cellStyle, ...sticky, opacity: isReadOnly ? 0.65 : 1, cursor: isReadOnly ? 'default' as const : 'text' as const }
-                                if (col.key === 'date') {
-                                  return (
-                                    <input
-                                      key={col.key}
-                                      type="date"
-                                      value={row.workDate}
-                                      onChange={e => updateRow(row.id, { workDate: e.target.value })}
-                                      readOnly={isReadOnly}
-                                      title={isReadOnly ? 'Synced from the ticket — not editable here' : undefined}
-                                      className={inputCls}
-                                      style={readOnlyStyle}
-                                      onFocus={isReadOnly ? undefined : onCellFocus}
-                                      onBlur={isReadOnly ? undefined : onCellBlurBg(rowOpaqueBg)}
-                                    />
-                                  )
-                                }
-                                const acc = columnAccessors[col.key]
-                                return (
-                                  <input
-                                    key={col.key}
-                                    type="text"
-                                    value={acc.get(row)}
-                                    onChange={e => acc.set(row.id, e.target.value)}
-                                    readOnly={isReadOnly}
-                                    title={isReadOnly ? 'Synced from the ticket — not editable here' : undefined}
-                                    className={inputCls}
-                                    style={readOnlyStyle}
-                                    onFocus={isReadOnly ? undefined : onCellFocus}
-                                    onBlur={isReadOnly ? undefined : onCellBlurBg(rowOpaqueBg)}
-                                  />
-                                )
-                              }
-
-                              // Remit — visually separated from labor/add-on fees (blue tint), since
-                              // it's money owed BACK to the branch, not part of the crew's payout.
-                              if (col.key === 'remit') {
-                                const acc = columnAccessors[col.key]
-                                return (
-                                  <input
-                                    key={col.key}
-                                    type="text"
-                                    value={acc.get(row)}
-                                    onChange={e => acc.set(row.id, e.target.value)}
-                                    className={inputCls}
-                                    style={{ ...cellStyle, backgroundColor: remitTint }}
-                                    onFocus={onRemitFocus}
-                                    onBlur={onRemitBlur}
-                                  />
-                                )
-                              }
-
-                              // Fee/add-on amounts — comma-formatted (e.g. 1,500.00) via the same
-                              // NumericFormat component the DTR form already uses for money fields.
-                              if (col.isMoney) {
-                                const acc = columnAccessors[col.key]
-                                return (
-                                  <NumericFormat
-                                    key={col.key}
-                                    thousandSeparator=","
-                                    decimalScale={2}
-                                    allowNegative={false}
-                                    value={acc.get(row)}
-                                    onValueChange={values => acc.set(row.id, values.value)}
-                                    className={inputCls}
-                                    style={cellStyle}
-                                    onFocus={onCellFocus}
-                                    onBlur={onCellBlur}
-                                  />
-                                )
-                              }
-
-                              const acc = columnAccessors[col.key]
-                              return (
-                                <input
-                                  key={col.key}
-                                  type="text"
-                                  value={acc.get(row)}
-                                  onChange={e => acc.set(row.id, e.target.value)}
-                                  className={inputCls}
-                                  style={cellStyle}
-                                  onFocus={onCellFocus}
-                                  onBlur={onCellBlur}
-                                />
-                              )
-                            })}
-                          </div>
-                        )
-                      })}
+                      <span>Date</span>
+                      <span>Ticket</span>
+                      <span>Customer</span>
+                      <span>Brand</span>
+                      <span className="text-right">Install Fee</span>
+                      <span className="text-right">Add-ons</span>
+                      <span className="text-right">Row Total</span>
+                      <span className="text-center">Audited</span>
                     </div>
+                    {installerRows.map((row, idx) => {
+                      const rowBg = idx % 2 === 1 ? zebraBg : 'transparent'
+                      const addOns = rowTotal(row) - num(row.installationFee)
+                      return (
+                        <div
+                          key={row.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setDetailRow(row)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              setDetailRow(row)
+                            }
+                          }}
+                          className="grid px-6 py-3 items-center cursor-pointer transition-colors"
+                          style={{ gridTemplateColumns: LIST_GRID_TEMPLATE, borderBottom: `1px solid ${border}`, backgroundColor: rowBg, fontSize: '13px', color: textPrimary }}
+                          onMouseEnter={e => { e.currentTarget.style.backgroundColor = rowHoverBg }}
+                          onMouseLeave={e => { e.currentTarget.style.backgroundColor = rowBg }}
+                        >
+                          <span style={{ color: textMuted }}>{row.workDate ? shortDate(row.workDate) : '—'}</span>
+                          <span className="truncate" style={{ color: textMuted }}>{row.ticketNumber || '—'}</span>
+                          <span className="truncate font-semibold">{row.customerName || 'No customer'}</span>
+                          <span className="truncate" style={{ color: textMuted }}>{row.brandCapacity || '—'}</span>
+                          <span className="text-right tabular-nums">₱{peso(num(row.installationFee))}</span>
+                          <span className="text-right tabular-nums" style={{ color: addOns > 0 ? textPrimary : textMuted }}>
+                            {addOns > 0 ? `₱${peso(addOns)}` : '—'}
+                          </span>
+                          <span className="text-right tabular-nums font-bold" style={{ color: '#10B981' }}>₱{peso(rowTotal(row))}</span>
+                          <span className="text-center text-[11px] font-bold truncate" style={{ color: row.audited ? '#10B981' : textMuted }}>
+                            {row.audited || '—'}
+                          </span>
+                        </div>
+                      )
+                    })}
+                    {installerRows.length === 0 && (
+                      <div className="px-6 py-8 text-center text-xs font-semibold" style={{ color: textMuted }}>
+                        No jobs for this period.
+                      </div>
+                    )}
                   </div>
 
                 {/* Mobile card view — one card per job instead of a horizontally-scrolling
@@ -2224,6 +2059,117 @@ export default function Payroll() {
             Manage all columns…
           </button>
         </div>,
+        document.body
+      )}
+
+      {/* Job detail popup — opened by clicking a row in the desktop list. Renders every column
+          the column manager leaves visible as an editable label/value row, reusing the same
+          cell renderer as the mobile cards so edits behave identically in both. */}
+      {detailRow && createPortal(
+        (() => {
+          // Re-read from `rows` so edits made inside the popup stay live; `detailRow` is only
+          // the identity of the row that was clicked.
+          const liveRow = rows.find(r => r.id === detailRow.id) || detailRow
+          const detailCols = (selectedInstaller ? visibleColumnsFor(selectedInstaller) : [])
+            .filter(c => !['date', 'ticketNumber', 'customerName'].includes(c.key))
+          const addOns = rowTotal(liveRow) - num(liveRow.installationFee)
+          return (
+            <div
+              className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-150"
+              onClick={() => setDetailRow(null)}
+            >
+              <div
+                className="w-full max-w-2xl max-h-[88vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden"
+                style={{ backgroundColor: cardBg, borderColor: border }}
+                onClick={e => e.stopPropagation()}
+              >
+                <div
+                  className="flex items-start justify-between gap-3 px-5 py-4 shrink-0"
+                  style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}
+                >
+                  {/* Synced rows show their schedule details read-only (corrected at the
+                      source); manually added rows stay editable here, same rule the old grid
+                      applied via readOnlyWhenSynced. */}
+                  {liveRow.ticketId ? (
+                    <div className="min-w-0">
+                      <div className="text-sm font-extrabold truncate" style={{ color: textPrimary }}>
+                        {liveRow.customerName || 'No customer'}
+                      </div>
+                      <div className="text-[11px] font-semibold mt-0.5 truncate" style={{ color: textMuted }}>
+                        {liveRow.workDate ? shortDate(liveRow.workDate) : 'No date'}
+                        {' · '}{liveRow.ticketNumber || 'No ticket'}
+                        {liveRow.brandCapacity ? ` · ${liveRow.brandCapacity}` : ''}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="min-w-0 flex flex-col gap-1">
+                      <input
+                        type="text"
+                        placeholder="Customer name"
+                        value={liveRow.customerName}
+                        onChange={e => updateRow(liveRow.id, { customerName: e.target.value })}
+                        className="text-sm font-extrabold bg-transparent border-0 outline-none w-full"
+                        style={{ color: textPrimary }}
+                      />
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="date"
+                          value={liveRow.workDate || ''}
+                          onChange={e => updateRow(liveRow.id, { workDate: e.target.value })}
+                          className="text-[11px] font-semibold bg-transparent border-0 outline-none"
+                          style={{ color: textMuted }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Ticket"
+                          value={liveRow.ticketNumber}
+                          onChange={e => updateRow(liveRow.id, { ticketNumber: e.target.value })}
+                          className="text-[11px] font-semibold bg-transparent border-0 outline-none w-24"
+                          style={{ color: textMuted }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setDetailRow(null)}
+                    className="p-1.5 rounded-lg shrink-0 transition-colors hover:bg-slate-500/10"
+                    style={{ color: textMuted }}
+                    aria-label="Close"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto px-5 py-1">
+                  {detailCols.map(col => (
+                    <div
+                      key={col.key}
+                      className="flex items-center justify-between gap-3 py-2"
+                      style={{ borderBottom: `1px solid ${border}` }}
+                    >
+                      <span
+                        className="text-[10px] font-bold uppercase tracking-wide shrink-0"
+                        style={{ color: col.key === 'remit' ? remitAccent : textMuted }}
+                      >
+                        {col.label}
+                      </span>
+                      <div className="max-w-[55%] flex-1">
+                        {renderMobileCellValue(col, liveRow)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-3 shrink-0" style={{ backgroundColor: headerBg, borderTop: `1px solid ${border}` }}>
+                  {footerTile('Install Fee', num(liveRow.installationFee), textPrimary)}
+                  {footerTile('Add-on Pay', addOns, textPrimary)}
+                  {footerTile('Row Total', rowTotal(liveRow), '#10B981')}
+                </div>
+              </div>
+            </div>
+          )
+        })(),
         document.body
       )}
 
