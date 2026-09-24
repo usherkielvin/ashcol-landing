@@ -215,6 +215,10 @@ const COLUMN_DEFS: ColumnDef[] = [
   { key: 'audited', label: 'Audited', width: 90, align: 'left', pinned: true },
 ]
 
+// Roster columns: Installer | Aircon Units | Payroll Amount | Payroll Status. There's no action
+// column — the whole row opens that installer's payroll.
+const ROSTER_GRID_TEMPLATE = 'minmax(240px, 2fr) 130px 170px 220px'
+
 // Desktop list columns: Date | Ticket | Customer | Brand | Install Fee | Add-ons | Total | Audited.
 // The full per-job fee breakdown lives in the row popup, not in the list itself.
 const LIST_GRID_TEMPLATE = '110px 110px minmax(180px, 1.6fr) minmax(110px, 1fr) 110px 110px 120px 90px'
@@ -1576,17 +1580,16 @@ export default function Payroll() {
       ) : (
         // Roster / summary — one continuous ledger table covering the whole selected period (not
         // a single job). Remarks/Payroll Due/Audited/Status live here, not in an installer's own
-        // per-job table. Click "View Payroll" to open that job-level table.
+        // per-job table. Click a row to open that installer's job-level table.
         <div className="rounded-b-2xl border overflow-hidden" style={{ borderColor: border, backgroundColor: cardBg }}>
           {/* Column header row */}
           <div
             className="hidden md:grid items-center px-6 md:px-7 py-3.5"
-            style={{ gridTemplateColumns: 'minmax(240px, 2fr) 130px 170px 170px 220px', backgroundColor: isLight ? '#f8fafc' : '#0d1520', borderBottom: `1px solid ${border}` }}
+            style={{ gridTemplateColumns: ROSTER_GRID_TEMPLATE, backgroundColor: isLight ? '#f8fafc' : '#0d1520', borderBottom: `1px solid ${border}` }}
           >
             <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70" style={{ color: textMuted }}>Installer</span>
             <span className="text-[10px] font-semibold uppercase tracking-wider text-center opacity-70" style={{ color: textMuted }}>Aircon Units</span>
             <span className="text-[10px] font-semibold uppercase tracking-wider text-right opacity-70" style={{ color: textMuted }}>Payroll Amount</span>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-center opacity-70" style={{ color: textMuted }}>Action</span>
             <span className="text-[10px] font-semibold uppercase tracking-wider text-center opacity-70" style={{ color: textMuted }}>Payroll Status</span>
           </div>
 
@@ -1599,9 +1602,19 @@ export default function Payroll() {
             return (
               <div
                 key={installerName}
-                className="grid items-center gap-x-4 gap-y-3 px-6 md:px-7 py-5 md:py-6 transition-colors"
+                role="button"
+                tabIndex={0}
+                title={`Open ${titleCase(displayInstallerName(installerName))}'s payroll`}
+                onClick={() => setSelectedInstaller(installerName)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setSelectedInstaller(installerName)
+                  }
+                }}
+                className="grid items-center gap-x-4 gap-y-3 px-6 md:px-7 py-5 md:py-6 transition-colors cursor-pointer"
                 style={{
-                  gridTemplateColumns: 'minmax(240px, 2fr) 130px 170px 170px 220px',
+                  gridTemplateColumns: ROSTER_GRID_TEMPLATE,
                   borderTop: rowIndex === 0 ? 'none' : `1px solid ${border}`,
                 }}
                 onMouseEnter={e => { e.currentTarget.style.backgroundColor = isLight ? '#f8fafc' : '#0d1520' }}
@@ -1634,20 +1647,7 @@ export default function Payroll() {
                       </span>
                     </div>
 
-                    {/* 4. ACTION (VIEW PAYROLL) */}
-                    <div className="flex justify-center">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedInstaller(installerName)}
-                        className="group flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-colors"
-                        style={{ color: '#10B981', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.14)' }}
-                      >
-                        <span>View Payroll</span>
-                        <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                      </button>
-                    </div>
-
-                    {/* 5. STATUS (LAST COLUMN TO THE RIGHT) */}
+                    {/* 4. STATUS (LAST COLUMN TO THE RIGHT) */}
                     <div className="flex justify-center">
                       {isComplete ? (
                         <div
@@ -1675,7 +1675,9 @@ export default function Payroll() {
                       ) : (
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={e => {
+                            // The whole row opens the payroll — completing is its own action.
+                            e.stopPropagation()
                             setCompleteModalFor(installerName)
                             setCompleteRemarks(summaryRemarks)
                           }}
