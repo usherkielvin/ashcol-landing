@@ -1,4 +1,4 @@
-import { Truck } from 'lucide-react'
+import { Truck, ArrowRightLeft } from 'lucide-react'
 import { FormField, FormSectionHead } from './FormField'
 import type { RelayFormTheme } from './theme'
 
@@ -17,6 +17,7 @@ export function DispatchSection({
   driverRoster,
   vehicle,
   onVehicleChange,
+  onTransferClick,
   theme,
 }: {
   step?: number
@@ -32,6 +33,7 @@ export function DispatchSection({
   driverRoster: string[]
   vehicle: string
   onVehicleChange: (value: string) => void
+  onTransferClick?: () => void
   theme: RelayFormTheme
 }) {
   const { textPrimary, inputBg, inputBorder, inputClassName, getInputStyle } = theme
@@ -41,7 +43,23 @@ export function DispatchSection({
     <section>
       <FormSectionHead step={step} icon={<Truck className="w-3.5 h-3.5" />} title="Dispatch" subtitle={subtitle} />
       <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
-        <FormField label={isTaguigServices ? 'Technician' : 'Installer / Technician'} className="md:col-span-4">
+        <div className="md:col-span-4">
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="font-bold uppercase tracking-wide block text-slate-500 dark:text-slate-400 text-[10.5px]">
+              {isTaguigServices ? 'Technician' : 'Installer / Technician'}
+            </label>
+            {onTransferClick && (
+              <button
+                type="button"
+                onClick={onTransferClick}
+                className="text-[10px] font-black uppercase text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 hover:underline flex items-center gap-1 transition-colors"
+                title="Transfer ticket to another branch and clear installer"
+              >
+                <ArrowRightLeft className="w-3 h-3" />
+                <span>Transfer Branch</span>
+              </button>
+            )}
+          </div>
           <select
             value={installerName || ''}
             onChange={e => onInstallerChange(e.target.value)}
@@ -53,7 +71,7 @@ export function DispatchSection({
               <option key={opt.id} value={opt.name}>{opt.label || opt.name}</option>
             ))}
           </select>
-        </FormField>
+        </div>
         <FormField label="Driver" className="md:col-span-4">
           <input
             type="text"

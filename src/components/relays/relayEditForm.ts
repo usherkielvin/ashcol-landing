@@ -205,7 +205,7 @@ export function buildRelayEditDraft(
       || ticket.warrantyRegistrationCompletedBy
       || '',
     ),
-    remarksUpdate: '',
+    remarksUpdate: ticket.remarks || ticket.remarksUpdate || '',
     installationCharges: ticket.installationCharges || 0,
     modeOfPayment: ticket.modeOfPayment || ticket.mode_of_payment || 'NO_PAYMENT',
     images: ticket.images || '',

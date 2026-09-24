@@ -1,4 +1,4 @@
-import { API_BASE_URL, readApiError } from './api'
+import { API_BASE_URL, readApiError, isFranchiseBranch } from './api'
 import { isTabCacheFresh, readTabCache, readTabCacheEntry, writeTabCache } from './ticketTabCache'
 
 const VERSION = 2
@@ -80,7 +80,31 @@ export async function fetchCachedBranches(
   }
   const data = await res.json()
   const list = data?.data || data || []
-  const normalized = Array.isArray(list) ? list as Array<Record<string, unknown>> : []
+  const rawList = Array.isArray(list) ? [...list as Array<Record<string, unknown>>] : []
+  const normalized = rawList.map(b => {
+    const isFranchise = Boolean(b.isFranchise || isFranchiseBranch(String(b.id || '')) || isFranchiseBranch(String(b.name || '')))
+    return isFranchise ? { ...b, isFranchise: true } : b
+  })
+  const hasValenzuela = normalized.some(b => isFranchiseBranch(String(b.id || b.name || '')) && String(b.id || b.name || '').toUpperCase().includes('VALENZUELA'))
+  if (!hasValenzuela) {
+    normalized.push({
+      id: 'BR-VALENZUELA',
+      name: 'ASHCOL VALENZUELA',
+      location: 'Valenzuela City',
+      isFranchise: true,
+      isActive: true,
+    })
+  }
+  const hasBatangas = normalized.some(b => isFranchiseBranch(String(b.id || b.name || '')) && String(b.id || b.name || '').toUpperCase().includes('BATANGAS'))
+  if (!hasBatangas) {
+    normalized.push({
+      id: 'BR-BATANGAS',
+      name: 'ASHCOL BATANGAS',
+      location: 'Taal, Batangas',
+      isFranchise: true,
+      isActive: true,
+    })
+  }
   writeTabCache(key, normalized)
   return normalized
 }

@@ -5,11 +5,11 @@ import {
   Search, Building2, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   SlidersHorizontal, Plus, X, RotateCcw, RefreshCw, Save, Loader2, EyeOff, Trash2,
   Stethoscope, Lightbulb, HardHat, PiggyBank, Wind, Recycle, ArrowBigDownDash, Snowflake,
-  Users, Clock, Receipt, FileText,
+  Users, Clock, Receipt, ArrowRightLeft,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatBranchName, isPortalAdmin, isPayrollMember } from '../utils/api'
+import { API_BASE_URL, formatBranchName, isPortalAdmin, isPayrollMember, isFranchiseBranch } from '../utils/api'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 import {
   fetchAndMapPayroll,
@@ -181,13 +181,13 @@ type ColumnKey =
 
 type ColumnCategory = 'standard' | 'piping' | 'electrical' | 'structural' | 'masonry' | 'admin'
 
-const CATEGORY_META: Record<ColumnCategory, { label: string; blurb: string }> = {
-  standard: { label: 'Standard Add-ons', blurb: 'Shown by default — the usual per-job extras' },
-  piping: { label: 'Piping & Copper', blurb: 'Copper tube and flushing-related fees' },
-  electrical: { label: 'Electrical & Power', blurb: 'Wiring, breakers, and power supply labor' },
-  structural: { label: 'Structural Work', blurb: 'Brackets, scaffolding, hauling, relocation' },
-  masonry: { label: 'Masonry & Labor', blurb: 'Chipping and other masonry-type labor fees' },
-  admin: { label: 'Admin & Notes', blurb: 'Paperwork, uploads, and remarks' },
+const CATEGORY_META: Record<ColumnCategory, { label: string }> = {
+  standard: { label: 'Standard Add-ons' },
+  piping: { label: 'Piping & Copper' },
+  electrical: { label: 'Electrical & Power' },
+  structural: { label: 'Structural Work' },
+  masonry: { label: 'Masonry & Labor' },
+  admin: { label: 'Admin & Notes' },
 }
 
 interface ColumnDef {
@@ -218,14 +218,14 @@ interface ColumnDef {
 const COLUMN_DEFS: ColumnDef[] = [
   { key: 'date', label: 'Date', width: 128, align: 'left', pinned: true, readOnlyWhenSynced: true },
   { key: 'ticketNumber', label: 'Ticket', width: 110, align: 'left', pinned: true, readOnlyWhenSynced: true },
-  { key: 'customerName', label: 'Customer Name', width: 220, align: 'left', pinned: true, readOnlyWhenSynced: true },
+  { key: 'customerName', label: 'Customer', width: 220, align: 'left', pinned: true, readOnlyWhenSynced: true },
   { key: 'brandCapacity', label: 'Brand', width: 150, align: 'left', pinned: true },
   { key: 'remit', label: 'Remit', width: 120, align: 'right', pinned: true },
   { key: 'installationUpload', label: 'Status', width: 130, align: 'left', pinned: true },
   { key: 'installationFee', label: 'Install Fee', width: 100, align: 'right', pinned: true, isMoney: true },
   { key: 'totalPipeLength', label: 'Pipe Length', width: 90, align: 'right', category: 'standard' },
   { key: 'earthGrounding', label: 'Earth Grounding', width: 100, align: 'right', category: 'standard', isMoney: true },
-  { key: 'dailyAllowance', label: 'Daily Allowance', width: 100, align: 'right', category: 'standard', isMoney: true },
+  { key: 'dailyAllowance', label: 'Allowance', width: 100, align: 'right', category: 'standard', isMoney: true },
   { key: 'excessCopperTube', label: 'Excess Copper Tube', width: 110, align: 'right', category: 'piping', isMoney: true },
   { key: 'excessCopperTubeLaborOnly', label: 'Copper Tube Labor', width: 120, align: 'right', category: 'piping', isMoney: true },
   { key: 'flushingOldPipe', label: 'Flushing Old Pipe', width: 110, align: 'right', category: 'piping', isMoney: true },
@@ -273,6 +273,9 @@ const DEFAULT_HIDDEN_COLUMNS: ColumnKey[] = COLUMN_DEFS
 const HIDDEN_COLUMNS_KEY = 'ashcol-payroll-hidden-columns'
 const COLUMN_WIDTHS_KEY = 'ashcol-payroll-column-widths'
 const CUSTOM_COLUMNS_KEY = 'ashcol-payroll-custom-columns'
+// Payroll keeps its own branch selection, independent of the app-wide branch switcher — once
+// picked here it must survive a reload and only change when this page's dropdown is used.
+const PAYROLL_BRANCH_KEY = 'ashcol-payroll-branch-id'
 const MIN_COLUMN_WIDTH = 70
 
 // Installer job list: columns are sized from their real rendered text (see listWidths in the
@@ -339,7 +342,12 @@ export default function Payroll() {
   const [selectedInstaller, setSelectedInstaller] = useState<string | null>(null)
   // The job row whose full fee breakdown is open in the popup (desktop list view).
   const [detailRow, setDetailRow] = useState<PayrollRow | null>(null)
-  const [installerTab, setInstallerTab] = useState<'jobs' | 'deductions'>('jobs')
+  // Which installer's Deductions modal is open (null = closed).
+  const [deductionsModalInstaller, setDeductionsModalInstaller] = useState<string | null>(null)
+  // Cross-branch transfer modal
+  const [transferModalRow, setTransferModalRow] = useState<PayrollRow | null>(null)
+  const [transferTargetBranchId, setTransferTargetBranchId] = useState('')
+  const [transferring, setTransferring] = useState(false)
 
   // Installer job list's horizontal scroll — which edges still hide columns (drives the fade +
   // arrow cues) and whether it's scrolled at all (drives the pinned-column shadow).
@@ -360,6 +368,9 @@ export default function Payroll() {
   const [rawSearch, setRawSearch] = useState('')
   const [search, setSearch] = useState('')
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // '' = all installers. Narrows the roster list to one technician, independent of the free-text
+  // search box above — the dropdown's own options always list the branch's full roster.
+  const [technicianFilter, setTechnicianFilter] = useState('')
   const [branches, setBranches] = useState<{ id: string; name: string; payrollRates?: string | null }[]>([])
   const defaultWeek = useMemo(() => getFridayToFriday(new Date()), [])
   const [dateFrom, setDateFrom] = useState(() => defaultWeek.from)
@@ -371,12 +382,19 @@ export default function Payroll() {
 
   const [branchFilter, setBranchFilter] = useState(() => {
     if (canManagePayroll) {
+      const savedPayrollBranch = localStorage.getItem(PAYROLL_BRANCH_KEY)
+      if (savedPayrollBranch) return savedPayrollBranch
       const activeBranch = localStorage.getItem('ashcol-global-branch-id')
       if (activeBranch && activeBranch !== 'ALL_BRANCHES') return activeBranch
       return 'BR-TAGUIG-SALES'
     }
     return user?.branchId || 'BR-TAGUIG-SALES'
   })
+  // Persist Payroll's own branch choice so a reload comes back to it, not whatever the
+  // app-wide branch switcher happens to be set to elsewhere.
+  useEffect(() => {
+    if (canManagePayroll && branchFilter) localStorage.setItem(PAYROLL_BRANCH_KEY, branchFilter)
+  }, [canManagePayroll, branchFilter])
 
   // Per-branch override of the standard rates (e.g. SILANG's cleaning fee differs from other
   // branches) — parsed from Branch.payrollRates (see "Payroll Settings" modal below), falling
@@ -492,7 +510,7 @@ export default function Payroll() {
   // cleanInstallerName in schedulePrefill.ts — that's what payrollDerive.ts groups rows by),
   // so the payroll page has to resolve that short form back to the real technician. Fetches
   // every EMPLOYEE tagged INSTALLER or TECHNICIAN for the selected branch.
-  const [branchTechnicians, setBranchTechnicians] = useState<{ id: string; name: string; nickname: string; jobTitle: string }[]>([])
+  const [branchTechnicians, setBranchTechnicians] = useState<{ id: string; name: string; nickname: string; jobTitle: string; inHouse: boolean }[]>([])
   useEffect(() => {
     if (!branchFilter) { setBranchTechnicians([]); return }
     let cancelled = false
@@ -504,12 +522,24 @@ export default function Payroll() {
         const filtered = list
           .filter(u => u.branchId === branchFilter)
           .filter(u => /INSTALLER|TECHNICIAN/i.test(u.jobTitle || ''))
-          .map(u => ({ id: u.id, name: String(u.name || '').trim(), nickname: String(u.nickname || '').trim(), jobTitle: u.jobTitle || '' }))
+          .map(u => ({ id: u.id, name: String(u.name || '').trim(), nickname: String(u.nickname || '').trim(), jobTitle: u.jobTitle || '', inHouse: !!u.inHouse }))
         setBranchTechnicians(filtered)
       })
       .catch(() => {})
     return () => { cancelled = true }
   }, [branchFilter])
+
+  // In-house (salaried) technicians are paid a fixed wage, not per job — their completed jobs
+  // shouldn't show up on this pakyaw/contract payroll sheet at all. Keyed by resolved real name
+  // (same identity the roster groups rows by), so it applies regardless of which alias/nickname
+  // a given ticket happened to use.
+  const inHouseTechnicianNames = useMemo(() => {
+    const set = new Set<string>()
+    for (const t of branchTechnicians) {
+      if (t.inHouse && t.name) set.add(t.name.toUpperCase())
+    }
+    return set
+  }, [branchTechnicians])
 
   // Exact aliases only — the account's own `nickname` field (set by hand for cases like
   // "RYAN" for "MARCYAN ZANTUA" that have zero textual relationship to the real name — see
@@ -623,16 +653,6 @@ export default function Payroll() {
       return next
     })
   }
-
-  useEffect(() => {
-    if (!canManagePayroll) return
-    const sync = () => {
-      const activeBranch = localStorage.getItem('ashcol-global-branch-id')
-      setBranchFilter(activeBranch && activeBranch !== 'ALL_BRANCHES' ? activeBranch : '')
-    }
-    window.addEventListener('ashcol-global-branch-change', sync)
-    return () => window.removeEventListener('ashcol-global-branch-change', sync)
-  }, [canManagePayroll])
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -864,8 +884,21 @@ export default function Payroll() {
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data) return
-        const list = (data?.data || data || []).map((b: any) => ({ id: b.id, name: b.name, payrollRates: b.payrollRates }))
-        const sorted = list.sort((a: any, b: any) => a.name.localeCompare(b.name))
+        const raw = (data?.data || data || []).map((b: any) => ({
+          id: b.id,
+          name: b.name,
+          payrollRates: b.payrollRates,
+          isFranchise: Boolean(b.isFranchise || isFranchiseBranch(b.id) || isFranchiseBranch(b.name)),
+        }))
+        const hasValenzuela = raw.some((b: any) => isFranchiseBranch(b.id || b.name) && String(b.id || b.name).toUpperCase().includes('VALENZUELA'))
+        if (!hasValenzuela) {
+          raw.push({ id: 'BR-VALENZUELA', name: 'ASHCOL VALENZUELA', isFranchise: true })
+        }
+        const hasBatangas = raw.some((b: any) => isFranchiseBranch(b.id || b.name) && String(b.id || b.name).toUpperCase().includes('BATANGAS'))
+        if (!hasBatangas) {
+          raw.push({ id: 'BR-BATANGAS', name: 'ASHCOL BATANGAS', isFranchise: true })
+        }
+        const sorted = raw.sort((a: any, b: any) => a.name.localeCompare(b.name))
         setBranches(sorted)
 
         setBranchFilter(prev => {
@@ -885,22 +918,30 @@ export default function Payroll() {
 
   // Shared by every mutation below — groups by month (a row can belong to a different month
   // than the active filter) and pushes each group to its own backend save.
+  const flushSave = (updated: PayrollRow[]) => {
+    if (canManagePayroll && branchFilter) {
+      const monthGroups = new Map<string, PayrollRow[]>()
+      for (const r of updated) {
+        const m = r.workDate ? r.workDate.slice(0, 7) : (dateFrom ? dateFrom.slice(0, 7) : new Date().toISOString().slice(0, 7))
+        if (!monthGroups.has(m)) monthGroups.set(m, [])
+        monthGroups.get(m)!.push(r)
+      }
+      for (const [mKey, mRows] of monthGroups.entries()) {
+        void savePayrollToBackend(mRows, branchFilter, mKey)
+      }
+    }
+  }
   const scheduleAutoSave = (updated: PayrollRow[]) => {
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     setSaveStatus('saving')
-    autoSaveTimer.current = setTimeout(() => {
-      if (canManagePayroll && branchFilter) {
-        const monthGroups = new Map<string, PayrollRow[]>()
-        for (const r of updated) {
-          const m = r.workDate ? r.workDate.slice(0, 7) : (dateFrom ? dateFrom.slice(0, 7) : new Date().toISOString().slice(0, 7))
-          if (!monthGroups.has(m)) monthGroups.set(m, [])
-          monthGroups.get(m)!.push(r)
-        }
-        for (const [mKey, mRows] of monthGroups.entries()) {
-          void savePayrollToBackend(mRows, branchFilter, mKey)
-        }
-      }
-    }, 700)
+    autoSaveTimer.current = setTimeout(() => flushSave(updated), 700)
+  }
+  // Save-now for the Deductions modal — skips the debounce so "Save" persists immediately.
+  const saveDeductionsNow = () => {
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    setSaveStatus('saving')
+    flushSave(rows)
+    setDeductionsModalInstaller(null)
   }
 
   // Debounced auto-save on row edits
@@ -921,6 +962,123 @@ export default function Payroll() {
       scheduleAutoSave(updated)
       return updated
     })
+  }
+
+  // Cross-branch payroll transfer — copies the row to a different branch's payroll under the
+  // same period month, stamps xfer: metadata in customFields so both sides know the history,
+  // then deletes the row from the source branch. The ticket reference (ticketId / ticketNumber)
+  // is preserved on the destination so the job stays traceable back to the original schedule.
+  const transferRowToBranch = async (row: PayrollRow, targetBranchId: string) => {
+    if (!branchFilter || !targetBranchId || targetBranchId === branchFilter) return
+    setTransferring(true)
+    try {
+      const sourceBranchName = branches.find(b => b.id === branchFilter)?.name || branchFilter
+      const targetBranchName = branches.find(b => b.id === targetBranchId)?.name || targetBranchId
+      const mKey = (row.workDate || new Date().toISOString().slice(0, 7)).slice(0, 7)
+
+      // 1. Load the destination branch's existing payroll for that month
+      const params = new URLSearchParams({ branchId: targetBranchId, month: mKey })
+      const existing = await fetch(`${API_BASE_URL}/v1/payroll?${params}`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      }).then(r => r.ok ? r.json() : [])
+      const destEntries: any[] = Array.isArray(existing) ? existing : []
+
+      // 2. Build the transferred row — carry all fee fields, stamp transfer metadata
+      const transferredCustomFields = {
+        ...row.customFields,
+        'xfer:fromBranchId': branchFilter,
+        'xfer:fromBranch': sourceBranchName,
+        'xfer:transferredAt': new Date().toISOString(),
+      }
+      const newEntry = {
+        ticketId: row.ticketId || null,
+        ticketNumber: row.ticketNumber || null,
+        installerName: row.installerName,
+        sortOrder: destEntries.length,
+        workDate: row.workDate || null,
+        customerName: row.customerName || null,
+        cityAddress: row.cityAddress || null,
+        brandCapacity: row.brandCapacity || null,
+        sifQuotation: row.sifQuotation || null,
+        totalPipeLength: row.totalPipeLength || null,
+        installationUpload: row.installationUpload || null,
+        amountCollected: row.amountCollected ? num(row.amountCollected) : null,
+        actualCollected: row.actualCollected || null,
+        installationFee: row.installationFee ? num(row.installationFee) : null,
+        earthGrounding: row.earthGrounding ? num(row.earthGrounding) : null,
+        dailyAllowance: row.dailyAllowance ? num(row.dailyAllowance) : null,
+        excessCopperTube: row.excessCopperTube ? num(row.excessCopperTube) : null,
+        hauling: row.hauling ? num(row.hauling) : null,
+        dismantling: row.dismantling ? num(row.dismantling) : null,
+        electricalWorks: row.electricalWorks ? num(row.electricalWorks) : null,
+        chippingWorks: row.chippingWorks ? num(row.chippingWorks) : null,
+        breaker: row.breaker ? num(row.breaker) : null,
+        powerSupplyLaborOnly: row.powerSupplyLaborOnly ? num(row.powerSupplyLaborOnly) : null,
+        powerSupplyLaborMaterials: row.powerSupplyLaborMaterials ? num(row.powerSupplyLaborMaterials) : null,
+        specialBracketCatwalk: row.specialBracketCatwalk ? num(row.specialBracketCatwalk) : null,
+        specialBracketWelding: row.specialBracketWelding ? num(row.specialBracketWelding) : null,
+        excessCopperTubeLaborOnly: row.excessCopperTubeLaborOnly ? num(row.excessCopperTubeLaborOnly) : null,
+        relocationAccuFcu: row.relocationAccuFcu ? num(row.relocationAccuFcu) : null,
+        systemReprocessLabor: row.systemReprocessLabor ? num(row.systemReprocessLabor) : null,
+        drainPumpInstallation: row.drainPumpInstallation ? num(row.drainPumpInstallation) : null,
+        scaffoldingInstallation: row.scaffoldingInstallation ? num(row.scaffoldingInstallation) : null,
+        flushingOldPipe: row.flushingOldPipe ? num(row.flushingOldPipe) : null,
+        sterneBracket: row.sterneBracket ? num(row.sterneBracket) : null,
+        breakerInstallationLabor: row.breakerInstallationLabor ? num(row.breakerInstallationLabor) : null,
+        chargingOfFreon: row.chargingOfFreon ? num(row.chargingOfFreon) : null,
+        materialsReturn: row.materialsReturn ? num(row.materialsReturn) : null,
+        installationChecklist: row.installationChecklist || null,
+        videoUpload: row.videoUpload || null,
+        remarks: row.remarks ? `[From ${sourceBranchName}] ${row.remarks}`.trim() : `Transferred from ${sourceBranchName}`,
+        audited: row.audited || null,
+        status: row.status || 'PENDING',
+        customFields: JSON.stringify(transferredCustomFields),
+      }
+
+      // 3. Save to destination branch (append to existing entries)
+      const destRes = await fetch(`${API_BASE_URL}/v1/payroll`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          branchId: targetBranchId,
+          periodMonth: mKey,
+          entries: [
+            ...destEntries.map((e: any, i: number) => ({ ...e, sortOrder: i })),
+            newEntry,
+          ],
+        }),
+      })
+      if (!destRes.ok) throw new Error('Failed to save to target branch')
+
+      // 4. Remove row from source branch payroll — stamp origin note on source side for audit
+      const sourceRows = rows.filter(r => r.id !== row.id)
+      await savePayrollToBackend(sourceRows, branchFilter, mKey)
+
+      // 5. Optimistically remove from local UI + close modals
+      setRows(sourceRows)
+      setTransferModalRow(null)
+      setTransferTargetBranchId('')
+      setDetailRow(null)
+
+      setConfirmDialog({
+        title: 'Transfer Successful',
+        message: `"${row.customerName || row.ticketNumber}" has been transferred to ${targetBranchName}. The payroll entry will appear in their roster under ${mKey}.`,
+        confirmText: 'OK',
+        variant: 'info',
+        onConfirm: () => setConfirmDialog(null),
+      })
+    } catch (err) {
+      console.error('Transfer failed:', err)
+      setConfirmDialog({
+        title: 'Transfer Failed',
+        message: 'Could not complete the branch transfer. Please try again or check your connection.',
+        confirmText: 'OK',
+        variant: 'danger',
+        onConfirm: () => setConfirmDialog(null),
+      })
+    } finally {
+      setTransferring(false)
+    }
   }
 
   // Writes one installer's deduction for the visible period. An amount lands on the period's
@@ -1020,24 +1178,6 @@ export default function Payroll() {
     setHiddenColumnsByInstaller(prev => ({ ...prev, [columnManagerFor]: new Set(toHide) }))
   }
 
-  const filteredRows = useMemo(() => {
-    const term = search.toLowerCase()
-    return rows.filter(r => {
-      if (term && !(
-        r.installerName.toLowerCase().includes(term)
-        || r.customerName.toLowerCase().includes(term)
-        || r.cityAddress.toLowerCase().includes(term)
-      )) return false
-      // Rows with no date (rare hand-added rows) aren't excluded by a date range —
-      // there's nothing to range-check, so they stay visible regardless of the filter.
-      if (r.workDate) {
-        if (dateFrom && r.workDate < dateFrom) return false
-        if (dateTo && r.workDate > dateTo) return false
-      }
-      return true
-    })
-  }, [rows, search, dateFrom, dateTo])
-
   // The grouping key IS the resolved identity now (not the raw ticket text), so "CRIS" and
   // "CRISANTO" — or any other alias of the same technician — collapse into one roster row
   // instead of showing as separate bogus entries. A hyphenated blob like "MARIANO-PATRICK"
@@ -1053,6 +1193,48 @@ export default function Payroll() {
       : trimmed
     return resolveInstallerIdentity(folded)
   }
+
+  // Every technician option the dropdown can offer — scoped to the selected date range (only
+  // installers with a job in that window show up), but independent of technicianFilter itself
+  // (so picking one doesn't collapse the list to just itself) and of the free-text search.
+  const technicianOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const row of rows) {
+      if (row.workDate) {
+        if (dateFrom && row.workDate < dateFrom) continue
+        if (dateTo && row.workDate > dateTo) continue
+      }
+      const key = resolveGroupKey(row.installerName)
+      if (inHouseTechnicianNames.has(key)) continue
+      set.add(key)
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, dateFrom, dateTo, installerAliases, inHouseTechnicianNames])
+
+  const filteredRows = useMemo(() => {
+    const term = search.toLowerCase()
+    return rows.filter(r => {
+      const groupKey = resolveGroupKey(r.installerName)
+      // In-house (salaried) technicians are paid a fixed wage, not per job — keep them off
+      // this pakyaw/contract payroll sheet entirely.
+      if (inHouseTechnicianNames.has(groupKey)) return false
+      if (technicianFilter && groupKey !== technicianFilter) return false
+      if (term && !(
+        r.installerName.toLowerCase().includes(term)
+        || r.customerName.toLowerCase().includes(term)
+        || r.cityAddress.toLowerCase().includes(term)
+      )) return false
+      // Rows with no date (rare hand-added rows) aren't excluded by a date range —
+      // there's nothing to range-check, so they stay visible regardless of the filter.
+      if (r.workDate) {
+        if (dateFrom && r.workDate < dateFrom) return false
+        if (dateTo && r.workDate > dateTo) return false
+      }
+      return true
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, search, dateFrom, dateTo, technicianFilter, installerAliases, inHouseTechnicianNames])
 
   const grouped = useMemo(() => {
     const map = new Map<string, PayrollRow[]>()
@@ -1092,6 +1274,15 @@ export default function Payroll() {
       setSelectedInstaller(null)
     }
   }, [grouped, selectedInstaller])
+
+  // Same fallback for the technician dropdown — narrowing the date range can drop the
+  // selected technician's only job out of range, so clear it instead of showing a stuck
+  // "no rows for this technician" roster.
+  useEffect(() => {
+    if (technicianFilter && !technicianOptions.includes(technicianFilter)) {
+      setTechnicianFilter('')
+    }
+  }, [technicianOptions, technicianFilter])
 
   // Re-check the job list's scroll edges whenever its width or its columns can change.
   useEffect(() => {
@@ -1137,20 +1328,11 @@ export default function Payroll() {
     return String(raw).trim() || '—'
   }
 
-  // Payout breakdown tile — used both per-installer (below each table) and for the
-  // all-crew total (in the Summary card), so remittance always reads as separate from payout.
-  const footerTile = (label: string, value: number, color: string) => (
-    <div className="px-4 py-3.5 min-w-0">
-      <div className="text-[10px] font-medium uppercase tracking-wider truncate opacity-60" style={{ color: textMuted }}>{label}</div>
-      <div className="text-sm font-bold tabular-nums" style={{ color }}>₱{peso(value)}</div>
-    </div>
-  )
-
   // Mobile card value cell — same accessors as the desktop grid, just without the
   // sticky/pin plumbing a card list doesn't need. Date/Ticket #/Customer Name and Job
   // Total are never passed in here — the mobile card shows those in its header instead.
   const renderMobileCellValue = (col: ColumnDef, row: PayrollRow) => {
-    const smallInputCls = "w-full text-right px-2 py-2 rounded-lg text-sm font-semibold uppercase bg-transparent border-0 outline-none focus:ring-1 focus:ring-emerald-500/40"
+    const smallInputCls = "w-full text-right px-2.5 py-2.5 rounded-lg text-base font-semibold uppercase bg-transparent border-0 outline-none focus:ring-1 focus:ring-emerald-500/40"
 
     if (col.key === 'remit') {
       const acc = columnAccessors[col.key]
@@ -1161,6 +1343,21 @@ export default function Payroll() {
           onChange={e => acc.set(row.id, e.target.value)}
           className={smallInputCls}
           style={{ backgroundColor: remitTint, borderRadius: 8 }}
+        />
+      )
+    }
+
+    // Free text, not amount-only — installers note what was returned (e.g. "2pcs wire"),
+    // not just a peso figure, so it can't be locked to a numeric-only input like the other
+    // money columns. Still summed into rowTotal() via num(), same as remit above.
+    if (col.key === 'materialsReturn') {
+      const acc = columnAccessors[col.key]
+      return (
+        <input
+          type="text"
+          value={acc.get(row)}
+          onChange={e => acc.set(row.id, e.target.value)}
+          className={smallInputCls}
         />
       )
     }
@@ -1209,9 +1406,14 @@ export default function Payroll() {
                 aria-label="Filter by Branch"
               >
                 <option value="">Select branch…</option>
-                {branches.map(b => (
-                  <option key={b.id} value={b.id}>{formatBranchName(b.name)}</option>
-                ))}
+                {branches.map(b => {
+                  const isFranchise = Boolean((b as any).isFranchise || isFranchiseBranch(b.id) || isFranchiseBranch(b.name))
+                  return (
+                    <option key={b.id} value={b.id}>
+                      {formatBranchName(b.name)}{isFranchise ? ' (Franchise)' : ''}
+                    </option>
+                  )
+                })}
               </select>
               <ChevronDown className="absolute right-3 w-3.5 h-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
             </div>
@@ -1425,6 +1627,26 @@ export default function Payroll() {
             )}
           </div>
 
+          {/* Technician filter — narrows the roster below to one installer */}
+          {branchFilter && (
+            <div className="relative w-32 md:w-44 lg:w-48 shrink-0">
+              <Users className="absolute left-3 w-4 h-4 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
+              <select
+                value={technicianFilter}
+                onChange={e => setTechnicianFilter(e.target.value)}
+                className="w-full pl-9 pr-8 py-1.5 md:py-2 rounded-xl text-xs font-bold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#10B981]/50 border transition-all truncate"
+                style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
+                aria-label="Filter by Technician"
+              >
+                <option value="">All technicians</option>
+                {technicianOptions.map(name => (
+                  <option key={name} value={name}>{titleCase(displayInstallerName(name))}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 w-3.5 h-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
+            </div>
+          )}
+
           {/* Search */}
           <div className="relative w-32 md:w-60 lg:w-64 shrink-0">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: textMuted }} />
@@ -1540,7 +1762,7 @@ export default function Payroll() {
         <div className="flex flex-col gap-4">
           <button
             type="button"
-            onClick={() => { setSelectedInstaller(null); setInstallerTab('jobs') }}
+            onClick={() => setSelectedInstaller(null)}
             className="flex items-center gap-1.5 self-start px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
             style={{ color: textMuted, backgroundColor: isLight ? '#eef2f7' : '#111d33' }}
           >
@@ -1572,7 +1794,7 @@ export default function Payroll() {
               const pad = 36 + (i === 0 ? 12 : 0)
               const autoW = Math.ceil(Math.max(60, headW, cellW) + pad)
               const dragged = userWidthFor(col.key)
-              return dragged ? Math.max(dragged, autoW) : autoW
+              return dragged ?? autoW
             })
             // Date + Ticket stay a fixed width so Customer's sticky offset is exact; Customer
             // takes the biggest share of spare room, every other column an even share.
@@ -1600,90 +1822,28 @@ export default function Payroll() {
             return (
               <div key={installerName} className="rounded-2xl border shadow-sm overflow-hidden" style={{ backgroundColor: cardBg, borderColor: border }}>
                 <div
-                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4"
+                  className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-6 py-4"
                   style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}
                 >
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-base md:text-lg font-bold" style={{ color: textPrimary }}>
-                      {titleCase(displayInstallerName(installerName))}
-                    </span>
-                    <span
-                      className="px-2.5 py-1 rounded-full text-[11px] font-medium"
-                      style={{
-                        backgroundColor: isLight ? '#f1f5f9' : '#0d1520',
-                        color: textMuted,
-                      }}
-                    >
-                      {completedJobsCount(installerRows)} completed {completedJobsCount(installerRows) === 1 ? 'job' : 'jobs'}
-                      {completedJobsBreakdown(installerRows) && <> &middot; {completedJobsBreakdown(installerRows)}</>}
-                    </span>
-
-                    {/* Jobs / Deductions Tabs */}
-                    <div className="flex items-center p-0.5 rounded-xl border text-xs font-semibold" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-                      <button
-                        type="button"
-                        onClick={() => setInstallerTab('jobs')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                          installerTab === 'jobs' ? 'shadow-sm font-bold' : 'opacity-70 hover:opacity-100'
-                        }`}
-                        style={{
-                          backgroundColor: installerTab === 'jobs' ? cardBg : 'transparent',
-                          color: installerTab === 'jobs' ? (isLight ? '#059669' : '#34D399') : textMuted,
-                        }}
-                      >
-                        <FileText className="w-3.5 h-3.5 text-emerald-500" />
-                        <span>Jobs</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setInstallerTab('deductions')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                          installerTab === 'deductions' ? 'shadow-sm font-bold' : 'opacity-70 hover:opacity-100'
-                        }`}
-                        style={{
-                          backgroundColor: installerTab === 'deductions' ? cardBg : 'transparent',
-                          color: installerTab === 'deductions' ? (isLight ? '#d97706' : '#FBBF24') : textMuted,
-                        }}
-                      >
-                        <Receipt className="w-3.5 h-3.5 text-amber-500" />
-                        <span>Deductions</span>
-                        {deductionTotal(installerRows) > 0 && (
-                          <span
-                            className="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
-                            style={{ backgroundColor: isLight ? '#fee2e2' : '#7f1d1d', color: isLight ? '#dc2626' : '#f87171' }}
-                          >
-                            −₱{peso(deductionTotal(installerRows))}
-                          </span>
-                        )}
-                      </button>
-                    </div>
-
-                    {installerTab === 'jobs' && (
-                      <button
-                        type="button"
-                        onClick={() => openColumnManager(installerName)}
-                        title="Show/hide columns"
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50 cursor-pointer"
-                        style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
-                      >
-                        <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-500" />
-                        Columns
-                      </button>
-                    )}
-                  </div>
-
-                  <span
-                    className="text-base md:text-lg font-bold tabular-nums"
-                    style={{ color: '#10B981' }}
-                    title="Net payroll (gross labor less deductions)"
-                  >
-                    ₱{peso(installerNet(installerRows))}
+                  <div />
+                  <span className="text-xl md:text-2xl font-extrabold uppercase tracking-wide text-center whitespace-nowrap" style={{ color: textPrimary }}>
+                    {titleCase(displayInstallerName(installerName))}
                   </span>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => openColumnManager(installerName)}
+                      title="Show/hide columns"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50 cursor-pointer"
+                      style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-500" />
+                      Columns
+                    </button>
+                  </div>
                 </div>
 
-                {installerTab === 'jobs' ? (
-                  <>
-                  {/* Desktop list — the columns the column manager leaves visible (including
+                {/* Desktop list — the columns the column manager leaves visible (including
                       any custom ones), read-only, one line per job. Clicking a row opens the
                       popup, which is where editing happens. Content-sized columns with grid
                       lines; Date/Ticket/Customer stay pinned while the rest scrolls sideways
@@ -1726,7 +1886,7 @@ export default function Payroll() {
                                 setColCtxMenu({ x: e.clientX, y: e.clientY, col, installerName })
                               }}
                             >
-                              <span className="whitespace-nowrap">{col.label}</span>
+                              <span className="flex-1 min-w-0 overflow-hidden whitespace-nowrap">{col.label}</span>
                               {/* Drag to resize (saved across reloads); double-click to auto-fit again. */}
                               <span
                                 onMouseDown={startColumnResize(col.key)}
@@ -1769,7 +1929,7 @@ export default function Payroll() {
                               return (
                                 <div
                                   key={col.key}
-                                  className={`px-3 py-2.5 flex items-center justify-start min-w-0 tabular-nums text-left ${i === 0 ? 'pl-6' : ''} ${col.key === lastListPinKey ? 'pl-pin-edge' : ''}`}
+                                  className={`px-3 py-2.5 flex items-center justify-start min-w-0 overflow-hidden tabular-nums text-left ${i === 0 ? 'pl-6' : ''} ${col.key === lastListPinKey ? 'pl-pin-edge' : ''}`}
                                   style={{
                                     ...listCellStyle(col, i, 'var(--pl-bg)'),
                                     ...(col.key === 'remit' ? { backgroundColor: remitTint } : {}),
@@ -1811,17 +1971,13 @@ export default function Payroll() {
                               return (
                                 <div
                                   key={col.key}
-                                  className={`px-3 py-2.5 flex items-center min-w-0 tabular-nums font-bold text-left ${i === 0 ? 'pl-6' : ''} ${col.key === lastListPinKey ? 'pl-pin-edge' : ''}`}
+                                  className={`px-3 py-2.5 flex items-center min-w-0 overflow-hidden tabular-nums font-bold text-left ${i === 0 ? 'pl-6' : ''} ${col.key === lastListPinKey ? 'pl-pin-edge' : ''}`}
                                   style={{
                                     ...listCellStyle(col, i, headerBg),
                                     ...(col.key === 'remit' ? { backgroundColor: remitTint, color: remitAccent } : {}),
                                   }}
                                 >
-                                  {i === 0 ? (
-                                    <span className="text-[11px] uppercase tracking-wide whitespace-nowrap" style={{ color: textPrimary }}>
-                                      Total <span className="font-medium normal-case tracking-normal" style={{ color: textMuted }}>· {installerRows.length} {installerRows.length === 1 ? 'job' : 'jobs'}</span>
-                                    </span>
-                                  ) : total ? (
+                                  {i === 0 ? null : total ? (
                                     <span className="whitespace-nowrap" style={{ color: col.key === 'remit' ? remitAccent : textPrimary }}>₱{peso(total)}</span>
                                   ) : total === 0 ? (
                                     <span style={{ color: textMuted, opacity: 0.45 }}>—</span>
@@ -1969,11 +2125,11 @@ export default function Payroll() {
                             )}
                             <button
                               type="button"
-                              onClick={() => setInstallerTab('deductions')}
+                              onClick={() => setDeductionsModalInstaller(installerName)}
                               className="ml-auto sm:ml-2 px-3 py-1 rounded-lg text-xs font-bold border transition-colors hover:border-amber-500/50 cursor-pointer flex items-center gap-1.5"
                               style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                             >
-                              <span>View Deductions Tab</span>
+                              <span>View Deductions</span>
                               <ChevronRight className="w-3.5 h-3.5 text-amber-500" />
                             </button>
                           </div>
@@ -2012,159 +2168,6 @@ export default function Payroll() {
                       </div>
                     )
                   })()}
-                </>
-              ) : (
-                <div className="flex flex-col">
-                  <div
-                    className="flex items-center justify-between px-6 py-3.5 border-b text-xs font-semibold"
-                    style={{ backgroundColor: headerBg, borderColor: border }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Receipt className="w-4 h-4 text-amber-500" />
-                      <span className="text-xs font-bold uppercase tracking-wider" style={{ color: textPrimary }}>
-                        {titleCase(displayInstallerName(installerName))}&rsquo;s Deductions &amp; Adjustments
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setInstallerTab('jobs')}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors hover:border-emerald-500/50 cursor-pointer"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                    >
-                      <ChevronLeft className="w-3.5 h-3.5 text-emerald-500" />
-                      Back to Jobs
-                    </button>
-                  </div>
-
-                    {(() => {
-                      const gross = installerTotal(installerRows)
-                      const base = baseInstallTotal(installerRows)
-                      const totalDeduction = deductionTotal(installerRows)
-                      const net = gross - totalDeduction
-                      const lateMinutes = deductionValue(installerRows, 'lateMinutes')
-                      const loan = deductionValue(installerRows, 'loan')
-                      const loanBalance = deductionValue(installerRows, 'loanBalance')
-                      const uniformBalance = deductionValue(installerRows, 'uniformBalance')
-                      const dedRed = isLight ? '#DC2626' : '#F87171'
-                      const fieldCls = "w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold text-right tabular-nums border outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-60 disabled:cursor-not-allowed"
-                      const fieldStyle = { backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }
-                      const moneyField = (key: DeductionKey, value: number, compact = false) => (
-                        <NumericFormat
-                          thousandSeparator=","
-                          decimalScale={key === 'lateMinutes' ? 0 : 2}
-                          allowNegative={false}
-                          prefix={key === 'lateMinutes' ? undefined : '₱'}
-                          suffix={key === 'lateMinutes' ? ' min' : undefined}
-                          value={value || ''}
-                          placeholder={key === 'lateMinutes' ? '0 min' : '₱0.00'}
-                          disabled={!canManagePayroll}
-                          onValueChange={(values, info) => {
-                            if (info.source === 'event') setDeduction(installerRows, key, values.value)
-                          }}
-                          className={`${fieldCls} ${compact ? 'max-w-[120px]' : ''}`}
-                          style={fieldStyle}
-                        />
-                      )
-                      const remark = (text: ReactNode) => (
-                        <span className="text-[11px] font-medium" style={{ color: textMuted }}>{text}</span>
-                      )
-                      const lines: { label: string; sub?: string; amount: ReactNode; remarks: ReactNode }[] = [
-                        {
-                          label: 'Late',
-                          sub: `₱${LATE_RATE_PER_MINUTE.toFixed(2)} / minute`,
-                          amount: moneyField('lateMinutes', lateMinutes),
-                          remarks: lateMinutes > 0
-                            ? remark(<>{lateMinutes} min × ₱{LATE_RATE_PER_MINUTE.toFixed(2)} = <b style={{ color: dedRed }}>₱{peso(lateDeduction(installerRows))}</b></>)
-                            : remark('No lates'),
-                        },
-                        {
-                          label: 'AC Loan / CA',
-                          amount: moneyField('loan', loan),
-                          remarks: (
-                            <div className="flex items-center gap-2 min-w-0">
-                              {loan === 0 && loanBalance === 0 && (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0" style={{ backgroundColor: isLight ? '#f1f5f9' : '#111d33', color: textMuted }}>NO LOAN</span>
-                              )}
-                              <span className="text-[11px] font-medium shrink-0" style={{ color: textMuted }}>Balance</span>
-                              {moneyField('loanBalance', loanBalance, true)}
-                            </div>
-                          ),
-                        },
-                        { label: 'Incomplete Upload', amount: moneyField('incompleteUpload', deductionValue(installerRows, 'incompleteUpload')), remarks: remark('Missing photos, video or checklist') },
-                        { label: 'Losses / Material Checklist', amount: moneyField('losses', deductionValue(installerRows, 'losses')), remarks: remark('Lost tools or unreturned materials') },
-                        { label: 'Remit', amount: moneyField('remitPenalty', deductionValue(installerRows, 'remitPenalty')), remarks: remark('No remit — ×3 charges') },
-                        {
-                          label: 'Uniform',
-                          sub: `₱${peso(UNIFORM_PRICE_PER_PC)} / pc`,
-                          amount: moneyField('uniform', deductionValue(installerRows, 'uniform')),
-                          remarks: (
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="text-[11px] font-medium shrink-0" style={{ color: textMuted }}>Balance</span>
-                              {moneyField('uniformBalance', uniformBalance, true)}
-                            </div>
-                          ),
-                        },
-                      ]
-                      const lineGrid = "grid grid-cols-[minmax(0,1fr)_130px] md:grid-cols-[minmax(0,1.1fr)_150px_minmax(0,1fr)] items-center gap-x-4 gap-y-1.5"
-                      return (
-                        <div className="flex flex-col lg:flex-row" style={{ backgroundColor: cardBg }}>
-                          {/* Deductions Editor */}
-                          <div className="flex-1 min-w-0 px-5 md:px-6 py-4">
-                            <div className={`${lineGrid} pb-2 mb-1 text-[10px] font-bold uppercase tracking-wider`} style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>
-                              <span>Deductions</span>
-                              <span className="text-right">Amount</span>
-                              <span className="hidden md:block">Remarks</span>
-                            </div>
-                            {lines.map(line => (
-                              <div key={line.label} className={`${lineGrid} py-1.5`}>
-                                <div className="min-w-0">
-                                  <div className="text-xs font-semibold truncate" style={{ color: textPrimary }}>{line.label}</div>
-                                  {line.sub && <div className="text-[10px] font-medium" style={{ color: textMuted }}>{line.sub}</div>}
-                                </div>
-                                {line.amount}
-                                <div className="col-span-2 md:col-span-1 min-w-0">{line.remarks}</div>
-                              </div>
-                            ))}
-                            <div className={`${lineGrid} pt-2.5 mt-1`} style={{ borderTop: `1px solid ${border}` }}>
-                              <span className="text-xs font-bold uppercase tracking-wide" style={{ color: dedRed }}>Total Deduction</span>
-                              <span className="text-sm font-bold tabular-nums text-right pr-2.5" style={{ color: totalDeduction > 0 ? dedRed : textMuted }}>
-                                {totalDeduction > 0 ? `−₱${peso(totalDeduction)}` : '₱0.00'}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Net payroll */}
-                          <div className="lg:w-80 shrink-0 px-5 md:px-6 py-4 flex flex-col gap-3 border-t lg:border-t-0 lg:border-l" style={{ borderColor: border, backgroundColor: headerBg }}>
-                            <div className="flex flex-col gap-1.5 text-xs">
-                              <div className="flex items-center justify-between gap-3">
-                                <span className="font-semibold uppercase tracking-wide text-[11px]" style={{ color: textMuted }}>Gross Total Labor</span>
-                                <span className="font-bold tabular-nums" style={{ color: textPrimary }}>₱{peso(gross)}</span>
-                              </div>
-                              <div className="flex items-center justify-between gap-3 text-[11px]" style={{ color: textMuted }}>
-                                <span>Base install ₱{peso(base)} · Add-ons ₱{peso(gross - base)}</span>
-                              </div>
-                              <div className="flex items-center justify-between gap-3">
-                                <span className="font-semibold uppercase tracking-wide text-[11px]" style={{ color: textMuted }}>Total Deduction</span>
-                                <span className="font-bold tabular-nums" style={{ color: totalDeduction > 0 ? dedRed : textMuted }}>
-                                  {totalDeduction > 0 ? `−₱${peso(totalDeduction)}` : '₱0.00'}
-                                </span>
-                              </div>
-                            </div>
-                            <div
-                              className="rounded-xl px-4 py-3 flex items-center justify-between gap-3"
-                              style={{ backgroundColor: isLight ? 'rgba(16,185,129,0.10)' : 'rgba(16,185,129,0.16)', border: '1px solid rgba(16,185,129,0.45)' }}
-                            >
-                              <span className="text-xs font-extrabold uppercase tracking-wider" style={{ color: isLight ? '#047857' : '#34D399' }}>Net Payroll</span>
-                              <span className="text-xl font-extrabold tabular-nums" style={{ color: net < 0 ? dedRed : (isLight ? '#047857' : '#34D399') }}>
-                                {net < 0 ? '−' : ''}₱{peso(Math.abs(net))}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })()}
-                  </div>
-                )}
               </div>
             )
           })}
@@ -2198,12 +2201,11 @@ export default function Payroll() {
                 role="button"
                 tabIndex={0}
                 title={`Open ${titleCase(displayInstallerName(installerName))}'s payroll`}
-                onClick={() => { setSelectedInstaller(installerName); setInstallerTab('jobs') }}
+                onClick={() => setSelectedInstaller(installerName)}
                 onKeyDown={e => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault()
                     setSelectedInstaller(installerName)
-                    setInstallerTab('jobs')
                   }
                 }}
                 className="grid items-center gap-x-4 gap-y-3 px-6 md:px-7 py-5 md:py-6 transition-colors cursor-pointer"
@@ -2239,10 +2241,15 @@ export default function Payroll() {
                       )}
                     </div>
 
-                    {/* 3. PAYROLL AMOUNT */}
+                    {/* 3. PAYROLL AMOUNT — negative when deductions outweigh the period's gross
+                        (e.g. an unpaid loan balance), so this needs the same sign-then-peso
+                        formatting and red/green split as the Net Payroll tiles below. */}
                     <div className="flex items-center justify-end">
-                      <span className="text-base md:text-lg font-bold tabular-nums text-right tracking-tight" style={{ color: '#10B981' }}>
-                        ₱{peso(total)}
+                      <span
+                        className="text-base md:text-lg font-bold tabular-nums text-right tracking-tight"
+                        style={{ color: total < 0 ? (isLight ? '#DC2626' : '#F87171') : '#10B981' }}
+                      >
+                        {total < 0 ? '−' : ''}₱{peso(Math.abs(total))}
                       </span>
                     </div>
 
@@ -2328,116 +2335,300 @@ export default function Payroll() {
         )
       })()}
 
-      {columnManagerFor && (
+      {columnManagerFor && (() => {
+        const hidden = hiddenColumnsFor(columnManagerFor)
+        const totalVisible = COLUMN_DEFS.filter(c => !c.pinned && !hidden.has(c.key as ColumnKey)).length
+        const totalToggleable = COLUMN_DEFS.filter(c => !c.pinned).length
+
+        /* Category accent palette */
+        const CAT_ACCENT: Record<ColumnCategory, { color: string; bg: string }> = {
+          standard:   { color: '#10B981', bg: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.10)' },
+          piping:     { color: '#38BDF8', bg: isLight ? '#f0f9ff' : 'rgba(56,189,248,0.10)' },
+          electrical: { color: '#FBBF24', bg: isLight ? '#fffbeb' : 'rgba(251,191,36,0.10)' },
+          structural: { color: '#A78BFA', bg: isLight ? '#f5f3ff' : 'rgba(167,139,250,0.10)' },
+          masonry:    { color: '#FB923C', bg: isLight ? '#fff7ed' : 'rgba(251,146,60,0.10)' },
+          admin:      { color: '#94A3B8', bg: isLight ? '#f8fafc' : 'rgba(148,163,184,0.10)' },
+        }
+
+        return createPortal(
         <div
-          className="fixed inset-0 z-[99999] flex items-center justify-center p-4"
-          style={{ backgroundColor: 'rgba(8,12,20,0.60)' }}
-          onClick={() => setColumnManagerFor(null)}
+          className="fixed inset-0 z-[999999] flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(4,8,20,0.75)', backdropFilter: 'blur(4px)' }}
         >
+          <style>{`
+            .col-toggle { position:relative; display:inline-flex; align-items:center; cursor:pointer; width:36px; height:20px; flex-shrink:0; }
+            .col-toggle input { opacity:0; width:0; height:0; position:absolute; }
+            .col-toggle-track {
+              position:absolute; inset:0; border-radius:999px; transition:background .2s;
+              background: ${isLight ? '#cbd5e1' : '#243452'};
+            }
+            .col-toggle input:checked + .col-toggle-track { background:#10B981; }
+            .col-toggle-thumb {
+              position:absolute; top:3px; left:3px; width:14px; height:14px;
+              border-radius:50%; background:white; box-shadow:0 1px 3px rgba(0,0,0,.3);
+              transition:transform .2s; pointer-events:none;
+            }
+            .col-toggle input:checked ~ .col-toggle-thumb { transform:translateX(16px); }
+            .col-mgr-row:hover { background:${isLight ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.08)'}; }
+            .col-cat-hdr:hover { background:${isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)'}; }
+            .col-mgr-scroll::-webkit-scrollbar { width:6px; }
+            .col-mgr-scroll::-webkit-scrollbar-track { background:transparent; }
+            .col-mgr-scroll::-webkit-scrollbar-thumb { background:${isLight ? '#cbd5e1' : '#243452'}; border-radius:999px; }
+            .col-mgr-scroll::-webkit-scrollbar-thumb:hover { background:#10B981; }
+            .col-mgr-scroll { scrollbar-width:thin; scrollbar-color:${isLight ? '#cbd5e1' : '#243452'} transparent; }
+          `}</style>
           <div
             className="w-full rounded-2xl shadow-2xl flex flex-col overflow-hidden"
-            style={{ maxWidth: 720, maxHeight: '82vh', backgroundColor: cardBg, border: `1px solid ${border}` }}
+            style={{
+              maxWidth: 900,
+              maxHeight: '92vh',
+              backgroundColor: cardBg,
+              border: `1px solid ${border}`,
+              boxShadow: isLight
+                ? '0 32px 80px rgba(0,0,0,0.18), 0 0 0 1px rgba(16,185,129,0.15)'
+                : '0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(16,185,129,0.20)',
+            }}
             onClick={e => e.stopPropagation()}
           >
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
-              <div className="flex items-center gap-2">
-                <SlidersHorizontal className="w-4 h-4" style={{ color: '#10B981' }} />
-                <h2 className="text-sm font-extrabold" style={{ color: textPrimary }}>
-                  Manage Columns — {displayInstallerName(columnManagerFor)}
+            {/* ── Header ── */}
+            <div
+              className="flex items-center justify-between px-6 py-4 shrink-0"
+              style={{
+                borderBottom: `1px solid ${border}`,
+                background: isLight
+                  ? 'linear-gradient(135deg,#f0fdf4 0%,#f8fafc 100%)'
+                  : 'linear-gradient(135deg,rgba(16,185,129,0.08) 0%,rgba(10,17,32,0) 100%)',
+              }}
+            >
+              <div>
+                <h2 className="text-sm font-extrabold leading-tight uppercase tracking-wide" style={{ color: textPrimary }}>
+                  Manage Columns
                 </h2>
+                <p className="text-[11px] font-medium mt-0.5" style={{ color: textMuted }}>
+                  {displayInstallerName(columnManagerFor)} &mdash; <span style={{ color: '#10B981' }}>{totalVisible}</span>/{totalToggleable} visible
+                </p>
               </div>
-              <button type="button" onClick={() => setColumnManagerFor(null)} className="p-1.5 rounded-lg hover:bg-red-500/10">
+              <button
+                type="button"
+                onClick={() => setColumnManagerFor(null)}
+                className="w-8 h-8 rounded-xl flex items-center justify-center transition-colors hover:bg-red-500/12"
+                style={{ border: `1px solid ${border}` }}
+              >
                 <X className="w-4 h-4" style={{ color: textMuted }} />
               </button>
             </div>
 
-            {/* Select preset — swaps the whole visible set in one click */}
-            <div className="flex flex-wrap items-center gap-2 px-5 py-3 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
-              <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Preset</span>
-              {COLUMN_PRESETS.map(preset => (
-                <button
-                  key={preset.label}
-                  type="button"
-                  onClick={() => applyColumnPreset(preset.cats)}
-                  className="px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap border transition-colors"
-                  style={{ color: textMuted, backgroundColor: inputBg, borderColor: inputBorder }}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Custom Columns — branch-defined extra fee columns added to every installer table.
-                Values live in row.customFields[key]; no fixed PayrollRow field exists for them. */}
-            <div className="flex flex-col gap-3 px-5 py-4 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
-              {/* Section heading + live count badge */}
-              <div className="flex items-center gap-2">
-                <SlidersHorizontal className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
-                <span className="text-[11px] font-extrabold uppercase tracking-wider" style={{ color: textMuted }}>Custom Columns</span>
-                {customColumnDefs.length > 0 && (
-                  <span
-                    className="text-[10px] font-black px-2 py-0.5 rounded-full"
-                    style={{ backgroundColor: '#10B981', color: 'white' }}
+            {/* ── Toolbar: Presets + Search + Bulk actions ── */}
+            <div
+              className="flex flex-wrap items-center gap-3 px-6 py-3 shrink-0"
+              style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#fafafa' : '#080f1c' }}
+            >
+              {/* Presets */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider shrink-0" style={{ color: textMuted }}>Preset</span>
+                {COLUMN_PRESETS.map(preset => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => applyColumnPreset(preset.cats)}
+                    className="px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap border transition-all hover:border-emerald-500/60 hover:text-emerald-500"
+                    style={{ color: textMuted, backgroundColor: inputBg, borderColor: inputBorder }}
                   >
-                    {customColumnDefs.length}
-                  </span>
-                )}
+                    {preset.label}
+                  </button>
+                ))}
               </div>
 
-              {/* Add-new input row */}
-              <div className="flex items-center gap-2">
+              <div className="flex-1" />
+
+              {/* Search */}
+              <div className="relative" style={{ minWidth: 180 }}>
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
                 <input
                   type="text"
-                  placeholder="Column name, e.g. Roof Access Fee"
-                  value={newColumnName}
-                  onChange={e => setNewColumnName(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomColumn() } }}
-                  className="flex-1 rounded-xl border px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  autoFocus
+                  placeholder="Search columns…"
+                  value={columnSearch}
+                  onChange={e => setColumnSearch(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 rounded-xl text-xs font-semibold border focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
                   style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
                 />
-                <button
-                  type="button"
-                  onClick={addCustomColumn}
-                  disabled={!newColumnName.trim()}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-                  style={{ background: '#10B981' }}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add Column
-                </button>
               </div>
 
-              {/* Custom columns list — proper table */}
-              {customColumnDefs.length > 0 ? (
-                <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${border}` }}>
-                  <div
-                    className="grid px-3 py-2 text-[10px] font-black uppercase tracking-wider"
-                    style={{
-                      gridTemplateColumns: '1fr auto auto',
-                      backgroundColor: headerBg,
-                      borderBottom: `1px solid ${border}`,
-                      color: textMuted,
-                    }}
-                  >
-                    <span>Column Name</span>
-                    <span className="pr-2">Field Key</span>
-                    <span className="text-center w-8">Del</span>
-                  </div>
-                  {customColumnDefs.map((cc, idx) => (
+              {/* Bulk */}
+              <button
+                type="button"
+                onClick={() => setHiddenColumnsByInstaller(prev => ({ ...prev, [columnManagerFor]: new Set() }))}
+                className="px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap border transition-all hover:border-emerald-500/60"
+                style={{ color: '#10B981', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.10)', borderColor: isLight ? '#a7f3d0' : 'rgba(16,185,129,0.25)' }}
+              >
+                Show all
+              </button>
+              <button
+                type="button"
+                onClick={() => setHiddenColumnsByInstaller(prev => ({ ...prev, [columnManagerFor]: new Set(COLUMN_DEFS.filter(c => !c.pinned).map(c => c.key as ColumnKey)) }))}
+                className="px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap border transition-all hover:border-red-400/50 hover:text-red-400"
+                style={{ color: textMuted, backgroundColor: inputBg, borderColor: inputBorder }}
+              >
+                Hide all
+              </button>
+            </div>
+
+            {/* ── Scrollable body: categories + custom ── */}
+            <div className="col-mgr-scroll flex-1 min-h-0 overflow-y-auto">
+
+              {/* Categorized column grid */}
+              <div className="px-6 py-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {(Object.keys(CATEGORY_META) as ColumnCategory[]).map(cat => {
+                  const cols = COLUMN_DEFS.filter(c =>
+                    c.category === cat &&
+                    c.label.toLowerCase().includes(columnSearch.trim().toLowerCase())
+                  )
+                  if (cols.length === 0) return null
+                  const meta = CATEGORY_META[cat]
+                  const acc = CAT_ACCENT[cat]
+                  const visibleCount = cols.filter(c => !hidden.has(c.key as ColumnKey)).length
+                  const allOn = visibleCount === cols.length
+                  const anyOn = visibleCount > 0
+
+                  return (
                     <div
-                      key={cc.key}
-                      className="grid items-center px-3 py-2.5 transition-colors hover:bg-emerald-500/5"
+                      key={cat}
+                      className="rounded-2xl overflow-hidden flex flex-col"
                       style={{
-                        gridTemplateColumns: '1fr auto auto',
-                        borderBottom: idx < customColumnDefs.length - 1 ? `1px solid ${border}` : 'none',
-                        gap: '8px',
+                        border: `1px solid ${border}`,
+                        boxShadow: isLight ? '0 1px 4px rgba(0,0,0,0.06)' : '0 1px 8px rgba(0,0,0,0.25)',
                       }}
                     >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: '#10B981' }} />
-                        <span className="text-xs font-bold truncate" style={{ color: textPrimary }}>{cc.label}</span>
+                      {/* Category header — click to toggle all */}
+                      <button
+                        type="button"
+                        className="col-cat-hdr flex items-center gap-3 px-4 py-3 w-full text-left transition-colors cursor-pointer"
+                        style={{ backgroundColor: acc.bg, borderBottom: `1px solid ${border}` }}
+                        onClick={() => {
+                          if (!columnManagerFor) return
+                          const newHidden = new Set(hidden)
+                          if (allOn) {
+                            cols.forEach(c => newHidden.add(c.key as ColumnKey))
+                          } else {
+                            cols.forEach(c => newHidden.delete(c.key as ColumnKey))
+                          }
+                          setHiddenColumnsByInstaller(prev => ({ ...prev, [columnManagerFor]: newHidden }))
+                        }}
+                        title={allOn ? 'Click to hide all in this group' : 'Click to show all in this group'}
+                      >
+                        <div className="flex-1 min-w-0" style={{ borderLeft: `3px solid ${acc.color}`, paddingLeft: 10 }}>
+                          <div className="text-[12px] font-extrabold leading-tight truncate uppercase tracking-wide" style={{ color: textPrimary }}>{meta.label}</div>
+                        </div>
+                        {/* Pill count */}
+                        <span
+                          className="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0"
+                          style={{
+                            backgroundColor: anyOn ? acc.color + '22' : (isLight ? '#f1f5f9' : '#0d1520'),
+                            color: anyOn ? acc.color : textMuted,
+                            border: `1px solid ${anyOn ? acc.color + '40' : border}`,
+                          }}
+                        >
+                          {visibleCount}/{cols.length}
+                        </span>
+                      </button>
+
+                      {/* Column rows */}
+                      <div className="flex flex-col" style={{ backgroundColor: cardBg }}>
+                        {cols.map((col, i) => {
+                          const on = !hidden.has(col.key as ColumnKey)
+                          return (
+                            <label
+                              key={col.key}
+                              className="col-mgr-row flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors"
+                              style={{
+                                borderTop: i > 0 ? `1px solid ${border}` : 'none',
+                              }}
+                            >
+                              {/* Custom toggle switch */}
+                              <span className="col-toggle">
+                                <input
+                                  type="checkbox"
+                                  checked={on}
+                                  onChange={() => toggleColumn(col.key as ColumnKey)}
+                                />
+                                <span className="col-toggle-track" />
+                                <span className="col-toggle-thumb" />
+                              </span>
+                              <span
+                                className="text-[12px] font-semibold flex-1 leading-tight"
+                                style={{ color: on ? textPrimary : textMuted, transition: 'color .15s' }}
+                              >
+                                {col.label}
+                              </span>
+                            </label>
+                          )
+                        })}
                       </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Custom Columns section */}
+              <div
+                className="mx-6 mb-6 rounded-2xl overflow-hidden flex flex-col"
+                style={{ border: `1px solid ${border}` }}
+              >
+                {/* Custom section header */}
+                <div
+                  className="flex items-center gap-3 px-4 py-3"
+                  style={{
+                    backgroundColor: isLight ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.08)',
+                    borderBottom: `1px solid ${border}`,
+                  }}
+                >
+                  <div className="flex-1">
+                    <div className="text-[12px] font-extrabold uppercase tracking-wide" style={{ color: textPrimary }}>Custom Columns</div>
+                  </div>
+                  {customColumnDefs.length > 0 && (
+                    <span
+                      className="text-[10px] font-black px-2 py-0.5 rounded-full"
+                      style={{ backgroundColor: '#10B981', color: 'white' }}
+                    >
+                      {customColumnDefs.length}
+                    </span>
+                  )}
+                </div>
+
+                {/* Add input */}
+                <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: customColumnDefs.length > 0 ? `1px solid ${border}` : 'none', backgroundColor: cardBg }}>
+                  <input
+                    type="text"
+                    placeholder="Column name, e.g. Roof Access Fee"
+                    value={newColumnName}
+                    onChange={e => setNewColumnName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomColumn() } }}
+                    className="flex-1 rounded-xl border px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  />
+                  <button
+                    type="button"
+                    onClick={addCustomColumn}
+                    disabled={!newColumnName.trim()}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed shrink-0 transition-opacity"
+                    style={{ background: 'linear-gradient(135deg,#10B981,#059669)' }}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add
+                  </button>
+                </div>
+
+                {/* Custom list */}
+                {customColumnDefs.length > 0 ? (
+                  customColumnDefs.map((cc, idx) => (
+                    <div
+                      key={cc.key}
+                      className="flex items-center gap-3 px-4 py-2.5 transition-colors col-mgr-row"
+                      style={{ borderTop: idx > 0 ? `1px solid ${border}` : 'none', backgroundColor: cardBg }}
+                    >
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: '#10B981' }} />
+                      <span className="text-xs font-bold flex-1 truncate" style={{ color: textPrimary }}>{cc.label}</span>
                       <span
                         className="text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 truncate max-w-[120px]"
                         title={cc.key}
@@ -2445,109 +2636,51 @@ export default function Payroll() {
                       >
                         {cc.key}
                       </span>
-                      <div className="flex justify-center w-8">
-                        <button
-                          type="button"
-                          onClick={() => removeCustomColumn(cc.key)}
-                          className="p-1.5 rounded-lg hover:bg-red-500/15 transition-colors"
-                          title={`Delete "${cc.label}" from all installer tables`}
-                        >
-                          <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeCustomColumn(cc.key)}
+                        className="p-1.5 rounded-lg hover:bg-red-500/15 transition-colors shrink-0"
+                        title={`Delete "${cc.label}" from all installer tables`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                      </button>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div
-                  className="text-xs font-medium text-center py-3 rounded-xl border border-dashed"
-                  style={{ color: textMuted, borderColor: border }}
-                >
-                  No custom columns yet — type a name above and click Add Column.
-                </div>
-              )}
-            </div>
-
-            {/* Search + bulk actions */}
-            <div className="flex items-center gap-2 px-5 py-3 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: textMuted }} />
-                <input
-                  type="text"
-                  autoFocus
-                  placeholder="Search columns..."
-                  value={columnSearch}
-                  onChange={e => setColumnSearch(e.target.value)}
-                  className="w-full pl-8 pr-3 py-2 rounded-xl text-xs font-semibold border focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                />
+                  ))
+                ) : (
+                  <div
+                    className="text-xs font-medium text-center py-5 px-4"
+                    style={{ color: textMuted, backgroundColor: cardBg }}
+                  >
+                    No custom columns yet — type a name above and press Enter or click Add.
+                  </div>
+                )}
               </div>
-              <button
-                type="button"
-                onClick={() => setHiddenColumnsByInstaller(prev => ({ ...prev, [columnManagerFor]: new Set() }))}
-                className="px-3 py-2 rounded-xl text-[11px] font-bold whitespace-nowrap"
-                style={{ color: '#10B981', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.12)' }}
-              >
-                Show all
-              </button>
-              <button
-                type="button"
-                onClick={() => setHiddenColumnsByInstaller(prev => ({ ...prev, [columnManagerFor]: new Set(COLUMN_DEFS.filter(c => !c.pinned).map(c => c.key as ColumnKey)) }))}
-                className="px-3 py-2 rounded-xl text-[11px] font-bold whitespace-nowrap"
-                style={{ color: textMuted, backgroundColor: isLight ? '#f1f5f9' : '#0d1520' }}
-              >
-                Hide all
-              </button>
             </div>
 
-            {/* Categorized checklist */}
-            <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 grid grid-cols-1 sm:grid-cols-2 gap-4 content-start">
-              {(() => {
-                const hidden = hiddenColumnsFor(columnManagerFor)
-                return (Object.keys(CATEGORY_META) as ColumnCategory[]).map(cat => {
-                  const cols = COLUMN_DEFS.filter(c => c.category === cat && c.label.toLowerCase().includes(columnSearch.trim().toLowerCase()))
-                  if (cols.length === 0) return null
-                  const meta = CATEGORY_META[cat]
-                  const visibleCount = cols.filter(c => !hidden.has(c.key as ColumnKey)).length
-                  return (
-                    <div key={cat} className="rounded-xl overflow-hidden" style={{ border: `1px solid ${border}` }}>
-                      <div className="px-3 py-2 flex items-center justify-between" style={{ backgroundColor: headerBg }}>
-                        <div>
-                          <div className="text-[11px] font-extrabold" style={{ color: textPrimary }}>{meta.label}</div>
-                          <div className="text-[10px] font-medium" style={{ color: textMuted }}>{meta.blurb}</div>
-                        </div>
-                        <span className="text-[10px] font-bold shrink-0 ml-2" style={{ color: visibleCount > 0 ? '#10B981' : textMuted }}>
-                          {visibleCount}/{cols.length}
-                        </span>
-                      </div>
-                      <div>
-                        {cols.map(col => (
-                          <label key={col.key} className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold cursor-pointer" style={{ color: textPrimary }}>
-                            <input type="checkbox" checked={!hidden.has(col.key as ColumnKey)} onChange={() => toggleColumn(col.key as ColumnKey)} />
-                            {col.label}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  )
-                })
-              })()}
-            </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-end px-5 py-3 shrink-0" style={{ borderTop: `1px solid ${border}` }}>
-              <button
-                type="button"
-                onClick={() => setColumnManagerFor(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-white"
-                style={{ background: '#10B981' }}
-              >
-                Done
-              </button>
+            {/* ── Footer ── */}
+            <div
+              className="flex items-center justify-between px-6 py-4 shrink-0"
+              style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#fafafa' : '#080f1c' }}
+            >
+              <p className="text-[11px]" style={{ color: textMuted }}>
+                <span style={{ color: '#10B981', fontWeight: 700 }}>{totalVisible}</span> of <span style={{ fontWeight: 600 }}>{totalToggleable}</span> optional columns visible
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setColumnManagerFor(null)}
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-white transition-opacity hover:opacity-90"
+                  style={{ background: 'linear-gradient(135deg,#10B981,#059669)', boxShadow: '0 4px 12px rgba(16,185,129,0.30)' }}
+                >
+                  Done
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+        document.body
+        )
+      })()}
 
       {/* Column right-click context menu — portal-rendered so it always clears the header. */}
       {colCtxMenu && createPortal(
@@ -2678,15 +2811,13 @@ export default function Payroll() {
           return (
             <div
               className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-150"
-              onClick={() => setDetailRow(null)}
             >
               <div
-                className="w-full max-w-2xl max-h-[88vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden"
+                className="w-full max-w-3xl max-h-[92vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden"
                 style={{ backgroundColor: cardBg, borderColor: border }}
-                onClick={e => e.stopPropagation()}
               >
                 <div
-                  className="flex items-start justify-between gap-3 px-5 py-4 shrink-0"
+                  className="flex items-start justify-between gap-3 px-6 py-5 shrink-0"
                   style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}
                 >
                   {/* Synced rows show their schedule details read-only (corrected at the
@@ -2694,23 +2825,32 @@ export default function Payroll() {
                       applied via readOnlyWhenSynced. */}
                   {liveRow.ticketId ? (
                     <div className="min-w-0">
-                      <div className="text-sm font-extrabold truncate" style={{ color: textPrimary }}>
+                      <div className="text-lg font-extrabold truncate" style={{ color: textPrimary }}>
                         {liveRow.customerName || 'No customer'}
                       </div>
-                      <div className="text-[11px] font-semibold mt-0.5 truncate" style={{ color: textMuted }}>
+                      <div className="text-sm font-semibold mt-1 truncate" style={{ color: textMuted }}>
                         {liveRow.workDate ? shortDate(liveRow.workDate) : 'No date'}
                         {' · '}{liveRow.ticketNumber || 'No ticket'}
                         {liveRow.brandCapacity ? ` · ${liveRow.brandCapacity}` : ''}
                       </div>
+                      {/* Transfer origin badge — shown when this row was moved in from another branch */}
+                      {liveRow.customFields?.['xfer:fromBranch'] && (
+                        <div className="flex items-center gap-1.5 mt-1.5">
+                          <ArrowRightLeft className="w-3 h-3" style={{ color: '#8B5CF6' }} />
+                          <span className="text-[11px] font-bold" style={{ color: '#8B5CF6' }}>
+                            Transferred from {liveRow.customFields['xfer:fromBranch']}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   ) : (
-                    <div className="min-w-0 flex flex-col gap-1">
+                    <div className="min-w-0 flex flex-col gap-1.5">
                       <input
                         type="text"
                         placeholder="Customer name"
                         value={liveRow.customerName}
                         onChange={e => updateRow(liveRow.id, { customerName: e.target.value })}
-                        className="text-sm font-extrabold bg-transparent border-0 outline-none w-full"
+                        className="text-lg font-extrabold bg-transparent border-0 outline-none w-full"
                         style={{ color: textPrimary }}
                       />
                       <div className="flex items-center gap-2">
@@ -2718,7 +2858,7 @@ export default function Payroll() {
                           type="date"
                           value={liveRow.workDate || ''}
                           onChange={e => updateRow(liveRow.id, { workDate: e.target.value })}
-                          className="text-[11px] font-semibold bg-transparent border-0 outline-none"
+                          className="text-sm font-semibold bg-transparent border-0 outline-none"
                           style={{ color: textMuted }}
                         />
                         <input
@@ -2726,7 +2866,7 @@ export default function Payroll() {
                           placeholder="Ticket"
                           value={liveRow.ticketNumber}
                           onChange={e => updateRow(liveRow.id, { ticketNumber: e.target.value })}
-                          className="text-[11px] font-semibold bg-transparent border-0 outline-none w-24"
+                          className="text-sm font-semibold bg-transparent border-0 outline-none w-28"
                           style={{ color: textMuted }}
                         />
                       </div>
@@ -2735,38 +2875,260 @@ export default function Payroll() {
                   <button
                     type="button"
                     onClick={() => setDetailRow(null)}
-                    className="p-1.5 rounded-lg shrink-0 transition-colors hover:bg-slate-500/10"
-                    style={{ color: textMuted }}
+                    className="p-2.5 rounded-full shrink-0 transition-all border cursor-pointer hover:bg-red-500 hover:border-red-500 hover:text-white active:scale-90"
+                    style={{ color: textMuted, backgroundColor: inputBg, borderColor: inputBorder }}
                     aria-label="Close"
                   >
-                    <X className="w-4 h-4" />
+                    <X className="w-5 h-5" strokeWidth={2.5} />
                   </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto px-5 py-1">
+                <div className="flex-1 overflow-y-auto px-6 py-1">
                   {detailCols.map(col => (
                     <div
                       key={col.key}
-                      className="flex items-center justify-between gap-3 py-2"
+                      className="flex items-center justify-between gap-4 py-3"
                       style={{ borderBottom: `1px solid ${border}` }}
                     >
                       <span
-                        className="text-[10px] font-bold uppercase tracking-wide shrink-0"
+                        className="text-xs font-bold uppercase tracking-wide shrink-0"
                         style={{ color: col.key === 'remit' ? remitAccent : textMuted }}
                       >
                         {col.label}
                       </span>
-                      <div className="max-w-[55%] flex-1">
+                      <div className="max-w-[60%] flex-1">
                         {renderMobileCellValue(col, liveRow)}
                       </div>
                     </div>
                   ))}
                 </div>
 
+                {/* Fee summary bar */}
                 <div className="grid grid-cols-3 shrink-0" style={{ backgroundColor: headerBg, borderTop: `1px solid ${border}` }}>
-                  {footerTile('Install Fee', num(liveRow.installationFee), textPrimary)}
-                  {footerTile('Add-on Pay', addOns, textPrimary)}
-                  {footerTile('Row Total', rowTotal(liveRow), '#10B981')}
+                  <div className="px-5 py-4 min-w-0">
+                    <div className="text-xs font-medium uppercase tracking-wider truncate opacity-60" style={{ color: textMuted }}>Install Fee</div>
+                    <div className="text-lg font-bold tabular-nums" style={{ color: textPrimary }}>₱{peso(num(liveRow.installationFee))}</div>
+                  </div>
+                  <div className="px-5 py-4 min-w-0">
+                    <div className="text-xs font-medium uppercase tracking-wider truncate opacity-60" style={{ color: textMuted }}>Add-on Pay</div>
+                    <div className="text-lg font-bold tabular-nums" style={{ color: textPrimary }}>₱{peso(addOns)}</div>
+                  </div>
+                  <div className="px-5 py-4 min-w-0">
+                    <div className="text-xs font-medium uppercase tracking-wider truncate opacity-60" style={{ color: textMuted }}>Row Total</div>
+                    <div className="text-lg font-bold tabular-nums" style={{ color: '#10B981' }}>₱{peso(rowTotal(liveRow))}</div>
+                  </div>
+                </div>
+
+                {/* Transfer to Branch action — only for payroll managers, only when viewing another branch's ticket */}
+                {canManagePayroll && !liveRow.customFields?.['xfer:fromBranch'] && (
+                  <div
+                    className="flex items-center justify-between gap-3 px-6 py-3 shrink-0"
+                    style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#fafafa' : '#080f1c' }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <ArrowRightLeft className="w-4 h-4" style={{ color: '#8B5CF6' }} />
+                      <span className="text-xs font-semibold" style={{ color: textMuted }}>
+                        This job was done by a different franchise?
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setTransferModalRow(liveRow); setTransferTargetBranchId('') }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all hover:border-purple-500/60 hover:bg-purple-500/10 shrink-0"
+                      style={{ color: '#8B5CF6', borderColor: isLight ? '#ddd6fe' : 'rgba(139,92,246,0.35)', backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.08)' }}
+                    >
+                      <ArrowRightLeft className="w-3.5 h-3.5" />
+                      Transfer to Branch
+                    </button>
+                  </div>
+                )}
+
+                {/* Already-transferred badge */}
+                {liveRow.customFields?.['xfer:fromBranch'] && (
+                  <div
+                    className="flex items-center gap-2 px-6 py-3 shrink-0"
+                    style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.08)' }}
+                  >
+                    <ArrowRightLeft className="w-4 h-4" style={{ color: '#8B5CF6' }} />
+                    <span className="text-xs font-semibold" style={{ color: '#8B5CF6' }}>
+                      Transferred from <strong>{liveRow.customFields['xfer:fromBranch']}</strong>
+                      {liveRow.customFields['xfer:transferredAt']
+                        ? ` · ${new Date(liveRow.customFields['xfer:transferredAt']).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                        : ''}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })(),
+        document.body
+      )}
+      {/* ── Cross-Branch Payroll Transfer Modal ── */}
+      {transferModalRow && createPortal(
+        (() => {
+          const row = transferModalRow
+          const sourceBranchName = branches.find(b => b.id === branchFilter)?.name || branchFilter
+          const targetBranchName = branches.find(b => b.id === transferTargetBranchId)?.name || ''
+          const otherBranches = branches.filter(b => b.id !== branchFilter)
+          const mKey = (row.workDate || '').slice(0, 7)
+
+          return (
+            <div
+              className="fixed inset-0 z-[9999999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
+              onClick={() => !transferring && setTransferModalRow(null)}
+            >
+              <div
+                className="w-full max-w-md rounded-2xl border shadow-2xl flex flex-col overflow-hidden"
+                style={{ backgroundColor: cardBg, borderColor: border, boxShadow: isLight ? '0 32px 80px rgba(0,0,0,0.18)' : '0 32px 80px rgba(0,0,0,0.7)' }}
+                onClick={e => e.stopPropagation()}
+              >
+                {/* Header */}
+                <div
+                  className="flex items-center gap-3 px-5 py-4 shrink-0"
+                  style={{
+                    borderBottom: `1px solid ${border}`,
+                    background: isLight
+                      ? 'linear-gradient(135deg,#f5f3ff 0%,#f8fafc 100%)'
+                      : 'linear-gradient(135deg,rgba(139,92,246,0.10) 0%,rgba(10,17,32,0) 100%)',
+                  }}
+                >
+                  <div
+                    className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: 'linear-gradient(135deg,#8B5CF6,#6D28D9)', boxShadow: '0 4px 12px rgba(139,92,246,0.35)' }}
+                  >
+                    <ArrowRightLeft className="w-4.5 h-4.5 text-white" style={{ width: 18, height: 18 }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h2 className="text-sm font-extrabold" style={{ color: textPrimary }}>Transfer to Branch</h2>
+                    <p className="text-[11px] font-medium mt-0.5 truncate" style={{ color: textMuted }}>
+                      From <strong>{sourceBranchName}</strong>
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={transferring}
+                    onClick={() => setTransferModalRow(null)}
+                    className="w-8 h-8 rounded-xl flex items-center justify-center transition-colors hover:bg-red-500/12 disabled:opacity-40"
+                    style={{ border: `1px solid ${border}` }}
+                  >
+                    <X className="w-4 h-4" style={{ color: textMuted }} />
+                  </button>
+                </div>
+
+                {/* Job Preview */}
+                <div className="px-5 py-4 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
+                  <div
+                    className="rounded-xl p-4 flex flex-col gap-2"
+                    style={{ backgroundColor: isLight ? '#f8fafc' : '#0d1520', border: `1px solid ${border}` }}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-sm font-extrabold truncate" style={{ color: textPrimary }}>
+                          {row.customerName || 'No customer'}
+                        </div>
+                        <div className="text-[11px] font-medium mt-0.5" style={{ color: textMuted }}>
+                          {row.ticketNumber && <span className="mr-2">#{row.ticketNumber}</span>}
+                          {row.workDate && shortDate(row.workDate)}
+                          {row.brandCapacity && <span className="ml-2">· {row.brandCapacity}</span>}
+                        </div>
+                      </div>
+                      <span
+                        className="text-sm font-extrabold tabular-nums shrink-0"
+                        style={{ color: '#10B981' }}
+                      >
+                        ₱{peso(rowTotal(row))}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 pt-1" style={{ borderTop: `1px solid ${border}` }}>
+                      <div
+                        className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black text-white shrink-0"
+                        style={{ backgroundColor: avatarColor(row.installerName) }}
+                      >
+                        {getInitials(row.installerName)}
+                      </div>
+                      <span className="text-[12px] font-bold" style={{ color: textPrimary }}>
+                        {titleCase(row.installerName)}
+                      </span>
+                      <span className="text-[10px] ml-auto" style={{ color: textMuted }}>
+                        Technician
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] font-medium mt-3" style={{ color: textMuted }}>
+                    This payroll entry will be <strong>moved</strong> to the selected branch's {mKey} payroll.
+                    The ticket reference and all fee amounts are carried over. This branch's record will be removed.
+                  </p>
+                </div>
+
+                {/* Branch Picker */}
+                <div className="px-5 py-4 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
+                  <label className="block text-[11px] font-extrabold uppercase tracking-wider mb-2" style={{ color: textMuted }}>
+                    Transfer To
+                  </label>
+                  <div className="relative">
+                    <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: textMuted }} />
+                    <select
+                      value={transferTargetBranchId}
+                      onChange={e => setTransferTargetBranchId(e.target.value)}
+                      disabled={transferring}
+                      className="w-full pl-9 pr-8 py-2.5 rounded-xl text-sm font-bold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500/40 border transition-all disabled:opacity-60"
+                      style={{ color: transferTargetBranchId ? textPrimary : textMuted, backgroundColor: inputBg, borderColor: transferTargetBranchId ? '#8B5CF6' : inputBorder }}
+                    >
+                      <option value="">— Select destination branch —</option>
+                      {otherBranches.map(b => {
+                        const isFranchise = Boolean((b as any).isFranchise || isFranchiseBranch(b.id) || isFranchiseBranch(b.name))
+                        return (
+                          <option key={b.id} value={b.id}>
+                            {formatBranchName(b.name)}{isFranchise ? ' (Franchise)' : ''}
+                          </option>
+                        )
+                      })}
+                    </select>
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: textMuted }} />
+                  </div>
+
+                  {/* Preview destination */}
+                  {transferTargetBranchId && targetBranchName && (
+                    <div
+                      className="flex items-center gap-2 mt-3 px-3 py-2 rounded-xl"
+                      style={{ backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.10)', border: '1px solid rgba(139,92,246,0.30)' }}
+                    >
+                      <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" style={{ color: '#8B5CF6' }} />
+                      <span className="text-[11px] font-bold" style={{ color: '#8B5CF6' }}>
+                        Will appear under <strong>{formatBranchName(targetBranchName)}</strong> payroll · {mKey}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div
+                  className="flex items-center justify-end gap-2 px-5 py-4 shrink-0"
+                  style={{ backgroundColor: isLight ? '#fafafa' : '#080f1c' }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setTransferModalRow(null)}
+                    disabled={transferring}
+                    className="px-4 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/10 disabled:opacity-40"
+                    style={{ color: textMuted, borderColor: inputBorder, backgroundColor: inputBg }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!transferTargetBranchId || transferring}
+                    onClick={() => transferRowToBranch(row, transferTargetBranchId)}
+                    className="flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                    style={{ background: 'linear-gradient(135deg,#8B5CF6,#6D28D9)', boxShadow: transferTargetBranchId && !transferring ? '0 4px 12px rgba(139,92,246,0.35)' : 'none' }}
+                  >
+                    {transferring ? (
+                      <><Loader2 className="w-3.5 h-3.5 animate-spin" />Transferring…</>
+                    ) : (
+                      <><ArrowRightLeft className="w-3.5 h-3.5" />Confirm Transfer</>
+                    )}
+                  </button>
                 </div>
               </div>
             </div>
@@ -3172,6 +3534,213 @@ export default function Payroll() {
                       <span>{savingRates ? 'Saving Rates…' : 'Save Rates'}</span>
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+          )
+        })(),
+        document.body
+      )}
+
+      {/* Deductions modal — big popup, no click-outside/Escape dismiss. Only Close, Save, or the
+          X button in the header may close it, so an in-progress edit is never lost to a stray click. */}
+      {deductionsModalInstaller && createPortal(
+        (() => {
+          const installerRows = grouped.find(([name]) => name === deductionsModalInstaller)?.[1] ?? []
+          const gross = installerTotal(installerRows)
+          const base = baseInstallTotal(installerRows)
+          const totalDeduction = deductionTotal(installerRows)
+          const net = gross - totalDeduction
+          const lateMinutes = deductionValue(installerRows, 'lateMinutes')
+          const loan = deductionValue(installerRows, 'loan')
+          const loanBalance = deductionValue(installerRows, 'loanBalance')
+          const uniformBalance = deductionValue(installerRows, 'uniformBalance')
+          const dedRed = isLight ? '#DC2626' : '#F87171'
+          const fieldCls = "w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold text-right tabular-nums border outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-60 disabled:cursor-not-allowed"
+          const fieldStyle = { backgroundColor: isLight ? '#f8fafc' : '#0F1A2E', borderColor: inputBorder, color: textPrimary }
+          const moneyField = (key: DeductionKey, value: number, compact = false) => (
+            <NumericFormat
+              thousandSeparator=","
+              decimalScale={key === 'lateMinutes' ? 0 : 2}
+              allowNegative={false}
+              prefix={key === 'lateMinutes' ? undefined : '₱'}
+              suffix={key === 'lateMinutes' ? ' min' : undefined}
+              value={value || ''}
+              placeholder={key === 'lateMinutes' ? '0 min' : '₱0.00'}
+              disabled={!canManagePayroll}
+              onValueChange={(values, info) => {
+                if (info.source === 'event') setDeduction(installerRows, key, values.value)
+              }}
+              className={`${fieldCls} ${compact ? 'max-w-[120px]' : ''}`}
+              style={fieldStyle}
+            />
+          )
+          const remark = (text: ReactNode) => (
+            <span className="text-[11px] font-medium" style={{ color: textMuted }}>{text}</span>
+          )
+          const lines: { label: string; sub?: string; amount: ReactNode; remarks: ReactNode }[] = [
+            {
+              label: 'Late',
+              sub: `₱${LATE_RATE_PER_MINUTE.toFixed(2)} / minute`,
+              amount: moneyField('lateMinutes', lateMinutes),
+              remarks: lateMinutes > 0
+                ? remark(<>{lateMinutes} min × ₱{LATE_RATE_PER_MINUTE.toFixed(2)} = <b style={{ color: dedRed }}>₱{peso(lateDeduction(installerRows))}</b></>)
+                : remark('No lates'),
+            },
+            {
+              label: 'AC Loan / CA',
+              amount: moneyField('loan', loan),
+              remarks: (
+                <div className="flex items-center gap-2 min-w-0">
+                  {loan === 0 && loanBalance === 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0" style={{ backgroundColor: isLight ? '#f1f5f9' : '#111d33', color: textMuted }}>NO LOAN</span>
+                  )}
+                  <span className="text-[11px] font-medium shrink-0" style={{ color: textMuted }}>Balance</span>
+                  {moneyField('loanBalance', loanBalance, true)}
+                </div>
+              ),
+            },
+            { label: 'Incomplete Upload', amount: moneyField('incompleteUpload', deductionValue(installerRows, 'incompleteUpload')), remarks: remark('Missing photos, video or checklist') },
+            { label: 'Losses / Material Checklist', amount: moneyField('losses', deductionValue(installerRows, 'losses')), remarks: remark('Lost tools or unreturned materials') },
+            { label: 'Remit', amount: moneyField('remitPenalty', deductionValue(installerRows, 'remitPenalty')), remarks: remark('No remit — ×3 charges') },
+            {
+              label: 'Uniform',
+              sub: `₱${peso(UNIFORM_PRICE_PER_PC)} / pc`,
+              amount: moneyField('uniform', deductionValue(installerRows, 'uniform')),
+              remarks: (
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-[11px] font-medium shrink-0" style={{ color: textMuted }}>Balance</span>
+                  {moneyField('uniformBalance', uniformBalance, true)}
+                </div>
+              ),
+            },
+          ]
+          const lineGrid = "grid grid-cols-[minmax(0,1fr)_130px] md:grid-cols-[minmax(0,1.1fr)_150px_minmax(0,1fr)] items-center gap-x-4 gap-y-1.5"
+          return (
+            <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+              <div
+                className="w-full rounded-2xl shadow-2xl flex flex-col overflow-hidden border animate-in zoom-in-95 duration-200"
+                style={{
+                  maxWidth: '1060px',
+                  height: 'min(86vh, 760px)',
+                  maxHeight: '90vh',
+                  backgroundColor: cardBg,
+                  borderColor: border,
+                  boxShadow: isLight
+                    ? '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+                    : '0 25px 50px -12px rgba(0, 0, 0, 0.8)',
+                }}
+              >
+                {/* Header */}
+                <div
+                  className="flex items-center justify-between gap-4 px-8 py-5 shrink-0"
+                  style={{ backgroundColor: isLight ? '#ffffff' : '#0B1324', borderBottom: `1px solid ${border}` }}
+                >
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div
+                      className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0"
+                      style={{ backgroundColor: isLight ? '#fef3c7' : 'rgba(251,191,36,0.14)' }}
+                    >
+                      <Receipt className="w-5 h-5 text-amber-500" />
+                    </div>
+                    <div className="min-w-0">
+                      <h2 className="text-base font-extrabold tracking-tight truncate" style={{ color: textPrimary }}>
+                        {titleCase(displayInstallerName(deductionsModalInstaller))}&rsquo;s Deductions &amp; Adjustments
+                      </h2>
+                      <p className="text-xs font-semibold mt-1 leading-snug" style={{ color: textMuted }}>
+                        Late minutes, AC loans &amp; cash advances, incomplete uploads, losses, uniform, and remit penalties.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDeductionsModalInstaller(null)}
+                    className="p-2.5 rounded-xl hover:bg-rose-500/10 hover:text-rose-500 transition-colors cursor-pointer shrink-0"
+                    style={{ color: textMuted }}
+                    title="Close"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Body */}
+                <div className="flex-1 min-h-0 overflow-y-auto flex flex-col lg:flex-row" style={{ backgroundColor: cardBg }}>
+                  {/* Deductions Editor */}
+                  <div className="flex-1 min-w-0 px-6 md:px-8 py-5">
+                    <div className={`${lineGrid} pb-2 mb-1 text-[10px] font-bold uppercase tracking-wider`} style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>
+                      <span>Deductions</span>
+                      <span className="text-right">Amount</span>
+                      <span className="hidden md:block">Remarks</span>
+                    </div>
+                    {lines.map(line => (
+                      <div key={line.label} className={`${lineGrid} py-2`}>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold truncate" style={{ color: textPrimary }}>{line.label}</div>
+                          {line.sub && <div className="text-[10px] font-medium" style={{ color: textMuted }}>{line.sub}</div>}
+                        </div>
+                        {line.amount}
+                        <div className="col-span-2 md:col-span-1 min-w-0">{line.remarks}</div>
+                      </div>
+                    ))}
+                    <div className={`${lineGrid} pt-2.5 mt-1`} style={{ borderTop: `1px solid ${border}` }}>
+                      <span className="text-xs font-bold uppercase tracking-wide" style={{ color: dedRed }}>Total Deduction</span>
+                      <span className="text-sm font-bold tabular-nums text-right pr-2.5" style={{ color: totalDeduction > 0 ? dedRed : textMuted }}>
+                        {totalDeduction > 0 ? `−₱${peso(totalDeduction)}` : '₱0.00'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Net payroll */}
+                  <div className="lg:w-80 shrink-0 px-6 md:px-8 py-5 flex flex-col gap-3 border-t lg:border-t-0 lg:border-l" style={{ borderColor: border, backgroundColor: headerBg }}>
+                    <div className="flex flex-col gap-1.5 text-xs">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-semibold uppercase tracking-wide text-[11px]" style={{ color: textMuted }}>Gross Total Labor</span>
+                        <span className="font-bold tabular-nums" style={{ color: textPrimary }}>₱{peso(gross)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 text-[11px]" style={{ color: textMuted }}>
+                        <span>Base install ₱{peso(base)} · Add-ons ₱{peso(gross - base)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-semibold uppercase tracking-wide text-[11px]" style={{ color: textMuted }}>Total Deduction</span>
+                        <span className="font-bold tabular-nums" style={{ color: totalDeduction > 0 ? dedRed : textMuted }}>
+                          {totalDeduction > 0 ? `−₱${peso(totalDeduction)}` : '₱0.00'}
+                        </span>
+                      </div>
+                    </div>
+                    <div
+                      className="rounded-xl px-4 py-3 flex items-center justify-between gap-3"
+                      style={{ backgroundColor: isLight ? 'rgba(16,185,129,0.10)' : 'rgba(16,185,129,0.16)', border: '1px solid rgba(16,185,129,0.45)' }}
+                    >
+                      <span className="text-xs font-extrabold uppercase tracking-wider" style={{ color: isLight ? '#047857' : '#34D399' }}>Net Payroll</span>
+                      <span className="text-xl font-extrabold tabular-nums" style={{ color: net < 0 ? dedRed : (isLight ? '#047857' : '#34D399') }}>
+                        {net < 0 ? '−' : ''}₱{peso(Math.abs(net))}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer — Close and Save are the only other ways out of this modal. */}
+                <div
+                  className="flex items-center justify-end gap-3 px-8 py-4 shrink-0"
+                  style={{ backgroundColor: isLight ? 'rgba(241, 245, 249, 0.7)' : 'rgba(15, 26, 46, 0.7)', borderTop: `1px solid ${border}` }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setDeductionsModalInstaller(null)}
+                    className="px-6 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer hover:opacity-80 active:scale-95"
+                    style={{ borderColor: border, color: textMuted, backgroundColor: inputBg }}
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveDeductionsNow}
+                    className="flex items-center gap-2 px-7 py-2.5 rounded-xl text-xs font-black text-white transition-all shadow-md hover:shadow-lg active:scale-95 cursor-pointer"
+                    style={{ background: '#10B981' }}
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>Save</span>
+                  </button>
                 </div>
               </div>
             </div>

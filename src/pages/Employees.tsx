@@ -67,6 +67,9 @@ interface Employee {
   street?: string
   landmark?: string
   skills?: string
+  /** Salaried in-house crew tag — technicians/installers tagged this way are excluded from
+   *  the per-job installer payroll sheet (that's for pakyaw/contract pay only). */
+  inHouse?: boolean
   dateHired?: string
   birthDate?: string
   viewBranchIds?: string
@@ -226,9 +229,14 @@ interface JobTitleMultiSelectProps {
   inputCls: string
   inputStyle: React.CSSProperties
   border: string
+  /** In-house (salaried) crew tag — shown as one more chip alongside the job titles, but kept
+   *  as its own field rather than folded into the jobTitle string (it's an employment
+   *  classification, not a role). Omit both props to hide the chip entirely. */
+  inHouse?: boolean
+  onToggleInHouse?: () => void
 }
 
-const JobTitleMultiSelect = ({ value, onChange, options, onAddCustom, inputCls, inputStyle, border }: JobTitleMultiSelectProps) => {
+const JobTitleMultiSelect = ({ value, onChange, options, onAddCustom, inputCls, inputStyle, border, inHouse, onToggleInHouse }: JobTitleMultiSelectProps) => {
   const selected = parseJobTitles(value)
   const [newTitle, setNewTitle] = useState('')
 
@@ -284,6 +292,27 @@ const JobTitleMultiSelect = ({ value, onChange, options, onAddCustom, inputCls, 
             </button>
           )
         })}
+        {onToggleInHouse && (
+          <button
+            type="button"
+            onClick={onToggleInHouse}
+            title="Salaried in-house crew — excluded from the installer payroll list"
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-black tracking-wider uppercase transition-all select-none cursor-pointer border ${
+              inHouse
+                ? 'bg-violet-500/15 border-violet-500 text-violet-600 dark:text-violet-400 shadow-sm shadow-violet-500/15'
+                : 'bg-white/80 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-white dark:hover:bg-slate-800'
+            }`}
+          >
+            <span className={`w-4 h-4 rounded-md flex items-center justify-center border transition-all ${
+              inHouse
+                ? 'bg-violet-500 border-violet-500 text-white'
+                : 'border-slate-300 dark:border-slate-600 bg-transparent'
+            }`}>
+              {inHouse && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+            </span>
+            IN-HOUSE
+          </button>
+        )}
       </div>
 
       {/* Add Custom Role */}
@@ -425,6 +454,7 @@ export default function Employees() {
     birthDate: '',
     profileImage: '',
     viewBranchIds: '',
+    inHouse: false,
   })
   const [showPass, setShowPass] = useState(false)
   const [saving,   setSaving]   = useState(false)
@@ -438,6 +468,7 @@ export default function Employees() {
     dateHired: '',
     birthDate: '',
     profileImage: '',
+    inHouse: false,
   })
   const [createSaving, setCreateSaving] = useState(false)
   const [createStep, setCreateStep] = useState<1 | 2 | 3>(1)
@@ -450,7 +481,7 @@ export default function Employees() {
     setFormErr('')
     setCreateForm({
       name: '', nickname: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
-      phone: '', personalEmail: '', dateHired: '', birthDate: '', profileImage: '',
+      phone: '', personalEmail: '', dateHired: '', birthDate: '', profileImage: '', inHouse: false,
     })
   }
 
@@ -459,7 +490,7 @@ export default function Employees() {
     setFormErr('')
     setCreateForm({
       name: '', nickname: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
-      phone: '', personalEmail: '', dateHired: '', birthDate: '', profileImage: '',
+      phone: '', personalEmail: '', dateHired: '', birthDate: '', profileImage: '', inHouse: false,
     })
     setShowCreate(true)
   }
@@ -580,6 +611,7 @@ export default function Employees() {
           barangay:    s.barangay    || '',
           street:      s.street      || '',
           landmark:    s.landmark    || '',
+          inHouse:     !!s.inHouse,
           dateHired:   s.dateHired   || '',
           createdAt:   s.createdAt,
           updatedAt:   s.updatedAt,
@@ -754,6 +786,7 @@ export default function Employees() {
       barangay: s.barangay || '',
       street: s.street || '',
       landmark: s.landmark || '',
+      inHouse: !!s.inHouse,
       dateHired: s.dateHired || '',
       birthDate: s.birthDate || '',
       viewBranchIds: s.viewBranchIds || '',
@@ -788,6 +821,7 @@ export default function Employees() {
       birthDate: emp.birthDate || '',
       profileImage: emp.profileImage || '',
       viewBranchIds: emp.viewBranchIds || '',
+      inHouse: !!emp.inHouse,
     })
     setFormErr('')
     setShowPass(false)
@@ -817,6 +851,7 @@ export default function Employees() {
         birthDate: editForm.birthDate || null,
         profileImage: editForm.profileImage,
         viewBranchIds: editForm.viewBranchIds ? editForm.viewBranchIds.trim() : null,
+        inHouse: editForm.inHouse,
       }
       if (editForm.newPassword.trim()) payload.password = editForm.newPassword.trim()
 
@@ -1024,6 +1059,7 @@ export default function Employees() {
             dateHired: createForm.dateHired || null,
             birthDate: createForm.birthDate || null,
             profileImage: createForm.profileImage,
+            inHouse: createForm.inHouse,
           }),
         })
       }
@@ -1427,6 +1463,17 @@ export default function Employees() {
                       {resolveLabel(e.role, e.jobTitle).toUpperCase()}
                     </span>
 
+                    {/* In-House Chip */}
+                    {e.inHouse && (
+                      <span
+                        className="text-[11px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wide border inline-flex items-center"
+                        style={{ backgroundColor: 'rgba(139,92,246,0.1)', color: '#8B5CF6', borderColor: 'rgba(139,92,246,0.3)' }}
+                        title="Salaried in-house crew — excluded from the installer payroll list"
+                      >
+                        IN-HOUSE
+                      </span>
+                    )}
+
                     {/* Branch Chip */}
                     {e.branchName && (
                       <span
@@ -1563,9 +1610,20 @@ export default function Employees() {
 
                     {/* Role */}
                     <td className="px-6 py-5 border-r text-center" style={{ borderColor: border }}>
-                      <span className="text-sm font-semibold tracking-wider whitespace-nowrap" style={{ color: rc.text }}>
-                        {resolveLabel(e.role, e.jobTitle).toUpperCase()}
-                      </span>
+                      <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                        <span className="text-sm font-semibold tracking-wider whitespace-nowrap" style={{ color: rc.text }}>
+                          {resolveLabel(e.role, e.jobTitle).toUpperCase()}
+                        </span>
+                        {e.inHouse && (
+                          <span
+                            className="text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wide border whitespace-nowrap"
+                            style={{ backgroundColor: 'rgba(139,92,246,0.1)', color: '#8B5CF6', borderColor: 'rgba(139,92,246,0.3)' }}
+                            title="Salaried in-house crew — excluded from the installer payroll list"
+                          >
+                            IN-HOUSE
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Branch */}
@@ -1775,6 +1833,17 @@ export default function Employees() {
                     >
                       <Building2 className="w-3 h-3 text-emerald-500 shrink-0" />
                       <span>{selectedEmployee.branchName}</span>
+                    </span>
+                  )}
+
+                  {/* In-House Badge */}
+                  {selectedEmployee.inHouse && (
+                    <span
+                      className="text-[11px] font-bold px-2.5 py-0.5 rounded-lg uppercase tracking-wide border shadow-xs"
+                      style={{ backgroundColor: 'rgba(139,92,246,0.1)', color: '#8B5CF6', borderColor: 'rgba(139,92,246,0.3)' }}
+                      title="Salaried in-house crew — excluded from the installer payroll list"
+                    >
+                      IN-HOUSE
                     </span>
                   )}
 
@@ -2440,6 +2509,8 @@ export default function Employees() {
                             inputCls={inputCls}
                             inputStyle={inputStyle}
                             border={border}
+                            inHouse={editForm.inHouse}
+                            onToggleInHouse={() => setEditForm(p => ({ ...p, inHouse: !p.inHouse }))}
                           />
                         </Field>
                       </div>
@@ -2644,6 +2715,8 @@ export default function Employees() {
                           inputCls={inputCls}
                           inputStyle={inputStyle}
                           border={border}
+                          inHouse={createForm.inHouse}
+                          onToggleInHouse={() => setCreateForm(p => ({ ...p, inHouse: !p.inHouse }))}
                         />
                       </Field>
                     </div>

@@ -256,10 +256,12 @@ function classifyJobRateKey(ticket: Ticket): JobRateKind | null {
 }
 
 // Negotiation/Quotation close out a sales conversation, not a job order a crew performs.
-const NON_INSTALLER_CLOSINGS = new Set(['DONE_NEGOTIATION', 'DONE_QUOTATION'])
+// Survey is excluded too — it doesn't owe an installer fee, so it shouldn't show up as a
+// payroll job row at all.
+const NON_INSTALLER_CLOSINGS = new Set(['DONE_NEGOTIATION', 'DONE_QUOTATION', 'DONE_SURVEY'])
 
 /** Every job order an installer actually finished — install and cleaning, plus checkups,
- *  services, backjobs, surveys, mounting, dismantling, relocation, reprocess. Service branches
+ *  services, backjobs, mounting, dismantling, relocation, reprocess. Service branches
  *  run mostly non-install work, so limiting payroll to installs left their crews looking idle. */
 function isCompletedInstallerJob(ticket: Ticket): boolean {
   const rateKey = classifyJobRateKey(ticket)

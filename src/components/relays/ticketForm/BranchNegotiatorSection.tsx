@@ -1,5 +1,5 @@
 import { Users } from 'lucide-react'
-import { formatBranchName } from '../../../utils/api'
+import { formatBranchName, isFranchiseBranch } from '../../../utils/api'
 import { FormField, FormSectionHead } from './FormField'
 import type { RelayFormTheme } from './theme'
 
@@ -39,15 +39,23 @@ export function BranchNegotiatorSection({
     <section>
       <FormSectionHead step={step} icon={<Users className="w-3.5 h-3.5" />} title={title} subtitle={subtitle} />
       <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
-        <FormField label="Branch Zone" className="md:col-span-5">
+        <FormField label="Branch Zone" required className="md:col-span-5">
           <select
+            required
             value={branchId}
             onChange={e => onBranchChange(e.target.value)}
             className={inputClassName}
             style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
           >
-            <option value="">{branches.length ? 'Select branch...' : 'Loading…'}</option>
-            {branches.map(b => <option key={b.id} value={b.id}>{formatBranchName(b.name)}</option>)}
+            <option value="">{branches.length ? 'Select branch (Required)...' : 'Loading…'}</option>
+            {branches.map(b => {
+              const isFranchise = Boolean((b as any).isFranchise || isFranchiseBranch(b.name) || isFranchiseBranch(b.id))
+              return (
+                <option key={b.id} value={b.id}>
+                  {formatBranchName(b.name)}{isFranchise ? ' (FRANCHISE)' : ''}
+                </option>
+              )
+            })}
           </select>
         </FormField>
         <FormField label="Negotiator" required className="md:col-span-4">

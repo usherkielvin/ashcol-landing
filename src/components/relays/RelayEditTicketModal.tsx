@@ -1,8 +1,8 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom'
-import { AlertTriangle, X, ClipboardList } from 'lucide-react'
+import { AlertTriangle, X, ClipboardList, ArrowRightLeft, Loader2 } from 'lucide-react'
 import { ConfirmationChecklistModal, isChecklistFilled } from '../tickets/ConfirmationChecklistModal'
-import { API_BASE_URL } from '../../utils/api'
+import { API_BASE_URL, isFranchiseBranch } from '../../utils/api'
 import { resolveScheduleStatusFields } from '../../constants/ticketCategories'
 import { buildRelayEditDraft, type RelayEditDraft } from './relayEditForm'
 import type { TicketEditSurface } from '../../utils/ticketEditBridge'
@@ -78,6 +78,8 @@ export type RelayEditTicketModalProps = {
   getTicketNumber: (ticket: any) => string
   parseAcDetails: (ticket: any) => { finalDate?: string; previousScheduleDates?: string[] }
   draftExtensions?: Partial<RelayEditDraft>
+  /** Called after a successful branch-transfer PATCH so the parent can sync its ticket list. */
+  onTransferBranch?: (ticketId: string, newBranchId: string) => void
 }
 
 const STANDARD_PAYMENT_MODES = new Set(['CASH', 'GCASH', 'BANK TRANSFER', 'CHEQUE', 'FOR COLLECTION', 'NO_PAYMENT', 'FREE', 'FREE INSTALL', 'PENDING'])
@@ -150,6 +152,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
     getTicketNumber,
     parseAcDetails,
     draftExtensions,
+    onTransferBranch,
   } = props
 
   const isFieldSurface = surface !== 'relay'
@@ -165,6 +168,12 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
   const has15QChecklist = isChecklistFilled(rawChecklist)
   const [confirmModal, setConfirmModal] = useState<StatusConfirmState | null>(null)
   const [editPayments, setEditPayments] = useState<PaymentRow[]>(() => seedPaymentRows(ticket, draftExtensions))
+
+  // Branch transfer state
+  const [showTransferPanel, setShowTransferPanel] = useState(false)
+  const [transferTargetBranchId, setTransferTargetBranchId] = useState('')
+  const [transferring, setTransferring] = useState(false)
+  const [transferDone, setTransferDone] = useState(false)
 
   useEffect(() => {
     const next = buildRelayEditDraft(ticket, parseStoreVendor, resolveBranch, draftExtensions)
@@ -238,6 +247,75 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
     })
   }
 
+  const allAvailableBranches = useMemo(() => {
+    const list = [...(branches || [])].map(b => {
+      const isFranchise = Boolean((b as any).isFranchise || isFranchiseBranch(b.id) || isFranchiseBranch(b.name))
+      return isFranchise ? { ...b, isFranchise: true } : b
+    })
+    const hasValenzuela = list.some(b => isFranchiseBranch(b.name || b.id) && String(b.name || b.id).toUpperCase().includes('VALENZUELA'))
+    if (!hasValenzuela) {
+      list.push({ id: 'BR-VALENZUELA', name: 'ASHCOL VALENZUELA', isFranchise: true } as any)
+    }
+    const hasBatangas = list.some(b => isFranchiseBranch(b.name || b.id) && String(b.name || b.id).toUpperCase().includes('BATANGAS'))
+    if (!hasBatangas) {
+      list.push({ id: 'BR-BATANGAS', name: 'ASHCOL BATANGAS', isFranchise: true } as any)
+    }
+    return list
+  }, [branches])
+
+  const handleTransferBranch = async () => {
+    if (!transferTargetBranchId || !ticket.id) return
+    setTransferring(true)
+    try {
+      const token = localStorage.getItem('ashcol-token') || localStorage.getItem('token') || sessionStorage.getItem('ashcol-token') || sessionStorage.getItem('token') || ''
+
+      const res = await fetch(`${API_BASE_URL}/tickets/${ticket.id}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          branchId: transferTargetBranchId,
+          installerName: '',
+          installerId: '',
+          driverName: '',
+          serviceVehicle: '',
+        }),
+      })
+      if (!res.ok) throw new Error('Transfer failed')
+      const json = await res.json().catch(() => null)
+      const updatedTicket = json?.data || {
+        ...ticket,
+        branchId: transferTargetBranchId,
+        branch_id: transferTargetBranchId,
+        installerName: '',
+        installerId: null,
+        driverName: '',
+        serviceVehicle: '',
+        serviceDriver: '',
+      }
+
+      setTransferDone(true)
+      onTransferBranch?.(ticket.id, transferTargetBranchId)
+      onTicketPatched?.(updatedTicket)
+
+      // Also update the draft so branch and installer/driver fields immediately reflect the removal
+      patch({
+        assignBranchId: transferTargetBranchId,
+        installerName: '',
+        driverName: '',
+        serviceDriver: '',
+      })
+      setTimeout(() => {
+        setShowTransferPanel(false)
+        setTransferDone(false)
+        setTransferTargetBranchId('')
+      }, 2000)
+    } catch (err) {
+      console.error('Branch transfer failed:', err)
+    } finally {
+      setTransferring(false)
+    }
+  }
+
   return (
     <>
       {ReactDOM.createPortal(
@@ -305,11 +383,161 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               )}
             </button>
+            {/* Transfer Branch button — reassigns the ticket to a different franchise branch */}
+            <button
+              type="button"
+              onClick={() => { setShowTransferPanel(v => !v); setTransferTargetBranchId(''); setTransferDone(false) }}
+              className="px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all hover:bg-purple-500/10 hover:border-purple-500/30 shrink-0"
+              style={{
+                borderColor: showTransferPanel ? (isLight ? '#ddd6fe' : 'rgba(139,92,246,0.5)') : inputBorder,
+                backgroundColor: showTransferPanel ? (isLight ? '#f5f3ff' : 'rgba(139,92,246,0.10)') : inputBg,
+                color: showTransferPanel ? '#8B5CF6' : textPrimary,
+              }}
+              title="Transfer this ticket to a different branch"
+            >
+              <ArrowRightLeft className="w-4 h-4 shrink-0" style={{ color: '#8B5CF6' }} />
+              <span className="hidden sm:inline">TRANSFER BRANCH</span>
+              <span className="sm:hidden">TRANSFER</span>
+            </button>
             <button type="button" onClick={requestClose} className="p-2 shrink-0 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
               <X className="w-5 h-5" style={{ color: textMuted }} />
             </button>
           </div>
         </div>
+
+        {/* ── Transfer Branch Dialog ── opens centered on screen when triggered from header, dispatch, or footer */}
+        {showTransferPanel && (
+          <div
+            className="fixed inset-0 z-[10005] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
+            onClick={(e) => { e.stopPropagation(); setShowTransferPanel(false); setTransferTargetBranchId(''); setTransferDone(false) }}
+          >
+            <div
+              className="w-full max-w-lg rounded-2xl p-5 sm:p-6 shadow-2xl border flex flex-col gap-4 animate-in zoom-in-95 duration-150"
+              style={{ backgroundColor: cardBg, borderColor: border }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: 'linear-gradient(135deg,#8B5CF6,#6D28D9)', boxShadow: '0 4px 12px rgba(139,92,246,0.35)' }}
+                  >
+                    <ArrowRightLeft className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm sm:text-base font-black uppercase tracking-tight" style={{ color: textPrimary }}>
+                      Transfer Ticket & Clear Installer
+                    </h3>
+                    <p className="text-[11px] font-bold" style={{ color: '#8B5CF6' }}>
+                      Ticket #{ticketNumberLabel} {draft.customerName ? `— ${draft.customerName.toUpperCase()}` : ''}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setShowTransferPanel(false); setTransferTargetBranchId(''); setTransferDone(false) }}
+                  className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  style={{ color: textMuted }}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div
+                className="p-3.5 rounded-xl text-xs space-y-2 normal-case"
+                style={{ backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.20)' }}
+              >
+                <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  <span>Current Branch: <strong className="text-slate-800 dark:text-slate-100">{resolveBranch(draft.assignBranchId)?.name || draft.assignBranchId || 'Unassigned'}</strong></span>
+                  <span>Current Installer: <strong className="text-slate-800 dark:text-slate-100">{draft.installerName || 'None'}</strong></span>
+                </div>
+                <p className="text-[11.5px] leading-relaxed" style={{ color: textMuted }}>
+                  An assigned branch is <strong>required</strong> for every ticket. Transferring will reassign this ticket to the selected branch and <strong>automatically remove previous installer ({draft.installerName || 'JHON'}) and driver assignments</strong> so the destination branch can assign their own team.
+                </p>
+              </div>
+
+              {transferDone ? (
+                <div
+                  className="flex items-center gap-3 px-4 py-4 rounded-xl animate-in zoom-in-95 duration-150 normal-case"
+                  style={{ backgroundColor: isLight ? '#f0fdf4' : 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.35)' }}
+                >
+                  <span className="text-2xl font-bold text-emerald-500">✓</span>
+                  <div>
+                    <p className="text-xs font-black text-emerald-600 dark:text-emerald-400">
+                      Transfer & Reset Complete!
+                    </p>
+                    <p className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300 mt-0.5">
+                      Branch updated and installer removed. Changes saved immediately to ASHCOL portal.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3.5">
+                  <div>
+                    <label className="font-bold uppercase tracking-wide block text-slate-500 dark:text-slate-400 text-[10.5px] mb-1.5">
+                      Destination Branch (Required)<span className="text-emerald-500 ml-0.5">*</span>
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={transferTargetBranchId}
+                        onChange={e => setTransferTargetBranchId(e.target.value)}
+                        disabled={transferring}
+                        className="w-full pl-3 pr-8 py-2.5 rounded-xl text-xs font-bold appearance-none cursor-pointer focus:outline-none border transition-all disabled:opacity-60 normal-case"
+                        style={{
+                          backgroundColor: inputBg,
+                          borderColor: transferTargetBranchId ? '#8B5CF6' : inputBorder,
+                          color: transferTargetBranchId ? textPrimary : textMuted,
+                        }}
+                      >
+                        <option value="">— Select destination branch (Required) —</option>
+                        {allAvailableBranches
+                          .filter(b => b.id !== (draft.assignBranchId || (ticket as any).branchId || (ticket as any).branch_id))
+                          .map(b => {
+                            const isFranchise = (b as any).isFranchise || /valenzuela|batangas|gentri|general trias/i.test(b.name || b.id)
+                            return (
+                              <option key={b.id} value={b.id}>
+                                {b.name} {isFranchise ? '— [Franchise]' : ''}
+                              </option>
+                            )
+                          })
+                        }
+                      </select>
+                      <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: textMuted, fontSize: 10 }}>▾</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      disabled={transferring}
+                      onClick={() => { setShowTransferPanel(false); setTransferTargetBranchId(''); setTransferDone(false) }}
+                      className="px-4 py-2 border rounded-xl text-xs font-bold"
+                      style={{ borderColor: inputBorder, color: textMuted }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!transferTargetBranchId || transferring}
+                      onClick={handleTransferBranch}
+                      className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all hover:opacity-95 shadow-md"
+                      style={{
+                        background: 'linear-gradient(135deg,#8B5CF6,#6D28D9)',
+                        boxShadow: transferTargetBranchId && !transferring ? '0 4px 12px rgba(139,92,246,0.35)' : 'none',
+                      }}
+                    >
+                      {transferring ? (
+                        <><Loader2 className="w-4 h-4 animate-spin" /> Transferring & Clearing Installer…</>
+                      ) : (
+                        <><ArrowRightLeft className="w-4 h-4" /> Transfer to Branch & Clear Installer</>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {showHistory && isOverview && (() => {
           const parsed = parseAcDetails ? parseAcDetails(ticket) : {}
@@ -421,7 +649,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                   : draft.updateStatus,
               })
             }}
-            branches={branches}
+            branches={allAvailableBranches}
             negotiatorId={draft.assignTechId}
             onNegotiatorChange={(val) => {
               const foundEmp = negotiatorsForBranch(undefined).find((emp) => emp.id === val)
@@ -476,6 +704,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
               driverRoster={driverRoster}
               vehicle={draft.serviceDriver}
               onVehicleChange={(v) => patch({ serviceDriver: v })}
+              onTransferClick={() => { setShowTransferPanel(true); setTransferTargetBranchId(''); setTransferDone(false) }}
               theme={relayFormTheme}
             />
           )}
@@ -483,11 +712,10 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
           {/* 7. Remarks */}
           <RemarksSection
             step={7}
-            remarks={isFieldSurface ? draft.remarks : undefined}
-            primaryLabel={isFieldSurface ? 'Add New Remark (appends to history)' : 'Add New Remark / Update'}
-            primaryPlaceholder="Type a new update (e.g. FOR CLEANING — send names for work permit). Saved remarks appear in Update History and this field clears."
-            primaryValue={draft.remarksUpdate}
-            onPrimaryChange={(v) => patch({ remarksUpdate: v })}
+            primaryLabel="Remarks / Update"
+            primaryPlaceholder="Type notes, updates, or special instructions..."
+            primaryValue={draft.remarksUpdate || draft.remarks || ''}
+            onPrimaryChange={(v) => patch({ remarks: v, remarksUpdate: v })}
             theme={relayFormTheme}
           />
 
@@ -526,7 +754,22 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
         </div>
 
         <div className="px-4 sm:px-6 py-3 sm:py-4 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2.5 border-t shrink-0 safe-area-bottom" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0f172a' }}>
-          <div className="hidden sm:block" />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => { setShowTransferPanel(true); setTransferTargetBranchId(''); setTransferDone(false) }}
+              className="w-full sm:w-auto px-4 py-2 border rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all hover:bg-purple-500/10 hover:border-purple-500/40"
+              style={{
+                borderColor: showTransferPanel ? '#8B5CF6' : (isLight ? '#ddd6fe' : 'rgba(139,92,246,0.4)'),
+                backgroundColor: showTransferPanel ? (isLight ? '#f5f3ff' : 'rgba(139,92,246,0.15)') : (isLight ? '#faf5ff' : 'rgba(139,92,246,0.08)'),
+                color: '#8B5CF6',
+              }}
+              title="Transfer ticket to another franchise branch and clear installer"
+            >
+              <ArrowRightLeft className="w-4 h-4 shrink-0" />
+              <span>TRANSFER BRANCH / CLEAR INSTALLER</span>
+            </button>
+          </div>
           <div className="flex gap-2.5 w-full sm:w-auto">
             <button type="button" onClick={requestClose} className="flex-1 sm:flex-none px-5 py-2.5 sm:py-2 border rounded-lg text-xs font-bold" style={{ borderColor: inputBorder, color: textMuted, backgroundColor: cardBg }}>Cancel</button>
             <button type="button" onClick={() => onSave(draft)} disabled={isSaving} className="flex-1 sm:flex-none px-6 py-2.5 sm:py-2 text-white rounded-lg text-xs font-bold shadow-md disabled:opacity-60" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>

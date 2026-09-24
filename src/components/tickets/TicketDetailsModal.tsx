@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import ReactDOM from 'react-dom'
 import { X, Edit3, Clock, ChevronDown, Loader2, ClipboardList, Trash2 } from 'lucide-react'
 import { ConfirmationChecklistModal, isChecklistFilled } from './ConfirmationChecklistModal'
+import { TicketPhotoGallery } from './TicketPhotoGallery'
 import { EmployeeNameLink } from '../EmployeeNameLink'
 import { EMPTY_CELL } from '../../utils/textSanitize'
 import { ROBINSON_APPLIANCES_RE } from '../../utils/dealer'
@@ -421,6 +422,20 @@ export function TicketDetailsModal({
                   </p>
                 </div>
               </div>
+
+              <TicketPhotoGallery
+                ticket={t}
+                isLight={isLight}
+                canManage={canEdit}
+                user={user}
+                branchLabel={branchName && branchName !== EMPTY_CELL ? branchName : undefined}
+                onPhotosChange={(photos) => {
+                  const serialized = photos.length ? JSON.stringify(photos) : null
+                  const updated = { ...currentTicket, photoAttachments: serialized, photo_attachments: serialized }
+                  setCurrentTicket(updated)
+                  onUpdateTicket?.(updated)
+                }}
+              />
 
               {/* Actions at bottom of details column */}
               <div className="flex flex-col sm:flex-row gap-2.5 pt-2 pb-6 sm:pb-2 border-t" style={{ borderColor: border }}>

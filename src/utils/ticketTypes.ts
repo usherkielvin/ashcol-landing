@@ -71,6 +71,9 @@ export interface Ticket {
   driver_name?: string
   confirmationChecklist?: string | null
   confirmation_checklist?: string | null
+  /** JSON array of TicketPhoto (see utils/ticketPhotos.ts); null on light schedule payloads. */
+  photoAttachments?: string | null
+  photo_attachments?: string | null
   finalDate?: string
   final_date?: string
   paymentStatus?: string

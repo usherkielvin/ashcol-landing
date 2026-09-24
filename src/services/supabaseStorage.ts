@@ -115,3 +115,95 @@ export async function uploadReceiptImage(
     compressed
   }
 }
+
+/** Public bucket for per-ticket photo attachments (Supabase Storage). */
+export const TICKET_ATTACHMENTS_BUCKET: string =
+  import.meta.env.VITE_SUPABASE_TICKET_BUCKET || 'ticket-attachments'
+
+export interface UploadTicketPhotoOptions {
+  /** Ticket number (or id) — used as the folder name so files are browsable per ticket. */
+  ticketKey: string
+  /** Branch/site name, used as a folder segment like receipts. */
+  branch?: string
+}
+
+export interface UploadTicketPhotoResult {
+  url: string
+  thumbUrl: string
+  path: string
+  thumbPath: string
+  size: number
+  originalSize: number
+  width: number
+  height: number
+}
+
+const slugifySegment = (value: string, maxLength: number) =>
+  value.trim().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, maxLength)
+
+/**
+ * Ticket photo upload — same client-side compression + public-bucket flow as receipts, but:
+ * - uploads a full image (≤1600px) and a small thumbnail (≤400px) for the gallery grid;
+ * - never falls back to a DataURL: base64 photos would bloat tickets.photo_attachments and
+ *   every ticket payload, so a failed upload surfaces as an error the user can retry.
+ */
+export async function uploadTicketPhoto(
+  file: File | Blob,
+  options: UploadTicketPhotoOptions
+): Promise<UploadTicketPhotoResult> {
+  const supabase = getSupabaseClient()
+  if (!supabase) {
+    throw new Error('Photo storage is not configured (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).')
+  }
+
+  const full = await compressImage(file, { maxWidth: 1600, maxHeight: 1600, quality: 0.75, mimeType: 'image/jpeg' })
+  // Thumbnail from the already-downscaled blob — much cheaper than decoding the camera original twice.
+  const thumb = await compressImage(full.blob, { maxWidth: 400, maxHeight: 400, quality: 0.65, mimeType: 'image/jpeg' })
+
+  const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : Math.random().toString(36).substring(2, 10) + Date.now().toString(36)
+  const branchSegment = options.branch ? slugifySegment(options.branch, 30) : ''
+  const ticketSegment = slugifySegment(options.ticketKey, 60) || 'ticket'
+  const folderPath = branchSegment ? `tickets/${branchSegment}/${ticketSegment}` : `tickets/${ticketSegment}`
+  const path = `${folderPath}/${uniqueId}.jpg`
+  const thumbPath = `${folderPath}/${uniqueId}_thumb.jpg`
+
+  const bucket = supabase.storage.from(TICKET_ATTACHMENTS_BUCKET)
+  const [fullUpload, thumbUpload] = await Promise.all([
+    bucket.upload(path, full.blob, { contentType: 'image/jpeg', upsert: false, cacheControl: '31536000' }),
+    bucket.upload(thumbPath, thumb.blob, { contentType: 'image/jpeg', upsert: false, cacheControl: '31536000' }),
+  ])
+  if (fullUpload.error || thumbUpload.error) {
+    const uploaded = [fullUpload.data?.path, thumbUpload.data?.path].filter((p): p is string => !!p)
+    if (uploaded.length) void bucket.remove(uploaded)
+    throw new Error((fullUpload.error || thumbUpload.error)?.message || 'Upload failed')
+  }
+
+  return {
+    url: bucket.getPublicUrl(path).data.publicUrl,
+    thumbUrl: bucket.getPublicUrl(thumbPath).data.publicUrl,
+    path,
+    thumbPath,
+    size: full.compressedSize + thumb.compressedSize,
+    originalSize: full.originalSize,
+    width: full.width,
+    height: full.height,
+  }
+}
+
+/**
+ * Best-effort removal of ticket photo files. Needs a DELETE storage policy on the bucket;
+ * if that's missing the row is still removed from the ticket and the file is just orphaned.
+ */
+export async function removeTicketPhotoFiles(paths: string[]): Promise<void> {
+  const supabase = getSupabaseClient()
+  const clean = paths.filter(Boolean)
+  if (!supabase || clean.length === 0) return
+  try {
+    const { error } = await supabase.storage.from(TICKET_ATTACHMENTS_BUCKET).remove(clean)
+    if (error) console.warn(`[Supabase Storage] Could not remove ticket photo files (${error.message}).`)
+  } catch (err) {
+    console.warn('[Supabase Storage] Error removing ticket photo files:', err)
+  }
+}

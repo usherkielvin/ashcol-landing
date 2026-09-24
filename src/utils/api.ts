@@ -433,6 +433,8 @@ export type BranchStaffOption = {
   is_active?: boolean | string | number | null
   enabled?: boolean | string | number | null
   status?: string | null
+  /** In-house (salaried) crew tag — excluded from the per-job installer payroll sheet. */
+  inHouse?: boolean | null
 }
 
 export function isAccountActive(user?: {
@@ -851,6 +853,19 @@ export function formatBranchName(name?: string | null, branchId?: string | null)
     .replace(/^ASHCOL\b[\s\-–—:]*/i, '')
     .replace(/^[\s\-–—:]+/, '')
     .trim()
+}
+
+/** Identifies franchise branches (Valenzuela, Batangas, Gen. Trias). */
+export function isFranchiseBranch(nameOrId?: string | null): boolean {
+  if (!nameOrId) return false
+  const upper = nameOrId.toUpperCase()
+  return (
+    upper.includes('VALENZUELA') ||
+    upper.includes('BATANGAS') ||
+    upper.includes('GENTRI') ||
+    upper.includes('GENERAL TRIAS') ||
+    upper.includes('FRANCHISE')
+  )
 }
 
 type PortalUserLike = {
