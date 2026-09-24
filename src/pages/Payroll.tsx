@@ -140,6 +140,35 @@ const parseMoneyText = (s: string) => {
 const remittanceTotal = (rowsIn: PayrollRow[]) => rowsIn.reduce((sum, r) => sum + parseMoneyText(r.actualCollected), 0)
 const baseInstallTotal = (rowsIn: PayrollRow[]) => rowsIn.reduce((sum, r) => sum + num(r.installationFee), 0)
 
+// Per-installer deductions for the period — the bottom block of the branch's payroll sheet
+// (Late / AC Loan-CA / Incomplete Upload / Losses / Remit / Uniform). They ride along in each
+// row's customFields under reserved "ded:" keys, so the existing payroll save persists them.
+const LATE_RATE_PER_MINUTE = 1.6
+const UNIFORM_PRICE_PER_PC = 850
+type DeductionKey =
+  | 'lateMinutes' | 'loan' | 'loanBalance' | 'incompleteUpload' | 'losses' | 'remitPenalty' | 'uniform' | 'uniformBalance'
+const DEDUCTION_PREFIX = 'ded:'
+// Balances are a snapshot (latest wins); every other key is an amount that adds up.
+const BALANCE_DEDUCTION_KEYS = new Set<DeductionKey>(['loanBalance', 'uniformBalance'])
+const rawDeduction = (r: PayrollRow, key: DeductionKey) => r.customFields?.[DEDUCTION_PREFIX + key] || ''
+/** Amounts sum across every row in range — each week's value sits on that week's first job —
+ *  so a month view shows the month's total. Balances take the latest row that has one. */
+const deductionValue = (rowsIn: PayrollRow[], key: DeductionKey): number => {
+  if (BALANCE_DEDUCTION_KEYS.has(key)) {
+    for (let i = rowsIn.length - 1; i >= 0; i--) {
+      const v = rawDeduction(rowsIn[i], key)
+      if (v) return num(v)
+    }
+    return 0
+  }
+  return rowsIn.reduce((sum, r) => sum + num(rawDeduction(r, key)), 0)
+}
+const lateDeduction = (rowsIn: PayrollRow[]) => deductionValue(rowsIn, 'lateMinutes') * LATE_RATE_PER_MINUTE
+const deductionTotal = (rowsIn: PayrollRow[]) =>
+  lateDeduction(rowsIn) + deductionValue(rowsIn, 'loan') + deductionValue(rowsIn, 'incompleteUpload')
+  + deductionValue(rowsIn, 'losses') + deductionValue(rowsIn, 'remitPenalty') + deductionValue(rowsIn, 'uniform')
+const installerNet = (installerRows: PayrollRow[]) => installerTotal(installerRows) - deductionTotal(installerRows)
+
 
 type ColumnKey =
   | 'date' | 'ticketNumber' | 'customerName' | 'brandCapacity' | 'remit'
@@ -822,6 +851,30 @@ export default function Payroll() {
     })
   }
 
+  // Writes one installer's deduction for the visible period. An amount lands on the period's
+  // first job, adjusted so the sum across the range equals what was typed (see deductionValue);
+  // a balance overwrites the latest row that holds one, else the latest job.
+  const setDeduction = (installerRows: PayrollRow[], key: DeductionKey, value: string) => {
+    if (installerRows.length === 0) return
+    let targetId = installerRows[0].id
+    let stored = value
+    if (BALANCE_DEDUCTION_KEYS.has(key)) {
+      const holder = [...installerRows].reverse().find(r => rawDeduction(r, key))
+      targetId = (holder ?? installerRows[installerRows.length - 1]).id
+    } else {
+      const others = installerRows.reduce((sum, r) => r.id === targetId ? sum : sum + num(rawDeduction(r, key)), 0)
+      const own = num(value) - others
+      stored = own === 0 ? '' : String(Math.round(own * 100) / 100)
+    }
+    setRows(prev => {
+      const updated = prev.map(r => r.id === targetId
+        ? { ...r, customFields: { ...(r.customFields || {}), [DEDUCTION_PREFIX + key]: stored } }
+        : r)
+      scheduleAutoSave(updated)
+      return updated
+    })
+  }
+
   const columnAccessors: Record<string, { get: (r: PayrollRow) => string; set: (id: string, v: string) => void }> = {
     date: { get: r => r.workDate, set: (id, v) => updateRow(id, { workDate: v }) },
     ticketNumber: { get: r => r.ticketNumber, set: (id, v) => updateRow(id, { ticketNumber: v }) },
@@ -950,6 +1003,7 @@ export default function Payroll() {
   }, [filteredRows, installerAliases])
 
   const grandTotal = useMemo(() => grouped.reduce((sum, [, r]) => sum + installerTotal(r), 0), [grouped])
+  const globalDeductionTotal = useMemo(() => grouped.reduce((sum, [, r]) => sum + deductionTotal(r), 0), [grouped])
   const globalBaseInstallTotal = useMemo(() => baseInstallTotal(filteredRows), [filteredRows])
   const globalRemittanceTotal = useMemo(() => remittanceTotal(filteredRows), [filteredRows])
   const globalAddOnTotal = grandTotal - globalBaseInstallTotal
@@ -1431,7 +1485,7 @@ export default function Payroll() {
                       Columns
                     </button>
                   </div>
-                  <span className="text-base md:text-lg font-bold tabular-nums" style={{ color: '#10B981' }}>₱{peso(installerTotal(installerRows))}</span>
+                  <span className="text-base md:text-lg font-bold tabular-nums" style={{ color: '#10B981' }} title="Net payroll (gross labor less deductions)">₱{peso(installerNet(installerRows))}</span>
                 </div>
 
                   {/* Desktop list view — one compact line per job. The full fee breakdown
@@ -1572,14 +1626,141 @@ export default function Payroll() {
                     ))}
                   </div>
 
-                {/* Payout breakdown — remittance is money owed BACK to the branch, shown
-                    separately from the crew's own labor/add-on payout. */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4" style={{ backgroundColor: headerBg, borderTop: `1px solid ${border}` }}>
-                    {footerTile('Total Remittance Collected', remittanceTotal(installerRows), remitAccent)}
-                    {footerTile('Base Install Total', baseInstallTotal(installerRows), textPrimary)}
-                    {footerTile('Total Add-on Pay', installerTotal(installerRows) - baseInstallTotal(installerRows), textPrimary)}
-                    {footerTile('Net Payout Due', installerTotal(installerRows), '#10B981')}
-                  </div>
+                {/* Payroll summary — the bottom block of the branch's weekly sheet: the deduction
+                    lines (amount + remarks) on the left, gross → total deduction → NET PAYROLL on
+                    the right. Remittance is money owed BACK to the branch, so it stays an info
+                    line, never part of the payout math. */}
+                  {(() => {
+                    const gross = installerTotal(installerRows)
+                    const base = baseInstallTotal(installerRows)
+                    const totalDeduction = deductionTotal(installerRows)
+                    const net = gross - totalDeduction
+                    const lateMinutes = deductionValue(installerRows, 'lateMinutes')
+                    const loan = deductionValue(installerRows, 'loan')
+                    const loanBalance = deductionValue(installerRows, 'loanBalance')
+                    const uniformBalance = deductionValue(installerRows, 'uniformBalance')
+                    const dedRed = isLight ? '#DC2626' : '#F87171'
+                    const fieldCls = "w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold text-right tabular-nums border outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-60 disabled:cursor-not-allowed"
+                    const fieldStyle = { backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }
+                    const moneyField = (key: DeductionKey, value: number, compact = false) => (
+                      <NumericFormat
+                        thousandSeparator=","
+                        decimalScale={key === 'lateMinutes' ? 0 : 2}
+                        allowNegative={false}
+                        prefix={key === 'lateMinutes' ? undefined : '₱'}
+                        suffix={key === 'lateMinutes' ? ' min' : undefined}
+                        value={value || ''}
+                        placeholder={key === 'lateMinutes' ? '0 min' : '₱0.00'}
+                        disabled={!canManagePayroll}
+                        onValueChange={(values, info) => {
+                          if (info.source === 'event') setDeduction(installerRows, key, values.value)
+                        }}
+                        className={`${fieldCls} ${compact ? 'max-w-[120px]' : ''}`}
+                        style={fieldStyle}
+                      />
+                    )
+                    const remark = (text: ReactNode) => (
+                      <span className="text-[11px] font-medium" style={{ color: textMuted }}>{text}</span>
+                    )
+                    const lines: { label: string; sub?: string; amount: ReactNode; remarks: ReactNode }[] = [
+                      {
+                        label: 'Late',
+                        sub: `₱${LATE_RATE_PER_MINUTE.toFixed(2)} / minute`,
+                        amount: moneyField('lateMinutes', lateMinutes),
+                        remarks: lateMinutes > 0
+                          ? remark(<>{lateMinutes} min × ₱{LATE_RATE_PER_MINUTE.toFixed(2)} = <b style={{ color: dedRed }}>₱{peso(lateDeduction(installerRows))}</b></>)
+                          : remark('No lates'),
+                      },
+                      {
+                        label: 'AC Loan / CA',
+                        amount: moneyField('loan', loan),
+                        remarks: (
+                          <div className="flex items-center gap-2 min-w-0">
+                            {loan === 0 && loanBalance === 0 && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0" style={{ backgroundColor: isLight ? '#f1f5f9' : '#111d33', color: textMuted }}>NO LOAN</span>
+                            )}
+                            <span className="text-[11px] font-medium shrink-0" style={{ color: textMuted }}>Balance</span>
+                            {moneyField('loanBalance', loanBalance, true)}
+                          </div>
+                        ),
+                      },
+                      { label: 'Incomplete Upload', amount: moneyField('incompleteUpload', deductionValue(installerRows, 'incompleteUpload')), remarks: remark('Missing photos, video or checklist') },
+                      { label: 'Losses / Material Checklist', amount: moneyField('losses', deductionValue(installerRows, 'losses')), remarks: remark('Lost tools or unreturned materials') },
+                      { label: 'Remit', amount: moneyField('remitPenalty', deductionValue(installerRows, 'remitPenalty')), remarks: remark('No remit — ×3 charges') },
+                      {
+                        label: 'Uniform',
+                        sub: `₱${peso(UNIFORM_PRICE_PER_PC)} / pc`,
+                        amount: moneyField('uniform', deductionValue(installerRows, 'uniform')),
+                        remarks: (
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-[11px] font-medium shrink-0" style={{ color: textMuted }}>Balance</span>
+                            {moneyField('uniformBalance', uniformBalance, true)}
+                          </div>
+                        ),
+                      },
+                    ]
+                    const lineGrid = "grid grid-cols-[minmax(0,1fr)_130px] md:grid-cols-[minmax(0,1.1fr)_150px_minmax(0,1fr)] items-center gap-x-4 gap-y-1.5"
+                    return (
+                      <div className="flex flex-col lg:flex-row" style={{ backgroundColor: headerBg, borderTop: `1px solid ${border}` }}>
+                        {/* Deductions */}
+                        <div className="flex-1 min-w-0 px-5 md:px-6 py-4">
+                          <div className={`${lineGrid} pb-2 mb-1 text-[10px] font-bold uppercase tracking-wider`} style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>
+                            <span>Deductions</span>
+                            <span className="text-right">Amount</span>
+                            <span className="hidden md:block">Remarks</span>
+                          </div>
+                          {lines.map(line => (
+                            <div key={line.label} className={`${lineGrid} py-1.5`}>
+                              <div className="min-w-0">
+                                <div className="text-xs font-semibold truncate" style={{ color: textPrimary }}>{line.label}</div>
+                                {line.sub && <div className="text-[10px] font-medium" style={{ color: textMuted }}>{line.sub}</div>}
+                              </div>
+                              {line.amount}
+                              <div className="col-span-2 md:col-span-1 min-w-0">{line.remarks}</div>
+                            </div>
+                          ))}
+                          <div className={`${lineGrid} pt-2.5 mt-1`} style={{ borderTop: `1px solid ${border}` }}>
+                            <span className="text-xs font-bold uppercase tracking-wide" style={{ color: dedRed }}>Total Deduction</span>
+                            <span className="text-sm font-bold tabular-nums text-right pr-2.5" style={{ color: totalDeduction > 0 ? dedRed : textMuted }}>
+                              {totalDeduction > 0 ? `−₱${peso(totalDeduction)}` : '₱0.00'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Net payroll */}
+                        <div className="lg:w-80 shrink-0 px-5 md:px-6 py-4 flex flex-col gap-3 border-t lg:border-t-0 lg:border-l" style={{ borderColor: border }}>
+                          <div className="flex flex-col gap-1.5 text-xs">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="font-semibold uppercase tracking-wide text-[11px]" style={{ color: textMuted }}>Gross Total Labor</span>
+                              <span className="font-bold tabular-nums" style={{ color: textPrimary }}>₱{peso(gross)}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3 text-[11px]" style={{ color: textMuted }}>
+                              <span>Base install ₱{peso(base)} · Add-ons ₱{peso(gross - base)}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="font-semibold uppercase tracking-wide text-[11px]" style={{ color: textMuted }}>Total Deduction</span>
+                              <span className="font-bold tabular-nums" style={{ color: totalDeduction > 0 ? dedRed : textMuted }}>
+                                {totalDeduction > 0 ? `−₱${peso(totalDeduction)}` : '₱0.00'}
+                              </span>
+                            </div>
+                          </div>
+                          <div
+                            className="rounded-xl px-4 py-3 flex items-center justify-between gap-3"
+                            style={{ backgroundColor: isLight ? 'rgba(16,185,129,0.10)' : 'rgba(16,185,129,0.16)', border: '1px solid rgba(16,185,129,0.45)' }}
+                          >
+                            <span className="text-xs font-extrabold uppercase tracking-wider" style={{ color: isLight ? '#047857' : '#34D399' }}>Net Payroll</span>
+                            <span className="text-xl font-extrabold tabular-nums" style={{ color: net < 0 ? dedRed : (isLight ? '#047857' : '#34D399') }}>
+                              {net < 0 ? '−' : ''}₱{peso(Math.abs(net))}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3 text-[11px] font-medium">
+                            <span style={{ color: textMuted }}>Remittance collected (owed to branch)</span>
+                            <span className="font-bold tabular-nums" style={{ color: remitAccent }}>₱{peso(remittanceTotal(installerRows))}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })()}
               </div>
             )
           })}
@@ -1603,7 +1784,8 @@ export default function Payroll() {
 
           {/* Data rows — hairline dividers, no per-row cards/shadows, just a row-hover tint */}
           {grouped.map(([installerName, installerRows], rowIndex) => {
-            const total = installerTotal(installerRows)
+            // Net of this period's deductions (Late / Loan / Uniform …) — what the installer takes home.
+            const total = installerNet(installerRows)
             const isComplete = installerRows.length > 0 && installerRows.every(r => r.status === 'COMPLETE')
             const summaryRemarks = installerRows[0]?.remarks || ''
             const summaryAudited = installerRows[0]?.audited || ''
@@ -1727,7 +1909,8 @@ export default function Payroll() {
                 { label: 'Remittance Collected', value: globalRemittanceTotal, color: remitAccent },
                 { label: 'Base Install Total', value: globalBaseInstallTotal, color: textPrimary },
                 { label: 'Total Add-on Pay', value: globalAddOnTotal, color: textPrimary },
-                { label: 'Net Payout Due', value: grandTotal, color: '#10B981' },
+                { label: 'Total Deductions', value: globalDeductionTotal, color: globalDeductionTotal > 0 ? (isLight ? '#DC2626' : '#F87171') : textPrimary },
+                { label: 'Net Payout Due', value: grandTotal - globalDeductionTotal, color: '#10B981' },
               ] as const).map(tile => (
                 <div key={tile.label} className="flex flex-col items-end">
                   <span className="text-[10px] font-medium uppercase tracking-wider opacity-60" style={{ color: textMuted }}>{tile.label}</span>
