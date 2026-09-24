@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { NumericFormat } from 'react-number-format'
 import {
   Search, Building2, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   SlidersHorizontal, Plus, X, RotateCcw, RefreshCw, Save, Loader2, EyeOff, Trash2,
   Stethoscope, Lightbulb, HardHat, PiggyBank, Wind, Recycle, ArrowBigDownDash, Snowflake,
-  Users, Clock,
+  Users, Clock, Receipt, FileText,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -275,6 +275,21 @@ const COLUMN_WIDTHS_KEY = 'ashcol-payroll-column-widths'
 const CUSTOM_COLUMNS_KEY = 'ashcol-payroll-custom-columns'
 const MIN_COLUMN_WIDTH = 70
 
+// Installer job list: columns are sized from their real rendered text (see listWidths in the
+// detail view), so fonts here must match the list's classes. Date/Ticket/Customer stay pinned.
+const LIST_PINNED_KEYS = ['date', 'ticketNumber', 'customerName']
+const LIST_CELL_FONT = '400 13px Inter, system-ui, sans-serif'
+const LIST_CELL_BOLD_FONT = '700 13px Inter, system-ui, sans-serif'
+const LIST_HEAD_FONT = '700 11px Inter, system-ui, sans-serif'
+const LIST_HEAD_TRACKING = 0.275 // Tailwind tracking-wide (0.025em) at 11px, per character
+let measureCtx: CanvasRenderingContext2D | null | undefined
+const measureText = (text: string, font: string, trackingPerChar = 0): number => {
+  if (measureCtx === undefined) measureCtx = document.createElement('canvas').getContext('2d')
+  if (!measureCtx) return text.length * 7.5
+  measureCtx.font = font
+  return measureCtx.measureText(text).width + text.length * trackingPerChar
+}
+
 // Widths default to COLUMN_DEFS but are user-adjustable (drag the header edge) and shared
 // across every installer table — a resize is a layout preference, not per-installer state.
 const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = COLUMN_DEFS.reduce((acc, c) => {
@@ -324,6 +339,19 @@ export default function Payroll() {
   const [selectedInstaller, setSelectedInstaller] = useState<string | null>(null)
   // The job row whose full fee breakdown is open in the popup (desktop list view).
   const [detailRow, setDetailRow] = useState<PayrollRow | null>(null)
+  const [installerTab, setInstallerTab] = useState<'jobs' | 'deductions'>('jobs')
+
+  // Installer job list's horizontal scroll — which edges still hide columns (drives the fade +
+  // arrow cues) and whether it's scrolled at all (drives the pinned-column shadow).
+  const listScrollRef = useRef<HTMLDivElement | null>(null)
+  const [listEdges, setListEdges] = useState({ left: false, right: false })
+  const updateListEdges = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return
+    const left = el.scrollLeft > 1
+    const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1
+    el.dataset.scrolled = left ? '1' : '0'
+    setListEdges(prev => (prev.left === left && prev.right === right ? prev : { left, right }))
+  }, [])
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null)
   const [completeModalFor, setCompleteModalFor] = useState<string | null>(null)
   const [completeRemarks, setCompleteRemarks] = useState('')
@@ -551,6 +579,50 @@ export default function Payroll() {
   // Custom columns have no entry in columnWidths/DEFAULT_COLUMN_WIDTHS (both strictly
   // ColumnKey-keyed) — they fall back to a fixed width.
   const widthFor = (key: string) => columnWidths[key as ColumnKey] ?? DEFAULT_COLUMN_WIDTHS[key as ColumnKey] ?? 120
+  // A width someone dragged (or set from the right-click column menu). Anything still at its
+  // default auto-sizes to its content in the job list instead.
+  const userWidthFor = (key: string): number | undefined => {
+    const w = columnWidths[key as ColumnKey]
+    return w !== undefined && w !== DEFAULT_COLUMN_WIDTHS[key as ColumnKey] ? w : undefined
+  }
+  // Drag a header's right edge to resize — starts from the column's real on-screen width (it
+  // may be auto-sized or stretched), saves to localStorage, so it's still that size on reload.
+  const resizeRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null)
+  const [resizingKey, setResizingKey] = useState<string | null>(null)
+  const startColumnResize = (key: string) => (e: ReactMouseEvent<HTMLSpanElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const cell = e.currentTarget.parentElement
+    resizeRef.current = { key, startX: e.clientX, startWidth: cell ? cell.getBoundingClientRect().width : widthFor(key) }
+    setResizingKey(key)
+    const onMove = (ev: MouseEvent) => {
+      const r = resizeRef.current
+      if (!r) return
+      const next = Math.round(Math.min(600, Math.max(MIN_COLUMN_WIDTH, r.startWidth + ev.clientX - r.startX)))
+      setColumnWidths(prev => ({ ...prev, [r.key as ColumnKey]: next }))
+    }
+    const onUp = () => {
+      resizeRef.current = null
+      setResizingKey(null)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+  // Double-click the handle: drop the saved width so the column auto-fits its content again.
+  const resetColumnWidth = (key: string) => {
+    setColumnWidths(prev => {
+      const next = { ...prev }
+      if (key in DEFAULT_COLUMN_WIDTHS) next[key as ColumnKey] = DEFAULT_COLUMN_WIDTHS[key as ColumnKey]
+      else delete next[key as ColumnKey]
+      return next
+    })
+  }
 
   useEffect(() => {
     if (!canManagePayroll) return
@@ -1021,6 +1093,17 @@ export default function Payroll() {
     }
   }, [grouped, selectedInstaller])
 
+  // Re-check the job list's scroll edges whenever its width or its columns can change.
+  useEffect(() => {
+    const el = listScrollRef.current
+    if (!el) return
+    updateListEdges(el)
+    const ro = new ResizeObserver(() => updateListEdges(el))
+    ro.observe(el)
+    if (el.firstElementChild) ro.observe(el.firstElementChild)
+    return () => ro.disconnect()
+  }, [selectedInstaller, grouped, hiddenColumnsByInstaller, customColumnDefs, updateListEdges])
+
 
   const visibleColumnsFor = (installerName: string): ColumnDef[] => {
     const hidden = hiddenColumnsFor(installerName)
@@ -1457,7 +1540,7 @@ export default function Payroll() {
         <div className="flex flex-col gap-4">
           <button
             type="button"
-            onClick={() => setSelectedInstaller(null)}
+            onClick={() => { setSelectedInstaller(null); setInstallerTab('jobs') }}
             className="flex items-center gap-1.5 self-start px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
             style={{ color: textMuted, backgroundColor: isLight ? '#eef2f7' : '#111d33' }}
           >
@@ -1467,18 +1550,60 @@ export default function Payroll() {
 
           {grouped.filter(([name]) => name === selectedInstaller).map(([installerName, installerRows]) => {
             const groupVisibleColumns = visibleColumnsFor(installerName)
-            // Widths come from the same per-column store the manager/resizer used, plus a
-            // trailing Row Total; the list scrolls rather than squashing when many are shown.
-            const ROW_TOTAL_WIDTH = 120
-            const listGridTemplate = [...groupVisibleColumns.map(c => `${widthFor(c.key)}px`), `${ROW_TOTAL_WIDTH}px`].join(' ')
-            const listMinWidth = groupVisibleColumns.reduce((sum, c) => sum + widthFor(c.key), 0) + ROW_TOTAL_WIDTH
+            // Each column is sized to its own content — the longest value (or the column's
+            // total), or its header wrapped onto two lines — so nothing gets squashed or cut
+            // off. Wide screens share the spare room out; narrow ones scroll sideways.
+            const listTotals = groupVisibleColumns.map(col => {
+              if (col.key === 'remit') return remittanceTotal(installerRows)
+              if (!col.isMoney) return null
+              return installerRows.reduce((sum, r) => sum + num(String(columnAccessors[col.key]?.get(r) ?? '')), 0)
+            })
+            const listWidths = groupVisibleColumns.map((col, i) => {
+              const label = col.label.toUpperCase()
+              const headW = measureText(label, LIST_HEAD_FONT, LIST_HEAD_TRACKING)
+              let cellW = 0
+              for (const row of installerRows) {
+                const text = listCellText(col, row)
+                const w = measureText(text, col.key === 'customerName' ? LIST_CELL_BOLD_FONT : LIST_CELL_FONT)
+                if (w > cellW) cellW = w
+              }
+              const total = listTotals[i]
+              if (total) cellW = Math.max(cellW, measureText(`₱${peso(total)}`, LIST_CELL_BOLD_FONT))
+              const pad = 36 + (i === 0 ? 12 : 0)
+              const autoW = Math.ceil(Math.max(60, headW, cellW) + pad)
+              const dragged = userWidthFor(col.key)
+              return dragged ? Math.max(dragged, autoW) : autoW
+            })
+            // Date + Ticket stay a fixed width so Customer's sticky offset is exact; Customer
+            // takes the biggest share of spare room, every other column an even share.
+            const listGridTemplate = groupVisibleColumns.map((col, i) => {
+              // A dragged width is exact; so are Date + Ticket (Customer's sticky offset needs them).
+              if (col.key === 'date' || col.key === 'ticketNumber' || userWidthFor(col.key)) return `${listWidths[i]}px`
+              return `minmax(${listWidths[i]}px, ${col.key === 'customerName' ? 3 : 1}fr)`
+            }).join(' ')
+            const listMinWidth = listWidths.reduce((sum, w) => sum + w, 0)
+            const listPinLeft: Record<string, number> = {}
+            {
+              let running = 0
+              groupVisibleColumns.forEach((col, i) => {
+                if (!LIST_PINNED_KEYS.includes(col.key)) return
+                listPinLeft[col.key] = running
+                running += listWidths[i]
+              })
+            }
+            const lastListPinKey = [...groupVisibleColumns].reverse().find(c => LIST_PINNED_KEYS.includes(c.key))?.key
+            const listCellStyle = (col: ColumnDef, i: number, bg: string): CSSProperties => ({
+              ...(i < groupVisibleColumns.length - 1 ? { borderRight: `1px solid ${border}` } : {}),
+              textAlign: 'left',
+              ...(listPinLeft[col.key] !== undefined ? { position: 'sticky', left: listPinLeft[col.key], zIndex: 2, backgroundColor: bg } : {}),
+            })
             return (
               <div key={installerName} className="rounded-2xl border shadow-sm overflow-hidden" style={{ backgroundColor: cardBg, borderColor: border }}>
                 <div
-                  className="flex items-center justify-between px-6 py-4"
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4"
                   style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <span className="text-base md:text-lg font-bold" style={{ color: textPrimary }}>
                       {titleCase(displayInstallerName(installerName))}
                     </span>
@@ -1492,45 +1617,135 @@ export default function Payroll() {
                       {completedJobsCount(installerRows)} completed {completedJobsCount(installerRows) === 1 ? 'job' : 'jobs'}
                       {completedJobsBreakdown(installerRows) && <> &middot; {completedJobsBreakdown(installerRows)}</>}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => openColumnManager(installerName)}
-                      title="Show/hide columns"
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50"
-                      style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
-                    >
-                      <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-500" />
-                      Columns
-                    </button>
+
+                    {/* Jobs / Deductions Tabs */}
+                    <div className="flex items-center p-0.5 rounded-xl border text-xs font-semibold" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+                      <button
+                        type="button"
+                        onClick={() => setInstallerTab('jobs')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                          installerTab === 'jobs' ? 'shadow-sm font-bold' : 'opacity-70 hover:opacity-100'
+                        }`}
+                        style={{
+                          backgroundColor: installerTab === 'jobs' ? cardBg : 'transparent',
+                          color: installerTab === 'jobs' ? (isLight ? '#059669' : '#34D399') : textMuted,
+                        }}
+                      >
+                        <FileText className="w-3.5 h-3.5 text-emerald-500" />
+                        <span>Jobs</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInstallerTab('deductions')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                          installerTab === 'deductions' ? 'shadow-sm font-bold' : 'opacity-70 hover:opacity-100'
+                        }`}
+                        style={{
+                          backgroundColor: installerTab === 'deductions' ? cardBg : 'transparent',
+                          color: installerTab === 'deductions' ? (isLight ? '#d97706' : '#FBBF24') : textMuted,
+                        }}
+                      >
+                        <Receipt className="w-3.5 h-3.5 text-amber-500" />
+                        <span>Deductions</span>
+                        {deductionTotal(installerRows) > 0 && (
+                          <span
+                            className="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+                            style={{ backgroundColor: isLight ? '#fee2e2' : '#7f1d1d', color: isLight ? '#dc2626' : '#f87171' }}
+                          >
+                            −₱{peso(deductionTotal(installerRows))}
+                          </span>
+                        )}
+                      </button>
+                    </div>
+
+                    {installerTab === 'jobs' && (
+                      <button
+                        type="button"
+                        onClick={() => openColumnManager(installerName)}
+                        title="Show/hide columns"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50 cursor-pointer"
+                        style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
+                      >
+                        <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-500" />
+                        Columns
+                      </button>
+                    )}
                   </div>
-                  <span className="text-base md:text-lg font-bold tabular-nums" style={{ color: '#10B981' }} title="Net payroll (gross labor less deductions)">₱{peso(installerNet(installerRows))}</span>
+
+                  <span
+                    className="text-base md:text-lg font-bold tabular-nums"
+                    style={{ color: '#10B981' }}
+                    title="Net payroll (gross labor less deductions)"
+                  >
+                    ₱{peso(installerNet(installerRows))}
+                  </span>
                 </div>
 
+                {installerTab === 'jobs' ? (
+                  <>
                   {/* Desktop list — the columns the column manager leaves visible (including
                       any custom ones), read-only, one line per job. Clicking a row opens the
-                      popup, which is where editing happens. Stays narrow by default since most
-                      fee columns start hidden, and scrolls if staff unhide a lot of them. */}
-                  <div className="hidden md:block w-full overflow-x-auto">
-                    <div style={{ minWidth: listMinWidth }}>
-                      <div
-                        className="grid px-6 py-2.5 text-[11px] font-bold uppercase tracking-wide sticky top-0 z-10"
-                        style={{ gridTemplateColumns: listGridTemplate, borderBottom: `2px solid ${border}`, color: textMuted, backgroundColor: headerBg }}
-                      >
-                        {groupVisibleColumns.map(col => (
-                          <span
-                            key={col.key}
-                            className="truncate"
-                            style={{ textAlign: col.align === 'right' ? 'right' : 'left', color: col.key === 'remit' ? remitAccent : textMuted }}
-                            title={col.label}
-                          >
-                            {col.label}
-                          </span>
-                        ))}
-                        <span className="text-right">Row Total</span>
-                      </div>
-                      {installerRows.map((row, idx) => {
-                        const rowBg = idx % 2 === 1 ? zebraBg : 'transparent'
-                        return (
+                      popup, which is where editing happens. Content-sized columns with grid
+                      lines; Date/Ticket/Customer stay pinned while the rest scrolls sideways
+                      on a big, easy-to-grab scrollbar, with fade + arrow cues at each edge. */}
+                  <div className="hidden md:block relative">
+                    <style>{`
+                      .pl-row { --pl-bg: ${cardBg}; background-color: var(--pl-bg); }
+                      .pl-row.pl-zebra { --pl-bg: ${zebraBg}; }
+                      .pl-row:hover, .pl-row:focus-visible { --pl-bg: ${rowHoverBg}; outline: none; }
+                      .pl-scroll { scrollbar-width: auto; scrollbar-color: ${isLight ? '#94a3b8' : '#3b4f72'} ${headerBg}; }
+                      .pl-scroll::-webkit-scrollbar { height: 14px; }
+                      .pl-scroll::-webkit-scrollbar-track { background: ${headerBg}; border-top: 1px solid ${border}; }
+                      .pl-scroll::-webkit-scrollbar-thumb { background: ${isLight ? '#94a3b8' : '#3b4f72'}; border-radius: 999px; border: 3px solid ${headerBg}; }
+                      .pl-scroll::-webkit-scrollbar-thumb:hover { background: #10B981; }
+                      .pl-scroll[data-scrolled="1"] .pl-pin-edge { box-shadow: 8px 0 10px -8px rgba(15,23,42,${isLight ? 0.2 : 0.6}); }
+                    `}</style>
+                    <div
+                      ref={listScrollRef}
+                      className="pl-scroll w-full overflow-x-auto"
+                      onScroll={e => updateListEdges(e.currentTarget)}
+                    >
+                      <div style={{ minWidth: listMinWidth }}>
+                        {/* Header */}
+                        <div
+                          className="grid text-[11px] font-bold uppercase tracking-wide"
+                          style={{ gridTemplateColumns: listGridTemplate, borderBottom: `2px solid ${border}`, color: textMuted, backgroundColor: headerBg }}
+                        >
+                          {groupVisibleColumns.map((col, i) => (
+                            <div
+                              key={col.key}
+                              className={`relative px-3 py-2.5 flex items-center leading-tight select-none text-left ${i === 0 ? 'pl-6' : ''} ${col.key === lastListPinKey ? 'pl-pin-edge' : ''}`}
+                              style={{
+                                ...listCellStyle(col, i, headerBg),
+                                color: col.key === 'remit' ? remitAccent : textMuted,
+                                ...(col.key === 'remit' ? { backgroundColor: remitTint } : {}),
+                              }}
+                              title={col.label}
+                              onContextMenu={e => {
+                                e.preventDefault()
+                                setColCtxMenu({ x: e.clientX, y: e.clientY, col, installerName })
+                              }}
+                            >
+                              <span className="whitespace-nowrap">{col.label}</span>
+                              {/* Drag to resize (saved across reloads); double-click to auto-fit again. */}
+                              <span
+                                onMouseDown={startColumnResize(col.key)}
+                                onDoubleClick={() => resetColumnWidth(col.key)}
+                                onClick={e => e.stopPropagation()}
+                                title="Drag to resize · double-click to auto-fit"
+                                className="group absolute top-0 -right-[4px] h-full w-[9px] cursor-col-resize z-10 flex justify-center"
+                              >
+                                <span
+                                  className="h-full w-[3px] rounded-full transition-colors group-hover:bg-emerald-500/70"
+                                  style={resizingKey === col.key ? { backgroundColor: '#10B981' } : undefined}
+                                />
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Job rows */}
+                        {installerRows.map((row, idx) => (
                           <div
                             key={row.id}
                             role="button"
@@ -1543,36 +1758,111 @@ export default function Payroll() {
                                 setDetailRow(row)
                               }
                             }}
-                            className="grid px-6 py-3 items-center cursor-pointer transition-colors"
-                            style={{ gridTemplateColumns: listGridTemplate, borderBottom: `1px solid ${border}`, backgroundColor: rowBg, fontSize: '13px', color: textPrimary }}
-                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = rowHoverBg }}
-                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = rowBg }}
+                            className={`pl-row grid cursor-pointer ${idx % 2 === 1 ? 'pl-zebra' : ''}`}
+                            style={{ gridTemplateColumns: listGridTemplate, borderBottom: `1px solid ${border}`, fontSize: '13px', color: textPrimary }}
                           >
-                            {groupVisibleColumns.map(col => (
-                              <span
-                                key={col.key}
-                                className="truncate tabular-nums"
-                                style={{
-                                  textAlign: col.align === 'right' ? 'right' : 'left',
-                                  color: col.key === 'remit' ? remitAccent : undefined,
-                                }}
-                                title={listCellText(col, row)}
-                              >
-                                {listCellText(col, row)}
-                              </span>
-                            ))}
-                            <span className="text-right tabular-nums font-bold" style={{ color: '#10B981' }}>
-                              ₱{peso(rowTotal(row))}
-                            </span>
+                            {groupVisibleColumns.map((col, i) => {
+                              const text = listCellText(col, row)
+                              const empty = text === '—'
+                              const isStatus = col.key === 'installationUpload'
+                              const isDone = isStatus && /^DONE\b/i.test(text)
+                              return (
+                                <div
+                                  key={col.key}
+                                  className={`px-3 py-2.5 flex items-center justify-start min-w-0 tabular-nums text-left ${i === 0 ? 'pl-6' : ''} ${col.key === lastListPinKey ? 'pl-pin-edge' : ''}`}
+                                  style={{
+                                    ...listCellStyle(col, i, 'var(--pl-bg)'),
+                                    ...(col.key === 'remit' ? { backgroundColor: remitTint } : {}),
+                                  }}
+                                  title={empty ? undefined : text}
+                                >
+                                  <span
+                                    className={`whitespace-nowrap ${col.key === 'customerName' ? 'font-semibold' : isStatus ? 'font-medium' : ''}`}
+                                    style={{
+                                      color: empty
+                                        ? textMuted
+                                        : isStatus
+                                          ? (isDone ? (isLight ? '#047857' : '#34D399') : (isLight ? '#b45309' : '#fbbf24'))
+                                          : col.key === 'remit'
+                                            ? remitAccent
+                                            : col.key === 'date' || col.key === 'ticketNumber'
+                                              ? textMuted
+                                              : undefined,
+                                      opacity: empty ? 0.45 : 1,
+                                    }}
+                                  >
+                                    {text}
+                                  </span>
+                                </div>
+                              )
+                            })}
                           </div>
-                        )
-                      })}
-                      {installerRows.length === 0 && (
-                        <div className="px-6 py-8 text-center text-xs font-semibold" style={{ color: textMuted }}>
-                          No jobs for this period.
-                        </div>
-                      )}
+                        ))}
+
+                        {installerRows.length === 0 ? (
+                          <div className="px-6 py-8 text-center text-xs font-semibold" style={{ color: textMuted }}>
+                            No jobs for this period.
+                          </div>
+                        ) : (
+                          /* Totals — one sum under every money column, aligned to the grid. */
+                          <div className="grid text-[13px]" style={{ gridTemplateColumns: listGridTemplate, backgroundColor: headerBg }}>
+                            {groupVisibleColumns.map((col, i) => {
+                              const total = listTotals[i]
+                              return (
+                                <div
+                                  key={col.key}
+                                  className={`px-3 py-2.5 flex items-center min-w-0 tabular-nums font-bold text-left ${i === 0 ? 'pl-6' : ''} ${col.key === lastListPinKey ? 'pl-pin-edge' : ''}`}
+                                  style={{
+                                    ...listCellStyle(col, i, headerBg),
+                                    ...(col.key === 'remit' ? { backgroundColor: remitTint, color: remitAccent } : {}),
+                                  }}
+                                >
+                                  {i === 0 ? (
+                                    <span className="text-[11px] uppercase tracking-wide whitespace-nowrap" style={{ color: textPrimary }}>
+                                      Total <span className="font-medium normal-case tracking-normal" style={{ color: textMuted }}>· {installerRows.length} {installerRows.length === 1 ? 'job' : 'jobs'}</span>
+                                    </span>
+                                  ) : total ? (
+                                    <span className="whitespace-nowrap" style={{ color: col.key === 'remit' ? remitAccent : textPrimary }}>₱{peso(total)}</span>
+                                  ) : total === 0 ? (
+                                    <span style={{ color: textMuted, opacity: 0.45 }}>—</span>
+                                  ) : null}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
                     </div>
+
+                    {/* Edge cues — fade + arrow wherever more columns are hidden off-screen. */}
+                    {listEdges.left && (
+                      <div className="absolute top-0 bottom-[14px] pointer-events-none flex items-center" style={{ left: listPinLeft[lastListPinKey ?? ''] !== undefined ? (listWidths[groupVisibleColumns.findIndex(c => c.key === lastListPinKey)] + listPinLeft[lastListPinKey!]) : 0 }}>
+                        <div className="h-full w-10" style={{ background: `linear-gradient(to right, ${cardBg}, transparent)` }} />
+                        <button
+                          type="button"
+                          onClick={() => listScrollRef.current?.scrollBy({ left: -320, behavior: 'smooth' })}
+                          className="pointer-events-auto absolute left-1 w-8 h-8 rounded-full flex items-center justify-center border shadow-md transition-colors hover:border-emerald-500"
+                          style={{ backgroundColor: cardBg, borderColor: border, color: textPrimary }}
+                          aria-label="Scroll columns left"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                    {listEdges.right && (
+                      <div className="absolute top-0 right-0 bottom-[14px] pointer-events-none flex items-center justify-end">
+                        <div className="h-full w-12" style={{ background: `linear-gradient(to left, ${cardBg}, transparent)` }} />
+                        <button
+                          type="button"
+                          onClick={() => listScrollRef.current?.scrollBy({ left: 320, behavior: 'smooth' })}
+                          className="pointer-events-auto absolute right-2 w-8 h-8 rounded-full flex items-center justify-center border shadow-md transition-colors hover:border-emerald-500"
+                          style={{ backgroundColor: cardBg, borderColor: border, color: textPrimary }}
+                          aria-label="Scroll columns right"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                 {/* Mobile card view — one card per job instead of a horizontally-scrolling
@@ -1654,105 +1944,42 @@ export default function Payroll() {
                     ))}
                   </div>
 
-                {/* Payroll summary — the bottom block of the branch's weekly sheet: the deduction
-                    lines (amount + remarks) on the left, gross → total deduction → NET PAYROLL on
-                    the right. Remittance is money owed BACK to the branch, so it stays an info
-                    line, never part of the payout math. */}
+                  {/* Jobs tab footer: Deductions summary with button on the left, Net payroll summary on the right */}
                   {(() => {
                     const gross = installerTotal(installerRows)
                     const base = baseInstallTotal(installerRows)
                     const totalDeduction = deductionTotal(installerRows)
                     const net = gross - totalDeduction
-                    const lateMinutes = deductionValue(installerRows, 'lateMinutes')
-                    const loan = deductionValue(installerRows, 'loan')
-                    const loanBalance = deductionValue(installerRows, 'loanBalance')
-                    const uniformBalance = deductionValue(installerRows, 'uniformBalance')
                     const dedRed = isLight ? '#DC2626' : '#F87171'
-                    const fieldCls = "w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold text-right tabular-nums border outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-60 disabled:cursor-not-allowed"
-                    const fieldStyle = { backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }
-                    const moneyField = (key: DeductionKey, value: number, compact = false) => (
-                      <NumericFormat
-                        thousandSeparator=","
-                        decimalScale={key === 'lateMinutes' ? 0 : 2}
-                        allowNegative={false}
-                        prefix={key === 'lateMinutes' ? undefined : '₱'}
-                        suffix={key === 'lateMinutes' ? ' min' : undefined}
-                        value={value || ''}
-                        placeholder={key === 'lateMinutes' ? '0 min' : '₱0.00'}
-                        disabled={!canManagePayroll}
-                        onValueChange={(values, info) => {
-                          if (info.source === 'event') setDeduction(installerRows, key, values.value)
-                        }}
-                        className={`${fieldCls} ${compact ? 'max-w-[120px]' : ''}`}
-                        style={fieldStyle}
-                      />
-                    )
-                    const remark = (text: ReactNode) => (
-                      <span className="text-[11px] font-medium" style={{ color: textMuted }}>{text}</span>
-                    )
-                    const lines: { label: string; sub?: string; amount: ReactNode; remarks: ReactNode }[] = [
-                      {
-                        label: 'Late',
-                        sub: `₱${LATE_RATE_PER_MINUTE.toFixed(2)} / minute`,
-                        amount: moneyField('lateMinutes', lateMinutes),
-                        remarks: lateMinutes > 0
-                          ? remark(<>{lateMinutes} min × ₱{LATE_RATE_PER_MINUTE.toFixed(2)} = <b style={{ color: dedRed }}>₱{peso(lateDeduction(installerRows))}</b></>)
-                          : remark('No lates'),
-                      },
-                      {
-                        label: 'AC Loan / CA',
-                        amount: moneyField('loan', loan),
-                        remarks: (
-                          <div className="flex items-center gap-2 min-w-0">
-                            {loan === 0 && loanBalance === 0 && (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0" style={{ backgroundColor: isLight ? '#f1f5f9' : '#111d33', color: textMuted }}>NO LOAN</span>
-                            )}
-                            <span className="text-[11px] font-medium shrink-0" style={{ color: textMuted }}>Balance</span>
-                            {moneyField('loanBalance', loanBalance, true)}
-                          </div>
-                        ),
-                      },
-                      { label: 'Incomplete Upload', amount: moneyField('incompleteUpload', deductionValue(installerRows, 'incompleteUpload')), remarks: remark('Missing photos, video or checklist') },
-                      { label: 'Losses / Material Checklist', amount: moneyField('losses', deductionValue(installerRows, 'losses')), remarks: remark('Lost tools or unreturned materials') },
-                      { label: 'Remit', amount: moneyField('remitPenalty', deductionValue(installerRows, 'remitPenalty')), remarks: remark('No remit — ×3 charges') },
-                      {
-                        label: 'Uniform',
-                        sub: `₱${peso(UNIFORM_PRICE_PER_PC)} / pc`,
-                        amount: moneyField('uniform', deductionValue(installerRows, 'uniform')),
-                        remarks: (
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-[11px] font-medium shrink-0" style={{ color: textMuted }}>Balance</span>
-                            {moneyField('uniformBalance', uniformBalance, true)}
-                          </div>
-                        ),
-                      },
-                    ]
-                    const lineGrid = "grid grid-cols-[minmax(0,1fr)_130px] md:grid-cols-[minmax(0,1.1fr)_150px_minmax(0,1fr)] items-center gap-x-4 gap-y-1.5"
                     return (
-                      <div className="flex flex-col lg:flex-row" style={{ backgroundColor: headerBg, borderTop: `1px solid ${border}` }}>
-                        {/* Deductions */}
-                        <div className="flex-1 min-w-0 px-5 md:px-6 py-4">
-                          <div className={`${lineGrid} pb-2 mb-1 text-[10px] font-bold uppercase tracking-wider`} style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>
-                            <span>Deductions</span>
-                            <span className="text-right">Amount</span>
-                            <span className="hidden md:block">Remarks</span>
+                      <div className="flex flex-col lg:flex-row items-stretch" style={{ backgroundColor: headerBg, borderTop: `1px solid ${border}` }}>
+                        {/* Deductions banner */}
+                        <div className="flex-1 min-w-0 px-5 md:px-6 py-4 flex flex-col justify-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2.5">
+                            <Receipt className="w-4 h-4 text-amber-500" />
+                            <span className="text-xs font-bold uppercase tracking-wider" style={{ color: textPrimary }}>Period Deductions</span>
+                            {totalDeduction > 0 ? (
+                              <span className="text-xs font-bold tabular-nums px-2 py-0.5 rounded-full" style={{ backgroundColor: isLight ? '#fee2e2' : '#7f1d1d', color: dedRed }}>
+                                −₱{peso(totalDeduction)}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: isLight ? '#f1f5f9' : '#0d1520', color: textMuted }}>
+                                ₱0.00
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setInstallerTab('deductions')}
+                              className="ml-auto sm:ml-2 px-3 py-1 rounded-lg text-xs font-bold border transition-colors hover:border-amber-500/50 cursor-pointer flex items-center gap-1.5"
+                              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                            >
+                              <span>View Deductions Tab</span>
+                              <ChevronRight className="w-3.5 h-3.5 text-amber-500" />
+                            </button>
                           </div>
-                          {lines.map(line => (
-                            <div key={line.label} className={`${lineGrid} py-1.5`}>
-                              <div className="min-w-0">
-                                <div className="text-xs font-semibold truncate" style={{ color: textPrimary }}>{line.label}</div>
-                                {line.sub && <div className="text-[10px] font-medium" style={{ color: textMuted }}>{line.sub}</div>}
-                              </div>
-                              {line.amount}
-                              <div className="col-span-2 md:col-span-1 min-w-0">{line.remarks}</div>
-                            </div>
-                          ))}
-                          <div className={`${lineGrid} pt-2.5 mt-1`} style={{ borderTop: `1px solid ${border}` }}>
-                            <span className="text-xs font-bold uppercase tracking-wide" style={{ color: dedRed }}>Total Deduction</span>
-                            <span className="text-sm font-bold tabular-nums text-right pr-2.5" style={{ color: totalDeduction > 0 ? dedRed : textMuted }}>
-                              {totalDeduction > 0 ? `−₱${peso(totalDeduction)}` : '₱0.00'}
-                            </span>
-                          </div>
+                          <p className="text-xs font-medium" style={{ color: textMuted }}>
+                            Late minutes, AC loans &amp; cash advances, incomplete uploads, losses, uniform, and remit penalties.
+                          </p>
                         </div>
 
                         {/* Net payroll */}
@@ -1781,14 +2008,163 @@ export default function Payroll() {
                               {net < 0 ? '−' : ''}₱{peso(Math.abs(net))}
                             </span>
                           </div>
-                          <div className="flex items-center justify-between gap-3 text-[11px] font-medium">
-                            <span style={{ color: textMuted }}>Remittance collected (owed to branch)</span>
-                            <span className="font-bold tabular-nums" style={{ color: remitAccent }}>₱{peso(remittanceTotal(installerRows))}</span>
-                          </div>
                         </div>
                       </div>
                     )
                   })()}
+                </>
+              ) : (
+                <div className="flex flex-col">
+                  <div
+                    className="flex items-center justify-between px-6 py-3.5 border-b text-xs font-semibold"
+                    style={{ backgroundColor: headerBg, borderColor: border }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Receipt className="w-4 h-4 text-amber-500" />
+                      <span className="text-xs font-bold uppercase tracking-wider" style={{ color: textPrimary }}>
+                        {titleCase(displayInstallerName(installerName))}&rsquo;s Deductions &amp; Adjustments
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setInstallerTab('jobs')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors hover:border-emerald-500/50 cursor-pointer"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5 text-emerald-500" />
+                      Back to Jobs
+                    </button>
+                  </div>
+
+                    {(() => {
+                      const gross = installerTotal(installerRows)
+                      const base = baseInstallTotal(installerRows)
+                      const totalDeduction = deductionTotal(installerRows)
+                      const net = gross - totalDeduction
+                      const lateMinutes = deductionValue(installerRows, 'lateMinutes')
+                      const loan = deductionValue(installerRows, 'loan')
+                      const loanBalance = deductionValue(installerRows, 'loanBalance')
+                      const uniformBalance = deductionValue(installerRows, 'uniformBalance')
+                      const dedRed = isLight ? '#DC2626' : '#F87171'
+                      const fieldCls = "w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold text-right tabular-nums border outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-60 disabled:cursor-not-allowed"
+                      const fieldStyle = { backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }
+                      const moneyField = (key: DeductionKey, value: number, compact = false) => (
+                        <NumericFormat
+                          thousandSeparator=","
+                          decimalScale={key === 'lateMinutes' ? 0 : 2}
+                          allowNegative={false}
+                          prefix={key === 'lateMinutes' ? undefined : '₱'}
+                          suffix={key === 'lateMinutes' ? ' min' : undefined}
+                          value={value || ''}
+                          placeholder={key === 'lateMinutes' ? '0 min' : '₱0.00'}
+                          disabled={!canManagePayroll}
+                          onValueChange={(values, info) => {
+                            if (info.source === 'event') setDeduction(installerRows, key, values.value)
+                          }}
+                          className={`${fieldCls} ${compact ? 'max-w-[120px]' : ''}`}
+                          style={fieldStyle}
+                        />
+                      )
+                      const remark = (text: ReactNode) => (
+                        <span className="text-[11px] font-medium" style={{ color: textMuted }}>{text}</span>
+                      )
+                      const lines: { label: string; sub?: string; amount: ReactNode; remarks: ReactNode }[] = [
+                        {
+                          label: 'Late',
+                          sub: `₱${LATE_RATE_PER_MINUTE.toFixed(2)} / minute`,
+                          amount: moneyField('lateMinutes', lateMinutes),
+                          remarks: lateMinutes > 0
+                            ? remark(<>{lateMinutes} min × ₱{LATE_RATE_PER_MINUTE.toFixed(2)} = <b style={{ color: dedRed }}>₱{peso(lateDeduction(installerRows))}</b></>)
+                            : remark('No lates'),
+                        },
+                        {
+                          label: 'AC Loan / CA',
+                          amount: moneyField('loan', loan),
+                          remarks: (
+                            <div className="flex items-center gap-2 min-w-0">
+                              {loan === 0 && loanBalance === 0 && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0" style={{ backgroundColor: isLight ? '#f1f5f9' : '#111d33', color: textMuted }}>NO LOAN</span>
+                              )}
+                              <span className="text-[11px] font-medium shrink-0" style={{ color: textMuted }}>Balance</span>
+                              {moneyField('loanBalance', loanBalance, true)}
+                            </div>
+                          ),
+                        },
+                        { label: 'Incomplete Upload', amount: moneyField('incompleteUpload', deductionValue(installerRows, 'incompleteUpload')), remarks: remark('Missing photos, video or checklist') },
+                        { label: 'Losses / Material Checklist', amount: moneyField('losses', deductionValue(installerRows, 'losses')), remarks: remark('Lost tools or unreturned materials') },
+                        { label: 'Remit', amount: moneyField('remitPenalty', deductionValue(installerRows, 'remitPenalty')), remarks: remark('No remit — ×3 charges') },
+                        {
+                          label: 'Uniform',
+                          sub: `₱${peso(UNIFORM_PRICE_PER_PC)} / pc`,
+                          amount: moneyField('uniform', deductionValue(installerRows, 'uniform')),
+                          remarks: (
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-[11px] font-medium shrink-0" style={{ color: textMuted }}>Balance</span>
+                              {moneyField('uniformBalance', uniformBalance, true)}
+                            </div>
+                          ),
+                        },
+                      ]
+                      const lineGrid = "grid grid-cols-[minmax(0,1fr)_130px] md:grid-cols-[minmax(0,1.1fr)_150px_minmax(0,1fr)] items-center gap-x-4 gap-y-1.5"
+                      return (
+                        <div className="flex flex-col lg:flex-row" style={{ backgroundColor: cardBg }}>
+                          {/* Deductions Editor */}
+                          <div className="flex-1 min-w-0 px-5 md:px-6 py-4">
+                            <div className={`${lineGrid} pb-2 mb-1 text-[10px] font-bold uppercase tracking-wider`} style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>
+                              <span>Deductions</span>
+                              <span className="text-right">Amount</span>
+                              <span className="hidden md:block">Remarks</span>
+                            </div>
+                            {lines.map(line => (
+                              <div key={line.label} className={`${lineGrid} py-1.5`}>
+                                <div className="min-w-0">
+                                  <div className="text-xs font-semibold truncate" style={{ color: textPrimary }}>{line.label}</div>
+                                  {line.sub && <div className="text-[10px] font-medium" style={{ color: textMuted }}>{line.sub}</div>}
+                                </div>
+                                {line.amount}
+                                <div className="col-span-2 md:col-span-1 min-w-0">{line.remarks}</div>
+                              </div>
+                            ))}
+                            <div className={`${lineGrid} pt-2.5 mt-1`} style={{ borderTop: `1px solid ${border}` }}>
+                              <span className="text-xs font-bold uppercase tracking-wide" style={{ color: dedRed }}>Total Deduction</span>
+                              <span className="text-sm font-bold tabular-nums text-right pr-2.5" style={{ color: totalDeduction > 0 ? dedRed : textMuted }}>
+                                {totalDeduction > 0 ? `−₱${peso(totalDeduction)}` : '₱0.00'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Net payroll */}
+                          <div className="lg:w-80 shrink-0 px-5 md:px-6 py-4 flex flex-col gap-3 border-t lg:border-t-0 lg:border-l" style={{ borderColor: border, backgroundColor: headerBg }}>
+                            <div className="flex flex-col gap-1.5 text-xs">
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="font-semibold uppercase tracking-wide text-[11px]" style={{ color: textMuted }}>Gross Total Labor</span>
+                                <span className="font-bold tabular-nums" style={{ color: textPrimary }}>₱{peso(gross)}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-3 text-[11px]" style={{ color: textMuted }}>
+                                <span>Base install ₱{peso(base)} · Add-ons ₱{peso(gross - base)}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="font-semibold uppercase tracking-wide text-[11px]" style={{ color: textMuted }}>Total Deduction</span>
+                                <span className="font-bold tabular-nums" style={{ color: totalDeduction > 0 ? dedRed : textMuted }}>
+                                  {totalDeduction > 0 ? `−₱${peso(totalDeduction)}` : '₱0.00'}
+                                </span>
+                              </div>
+                            </div>
+                            <div
+                              className="rounded-xl px-4 py-3 flex items-center justify-between gap-3"
+                              style={{ backgroundColor: isLight ? 'rgba(16,185,129,0.10)' : 'rgba(16,185,129,0.16)', border: '1px solid rgba(16,185,129,0.45)' }}
+                            >
+                              <span className="text-xs font-extrabold uppercase tracking-wider" style={{ color: isLight ? '#047857' : '#34D399' }}>Net Payroll</span>
+                              <span className="text-xl font-extrabold tabular-nums" style={{ color: net < 0 ? dedRed : (isLight ? '#047857' : '#34D399') }}>
+                                {net < 0 ? '−' : ''}₱{peso(Math.abs(net))}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })()}
+                  </div>
+                )}
               </div>
             )
           })}
@@ -1822,11 +2198,12 @@ export default function Payroll() {
                 role="button"
                 tabIndex={0}
                 title={`Open ${titleCase(displayInstallerName(installerName))}'s payroll`}
-                onClick={() => setSelectedInstaller(installerName)}
+                onClick={() => { setSelectedInstaller(installerName); setInstallerTab('jobs') }}
                 onKeyDown={e => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault()
                     setSelectedInstaller(installerName)
+                    setInstallerTab('jobs')
                   }
                 }}
                 className="grid items-center gap-x-4 gap-y-3 px-6 md:px-7 py-5 md:py-6 transition-colors cursor-pointer"
