@@ -551,28 +551,67 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
             if (b.isActive === false) return false
             const id = b.id.toUpperCase()
             const name = b.name.toUpperCase()
-            return id === 'BR-TAGUIG-SERVICES' || id === 'BR-TAGUIG-SERVICE' || name.includes('TAGUIG') && name.includes('SERVICE')
+            return id === 'BR-TAGUIG-SERVICES' || id === 'BR-TAGUIG-SERVICE' || (name.includes('TAGUIG') && name.includes('SERVICE'))
           })
 
           const newList: { id: string; name: string; auditLine?: string; isActive?: boolean }[] = []
           for (const b of list) {
             const cleanName = b.name.replace(/^(ashcol\s+)/i, '').toUpperCase()
             if (cleanName === 'TAGUIG' || cleanName === 'ASHCOL TAGUIG') {
-              if (!hasExplicitTaguigSales) newList.push({ id: b.id, name: 'TAGUIG - SALES', auditLine: 'TAGUIG_SALES', isActive: b.isActive })
-              if (!hasExplicitTaguigServices) newList.push({ id: b.id, name: 'TAGUIG - SERVICES', auditLine: 'TAGUIG_SERVICE', isActive: b.isActive })
+              if (!hasExplicitTaguigSales) newList.push({ id: b.id, name: 'TAGUIG - SALES', auditLine: 'TAGUIG_SALES', isActive: true })
+              if (!hasExplicitTaguigServices) newList.push({ id: b.id, name: 'TAGUIG - SERVICES', auditLine: 'TAGUIG_SERVICE', isActive: true })
             } else if (cleanName.includes('TAGUIG')) {
               const isServ = cleanName.includes('SERVICE')
               newList.push({
                 id: b.id,
                 name: isServ ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES',
                 auditLine: isServ ? 'TAGUIG_SERVICE' : 'TAGUIG_SALES',
-                isActive: b.isActive
+                isActive: true
               })
             } else {
               newList.push({ id: b.id, name: cleanName, isActive: b.isActive })
             }
           }
-          const finalList = newList
+          // Keep all branches (even if inactive; submission is checked separately)
+          let finalList = [...newList]
+
+          // Guarantee Taguig Sales and Taguig Services are NEVER missing
+          const detectedSalesBranch = list.find(b => {
+            const id = b.id.toUpperCase()
+            const name = b.name.toUpperCase()
+            return (id.includes('TAGUIG') || name.includes('TAGUIG')) && (id.includes('SALES') || name.includes('SALES') || (!id.includes('SERVICE') && !name.includes('SERVICE')))
+          })
+          const detectedServiceBranch = list.find(b => {
+            const id = b.id.toUpperCase()
+            const name = b.name.toUpperCase()
+            return (id.includes('TAGUIG') || name.includes('TAGUIG')) && (id.includes('SERVICE') || name.includes('SERVICE'))
+          })
+
+          if (!finalList.some(b => b.name === 'TAGUIG - SALES')) {
+            finalList.push({
+              id: detectedSalesBranch?.id || 'BR-TAGUIG-SALES',
+              name: 'TAGUIG - SALES',
+              auditLine: 'TAGUIG_SALES',
+              isActive: true,
+            })
+          }
+          if (!finalList.some(b => b.name === 'TAGUIG - SERVICES')) {
+            finalList.push({
+              id: detectedServiceBranch?.id || 'BR-TAGUIG-SERVICES',
+              name: 'TAGUIG - SERVICES',
+              auditLine: 'TAGUIG_SERVICE',
+              isActive: true,
+            })
+          }
+
+          // Deduplicate by name and auditLine
+          const seen = new Set<string>()
+          finalList = finalList.filter(b => {
+            const key = `${b.name}|${b.auditLine || ''}`
+            if (seen.has(key)) return false
+            seen.add(key)
+            return true
+          })
 
           finalList.sort((a, b) => a.name.localeCompare(b.name))
           setBranchesList(finalList)
