@@ -122,11 +122,21 @@ const rowTotal = (r: PayrollRow) =>
 const installerTotal = (installerRows: PayrollRow[]) =>
   installerRows.reduce((sum, r) => sum + rowTotal(r), 0)
 
-// Counts only actually-completed installs (schedule status "DONE INSTALL") — not cleanings,
-// surveys, or manually added rows of some other job type. installerRows is already scoped to
-// the active date-range filter, so this is automatically "within the selected range" too.
-const installedUnitsCount = (installerRows: PayrollRow[]) =>
-  installerRows.filter(r => r.installationUpload.trim().toUpperCase() === 'DONE INSTALL').length
+// A job counts once its schedule status is a DONE outcome — install, cleaning, checkup, service,
+// etc. — so service branches (mostly cleanings) don't read as zero work. installerRows is already
+// scoped to the active date-range filter, so this is automatically "within the selected range" too.
+const isCompletedRow = (r: PayrollRow) => /^DONE\b/i.test(r.installationUpload.trim())
+const completedJobsCount = (installerRows: PayrollRow[]) => installerRows.filter(isCompletedRow).length
+/** "2 Cleaning · 1 Install" — what kind of work those completed jobs were, most frequent first. */
+const completedJobsBreakdown = (installerRows: PayrollRow[]) => {
+  const counts = new Map<string, number>()
+  for (const r of installerRows) {
+    if (!isCompletedRow(r)) continue
+    const kind = titleCase(r.installationUpload.trim().replace(/^DONE\s*/i, '')) || 'Job'
+    counts.set(kind, (counts.get(kind) || 0) + 1)
+  }
+  return Array.from(counts).sort((a, b) => b[1] - a[1]).map(([kind, n]) => `${n} ${kind}`).join(' · ')
+}
 
 // Money owed BACK to the branch — parses the free-text remit field ("2,000 CASH", "FREE")
 // down to its numeric amount, ignoring the payment-method text.
@@ -1358,7 +1368,7 @@ export default function Payroll() {
                 borderColor: '#10B98150',
                 color: '#10B981',
               }}
-              title="Sync latest updated tickets from Schedules (DONE CLEANING / DONE INSTALL)"
+              title="Sync latest completed job orders from Schedules (DONE INSTALL, DONE CLEANING, DONE CHECKUP, DONE SERVICE, etc.)"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
               <span>{syncing ? 'Syncing…' : 'Sync Latest'}</span>
@@ -1516,7 +1526,8 @@ export default function Payroll() {
                     {titleCase(displayInstallerName(installerName))}
                   </div>
                   <div className="text-[11px] font-medium truncate" style={{ color: textMuted }}>
-                    {installerRows.length} {installerRows.length === 1 ? 'job' : 'jobs'} &middot; {installedUnitsCount(installerRows)} aircon units
+                    {completedJobsCount(installerRows)} completed {completedJobsCount(installerRows) === 1 ? 'job' : 'jobs'}
+                    {completedJobsBreakdown(installerRows) && <> &middot; {completedJobsBreakdown(installerRows)}</>}
                     {rangeLabel && <> &middot; {rangeLabel}</>}
                   </div>
                 </div>
@@ -1865,10 +1876,10 @@ export default function Payroll() {
           {/* Column header row */}
           <div
             className="hidden md:grid items-center px-6 md:px-7 py-3.5"
-            style={{ gridTemplateColumns: 'minmax(240px, 2fr) 130px 170px 170px 220px', backgroundColor: isLight ? '#f8fafc' : '#0d1520', borderBottom: `1px solid ${border}` }}
+            style={{ gridTemplateColumns: 'minmax(240px, 2fr) 190px 170px 170px 220px', backgroundColor: isLight ? '#f8fafc' : '#0d1520', borderBottom: `1px solid ${border}` }}
           >
             <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70" style={{ color: textMuted }}>Installer</span>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-center opacity-70" style={{ color: textMuted }}>Aircon Units</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-center opacity-70" style={{ color: textMuted }}>Completed Jobs</span>
             <span className="text-[10px] font-semibold uppercase tracking-wider text-right opacity-70" style={{ color: textMuted }}>Payroll Amount</span>
             <span className="text-[10px] font-semibold uppercase tracking-wider text-center opacity-70" style={{ color: textMuted }}>Action</span>
             <span className="text-[10px] font-semibold uppercase tracking-wider text-center opacity-70" style={{ color: textMuted }}>Payroll Status</span>
@@ -1885,7 +1896,7 @@ export default function Payroll() {
                 key={installerName}
                 className="grid items-center gap-x-4 gap-y-3 px-6 md:px-7 py-5 md:py-6 transition-colors"
                 style={{
-                  gridTemplateColumns: 'minmax(240px, 2fr) 130px 170px 170px 220px',
+                  gridTemplateColumns: 'minmax(240px, 2fr) 190px 170px 170px 220px',
                   borderTop: rowIndex === 0 ? 'none' : `1px solid ${border}`,
                 }}
                 onMouseEnter={e => { e.currentTarget.style.backgroundColor = isLight ? '#f8fafc' : '#0d1520' }}
@@ -1904,11 +1915,16 @@ export default function Payroll() {
                       </span>
                     </div>
 
-                    {/* 2. AIRCON UNITS */}
-                    <div className="flex items-center justify-center">
+                    {/* 2. COMPLETED JOBS — count plus what kind of work it was */}
+                    <div className="flex flex-col items-center justify-center min-w-0">
                       <span className="text-lg md:text-xl font-bold tabular-nums tracking-tight" style={{ color: textPrimary }}>
-                        {installedUnitsCount(installerRows)}
+                        {completedJobsCount(installerRows)}
                       </span>
+                      {completedJobsBreakdown(installerRows) && (
+                        <span className="text-[11px] font-medium truncate max-w-full" style={{ color: textMuted }} title={completedJobsBreakdown(installerRows)}>
+                          {completedJobsBreakdown(installerRows)}
+                        </span>
+                      )}
                     </div>
 
                     {/* 3. PAYROLL AMOUNT */}

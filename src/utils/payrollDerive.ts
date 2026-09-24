@@ -14,6 +14,7 @@ import {
 } from './ticketHelpers'
 import { parseBrandFromAcDetails } from './warrantyTicketDisplay'
 import { cleanInstallerName, stripInstallerCounter } from './schedulePrefill'
+import { CLOSING_SCHEDULE_STATUSES } from './scheduleStatus'
 
 /** Brand only, no capacity/HP — the payroll sheet's Brand column doesn't need the unit size. */
 function parseBrandOnly(ticket: Ticket): string {
@@ -254,6 +255,19 @@ function classifyJobRateKey(ticket: Ticket): JobRateKind | null {
   return null
 }
 
+// Negotiation/Quotation close out a sales conversation, not a job order a crew performs.
+const NON_INSTALLER_CLOSINGS = new Set(['DONE_NEGOTIATION', 'DONE_QUOTATION'])
+
+/** Every job order an installer actually finished — install and cleaning, plus checkups,
+ *  services, backjobs, surveys, mounting, dismantling, relocation, reprocess. Service branches
+ *  run mostly non-install work, so limiting payroll to installs left their crews looking idle. */
+function isCompletedInstallerJob(ticket: Ticket): boolean {
+  const rateKey = classifyJobRateKey(ticket)
+  if (rateKey === 'install' || rateKey === 'cleaning') return true
+  const status = getScheduleStatusValue(ticket)
+  return CLOSING_SCHEDULE_STATUSES.has(status) && !NON_INSTALLER_CLOSINGS.has(status)
+}
+
 /** Label shown in the Status column — exactly what the ticket's own Schedule Status shows (e.g. "DONE INSTALL"). */
 function classifyJob(ticket: Ticket): { label: string; rateKey: JobRateKind | null } {
   return { label: getScheduleStatusDisplay(ticket), rateKey: classifyJobRateKey(ticket) }
@@ -388,9 +402,8 @@ export async function fetchAndMapPayroll(
 
     let rows: PayrollRow[] = []
     for (const ticket of tickets) {
-      // Only pull completed jobs into payroll — skip reschedules, surveys, for-approval, etc.
-      const rateKey = classifyJobRateKey(ticket)
-      if (rateKey !== 'install' && rateKey !== 'cleaning') continue
+      // Only pull completed job orders into payroll — skip pending, rescheduled, for-approval, etc.
+      if (!isCompletedInstallerJob(ticket)) continue
       rows.push(...mapTicketToPayrollRows(ticket, branchName, rates))
     }
     // The backend's ?month= match is a broad OR across several schedule date fields (preferred,
