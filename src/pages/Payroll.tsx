@@ -254,9 +254,9 @@ const COLUMN_DEFS: ColumnDef[] = [
   { key: 'audited', label: 'Audited', width: 90, align: 'left', pinned: true },
 ]
 
-// Desktop list columns: Date | Ticket | Customer | Brand | Install Fee | Add-ons | Total | Audited.
-// The full per-job fee breakdown lives in the row popup, not in the list itself.
-const LIST_GRID_TEMPLATE = '110px 110px minmax(180px, 1.6fr) minmax(110px, 1fr) 110px 110px 120px 90px'
+// Roster columns: Installer | Aircon Units | Payroll Amount | Payroll Status. There's no action
+// column — the whole row opens that installer's payroll.
+const ROSTER_GRID_TEMPLATE = 'minmax(240px, 2fr) 190px 170px 220px'
 
 const COLUMN_PRESETS: { label: string; cats: ColumnCategory[] }[] = [
   { label: 'Standard', cats: ['standard'] },
@@ -1041,6 +1041,19 @@ export default function Payroll() {
   const remitTint = isLight ? '#F0F9FF' : 'rgba(56,189,248,0.10)'
   const remitAccent = isLight ? '#0369A1' : '#7DD3FC'
 
+  /** Read-only text for a list cell. Editing lives in the row popup, so the list only needs
+   *  a display value — money right-aligned and blanked when zero so the eye lands on the
+   *  columns that actually carry a fee. Custom columns resolve through the same accessors. */
+  const listCellText = (col: ColumnDef, row: PayrollRow): string => {
+    const raw = columnAccessors[col.key]?.get(row) ?? ''
+    if (col.isMoney) {
+      const n = num(String(raw))
+      return n === 0 ? '—' : `₱${peso(n)}`
+    }
+    if (col.key === 'date') return row.workDate ? shortDate(row.workDate) : '—'
+    return String(raw).trim() || '—'
+  }
+
   // Payout breakdown tile — used both per-installer (below each table) and for the
   // all-crew total (in the Summary card), so remittance always reads as separate from payout.
   const footerTile = (label: string, value: number, color: string) => (
@@ -1454,6 +1467,11 @@ export default function Payroll() {
 
           {grouped.filter(([name]) => name === selectedInstaller).map(([installerName, installerRows]) => {
             const groupVisibleColumns = visibleColumnsFor(installerName)
+            // Widths come from the same per-column store the manager/resizer used, plus a
+            // trailing Row Total; the list scrolls rather than squashing when many are shown.
+            const ROW_TOTAL_WIDTH = 120
+            const listGridTemplate = [...groupVisibleColumns.map(c => `${widthFor(c.key)}px`), `${ROW_TOTAL_WIDTH}px`].join(' ')
+            const listMinWidth = groupVisibleColumns.reduce((sum, c) => sum + widthFor(c.key), 0) + ROW_TOTAL_WIDTH
             return (
               <div key={installerName} className="rounded-2xl border shadow-sm overflow-hidden" style={{ backgroundColor: cardBg, borderColor: border }}>
                 <div
@@ -1488,63 +1506,73 @@ export default function Payroll() {
                   <span className="text-base md:text-lg font-bold tabular-nums" style={{ color: '#10B981' }} title="Net payroll (gross labor less deductions)">₱{peso(installerNet(installerRows))}</span>
                 </div>
 
-                  {/* Desktop list view — one compact line per job. The full fee breakdown
-                      (every column the column manager leaves visible) opens in a popup on row
-                      click, instead of a wide horizontally-scrolling worksheet. */}
-                  <div className="hidden md:block w-full">
-                    <div
-                      className="grid px-6 py-2.5 text-[11px] font-bold uppercase tracking-wide sticky top-0 z-10"
-                      style={{ gridTemplateColumns: LIST_GRID_TEMPLATE, borderBottom: `2px solid ${border}`, color: textMuted, backgroundColor: headerBg }}
-                    >
-                      <span>Date</span>
-                      <span>Ticket</span>
-                      <span>Customer</span>
-                      <span>Brand</span>
-                      <span className="text-right">Install Fee</span>
-                      <span className="text-right">Add-ons</span>
-                      <span className="text-right">Row Total</span>
-                      <span className="text-center">Audited</span>
-                    </div>
-                    {installerRows.map((row, idx) => {
-                      const rowBg = idx % 2 === 1 ? zebraBg : 'transparent'
-                      const addOns = rowTotal(row) - num(row.installationFee)
-                      return (
-                        <div
-                          key={row.id}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => setDetailRow(row)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault()
-                              setDetailRow(row)
-                            }
-                          }}
-                          className="grid px-6 py-3 items-center cursor-pointer transition-colors"
-                          style={{ gridTemplateColumns: LIST_GRID_TEMPLATE, borderBottom: `1px solid ${border}`, backgroundColor: rowBg, fontSize: '13px', color: textPrimary }}
-                          onMouseEnter={e => { e.currentTarget.style.backgroundColor = rowHoverBg }}
-                          onMouseLeave={e => { e.currentTarget.style.backgroundColor = rowBg }}
-                        >
-                          <span style={{ color: textMuted }}>{row.workDate ? shortDate(row.workDate) : '—'}</span>
-                          <span className="truncate" style={{ color: textMuted }}>{row.ticketNumber || '—'}</span>
-                          <span className="truncate font-semibold">{row.customerName || 'No customer'}</span>
-                          <span className="truncate" style={{ color: textMuted }}>{row.brandCapacity || '—'}</span>
-                          <span className="text-right tabular-nums">₱{peso(num(row.installationFee))}</span>
-                          <span className="text-right tabular-nums" style={{ color: addOns > 0 ? textPrimary : textMuted }}>
-                            {addOns > 0 ? `₱${peso(addOns)}` : '—'}
+                  {/* Desktop list — the columns the column manager leaves visible (including
+                      any custom ones), read-only, one line per job. Clicking a row opens the
+                      popup, which is where editing happens. Stays narrow by default since most
+                      fee columns start hidden, and scrolls if staff unhide a lot of them. */}
+                  <div className="hidden md:block w-full overflow-x-auto">
+                    <div style={{ minWidth: listMinWidth }}>
+                      <div
+                        className="grid px-6 py-2.5 text-[11px] font-bold uppercase tracking-wide sticky top-0 z-10"
+                        style={{ gridTemplateColumns: listGridTemplate, borderBottom: `2px solid ${border}`, color: textMuted, backgroundColor: headerBg }}
+                      >
+                        {groupVisibleColumns.map(col => (
+                          <span
+                            key={col.key}
+                            className="truncate"
+                            style={{ textAlign: col.align === 'right' ? 'right' : 'left', color: col.key === 'remit' ? remitAccent : textMuted }}
+                            title={col.label}
+                          >
+                            {col.label}
                           </span>
-                          <span className="text-right tabular-nums font-bold" style={{ color: '#10B981' }}>₱{peso(rowTotal(row))}</span>
-                          <span className="text-center text-[11px] font-bold truncate" style={{ color: row.audited ? '#10B981' : textMuted }}>
-                            {row.audited || '—'}
-                          </span>
-                        </div>
-                      )
-                    })}
-                    {installerRows.length === 0 && (
-                      <div className="px-6 py-8 text-center text-xs font-semibold" style={{ color: textMuted }}>
-                        No jobs for this period.
+                        ))}
+                        <span className="text-right">Row Total</span>
                       </div>
-                    )}
+                      {installerRows.map((row, idx) => {
+                        const rowBg = idx % 2 === 1 ? zebraBg : 'transparent'
+                        return (
+                          <div
+                            key={row.id}
+                            role="button"
+                            tabIndex={0}
+                            title="Open this job"
+                            onClick={() => setDetailRow(row)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault()
+                                setDetailRow(row)
+                              }
+                            }}
+                            className="grid px-6 py-3 items-center cursor-pointer transition-colors"
+                            style={{ gridTemplateColumns: listGridTemplate, borderBottom: `1px solid ${border}`, backgroundColor: rowBg, fontSize: '13px', color: textPrimary }}
+                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = rowHoverBg }}
+                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = rowBg }}
+                          >
+                            {groupVisibleColumns.map(col => (
+                              <span
+                                key={col.key}
+                                className="truncate tabular-nums"
+                                style={{
+                                  textAlign: col.align === 'right' ? 'right' : 'left',
+                                  color: col.key === 'remit' ? remitAccent : undefined,
+                                }}
+                                title={listCellText(col, row)}
+                              >
+                                {listCellText(col, row)}
+                              </span>
+                            ))}
+                            <span className="text-right tabular-nums font-bold" style={{ color: '#10B981' }}>
+                              ₱{peso(rowTotal(row))}
+                            </span>
+                          </div>
+                        )
+                      })}
+                      {installerRows.length === 0 && (
+                        <div className="px-6 py-8 text-center text-xs font-semibold" style={{ color: textMuted }}>
+                          No jobs for this period.
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                 {/* Mobile card view — one card per job instead of a horizontally-scrolling
@@ -1768,17 +1796,16 @@ export default function Payroll() {
       ) : (
         // Roster / summary — one continuous ledger table covering the whole selected period (not
         // a single job). Remarks/Payroll Due/Audited/Status live here, not in an installer's own
-        // per-job table. Click "View Payroll" to open that job-level table.
+        // per-job table. Click a row to open that installer's job-level table.
         <div className="rounded-b-2xl border overflow-hidden" style={{ borderColor: border, backgroundColor: cardBg }}>
           {/* Column header row */}
           <div
             className="hidden md:grid items-center px-6 md:px-7 py-3.5"
-            style={{ gridTemplateColumns: 'minmax(240px, 2fr) 190px 170px 170px 220px', backgroundColor: isLight ? '#f8fafc' : '#0d1520', borderBottom: `1px solid ${border}` }}
+            style={{ gridTemplateColumns: ROSTER_GRID_TEMPLATE, backgroundColor: isLight ? '#f8fafc' : '#0d1520', borderBottom: `1px solid ${border}` }}
           >
             <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70" style={{ color: textMuted }}>Installer</span>
             <span className="text-[10px] font-semibold uppercase tracking-wider text-center opacity-70" style={{ color: textMuted }}>Completed Jobs</span>
             <span className="text-[10px] font-semibold uppercase tracking-wider text-right opacity-70" style={{ color: textMuted }}>Payroll Amount</span>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-center opacity-70" style={{ color: textMuted }}>Action</span>
             <span className="text-[10px] font-semibold uppercase tracking-wider text-center opacity-70" style={{ color: textMuted }}>Payroll Status</span>
           </div>
 
@@ -1792,9 +1819,19 @@ export default function Payroll() {
             return (
               <div
                 key={installerName}
-                className="grid items-center gap-x-4 gap-y-3 px-6 md:px-7 py-5 md:py-6 transition-colors"
+                role="button"
+                tabIndex={0}
+                title={`Open ${titleCase(displayInstallerName(installerName))}'s payroll`}
+                onClick={() => setSelectedInstaller(installerName)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setSelectedInstaller(installerName)
+                  }
+                }}
+                className="grid items-center gap-x-4 gap-y-3 px-6 md:px-7 py-5 md:py-6 transition-colors cursor-pointer"
                 style={{
-                  gridTemplateColumns: 'minmax(240px, 2fr) 190px 170px 170px 220px',
+                  gridTemplateColumns: ROSTER_GRID_TEMPLATE,
                   borderTop: rowIndex === 0 ? 'none' : `1px solid ${border}`,
                 }}
                 onMouseEnter={e => { e.currentTarget.style.backgroundColor = isLight ? '#f8fafc' : '#0d1520' }}
@@ -1832,20 +1869,7 @@ export default function Payroll() {
                       </span>
                     </div>
 
-                    {/* 4. ACTION (VIEW PAYROLL) */}
-                    <div className="flex justify-center">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedInstaller(installerName)}
-                        className="group flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-colors"
-                        style={{ color: '#10B981', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.14)' }}
-                      >
-                        <span>View Payroll</span>
-                        <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                      </button>
-                    </div>
-
-                    {/* 5. STATUS (LAST COLUMN TO THE RIGHT) */}
+                    {/* 4. STATUS (LAST COLUMN TO THE RIGHT) */}
                     <div className="flex justify-center">
                       {isComplete ? (
                         <div
@@ -1873,7 +1897,9 @@ export default function Payroll() {
                       ) : (
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={e => {
+                            // The whole row opens the payroll — completing is its own action.
+                            e.stopPropagation()
                             setCompleteModalFor(installerName)
                             setCompleteRemarks(summaryRemarks)
                           }}
