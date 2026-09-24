@@ -52,6 +52,7 @@ export function TicketPhotoGallery({
   branchLabel,
   onPhotosChange,
   variant = 'details',
+  subtitle,
 }: {
   ticket: Ticket
   isLight: boolean
@@ -61,6 +62,8 @@ export function TicketPhotoGallery({
   onPhotosChange?: (photos: TicketPhoto[]) => void
   /** `details` = TicketDetailsModal section head; `form` = Edit Ticket form section head. */
   variant?: 'details' | 'form'
+  /** Optional custom subtitle (e.g. for form variant). Defaults to none for a clean simple header. */
+  subtitle?: string
 }) {
   const rawPhotos = getTicketPhotosRaw(ticket)
   const [photos, setPhotos] = useState<TicketPhoto[]>(() => parseTicketPhotos(rawPhotos))
@@ -272,9 +275,11 @@ export function TicketPhotoGallery({
             </div>
             <div className="min-w-0">
               <p className="text-[11.5px] font-black uppercase tracking-wider text-emerald-600 leading-tight">Photos</p>
-              <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 leading-tight mt-0.5">
-                Up to {MAX_TICKET_PHOTOS} images · auto-compressed · saves instantly
-              </p>
+              {subtitle ? (
+                <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 leading-tight mt-0.5">
+                  {subtitle}
+                </p>
+              ) : null}
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -337,7 +342,7 @@ export function TicketPhotoGallery({
           >
             <ImagePlus className="w-6 h-6 text-emerald-500" />
             <span className="text-xs font-bold" style={{ color: textPrimary }}>Add photos</span>
-            <span className="text-[10px]">Up to {MAX_TICKET_PHOTOS} images · auto-compressed on upload · drag & drop supported</span>
+            <span className="text-[10px]">Click or drag photos here (up to {MAX_TICKET_PHOTOS})</span>
           </button>
         ) : (
           <p className="text-xs rounded-xl p-4" style={{ ...tileStyle, color: textMuted }}>No photos attached.</p>

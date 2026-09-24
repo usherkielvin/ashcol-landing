@@ -5,10 +5,6 @@ import type { RelayFormTheme } from './theme'
 export function RemarksSection({
   step,
   subtitle = 'Notes or special instructions',
-  /** Edit-only: the ticket's current remarks value, editable directly. Omit for Create — a brand
-   *  new ticket has no existing remarks to show separately from the note being typed. */
-  remarks,
-  onRemarksChange,
   primaryLabel = 'Remarks',
   primaryPlaceholder = 'Notes or special instructions',
   primaryValue,
@@ -17,8 +13,6 @@ export function RemarksSection({
 }: {
   step?: number
   subtitle?: string
-  remarks?: string
-  onRemarksChange?: (value: string) => void
   primaryLabel?: string
   primaryPlaceholder?: string
   primaryValue: string

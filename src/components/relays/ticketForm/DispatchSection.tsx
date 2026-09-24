@@ -1,4 +1,4 @@
-import { Truck, ArrowRightLeft } from 'lucide-react'
+import { Truck } from 'lucide-react'
 import { FormField, FormSectionHead } from './FormField'
 import type { RelayFormTheme } from './theme'
 
@@ -17,7 +17,6 @@ export function DispatchSection({
   driverRoster,
   vehicle,
   onVehicleChange,
-  onTransferClick,
   theme,
 }: {
   step?: number
@@ -33,7 +32,6 @@ export function DispatchSection({
   driverRoster: string[]
   vehicle: string
   onVehicleChange: (value: string) => void
-  onTransferClick?: () => void
   theme: RelayFormTheme
 }) {
   const { textPrimary, inputBg, inputBorder, inputClassName, getInputStyle } = theme
@@ -48,17 +46,6 @@ export function DispatchSection({
             <label className="font-bold uppercase tracking-wide block text-slate-500 dark:text-slate-400 text-[10.5px]">
               {isTaguigServices ? 'Technician' : 'Installer / Technician'}
             </label>
-            {onTransferClick && (
-              <button
-                type="button"
-                onClick={onTransferClick}
-                className="text-[10px] font-black uppercase text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 hover:underline flex items-center gap-1 transition-colors"
-                title="Transfer ticket to another branch and clear installer"
-              >
-                <ArrowRightLeft className="w-3 h-3" />
-                <span>Transfer Branch</span>
-              </button>
-            )}
           </div>
           <select
             value={installerName || ''}
