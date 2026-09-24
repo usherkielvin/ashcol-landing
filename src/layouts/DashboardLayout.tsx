@@ -221,10 +221,30 @@ export default function DashboardLayout() {
   const isLight = theme === 'light'
   const [branchLabel, setBranchLabel] = useState<string | null>(null)
 
+  const ignoreHoverUntilLeave = useRef(false)
+
+  const collapseSidebar = () => {
+    if (window.innerWidth < 768) return
+    ignoreHoverUntilLeave.current = true
+    if (hoverDebounce.current) clearTimeout(hoverDebounce.current)
+    if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
+    if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
+    setIsHoverExpanded(false)
+    setNavVisible(false)
+    setShowCollapsedIcons(false)
+    setSidebarCollapsed(true)
+    navVisibleTimeout.current = setTimeout(() => {
+      setShowCollapsedIcons(true)
+    }, 140)
+  }
+
   const handleMouseEnter = () => {
+    if (ignoreHoverUntilLeave.current) return
+    if (window.innerWidth < 768) return
     // Debounce: cancel any pending leave, schedule enter with small delay to ignore rapid oscillations
     if (hoverDebounce.current) clearTimeout(hoverDebounce.current)
     hoverDebounce.current = setTimeout(() => {
+      if (ignoreHoverUntilLeave.current) return
       if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
       if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
       if (sidebarCollapsed || (isHoverExpanded && !navVisible)) {
@@ -237,6 +257,7 @@ export default function DashboardLayout() {
   }
 
   const handleMouseLeave = () => {
+    ignoreHoverUntilLeave.current = false
     // Debounce: cancel any pending enter, schedule leave after debounce window
     if (hoverDebounce.current) clearTimeout(hoverDebounce.current)
     hoverDebounce.current = setTimeout(() => {
@@ -608,19 +629,16 @@ export default function DashboardLayout() {
     setOpenAccordion(null)
   }, [location.pathname, navGroups])
 
-  // Auto collapse on table-heavy tabs and scroll to top on route change
+  // Auto collapse on route change and scroll to top
   const mainContentRef = useRef<HTMLElement>(null)
   useEffect(() => {
     if (mainContentRef.current) {
       mainContentRef.current.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior })
     }
-    const isTablePage = ['/relays', '/my-tickets', '/schedules', '/service-report', '/search', '/lineup', '/ddrm'].some(p => 
-      location.pathname === p || location.pathname.startsWith(p + '/')
-    )
-    if (isTablePage && window.innerWidth >= 768) {
-      setSidebarCollapsed(true)
+    if (window.innerWidth >= 768) {
+      collapseSidebar()
     }
-  }, [location.pathname])
+  }, [location.pathname, location.search])
 
   // Prevent minimized state on mobile
   useEffect(() => {
@@ -684,7 +702,17 @@ export default function DashboardLayout() {
           <img
             src={logoImg}
             alt="ASHCOL"
-            onClick={() => { setSidebarCollapsed(c => !c); setIsHoverExpanded(false) }}
+            onClick={() => {
+              if (sidebarCollapsed) {
+                ignoreHoverUntilLeave.current = false
+                setShowCollapsedIcons(false)
+                setSidebarCollapsed(false)
+                setIsHoverExpanded(false)
+                setNavVisible(true)
+              } else {
+                collapseSidebar()
+              }
+            }}
             className={`w-9 h-9 object-contain rounded-lg shrink-0 transition-all duration-300 cursor-pointer hidden md:block ${sidebarCollapsed ? 'mx-auto' : ''}`}
           />
           <img
@@ -738,7 +766,10 @@ export default function DashboardLayout() {
                     key={link.name}
                     to={link.path}
                     onMouseEnter={() => preloadPath(link.path)}
-                    onClick={() => setSidebarOpen(false)}
+                    onClick={() => {
+                      setSidebarOpen(false)
+                      collapseSidebar()
+                    }}
                     className="group flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150 relative"
                     style={isActive
                       ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.15)' }
@@ -831,6 +862,7 @@ export default function DashboardLayout() {
                                 e.stopPropagation()
                                 setActiveSubItem(sub.name)
                                 setSidebarOpen(false)
+                                collapseSidebar()
                               }}
                               className={`relative flex items-center gap-2 text-[13.5px] font-semibold transition-colors py-1 ${
                                 isSubActive ? 'text-white' : 'text-white/50 hover:text-white'
@@ -875,6 +907,7 @@ export default function DashboardLayout() {
                     onMouseEnter={() => preloadPath(item.path)}
                     onClick={() => {
                       setSidebarOpen(false)
+                      collapseSidebar()
                       if (item.groupPaths) setOpenAccordion(item.name)
                     }}
                     title={item.name}
@@ -1195,6 +1228,8 @@ export default function DashboardLayout() {
           className={
             currentPage === 'DDRM'
               ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-2 md:p-3"
+              : currentPage === 'Payroll'
+                ? "flex-1 flex flex-col min-h-0 overflow-hidden relative px-1.5 py-2 md:px-2 md:py-2.5"
               : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search')
                 ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
                 : (currentPage === 'Request Forms' || currentPage === 'Operations Forms')
@@ -1211,7 +1246,7 @@ export default function DashboardLayout() {
                    zIndex: 0,
                  }} />
           )}
-          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'DDRM') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
+          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'DDRM' || currentPage === 'Payroll') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
             {/* Do not key Outlet by pathname — that remounts Schedules on every nav and forces a reload spinner. */}
             <Suspense fallback={
               <div className="flex items-center justify-center min-h-[50vh] w-full transition-opacity duration-200">
