@@ -958,6 +958,10 @@ export function computeUnitSummaryFromTickets(tickets: Ticket[]): UnitSummaryCou
       cancelled++
     } else if (statusVal === 'DONE_SURVEY' || rawStatus === 'SURVEY' || serviceType === 'SURVEY') {
       surveyOnly++
+    } else if (commitText.includes('FREE')) {
+      // Free installs/services are their own exclusive bucket — don't also count them under
+      // Installed or Serviced, or every free job gets double-counted into the Unit Summary.
+      freeInstall++
     } else if (
       statusVal === 'DONE_INSTALLED' ||
       statusVal === 'DONE_INSTALLATION' ||
@@ -967,9 +971,6 @@ export function computeUnitSummaryFromTickets(tickets: Ticket[]): UnitSummaryCou
       statusVal === 'S/I'
     ) {
       installed++
-      if (commitText.includes('FREE')) {
-        freeInstall++
-      }
     } else if (
       statusVal === 'DONE_CLEANING' ||
       statusVal === 'DONE_CHECKUP' ||
@@ -982,11 +983,6 @@ export function computeUnitSummaryFromTickets(tickets: Ticket[]): UnitSummaryCou
       serviceType.includes('REPAIR')
     ) {
       serviced++
-      if (commitText.includes('FREE')) {
-        freeInstall++
-      }
-    } else if (commitText.includes('FREE')) {
-      freeInstall++
     }
   }
 

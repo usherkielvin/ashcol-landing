@@ -875,8 +875,25 @@ export default function Branches() {
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [editingBranch, employeesList])
 
+  /** The other branch card, if any, backed by the same underlying branch record as the one
+   *  being edited (i.e. Taguig Sales/Services still sharing a single physical branch row).
+   *  Toggling Active/Inactive there flips BOTH cards since it's one database record. */
+  const editingBranchSharedWith = useMemo(() => {
+    if (!editingBranch) return null
+    const rawId = editingBranch.rawBranchId || editingBranch.id
+    if (!rawId) return null
+    return branches.find(b => b.id !== editingBranch.id && (b.rawBranchId || b.id) === rawId) || null
+  }, [editingBranch, branches])
+
   const handleSaveEdit = async () => {
     if (!editingBranch) return
+    if (editingBranchSharedWith && editForm.isActive !== editingBranch.isActive) {
+      const proceed = window.confirm(
+        `"${editingBranch.name}" shares one branch record with "${editingBranchSharedWith.name}". ` +
+        `Saving will also set "${editingBranchSharedWith.name}" to ${editForm.isActive ? 'ACTIVE' : 'INACTIVE'}. Continue?`
+      )
+      if (!proceed) return
+    }
     setSaving(true)
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -2341,10 +2358,16 @@ export default function Branches() {
                     Branch Operation Status
                   </h4>
                   <p className="text-[11px] mt-0.5" style={{ color: textMuted }}>
-                    {editForm.isActive 
-                      ? 'This branch is currently active and accepts daily dispatch and transactions.' 
+                    {editForm.isActive
+                      ? 'This branch is currently active and accepts daily dispatch and transactions.'
                       : 'This branch is marked inactive and will be hidden from daily operations.'}
                   </p>
+                  {editingBranchSharedWith && (
+                    <p className="text-[11px] mt-1.5 font-bold" style={{ color: '#F59E0B' }}>
+                      ⚠ Shares one branch record with "{editingBranchSharedWith.name}" — toggling this
+                      will also switch that one to {editForm.isActive ? 'ACTIVE' : 'INACTIVE'} on save.
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-3">
                   <span className={`text-xs font-black uppercase tracking-wider ${editForm.isActive ? 'text-[#10B981]' : 'text-slate-400'}`}>

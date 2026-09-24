@@ -572,8 +572,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
               newList.push({ id: b.id, name: cleanName, isActive: b.isActive })
             }
           }
-          // Filter to active branches only (where submission isn't disabled)
-          let finalList = newList.filter(b => b.isActive !== false)
+          // Keep all branches (even if inactive; submission is checked separately)
+          let finalList = [...newList]
 
           // Guarantee Taguig Sales and Taguig Services are NEVER missing
           const detectedSalesBranch = list.find(b => {
@@ -733,9 +733,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   // Bank Deposits (cash physically dropped off at the company bank)
   const [deposits, setDeposits] = useState<DepositRow[]>([])
   const [scanningDepositId, setScanningDepositId] = useState<string | null>(null)
-  // Expenses for Purchase
+  // Purchases (separate cash-out category, never counted in or synced to Expenses)
   const [expPurch, setExpPurch]         = useState<ExpenseRow[]>([mkExp()])
-  const [scanningPurchaseId, setScanningPurchaseId] = useState<string | null>(null)
   // Incentives
   const [incentives, setIncentives]     = useState<IncentiveRow[]>([mkInc()])
   // Unit summary
@@ -1584,94 +1583,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     }
   }
 
-  // OCR the purchase receipt photo and prefill the row's details from whatever it can read off the receipt.
-  const scanPurchaseReceipt = async (rowId: string, file: File, imageUrl?: string) => {
-    setScanningPurchaseId(rowId)
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const formData = new FormData()
-      formData.append('image', file)
-      const res = await fetch(`${API_BASE_URL}/v1/receipts/scan`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      })
-      if (!res.ok) throw new Error(`Server error ${res.status}`)
-      const data = await res.json() as Record<string, unknown>
-      if (data.error) {
-        console.error('[scanPurchaseReceipt] scan error:', data.error)
-        return
-      }
-
-      const scannedAmount = data.amount != null ? String(data.amount) : ''
-      const scannedReceiptNo = data.receiptNo ? String(data.receiptNo) : ''
-      const scannedDesc = String(data.description || data.company || '')
-      const scannedIncurredBy = String(data.incurredBy || data.name || '')
-      const scannedDate = data.date ? String(data.date) : ''
-      const scannedCompany = data.company ? String(data.company).toUpperCase() : ''
-      const scannedCategory = data.expenseCategory ? String(data.expenseCategory).toUpperCase() : 'INSTALLATION MATERIALS'
-      const scannedFunds = data.sourceOfFunds ? String(data.sourceOfFunds).toUpperCase() : 'CASH'
-
-      let purchaseToUpsert: AuditExpense | null = null
-
-      setExpPurch(p => p.map(r => {
-        if (r.id !== rowId) return r
-        const next = { ...r }
-        if (imageUrl) next.receiptImage = imageUrl
-        if (scannedAmount && !next.amount) next.amount = scannedAmount
-        if (scannedReceiptNo) next.receiptNo = scannedReceiptNo
-        if (scannedDesc && !next.description) next.description = scannedDesc
-        if (scannedIncurredBy && !next.name) next.name = scannedIncurredBy
-        if (scannedDate) next.receiptDate = scannedDate
-        if (scannedCompany) next.company = scannedCompany
-        if (scannedCategory) next.expenseCategory = scannedCategory
-        if (scannedFunds) next.sourceOfFunds = scannedFunds
-
-        const branchIdToUse = selectedBranchId || user?.branchId || ''
-        const resolvedId = next.resolvedExpenseId || `dtr-${branchIdToUse || 'branch'}-${reportDate}-purch-${rowId}`
-        next.resolvedExpenseId = resolvedId
-
-        const rawAmt = next.amount || scannedAmount
-        const numAmt = typeof rawAmt === 'string'
-          ? (parseFloat(rawAmt.replace(/,/g, '')) || 0)
-          : (Number(rawAmt) || 0)
-
-        purchaseToUpsert = {
-          id: resolvedId,
-          branchId: branchIdToUse,
-          branchName: branchName || '',
-          date: formatExpenseDate(next.receiptDate || scannedDate),
-          incurredBy: (next.name || scannedIncurredBy || user?.name || 'STAFF').trim().toUpperCase(),
-          description: (next.description || scannedDesc || 'Purchase with Receipt').trim(),
-          company: next.company || scannedCompany || '',
-          receiptNo: next.receiptNo || scannedReceiptNo || '',
-          amount: numAmt,
-          expenseCategory: (next.expenseCategory as AuditExpenseCategory) || (scannedCategory as AuditExpenseCategory) || 'INSTALLATION MATERIALS',
-          sourceOfFunds: next.sourceOfFunds || scannedFunds || 'CASH',
-          receiptImageUri: next.receiptImage || imageUrl || '',
-          createdAt: '',
-          updatedAt: '',
-          updateHistory: []
-        }
-
-        return next
-      }))
-
-      if (purchaseToUpsert) {
-        try {
-          await upsertAuditExpense(purchaseToUpsert)
-        } catch (err) {
-          console.error('[scanPurchaseReceipt] Failed to auto-push purchase to audit expenses:', err)
-        }
-      }
-    } catch (err) {
-      console.error('[scanPurchaseReceipt] Failed to scan purchase receipt:', err)
-    } finally {
-      setScanningPurchaseId(null)
-    }
-  }
-
-  const syncExpenseRowOnBlur = async (row: ExpenseRow, type: 'exp' | 'purch') => {
+  // Only used by "Expenses with Receipts" rows — Purchases are never synced into the Expenses list.
+  const syncExpenseRowOnBlur = async (row: ExpenseRow) => {
     if (!row.resolvedExpenseId) return
     const branchIdToUse = selectedBranchId || user?.branchId || ''
     const numAmt = typeof row.amount === 'string'
@@ -1684,11 +1597,11 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         branchName: branchName || '',
         date: formatExpenseDate(row.receiptDate),
         incurredBy: (row.name || user?.name || 'STAFF').trim().toUpperCase(),
-        description: (row.description || (type === 'purch' ? 'Purchase with Receipt' : 'Expense with Receipt')).trim(),
+        description: (row.description || 'Expense with Receipt').trim(),
         company: (row.company || '').trim().toUpperCase(),
         receiptNo: (row.receiptNo || '').trim(),
         amount: numAmt,
-        expenseCategory: (row.expenseCategory as AuditExpenseCategory) || (type === 'purch' ? 'INSTALLATION MATERIALS' : 'OTHER'),
+        expenseCategory: (row.expenseCategory as AuditExpenseCategory) || 'OTHER',
         sourceOfFunds: (row.sourceOfFunds || 'CASH').trim().toUpperCase(),
         receiptImageUri: row.receiptImage || '',
         createdAt: '',
@@ -2110,6 +2023,19 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
 
+      // Stamp a stable audit-expense id on every expense row BEFORE building the payload, so it
+      // rides along in the report item's resolvedExpenseId. Row ids are regenerated (uid()) each
+      // time the form reloads, so an id derived from them at push time would differ on every
+      // re-save and make the backend insert a new audit_expenses row instead of updating the
+      // existing one — that's what produced duplicate entries in the Expenses table.
+      const expenseBranchKey = selectedBranchId || user?.branchId || 'branch'
+      const expReceiptForSave = expReceipt.map(r =>
+        (r.name || r.amount || r.receiptImage || r.receiptNo) && !r.resolvedExpenseId
+          ? { ...r, resolvedExpenseId: `dtr-${expenseBranchKey}-${reportDate}-exp-${r.id}` }
+          : r
+      )
+      setExpReceipt(expReceiptForSave)
+
       // Build unified items array from all DTR sections
       const dtrItems: object[] = [
         ...cashTx.filter(r => r.customer || r.installer || r.amount).map(r => ({
@@ -2129,7 +2055,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           description: `PARTS|${r.customer}|${r.description}`,
           amount: parseFloat(r.amount) || 0
         })),
-        ...expReceipt.filter(r => r.name || r.amount).map(r => ({
+        ...expReceiptForSave.filter(r => r.name || r.amount).map(r => ({
           type: 'EXPENSE',
           description: `${r.name}|${r.description}`,
           amount: parseFloat(r.amount) || 0,
@@ -2279,15 +2205,17 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           return parseSmartDate(reportDate) || reportDate
         }
 
-        // 1. Push Expenses with Receipts
-        const expensesToPush = expReceipt.filter(r => r.name || r.amount || r.receiptImage || r.receiptNo)
+        // 1. Push Expenses with Receipts — reuses the id stamped above (and persisted on the
+        // report item), so re-saving an existing DTR updates its expense rows instead of
+        // inserting duplicates.
+        const expensesToPush = expReceiptForSave.filter(r => r.name || r.amount || r.receiptImage || r.receiptNo)
         for (const row of expensesToPush) {
           try {
             const rawAmt = row.amount
             const numAmt = typeof rawAmt === 'string'
               ? (parseFloat(rawAmt.replace(/,/g, '')) || 0)
               : (Number(rawAmt) || 0)
-            const expenseId = row.resolvedExpenseId || `dtr-${selectedBranchId || 'branch'}-${reportDate}-exp-${row.id}`
+            const expenseId = row.resolvedExpenseId || `dtr-${expenseBranchKey}-${reportDate}-exp-${row.id}`
             await upsertAuditExpense({
               id: expenseId,
               branchId: selectedBranchId || user?.branchId || '',
@@ -2310,36 +2238,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           }
         }
 
-        // 2. Push Expenses for Purchase
-        const purchasesToPush = expPurch.filter(r => r.name || r.amount || r.receiptImage || r.receiptNo)
-        for (const row of purchasesToPush) {
-          try {
-            const rawAmt = row.amount
-            const numAmt = typeof rawAmt === 'string'
-              ? (parseFloat(rawAmt.replace(/,/g, '')) || 0)
-              : (Number(rawAmt) || 0)
-            const expenseId = row.resolvedExpenseId || `dtr-${selectedBranchId || 'branch'}-${reportDate}-purch-${row.id}`
-            await upsertAuditExpense({
-              id: expenseId,
-              branchId: selectedBranchId || user?.branchId || '',
-              branchName: branchName || '',
-              date: formatExpenseDate(row.receiptDate),
-              incurredBy: (row.name || user?.name || 'STAFF').trim().toUpperCase(),
-              description: (row.description || 'Purchase with Receipt').trim(),
-              company: (row.company || '').trim().toUpperCase(),
-              receiptNo: (row.receiptNo || '').trim(),
-              amount: numAmt,
-              expenseCategory: (row.expenseCategory as AuditExpenseCategory) || 'INSTALLATION MATERIALS',
-              sourceOfFunds: (row.sourceOfFunds || 'CASH').trim().toUpperCase(),
-              receiptImageUri: row.receiptImage || '',
-              createdAt: '',
-              updatedAt: '',
-              updateHistory: []
-            })
-          } catch (err) {
-            console.error('[DTR→AuditExpenses] Failed to push purchase expense:', err)
-          }
-        }
+        // Purchases ("Expenses for Purchase") are intentionally NOT pushed into the shared
+        // Expenses list — they're a separate cash-out category from actual expenses.
       }
       setReviewMode(false)
       setReviewStartedAt(null)
@@ -3174,14 +3074,14 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                         ) : (
                           <input type="text" placeholder="Name" value={row.name}
                             onChange={e => setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, name: e.target.value } : r))}
-                            onBlur={() => void syncExpenseRowOnBlur(row, 'exp')}
+                            onBlur={() => void syncExpenseRowOnBlur(row)}
                             className={flushInput} />
                         )}
                       </td>
                       <td className={tableTd}>
                         <input type="text" placeholder="Description" value={row.description}
                           onChange={e => setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
-                          onBlur={() => void syncExpenseRowOnBlur(row, 'exp')}
+                          onBlur={() => void syncExpenseRowOnBlur(row)}
                           className={flushInput} disabled={isFormDisabled} />
                         {(row.company || row.receiptNo) && (
                           <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-400 dark:text-slate-500 font-medium">
@@ -3194,7 +3094,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
                           onValueChange={(values) => setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                          onBlur={() => void syncExpenseRowOnBlur(row, 'exp')}
+                          onBlur={() => void syncExpenseRowOnBlur(row)}
                           className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd + ' text-center'}>
@@ -3228,7 +3128,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                               <button type="button" onClick={() => {
                                 setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, receiptImage: '' } : r))
                                 if (row.resolvedExpenseId) {
-                                  void syncExpenseRowOnBlur({ ...row, receiptImage: '' }, 'exp')
+                                  void syncExpenseRowOnBlur({ ...row, receiptImage: '' })
                                 }
                               }}
                                 className="text-[10px] text-red-500 font-bold uppercase hover:underline">
@@ -3315,9 +3215,9 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
             </div>
           </div>
 
-          {/* Expenses for Purchase */}
+          {/* Purchases — a separate cash-out category, never counted in or synced to Expenses */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="Expenses for Purchase" total={totalExpPurch} variant="expense" />
+            <SectionHeader label="Purchases" total={totalExpPurch} variant="expense" />
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -3325,7 +3225,6 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                     <th className={tableTh}>Name</th>
                     <th className={tableTh}>Description</th>
                     <th className={tableTh + ' text-right w-28'}>Amount</th>
-                    <th className={tableTh + ' text-center w-28'}>Receipt</th>
                     {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
                   </tr>
                 </thead>
@@ -3340,87 +3239,22 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                         ) : (
                           <input type="text" placeholder="Name" value={row.name}
                             onChange={e => setExpPurch(p => p.map(r => r.id === row.id ? { ...r, name: e.target.value } : r))}
-                            onBlur={() => void syncExpenseRowOnBlur(row, 'purch')}
                             className={flushInput} />
                         )}
                       </td>
                       <td className={tableTd}>
                         <input type="text" placeholder="Description" value={row.description}
                           onChange={e => setExpPurch(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
-                          onBlur={() => void syncExpenseRowOnBlur(row, 'purch')}
                           className={flushInput} disabled={isFormDisabled} />
-                        {(row.company || row.receiptNo) && (
-                          <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-400 dark:text-slate-500 font-medium">
-                            {row.company && <span className="truncate max-w-[130px]" title={row.company}>🏢 {row.company}</span>}
-                            {row.company && row.receiptNo && <span>•</span>}
-                            {row.receiptNo && <span>OR: {row.receiptNo}</span>}
-                          </div>
-                        )}
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
                           onValueChange={(values) => setExpPurch(p => p.map(r => r.id === row.id ? { ...r, amount: values.value } : r))}
-                          onBlur={() => void syncExpenseRowOnBlur(row, 'purch')}
                           className={flushInputNumber} disabled={isFormDisabled} />
-                      </td>
-                      <td className={tableTd + ' text-center'}>
-                        <input type="file" accept="image/*" id={`purchase-receipt-${row.id}`} className="hidden"
-                          disabled={isFormDisabled}
-                          onChange={async e => {
-                            const file = e.target.files?.[0]
-                            if (!file) return
-                            try {
-                              const uploadResult = await uploadReceiptImage(file, {
-                                folder: 'expenses',
-                                branch: branchName,
-                                description: row.description,
-                                filename: `purchase_${row.id}`
-                              })
-                              setExpPurch(p => p.map(r => r.id === row.id ? { ...r, receiptImage: uploadResult.url } : r))
-                              void scanPurchaseReceipt(row.id, file, uploadResult.url)
-                            } catch (err) {
-                              console.error('Failed to process receipt image:', err)
-                              setError('Failed to process receipt image')
-                            }
-                          }} />
-                        {row.receiptImage ? (
-                          <div className="flex items-center justify-center gap-1.5">
-                            <a href={row.receiptImage} target="_blank" rel="noopener noreferrer" title="View receipt">
-                              <img src={row.receiptImage} alt="Receipt" className="h-8 w-8 object-cover rounded border border-slate-300 dark:border-slate-700 hover:opacity-80 transition cursor-pointer" />
-                            </a>
-                            {scanningPurchaseId === row.id ? (
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 animate-pulse">Scanning…</span>
-                            ) : !isFormDisabled && (
-                              <button type="button" onClick={() => {
-                                setExpPurch(p => p.map(r => r.id === row.id ? { ...r, receiptImage: '' } : r))
-                                if (row.resolvedExpenseId) {
-                                  void syncExpenseRowOnBlur({ ...row, receiptImage: '' }, 'purch')
-                                }
-                              }}
-                                className="text-[10px] text-red-500 font-bold uppercase hover:underline">
-                                Remove
-                              </button>
-                            )}
-                          </div>
-                        ) : (
-                          !isFormDisabled ? (
-                            <button type="button" onClick={() => document.getElementById(`purchase-receipt-${row.id}`)?.click()}
-                              className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 hover:underline">
-                              Upload &amp; Scan
-                            </button>
-                          ) : (
-                            <span className="text-xs text-slate-400">—</span>
-                          )
-                        )}
                       </td>
                       {canSubmit && !reviewMode && (
                         <td className={tableTd + ' text-center'}>
-                          <DelBtn onClick={() => {
-                            if (row.resolvedExpenseId) {
-                              deleteAuditExpense(row.resolvedExpenseId).catch(err => console.error('[DTR] Failed to delete purchase:', err))
-                            }
-                            setExpPurch(p => p.filter(r => r.id !== row.id))
-                          }} />
+                          <DelBtn onClick={() => setExpPurch(p => p.filter(r => r.id !== row.id))} />
                         </td>
                       )}
                     </tr>
