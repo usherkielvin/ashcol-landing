@@ -62,19 +62,25 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
     const handleChange = (e: MediaQueryListEvent) => {
-      setTheme(e.matches ? 'dark' : 'light')
+      if (localStorage.getItem('ashcol-theme')) return
+      const next = e.matches ? 'dark' : 'light'
+      applyTheme(next)
+      setTheme(next)
     }
     mediaQuery.addEventListener('change', handleChange)
     return () => mediaQuery.removeEventListener('change', handleChange)
   }, [])
 
   const toggleTheme = () => {
-    const root = document.documentElement
-    // Add transitioning class to enable smooth CSS transitions
-    root.classList.add('theme-transitioning')
-    setTheme(prev => prev === 'dark' ? 'light' : 'dark')
-    // Remove after transition completes (matches 0.35s CSS duration + buffer)
-    setTimeout(() => root.classList.remove('theme-transitioning'), 400)
+    setTheme(prev => {
+      const next = prev === 'dark' ? 'light' : 'dark'
+      // Immediately and synchronously update DOM class and CSS variables
+      applyTheme(next)
+      try {
+        localStorage.setItem('ashcol-theme', next)
+      } catch {}
+      return next
+    })
   }
 
   return (

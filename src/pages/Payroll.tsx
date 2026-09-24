@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef, useMemo, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { useNavigate } from 'react-router-dom'
 import { NumericFormat } from 'react-number-format'
 import {
   Search, Building2, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   SlidersHorizontal, Plus, X, RotateCcw, RefreshCw, Save, Loader2, EyeOff, Trash2,
   Stethoscope, Lightbulb, HardHat, PiggyBank, Wind, Recycle, ArrowBigDownDash, Snowflake,
-  Users, Clock, Receipt, ArrowRightLeft,
+  Users, Clock, Receipt, ArrowRightLeft, ExternalLink,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -264,10 +265,11 @@ const COLUMN_PRESETS: { label: string; cats: ColumnCategory[] }[] = [
   { label: 'Structural Heavy', cats: ['standard', 'structural'] },
 ]
 
-// Only "Standard Add-ons" show on first visit — every other fee category starts hidden
-// since most are blank for any given installer/job (see COLUMN_DEFS comment above).
+// "Standard Add-ons" and "Admin & Notes" (Materials Return, Install Checklist, Video Upload)
+// show on first visit — every other fee category starts hidden since most are blank for any
+// given installer/job (see COLUMN_DEFS comment above).
 const DEFAULT_HIDDEN_COLUMNS: ColumnKey[] = COLUMN_DEFS
-  .filter(c => !c.pinned && c.category !== 'standard')
+  .filter(c => !c.pinned && c.category !== 'standard' && c.category !== 'admin')
   .map(c => c.key as ColumnKey)
 
 const HIDDEN_COLUMNS_KEY = 'ashcol-payroll-hidden-columns'
@@ -312,6 +314,7 @@ interface CustomColumnDef {
 export default function Payroll() {
   const { theme } = useTheme()
   const { user } = useAuth()
+  const navigate = useNavigate()
   const isLight = theme === 'light'
 
   const cardBg      = isLight ? '#ffffff'  : '#0A1120'
@@ -344,11 +347,6 @@ export default function Payroll() {
   const [detailRow, setDetailRow] = useState<PayrollRow | null>(null)
   // Which installer's Deductions modal is open (null = closed).
   const [deductionsModalInstaller, setDeductionsModalInstaller] = useState<string | null>(null)
-  // Cross-branch transfer modal
-  const [transferModalRow, setTransferModalRow] = useState<PayrollRow | null>(null)
-  const [transferTargetBranchId, setTransferTargetBranchId] = useState('')
-  const [transferring, setTransferring] = useState(false)
-
   // Installer job list's horizontal scroll — which edges still hide columns (drives the fade +
   // arrow cues) and whether it's scrolled at all (drives the pinned-column shadow).
   const listScrollRef = useRef<HTMLDivElement | null>(null)
@@ -964,123 +962,6 @@ export default function Payroll() {
     })
   }
 
-  // Cross-branch payroll transfer — copies the row to a different branch's payroll under the
-  // same period month, stamps xfer: metadata in customFields so both sides know the history,
-  // then deletes the row from the source branch. The ticket reference (ticketId / ticketNumber)
-  // is preserved on the destination so the job stays traceable back to the original schedule.
-  const transferRowToBranch = async (row: PayrollRow, targetBranchId: string) => {
-    if (!branchFilter || !targetBranchId || targetBranchId === branchFilter) return
-    setTransferring(true)
-    try {
-      const sourceBranchName = branches.find(b => b.id === branchFilter)?.name || branchFilter
-      const targetBranchName = branches.find(b => b.id === targetBranchId)?.name || targetBranchId
-      const mKey = (row.workDate || new Date().toISOString().slice(0, 7)).slice(0, 7)
-
-      // 1. Load the destination branch's existing payroll for that month
-      const params = new URLSearchParams({ branchId: targetBranchId, month: mKey })
-      const existing = await fetch(`${API_BASE_URL}/v1/payroll?${params}`, {
-        headers: { Authorization: `Bearer ${getToken()}` },
-      }).then(r => r.ok ? r.json() : [])
-      const destEntries: any[] = Array.isArray(existing) ? existing : []
-
-      // 2. Build the transferred row — carry all fee fields, stamp transfer metadata
-      const transferredCustomFields = {
-        ...row.customFields,
-        'xfer:fromBranchId': branchFilter,
-        'xfer:fromBranch': sourceBranchName,
-        'xfer:transferredAt': new Date().toISOString(),
-      }
-      const newEntry = {
-        ticketId: row.ticketId || null,
-        ticketNumber: row.ticketNumber || null,
-        installerName: row.installerName,
-        sortOrder: destEntries.length,
-        workDate: row.workDate || null,
-        customerName: row.customerName || null,
-        cityAddress: row.cityAddress || null,
-        brandCapacity: row.brandCapacity || null,
-        sifQuotation: row.sifQuotation || null,
-        totalPipeLength: row.totalPipeLength || null,
-        installationUpload: row.installationUpload || null,
-        amountCollected: row.amountCollected ? num(row.amountCollected) : null,
-        actualCollected: row.actualCollected || null,
-        installationFee: row.installationFee ? num(row.installationFee) : null,
-        earthGrounding: row.earthGrounding ? num(row.earthGrounding) : null,
-        dailyAllowance: row.dailyAllowance ? num(row.dailyAllowance) : null,
-        excessCopperTube: row.excessCopperTube ? num(row.excessCopperTube) : null,
-        hauling: row.hauling ? num(row.hauling) : null,
-        dismantling: row.dismantling ? num(row.dismantling) : null,
-        electricalWorks: row.electricalWorks ? num(row.electricalWorks) : null,
-        chippingWorks: row.chippingWorks ? num(row.chippingWorks) : null,
-        breaker: row.breaker ? num(row.breaker) : null,
-        powerSupplyLaborOnly: row.powerSupplyLaborOnly ? num(row.powerSupplyLaborOnly) : null,
-        powerSupplyLaborMaterials: row.powerSupplyLaborMaterials ? num(row.powerSupplyLaborMaterials) : null,
-        specialBracketCatwalk: row.specialBracketCatwalk ? num(row.specialBracketCatwalk) : null,
-        specialBracketWelding: row.specialBracketWelding ? num(row.specialBracketWelding) : null,
-        excessCopperTubeLaborOnly: row.excessCopperTubeLaborOnly ? num(row.excessCopperTubeLaborOnly) : null,
-        relocationAccuFcu: row.relocationAccuFcu ? num(row.relocationAccuFcu) : null,
-        systemReprocessLabor: row.systemReprocessLabor ? num(row.systemReprocessLabor) : null,
-        drainPumpInstallation: row.drainPumpInstallation ? num(row.drainPumpInstallation) : null,
-        scaffoldingInstallation: row.scaffoldingInstallation ? num(row.scaffoldingInstallation) : null,
-        flushingOldPipe: row.flushingOldPipe ? num(row.flushingOldPipe) : null,
-        sterneBracket: row.sterneBracket ? num(row.sterneBracket) : null,
-        breakerInstallationLabor: row.breakerInstallationLabor ? num(row.breakerInstallationLabor) : null,
-        chargingOfFreon: row.chargingOfFreon ? num(row.chargingOfFreon) : null,
-        materialsReturn: row.materialsReturn ? num(row.materialsReturn) : null,
-        installationChecklist: row.installationChecklist || null,
-        videoUpload: row.videoUpload || null,
-        remarks: row.remarks ? `[From ${sourceBranchName}] ${row.remarks}`.trim() : `Transferred from ${sourceBranchName}`,
-        audited: row.audited || null,
-        status: row.status || 'PENDING',
-        customFields: JSON.stringify(transferredCustomFields),
-      }
-
-      // 3. Save to destination branch (append to existing entries)
-      const destRes = await fetch(`${API_BASE_URL}/v1/payroll`, {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          branchId: targetBranchId,
-          periodMonth: mKey,
-          entries: [
-            ...destEntries.map((e: any, i: number) => ({ ...e, sortOrder: i })),
-            newEntry,
-          ],
-        }),
-      })
-      if (!destRes.ok) throw new Error('Failed to save to target branch')
-
-      // 4. Remove row from source branch payroll — stamp origin note on source side for audit
-      const sourceRows = rows.filter(r => r.id !== row.id)
-      await savePayrollToBackend(sourceRows, branchFilter, mKey)
-
-      // 5. Optimistically remove from local UI + close modals
-      setRows(sourceRows)
-      setTransferModalRow(null)
-      setTransferTargetBranchId('')
-      setDetailRow(null)
-
-      setConfirmDialog({
-        title: 'Transfer Successful',
-        message: `"${row.customerName || row.ticketNumber}" has been transferred to ${targetBranchName}. The payroll entry will appear in their roster under ${mKey}.`,
-        confirmText: 'OK',
-        variant: 'info',
-        onConfirm: () => setConfirmDialog(null),
-      })
-    } catch (err) {
-      console.error('Transfer failed:', err)
-      setConfirmDialog({
-        title: 'Transfer Failed',
-        message: 'Could not complete the branch transfer. Please try again or check your connection.',
-        confirmText: 'OK',
-        variant: 'danger',
-        onConfirm: () => setConfirmDialog(null),
-      })
-    } finally {
-      setTransferring(false)
-    }
-  }
-
   // Writes one installer's deduction for the visible period. An amount lands on the period's
   // first job, adjusted so the sum across the range equals what was typed (see deductionValue);
   // a balance overwrites the latest row that holds one, else the latest job.
@@ -1406,11 +1287,10 @@ export default function Payroll() {
                 aria-label="Filter by Branch"
               >
                 <option value="">Select branch…</option>
-                {branches.map(b => {
-                  const isFranchise = Boolean((b as any).isFranchise || isFranchiseBranch(b.id) || isFranchiseBranch(b.name))
+                {branches.filter(b => !(Boolean((b as any).isFranchise) || isFranchiseBranch(b.id) || isFranchiseBranch(b.name))).map(b => {
                   return (
                     <option key={b.id} value={b.id}>
-                      {formatBranchName(b.name)}{isFranchise ? ' (Franchise)' : ''}
+                      {formatBranchName(b.name)}
                     </option>
                   )
                 })}
@@ -2919,26 +2799,20 @@ export default function Payroll() {
                   </div>
                 </div>
 
-                {/* Transfer to Branch action — only for payroll managers, only when viewing another branch's ticket */}
-                {canManagePayroll && !liveRow.customFields?.['xfer:fromBranch'] && (
+                {/* View Ticket action — jumps to the actual ticket behind this payroll row */}
+                {(liveRow.ticketId || liveRow.ticketNumber) && (
                   <div
-                    className="flex items-center justify-between gap-3 px-6 py-3 shrink-0"
+                    className="flex items-center justify-end gap-3 px-6 py-3 shrink-0"
                     style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#fafafa' : '#080f1c' }}
                   >
-                    <div className="flex items-center gap-2">
-                      <ArrowRightLeft className="w-4 h-4" style={{ color: '#8B5CF6' }} />
-                      <span className="text-xs font-semibold" style={{ color: textMuted }}>
-                        This job was done by a different franchise?
-                      </span>
-                    </div>
                     <button
                       type="button"
-                      onClick={() => { setTransferModalRow(liveRow); setTransferTargetBranchId('') }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all hover:border-purple-500/60 hover:bg-purple-500/10 shrink-0"
-                      style={{ color: '#8B5CF6', borderColor: isLight ? '#ddd6fe' : 'rgba(139,92,246,0.35)', backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.08)' }}
+                      onClick={() => navigate(`/search?ticket=${encodeURIComponent(liveRow.ticketId || liveRow.ticketNumber)}`)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all hover:border-emerald-500/60 hover:bg-emerald-500/10 shrink-0"
+                      style={{ color: '#10B981', borderColor: isLight ? '#a7f3d0' : 'rgba(16,185,129,0.35)', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.08)' }}
                     >
-                      <ArrowRightLeft className="w-3.5 h-3.5" />
-                      Transfer to Branch
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      View Ticket
                     </button>
                   </div>
                 )}
@@ -2964,179 +2838,6 @@ export default function Payroll() {
         })(),
         document.body
       )}
-      {/* ── Cross-Branch Payroll Transfer Modal ── */}
-      {transferModalRow && createPortal(
-        (() => {
-          const row = transferModalRow
-          const sourceBranchName = branches.find(b => b.id === branchFilter)?.name || branchFilter
-          const targetBranchName = branches.find(b => b.id === transferTargetBranchId)?.name || ''
-          const otherBranches = branches.filter(b => b.id !== branchFilter)
-          const mKey = (row.workDate || '').slice(0, 7)
-
-          return (
-            <div
-              className="fixed inset-0 z-[9999999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
-              onClick={() => !transferring && setTransferModalRow(null)}
-            >
-              <div
-                className="w-full max-w-md rounded-2xl border shadow-2xl flex flex-col overflow-hidden"
-                style={{ backgroundColor: cardBg, borderColor: border, boxShadow: isLight ? '0 32px 80px rgba(0,0,0,0.18)' : '0 32px 80px rgba(0,0,0,0.7)' }}
-                onClick={e => e.stopPropagation()}
-              >
-                {/* Header */}
-                <div
-                  className="flex items-center gap-3 px-5 py-4 shrink-0"
-                  style={{
-                    borderBottom: `1px solid ${border}`,
-                    background: isLight
-                      ? 'linear-gradient(135deg,#f5f3ff 0%,#f8fafc 100%)'
-                      : 'linear-gradient(135deg,rgba(139,92,246,0.10) 0%,rgba(10,17,32,0) 100%)',
-                  }}
-                >
-                  <div
-                    className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ background: 'linear-gradient(135deg,#8B5CF6,#6D28D9)', boxShadow: '0 4px 12px rgba(139,92,246,0.35)' }}
-                  >
-                    <ArrowRightLeft className="w-4.5 h-4.5 text-white" style={{ width: 18, height: 18 }} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h2 className="text-sm font-extrabold" style={{ color: textPrimary }}>Transfer to Branch</h2>
-                    <p className="text-[11px] font-medium mt-0.5 truncate" style={{ color: textMuted }}>
-                      From <strong>{sourceBranchName}</strong>
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={transferring}
-                    onClick={() => setTransferModalRow(null)}
-                    className="w-8 h-8 rounded-xl flex items-center justify-center transition-colors hover:bg-red-500/12 disabled:opacity-40"
-                    style={{ border: `1px solid ${border}` }}
-                  >
-                    <X className="w-4 h-4" style={{ color: textMuted }} />
-                  </button>
-                </div>
-
-                {/* Job Preview */}
-                <div className="px-5 py-4 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
-                  <div
-                    className="rounded-xl p-4 flex flex-col gap-2"
-                    style={{ backgroundColor: isLight ? '#f8fafc' : '#0d1520', border: `1px solid ${border}` }}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="text-sm font-extrabold truncate" style={{ color: textPrimary }}>
-                          {row.customerName || 'No customer'}
-                        </div>
-                        <div className="text-[11px] font-medium mt-0.5" style={{ color: textMuted }}>
-                          {row.ticketNumber && <span className="mr-2">#{row.ticketNumber}</span>}
-                          {row.workDate && shortDate(row.workDate)}
-                          {row.brandCapacity && <span className="ml-2">· {row.brandCapacity}</span>}
-                        </div>
-                      </div>
-                      <span
-                        className="text-sm font-extrabold tabular-nums shrink-0"
-                        style={{ color: '#10B981' }}
-                      >
-                        ₱{peso(rowTotal(row))}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 pt-1" style={{ borderTop: `1px solid ${border}` }}>
-                      <div
-                        className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black text-white shrink-0"
-                        style={{ backgroundColor: avatarColor(row.installerName) }}
-                      >
-                        {getInitials(row.installerName)}
-                      </div>
-                      <span className="text-[12px] font-bold" style={{ color: textPrimary }}>
-                        {titleCase(row.installerName)}
-                      </span>
-                      <span className="text-[10px] ml-auto" style={{ color: textMuted }}>
-                        Technician
-                      </span>
-                    </div>
-                  </div>
-                  <p className="text-[11px] font-medium mt-3" style={{ color: textMuted }}>
-                    This payroll entry will be <strong>moved</strong> to the selected branch's {mKey} payroll.
-                    The ticket reference and all fee amounts are carried over. This branch's record will be removed.
-                  </p>
-                </div>
-
-                {/* Branch Picker */}
-                <div className="px-5 py-4 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
-                  <label className="block text-[11px] font-extrabold uppercase tracking-wider mb-2" style={{ color: textMuted }}>
-                    Transfer To
-                  </label>
-                  <div className="relative">
-                    <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: textMuted }} />
-                    <select
-                      value={transferTargetBranchId}
-                      onChange={e => setTransferTargetBranchId(e.target.value)}
-                      disabled={transferring}
-                      className="w-full pl-9 pr-8 py-2.5 rounded-xl text-sm font-bold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500/40 border transition-all disabled:opacity-60"
-                      style={{ color: transferTargetBranchId ? textPrimary : textMuted, backgroundColor: inputBg, borderColor: transferTargetBranchId ? '#8B5CF6' : inputBorder }}
-                    >
-                      <option value="">— Select destination branch —</option>
-                      {otherBranches.map(b => {
-                        const isFranchise = Boolean((b as any).isFranchise || isFranchiseBranch(b.id) || isFranchiseBranch(b.name))
-                        return (
-                          <option key={b.id} value={b.id}>
-                            {formatBranchName(b.name)}{isFranchise ? ' (Franchise)' : ''}
-                          </option>
-                        )
-                      })}
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: textMuted }} />
-                  </div>
-
-                  {/* Preview destination */}
-                  {transferTargetBranchId && targetBranchName && (
-                    <div
-                      className="flex items-center gap-2 mt-3 px-3 py-2 rounded-xl"
-                      style={{ backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.10)', border: '1px solid rgba(139,92,246,0.30)' }}
-                    >
-                      <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" style={{ color: '#8B5CF6' }} />
-                      <span className="text-[11px] font-bold" style={{ color: '#8B5CF6' }}>
-                        Will appear under <strong>{formatBranchName(targetBranchName)}</strong> payroll · {mKey}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Footer */}
-                <div
-                  className="flex items-center justify-end gap-2 px-5 py-4 shrink-0"
-                  style={{ backgroundColor: isLight ? '#fafafa' : '#080f1c' }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setTransferModalRow(null)}
-                    disabled={transferring}
-                    className="px-4 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/10 disabled:opacity-40"
-                    style={{ color: textMuted, borderColor: inputBorder, backgroundColor: inputBg }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!transferTargetBranchId || transferring}
-                    onClick={() => transferRowToBranch(row, transferTargetBranchId)}
-                    className="flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
-                    style={{ background: 'linear-gradient(135deg,#8B5CF6,#6D28D9)', boxShadow: transferTargetBranchId && !transferring ? '0 4px 12px rgba(139,92,246,0.35)' : 'none' }}
-                  >
-                    {transferring ? (
-                      <><Loader2 className="w-3.5 h-3.5 animate-spin" />Transferring…</>
-                    ) : (
-                      <><ArrowRightLeft className="w-3.5 h-3.5" />Confirm Transfer</>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )
-        })(),
-        document.body
-      )}
-
       {ratesModalOpen && createPortal(
         (() => {
           const headerBgColor = isLight ? '#f8fafc' : '#0F1A2E'

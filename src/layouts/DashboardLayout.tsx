@@ -43,7 +43,7 @@ import {
 } from 'react-icons/md'
 import { FiMinus, FiPlus } from 'react-icons/fi'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortalAdmin, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry, formatBranchName, canMemberAccessRelaysAndTicketCreation, canMemberAccessDdrm, canMemberAccessPayroll, isSystemAdmin, isPortalStaffUser, isWarrantyRegistrar, getUserViewBranchIds, isBranchReadOnlyForUser, branchScopesMatch } from '../utils/api'
+import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortalAdmin, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry, formatBranchName, canMemberAccessRelaysAndTicketCreation, canMemberAccessDdrm, canMemberAccessPayroll, isSystemAdmin, isPortalStaffUser, isWarrantyRegistrar, getUserViewBranchIds, isBranchReadOnlyForUser, branchScopesMatch, isFranchiseBranch } from '../utils/api'
 import UserAvatar from '../components/UserAvatar'
 import MessagesDropdown from '../components/MessagesDropdown'
 import NotificationsDropdown from '../components/NotificationsDropdown'
@@ -388,6 +388,9 @@ export default function DashboardLayout() {
             || cleanName.includes('TAGUIG')
           // Taguig (Sales/Services) is always available; other inactive branches are hidden.
           if (b.isActive === false && !isTaguigRow) continue
+          // Franchise branches (Valenzuela, Batangas, Gen. Trias) don't show in this
+          // portal-wide switcher — they're only selectable from the ticket edit form.
+          if (Boolean((b as any).isFranchise) || isFranchiseBranch(b.id) || isFranchiseBranch(b.name)) continue
           if (b.id === 'BR-TAGUIG-SALES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') {
             if (!allList.some(item => item.id === 'BR-TAGUIG-SALES')) {
               allList.push({ id: 'BR-TAGUIG-SALES', name: 'TAGUIG - SALES' })
@@ -1088,10 +1091,9 @@ export default function DashboardLayout() {
                     setProfileOpen(next)
                   }}
                   title={user?.name}
-                  className="flex items-center gap-1.5 p-1 pr-1.5 rounded-xl transition-all"
-                  style={{ backgroundColor: profileOpen ? hoverBg : 'transparent' }}
-                  onMouseEnter={e => { if (!profileOpen) (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg }}
-                  onMouseLeave={e => { if (!profileOpen) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent' }}
+                  className={`flex items-center gap-1.5 p-1 pr-1.5 rounded-xl transition-colors ${
+                    profileOpen ? 'bg-slate-200/70 dark:bg-slate-800' : 'hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                  }`}
                 >
                   <UserAvatar name={user?.name} imageUrl={user?.picture} size="xs" ring className="shrink-0" />
                   <ChevronDown
@@ -1117,10 +1119,8 @@ export default function DashboardLayout() {
                       <Link
                         to="/profile"
                         onClick={() => setProfileOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60"
                         style={{ color: textPrimary }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
                       >
                         <UserCircle className="w-4 h-4 text-green-500" />
                         My Profile
@@ -1129,10 +1129,8 @@ export default function DashboardLayout() {
                         <Link
                           to="/profile?tab=history"
                           onClick={() => setProfileOpen(false)}
-                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60"
                           style={{ color: textPrimary }}
-                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
-                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
                         >
                           <History className="w-4 h-4 text-green-500" />
                           Ticket History
@@ -1142,10 +1140,8 @@ export default function DashboardLayout() {
                         <Link
                           to="/profile?tab=registrations"
                           onClick={() => setProfileOpen(false)}
-                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60"
                           style={{ color: textPrimary }}
-                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
-                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
                         >
                           <ClipboardCheck className="w-4 h-4 text-green-500" />
                           Registered Tickets
@@ -1155,10 +1151,8 @@ export default function DashboardLayout() {
                         <Link
                           to="/profile?tab=users"
                           onClick={() => setProfileOpen(false)}
-                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60"
                           style={{ color: textPrimary }}
-                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
-                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
                         >
                           <Shield className="w-4 h-4 text-green-500" />
                           User Management
@@ -1167,10 +1161,8 @@ export default function DashboardLayout() {
                       <Link
                         to="/profile?tab=privacy"
                         onClick={() => setProfileOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60"
                         style={{ color: textPrimary }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
                       >
                         <Settings className="w-4 h-4 text-green-500" />
                         Settings &amp; Privacy
@@ -1179,11 +1171,10 @@ export default function DashboardLayout() {
                       <div className="mx-3 my-1.5" style={{ borderTop: `1px solid ${inputBorder}` }} />
 
                       <button
+                        type="button"
                         onClick={toggleTheme}
-                        className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-left transition-colors"
+                        className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60"
                         style={{ color: textPrimary }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
                       >
                         <span className="flex items-center gap-3">
                           {isLight ? <Moon className="w-4 h-4 text-green-500" /> : <Sun className="w-4 h-4" style={{ color: '#F59E0B' }} />}
@@ -1194,7 +1185,7 @@ export default function DashboardLayout() {
                           style={{ backgroundColor: isLight ? inputBorder : '#10B981' }}
                         >
                           <span
-                            className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all"
+                            className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all duration-150"
                             style={{ left: isLight ? '2px' : 'calc(100% - 18px)' }}
                           />
                         </span>
@@ -1203,11 +1194,10 @@ export default function DashboardLayout() {
                       <div className="mx-3 my-1.5" style={{ borderTop: `1px solid ${inputBorder}` }} />
 
                       <button
+                        type="button"
                         onClick={() => { setProfileOpen(false); logout() }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-left transition-colors hover:text-red-500"
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-red-500"
                         style={{ color: textMuted }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
                       >
                         <LogOut className="w-4 h-4" />
                         Logout

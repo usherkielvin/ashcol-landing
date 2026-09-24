@@ -16,17 +16,7 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Smooth theme transition — only active during the toggle, not on load */
-  html.theme-transitioning *,
-  html.theme-transitioning *::before,
-  html.theme-transitioning *::after {
-    transition:
-      color 0.35s ease,
-      background-color 0.35s ease,
-      border-color 0.35s ease,
-      box-shadow 0.35s ease,
-      fill 0.35s ease !important;
-  }
+
   :root {
     /* Dark mode defaults (applied before JS runs) */
     --bg:           #0a0f1d;
