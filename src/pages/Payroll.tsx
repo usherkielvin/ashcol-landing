@@ -6,11 +6,21 @@ import {
   Search, Building2, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   SlidersHorizontal, Plus, X, RotateCcw, RefreshCw, Save, Loader2, EyeOff, Trash2,
   Stethoscope, Lightbulb, HardHat, PiggyBank, Wind, Recycle, ArrowBigDownDash, Snowflake,
-  Users, Clock, Receipt, ArrowRightLeft, ExternalLink,
+  Users, Clock, Receipt, ArrowRightLeft, ExternalLink, Lock, Unlock,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatBranchName, isPortalAdmin, isPayrollMember, isFranchiseBranch } from '../utils/api'
+import {
+  branchWeekCycle,
+  weeksOfMonth,
+  weekContaining,
+  prevMonth,
+  nextMonth,
+  formatMonth,
+  todayYMD,
+  type PayrollWeek,
+} from '../utils/payrollWeeks'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 import {
   fetchAndMapPayroll,
@@ -68,49 +78,7 @@ const avatarColor = (name: string) => {
   return AVATAR_COLORS[hash % AVATAR_COLORS.length]
 }
 
-function getFridayToFriday(d: Date = new Date()): { from: string; to: string } {
-  const day = d.getDay() // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
-  const daysBack = (day + 2) % 7 // Fri=0, Sat=1, Sun=2, Mon=3, Tue=4, Wed=5, Thu=6
-  const start = new Date(d.getFullYear(), d.getMonth(), d.getDate() - daysBack)
-  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return {
-    from: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`,
-    to: `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`,
-  }
-}
-
-function getLastWeekFridayToFriday(d: Date = new Date()): { from: string; to: string } {
-  const current = getFridayToFriday(d)
-  const [y, m, day] = current.from.split('-').map(Number)
-  const lastStart = new Date(y, m - 1, day - 7)
-  const lastEnd = new Date(lastStart.getFullYear(), lastStart.getMonth(), lastStart.getDate() + 7)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return {
-    from: `${lastStart.getFullYear()}-${pad(lastStart.getMonth() + 1)}-${pad(lastStart.getDate())}`,
-    to: `${lastEnd.getFullYear()}-${pad(lastEnd.getMonth() + 1)}-${pad(lastEnd.getDate())}`,
-  }
-}
-
-function getThisMonthRange(d: Date = new Date()): { from: string; to: string } {
-  const start = new Date(d.getFullYear(), d.getMonth(), 1)
-  const end = new Date(d.getFullYear(), d.getMonth() + 1, 0)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return {
-    from: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`,
-    to: `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`,
-  }
-}
-
-function getLastMonthRange(d: Date = new Date()): { from: string; to: string } {
-  const start = new Date(d.getFullYear(), d.getMonth() - 1, 1)
-  const end = new Date(d.getFullYear(), d.getMonth(), 0)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return {
-    from: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`,
-    to: `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`,
-  }
-}
+// Legacy date helpers removed — week logic now lives in payrollWeeks.ts
 
 const customFieldsFeeTotal = (r: PayrollRow): number => {
   if (!r.customFields) return 0
@@ -298,7 +266,49 @@ const CUSTOM_COLUMNS_KEY = 'ashcol-payroll-custom-columns'
 // Payroll keeps its own branch selection, independent of the app-wide branch switcher — once
 // picked here it must survive a reload and only change when this page's dropdown is used.
 const PAYROLL_BRANCH_KEY = 'ashcol-payroll-branch-id'
+const PAYROLL_WEEK_KEY = (branchId: string) => `ashcol-payroll-week-${branchId}`
+const PAYROLL_LAST_SELECTION_KEY = 'ashcol-payroll-last-selection'
 const MIN_COLUMN_WIDTH = 70
+
+interface SavedPayrollSelection {
+  month: string
+  weekFrom: string
+  weekTo: string
+  weekNumber?: number
+  label?: string
+}
+
+interface PayrollWeekClosure {
+  id?: number
+  branchId: string
+  weekFrom: string
+  weekTo: string
+  closedAt?: string
+  closedBy?: string
+  notes?: string | null
+}
+
+function getSavedPayrollSelection(branchId?: string): SavedPayrollSelection | null {
+  try {
+    if (branchId) {
+      const raw = localStorage.getItem(PAYROLL_WEEK_KEY(branchId))
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (parsed && typeof parsed.month === 'string' && typeof parsed.weekFrom === 'string' && typeof parsed.weekTo === 'string') {
+          return parsed
+        }
+      }
+    }
+    const general = localStorage.getItem(PAYROLL_LAST_SELECTION_KEY)
+    if (general) {
+      const parsed = JSON.parse(general)
+      if (parsed && typeof parsed.month === 'string' && typeof parsed.weekFrom === 'string' && typeof parsed.weekTo === 'string') {
+        return parsed
+      }
+    }
+  } catch {}
+  return null
+}
 
 // Installer job list: columns are sized from their real rendered text (see listWidths in the
 // detail view), so fonts here must match the list's classes. Date/Ticket/Customer stay pinned.
@@ -349,6 +359,7 @@ export default function Payroll() {
   // all-branch dropdown, saving/autosave, and Payroll Settings. Without this a payroll-tagged
   // member was pinned to their own branch and their edits were silently never saved.
   const canManagePayroll = isPortalAdmin(role) || isPayrollMember(user?.jobTitle)
+  const canManageClosures = isPortalAdmin(role) || role === 'manager'
 
   const userFirstName = useMemo(() => {
     const raw = (user as any)?.firstName || user?.name || (user as any)?.username || 'ADMIN'
@@ -396,13 +407,6 @@ export default function Payroll() {
   // search box above — the dropdown's own options always list the branch's full roster.
   const [technicianFilter, setTechnicianFilter] = useState('')
   const [branches, setBranches] = useState<{ id: string; name: string; payrollRates?: string | null }[]>([])
-  const defaultWeek = useMemo(() => getFridayToFriday(new Date()), [])
-  const [dateFrom, setDateFrom] = useState(() => defaultWeek.from)
-  const [dateTo, setDateTo] = useState(() => defaultWeek.to)
-  const [draftDateFrom, setDraftDateFrom] = useState(() => defaultWeek.from)
-  const [draftDateTo, setDraftDateTo] = useState(() => defaultWeek.to)
-  const [dateRangeOpen, setDateRangeOpen] = useState(false)
-  const dateRangeRef = useRef<HTMLDivElement>(null)
 
   const [branchFilter, setBranchFilter] = useState(() => {
     if (canManagePayroll) {
@@ -419,6 +423,50 @@ export default function Payroll() {
   useEffect(() => {
     if (canManagePayroll && branchFilter) localStorage.setItem(PAYROLL_BRANCH_KEY, branchFilter)
   }, [canManagePayroll, branchFilter])
+
+  // Track the previous branch to distinguish between initial mount / branch list loading
+  // vs. an actual user-initiated branch change.
+  const lastBranchRef = useRef<string>(branchFilter)
+
+  // Week picker state — drives dateFrom/dateTo for all downstream filtering and saving.
+  // Persisted in localStorage so reloading the page permanently preserves the selected
+  // month and week until the user explicitly changes them.
+  const [activeMonth, setActiveMonth] = useState<string>(() => {
+    const saved = getSavedPayrollSelection(branchFilter)
+    if (saved?.month) return saved.month
+
+    const c = branchWeekCycle(branchFilter)
+    return weekContaining(todayYMD(), c).owningMonth
+  })
+
+  const [activeWeek, setActiveWeek] = useState<PayrollWeek | null>(() => {
+    const saved = getSavedPayrollSelection(branchFilter)
+    const c = branchWeekCycle(branchFilter)
+    const m = saved?.month || weekContaining(todayYMD(), c).owningMonth
+    const weeks = weeksOfMonth(m, c)
+    if (saved?.weekFrom && saved?.weekTo) {
+      const match = weeks.find(w => w.from === saved.weekFrom && w.to === saved.weekTo)
+      if (match) return match
+    }
+    const today = todayYMD()
+    const todaySlot = weeks.find(w => w.from <= today && today <= w.to)
+    return todaySlot ?? weeks[weeks.length - 1] ?? null
+  })
+  // Derived date range — stays YYYY-MM-DD and feeds the same downstream logic unchanged.
+  const dateFrom = activeWeek?.from ?? ''
+  const dateTo   = activeWeek?.to   ?? ''
+
+  // Week closure / locking state (Phase 2 backend integration)
+  const [closures, setClosures] = useState<PayrollWeekClosure[]>([])
+  const [closingWeek, setClosingWeek] = useState(false)
+  const [reopeningWeek, setReopeningWeek] = useState(false)
+
+  const activeWeekClosure = useMemo(() => {
+    if (!activeWeek || !branchFilter) return null
+    return closures.find(c => c.branchId === branchFilter && c.weekFrom === activeWeek.from && c.weekTo === activeWeek.to) || null
+  }, [closures, branchFilter, activeWeek])
+
+  const isWeekClosed = Boolean(activeWeekClosure)
 
   // Per-branch override of the standard rates (e.g. SILANG's cleaning fee differs from other
   // branches) — parsed from Branch.payrollRates (see "Payroll Settings" modal below), falling
@@ -680,14 +728,6 @@ export default function Payroll() {
     })
   }
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (dateRangeRef.current && !dateRangeRef.current.contains(e.target as Node)) setDateRangeOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
-
   // Close the column right-click context menu on any click or scroll outside it.
   useEffect(() => {
     if (!colCtxMenu) return
@@ -700,33 +740,195 @@ export default function Payroll() {
     }
   }, [colCtxMenu])
 
-  const openDateRange = () => {
-    setDraftDateFrom(dateFrom)
-    setDraftDateTo(dateTo)
-    setDateRangeOpen(o => !o)
-  }
-  const applyDateRange = () => {
-    setDateFrom(draftDateFrom)
-    setDateTo(draftDateTo)
-    setDateRangeOpen(false)
-  }
-  const clearDateRange = () => {
-    setDateFrom('')
-    setDateTo('')
-    setDraftDateFrom('')
-    setDraftDateTo('')
-    setDateRangeOpen(false)
-  }
-  const applyPreset = (from: string, to: string) => {
-    setDateFrom(from)
-    setDateTo(to)
-    setDraftDateFrom(from)
-    setDraftDateTo(to)
-    setDateRangeOpen(false)
-  }
+  // ---------------------------------------------------------------------------
+  // Payroll week cycle — derived from the selected branch’s name/id.
+  // ---------------------------------------------------------------------------
+  const cycle = useMemo(() => {
+    const branch = branches.find(b => b.id === branchFilter)
+    // Use name first (more readable); fall back to raw id (works even before branch list loads
+    // because branch IDs like BR-TAGUIG-SALES contain the keyword directly).
+    return branchWeekCycle(branch?.name || branchFilter || '')
+  }, [branchFilter, branches])
+
+  // All 7-day weeks whose end date falls in activeMonth for this branch’s cycle.
+  const branchWeeks = useMemo(() => weeksOfMonth(activeMonth, cycle), [activeMonth, cycle])
+
+  // When the branch changes, restore the saved selection for that branch or jump to today.
+  // We check lastBranchRef to avoid resetting on initial mount or when the branches list loads.
+  useEffect(() => {
+    if (!branchFilter) return
+    if (lastBranchRef.current === branchFilter) return
+    lastBranchRef.current = branchFilter
+
+    const branch = branches.find(b => b.id === branchFilter)
+    const c = branchWeekCycle(branch?.name || branchFilter || '')
+    const saved = getSavedPayrollSelection(branchFilter)
+
+    if (saved) {
+      setActiveMonth(saved.month)
+      const weeks = weeksOfMonth(saved.month, c)
+      const match = weeks.find(w => w.from === saved.weekFrom && w.to === saved.weekTo)
+      if (match) {
+        setActiveWeek(match)
+        return
+      }
+    }
+
+    const todayWeek = weekContaining(todayYMD(), c)
+    setActiveMonth(todayWeek.owningMonth)
+    const weeks = weeksOfMonth(todayWeek.owningMonth, c)
+    const today = todayYMD()
+    const todaySlot = weeks.find(w => w.from <= today && today <= w.to)
+    setActiveWeek(todaySlot ?? weeks[weeks.length - 1] ?? null)
+  }, [branchFilter, branches]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Whenever the week list for the active month changes, auto-select:
+  //   • the current selection if it still exists in this month's list, OR
+  //   • the saved week for this branch if it matches activeMonth, OR
+  //   • the week that contains today, if today falls in this month, OR
+  //   • the last week of the month (for past/future month navigation).
+  useEffect(() => {
+    if (branchWeeks.length === 0) return
+    setActiveWeek(prev => {
+      // Don’t disturb an explicit user choice that still exists in this month’s list.
+      if (prev && branchWeeks.some(w => w.from === prev.from && w.to === prev.to)) return prev
+
+      const saved = getSavedPayrollSelection(branchFilter)
+      if (saved && saved.month === activeMonth) {
+        const match = branchWeeks.find(w => w.from === saved.weekFrom && w.to === saved.weekTo)
+        if (match) return match
+      }
+
+      const today = todayYMD()
+      const todaySlot = branchWeeks.find(w => w.from <= today && today <= w.to)
+      return todaySlot ?? branchWeeks[branchWeeks.length - 1] ?? null
+    })
+  }, [branchWeeks, branchFilter, activeMonth])
+
+  // Persist week and month selection to localStorage whenever user changes them
+  useEffect(() => {
+    if (!branchFilter || !activeWeek || !activeMonth) return
+    // Guard against saving when branchFilter has just changed but activeWeek hasn't updated yet
+    if (lastBranchRef.current !== branchFilter) return
+    // Guard against temporary mismatch while navigating between months
+    if (activeWeek.owningMonth && activeWeek.owningMonth !== activeMonth) return
+
+    const payload = JSON.stringify({
+      month: activeMonth,
+      weekFrom: activeWeek.from,
+      weekTo: activeWeek.to,
+      weekNumber: activeWeek.weekNumber,
+      label: activeWeek.label,
+    })
+    try {
+      localStorage.setItem(PAYROLL_WEEK_KEY(branchFilter), payload)
+      localStorage.setItem(PAYROLL_LAST_SELECTION_KEY, payload)
+    } catch (e) {
+      console.error('Failed to persist payroll week selection:', e)
+    }
+  }, [branchFilter, activeMonth, activeWeek])
 
   const getToken = () =>
     localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+
+  const fetchClosures = useCallback(async () => {
+    if (!branchFilter) {
+      setClosures([])
+      return
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/v1/payroll/closures?branchId=${encodeURIComponent(branchFilter)}`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      })
+      if (res.ok) {
+        const list = await res.json()
+        setClosures(Array.isArray(list) ? list : [])
+      }
+    } catch (e) {
+      console.error('Failed to fetch payroll week closures:', e)
+    }
+  }, [branchFilter])
+
+  useEffect(() => {
+    void fetchClosures()
+  }, [fetchClosures])
+
+  const handleCloseWeek = () => {
+    if (!activeWeek || !branchFilter || !canManageClosures) return
+    setConfirmDialog({
+      title: 'Close & Lock Payroll Week',
+      message: `Are you sure you want to close Week ${activeWeek.weekNumber} (${activeWeek.label})?`,
+      detail: 'Once closed, this payroll week will be locked. No further job synchronizations, manual additions, or edits can be made until the week is reopened by an administrator.',
+      confirmText: 'Close & Lock Week',
+      cancelText: 'Cancel',
+      variant: 'discard',
+      onConfirm: async () => {
+        setClosingWeek(true)
+        try {
+          const res = await fetch(`${API_BASE_URL}/v1/payroll/closures`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${getToken()}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              branchId: branchFilter,
+              weekFrom: activeWeek.from,
+              weekTo: activeWeek.to,
+            }),
+          })
+          if (res.ok) {
+            await fetchClosures()
+          } else {
+            const err = await res.json().catch(() => ({}))
+            alert(err.message || err.error || 'Failed to close payroll week.')
+          }
+        } catch (e) {
+          console.error('Failed to close week:', e)
+        } finally {
+          setClosingWeek(false)
+        }
+      },
+    })
+  }
+
+  const handleReopenWeek = () => {
+    if (!activeWeek || !branchFilter || !canManageClosures) return
+    setConfirmDialog({
+      title: 'Reopen Payroll Week',
+      message: `Are you sure you want to reopen Week ${activeWeek.weekNumber} (${activeWeek.label})?`,
+      detail: 'This will unlock the payroll week, allowing new job orders to be synced and existing entries to be edited.',
+      confirmText: 'Reopen Week',
+      cancelText: 'Keep Locked',
+      variant: 'info',
+      onConfirm: async () => {
+        setReopeningWeek(true)
+        try {
+          const params = new URLSearchParams({
+            branchId: branchFilter,
+            weekFrom: activeWeek.from,
+            weekTo: activeWeek.to,
+          })
+          const res = await fetch(`${API_BASE_URL}/v1/payroll/closures?${params.toString()}`, {
+            method: 'DELETE',
+            headers: {
+              Authorization: `Bearer ${getToken()}`,
+            },
+          })
+          if (res.ok) {
+            await fetchClosures()
+          } else {
+            const err = await res.json().catch(() => ({}))
+            alert(err.message || err.error || 'Failed to reopen payroll week.')
+          }
+        } catch (e) {
+          console.error('Failed to reopen week:', e)
+        } finally {
+          setReopeningWeek(false)
+        }
+      },
+    })
+  }
 
   const handleSearchChange = (value: string) => {
     setRawSearch(value)
@@ -737,6 +939,10 @@ export default function Payroll() {
   // Core background save routine
   const savePayrollToBackend = useCallback(async (data: PayrollRow[], bId: string, mKey: string) => {
     if (!bId || !mKey) return
+    // Guard against saving a locked week
+    if (activeWeek && closures.some(c => c.branchId === bId && c.weekFrom === activeWeek.from && c.weekTo === activeWeek.to)) {
+      return
+    }
     setSaveStatus('saving')
     try {
       const entries = data.map((r, idx) => ({
@@ -790,6 +996,9 @@ export default function Payroll() {
       })
       if (res.ok) {
         setSaveStatus('saved')
+      } else if (res.status === 423) {
+        setSaveStatus('error')
+        console.warn('Cannot save payroll: this week is closed/locked.')
       } else {
         setSaveStatus('error')
       }
@@ -797,7 +1006,7 @@ export default function Payroll() {
       console.error('Failed to auto-save payroll:', e)
       setSaveStatus('error')
     }
-  }, [])
+  }, [activeWeek, closures])
 
   const monthsToFetch = useMemo(() => {
     const set = new Set<string>()
@@ -879,6 +1088,12 @@ export default function Payroll() {
               try { return e.customFields ? JSON.parse(e.customFields) : {} } catch { return {} }
             })(),
           }))
+        }
+
+        // If the active week is closed, use saved rows only and skip schedule sync & auto-save
+        if (activeWeek && closures.some(c => c.branchId === branchFilter && c.weekFrom === activeWeek.from && c.weekTo === activeWeek.to)) {
+          combinedSavedRows = deduplicateAndMergePayroll(combinedSavedRows, savedRows)
+          continue
         }
 
         // Automatically fetch latest results from schedules
@@ -966,6 +1181,7 @@ export default function Payroll() {
   // Shared by every mutation below — groups by month (a row can belong to a different month
   // than the active filter) and pushes each group to its own backend save.
   const flushSave = (updated: PayrollRow[]) => {
+    if (isWeekClosed) return
     if (canManagePayroll && branchFilter) {
       const monthGroups = new Map<string, PayrollRow[]>()
       for (const r of updated) {
@@ -979,12 +1195,14 @@ export default function Payroll() {
     }
   }
   const scheduleAutoSave = (updated: PayrollRow[]) => {
+    if (isWeekClosed) return
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     setSaveStatus('saving')
     autoSaveTimer.current = setTimeout(() => flushSave(updated), 700)
   }
   // Save-now for the Deductions modal — skips the debounce so "Save" persists immediately.
   const saveDeductionsNow = () => {
+    if (isWeekClosed) return
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     setSaveStatus('saving')
     flushSave(rows)
@@ -993,6 +1211,7 @@ export default function Payroll() {
 
   // Debounced auto-save on row edits (supports functional patch so custom fields never read stale state)
   const updateRow = (id: string, patch: Partial<PayrollRow> | ((prevRow: PayrollRow) => Partial<PayrollRow>)) => {
+    if (isWeekClosed) return
     setRows(prev => {
       const updated = prev.map(r => {
         if (r.id !== id) return r
@@ -1008,6 +1227,7 @@ export default function Payroll() {
   // not one job — so editing them writes the same value across every row grouped under that
   // installer's name, rather than a single row's field.
   const updateInstallerRows = (installerName: string, patch: Partial<PayrollRow>) => {
+    if (isWeekClosed) return
     setRows(prev => {
       const updated = prev.map(r => resolveGroupKey(r.installerName) === installerName ? { ...r, ...patch } : r)
       scheduleAutoSave(updated)
@@ -1019,7 +1239,7 @@ export default function Payroll() {
   // first job, adjusted so the sum across the range equals what was typed (see deductionValue);
   // a balance overwrites the latest row that holds one, else the latest job.
   const setDeduction = (installerRows: PayrollRow[], key: DeductionKey, value: string) => {
-    if (installerRows.length === 0) return
+    if (isWeekClosed || installerRows.length === 0) return
     let targetId = installerRows[0].id
     let stored = value
     if (BALANCE_DEDUCTION_KEYS.has(key)) {
@@ -1042,6 +1262,7 @@ export default function Payroll() {
   // Allowance / Earth Grounding are auto-stamped from the branch rate on every sync; a hand edit
   // (including clearing to zero) flags the row so re-syncs keep the user's value instead.
   const setAutoStampedFee = (id: string, field: AutoStampedFee, v: string) => {
+    if (isWeekClosed) return
     setRows(prev => {
       const updated = prev.map(r => r.id === id
         ? { ...r, [field]: v, customFields: { ...(r.customFields || {}), [MANUAL_FEE_PREFIX + field]: '1' } }
@@ -1381,203 +1602,29 @@ export default function Payroll() {
             </div>
           )}
 
-          {/* Date Range Filter with Quick Presets */}
-          <div ref={dateRangeRef} className="relative z-40 shrink-0">
+          {/* Month navigator — compact pill with prev/next arrows */}
+          <div className="flex items-center gap-0.5 rounded-xl border px-1 py-0.5 shrink-0" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
             <button
               type="button"
-              onClick={openDateRange}
-              className="flex items-center gap-2 px-3 py-1.5 md:py-2 rounded-xl border text-xs font-bold transition-all whitespace-nowrap shadow-xs hover:border-emerald-500/50"
-              style={{
-                backgroundColor: (dateFrom || dateTo) ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)') : inputBg,
-                borderColor: (dateFrom || dateTo) ? '#10B98160' : inputBorder,
-                color: (dateFrom || dateTo) ? (isLight ? '#047857' : '#10B981') : textMuted,
-              }}
+              onClick={() => setActiveMonth(m => prevMonth(m))}
+              className="p-1 rounded-lg transition-colors hover:bg-emerald-500/15 active:scale-90"
+              title="Previous month"
+              style={{ color: textMuted }}
             >
-              <Calendar className="w-4 h-4 text-emerald-500 shrink-0" />
-              <span>
-                {dateFrom && dateTo
-                  ? `${shortDate(dateFrom)} – ${shortDate(dateTo)}`
-                  : dateFrom
-                    ? `From ${shortDate(dateFrom)}`
-                    : dateTo
-                      ? `Until ${shortDate(dateTo)}`
-                      : 'Date range'}
-              </span>
-              {(dateFrom || dateTo) ? (
-                <span
-                  onClick={e => { e.stopPropagation(); clearDateRange() }}
-                  className="ml-0.5 p-0.5 rounded-full hover:bg-emerald-500/20 transition-colors"
-                  title="Clear date filter"
-                >
-                  <X className="w-3.5 h-3.5 text-emerald-500" />
-                </span>
-              ) : (
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${dateRangeOpen ? 'rotate-180' : ''}`} />
-              )}
+              <ChevronLeft className="w-3.5 h-3.5" />
             </button>
-
-            {dateRangeOpen && (
-              <div
-                className="absolute top-full left-0 mt-2 rounded-2xl overflow-hidden p-3.5 flex flex-col gap-3 z-50 animate-in fade-in slide-in-from-top-1 duration-150"
-                style={{
-                  backgroundColor: cardBg,
-                  border: `1px solid ${border}`,
-                  minWidth: '280px',
-                  boxShadow: isLight ? '0 20px 60px rgba(0,0,0,0.14)' : '0 20px 60px rgba(0,0,0,0.7)',
-                }}
-              >
-                {/* Quick presets */}
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-500">Quick Presets</span>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const r = getFridayToFriday(new Date())
-                        applyPreset(r.from, r.to)
-                      }}
-                      className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-left border transition-all hover:border-emerald-500"
-                      style={{
-                        backgroundColor: (dateFrom === defaultWeek.from && dateTo === defaultWeek.to) ? (isLight ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.2)') : inputBg,
-                        borderColor: (dateFrom === defaultWeek.from && dateTo === defaultWeek.to) ? '#10B981' : inputBorder,
-                        color: (dateFrom === defaultWeek.from && dateTo === defaultWeek.to) ? '#10B981' : textPrimary,
-                      }}
-                    >
-                      This Week (Fri–Fri)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const r = getLastWeekFridayToFriday(new Date())
-                        applyPreset(r.from, r.to)
-                      }}
-                      className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-left border transition-all hover:border-emerald-500"
-                      style={{
-                        backgroundColor: inputBg,
-                        borderColor: inputBorder,
-                        color: textPrimary,
-                      }}
-                    >
-                      Last Week (Fri–Fri)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const r = getThisMonthRange(new Date())
-                        applyPreset(r.from, r.to)
-                      }}
-                      className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-left border transition-all hover:border-emerald-500"
-                      style={{
-                        backgroundColor: inputBg,
-                        borderColor: inputBorder,
-                        color: textPrimary,
-                      }}
-                    >
-                      This Month
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const r = getLastMonthRange(new Date())
-                        applyPreset(r.from, r.to)
-                      }}
-                      className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-left border transition-all hover:border-emerald-500"
-                      style={{
-                        backgroundColor: inputBg,
-                        borderColor: inputBorder,
-                        color: textPrimary,
-                      }}
-                    >
-                      Last Month
-                    </button>
-                  </div>
-                </div>
-
-                <div className="h-px w-full" style={{ backgroundColor: border }} />
-
-                {/* Custom range input */}
-                <div className="flex flex-col gap-2">
-                  <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Custom Range</span>
-                  <div className="flex flex-col gap-2">
-                    {/* From Date Button */}
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[11px] font-bold" style={{ color: textMuted }}>From Date</label>
-                      <div
-                        onClick={(e) => {
-                          const input = e.currentTarget.querySelector('input')
-                          try { input?.showPicker() } catch { input?.focus() }
-                        }}
-                        className="relative flex items-center justify-between px-3 py-2 rounded-xl border cursor-pointer transition-all hover:border-emerald-500 group shadow-xs select-none"
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder }}
-                      >
-                        <div className="flex items-center gap-2 pointer-events-none">
-                          <Calendar className="w-3.5 h-3.5 text-emerald-500" />
-                          <span className="text-xs font-bold" style={{ color: draftDateFrom ? textPrimary : textMuted }}>
-                            {draftDateFrom ? new Date(draftDateFrom + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Select start date...'}
-                          </span>
-                        </div>
-                        <input
-                          type="date"
-                          value={draftDateFrom}
-                          onChange={e => setDraftDateFrom(e.target.value)}
-                          max={draftDateTo || undefined}
-                          className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
-                        />
-                        <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-500 transition-colors pointer-events-none" />
-                      </div>
-                    </div>
-
-                    {/* To Date Button */}
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[11px] font-bold" style={{ color: textMuted }}>To Date</label>
-                      <div
-                        onClick={(e) => {
-                          const input = e.currentTarget.querySelector('input')
-                          try { input?.showPicker() } catch { input?.focus() }
-                        }}
-                        className="relative flex items-center justify-between px-3 py-2 rounded-xl border cursor-pointer transition-all hover:border-emerald-500 group shadow-xs select-none"
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder }}
-                      >
-                        <div className="flex items-center gap-2 pointer-events-none">
-                          <Calendar className="w-3.5 h-3.5 text-emerald-500" />
-                          <span className="text-xs font-bold" style={{ color: draftDateTo ? textPrimary : textMuted }}>
-                            {draftDateTo ? new Date(draftDateTo + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Select end date...'}
-                          </span>
-                        </div>
-                        <input
-                          type="date"
-                          value={draftDateTo}
-                          onChange={e => setDraftDateTo(e.target.value)}
-                          min={draftDateFrom || undefined}
-                          className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
-                        />
-                        <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-500 transition-colors pointer-events-none" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex gap-2 pt-1 border-t" style={{ borderColor: border }}>
-                  <button
-                    type="button"
-                    onClick={clearDateRange}
-                    className="flex-1 py-1.5 rounded-xl text-xs font-bold transition-all hover:bg-slate-500/10"
-                    style={{ color: textMuted }}
-                  >
-                    Clear
-                  </button>
-                  <button
-                    type="button"
-                    onClick={applyDateRange}
-                    className="flex-1 py-1.5 rounded-xl text-xs font-black text-white transition-all shadow-xs active:scale-95"
-                    style={{ backgroundColor: '#10B981' }}
-                  >
-                    Apply Range
-                  </button>
-                </div>
-              </div>
-            )}
+            <span className="px-1.5 text-xs font-bold tracking-tight whitespace-nowrap" style={{ color: textPrimary }}>
+              {formatMonth(activeMonth)}
+            </span>
+            <button
+              type="button"
+              onClick={() => setActiveMonth(m => nextMonth(m))}
+              className="p-1 rounded-lg transition-colors hover:bg-emerald-500/15 active:scale-90"
+              title="Next month"
+              style={{ color: textMuted }}
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
           </div>
 
           {/* Technician filter — narrows the roster below to one installer */}
@@ -1618,25 +1665,42 @@ export default function Payroll() {
             <button
               type="button"
               onClick={() => void loadAndSync(true)}
-              disabled={syncing || initialLoading}
+              disabled={syncing || initialLoading || isWeekClosed}
               className="flex items-center gap-2 px-3.5 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all shadow-xs disabled:opacity-50 cursor-pointer hover:border-emerald-500/50 active:scale-95"
-              style={syncFailed && !syncing
-                ? {
-                    backgroundColor: isLight ? 'rgba(220,38,38,0.08)' : 'rgba(248,113,113,0.14)',
-                    borderColor: isLight ? '#DC262660' : '#F8717160',
-                    color: isLight ? '#DC2626' : '#F87171',
-                  }
-                : {
-                    backgroundColor: isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)',
-                    borderColor: '#10B98150',
-                    color: '#10B981',
-                  }}
-              title={syncFailed
-                ? "Couldn't pull the latest jobs from Schedules — showing only previously saved rows, which may stop partway through the period. Click to retry."
-                : 'Sync latest completed job orders from Schedules (DONE INSTALL, DONE CLEANING, DONE CHECKUP, DONE SERVICE, etc.)'}
+              style={
+                isWeekClosed
+                  ? {
+                      backgroundColor: inputBg,
+                      borderColor: inputBorder,
+                      color: textMuted,
+                      cursor: 'not-allowed',
+                    }
+                  : syncFailed && !syncing
+                  ? {
+                      backgroundColor: isLight ? 'rgba(220,38,38,0.08)' : 'rgba(248,113,113,0.14)',
+                      borderColor: isLight ? '#DC262660' : '#F8717160',
+                      color: isLight ? '#DC2626' : '#F87171',
+                    }
+                  : {
+                      backgroundColor: isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)',
+                      borderColor: '#10B98150',
+                      color: '#10B981',
+                    }
+              }
+              title={
+                isWeekClosed
+                  ? 'This payroll week is closed and locked — syncing is disabled'
+                  : syncFailed
+                  ? "Couldn't pull the latest jobs from Schedules — showing only previously saved rows, which may stop partway through the period. Click to retry."
+                  : 'Sync latest completed job orders from Schedules (DONE INSTALL, DONE CLEANING, DONE CHECKUP, DONE SERVICE, etc.)'
+              }
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-              <span>{syncing ? 'Syncing…' : syncFailed ? 'Sync failed — Retry' : 'Sync Latest'}</span>
+              {isWeekClosed ? (
+                <Lock className="w-3.5 h-3.5 text-amber-500" />
+              ) : (
+                <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+              )}
+              <span>{isWeekClosed ? 'Week Locked' : syncing ? 'Syncing…' : syncFailed ? 'Sync failed — Retry' : 'Sync Latest'}</span>
             </button>
           )}
 
@@ -1656,6 +1720,98 @@ export default function Payroll() {
           )}
       </div>
 
+
+      {/* Week-tab strip */}
+      {branchFilter && branchWeeks.length > 0 && (
+        <div
+          className="-mx-5 md:mx-0 px-3 md:px-0 py-2 md:py-2.5 flex items-center justify-between gap-2 overflow-x-auto"
+          style={{ borderBottom: `1px solid ${border}` }}
+        >
+          <div className="flex items-center gap-1.5 min-w-0">
+            {branchWeeks.map(w => {
+              const isActive = activeWeek?.from === w.from && activeWeek?.to === w.to
+              const today = todayYMD()
+              const isCurrent = w.from <= today && today <= w.to
+              const isClosed = closures.some(c => c.branchId === branchFilter && c.weekFrom === w.from && c.weekTo === w.to)
+              return (
+                <button
+                  key={w.from}
+                  type="button"
+                  onClick={() => setActiveWeek(w)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all active:scale-95 whitespace-nowrap border"
+                  style={{
+                    backgroundColor: isActive ? (isLight ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.2)') : inputBg,
+                    borderColor: isActive ? '#10B981' : inputBorder,
+                    color: isActive ? '#10B981' : textMuted,
+                    boxShadow: isActive ? '0 0 0 1px #10B98140' : 'none',
+                  }}
+                >
+                  {isClosed && (
+                    <span title="Week closed & locked" className="inline-flex items-center shrink-0">
+                      <Lock className="w-3 h-3 text-amber-500" />
+                    </span>
+                  )}
+                  <span className="font-black" style={{ color: isActive ? '#10B981' : textPrimary }}>
+                    Week {w.weekNumber}
+                  </span>
+                  <span className="opacity-70">{w.label}</span>
+                  {isCurrent && (
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#10B981' }} title="Current week" />
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Week Closed Status & Action */}
+            {isWeekClosed ? (
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border shrink-0 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                  title={activeWeekClosure?.closedBy ? `Closed by ${activeWeekClosure.closedBy}${activeWeekClosure.closedAt ? ` on ${new Date(activeWeekClosure.closedAt).toLocaleDateString()}` : ''}` : 'Week is closed & locked'}
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>Closed</span>
+                </span>
+                {canManageClosures && (
+                  <button
+                    type="button"
+                    onClick={handleReopenWeek}
+                    disabled={reopeningWeek}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-all hover:bg-emerald-500/10 hover:border-emerald-500/40 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 active:scale-95 cursor-pointer disabled:opacity-50"
+                    title="Reopen this week for edits"
+                  >
+                    <Unlock className="w-3.5 h-3.5" />
+                    <span>{reopeningWeek ? 'Reopening…' : 'Reopen'}</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              canManageClosures && activeWeek && (
+                <button
+                  type="button"
+                  onClick={handleCloseWeek}
+                  disabled={closingWeek}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-all hover:bg-amber-500/10 hover:border-amber-500/40 text-amber-600 dark:text-amber-400 border-amber-500/30 active:scale-95 cursor-pointer disabled:opacity-50"
+                  title="Close and lock this payroll week"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>{closingWeek ? 'Closing…' : 'Close Week'}</span>
+                </button>
+              )
+            )}
+
+            <span
+              className="text-[10px] font-black uppercase tracking-widest shrink-0 px-2 py-1 rounded-lg border"
+              style={{ color: textMuted, backgroundColor: inputBg, borderColor: inputBorder }}
+              title={cycle === 'friday' ? 'North branch cycle: Fri-Thu' : 'South branch cycle: Mon-Sun'}
+            >
+              {cycle === 'friday' ? 'Fri - Thu' : 'Mon - Sun'}
+            </span>
+          </div>
+        </div>
+      )}
       {/* The letterhead and the roster below it read as one continuous payroll ledger — same
           document metaphor as the branch's own printed weekly sheet — so they're fused with a
           shared border/no gap whenever the roster table is actually what's rendered below. */}
@@ -1692,6 +1848,12 @@ export default function Payroll() {
               >
                 <Calendar className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                 <span>{dateFrom ? longDate(dateFrom) : '—'} – {dateTo ? longDate(dateTo) : '—'}</span>
+                {isWeekClosed && (
+                  <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-md ml-1">
+                    <Lock className="w-3 h-3" />
+                    Locked
+                  </span>
+                )}
               </div>
             )}
           </div>
@@ -1883,7 +2045,7 @@ export default function Payroll() {
                               const empty = text === '—'
                               const isStatus = col.key === 'installationUpload'
                               const isDone = isStatus && /^DONE\b/i.test(text)
-                              const isReadOnly = Boolean(col.readOnlyWhenSynced && row.ticketId)
+                              const isReadOnly = isWeekClosed || Boolean(col.readOnlyWhenSynced && row.ticketId)
                               const isEditing = editingCell?.rowId === row.id && editingCell?.colKey === col.key
                               const acc = getColAccessor(col.key)
 
@@ -1893,7 +2055,7 @@ export default function Payroll() {
                                   setEditingCell(null)
                                 } else if (e.key === 'Tab') {
                                   e.preventDefault()
-                                  const editableCols = groupVisibleColumns.filter(c => !(c.readOnlyWhenSynced && Boolean(row.ticketId)))
+                                  const editableCols = isWeekClosed ? [] : groupVisibleColumns.filter(c => !(c.readOnlyWhenSynced && Boolean(row.ticketId)))
                                   const curIdx = editableCols.findIndex(c => c.key === col.key)
                                   if (curIdx !== -1) {
                                     const step = e.shiftKey ? -1 : 1
@@ -1908,7 +2070,7 @@ export default function Payroll() {
                               }
 
                               const startCellEdit = () => {
-                                if (!isReadOnly) {
+                                if (!isReadOnly && !isWeekClosed) {
                                   setEditingCell({ rowId: row.id, colKey: col.key })
                                 }
                               }
@@ -2125,24 +2287,27 @@ export default function Payroll() {
                                   type="text"
                                   placeholder="Customer name"
                                   value={row.customerName}
+                                  disabled={isWeekClosed}
                                   onChange={e => updateRow(row.id, { customerName: e.target.value })}
-                                  className="text-sm font-extrabold bg-transparent border-0 outline-none w-full"
+                                  className="text-sm font-extrabold bg-transparent border-0 outline-none w-full disabled:opacity-70 disabled:cursor-not-allowed"
                                   style={{ color: textPrimary }}
                                 />
                                 <div className="flex items-center gap-2">
                                   <input
                                     type="date"
                                     value={row.workDate}
+                                    disabled={isWeekClosed}
                                     onChange={e => updateRow(row.id, { workDate: e.target.value })}
-                                    className="text-[11px] font-semibold bg-transparent border-0 outline-none"
+                                    className="text-[11px] font-semibold bg-transparent border-0 outline-none disabled:opacity-70 disabled:cursor-not-allowed"
                                     style={{ color: textMuted, colorScheme: isLight ? 'light' : 'dark' }}
                                   />
                                   <input
                                     type="text"
                                     placeholder="Ticket"
                                     value={row.ticketNumber}
+                                    disabled={isWeekClosed}
                                     onChange={e => updateRow(row.id, { ticketNumber: e.target.value })}
-                                    className="text-[11px] font-semibold bg-transparent border-0 outline-none w-20"
+                                    className="text-[11px] font-semibold bg-transparent border-0 outline-none w-20 disabled:opacity-70 disabled:cursor-not-allowed"
                                     style={{ color: textMuted }}
                                   />
                                 </div>
@@ -3625,7 +3790,7 @@ export default function Payroll() {
               suffix={key === 'lateMinutes' ? ' min' : undefined}
               value={value || ''}
               placeholder={key === 'lateMinutes' ? '0 min' : '₱0.00'}
-              disabled={!canManagePayroll}
+              disabled={!canManagePayroll || isWeekClosed}
               onValueChange={(values, info) => {
                 if (info.source === 'event') setDeduction(installerRows, key, values.value)
               }}
@@ -3790,15 +3955,17 @@ export default function Payroll() {
                   >
                     Close
                   </button>
-                  <button
-                    type="button"
-                    onClick={saveDeductionsNow}
-                    className="flex items-center gap-2 px-7 py-2.5 rounded-xl text-xs font-black text-white transition-all shadow-md hover:shadow-lg active:scale-95 cursor-pointer"
-                    style={{ background: '#10B981' }}
-                  >
-                    <Save className="w-4 h-4" />
-                    <span>Save</span>
-                  </button>
+                  {!isWeekClosed && (
+                    <button
+                      type="button"
+                      onClick={saveDeductionsNow}
+                      className="flex items-center gap-2 px-7 py-2.5 rounded-xl text-xs font-black text-white transition-all shadow-md hover:shadow-lg active:scale-95 cursor-pointer"
+                      style={{ background: '#10B981' }}
+                    >
+                      <Save className="w-4 h-4" />
+                      <span>Save</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
