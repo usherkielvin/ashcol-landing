@@ -19,6 +19,7 @@ export interface TicketPhoto {
   uploadedAt?: string
   uploadedBy?: string
   uploadedById?: string
+  description?: string
 }
 
 export function parseTicketPhotos(raw: unknown): TicketPhoto[] {

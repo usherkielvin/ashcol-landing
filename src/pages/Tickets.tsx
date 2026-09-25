@@ -75,7 +75,7 @@ import {
   fetchTicketById, findTicketInListByRef, fmtPhone, formatAddress, formatDateKeyLabel, formatDateToKey,
   formatDisplayDate, formatGhostRemarks, formatMonthFilterLabel, formatNegotiatorLabel, formatInstallerLabel, formatPaymentAmount,
   formatPaymentBreakdownText, formatRelayTicketTypeShort, formatServiceDriver, formatSimpleDateShort,
-  getArchivedScheduleDate, getBranchDisplayName, getCellRawValue, getContinuationDates, getCustomerDisplayName,
+  buildRescheduleGhostAcUpdates, getArchivedScheduleDate, getBranchDisplayName, getCellRawValue, getContinuationDates, getCustomerDisplayName,
   getEmptyRequiredColumnsForClose, getF, getFinalDateKey, getInstalledDateKey,
   getInstallerDisplay, getNextContinuationDate, getOverviewStatusBadge, getPaymentBreakdown, getPaymentMode,
   getPreferredDateKey, getPreviousScheduleDates, getScheduleGhostKind, getScheduleOutcome, getSchedulePaymentDisplay, getScheduleRowColors,
@@ -94,7 +94,7 @@ import {
   sortOverviewSearchResults, statusShowsScheduleDetails, stripArchivedRemarkSuffix,
   ticketBelongsOnScheduleBranch, ticketBelongsOnScheduleDate, ticketHadScheduleDate,
   ticketHasRescheduleMeta, ticketMatchesDateKey, ticketMatchesNegotiatorFilter, ticketMatchesOverviewQuery,
-  todayDateKey, wantsTicketArchive,
+  todayDateKey, wantsTicketArchive, withRescheduleSnapshot,
   type Ticket,
   type TicketsSurface,
   type ImportUpdate,
@@ -2185,6 +2185,12 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           }
         } else {
           acMetaExtras.reschedulePending = false
+          // Leave a RESCHED ghost on the old date with that day's crew frozen. The backend records
+          // this too, but the optimistic local row (applyTicketLocally) is built from THIS body —
+          // without it here, the old date's row is dropped from the board/cache until a refetch.
+          if (isDateMove && originalTicket) {
+            Object.assign(acMetaExtras, buildRescheduleGhostAcUpdates(originalTicket, oldDateKey, newDateKey))
+          }
         }
       } else if (isDateMove && !leavingResched) {
         body.status = 'SCHEDULED'
@@ -3739,6 +3745,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       .catch(() => setDriverOnlyNames([]))
   }, [token])
 
+  // Display-only: a RESCHED ghost row shows the crew frozen for its old date (see
+  // withRescheduleSnapshot). Used for rendering/sorting/branch-scoping ONLY — rows, menus, and
+  // save paths keep the live ticket object so a snapshot can never be written back.
+  const displayTicket = useCallback((ticket: Ticket): Ticket => (
+    !isMyTickets && dateFilter ? withRescheduleSnapshot(ticket, dateFilter) : ticket
+  ), [isMyTickets, dateFilter])
+
   // ─────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     const effectiveBranch = activeBranchId
@@ -3779,7 +3792,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         if (!ticketBelongsOnScheduleDate(t, dateFilter)) return false
         if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES'
           && !ticketBelongsOnScheduleBranch(
-            t, effectiveBranch, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+            displayTicket(t), effectiveBranch, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
           )) return false
         return true
       })
@@ -3884,7 +3897,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         list = list.filter(t =>
           (dateFilter && isCancelledScheduleGhost(t, dateFilter))
           || ticketBelongsOnScheduleBranch(
-            t, effectiveBranch, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+            displayTicket(t), effectiveBranch, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
           ),
         )
       }
@@ -3909,12 +3922,12 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       )
     }
     return list
-  }, [tickets, isMyTickets, activeBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, user?.jobTitle, installerLineupIndex, driverOnlyNames, isAdmin, myTicketsNegotiatorFilter, myTicketsStatusFilter, myTicketsMonthFilter, branchEmployees, isBranchMatch, monthViewActive, monthFilterNegotiatorId, monthFilterStatus])
+  }, [tickets, isMyTickets, activeBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, user?.jobTitle, installerLineupIndex, driverOnlyNames, isAdmin, myTicketsNegotiatorFilter, myTicketsStatusFilter, myTicketsMonthFilter, branchEmployees, isBranchMatch, monthViewActive, monthFilterNegotiatorId, monthFilterStatus, displayTicket])
 
   // Auto-numbered vehicle trip labels ("STRADA - 1", "STRADA - 2") for the current filtered set —
   // the vehicle is now the dispatch unit, so staff never type a manual "- N" suffix into the
   // Driver or Vehicle fields; the trip number is derived from assignment order instead.
-  const vehicleTripLabels = useMemo(() => buildVehicleTripLabels(filtered), [filtered])
+  const vehicleTripLabels = useMemo(() => buildVehicleTripLabels(filtered.map(displayTicket)), [filtered, displayTicket])
 
   const visible = useMemo(() => {
     let list = filtered
@@ -3928,7 +3941,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         return compareTicketsByColumn(a, b, 'TICKET NO', cmpOpts)
       })
     }
-    list = [...list].sort((a, b) => {
+    list = [...list].sort((rowA, rowB) => {
+      const a = displayTicket(rowA)
+      const b = displayTicket(rowB)
       // Schedules: always group rows by vehicle first — the vehicle (e.g. "STRADA - 1",
       // "STRADA - 2") is the actual dispatch unit and trip order, auto-numbered from assignment
       // order. Driver name is the secondary tiebreaker so rows stay readable within a vehicle group.
@@ -3955,7 +3970,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       return compareTicketsByColumn(a, b, 'TICKET NO', cmpOpts)
     })
     return list
-  }, [filtered, sortConfig, isMyTickets, branchEmployees, activeBranchId, vehicleTripLabels, monthViewActive])
+  }, [filtered, sortConfig, isMyTickets, branchEmployees, activeBranchId, vehicleTripLabels, monthViewActive, displayTicket])
 
   // Ground Arctic in the actual rows on screen and the active date/branch
   useEffect(() => {
@@ -4092,7 +4107,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     // INSTALLER / DRIVER (SERVICE column): name only — never trip "- N" suffixes.
     // VEHICLE (exported as service): use the same auto trip labels as the table.
     return visible.map((ticket, index) => {
-      const live = optimisticTicketsRef.current.get(ticket.id) || ticket
+      const live = displayTicket(optimisticTicketsRef.current.get(ticket.id) || ticket)
       const installerRaw = getInstallerDisplay(live, branchEmployees, activeBranchId)
       const driverRaw = getTicketDriverDisplay(live) || getTicketDriverName(live) || formatServiceDriver(live) || ''
       const vehicleTrip = vehicleTripLabels.get(live.id || '') || getTicketVehicleDisplay(live) || ''
@@ -4116,7 +4131,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         service: vehicleTrip,
       }
     })
-  }, [visible, isMyTickets, branchEmployees, activeBranchId, tickets, dateFilter, vehicleTripLabels])
+  }, [visible, isMyTickets, branchEmployees, activeBranchId, tickets, dateFilter, vehicleTripLabels, displayTicket])
 
   const showcasePaymentByRowId = useMemo(() => {
     const map: Record<string, string> = {}
@@ -4153,7 +4168,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   }
 
   // ─────────────────────────────────────────────────────────────
-  function getCellDisplay(ticket: Ticket, colLabel: string): string {
+  function getCellDisplay(rowTicket: Ticket, colLabel: string): string {
+    const ticket = displayTicket(rowTicket)
     const raw = (() => {
       switch (colLabel) {
         case 'TICKET NO': return getTicketNumberDisplay(ticket)
@@ -5966,7 +5982,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
     if (label === 'VEHICLE' && !isMyTickets) {
       // Prefer auto trip label ("STRADA - 2") so the red number always matches table ordering.
-      const vehicleCode = vehicleTripLabels.get(ticket.id || '') || getTicketVehicleDisplay(ticket) || val
+      const vehicleCode = vehicleTripLabels.get(ticket.id || '') || getTicketVehicleDisplay(displayTicket(ticket)) || val
       const canDragVehicle = canEdit && !rowGhost && Boolean(vehicleCode)
       // "MIRAGE - 2" splits into a plain name and a red trip number that live-updates as the
       // ticket's position in its vehicle group changes (drag-and-drop) — never manually typed.
@@ -6283,11 +6299,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     }
 
     if (label === 'INSTALLER') {
-      const rawInstaller = getInstallerDisplay(ticket, branchEmployees, activeBranchId)
+      const rawInstaller = getInstallerDisplay(displayTicket(ticket), branchEmployees, activeBranchId)
       const isEmpty = !rawInstaller
 
       const prevInstaller = idx != null && idx > 0
-        ? getInstallerDisplay(visible[idx - 1], branchEmployees, activeBranchId)
+        ? getInstallerDisplay(displayTicket(visible[idx - 1]), branchEmployees, activeBranchId)
         : ''
       const curToken = parseNameSiteToken(rawInstaller)
       const prevToken = parseNameSiteToken(prevInstaller)

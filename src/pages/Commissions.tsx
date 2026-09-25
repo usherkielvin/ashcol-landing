@@ -163,6 +163,7 @@ export default function Commissions() {
           collectionResolvedBy: user?.name || '',
           collectionResolvedAt: now,
           customer: customerName || it.customer,
+          amount: amountPaid ?? it.amount,
         }
       : it))
     setConfirmItem(null)
@@ -173,13 +174,17 @@ export default function Commissions() {
         body: JSON.stringify({ amountPaid, datePaid, referenceNumber, whoPaid, customerName }),
       })
       if (!res.ok) {
-        setItems(prev => prev.map(it => it.id === item.id ? { ...it, collectionResolved: false, status: 'PENDING' } : it))
+        setItems(prev => prev.map(it => it.id === item.id
+          ? { ...it, collectionResolved: false, status: 'PENDING', amount: item.amount }
+          : it))
       } else {
         try { sessionStorage.removeItem(cacheKey()) } catch { /* ignore */ }
       }
     } catch (e) {
       console.error('Failed to mark commission as paid', e)
-      setItems(prev => prev.map(it => it.id === item.id ? { ...it, collectionResolved: false, status: 'PENDING' } : it))
+      setItems(prev => prev.map(it => it.id === item.id
+        ? { ...it, collectionResolved: false, status: 'PENDING', amount: item.amount }
+        : it))
     } finally {
       setMarkingPaidId(null)
     }
@@ -418,20 +423,21 @@ export default function Commissions() {
                         ₱{peso(item.amount)}
                       </td>
                       <td className="px-3 py-3 text-center" style={{ fontSize: '11px', fontWeight: 500 }}>
-                        {paid ? (
-                          <span style={{ color: '#10B981' }}>Paid</span>
-                        ) : canMarkPaid ? (
+                        {canMarkPaid ? (
                           <button
                             type="button"
                             onClick={() => setConfirmItem(item)}
                             disabled={markingPaidId === item.id}
+                            title={paid ? 'Edit paid details' : 'Mark as paid'}
                             className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-all hover:opacity-80 disabled:opacity-50"
-                            style={{ color: '#F59E0B', border: '1px solid #F59E0B' }}
+                            style={paid
+                              ? { color: '#10B981', border: '1px solid #10B981' }
+                              : { color: '#F59E0B', border: '1px solid #F59E0B' }}
                           >
-                            {markingPaidId === item.id ? 'Marking…' : 'Pending — Mark Paid'}
+                            {markingPaidId === item.id ? 'Marking…' : paid ? 'Paid — Edit' : 'Pending — Mark Paid'}
                           </button>
                         ) : (
-                          <span style={{ color: '#F59E0B' }}>Pending</span>
+                          <span style={{ color: paid ? '#10B981' : '#F59E0B' }}>{paid ? 'Paid' : 'Pending'}</span>
                         )}
                       </td>
                     </tr>

@@ -42,6 +42,7 @@ const Ddrm = lazyWithPreload(() => import('./pages/Ddrm'))
 const Bills = lazyWithPreload(() => import('./pages/Bills'))
 const Telecom = lazyWithPreload(() => import('./pages/Telecom'))
 const OperationsForms = lazyWithPreload(() => import('./pages/OperationsForms'))
+const RequestFormsArchive = lazyWithPreload(() => import('./pages/RequestFormsArchive'))
 
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
@@ -157,6 +158,7 @@ export default function App() {
             <Route path="/admin-hris" element={<Hris />} />
             <Route path="/ddrm" element={<Ddrm />} />
             <Route path="/operations-forms" element={<OperationsForms />} />
+            <Route path="/request-forms-archive" element={<RequestFormsArchive />} />
             <Route path="/admin-bills" element={<Bills />} />
             <Route path="/admin-telecom" element={<Telecom />} />
           </Route>

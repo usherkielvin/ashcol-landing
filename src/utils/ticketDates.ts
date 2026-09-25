@@ -73,6 +73,72 @@ export function getRescheduleHistoryDates(ticket: Ticket): string[] {
     .map(d => d.split('T')[0].split(' ')[0].trim())
 }
 
+/**
+ * Crew as it stood on a date the ticket was rescheduled away from. Stored per old date in
+ * acDetails.rescheduleSnapshots so the RESCHED ghost row keeps showing who was dispatched
+ * that day, even after the active row on the new date gets a different installer/driver.
+ */
+export interface RescheduleSnapshot {
+  installerName?: string
+  driverName?: string
+  serviceVehicle?: string
+  capturedAt?: string
+}
+
+export function getRescheduleSnapshots(ticket: Ticket): Record<string, RescheduleSnapshot> {
+  const raw = parseAcMeta(ticket).rescheduleSnapshots
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  return raw as Record<string, RescheduleSnapshot>
+}
+
+export function getRescheduleSnapshot(ticket: Ticket, dateKey: string): RescheduleSnapshot | null {
+  if (!dateKey) return null
+  return getRescheduleSnapshots(ticket)[dateKey] || null
+}
+
+function readCrewField(ticket: Ticket, meta: Record<string, unknown>, ...keys: string[]): string {
+  const record = ticket as unknown as Record<string, unknown>
+  for (const k of keys) {
+    const v = record[k] ?? meta[k]
+    if (typeof v === 'string' && v.trim()) return v.trim()
+  }
+  return ''
+}
+
+/** Snapshot of the ticket's current installer/driver/vehicle (pre-edit values). */
+export function buildRescheduleSnapshot(ticket: Ticket): RescheduleSnapshot {
+  const meta = parseAcMeta(ticket)
+  return {
+    installerName: readCrewField(ticket, meta, 'installerName', 'installer_name', 'installer', 'technicianName'),
+    driverName: readCrewField(ticket, meta, 'driverName', 'driver_name'),
+    serviceVehicle: readCrewField(ticket, meta, 'serviceVehicle', 'service_vehicle'),
+    capturedAt: new Date().toISOString(),
+  }
+}
+
+/**
+ * acDetails updates that leave a RESCHED ghost on `oldDateKey`: records the date in
+ * rescheduleHistoryDates and freezes the old date's crew (first snapshot for a date wins —
+ * rescheduling onto and off the same date again never overwrites what was dispatched there).
+ * `ticket` must be the PRE-edit ticket so the snapshot captures the old crew.
+ */
+export function buildRescheduleGhostAcUpdates(
+  ticket: Ticket,
+  oldDateKey: string,
+  newDateKey: string,
+): Record<string, unknown> {
+  if (!oldDateKey || !newDateKey || oldDateKey === newDateKey) return {}
+  const history = getRescheduleHistoryDates(ticket)
+  const snapshots = getRescheduleSnapshots(ticket)
+  return {
+    rescheduleHistoryDates: history.includes(oldDateKey) ? history : [...history, oldDateKey],
+    rescheduleSnapshots: snapshots[oldDateKey]
+      ? snapshots
+      : { ...snapshots, [oldDateKey]: buildRescheduleSnapshot(ticket) },
+    rescheduledTo: newDateKey,
+  }
+}
+
 export function shouldBlankReschedGhostPayment(
   dateKey?: string,
   ghostKind?: ScheduleGhostKind,

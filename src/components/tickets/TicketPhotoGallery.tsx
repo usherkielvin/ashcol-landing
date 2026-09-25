@@ -1,5 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import { Camera, ImagePlus, Loader2, Trash2, AlertCircle, RotateCcw, X } from 'lucide-react'
+import {
+  Camera,
+  ImagePlus,
+  Loader2,
+  Trash2,
+  AlertCircle,
+  RotateCcw,
+  X,
+  Pencil,
+  MessageSquare,
+  FileText,
+  Check,
+} from 'lucide-react'
 import type { AuthUser } from '../../contexts/AuthContext'
 import type { Ticket } from '../../utils/ticketTypes'
 import { isTempTicketId } from '../../utils/ticketDisplay'
@@ -24,6 +36,14 @@ interface PendingUpload {
   previewUrl: string
   status: PendingStatus
   error?: string
+  description?: string
+}
+
+interface StagedFile {
+  key: string
+  file: File
+  previewUrl: string
+  description: string
 }
 
 const IMAGE_NAME_RE = /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i
@@ -37,12 +57,18 @@ function formatUploadedAt(iso?: string): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+  return d.toLocaleString('en-PH', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
 }
 
 /**
- * "Photos" section of TicketDetailsModal: up to 10 compressed images per ticket, stored in the
- * Supabase `ticket-attachments` bucket and listed in tickets.photo_attachments.
+ * "Photos" section of TicketDetailsModal and forms: up to 10 compressed images per ticket, stored in the
+ * Supabase `ticket-attachments` bucket and listed in tickets.photo_attachments with optional descriptions.
  */
 export function TicketPhotoGallery({
   ticket,
@@ -69,6 +95,10 @@ export function TicketPhotoGallery({
   const [photos, setPhotos] = useState<TicketPhoto[]>(() => parseTicketPhotos(rawPhotos))
   const [loading, setLoading] = useState(rawPhotos == null)
   const [pending, setPending] = useState<PendingUpload[]>([])
+  const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([])
+  const [editingPhoto, setEditingPhoto] = useState<TicketPhoto | null>(null)
+  const [editDescDraft, setEditDescDraft] = useState('')
+  const [savingDesc, setSavingDesc] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
@@ -81,6 +111,7 @@ export function TicketPhotoGallery({
   useEffect(() => { pendingRef.current = pending }, [pending])
 
   const border = isLight ? '#cbd5e1' : '#1e293b'
+  const cardBg = isLight ? '#ffffff' : '#0a1120'
   const inputBg = isLight ? '#f8fafc' : '#0f172a'
   const textPrimary = isLight ? '#0f172a' : '#f8fafc'
   const textMuted = isLight ? '#64748b' : '#94a3b8'
@@ -110,7 +141,8 @@ export function TicketPhotoGallery({
 
   useEffect(() => () => {
     pendingRef.current.forEach(p => URL.revokeObjectURL(p.previewUrl))
-  }, [])
+    stagedFiles.forEach(s => URL.revokeObjectURL(s.previewUrl))
+  }, [stagedFiles])
 
   useEffect(() => {
     if (message?.kind !== 'ok') return
@@ -165,6 +197,7 @@ export function TicketPhotoGallery({
     const now = new Date().toISOString()
     const newPhotos: TicketPhoto[] = uploadedKeys.map(key => {
       const r = results.get(key)!
+      const originalEntry = entries.find(e => e.key === key)
       return {
         id: r.path,
         url: r.url,
@@ -178,6 +211,7 @@ export function TicketPhotoGallery({
         uploadedAt: now,
         uploadedBy: user?.name || undefined,
         uploadedById: user?.id || undefined,
+        description: originalEntry?.description?.trim() || undefined,
       }
     })
 
@@ -213,19 +247,37 @@ export function TicketPhotoGallery({
       return
     }
     const accepted = files.slice(0, slotsLeft)
-    const entries: PendingUpload[] = accepted.map((file, i) => ({
+    const staged: StagedFile[] = accepted.map((file, i) => ({
       key: `${Date.now()}-${i}-${file.name}`,
       file,
       previewUrl: URL.createObjectURL(file),
-      status: 'uploading',
+      description: '',
     }))
-    setPending(prev => [...prev, ...entries])
+    setStagedFiles(staged)
     if (files.length > accepted.length) {
       setMessage({ kind: 'error', text: `Only ${accepted.length} more photo${accepted.length === 1 ? '' : 's'} allowed (max ${MAX_TICKET_PHOTOS}). The rest were skipped.` })
     } else {
       setMessage(null)
     }
+  }
+
+  const confirmStagedUploads = () => {
+    if (!stagedFiles.length) return
+    const entries: PendingUpload[] = stagedFiles.map(s => ({
+      key: s.key,
+      file: s.file,
+      previewUrl: s.previewUrl,
+      status: 'uploading',
+      description: s.description.trim() || undefined,
+    }))
+    setPending(prev => [...prev, ...entries])
+    setStagedFiles([])
     void processUploads(entries)
+  }
+
+  const cancelStagedUploads = () => {
+    stagedFiles.forEach(s => URL.revokeObjectURL(s.previewUrl))
+    setStagedFiles([])
   }
 
   const deletePhoto = async (photo: TicketPhoto) => {
@@ -254,6 +306,30 @@ export function TicketPhotoGallery({
     })
   }
 
+  const startEditDescription = (photo: TicketPhoto) => {
+    setEditingPhoto(photo)
+    setEditDescDraft(photo.description || '')
+  }
+
+  const saveEditedDescription = async () => {
+    if (!editingPhoto) return
+    setSavingDesc(true)
+    const targetId = editingPhoto.id
+    const nextDesc = editDescDraft.trim() || undefined
+    try {
+      const saved = await updateTicketPhotos(ticketId, photosRef.current, current =>
+        current.map(p => (p.id === targetId || p.url === editingPhoto.url ? { ...p, description: nextDesc } : p))
+      )
+      applySaved(saved)
+      setMessage({ kind: 'ok', text: nextDesc ? 'Photo description updated.' : 'Photo description removed.' })
+      setEditingPhoto(null)
+    } catch (err) {
+      setMessage({ kind: 'error', text: err instanceof Error ? err.message : 'Failed to save description' })
+    } finally {
+      setSavingDesc(false)
+    }
+  }
+
   const openPicker = () => inputRef.current?.click()
 
   const dropProps = canUpload ? {
@@ -263,7 +339,7 @@ export function TicketPhotoGallery({
   } : {}
 
   const tileStyle = { backgroundColor: inputBg, border: `1px solid ${border}` }
-  const isEmpty = photos.length === 0 && pending.length === 0
+  const isEmpty = photos.length === 0 && pending.length === 0 && stagedFiles.length === 0
 
   return (
     <div {...dropProps} className={`rounded-xl transition-shadow ${dragOver ? 'ring-2 ring-emerald-500/60' : ''}`}>
@@ -342,7 +418,7 @@ export function TicketPhotoGallery({
           >
             <ImagePlus className="w-6 h-6 text-emerald-500" />
             <span className="text-xs font-bold" style={{ color: textPrimary }}>Add photos</span>
-            <span className="text-[10px]">Click or drag photos here (up to {MAX_TICKET_PHOTOS})</span>
+            <span className="text-[10px]">Click or drag photos here (up to {MAX_TICKET_PHOTOS}) · Add descriptions to each</span>
           </button>
         ) : (
           <p className="text-xs rounded-xl p-4" style={{ ...tileStyle, color: textMuted }}>No photos attached.</p>
@@ -350,32 +426,89 @@ export function TicketPhotoGallery({
       ) : (
         <div className={`grid gap-2 ${variant === 'form' ? 'grid-cols-3 sm:grid-cols-5 lg:grid-cols-10' : 'grid-cols-3 sm:grid-cols-5'}`}>
           {photos.map((photo, i) => (
-            <div key={photo.id} className="group relative aspect-square rounded-lg overflow-hidden" style={tileStyle}>
+            <div
+              key={photo.id}
+              className="group relative aspect-square rounded-lg overflow-hidden transition-all duration-200"
+              style={tileStyle}
+            >
+              {/* Image thumbnail */}
               <button
                 type="button"
                 onClick={() => setLightboxIndex(i)}
-                className="w-full h-full cursor-zoom-in"
-                aria-label={`View photo ${i + 1}`}
+                className="w-full h-full cursor-zoom-in relative block"
+                aria-label={`View photo ${i + 1}: ${photo.description || 'No description'}`}
               >
                 <img
                   src={photo.thumbUrl || photo.url}
-                  alt={`Ticket photo ${i + 1}`}
+                  alt={photo.description || `Ticket photo ${i + 1}`}
                   loading="lazy"
-                  className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   draggable={false}
                 />
+
+                {/* Subtle indicator badge if photo has a description */}
+                {photo.description && (
+                  <div
+                    className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-md bg-black/75 backdrop-blur-xs text-emerald-400 flex items-center gap-1 border border-emerald-500/30 group-hover:opacity-0 transition-opacity"
+                    title={photo.description}
+                  >
+                    <MessageSquare className="w-2.5 h-2.5" />
+                    <span className="text-[8.5px] font-bold truncate max-w-[55px] sm:max-w-[70px]">
+                      {photo.description}
+                    </span>
+                  </div>
+                )}
               </button>
+
+              {/* Hover description overlay card */}
+              <div
+                onClick={() => setLightboxIndex(i)}
+                className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/95 via-black/80 to-transparent text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none flex flex-col justify-end"
+              >
+                {photo.description ? (
+                  <div className="flex items-start gap-1">
+                    <FileText className="w-3 h-3 text-emerald-400 shrink-0 mt-0.5" />
+                    <p className="text-[10px] font-bold leading-tight text-emerald-300 line-clamp-3 select-none">
+                      {photo.description}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-[9.5px] font-medium text-slate-300/80 italic select-none">
+                    No description
+                  </p>
+                )}
+                <div className="flex items-center gap-1 mt-1 text-[8.5px] text-slate-400 select-none">
+                  {photo.uploadedBy && <span className="truncate">{photo.uploadedBy}</span>}
+                  {photo.size ? <span>· {formatBytes(photo.size)}</span> : null}
+                </div>
+              </div>
+
+              {/* Action buttons (Edit description + Delete) */}
               {canManage && (
-                <button
-                  type="button"
-                  onClick={() => askDelete(photo)}
-                  disabled={deletingId === photo.id}
-                  className="absolute top-1 right-1 w-7 h-7 rounded-full flex items-center justify-center bg-black/60 text-white hover:bg-red-600 transition-all sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100"
-                  aria-label="Delete photo"
-                  title="Delete photo"
-                >
-                  {deletingId === photo.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                </button>
+                <div className="absolute top-1 right-1 flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200 z-10">
+                  {/* Edit description button */}
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); startEditDescription(photo) }}
+                    className="w-6 h-6 rounded-full flex items-center justify-center bg-black/70 text-white hover:bg-emerald-600 active:scale-95 transition-all shadow-md"
+                    aria-label="Edit description"
+                    title={photo.description ? 'Edit description' : 'Add description'}
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+
+                  {/* Delete button */}
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); askDelete(photo) }}
+                    disabled={deletingId === photo.id}
+                    className="w-6 h-6 rounded-full flex items-center justify-center bg-black/70 text-white hover:bg-red-600 active:scale-95 transition-all shadow-md"
+                    aria-label="Delete photo"
+                    title="Delete photo"
+                  >
+                    {deletingId === photo.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                  </button>
+                </div>
               )}
             </div>
           ))}
@@ -407,6 +540,11 @@ export function TicketPhotoGallery({
                     <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: textPrimary }}>
                       {p.status === 'saving' ? 'Saving…' : 'Uploading…'}
                     </span>
+                    {p.description && (
+                      <span className="text-[8.5px] font-semibold text-emerald-500/90 truncate max-w-[90%]">
+                        {p.description}
+                      </span>
+                    )}
                   </>
                 )}
               </div>
@@ -434,14 +572,200 @@ export function TicketPhotoGallery({
         </p>
       )}
 
+      {/* Pre-Upload Staging Modal: Allows adding description to each image before uploading */}
+      {stagedFiles.length > 0 && (
+        <div
+          className="fixed inset-0 z-[12000] flex items-center justify-center p-3 bg-black/70 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={cancelStagedUploads}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl p-5 shadow-2xl flex flex-col gap-4 border overflow-hidden max-h-[90vh]"
+            style={{ backgroundColor: cardBg, borderColor: border }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: border }}>
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                  <ImagePlus className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold" style={{ color: textPrimary }}>
+                    Add Photo Descriptions
+                  </h3>
+                  <p className="text-[11px]" style={{ color: textMuted }}>
+                    {stagedFiles.length} photo{stagedFiles.length === 1 ? '' : 's'} selected · Add notes for each
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={cancelStagedUploads}
+                className="w-7 h-7 rounded-full flex items-center justify-center transition-colors hover:bg-red-500/10 hover:text-red-500"
+                style={{ color: textMuted }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-3 overflow-y-auto max-h-[55vh] pr-1">
+              {stagedFiles.map((staged, idx) => (
+                <div
+                  key={staged.key}
+                  className="flex items-start gap-3 p-2.5 rounded-xl border"
+                  style={{ backgroundColor: inputBg, borderColor: border }}
+                >
+                  <div className="w-16 h-16 rounded-lg overflow-hidden shrink-0 border" style={{ borderColor: border }}>
+                    <img src={staged.previewUrl} alt="" className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex-1 min-w-0 flex flex-col gap-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[11px] font-bold truncate" style={{ color: textPrimary }}>
+                        Photo #{idx + 1} ({formatBytes(staged.file.size)})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setStagedFiles(prev => prev.filter(s => s.key !== staged.key))}
+                        className="text-slate-400 hover:text-red-500 transition-colors p-0.5"
+                        title="Remove"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Add description (e.g. Serial tag, Outdoor unit, Before repair)…"
+                      value={staged.description}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setStagedFiles(prev => prev.map(s => s.key === staged.key ? { ...s, description: val } : s))
+                      }}
+                      className="w-full text-xs font-semibold px-2.5 py-1.5 rounded-lg border outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                      style={{ backgroundColor: cardBg, borderColor: border, color: textPrimary }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t pt-3 shrink-0" style={{ borderColor: border }}>
+              <button
+                type="button"
+                onClick={cancelStagedUploads}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold transition-colors hover:bg-slate-500/10"
+                style={{ color: textMuted }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmStagedUploads}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md transition-all active:scale-95"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Upload Photos</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Description Modal for already uploaded photos */}
+      {editingPhoto && (
+        <div
+          className="fixed inset-0 z-[12000] flex items-center justify-center p-3 bg-black/70 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => !savingDesc && setEditingPhoto(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl p-5 shadow-2xl flex flex-col gap-4 border overflow-hidden"
+            style={{ backgroundColor: cardBg, borderColor: border }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b pb-2.5" style={{ borderColor: border }}>
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                  <Pencil className="w-3.5 h-3.5" />
+                </div>
+                <h3 className="text-sm font-extrabold" style={{ color: textPrimary }}>
+                  Edit Photo Description
+                </h3>
+              </div>
+              <button
+                type="button"
+                disabled={savingDesc}
+                onClick={() => setEditingPhoto(null)}
+                className="w-7 h-7 rounded-full flex items-center justify-center transition-colors hover:bg-red-500/10 hover:text-red-500 disabled:opacity-50"
+                style={{ color: textMuted }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="w-16 h-16 rounded-lg overflow-hidden shrink-0 border" style={{ borderColor: border }}>
+                <img src={editingPhoto.thumbUrl || editingPhoto.url} alt="" className="w-full h-full object-cover" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] font-bold truncate" style={{ color: textPrimary }}>
+                  {editingPhoto.uploadedBy || 'Uploaded Photo'}
+                </p>
+                <p className="text-[10px]" style={{ color: textMuted }}>
+                  {formatUploadedAt(editingPhoto.uploadedAt)} · {formatBytes(editingPhoto.size)}
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>
+                Description / Note
+              </label>
+              <textarea
+                autoFocus
+                rows={3}
+                placeholder="e.g. Serial number plate, Indoor split unit, Cleaned evaporator coil…"
+                value={editDescDraft}
+                onChange={(e) => setEditDescDraft(e.target.value)}
+                className="w-full text-xs font-semibold p-2.5 rounded-xl border outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 resize-none"
+                style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t pt-3" style={{ borderColor: border }}>
+              <button
+                type="button"
+                disabled={savingDesc}
+                onClick={() => setEditingPhoto(null)}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors hover:bg-slate-500/10 disabled:opacity-50"
+                style={{ color: textMuted }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={savingDesc}
+                onClick={saveEditedDescription}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md transition-all active:scale-95 disabled:opacity-50"
+              >
+                {savingDesc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                <span>Save Description</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox Modal */}
       {lightboxIndex !== null && photos[lightboxIndex] && (
         <ImageLightbox
           images={photos.map(p => ({
             src: p.url,
             placeholderSrc: p.thumbUrl,
-            alt: 'Ticket photo',
-            caption: [p.uploadedBy, formatUploadedAt(p.uploadedAt), p.size ? formatBytes(p.size) : '']
-              .filter(Boolean).join(' · '),
+            alt: p.description || 'Ticket photo',
+            caption: [
+              p.description ? `“${p.description}”` : '',
+              p.uploadedBy ? `By ${p.uploadedBy}` : '',
+              formatUploadedAt(p.uploadedAt),
+              p.size ? formatBytes(p.size) : '',
+            ].filter(Boolean).join(' · '),
           }))}
           index={lightboxIndex}
           onIndexChange={setLightboxIndex}

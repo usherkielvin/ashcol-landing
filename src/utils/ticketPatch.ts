@@ -21,7 +21,7 @@ import {
   getFinalDateKey,
   getEffectiveScheduleDateKey,
   getPreviousScheduleDates,
-  getRescheduleHistoryDates,
+  buildRescheduleGhostAcUpdates,
   formatDateKeyLabel,
   todayDateKey,
   resolveScheduleCompletionDateKey,
@@ -396,7 +396,7 @@ export function preserveLocalScheduleFields(local: Ticket, server: Ticket): Tick
         'schedulePhase', 'scheduleOutcome', 'paymentMode', 'paymentStatus', 'charges', 'amountCharged',
         'finalDate', 'scheduledDate', 'previousScheduleDates', 'rescheduledTo', 'reschedulePending',
         'archivedScheduleDate', 'installedDate', 'cancelledScheduleDate', 'cancelledBranchId',
-        'rescheduleHistoryDates',
+        'rescheduleHistoryDates', 'rescheduleSnapshots',
         'destination', 'address', 'district', 'brand', 'unitType', 'dealer', 'dlr',
         'negotiatorId', 'negotiatorName',
       ]) {
@@ -582,13 +582,7 @@ export function buildReschedulePatchBody(
     body.preferredDate = newDateKey
     body.finalDate = newDateKey
     body.status = 'SCHEDULED'
-    if (oldDateKey && oldDateKey !== newDateKey) {
-      const priorHistory = getRescheduleHistoryDates(ticket)
-      acUpdates.rescheduleHistoryDates = priorHistory.includes(oldDateKey)
-        ? priorHistory
-        : [...priorHistory, oldDateKey]
-      acUpdates.rescheduledTo = newDateKey
-    }
+    Object.assign(acUpdates, buildRescheduleGhostAcUpdates(ticket, oldDateKey, newDateKey))
     const formattedNewDate = formatDateKeyLabel(newDateKey)
     const formattedRemarks = userRemarks
       ? `Moved to ${formattedNewDate} - ${userRemarks}`

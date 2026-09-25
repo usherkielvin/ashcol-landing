@@ -8,7 +8,7 @@ import {
   type InstallerBranchIndexEntry,
 } from './api'
 import type { Ticket, ScheduleOutcome, ScheduleGhostKind } from './ticketTypes'
-import { parseAcMeta } from './ticketPatch'
+import { parseAcMeta, mergeAcMeta } from './ticketPatch'
 import {
   getScheduleOutcome,
   getScheduleStatusValue,
@@ -27,6 +27,7 @@ import {
   getRescheduleTargetDateKey,
   getContinuationDates,
   formatDateKeyLabel,
+  getRescheduleSnapshot,
 } from './ticketDates'
 
 export function isInstalledRemarks(_text?: string | null): boolean {
@@ -120,11 +121,51 @@ export function isRescheduledGhostOnDate(ticket: Ticket, dateKey: string): boole
   // keeps rendering a RESCHED ghost on that old target date forever, even though the ticket is
   // long since done. isCompletedGhostOnDate/isCancelledScheduleGhost (checked before this in
   // getScheduleGhostKind) are the only ghosts a closed ticket should still produce.
+  //
+  // Exception: a date with a crew snapshot (rescheduleSnapshots) was recorded by an actual
+  // reschedule save, not a stray note — that day's RESCHED record must survive the ticket later
+  // being completed or cancelled on its new date.
   const stat = String(ticket.status || '').toUpperCase()
-  if (isInstalledWorkflowStatus(stat) || stat.startsWith('DONE') || stat === 'CANCELLED') return false
+  const isClosed = isInstalledWorkflowStatus(stat) || stat.startsWith('DONE') || stat === 'CANCELLED'
+  if (isClosed && !getRescheduleSnapshot(ticket, dateKey)) return false
   const currentKey = getEffectiveScheduleDateKey(ticket)
   if (currentKey && currentKey === dateKey) return false
   return getRescheduleHistoryDates(ticket).includes(dateKey)
+}
+
+/**
+ * DISPLAY-ONLY view of a ticket on `dateKey`: when that date is a RESCHED ghost with a crew
+ * snapshot, overlays the installer/driver/vehicle that were dispatched that day, so edits to the
+ * active row on the new date don't rewrite the old day's record. Never pass the result to a save
+ * path — it's for rendering, sorting, and branch-scoping only.
+ */
+export function withRescheduleSnapshot(ticket: Ticket, dateKey: string): Ticket {
+  if (!dateKey || !isRescheduledGhostOnDate(ticket, dateKey)) return ticket
+  const snap = getRescheduleSnapshot(ticket, dateKey)
+  if (!snap) return ticket
+  const installerName = snap.installerName || ''
+  const driverName = snap.driverName || ''
+  const serviceVehicle = snap.serviceVehicle || ''
+  return {
+    ...ticket,
+    installerName,
+    installer_name: installerName,
+    installerId: undefined,
+    driverName,
+    driver_name: driverName,
+    serviceVehicle,
+    service_vehicle: serviceVehicle,
+    acDetails: mergeAcMeta(ticket, {
+      installerName,
+      installer: installerName,
+      technicianName: installerName,
+      driverName,
+      driver_name: driverName,
+      driver: driverName,
+      serviceVehicle,
+      service_vehicle: serviceVehicle,
+    }),
+  } as Ticket
 }
 
 export function isContinuationGhostOnDate(ticket: Ticket, dateKey: string): boolean {

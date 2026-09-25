@@ -2422,7 +2422,7 @@ export default function Employees() {
 
                 {/* ── Section: Job Details ── */}
                 <div className="border-t pt-4" style={{ borderColor: border }}>
-                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">SYSTEM & JOB SETTINGS</h4>
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">ROLE & ACCESS</h4>
                   {editTarget && editForm.role !== editTarget.role && (
                     <div className="mb-3 text-xs rounded-xl px-3 py-2.5 border" style={{ borderColor: 'rgba(59,130,246,0.25)', backgroundColor: 'rgba(59,130,246,0.08)', color: '#3B82F6' }}>
                       Role will change: {describeRoleChange(editTarget.role, editForm.role)}
@@ -2500,7 +2500,7 @@ export default function Employees() {
                     )}
                     {(editForm.role === 'EMPLOYEE' || editForm.role === 'MANAGEMENT') && (
                       <div className="col-span-1 sm:col-span-2">
-                        <Field label="JOB TITLE (SELECT ANY THAT APPLY)" labelColor={textMuted}>
+                        <Field label="ACCESS TAGS" labelColor={textMuted}>
                           <JobTitleMultiSelect
                             value={editForm.jobTitle}
                             onChange={next => setEditForm(p => ({ ...p, jobTitle: next }))}
@@ -2706,7 +2706,7 @@ export default function Employees() {
                   )}
                   {(createForm.role === 'EMPLOYEE' || createForm.role === 'MANAGEMENT') && (
                     <div className="sm:col-span-2">
-                      <Field label="JOB TITLE (SELECT ANY THAT APPLY)" labelColor={textMuted}>
+                      <Field label="ACCESS TAGS" labelColor={textMuted}>
                         <JobTitleMultiSelect
                           value={createForm.jobTitle}
                           onChange={next => setCreateForm(p => ({ ...p, jobTitle: next }))}

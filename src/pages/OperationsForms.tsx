@@ -78,6 +78,13 @@ interface OvertimeRequest {
   rejectionReason?: string
 }
 
+interface DuplicateMatch {
+  id: string
+  status: string
+  createdAt?: string
+  summary?: string
+}
+
 interface UnifiedRow {
   id: string
   type: TabId
@@ -476,6 +483,56 @@ export default function OperationsForms() {
     })
   }
 
+  // Owner self-service cancel — soft CANCELLED status (record kept, visible in Archives),
+  // as opposed to admin's hard DELETE above. Available any time before the request is
+  // archived (DONE/RELEASED/CANCELLED), not just while PENDING.
+  const requestCancelRecord = (type: TabId, id: string, label: string) => {
+    const endpoints: Record<TabId, string> = {
+      'cash-advance': `${API_BASE_URL}/hris/cash-advances/${id}/cancel`,
+      budget: `${API_BASE_URL}/operations/budget-requests/${id}/cancel`,
+      overtime: `${API_BASE_URL}/operations/overtime-requests/${id}/cancel`,
+    }
+    setConfirmDialog({
+      title: 'Cancel request?',
+      message: `This will cancel "${label}". It will move to Archives and can be restored later if needed.`,
+      variant: 'discard',
+      confirmText: 'Cancel Request',
+      cancelText: 'Never mind',
+      onConfirm: async () => {
+        try {
+          const res = await fetch(endpoints[type], {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+          })
+          if (res.ok) {
+            if (type === 'cash-advance') {
+              setCashAdvances(prev => prev.filter(c => c.id !== id))
+            } else if (type === 'budget') {
+              setBudgetRequests(prev => prev.filter(b => b.id !== id))
+            } else {
+              setOvertimeRequests(prev => prev.filter(o => o.id !== id))
+            }
+            if (modal?.record && modal.record.id === id) closeModal()
+            fetchAll()
+          } else {
+            const errText = await res.text().catch(() => '')
+            let message = 'Failed to cancel request.'
+            try {
+              const json = JSON.parse(errText)
+              message = json.message || json.error || errText
+            } catch {
+              if (errText) message = errText
+            }
+            setError(message)
+          }
+        } catch (err: any) {
+          setError(err?.message || 'Failed to cancel request.')
+        }
+      },
+    })
+  }
+
   const resetForms = useCallback(() => {
     const defaultBranchId = userAssignedBranchId || (branches.length > 0 ? branches[0].id : '')
     const defaultBranchName = userAssignedBranchName || (branches.length > 0 ? branches[0].name.toUpperCase() : '')
@@ -506,9 +563,10 @@ export default function OperationsForms() {
   const canEditRecord = (r: { status: string; employeeId: string }) =>
     r.status === 'PENDING' && r.employeeId === user?.id
 
-  // The creator of a PENDING request can withdraw (delete) their own submission.
-  const canDeleteAsOwner = (r: { status: string; employeeId: string }) =>
-    r.status === 'PENDING' && r.employeeId === user?.id
+  // The creator of a request can cancel it any time before it's archived
+  // (DONE/RELEASED/CANCELLED) — not just while PENDING.
+  const canCancelAsOwner = (r: { status: string; employeeId: string }) =>
+    r.employeeId === user?.id && !['DONE', 'RELEASED', 'CANCELLED'].includes(r.status)
 
   const openNewForm = () => {
     resetForms()
@@ -587,6 +645,40 @@ export default function OperationsForms() {
   }
   const closeContextMenu = () => setContextMenu(null)
 
+  // Advisory-only duplicate warning on new submissions (requirement: check both active
+  // and archived requests, never hard-block). `checkEndpoint` is a per-type
+  // `POST .../check-duplicate`; `proceed` is the actual create call.
+  const checkDuplicatesThenProceed = async (checkEndpoint: string, payload: Record<string, unknown>, proceed: () => Promise<void>) => {
+    try {
+      const res = await fetch(checkEndpoint, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (res.ok) {
+        const matches: DuplicateMatch[] = await res.json().catch(() => [])
+        if (Array.isArray(matches) && matches.length > 0) {
+          const detail = matches
+            .map(m => `#${String(m.id).slice(0, 8).toUpperCase()} — ${m.status} — ${m.createdAt ? new Date(m.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}${m.summary ? ` — ${m.summary}` : ''}`)
+            .join('\n')
+          setConfirmDialog({
+            title: 'Possible duplicate request',
+            message: 'A similar request already exists. Review it before submitting, or continue if this one is legitimate.',
+            detail,
+            variant: 'info',
+            confirmText: 'Submit Anyway',
+            cancelText: 'Review First',
+            onConfirm: () => { proceed() },
+          })
+          return
+        }
+      }
+    } catch {
+      // Duplicate check is advisory only — never block submission if it fails.
+    }
+    await proceed()
+  }
+
   const handleSubmitCashAdvance = async (e: React.FormEvent) => {
     e.preventDefault()
     setFormErrors({})
@@ -612,34 +704,44 @@ export default function OperationsForms() {
       return
     }
 
-    setSaving(true)
     const isEdit = modal?.mode === 'edit' && modal.record
-    try {
-      const res = await fetch(
-        isEdit ? `${API_BASE_URL}/hris/cash-advances/${modal!.record!.id}` : `${API_BASE_URL}/hris/cash-advances`,
-        {
-          method: isEdit ? 'PUT' : 'POST',
-          headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            employeeName: caMemberName.trim(),
-            amount: amtNum,
-            purpose: caPurpose.trim(),
-            repaymentTermMonths: 1,
-            branchId: branch,
-          }),
+    const payload = {
+      employeeName: caMemberName.trim(),
+      amount: amtNum,
+      purpose: caPurpose.trim(),
+      repaymentTermMonths: 1,
+      branchId: branch,
+    }
+
+    const doSubmit = async () => {
+      setSaving(true)
+      try {
+        const res = await fetch(
+          isEdit ? `${API_BASE_URL}/hris/cash-advances/${modal!.record!.id}` : `${API_BASE_URL}/hris/cash-advances`,
+          {
+            method: isEdit ? 'PUT' : 'POST',
+            headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          }
+        )
+        if (res.ok) {
+          closeModal()
+          fetchAll()
+        } else {
+          const err = await res.json().catch(() => ({}))
+          setError(err.error || err.message || 'Failed to submit cash advance.')
         }
-      )
-      if (res.ok) {
-        closeModal()
-        fetchAll()
-      } else {
-        const err = await res.json().catch(() => ({}))
-        setError(err.error || err.message || 'Failed to submit cash advance.')
+      } catch {
+        setError('Failed to submit cash advance.')
+      } finally {
+        setSaving(false)
       }
-    } catch {
-      setError('Failed to submit cash advance.')
-    } finally {
-      setSaving(false)
+    }
+
+    if (isEdit) {
+      await doSubmit()
+    } else {
+      await checkDuplicatesThenProceed(`${API_BASE_URL}/hris/cash-advances/check-duplicate`, payload, doSubmit)
     }
   }
 
@@ -677,41 +779,51 @@ export default function OperationsForms() {
       return
     }
 
-    setSaving(true)
     const isEdit = modal?.mode === 'edit' && modal.record
-    try {
-      const res = await fetch(
-        isEdit ? `${API_BASE_URL}/operations/budget-requests/${modal!.record!.id}` : `${API_BASE_URL}/operations/budget-requests`,
-        {
-          method: isEdit ? 'PUT' : 'POST',
-          headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            requestDate: budgetDate,
-            fromBranch: branch,
-            fromDept: (budgetDept || 'OPERATIONS').trim(),
-            poNumber: budgetPo.trim(),
-            paymentMethod,
-            payeeName: payeeName.trim(),
-            bankName: bankName.trim() || null,
-            accountNo: accountNo.trim() || null,
-            dueDate: dueDate || null,
-            lineItemsJson: JSON.stringify(validItems),
-            totalAmount: budgetTotal,
-            branchId: userAssignedBranchId || user?.branchId,
-          }),
+    const payload = {
+      requestDate: budgetDate,
+      fromBranch: branch,
+      fromDept: (budgetDept || 'OPERATIONS').trim(),
+      poNumber: budgetPo.trim(),
+      paymentMethod,
+      payeeName: payeeName.trim(),
+      bankName: bankName.trim() || null,
+      accountNo: accountNo.trim() || null,
+      dueDate: dueDate || null,
+      lineItemsJson: JSON.stringify(validItems),
+      totalAmount: budgetTotal,
+      branchId: userAssignedBranchId || user?.branchId,
+    }
+
+    const doSubmit = async () => {
+      setSaving(true)
+      try {
+        const res = await fetch(
+          isEdit ? `${API_BASE_URL}/operations/budget-requests/${modal!.record!.id}` : `${API_BASE_URL}/operations/budget-requests`,
+          {
+            method: isEdit ? 'PUT' : 'POST',
+            headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          }
+        )
+        if (res.ok) {
+          closeModal()
+          fetchAll()
+        } else {
+          const err = await res.json().catch(() => ({}))
+          setError(err.error || err.message || 'Failed to submit budget request.')
         }
-      )
-      if (res.ok) {
-        closeModal()
-        fetchAll()
-      } else {
-        const err = await res.json().catch(() => ({}))
-        setError(err.error || err.message || 'Failed to submit budget request.')
+      } catch {
+        setError('Failed to submit budget request.')
+      } finally {
+        setSaving(false)
       }
-    } catch {
-      setError('Failed to submit budget request.')
-    } finally {
-      setSaving(false)
+    }
+
+    if (isEdit) {
+      await doSubmit()
+    } else {
+      await checkDuplicatesThenProceed(`${API_BASE_URL}/operations/budget-requests/check-duplicate`, payload, doSubmit)
     }
   }
 
@@ -745,35 +857,45 @@ export default function OperationsForms() {
       return
     }
 
-    setSaving(true)
     const isEdit = modal?.mode === 'edit' && modal.record
-    try {
-      const res = await fetch(
-        isEdit ? `${API_BASE_URL}/operations/overtime-requests/${modal!.record!.id}` : `${API_BASE_URL}/operations/overtime-requests`,
-        {
-          method: isEdit ? 'PUT' : 'POST',
-          headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            employeeName: otName.trim(),
-            position: otPosition.trim(),
-            department: otDepartment.trim(),
-            cutoffPeriod: otCutoff.trim(),
-            entriesJson: JSON.stringify(filledEntries),
-            branchId: userAssignedBranchId || user?.branchId,
-          }),
+    const payload = {
+      employeeName: otName.trim(),
+      position: otPosition.trim(),
+      department: otDepartment.trim(),
+      cutoffPeriod: otCutoff.trim(),
+      entriesJson: JSON.stringify(filledEntries),
+      branchId: userAssignedBranchId || user?.branchId,
+    }
+
+    const doSubmit = async () => {
+      setSaving(true)
+      try {
+        const res = await fetch(
+          isEdit ? `${API_BASE_URL}/operations/overtime-requests/${modal!.record!.id}` : `${API_BASE_URL}/operations/overtime-requests`,
+          {
+            method: isEdit ? 'PUT' : 'POST',
+            headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          }
+        )
+        if (res.ok) {
+          closeModal()
+          fetchAll()
+        } else {
+          const err = await res.json().catch(() => ({}))
+          setError(err.error || err.message || 'Failed to submit overtime request.')
         }
-      )
-      if (res.ok) {
-        closeModal()
-        fetchAll()
-      } else {
-        const err = await res.json().catch(() => ({}))
-        setError(err.error || err.message || 'Failed to submit overtime request.')
+      } catch {
+        setError('Failed to submit overtime request.')
+      } finally {
+        setSaving(false)
       }
-    } catch {
-      setError('Failed to submit overtime request.')
-    } finally {
-      setSaving(false)
+    }
+
+    if (isEdit) {
+      await doSubmit()
+    } else {
+      await checkDuplicatesThenProceed(`${API_BASE_URL}/operations/overtime-requests/check-duplicate`, payload, doSubmit)
     }
   }
 
@@ -794,6 +916,11 @@ export default function OperationsForms() {
 
   const closeStatusMenu = () => setStatusMenu(null)
 
+  const ARCHIVE_STATUS_OPTIONS = [
+    { value: 'DONE', label: 'Done', color: '#0ea5e9' },
+    { value: 'RELEASED', label: 'Released', color: '#8b5cf6' },
+  ]
+
   const getStatusOptions = (type: TabId) => {
     if (type === 'cash-advance') {
       return [
@@ -802,6 +929,7 @@ export default function OperationsForms() {
         { value: 'DISBURSED', label: 'Disbursed', color: '#4f46e5' },
         { value: 'FULLY_PAID', label: 'Fully Paid', color: '#0d9488' },
         { value: 'REJECTED', label: 'Rejected', color: '#dc2626' },
+        ...ARCHIVE_STATUS_OPTIONS,
       ]
     }
     if (type === 'budget') {
@@ -810,12 +938,14 @@ export default function OperationsForms() {
         { value: 'NOTED', label: 'Noted', color: '#2563eb' },
         { value: 'APPROVED', label: 'Approved', color: '#16a34a' },
         { value: 'REJECTED', label: 'Rejected', color: '#dc2626' },
+        ...ARCHIVE_STATUS_OPTIONS,
       ]
     }
     return [
       { value: 'PENDING', label: 'Pending', color: '#d97706' },
       { value: 'APPROVED', label: 'Approved', color: '#16a34a' },
       { value: 'REJECTED', label: 'Rejected', color: '#dc2626' },
+      ...ARCHIVE_STATUS_OPTIONS,
     ]
   }
 
@@ -872,6 +1002,7 @@ export default function OperationsForms() {
   const statusColors: Record<string, string> = {
     PENDING: '#d97706', APPROVED: '#16a34a', NOTED: '#2563eb',
     REJECTED: '#dc2626', DISBURSED: '#4f46e5', FULLY_PAID: '#0d9488',
+    DONE: '#0ea5e9', RELEASED: '#8b5cf6', CANCELLED: '#64748b',
   }
 
   const [editingNotesId, setEditingNotesId] = useState<string | null>(null)
@@ -1080,6 +1211,7 @@ export default function OperationsForms() {
                 <option value="APPROVED">Approved</option>
                 <option value="REJECTED">Rejected</option>
                 <option value="DISBURSED">Disbursed</option>
+                <option value="FULLY_PAID">Fully Paid</option>
               </select>
             </div>
           </div>
@@ -1195,13 +1327,13 @@ export default function OperationsForms() {
 
                   {/* Card actions */}
                   <div className="flex items-center justify-end gap-2 pt-0.5" onClick={e => e.stopPropagation()}>
-                    {canDeleteAsOwner(r) && (
+                    {canCancelAsOwner(r) && (
                       <button
                         type="button"
-                        onClick={() => requestDeleteRecord(r.type, r.id, r.detail)}
+                        onClick={() => requestCancelRecord(r.type, r.id, r.detail)}
                         className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all text-red-600 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800"
                       >
-                        <Trash2 className="w-3 h-3" /> Delete
+                        <X className="w-3 h-3" /> Cancel
                       </button>
                     )}
                     {canEditRecord(r as any) && (
@@ -1385,10 +1517,16 @@ export default function OperationsForms() {
             {isAdmin && contextMenu.row.status === 'NOTED' && contextMenu.row.type === 'budget' && (
               <MenuItem icon={Check} label="Approve" color="#16a34a" onClick={() => { handleStatusUpdate('budget', contextMenu.row.id, 'APPROVED'); closeContextMenu() }} />
             )}
-            {(isAdmin || canDeleteAsOwner(contextMenu.row)) && (
+            {isAdmin && (
               <>
                 <div style={{ borderTop: `1px solid ${border}` }} className="my-1" />
                 <MenuItem icon={Trash2} label="Delete" color="#dc2626" onClick={() => { closeContextMenu(); requestDeleteRecord(contextMenu.row.type, contextMenu.row.id, contextMenu.row.detail) }} />
+              </>
+            )}
+            {!isAdmin && canCancelAsOwner(contextMenu.row) && (
+              <>
+                <div style={{ borderTop: `1px solid ${border}` }} className="my-1" />
+                <MenuItem icon={X} label="Cancel Request" color="#dc2626" onClick={() => { closeContextMenu(); requestCancelRecord(contextMenu.row.type, contextMenu.row.id, contextMenu.row.detail) }} />
               </>
             )}
           </div>
@@ -1658,18 +1796,18 @@ export default function OperationsForms() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {canDeleteAsOwner(modal.record) && (
+                      {canCancelAsOwner(modal.record) && (
                         <button
                           type="button"
-                          onClick={() => requestDeleteRecord(
+                          onClick={() => requestCancelRecord(
                             modal.type,
                             modal.record!.id,
                             (modal.record as any).payeeName || (modal.record as any).purpose || (modal.record as any).cutoffPeriod || modal.type
                           )}
                           className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-200 dark:border-red-800/40 transition-colors cursor-pointer"
-                          title="Withdraw and delete this pending request"
+                          title="Cancel this request"
                         >
-                          <Trash2 className="w-3.5 h-3.5" /> Withdraw Request
+                          <X className="w-3.5 h-3.5" /> Cancel Request
                         </button>
                       )}
                     </div>

@@ -437,13 +437,22 @@ export function deduplicateAndMergePayroll(existing: PayrollRow[], incoming: Pay
     incomingMap.set(key, row)
   }
 
-  // Update existing saved rows with fresh ticket metadata (like ticketNumber) if previously blank
+  // Update existing saved rows with fresh ticket metadata and missing details/fees
   const updatedExisting = nonEmpty.map((row) => {
     const key = row.ticketId
       ? `tk:${row.ticketId}|${row.installerName.trim().toLowerCase()}`
       : `manual:${row.id}`
     const fresh = incomingMap.get(key)
     if (fresh) {
+      const isFreshDone = /^DONE\b/i.test(fresh.installationUpload?.trim() || '')
+      const isRowDone = /^DONE\b/i.test(row.installationUpload?.trim() || '')
+      const rowInstallFeeNum = parseFloat(String(row.installationFee || '').replace(/[^0-9.-]/g, '')) || 0
+      const freshInstallFeeNum = parseFloat(String(fresh.installationFee || '').replace(/[^0-9.-]/g, '')) || 0
+      const rowAllowanceNum = parseFloat(String(row.dailyAllowance || '').replace(/[^0-9.-]/g, '')) || 0
+      const freshAllowanceNum = parseFloat(String(fresh.dailyAllowance || '').replace(/[^0-9.-]/g, '')) || 0
+      const rowGroundingNum = parseFloat(String(row.earthGrounding || '').replace(/[^0-9.-]/g, '')) || 0
+      const freshGroundingNum = parseFloat(String(fresh.earthGrounding || '').replace(/[^0-9.-]/g, '')) || 0
+
       return {
         ...row,
         ticketNumber: row.ticketNumber?.trim() || fresh.ticketNumber || '',
@@ -451,6 +460,13 @@ export function deduplicateAndMergePayroll(existing: PayrollRow[], incoming: Pay
         customerName: row.customerName || fresh.customerName || '',
         cityAddress: row.cityAddress || fresh.cityAddress || '',
         brandCapacity: row.brandCapacity || fresh.brandCapacity || '',
+        installationUpload: (!isRowDone && isFreshDone) ? fresh.installationUpload : (row.installationUpload || fresh.installationUpload || ''),
+        installationFee: rowInstallFeeNum > 0 ? row.installationFee : (freshInstallFeeNum > 0 ? fresh.installationFee : (row.installationFee || '')),
+        dailyAllowance: rowAllowanceNum > 0 ? row.dailyAllowance : (freshAllowanceNum > 0 ? fresh.dailyAllowance : (row.dailyAllowance || '')),
+        earthGrounding: rowGroundingNum > 0 ? row.earthGrounding : (freshGroundingNum > 0 ? fresh.earthGrounding : (row.earthGrounding || '')),
+        actualCollected: row.actualCollected?.trim() ? row.actualCollected : (fresh.actualCollected || ''),
+        amountCollected: row.amountCollected?.trim() ? row.amountCollected : (fresh.amountCollected || ''),
+        sifQuotation: row.sifQuotation?.trim() ? row.sifQuotation : (fresh.sifQuotation || ''),
       }
     }
     return row

@@ -21,11 +21,19 @@ import {
   type PayrollRates,
 } from '../utils/payrollDerive'
 
+const num = (v: number | string | null | undefined): number => {
+  if (v == null) return 0
+  if (typeof v === 'number') return isNaN(v) ? 0 : v
+  const cleaned = String(v).replace(/[^0-9.-]/g, '')
+  if (!cleaned) return 0
+  const parsed = parseFloat(cleaned)
+  return isNaN(parsed) ? 0 : parsed
+}
+
 const peso = (v: number | string | null | undefined) => {
-  const n = typeof v === 'string' ? parseFloat(v) || 0 : (v ?? 0)
+  const n = num(v)
   return n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
-const num = (s: string) => parseFloat(s) || 0
 const uid = () => Math.random().toString(36).slice(2)
 const shortDate = (ymd: string) => {
   if (!ymd) return ''
@@ -102,9 +110,19 @@ function getLastMonthRange(d: Date = new Date()): { from: string; to: string } {
   }
 }
 
+const customFieldsFeeTotal = (r: PayrollRow): number => {
+  if (!r.customFields) return 0
+  let sum = 0
+  for (const [k, v] of Object.entries(r.customFields)) {
+    if (k.startsWith('ded:') || k.startsWith('xfer:')) continue
+    sum += num(v)
+  }
+  return sum
+}
+
 // Mirrors the sheet's "PAYROLL DUE" — sum of every fee-type column, whether or not that
-// column is currently shown (a hidden column can still hold an amount).
-const rowTotal = (r: PayrollRow) =>
+// column is currently shown (a hidden column can still hold an amount), including branch custom columns.
+const rowTotal = (r: PayrollRow): number =>
   num(r.installationFee) + num(r.earthGrounding) + num(r.dailyAllowance)
   + num(r.excessCopperTube) + num(r.hauling) + num(r.dismantling) + num(r.electricalWorks)
   + num(r.chippingWorks) + num(r.breaker) + num(r.powerSupplyLaborOnly) + num(r.powerSupplyLaborMaterials)
@@ -112,6 +130,9 @@ const rowTotal = (r: PayrollRow) =>
   + num(r.relocationAccuFcu) + num(r.systemReprocessLabor) + num(r.drainPumpInstallation)
   + num(r.scaffoldingInstallation) + num(r.flushingOldPipe) + num(r.sterneBracket)
   + num(r.breakerInstallationLabor) + num(r.chargingOfFreon) + num(r.materialsReturn)
+  + customFieldsFeeTotal(r)
+
+const rowAddOns = (r: PayrollRow): number => Math.max(0, rowTotal(r) - num(r.installationFee))
 
 const installerTotal = (installerRows: PayrollRow[]) =>
   installerRows.reduce((sum, r) => sum + rowTotal(r), 0)
@@ -134,10 +155,7 @@ const completedJobsBreakdown = (installerRows: PayrollRow[]) => {
 
 // Money owed BACK to the branch — parses the free-text remit field ("2,000 CASH", "FREE")
 // down to its numeric amount, ignoring the payment-method text.
-const parseMoneyText = (s: string) => {
-  const cleaned = (s || '').replace(/[^0-9.]/g, '')
-  return cleaned ? parseFloat(cleaned) || 0 : 0
-}
+const parseMoneyText = (s: string | number | null | undefined) => num(s)
 const remittanceTotal = (rowsIn: PayrollRow[]) => rowsIn.reduce((sum, r) => sum + parseMoneyText(r.actualCollected), 0)
 const baseInstallTotal = (rowsIn: PayrollRow[]) => rowsIn.reduce((sum, r) => sum + num(r.installationFee), 0)
 
@@ -471,6 +489,8 @@ export default function Payroll() {
     hiddenColumnsByInstaller[installerName] ?? new Set(DEFAULT_HIDDEN_COLUMNS)
   const [columnManagerFor, setColumnManagerFor] = useState<string | null>(null)
   const [columnSearch, setColumnSearch] = useState('')
+  const [popupCategory, setPopupCategory] = useState<string>('all')
+  const [popupSearch, setPopupSearch] = useState<string>('')
   // { x, y } = screen coords of right-click; col = which header was right-clicked;
   // installerName = which installer table it belongs to (for per-installer hide toggle).
   const [colCtxMenu, setColCtxMenu] = useState<{ x: number; y: number; col: ColumnDef; installerName: string } | null>(null)
@@ -867,6 +887,25 @@ export default function Payroll() {
         combinedSavedRows = deduplicateAndMergePayroll(combinedSavedRows, merged)
       }
 
+      // Auto-discover custom fee columns stored in row customFields so they show up
+      setCustomColumnDefs(prev => {
+        const known = new Set(prev.map(c => c.key))
+        const added: CustomColumnDef[] = []
+        for (const r of combinedSavedRows) {
+          if (r.customFields) {
+            for (const k of Object.keys(r.customFields)) {
+              if (k.startsWith('ded:') || k.startsWith('xfer:')) continue
+              if (!known.has(k)) {
+                known.add(k)
+                const label = k.replace(/^custom_/, '').replace(/_/g, ' ')
+                added.push({ key: k, label: titleCase(label) })
+              }
+            }
+          }
+        }
+        return added.length ? [...prev, ...added] : prev
+      })
+
       setRows(combinedSavedRows)
     } catch (e) {
       console.error('Failed to auto-fetch payroll and schedules:', e)
@@ -936,10 +975,14 @@ export default function Payroll() {
     setDeductionsModalInstaller(null)
   }
 
-  // Debounced auto-save on row edits
-  const updateRow = (id: string, patch: Partial<PayrollRow>) => {
+  // Debounced auto-save on row edits (supports functional patch so custom fields never read stale state)
+  const updateRow = (id: string, patch: Partial<PayrollRow> | ((prevRow: PayrollRow) => Partial<PayrollRow>)) => {
     setRows(prev => {
-      const updated = prev.map(r => r.id === id ? { ...r, ...patch } : r)
+      const updated = prev.map(r => {
+        if (r.id !== id) return r
+        const resolved = typeof patch === 'function' ? patch(r) : patch
+        return { ...r, ...resolved }
+      })
       scheduleAutoSave(updated)
       return updated
     })
@@ -1016,12 +1059,23 @@ export default function Payroll() {
     remarks: { get: r => r.remarks, set: (id, v) => updateRow(id, { remarks: v }) },
     audited: { get: r => r.audited, set: (id, v) => updateRow(id, { audited: v }) },
   }
-  // Custom columns read/write row.customFields[key], merging so setting one custom value
-  // never clobbers another custom value already on that row.
+  // Custom columns read/write row.customFields[key], merging safely via functional update
   for (const cc of customColumnDefs) {
     columnAccessors[cc.key] = {
       get: r => r.customFields?.[cc.key] || '',
-      set: (id, v) => updateRow(id, { customFields: { ...(rows.find(r => r.id === id)?.customFields || {}), [cc.key]: v } }),
+      set: (id, v) => updateRow(id, prevRow => ({
+        customFields: { ...(prevRow.customFields || {}), [cc.key]: v },
+      })),
+    }
+  }
+
+  const getColAccessor = (key: string) => {
+    if (columnAccessors[key]) return columnAccessors[key]
+    return {
+      get: (r: PayrollRow) => r.customFields?.[key] || (r as any)[key] || '',
+      set: (id: string, v: string) => updateRow(id, prevRow => ({
+        customFields: { ...(prevRow.customFields || {}), [key]: v },
+      })),
     }
   }
 
@@ -1194,7 +1248,7 @@ export default function Payroll() {
    *  a display value — money right-aligned and blanked when zero so the eye lands on the
    *  columns that actually carry a fee. Custom columns resolve through the same accessors. */
   const listCellText = (col: ColumnDef, row: PayrollRow): string => {
-    const raw = columnAccessors[col.key]?.get(row) ?? ''
+    const raw = getColAccessor(col.key).get(row)
     if (col.isMoney) {
       const n = num(String(raw))
       return n === 0 ? '—' : `₱${peso(n)}`
@@ -1208,9 +1262,9 @@ export default function Payroll() {
   // Total are never passed in here — the mobile card shows those in its header instead.
   const renderMobileCellValue = (col: ColumnDef, row: PayrollRow) => {
     const smallInputCls = "w-full text-right px-2.5 py-2.5 rounded-lg text-base font-semibold uppercase bg-transparent border-0 outline-none focus:ring-1 focus:ring-emerald-500/40"
+    const acc = getColAccessor(col.key)
 
     if (col.key === 'remit') {
-      const acc = columnAccessors[col.key]
       return (
         <input
           type="text"
@@ -1226,7 +1280,6 @@ export default function Payroll() {
     // not just a peso figure, so it can't be locked to a numeric-only input like the other
     // money columns. Still summed into rowTotal() via num(), same as remit above.
     if (col.key === 'materialsReturn') {
-      const acc = columnAccessors[col.key]
       return (
         <input
           type="text"
@@ -1238,7 +1291,6 @@ export default function Payroll() {
     }
 
     if (col.isMoney) {
-      const acc = columnAccessors[col.key]
       return (
         <NumericFormat
           thousandSeparator=","
@@ -1251,7 +1303,6 @@ export default function Payroll() {
       )
     }
 
-    const acc = columnAccessors[col.key]
     return (
       <input
         type="text"
@@ -2671,17 +2722,65 @@ export default function Payroll() {
         document.body
       )}
 
-      {/* Job detail popup — opened by clicking a row in the desktop list. Renders every column
-          the column manager leaves visible as an editable label/value row, reusing the same
-          cell renderer as the mobile cards so edits behave identically in both. */}
+      {/* Job detail popup — opened by clicking a row in the desktop list. Renders all fee and
+          detail columns as editable label/value rows, with category filters and an itemized breakdown. */}
       {detailRow && createPortal(
         (() => {
-          // Re-read from `rows` so edits made inside the popup stay live; `detailRow` is only
-          // the identity of the row that was clicked.
-          const liveRow = rows.find(r => r.id === detailRow.id) || detailRow
-          const detailCols = (selectedInstaller ? visibleColumnsFor(selectedInstaller) : [])
-            .filter(c => !['date', 'ticketNumber', 'customerName'].includes(c.key))
-          const addOns = rowTotal(liveRow) - num(liveRow.installationFee)
+          // Re-read from `rows` so edits made inside the popup stay live; fallback to ticketId + installer match
+          const liveRow = rows.find(r => r.id === detailRow.id || (detailRow.ticketId && r.ticketId === detailRow.ticketId && r.installerName === detailRow.installerName)) || detailRow
+
+          // All candidate fee & detail columns for this ticket (including all categories & custom columns)
+          const allDetailCols: ColumnDef[] = [
+            ...COLUMN_DEFS.filter(c => !['date', 'ticketNumber', 'customerName', 'brandCapacity'].includes(c.key)),
+            ...customColumnDefs.map(cc => ({
+              key: cc.key, label: cc.label, width: 120, align: 'right' as const, isMoney: true, category: 'admin' as const,
+            })),
+          ]
+
+          // Collect every active fee added to this ticket row
+          const activeFeeItems: { key: string; label: string; amount: number; isBase?: boolean }[] = []
+          if (num(liveRow.installationFee) > 0) {
+            activeFeeItems.push({ key: 'installationFee', label: 'Base Install Fee', amount: num(liveRow.installationFee), isBase: true })
+          }
+          for (const col of allDetailCols) {
+            if (col.key === 'installationFee' || !col.isMoney) continue
+            const val = num(getColAccessor(col.key).get(liveRow))
+            if (val > 0) {
+              activeFeeItems.push({ key: col.key, label: col.label, amount: val })
+            }
+          }
+
+          const baseFee = num(liveRow.installationFee)
+          const addOns = rowAddOns(liveRow)
+          const rowGrandTotal = rowTotal(liveRow)
+
+          // Filter columns by selected category & search
+          const filteredCols = allDetailCols.filter(col => {
+            if (popupSearch.trim() && !col.label.toLowerCase().includes(popupSearch.toLowerCase())) {
+              return false
+            }
+            if (popupCategory === 'active') {
+              const val = getColAccessor(col.key).get(liveRow)
+              return col.key === 'remit' || col.key === 'installationUpload' || (col.isMoney ? num(val) > 0 : Boolean(String(val).trim()))
+            }
+            if (popupCategory === 'standard') {
+              return col.pinned || col.category === 'standard'
+            }
+            if (popupCategory === 'piping') {
+              return col.category === 'piping'
+            }
+            if (popupCategory === 'electrical') {
+              return col.category === 'electrical'
+            }
+            if (popupCategory === 'structural') {
+              return col.category === 'structural' || col.category === 'masonry'
+            }
+            if (popupCategory === 'admin') {
+              return col.category === 'admin'
+            }
+            return true
+          })
+
           return (
             <div
               className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-150"
@@ -2690,26 +2789,24 @@ export default function Payroll() {
                 className="w-full max-w-3xl max-h-[92vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden"
                 style={{ backgroundColor: cardBg, borderColor: border }}
               >
+                {/* Header */}
                 <div
-                  className="flex items-start justify-between gap-3 px-6 py-5 shrink-0"
+                  className="flex items-start justify-between gap-3 px-6 py-4 shrink-0"
                   style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}
                 >
-                  {/* Synced rows show their schedule details read-only (corrected at the
-                      source); manually added rows stay editable here, same rule the old grid
-                      applied via readOnlyWhenSynced. */}
                   {liveRow.ticketId ? (
                     <div className="min-w-0">
                       <div className="text-lg font-extrabold truncate" style={{ color: textPrimary }}>
                         {liveRow.customerName || 'No customer'}
                       </div>
-                      <div className="text-sm font-semibold mt-1 truncate" style={{ color: textMuted }}>
+                      <div className="text-sm font-semibold mt-0.5 truncate" style={{ color: textMuted }}>
                         {liveRow.workDate ? shortDate(liveRow.workDate) : 'No date'}
                         {' · '}{liveRow.ticketNumber || 'No ticket'}
                         {liveRow.brandCapacity ? ` · ${liveRow.brandCapacity}` : ''}
+                        {' · '}<span className="text-emerald-500 font-bold">{displayInstallerName(liveRow.installerName)}</span>
                       </div>
-                      {/* Transfer origin badge — shown when this row was moved in from another branch */}
                       {liveRow.customFields?.['xfer:fromBranch'] && (
-                        <div className="flex items-center gap-1.5 mt-1.5">
+                        <div className="flex items-center gap-1.5 mt-1">
                           <ArrowRightLeft className="w-3 h-3" style={{ color: '#8B5CF6' }} />
                           <span className="text-[11px] font-bold" style={{ color: '#8B5CF6' }}>
                             Transferred from {liveRow.customFields['xfer:fromBranch']}
@@ -2748,7 +2845,7 @@ export default function Payroll() {
                   )}
                   <button
                     type="button"
-                    onClick={() => setDetailRow(null)}
+                    onClick={() => { setDetailRow(null); setPopupCategory('all'); setPopupSearch('') }}
                     className="p-2.5 rounded-full shrink-0 transition-all border cursor-pointer hover:bg-red-500 hover:border-red-500 hover:text-white active:scale-90"
                     style={{ color: textMuted, backgroundColor: inputBg, borderColor: inputBorder }}
                     aria-label="Close"
@@ -2757,52 +2854,169 @@ export default function Payroll() {
                   </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto px-6 py-1">
-                  {detailCols.map(col => (
-                    <div
-                      key={col.key}
-                      className="flex items-center justify-between gap-4 py-3"
-                      style={{ borderBottom: `1px solid ${border}` }}
-                    >
-                      <span
-                        className="text-xs font-bold uppercase tracking-wide shrink-0"
-                        style={{ color: col.key === 'remit' ? remitAccent : textMuted }}
+                {/* Category navigation & fast search toolbar */}
+                <div
+                  className="px-6 py-2.5 flex flex-wrap items-center justify-between gap-2 border-b shrink-0 text-xs"
+                  style={{ backgroundColor: cardBg, borderColor: border }}
+                >
+                  <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 max-w-full">
+                    {[
+                      { id: 'all', label: `All (${allDetailCols.length})` },
+                      { id: 'active', label: `Active (${activeFeeItems.length})`, badgeColor: activeFeeItems.length > 0 ? '#10B981' : undefined },
+                      { id: 'standard', label: 'Standard' },
+                      { id: 'piping', label: 'Piping' },
+                      { id: 'electrical', label: 'Electrical' },
+                      { id: 'structural', label: 'Structural & Masonry' },
+                      { id: 'admin', label: 'Admin & Custom' },
+                    ].map(tab => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setPopupCategory(tab.id)}
+                        className="px-2.5 py-1 rounded-lg font-bold transition-all text-[11px] whitespace-nowrap cursor-pointer flex items-center gap-1"
+                        style={{
+                          backgroundColor: popupCategory === tab.id
+                            ? (isLight ? '#10B981' : '#059669')
+                            : (isLight ? '#f1f5f9' : '#111d33'),
+                          color: popupCategory === tab.id ? '#ffffff' : (tab.badgeColor || textMuted),
+                        }}
                       >
-                        {col.label}
-                      </span>
-                      <div className="max-w-[60%] flex-1">
-                        {renderMobileCellValue(col, liveRow)}
-                      </div>
-                    </div>
-                  ))}
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="relative w-40 shrink-0">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Filter fields..."
+                      value={popupSearch}
+                      onChange={e => setPopupSearch(e.target.value)}
+                      className="w-full pl-8 pr-2 py-1 rounded-lg text-xs border outline-none bg-transparent"
+                      style={{ borderColor: inputBorder, color: textPrimary }}
+                    />
+                  </div>
                 </div>
 
-                {/* Fee summary bar */}
+                {/* Column rows */}
+                <div className="flex-1 overflow-y-auto px-6 py-1">
+                  {filteredCols.length === 0 ? (
+                    <div className="py-12 text-center text-xs font-semibold" style={{ color: textMuted }}>
+                      No fields match the selected filter.
+                    </div>
+                  ) : (
+                    filteredCols.map(col => {
+                      const curVal = getColAccessor(col.key).get(liveRow)
+                      const isMoneyVal = col.isMoney && num(curVal) > 0
+                      return (
+                        <div
+                          key={col.key}
+                          className="flex items-center justify-between gap-4 py-2.5 transition-colors"
+                          style={{
+                            borderBottom: `1px solid ${border}`,
+                            backgroundColor: isMoneyVal ? (isLight ? 'rgba(16,185,129,0.04)' : 'rgba(16,185,129,0.06)') : undefined,
+                          }}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className="text-xs font-bold uppercase tracking-wide truncate"
+                              style={{ color: col.key === 'remit' ? remitAccent : textPrimary }}
+                            >
+                              {col.label}
+                            </span>
+                            {col.category && (
+                              <span
+                                className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider hidden sm:inline"
+                                style={{ backgroundColor: isLight ? '#f1f5f9' : '#111d33', color: textMuted }}
+                              >
+                                {col.category}
+                              </span>
+                            )}
+                            {isMoneyVal && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 tabular-nums">
+                                ₱{peso(curVal)}
+                              </span>
+                            )}
+                          </div>
+                          <div className="max-w-[55%] flex-1">
+                            {renderMobileCellValue(col, liveRow)}
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+
+                {/* Itemized active fees breakdown (if any add-on is present) */}
+                {activeFeeItems.length > 0 && (
+                  <div
+                    className="px-6 py-2.5 border-t shrink-0 flex flex-col gap-1.5"
+                    style={{ backgroundColor: isLight ? '#f8fafc' : '#0b1322', borderColor: border }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                        Added Ticket Details &amp; Fee Breakdown ({activeFeeItems.length})
+                      </span>
+                      <span className="text-[11px] font-bold tabular-nums" style={{ color: textPrimary }}>
+                        Total: ₱{peso(rowGrandTotal)}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5 max-h-20 overflow-y-auto">
+                      {activeFeeItems.map(item => (
+                        <span
+                          key={item.key}
+                          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-semibold border tabular-nums"
+                          style={{
+                            backgroundColor: item.isBase ? (isLight ? '#e0f2fe' : 'rgba(56,189,248,0.15)') : (isLight ? '#ecfdf5' : 'rgba(16,185,129,0.15)'),
+                            borderColor: item.isBase ? (isLight ? '#bae6fd' : 'rgba(56,189,248,0.3)') : (isLight ? '#a7f3d0' : 'rgba(16,185,129,0.3)'),
+                            color: item.isBase ? (isLight ? '#0284c7' : '#38bdf8') : (isLight ? '#059669' : '#34d399'),
+                          }}
+                        >
+                          <span>{item.label}:</span>
+                          <strong className="font-extrabold">₱{peso(item.amount)}</strong>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Per-Ticket Total Summary bar */}
                 <div className="grid grid-cols-3 shrink-0" style={{ backgroundColor: headerBg, borderTop: `1px solid ${border}` }}>
-                  <div className="px-5 py-4 min-w-0">
-                    <div className="text-xs font-medium uppercase tracking-wider truncate opacity-60" style={{ color: textMuted }}>Install Fee</div>
-                    <div className="text-lg font-bold tabular-nums" style={{ color: textPrimary }}>₱{peso(num(liveRow.installationFee))}</div>
+                  <div className="px-5 py-3.5 min-w-0">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider truncate opacity-70" style={{ color: textMuted }}>Install Fee</div>
+                    <div className="text-base sm:text-lg font-bold tabular-nums" style={{ color: textPrimary }}>₱{peso(baseFee)}</div>
                   </div>
-                  <div className="px-5 py-4 min-w-0">
-                    <div className="text-xs font-medium uppercase tracking-wider truncate opacity-60" style={{ color: textMuted }}>Add-on Pay</div>
-                    <div className="text-lg font-bold tabular-nums" style={{ color: textPrimary }}>₱{peso(addOns)}</div>
+                  <div className="px-5 py-3.5 min-w-0">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider truncate opacity-70" style={{ color: textMuted }}>
+                      Add-on Pay ({activeFeeItems.filter(i => !i.isBase).length})
+                    </div>
+                    <div className="text-base sm:text-lg font-bold tabular-nums" style={{ color: addOns > 0 ? (isLight ? '#047857' : '#34d399') : textPrimary }}>
+                      ₱{peso(addOns)}
+                    </div>
                   </div>
-                  <div className="px-5 py-4 min-w-0">
-                    <div className="text-xs font-medium uppercase tracking-wider truncate opacity-60" style={{ color: textMuted }}>Row Total</div>
-                    <div className="text-lg font-bold tabular-nums" style={{ color: '#10B981' }}>₱{peso(rowTotal(liveRow))}</div>
+                  <div className="px-5 py-3.5 min-w-0">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider truncate opacity-70 text-emerald-600 dark:text-emerald-400">
+                      Per Ticket Total
+                    </div>
+                    <div className="text-lg sm:text-xl font-extrabold tabular-nums" style={{ color: '#10B981' }}>
+                      ₱{peso(rowGrandTotal)}
+                    </div>
                   </div>
                 </div>
 
                 {/* View Ticket action — jumps to the actual ticket behind this payroll row */}
                 {(liveRow.ticketId || liveRow.ticketNumber) && (
                   <div
-                    className="flex items-center justify-end gap-3 px-6 py-3 shrink-0"
+                    className="flex items-center justify-between gap-3 px-6 py-2.5 shrink-0"
                     style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#fafafa' : '#080f1c' }}
                   >
+                    <span className="text-[11px] font-medium opacity-60" style={{ color: textMuted }}>
+                      Ticket #{liveRow.ticketNumber || liveRow.ticketId}
+                    </span>
                     <button
                       type="button"
                       onClick={() => navigate(`/search?ticket=${encodeURIComponent(liveRow.ticketId || liveRow.ticketNumber)}`)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all hover:border-emerald-500/60 hover:bg-emerald-500/10 shrink-0"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all hover:border-emerald-500/60 hover:bg-emerald-500/10 shrink-0 cursor-pointer"
                       style={{ color: '#10B981', borderColor: isLight ? '#a7f3d0' : 'rgba(16,185,129,0.35)', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.08)' }}
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
@@ -2854,11 +3068,10 @@ export default function Payroll() {
                 className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4 px-5 py-3.5 transition-colors hover:bg-slate-500/5"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-bold leading-relaxed" style={{ color: textPrimary }}>
-                    {item.label}
-                  </div>
-                  <div className="text-[10px] font-medium flex items-center flex-wrap gap-x-1.5 gap-y-1 mt-1" style={{ color: textMuted }}>
-                    <span>Head Office default: ₱{item.defaultRate.toLocaleString('en-PH')}</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-bold leading-relaxed" style={{ color: textPrimary }}>
+                      {item.label}
+                    </span>
                     {overridden && (
                       <span className="text-[9px] font-black text-emerald-500 uppercase px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">
                         Custom
@@ -2894,7 +3107,7 @@ export default function Payroll() {
                       lineItemOverrides: { ...prev.lineItemOverrides, [item.key]: item.defaultRate },
                     }))}
                     disabled={!overridden}
-                    title="Reset to Head Office default"
+                    title="Reset to default rate"
                     className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-500/10 disabled:opacity-0 cursor-pointer transition-colors shrink-0"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
@@ -2989,7 +3202,7 @@ export default function Payroll() {
                       <Lightbulb className="w-4 h-4 text-amber-500" />
                     </div>
                     <span className="leading-relaxed">
-                      Install and General Cleaning fees auto-fill on sync based on capacity. Everything else uses the Head Office default until you set your own.
+                      Install and General Cleaning fees auto-fill on sync based on capacity. Customized rates will apply to this branch.
                     </span>
                   </div>
 
@@ -3083,11 +3296,10 @@ export default function Payroll() {
                                     className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4 px-5 py-3.5 transition-colors hover:bg-slate-500/5"
                                   >
                                     <div className="min-w-0 flex-1">
-                                      <div className="text-xs font-bold leading-relaxed" style={{ color: textPrimary }}>
-                                        {item.label}
-                                      </div>
-                                      <div className="text-[10px] font-medium flex items-center flex-wrap gap-x-1.5 gap-y-1 mt-1" style={{ color: textMuted }}>
-                                        <span>Head Office default: ₱{item.defaultVal.toLocaleString('en-PH')}</span>
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-xs font-bold leading-relaxed" style={{ color: textPrimary }}>
+                                          {item.label}
+                                        </span>
                                         {isOverridden && (
                                           <span className="text-[9px] font-black text-emerald-500 uppercase px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">
                                             Custom
@@ -3117,7 +3329,7 @@ export default function Payroll() {
                                         type="button"
                                         onClick={() => setDraftRates(prev => ({ ...prev, [item.key]: item.defaultVal }))}
                                         disabled={!isOverridden}
-                                        title="Reset to Head Office default"
+                                        title="Reset to default rate"
                                         className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-500/10 disabled:opacity-0 cursor-pointer transition-colors shrink-0"
                                       >
                                         <RotateCcw className="w-3.5 h-3.5" />
@@ -3197,7 +3409,7 @@ export default function Payroll() {
                         backgroundColor: inputBg,
                         color: textMuted,
                       }}
-                      title="Reset all branch rates to Head Office defaults"
+                      title="Reset all branch rates to defaults"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                       <span>Reset All to Defaults</span>
