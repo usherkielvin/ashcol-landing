@@ -6,7 +6,7 @@ import {
   Check, Eye, EyeOff,
   Camera, Calendar, User,
   Loader2, ChevronDown, Filter, Edit3, Shield,
-  Clock, Briefcase, UserCheck
+  Clock, Briefcase, UserCheck, KeyRound
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -17,6 +17,15 @@ import WarrantyRegistrationHistoryTable from '../components/WarrantyRegistration
 import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName, notifyEmployeesDirectoryUpdated, isWarrantyRegistrar } from '../utils/api'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 import { uploadReceiptImage } from '../services/supabaseStorage'
+
+function format8DigitId(id?: string | null): string {
+  if (!id) return '—'
+  const clean = id.replace(/[^a-zA-Z0-9]/g, '')
+  if (clean.length >= 8) {
+    return clean.slice(0, 8)
+  }
+  return clean.padStart(8, '0')
+}
 
 function formatDisplayDate(dateStr?: string | null): string {
   if (!dateStr) return '—'
@@ -1793,33 +1802,17 @@ export default function Employees() {
 
                 {/* Badges Flow */}
                 <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap pt-0.5">
-                  {/* Role / Job Title Pills */}
-                  {parseJobTitles(selectedEmployee.jobTitle).length > 0 ? (
-                    parseJobTitles(selectedEmployee.jobTitle).map(jt => (
-                      <span
-                        key={jt}
-                        className="text-[11px] font-bold px-2.5 py-0.5 rounded-lg uppercase tracking-wide border shadow-xs"
-                        style={{
-                          backgroundColor: roleColor(selectedEmployee.role).bg,
-                          color: roleColor(selectedEmployee.role).text,
-                          borderColor: roleColor(selectedEmployee.role).border,
-                        }}
-                      >
-                        {jt}
-                      </span>
-                    ))
-                  ) : (
-                    <span
-                      className="text-[11px] font-bold px-2.5 py-0.5 rounded-lg uppercase tracking-wide border shadow-xs"
-                      style={{
-                        backgroundColor: roleColor(selectedEmployee.role).bg,
-                        color: roleColor(selectedEmployee.role).text,
-                        borderColor: roleColor(selectedEmployee.role).border,
-                      }}
-                    >
-                      {resolveLabel(selectedEmployee.role, selectedEmployee.jobTitle)}
-                    </span>
-                  )}
+                  {/* Primary Role Badge (clean, not access tags badges) */}
+                  <span
+                    className="text-[11px] font-black px-2.5 py-0.5 rounded-lg uppercase tracking-wider border shadow-xs"
+                    style={{
+                      backgroundColor: roleColor(selectedEmployee.role).bg,
+                      color: roleColor(selectedEmployee.role).text,
+                      borderColor: roleColor(selectedEmployee.role).border,
+                    }}
+                  >
+                    {formatRoleLabel(selectedEmployee.role)}
+                  </span>
 
                   {/* Branch Badge */}
                   {selectedEmployee.branchName && (
@@ -1908,10 +1901,10 @@ export default function Employees() {
                 </a>
               )}
               <button
-                onClick={() => copyToClipboard(selectedEmployee.id, 'id')}
+                onClick={() => copyToClipboard(format8DigitId(selectedEmployee.id), 'id')}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all hover:border-emerald-500 hover:text-emerald-500 active:scale-95"
                 style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                title="Copy Member ID"
+                title="Copy 8-digit Member ID"
               >
                 {copiedKey === 'id' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 text-emerald-500" />}
                 <span>{copiedKey === 'id' ? 'Copied ID' : 'Copy ID'}</span>
@@ -1953,18 +1946,27 @@ export default function Employees() {
             {activeDrawerTab === 'overview' && (
               <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 flex flex-col gap-6">
 
-                {/* Section 1: Contact & Workplace */}
+                {/* Section 1: Contact & Location */}
                 <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-emerald-500">
-                    <Mail className="w-3.5 h-3.5" />
-                    <span>Contact & Location</span>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-6 h-6 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
+                      <Mail className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>
+                      Contact & Location
+                    </span>
+                    <div className="flex-1 h-px" style={{ backgroundColor: border }} />
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     {/* Work Email */}
                     <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-emerald-500/40"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
+                        borderColor: inputBorder,
+                        backdropFilter: 'blur(8px)',
+                      }}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
@@ -1976,7 +1978,7 @@ export default function Employees() {
                         {selectedEmployee.email && (
                           <button
                             onClick={() => copyToClipboard(selectedEmployee.email, 'workEmail')}
-                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors"
+                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors cursor-pointer"
                             title="Copy email"
                           >
                             {copiedKey === 'workEmail' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
@@ -1990,8 +1992,12 @@ export default function Employees() {
 
                     {/* Personal Email */}
                     <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-blue-500/40"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
+                        borderColor: inputBorder,
+                        backdropFilter: 'blur(8px)',
+                      }}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
@@ -2003,7 +2009,7 @@ export default function Employees() {
                         {selectedEmployee.personalEmail && (
                           <button
                             onClick={() => copyToClipboard(selectedEmployee.personalEmail, 'personalEmail')}
-                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors"
+                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors cursor-pointer"
                             title="Copy personal email"
                           >
                             {copiedKey === 'personalEmail' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
@@ -2017,8 +2023,12 @@ export default function Employees() {
 
                     {/* Phone Number */}
                     <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-emerald-500/40"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
+                        borderColor: inputBorder,
+                        backdropFilter: 'blur(8px)',
+                      }}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
@@ -2030,7 +2040,7 @@ export default function Employees() {
                         {selectedEmployee.phone && (
                           <button
                             onClick={() => copyToClipboard(selectedEmployee.phone, 'phone')}
-                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors"
+                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors cursor-pointer"
                             title="Copy phone number"
                           >
                             {copiedKey === 'phone' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
@@ -2044,8 +2054,12 @@ export default function Employees() {
 
                     {/* Assigned Branch */}
                     <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-amber-500/40"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
+                        borderColor: inputBorder,
+                        backdropFilter: 'blur(8px)',
+                      }}
                     >
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-lg flex items-center justify-center text-amber-500 bg-amber-500/10 shrink-0">
@@ -2060,52 +2074,62 @@ export default function Employees() {
                   </div>
                 </div>
 
-                {/* Section 2: Role & Employment Details */}
+                {/* Section 2: Employment & Access Information */}
                 <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-emerald-500">
-                    <Briefcase className="w-3.5 h-3.5" />
-                    <span>Role & Employment Information</span>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-6 h-6 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
+                      <Briefcase className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>
+                      Employment & Access Information
+                    </span>
+                    <div className="flex-1 h-px" style={{ backgroundColor: border }} />
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    {/* Job Title */}
+                    {/* Access Tags (formerly Job Title & Roles) */}
                     <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all sm:col-span-2"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all sm:col-span-2 group hover:border-violet-500/40"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
+                        borderColor: inputBorder,
+                        backdropFilter: 'blur(8px)',
+                      }}
                     >
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-lg flex items-center justify-center text-violet-500 bg-violet-500/10 shrink-0">
-                          <Wrench className="w-3.5 h-3.5" />
+                          <KeyRound className="w-3.5 h-3.5" />
                         </div>
-                        <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>JOB TITLE & ROLES</span>
+                        <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
+                          ACCESS TAGS
+                        </span>
                       </div>
-                      <div className="flex flex-wrap gap-1.5 pt-1">
+                      <div className="text-sm font-bold select-text" style={{ color: textPrimary }}>
                         {parseJobTitles(selectedEmployee.jobTitle).length > 0 ? (
-                          parseJobTitles(selectedEmployee.jobTitle).map(jt => (
-                            <span
-                              key={jt}
-                              className="text-xs font-bold px-3 py-1 rounded-lg uppercase tracking-wide border shadow-xs"
-                              style={{
-                                backgroundColor: roleColor(selectedEmployee.role).bg,
-                                color: roleColor(selectedEmployee.role).text,
-                                borderColor: roleColor(selectedEmployee.role).border,
-                              }}
-                            >
-                              {jt}
-                            </span>
-                          ))
+                          <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                            {parseJobTitles(selectedEmployee.jobTitle).map((tag, idx, arr) => (
+                              <span key={tag} className="inline-flex items-center text-xs font-bold tracking-wide" style={{ color: textPrimary }}>
+                                <span>{tag}</span>
+                                {idx < arr.length - 1 && (
+                                  <span className="mx-2 opacity-30 select-none">•</span>
+                                )}
+                              </span>
+                            ))}
+                          </div>
                         ) : (
-                          <span className="text-sm font-bold uppercase" style={{ color: textPrimary }}>
-                            {resolveLabel(selectedEmployee.role, selectedEmployee.jobTitle)}
-                          </span>
+                          <span className="text-xs italic opacity-50 font-normal">No access tags assigned</span>
                         )}
                       </div>
                     </div>
 
                     {/* Date Hired */}
                     <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-emerald-500/40"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
+                        borderColor: inputBorder,
+                        backdropFilter: 'blur(8px)',
+                      }}
                     >
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
@@ -2127,8 +2151,12 @@ export default function Employees() {
 
                     {/* Birthdate */}
                     <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-pink-500/40"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
+                        borderColor: inputBorder,
+                        backdropFilter: 'blur(8px)',
+                      }}
                     >
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-lg flex items-center justify-center text-pink-500 bg-pink-500/10 shrink-0">
@@ -2143,18 +2171,27 @@ export default function Employees() {
                   </div>
                 </div>
 
-                {/* Section 3: System & Security Metadata */}
+                {/* Section 3: Account & System Information */}
                 <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-emerald-500">
-                    <Shield className="w-3.5 h-3.5" />
-                    <span>System & Account Metadata</span>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-6 h-6 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
+                      <Shield className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>
+                      Account & System Details
+                    </span>
+                    <div className="flex-1 h-px" style={{ backgroundColor: border }} />
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     {/* Member ID */}
                     <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-indigo-500/40"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
+                        borderColor: inputBorder,
+                        backdropFilter: 'blur(8px)',
+                      }}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
@@ -2164,22 +2201,35 @@ export default function Employees() {
                           <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>MEMBER ID</span>
                         </div>
                         <button
-                          onClick={() => copyToClipboard(selectedEmployee.id, 'memberId')}
-                          className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors"
-                          title="Copy Full Member ID"
+                          onClick={() => copyToClipboard(format8DigitId(selectedEmployee.id), 'memberId')}
+                          className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors cursor-pointer"
+                          title="Copy 8-digit Member ID"
                         >
                           {copiedKey === 'memberId' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                         </button>
                       </div>
-                      <div className="text-xs font-mono font-semibold break-all select-text" style={{ color: textPrimary }}>
-                        {selectedEmployee.id}
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="font-mono text-base font-extrabold tracking-[0.2em] px-3 py-1.5 rounded-xl select-all border shadow-xs"
+                          style={{
+                            backgroundColor: isLight ? 'rgba(241, 245, 249, 0.9)' : 'rgba(30, 41, 59, 0.7)',
+                            borderColor: isLight ? '#cbd5e1' : '#334155',
+                            color: isLight ? '#0f172a' : '#f8fafc',
+                          }}
+                        >
+                          {format8DigitId(selectedEmployee.id)}
+                        </span>
                       </div>
                     </div>
 
                     {/* Registered Date */}
                     <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-cyan-500/40"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
+                        borderColor: inputBorder,
+                        backdropFilter: 'blur(8px)',
+                      }}
                     >
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-lg flex items-center justify-center text-cyan-500 bg-cyan-500/10 shrink-0">
@@ -2194,8 +2244,12 @@ export default function Employees() {
 
                     {/* Combined Active & Last Login */}
                     <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-emerald-500/40"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
+                        borderColor: inputBorder,
+                        backdropFilter: 'blur(8px)',
+                      }}
                     >
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
@@ -2205,7 +2259,7 @@ export default function Employees() {
                       </div>
                       <div className="flex flex-col gap-0.5">
                         <div className="flex items-center gap-1.5 text-sm font-bold" style={{ color: selectedEmployee.isActive ? '#10B981' : textMuted }}>
-                          <span className={`w-2 h-2 rounded-full ${selectedEmployee.isActive ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                          <span className={`w-2 h-2 rounded-full ${selectedEmployee.isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
                           <span>{selectedEmployee.isActive ? 'Active Member' : 'Deactivated'}</span>
                         </div>
                         <div className="text-xs mt-0.5 flex items-center gap-1" style={{ color: textMuted }}>

@@ -393,11 +393,15 @@ export async function fetchAndMapPayroll(
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
     if (!token) return { ok: false, error: 'auth_missing' }
 
+    // The month match is broad (any ticket with any date key in the month — including
+    // reschedule/ghost history), so a busy branch-month can exceed the default 5-page cap;
+    // pages come back newest-first, so hitting the cap would silently drop part of the month.
     const list = await fetchTicketsPage('/tickets/branch', token, {
       month: monthKey,
       branchId,
       paginate: true,
       size: 200,
+      maxPages: 20,
     })
 
     const tickets = (list as Ticket[]).filter((t) => (t.status || '').toUpperCase() !== 'CANCELLED')

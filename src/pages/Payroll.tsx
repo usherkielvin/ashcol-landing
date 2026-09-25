@@ -356,6 +356,9 @@ export default function Payroll() {
   const [rows, setRows] = useState<PayrollRow[]>([])
   const [initialLoading, setInitialLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  // True when the last pull from Schedules failed — the table is then only showing previously
+  // saved rows, which can stop partway through the period.
+  const [syncFailed, setSyncFailed] = useState(false)
   // Header shows no save-status indicator per the simplified toolbar — the setter still
   // drives autosave logic below, the value itself just isn't rendered anywhere right now.
   const [, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -812,6 +815,7 @@ export default function Payroll() {
     if (isManualRefresh) setSyncing(true)
     else setInitialLoading(true)
 
+    let anySyncFailed = false
     try {
       let combinedSavedRows: PayrollRow[] = []
       const currentBranchName = branches.find(b => b.id === branchFilter)?.name || ''
@@ -874,6 +878,10 @@ export default function Payroll() {
 
         // Automatically fetch latest results from schedules
         const scheduleResult = await fetchAndMapPayroll(branchFilter, mKey, currentBranchName, rates)
+        if (!scheduleResult.ok) {
+          anySyncFailed = true
+          console.error(`[Payroll] Schedules sync failed for ${branchFilter} ${mKey}:`, scheduleResult.error)
+        }
         let merged = savedRows
         if (scheduleResult.ok && scheduleResult.rows.length > 0) {
           merged = deduplicateAndMergePayroll(savedRows, scheduleResult.rows)
@@ -908,8 +916,10 @@ export default function Payroll() {
 
       setRows(combinedSavedRows)
     } catch (e) {
+      anySyncFailed = true
       console.error('Failed to auto-fetch payroll and schedules:', e)
     } finally {
+      setSyncFailed(anySyncFailed)
       setInitialLoading(false)
       setSyncing(false)
     }
@@ -1592,15 +1602,23 @@ export default function Payroll() {
               onClick={() => void loadAndSync(true)}
               disabled={syncing || initialLoading}
               className="flex items-center gap-2 px-3.5 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all shadow-xs disabled:opacity-50 cursor-pointer hover:border-emerald-500/50 active:scale-95"
-              style={{
-                backgroundColor: isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)',
-                borderColor: '#10B98150',
-                color: '#10B981',
-              }}
-              title="Sync latest completed job orders from Schedules (DONE INSTALL, DONE CLEANING, DONE CHECKUP, DONE SERVICE, etc.)"
+              style={syncFailed && !syncing
+                ? {
+                    backgroundColor: isLight ? 'rgba(220,38,38,0.08)' : 'rgba(248,113,113,0.14)',
+                    borderColor: isLight ? '#DC262660' : '#F8717160',
+                    color: isLight ? '#DC2626' : '#F87171',
+                  }
+                : {
+                    backgroundColor: isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)',
+                    borderColor: '#10B98150',
+                    color: '#10B981',
+                  }}
+              title={syncFailed
+                ? "Couldn't pull the latest jobs from Schedules — showing only previously saved rows, which may stop partway through the period. Click to retry."
+                : 'Sync latest completed job orders from Schedules (DONE INSTALL, DONE CLEANING, DONE CHECKUP, DONE SERVICE, etc.)'}
             >
               <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-              <span>{syncing ? 'Syncing…' : 'Sync Latest'}</span>
+              <span>{syncing ? 'Syncing…' : syncFailed ? 'Sync failed — Retry' : 'Sync Latest'}</span>
             </button>
           )}
 

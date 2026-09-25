@@ -126,6 +126,40 @@ export {
  */
 const AUTOFIT_COLUMNS = new Set(['DESTINATION', 'DLR', 'COMMIT', 'BRAND'])
 
+const DEFAULT_COL_WIDTHS: Record<string, number> = {
+  'TICKET NO': 115,
+  'FINAL DATE': 130,
+  "CUSTOMER'S NAME": 210,
+  'DESTINATION': 135,
+  'BRAND': 120,
+  'DLR': 135,
+  'COMMIT': 105,
+  'INSTALLER': 125,
+  'NEGOTIATOR': 110,
+  'SERVICE': 120,
+  'VEHICLE': 110,
+  'STATUS': 130,
+  'UPDATE': 160,
+  'PAYMENT': 115,
+}
+
+const MIN_COL_WIDTHS: Record<string, number> = {
+  'TICKET NO': 65,
+  'FINAL DATE': 75,
+  "CUSTOMER'S NAME": 85,
+  'DESTINATION': 70,
+  'BRAND': 65,
+  'DLR': 70,
+  'COMMIT': 60,
+  'INSTALLER': 70,
+  'NEGOTIATOR': 65,
+  'SERVICE': 65,
+  'VEHICLE': 60,
+  'STATUS': 75,
+  'UPDATE': 80,
+  'PAYMENT': 65,
+}
+
 function AutoFitText({ text, style, title, minScale = 0.55, align = 'center' }: {
   text: string
   style?: React.CSSProperties
@@ -3078,6 +3112,51 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
   // ─────────────────────────────────────────────────────────────
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
+  const [customColWidths, setCustomColWidths] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem('ashcol_schedule_col_widths_v2')
+      if (saved) return JSON.parse(saved)
+    } catch { /* ignore */ }
+    return {}
+  })
+
+  const startColResize = useCallback((e: React.MouseEvent, colLabel: string, currentWidth: number) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const startX = e.clientX
+    const startWidth = currentWidth
+    const minW = MIN_COL_WIDTHS[colLabel] || 60
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    let latestWidth = startWidth
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = moveEvent.clientX - startX
+      const newWidth = Math.max(minW, Math.round(startWidth + delta))
+      latestWidth = newWidth
+      setCustomColWidths(prev => ({
+        ...prev,
+        [colLabel]: newWidth,
+      }))
+    }
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      setCustomColWidths(latest => {
+        try {
+          localStorage.setItem('ashcol_schedule_col_widths_v2', JSON.stringify({ ...latest, [colLabel]: latestWidth }))
+        } catch { /* ignore */ }
+        return latest
+      })
+    }
+
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }, [])
   const [editingCell, setEditingCell] = useState<{ ticketId: string; rowIndex: number; colLabel: string; value: string } | null>(null)
   const [statusPicker, setStatusPicker] = useState<{
     ticket: Ticket
@@ -3274,18 +3353,20 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       { label: 'FINAL DATE', display: 'FINAL DATE', weight: 10, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
     ]
     const raw = isMyTickets ? myTicketsCols : scheduleCols
-    const weights = raw.map(c => c.weight * (expandedCols[c.label] ? c.expMul : 1))
-    const totalWeight = weights.reduce((s, w) => s + w, 0)
-    let left = 0
-    return raw.map((c, idx) => {
+    let stickyLeft = 0
+    return raw.map((c) => {
       const isExpanded = !!expandedCols[c.label]
-      const pct = `${((weights[idx] / totalWeight) * 100).toFixed(2)}%`
-      const l = c.sticky ? left : 0
-      // sticky columns: accumulate by base weight share only
-      if (c.sticky) left += (c.weight / totalWeight) * 100
-      return { ...c, isExpanded, w: pct, left: l }
+      const baseW = customColWidths[c.label] || DEFAULT_COL_WIDTHS[c.label] || 120
+      const pixelWidth = isExpanded ? Math.round(baseW * 1.35) : baseW
+      const leftPx = c.sticky ? stickyLeft : 0
+      if (c.sticky) stickyLeft += pixelWidth
+      return { ...c, isExpanded, pixelWidth, w: `${pixelWidth}px`, left: leftPx }
     })
-  }, [expandedCols, isTaguigServices, isMyTickets, monthViewActive])
+  }, [expandedCols, isTaguigServices, isMyTickets, monthViewActive, customColWidths])
+
+  const totalTableWidth = useMemo(() => {
+    return columns.reduce((acc, c) => acc + (c as any).pixelWidth, 0)
+  }, [columns])
 
   // ─────────────────────────────────────────────────────────────
   const token = useCallback(() =>
@@ -5657,7 +5738,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     const showExpanded = cellExpanded
     const truncStyle: React.CSSProperties = showExpanded
       ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.45, display: 'block', paddingRight: '4px', color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: label !== 'UPDATE' ? 'uppercase' : undefined }
-      : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', maxWidth: '100%', lineHeight: 1.3, color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: label !== 'UPDATE' ? 'uppercase' : undefined }
+      : { overflow: 'hidden', textOverflow: 'clip', whiteSpace: 'nowrap', display: 'block', maxWidth: '100%', lineHeight: 1.3, color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: label !== 'UPDATE' ? 'uppercase' : undefined }
 
     if (label === 'DESTINATION') {
       const fullAddress = formatAddress(ticket.location)
@@ -6111,7 +6192,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           }}
           title={hasRemarks ? `Click to view history: ${remarksText}` : 'Click to view history'}
         >
-          <span className="block min-w-0 w-full truncate">
+          <span className="block min-w-0 w-full overflow-hidden whitespace-nowrap" style={{ textOverflow: 'clip' }}>
             {hasRemarks ? remarksText : 'View History'}
           </span>
         </button>
@@ -7115,8 +7196,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   key={dateFilter || 'all'}
                   className="text-xs hidden md:table"
                   style={{
-                    width: '100%',
-                    minWidth: '1400px',
+                    width: `${Math.max(totalTableWidth, 1400)}px`,
+                    minWidth: '100%',
                     tableLayout: 'fixed',
                     borderCollapse: 'collapse',
                   }}
@@ -7154,6 +7235,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                             }}
                             title={canSort ? 'Click to widen column · Use arrow to sort' : 'Click to widen column'}
                             style={{
+                              position: col.sticky ? ('sticky' as const) : ('relative' as const),
                               padding: '13px 12px',
                               color: (col.isExpanded || isSorted)
                                 ? (isLight ? '#16A34A' : '#4ADE80')
@@ -7162,14 +7244,14 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                               borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`,
                               borderRight: isLastCol ? 'none' : (isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`),
                               fontSize: '11px', letterSpacing: '0.06em',
-                              width: col.w, minWidth: 0,
-                              overflow: 'hidden', textOverflow: 'ellipsis',
+                              width: col.w, minWidth: col.w, maxWidth: col.w,
+                              overflow: 'hidden', textOverflow: 'clip',
                               backgroundColor: isMyTickets ? myTicketsTheadBg : schedTheadBg,
                               cursor: 'pointer',
                               userSelect: 'none',
                               transition: 'color 0.15s ease',
                               textAlign: col.align || 'left',
-                              ...(col.sticky ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: 15, boxShadow: `2px 0 0 ${isMyTickets ? myTicketsTheadBorder : schedTheadBorder}` } : {}),
+                              ...(col.sticky ? { position: 'sticky' as const, left: `${col.left}px`, zIndex: 15, boxShadow: `2px 0 0 ${isMyTickets ? myTicketsTheadBorder : schedTheadBorder}` } : {}),
                             }}>
                             <div className={`flex items-center gap-1 w-full ${col.align === 'center' ? 'justify-center text-center' :
                               col.align === 'right' ? 'justify-end text-right' :
@@ -7193,6 +7275,26 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                   />
                                 </button>
                               )}
+                            </div>
+
+                            {/* Column resize drag handle */}
+                            <div
+                              className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize z-30 flex items-center justify-end select-none group"
+                              style={{ touchAction: 'none' }}
+                              onMouseDown={(e) => startColResize(e, col.label, col.pixelWidth)}
+                              onClick={(e) => e.stopPropagation()}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation()
+                                const defW = DEFAULT_COL_WIDTHS[col.label] || 120
+                                setCustomColWidths(prev => {
+                                  const next = { ...prev, [col.label]: defW }
+                                  try { localStorage.setItem('ashcol_schedule_col_widths_v2', JSON.stringify(next)) } catch {}
+                                  return next
+                                })
+                              }}
+                              title="Drag to resize column · Double-click to reset width"
+                            >
+                              <div className="w-[3px] h-full bg-transparent group-hover:bg-emerald-500/80 active:bg-emerald-500 transition-colors" />
                             </div>
                           </th>
                         )
@@ -7404,11 +7506,12 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                     borderBottom: `1px solid ${tableBorder}`,
                                     borderRight: isLastCol ? 'none' : `1px solid ${tableBorder}`,
                                     width: col.w,
-                                    minWidth: 0,
+                                    minWidth: col.w,
+                                    maxWidth: col.w,
                                     height: isEditingCell ? 'auto' : TABLE_ROW_HEIGHT,
                                     maxHeight: isEditingCell ? undefined : TABLE_ROW_HEIGHT,
-                                    overflow: 'visible',
-                                    textOverflow: 'ellipsis',
+                                    overflow: 'hidden',
+                                    textOverflow: 'clip',
                                     transition: isDropTargetRow ? 'background-color 1s ease' : 'background-color 0.1s ease',
                                     cursor: canEdit && (!isGhost || allowGhostCellEdit) && INLINE_EDIT_COLUMNS.has(col.label) ? 'text' : 'default',
                                     verticalAlign: 'middle',
@@ -7416,7 +7519,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                     userSelect: isEditingCell ? 'text' : (canEdit && (!isGhost || allowGhostCellEdit) ? 'none' : undefined),
                                     WebkitUserSelect: isEditingCell ? 'text' : (canEdit && (!isGhost || allowGhostCellEdit) ? 'none' : undefined),
                                     ...(col.sticky
-                                      ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: (isEditingCell || isExpandedCell) ? 95 : 5 }
+                                      ? { position: 'sticky' as const, left: `${col.left}px`, zIndex: (isEditingCell || isExpandedCell) ? 95 : 5 }
                                       : { position: 'relative' as const, zIndex: (isEditingCell || isExpandedCell) ? (isEditingCell ? 90 : 85) : undefined }),
                                     boxShadow: isSelectedVehicleCell
                                       ? `inset 0 0 0 2px ${green}`
@@ -7432,7 +7535,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                         }`}
                                       style={{ minHeight: TABLE_ROW_HEIGHT - 2 }}
                                     >
-                                      <div className={`min-w-0 overflow-hidden ${col.align === 'center' && col.label !== 'VEHICLE' && !AUTOFIT_COLUMNS.has(col.label) ? 'w-auto max-w-full' : 'w-full'}`}>
+                                      <div className={`min-w-0 overflow-hidden ${col.align === 'center' && col.label !== 'VEHICLE' && !AUTOFIT_COLUMNS.has(col.label) ? 'w-auto max-w-full' : 'w-full'}`} style={{ textOverflow: 'clip' }}>
                                         {renderCell(ticket, col, idx, isGhost, ghostKind, false)}
                                       </div>
                                     </div>
