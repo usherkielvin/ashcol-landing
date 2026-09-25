@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { NumericFormat } from 'react-number-format'
 import {
   FileText, CreditCard, Clock, Plus, Search, Filter, Loader2,
   Check, X, AlertCircle, Trash2, Eye, Pencil, MousePointerClick, ChevronLeft,
   CircleCheck, CircleX, Hourglass, TrendingUp, ChevronDown, Building2,
-  MessageSquare,
+  MessageSquare, Archive, Calendar, Undo2,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -171,6 +171,9 @@ export default function OperationsForms() {
   const targetId = searchParams.get('id')
   const targetType = searchParams.get('type') as TabId | null
 
+  // ── Page-level tab: 'active' | 'archives' ────────────────────────────────
+  const [activeTab, setActiveTab] = useState<'active' | 'archives'>('active')
+
   const [modal, setModal] = useState<{ mode: ModalMode; type: TabId; record: CashAdvance | BudgetRequest | OvertimeRequest | null } | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: UnifiedRow } | null>(null)
   const [loading, setLoading] = useState(false)
@@ -190,6 +193,69 @@ export default function OperationsForms() {
   const [modalNotesInput, setModalNotesInput] = useState('')
   const [rejectDialog, setRejectDialog] = useState<{ isOpen: boolean; type: TabId; id: string; currentReason: string } | null>(null)
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+
+  // ── Archive tab state ─────────────────────────────────────────────────────
+  interface ArchiveRecord {
+    id: string; employeeId: string; employeeName?: string; branchId?: string
+    status: string; createdAt: string; archivedBy?: string; archivedByName?: string; archivedAt?: string
+    amount?: number; purpose?: string; fromBranch?: string; fromDept?: string
+    poNumber?: string; payeeName?: string; totalAmount?: number
+    department?: string; cutoffPeriod?: string; notes?: string; rejectionReason?: string
+  }
+  interface ArchHistoryEntry { id: string; previousStatus?: string; newStatus: string; changedByName?: string; note?: string; createdAt: string }
+  interface ArchUnifiedRow {
+    id: string; type: TabId; createdAt: string; employeeId: string
+    requesterName: string; branchLabel: string; status: string
+    amount: number | null; detail: string; archivedByName?: string; archivedAt?: string
+    raw: ArchiveRecord
+  }
+
+  const ARCH_BASE_PATHS: Record<TabId, string> = {
+    'cash-advance': '/hris/cash-advances',
+    budget: '/operations/budget-requests',
+    overtime: '/operations/overtime-requests',
+  }
+  const archStatusColors: Record<string, string> = { DONE: '#0ea5e9', RELEASED: '#8b5cf6', CANCELLED: '#64748b' }
+  const TAB_LABELS: Record<TabId, string> = { 'cash-advance': 'Cash Advance', budget: 'Budget Request', overtime: 'Overtime Authorization' }
+
+  const [archRecords, setArchRecords] = useState<Record<TabId, ArchiveRecord[]>>({ 'cash-advance': [], budget: [], overtime: [] })
+  const [archLoading, setArchLoading] = useState(false)
+  const [archError, setArchError] = useState<string | null>(null)
+  const [archEmployeeDir, setArchEmployeeDir] = useState<Record<string, string>>({})
+  const [archSearchQuery, setArchSearchQuery] = useState('')
+  const [archTypeFilter, setArchTypeFilter] = useState<'ALL' | TabId>('ALL')
+  const [archStatusFilter, setArchStatusFilter] = useState<'ALL' | 'DONE' | 'RELEASED' | 'CANCELLED'>('ALL')
+  const [archBranchFilter, setArchBranchFilter] = useState('ALL')
+  const [archStaffFilter, setArchStaffFilter] = useState('ALL')
+  const [archMonthFilter, setArchMonthFilter] = useState('')
+  const [archSelected, setArchSelected] = useState<ArchUnifiedRow | null>(null)
+  const [archHistory, setArchHistory] = useState<ArchHistoryEntry[]>([])
+  const [archHistLoading, setArchHistLoading] = useState(false)
+  const [archRestoring, setArchRestoring] = useState(false)
+
+  // Monthly auto-archive: triggers once per month (stored in localStorage)
+  const autoArchTriggered = useRef(false)
+  useEffect(() => {
+    if (autoArchTriggered.current || !isAdmin) return
+    autoArchTriggered.current = true
+    const key = 'ashcol_auto_archive_month'
+    const nowMonth = new Date().toISOString().slice(0, 7)
+    const lastRun = localStorage.getItem(key)
+    if (lastRun === nowMonth) return
+    // Fire-and-forget: hit the bulk auto-archive endpoint (best-effort)
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    const urls = [
+      `${API_BASE_URL}/hris/cash-advances/auto-archive`,
+      `${API_BASE_URL}/operations/budget-requests/auto-archive`,
+      `${API_BASE_URL}/operations/overtime-requests/auto-archive`,
+    ]
+    Promise.allSettled(urls.map(url => fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}` } })))
+      .then(() => {
+        localStorage.setItem(key, nowMonth)
+        fetchAll()
+      })
+      .catch(() => { /* best-effort */ })
+  }, [isAdmin])
 
   // Cash advance form
   const [caMemberName, setCaMemberName] = useState('')
@@ -277,16 +343,45 @@ export default function OperationsForms() {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
+  const fetchArchive = useCallback(async () => {
+    setArchLoading(true)
+    setArchError(null)
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    const headers = { Authorization: `Bearer ${token}` }
+    const suffix = isAdmin ? '?archived=true' : '/my?archived=true'
+    try {
+      const [caRes, budRes, otRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/hris/cash-advances${suffix}`, { headers }),
+        fetch(`${API_BASE_URL}/operations/budget-requests${suffix}`, { headers }),
+        fetch(`${API_BASE_URL}/operations/overtime-requests${suffix}`, { headers }),
+      ])
+      const next: Record<TabId, ArchiveRecord[]> = { 'cash-advance': [], budget: [], overtime: [] }
+      let anyFailed = false
+      if (caRes.ok) next['cash-advance'] = await caRes.json(); else anyFailed = true
+      if (budRes.ok) next.budget = await budRes.json(); else anyFailed = true
+      if (otRes.ok) next.overtime = await otRes.json(); else anyFailed = true
+      setArchRecords(next)
+      if (anyFailed) setArchError('Some archived requests could not be loaded.')
+    } catch {
+      setArchError('Could not connect to the server.')
+    } finally {
+      setArchLoading(false)
+    }
+  }, [isAdmin])
+
   useEffect(() => {
     if (!isAdmin) return
     fetchCachedEmployees(getToken()).then(list => {
       const map: Record<string, { name: string; branchId: string }> = {}
+      const archMap: Record<string, string> = {}
       list.forEach(u => {
         const id = u.id as string
         if (!id) return
         map[id] = { name: (u.name as string) || '', branchId: (u.branchId as string) || '' }
+        archMap[id] = (u.name as string) || id
       })
       setUserDirectory(map)
+      setArchEmployeeDir(archMap)
     }).catch(() => { /* directory is a display enhancement, ignore failures */ })
   }, [isAdmin, getToken])
 
@@ -438,6 +533,126 @@ export default function OperationsForms() {
     approved: statsBase.filter(r => ['APPROVED', 'DISBURSED', 'NOTED', 'FULLY_PAID'].includes(r.status)).length,
     rejected: statsBase.filter(r => r.status === 'REJECTED').length,
   }
+
+    // ── Archive computed data ───────────────────────────────────────────────
+    // (placed here so it's below resolveBranchLabel + archEmployeeDir)
+  const archGetRequesterName = useCallback((employeeId: string, fallbackName?: string) =>
+    fallbackName || (employeeId === user?.id ? user?.name : archEmployeeDir[employeeId]) || employeeId || '—',
+    [user?.id, user?.name, archEmployeeDir])
+
+  const archResolveBranch = useCallback((...candidates: (string | null | undefined)[]) => {
+    for (const cand of candidates) {
+      if (!cand?.trim()) continue
+      const c = cand.trim()
+      const m = findBranchListEntry(c, branches) || branches.find(b => b.id.toLowerCase() === c.toLowerCase() || b.name.toLowerCase() === c.toLowerCase())
+      if (m) return m.name.toUpperCase().replace(/^ASHCOL\s+/i, '').replace(/-(SALES|SERVICES)$/i, '').trim()
+      const f = getBranchLabel(c)
+      if (f && !f.includes('-') && f.length < 30) return f
+    }
+    return '—'
+  }, [branches])
+
+  const archUnifiedRows = useMemo<ArchUnifiedRow[]>(() => {
+    const ca = archRecords['cash-advance'].map((r): ArchUnifiedRow => ({
+      id: r.id, type: 'cash-advance', createdAt: r.createdAt, employeeId: r.employeeId,
+      requesterName: archGetRequesterName(r.employeeId, r.employeeName),
+      branchLabel: archResolveBranch(r.branchId),
+      status: r.status, amount: r.amount ?? null,
+      detail: r.purpose || '—', archivedByName: r.archivedByName, archivedAt: r.archivedAt, raw: r,
+    }))
+    const bud = archRecords.budget.map((r): ArchUnifiedRow => ({
+      id: r.id, type: 'budget', createdAt: r.createdAt, employeeId: r.employeeId,
+      requesterName: archGetRequesterName(r.employeeId),
+      branchLabel: archResolveBranch(r.fromBranch, r.branchId),
+      status: r.status, amount: r.totalAmount ?? null,
+      detail: r.payeeName ? `Payee: ${r.payeeName}` : (r.poNumber ? `PO ${r.poNumber}` : '—'),
+      archivedByName: r.archivedByName, archivedAt: r.archivedAt, raw: r,
+    }))
+    const ot = archRecords.overtime.map((r): ArchUnifiedRow => ({
+      id: r.id, type: 'overtime', createdAt: r.createdAt, employeeId: r.employeeId,
+      requesterName: archGetRequesterName(r.employeeId, r.employeeName),
+      branchLabel: archResolveBranch(r.department, r.branchId),
+      status: r.status, amount: null,
+      detail: r.cutoffPeriod ? `Cut-off: ${r.cutoffPeriod}` : '—',
+      archivedByName: r.archivedByName, archivedAt: r.archivedAt, raw: r,
+    }))
+    return [...ca, ...bud, ...ot].sort((x, y) => new Date(y.archivedAt || y.createdAt).getTime() - new Date(x.archivedAt || x.createdAt).getTime())
+  }, [archRecords, archGetRequesterName, archResolveBranch])
+
+  const archMatchesBranch = useCallback((r: ArchUnifiedRow, filterId: string) => {
+    if (!filterId || filterId === 'ALL') return true
+    const sel = branches.find(b => b.id.toLowerCase() === filterId.toLowerCase())
+    if (!sel) return false
+    const bn = sel.name.toLowerCase()
+    const rl = r.branchLabel.toLowerCase()
+    if (rl === bn || bn.includes(rl) || rl.includes(bn)) return true
+    const fn = formatBranchName(sel.name, sel.id).toLowerCase()
+    return rl === fn || fn.includes(rl) || rl.includes(fn)
+  }, [branches])
+
+  const archFilteredRows = useMemo(() => archUnifiedRows.filter(r => {
+    if (archTypeFilter !== 'ALL' && r.type !== archTypeFilter) return false
+    if (archStatusFilter !== 'ALL' && r.status !== archStatusFilter) return false
+    if (!archMatchesBranch(r, archBranchFilter)) return false
+    if (archStaffFilter !== 'ALL' && r.employeeId !== archStaffFilter) return false
+    if (archMonthFilter && !(r.createdAt || '').startsWith(archMonthFilter)) return false
+    if (archSearchQuery.trim()) {
+      const term = archSearchQuery.trim().toLowerCase()
+      if (!`${r.id} ${r.requesterName} ${r.branchLabel} ${r.detail}`.toLowerCase().includes(term)) return false
+    }
+    return true
+  }), [archUnifiedRows, archTypeFilter, archStatusFilter, archBranchFilter, archStaffFilter, archMonthFilter, archSearchQuery, archMatchesBranch])
+
+  const archStaffOptions = useMemo(() => {
+    const seen = new Map<string, string>()
+    archUnifiedRows.forEach(r => { if (!seen.has(r.employeeId)) seen.set(r.employeeId, r.requesterName) })
+    return Array.from(seen.entries()).sort((a, b) => a[1].localeCompare(b[1]))
+  }, [archUnifiedRows])
+
+  // Fetch archives when user switches to archive tab
+  useEffect(() => {
+    if (activeTab === 'archives') fetchArchive()
+  }, [activeTab, fetchArchive])
+
+  const openArchiveDetail = async (row: ArchUnifiedRow) => {
+    setArchSelected(row)
+    setArchHistory([])
+    setArchHistLoading(true)
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    try {
+      const res = await fetch(`${API_BASE_URL}${ARCH_BASE_PATHS[row.type]}/${row.id}/history`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) setArchHistory(await res.json())
+    } catch { /* history is supplementary */ } finally { setArchHistLoading(false) }
+  }
+
+  const requestRestore = (row: ArchUnifiedRow) => {
+    setConfirmDialog({
+      title: 'Restore this request?',
+      message: 'This will move the request back to the active Request Forms list at its status before it was archived.',
+      variant: 'save',
+      confirmText: 'Restore',
+      onConfirm: async () => {
+        setArchRestoring(true)
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        try {
+          const res = await fetch(`${API_BASE_URL}${ARCH_BASE_PATHS[row.type]}/${row.id}/restore`, {
+            method: 'PUT',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          })
+          if (res.ok) { setArchSelected(null); fetchArchive(); fetchAll() }
+          else { const e = await res.json().catch(() => ({})); setArchError(e.error || e.message || 'Failed to restore.') }
+        } catch { setArchError('Failed to restore request.') }
+        finally { setArchRestoring(false) }
+      },
+    })
+  }
+
+  const archFormatDate = (value?: string) => value
+    ? new Date(value).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+    : '—'
+    // ── end archive computed data ──────────────────────────────────────────
 
   const requestDeleteRecord = (type: TabId, id: string, label: string) => {
     const endpoints: Record<TabId, string> = {
@@ -1117,14 +1332,47 @@ export default function OperationsForms() {
             Cash advance, budget, and overtime requests in one place
           </p>
         </div>
-        <button
-          onClick={openNewForm}
-          className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-white shadow-md hover:opacity-90 transition-all"
-          style={{ backgroundColor: accent }}
-        >
-          <Plus className="w-4 h-4" />
-          New Request
-        </button>
+        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+          {/* Active / Archives tab switcher */}
+          <div
+            className="flex items-center rounded-xl p-1 gap-1"
+            style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F1A2E', border: `1px solid ${border}` }}
+          >
+            <button
+              type="button"
+              onClick={() => setActiveTab('active')}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all"
+              style={activeTab === 'active' ? { backgroundColor: accent, color: '#fff', boxShadow: '0 2px 8px rgba(16,185,129,0.3)' } : { color: textMuted }}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Active
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('archives')}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all"
+              style={activeTab === 'archives' ? { backgroundColor: '#6366f1', color: '#fff', boxShadow: '0 2px 8px rgba(99,102,241,0.3)' } : { color: textMuted }}
+            >
+              <Archive className="w-3.5 h-3.5" />
+              Archives
+              {archUnifiedRows.length > 0 && (
+                <span className="ml-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-black" style={{ backgroundColor: activeTab === 'archives' ? 'rgba(255,255,255,0.2)' : 'rgba(99,102,241,0.12)', color: activeTab === 'archives' ? '#fff' : '#6366f1' }}>
+                  {archUnifiedRows.length}
+                </span>
+              )}
+            </button>
+          </div>
+          {activeTab === 'active' && (
+            <button
+              onClick={openNewForm}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-white shadow-md hover:opacity-90 transition-all"
+              style={{ backgroundColor: accent }}
+            >
+              <Plus className="w-4 h-4" />
+              New Request
+            </button>
+          )}
+        </div>
       </div>
       </>
       )}
@@ -1144,7 +1392,7 @@ export default function OperationsForms() {
         </div>
       )}
 
-      {!modal && (
+      {!modal && activeTab === 'active' && (
       <>
       {/* Summary stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3">
@@ -1230,139 +1478,69 @@ export default function OperationsForms() {
           <div className="text-center py-12 text-xs font-semibold" style={{ color: textMuted }}>No requests found.</div>
         ) : (
           <>
-            {/* Mobile Card View (shown below md) */}
+            {/* Mobile Card View */}
             <div className="md:hidden divide-y" style={{ borderColor: border }}>
               {filteredRows.map(r => (
                 <div
                   key={`card-${r.type}-${r.id}`}
                   onClick={() => openRecord('view', r.type, r.raw)}
                   className="p-3.5 flex flex-col gap-2.5 transition-colors active:bg-black/[0.03] dark:active:bg-white/[0.04] cursor-pointer"
-                  style={{
-                    borderLeft: `4px solid ${statusColors[r.status] || statusColors.PENDING}`,
-                  }}
+                  style={{ borderLeft: `4px solid ${statusColors[r.status] || statusColors.PENDING}` }}
                 >
-                  {/* Top row: Type badge, Date, Status */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       {typeText(r.type)}
-                      <span className="text-[11px] font-semibold" style={{ color: textMuted }}>
-                        {formatDateCaps(r.createdAt)}
-                      </span>
+                      <span className="text-[11px] font-semibold" style={{ color: textMuted }}>{formatDateCaps(r.createdAt)}</span>
                     </div>
                     <div onClick={e => e.stopPropagation()}>
                       {isAdmin ? (
-                        <button
-                          type="button"
-                          onClick={(e) => openStatusMenu(e, r)}
+                        <button type="button" onClick={(e) => openStatusMenu(e, r)}
                           className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-sm cursor-pointer"
-                          style={{
-                            color: statusColors[r.status] || statusColors.PENDING,
-                            backgroundColor: `${statusColors[r.status] || statusColors.PENDING}18`,
-                            border: `1px solid ${statusColors[r.status] || statusColors.PENDING}33`,
-                          }}
+                          style={{ color: statusColors[r.status] || statusColors.PENDING, backgroundColor: `${statusColors[r.status] || statusColors.PENDING}18`, border: `1px solid ${statusColors[r.status] || statusColors.PENDING}33` }}
                           title="Click to change status"
                         >
-                          {r.status.replace(/_/g, ' ')}
-                          <ChevronDown className="w-3 h-3 opacity-70" />
+                          {r.status.replace(/_/g, ' ')}<ChevronDown className="w-3 h-3 opacity-70" />
                         </button>
-                      ) : (
-                        statusText(r.status)
-                      )}
+                      ) : statusText(r.status)}
                     </div>
                   </div>
-
-                  {/* Middle row: Requester Name and Branch badge */}
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-black uppercase truncate" style={{ color: textPrimary }}>
-                      {r.requesterName}
-                    </span>
+                    <span className="text-xs font-black uppercase truncate" style={{ color: textPrimary }}>{r.requesterName}</span>
                     {r.branchLabel && r.branchLabel !== '—' && (
-                      <span
-                        className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase shrink-0"
-                        style={{
-                          backgroundColor: isLight ? '#f1f5f9' : '#142038',
-                          color: textMuted,
-                          border: `1px solid ${border}`,
-                        }}
-                      >
-                        {r.branchLabel}
-                      </span>
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase shrink-0" style={{ backgroundColor: isLight ? '#f1f5f9' : '#142038', color: textMuted, border: `1px solid ${border}` }}>{r.branchLabel}</span>
                     )}
                   </div>
-
-                  {/* Details and Amount */}
                   <div className="flex items-center justify-between gap-3 text-xs">
-                    <span className="truncate text-xs font-semibold" style={{ color: textMuted }} title={r.detail}>
-                      {r.detail}
-                    </span>
-                    {r.amount != null && (
-                      <span className="text-xs font-black shrink-0" style={{ color: textPrimary }}>
-                        {formatPeso(r.amount)}
-                      </span>
-                    )}
+                    <span className="truncate text-xs font-semibold" style={{ color: textMuted }} title={r.detail}>{r.detail}</span>
+                    {r.amount != null && <span className="text-xs font-black shrink-0" style={{ color: textPrimary }}>{formatPeso(r.amount)}</span>}
                   </div>
-
-                  {/* Notes row if any */}
                   {(r.notesText || (r.status === 'REJECTED' && r.rejectionReason)) && (
-                    <div
-                      className="text-[11px] p-2 rounded-lg"
-                      style={{
-                        backgroundColor: isLight ? '#f8fafc' : '#0e172a',
-                        border: `1px solid ${border}`,
-                        color: r.status === 'REJECTED' ? '#dc2626' : textMuted,
-                      }}
-                      onClick={e => {
-                        e.stopPropagation()
-                        if (isAdmin) startEditingNotes(r)
-                      }}
-                    >
-                      <span className="font-bold">
-                        {r.status === 'REJECTED' && r.rejectionReason ? 'Reason: ' : 'Note: '}
-                      </span>
-                      <span>
-                        {r.status === 'REJECTED' ? (r.rejectionReason || r.notesText) : r.notesText}
-                      </span>
+                    <div className="text-[11px] p-2 rounded-lg" style={{ backgroundColor: isLight ? '#f8fafc' : '#0e172a', border: `1px solid ${border}`, color: r.status === 'REJECTED' ? '#dc2626' : textMuted }} onClick={e => { e.stopPropagation(); if (isAdmin) startEditingNotes(r) }}>
+                      <span className="font-bold">{r.status === 'REJECTED' && r.rejectionReason ? 'Reason: ' : 'Note: '}</span>
+                      <span>{r.status === 'REJECTED' ? (r.rejectionReason || r.notesText) : r.notesText}</span>
                     </div>
                   )}
-
-                  {/* Card actions */}
                   <div className="flex items-center justify-end gap-2 pt-0.5" onClick={e => e.stopPropagation()}>
                     {canCancelAsOwner(r) && (
-                      <button
-                        type="button"
-                        onClick={() => requestCancelRecord(r.type, r.id, r.detail)}
+                      <button type="button" onClick={() => requestCancelRecord(r.type, r.id, r.detail)}
                         className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all text-red-600 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800"
-                      >
-                        <X className="w-3 h-3" /> Cancel
-                      </button>
+                      ><X className="w-3 h-3" /> Cancel</button>
                     )}
                     {canEditRecord(r as any) && (
-                      <button
-                        type="button"
-                        onClick={() => openRecord('edit', r.type, r.raw)}
+                      <button type="button" onClick={() => openRecord('edit', r.type, r.raw)}
                         className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all text-blue-600 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800"
-                      >
-                        <Pencil className="w-3 h-3" /> Edit
-                      </button>
+                      ><Pencil className="w-3 h-3" /> Edit</button>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => openRecord('view', r.type, r.raw)}
+                    <button type="button" onClick={() => openRecord('view', r.type, r.raw)}
                       className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all hover:opacity-80"
-                      style={{
-                        backgroundColor: isLight ? '#f1f5f9' : '#172544',
-                        color: textPrimary,
-                        border: `1px solid ${border}`,
-                      }}
-                    >
-                      <Eye className="w-3 h-3" /> View Form
-                    </button>
+                      style={{ backgroundColor: isLight ? '#f1f5f9' : '#172544', color: textPrimary, border: `1px solid ${border}` }}
+                    ><Eye className="w-3 h-3" /> View Form</button>
                   </div>
                 </div>
               ))}
             </div>
 
-            {/* Desktop Table View (shown on md and up) */}
+            {/* Desktop Table */}
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
                 <thead>
@@ -1374,15 +1552,9 @@ export default function OperationsForms() {
                 </thead>
                 <tbody>
                   {filteredRows.map(r => (
-                    <tr
-                      key={`${r.type}-${r.id}`}
-                      onContextMenu={e => openContextMenu(e, r)}
+                    <tr key={`${r.type}-${r.id}`} onContextMenu={e => openContextMenu(e, r)}
                       className="transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.03]"
-                      style={{
-                        borderBottom: `1px solid ${border}`,
-                        borderLeft: `3px solid ${statusColors[r.status] || statusColors.PENDING}`,
-                        cursor: 'context-menu',
-                      }}
+                      style={{ borderBottom: `1px solid ${border}`, borderLeft: `3px solid ${statusColors[r.status] || statusColors.PENDING}`, cursor: 'context-menu' }}
                     >
                       <td className={`${cellCls} whitespace-nowrap`} style={{ color: textPrimary }}>{formatDateCaps(r.createdAt)}</td>
                       <td className={cellCls}>{typeText(r.type)}</td>
@@ -1392,76 +1564,39 @@ export default function OperationsForms() {
                       <td className={`${cellCls} whitespace-nowrap`} style={{ color: textPrimary }}>{r.amount != null ? formatPeso(r.amount) : '—'}</td>
                       <td className={`${cellCls} select-none`}>
                         {isAdmin ? (
-                          <button
-                            type="button"
-                            onClick={(e) => openStatusMenu(e, r)}
+                          <button type="button" onClick={(e) => openStatusMenu(e, r)}
                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all hover:scale-105 shadow-sm active:scale-95 cursor-pointer"
-                            style={{
-                              color: statusColors[r.status] || statusColors.PENDING,
-                              backgroundColor: `${statusColors[r.status] || statusColors.PENDING}18`,
-                              border: `1px solid ${statusColors[r.status] || statusColors.PENDING}33`,
-                            }}
+                            style={{ color: statusColors[r.status] || statusColors.PENDING, backgroundColor: `${statusColors[r.status] || statusColors.PENDING}18`, border: `1px solid ${statusColors[r.status] || statusColors.PENDING}33` }}
                             title="Click to edit status"
                           >
-                            {r.status.replace(/_/g, ' ')}
-                            <ChevronDown className="w-3 h-3 opacity-70" />
+                            {r.status.replace(/_/g, ' ')}<ChevronDown className="w-3 h-3 opacity-70" />
                           </button>
-                        ) : (
-                          statusText(r.status)
-                        )}
+                        ) : statusText(r.status)}
                       </td>
-                      <td
-                        className={`${cellCls} max-w-[200px] select-none`}
-                        style={{ color: textPrimary }}
-                        onDoubleClick={(e) => {
-                          e.stopPropagation()
-                          if (isAdmin) startEditingNotes(r)
-                        }}
-                        title={isAdmin ? "Double-click to add/edit note for this member" : undefined}
+                      <td className={`${cellCls} max-w-[200px] select-none`} style={{ color: textPrimary }}
+                        onDoubleClick={(e) => { e.stopPropagation(); if (isAdmin) startEditingNotes(r) }}
+                        title={isAdmin ? 'Double-click to add/edit note for this member' : undefined}
                       >
                         {editingNotesId === r.id ? (
                           <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-                            <input
-                              type="text"
-                              value={notesInput}
-                              onChange={e => setNotesInput(e.target.value)}
-                              onKeyDown={e => {
-                                if (e.key === 'Enter') handleSaveNotes(r.type, r.id, notesInput)
-                                else if (e.key === 'Escape') cancelEditingNotes()
-                              }}
+                            <input type="text" value={notesInput} onChange={e => setNotesInput(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') handleSaveNotes(r.type, r.id, notesInput); else if (e.key === 'Escape') cancelEditingNotes() }}
                               className="px-2 py-1 rounded text-xs w-full focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
-                              style={istyle}
-                              placeholder="Add note for member…"
-                              autoFocus
-                              disabled={savingNotes}
+                              style={istyle} placeholder="Add note for member…" autoFocus disabled={savingNotes}
                             />
-                            <button
-                              type="button"
-                              onClick={() => handleSaveNotes(r.type, r.id, notesInput)}
-                              disabled={savingNotes}
-                              className="p-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
-                              title="Save Note"
-                            >
-                              {savingNotes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={cancelEditingNotes}
-                              disabled={savingNotes}
-                              className="p-1 rounded hover:bg-black/[0.06] dark:hover:bg-white/[0.08] text-slate-400 hover:text-slate-200 transition-colors"
-                              title="Cancel"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
+                            <button type="button" onClick={() => handleSaveNotes(r.type, r.id, notesInput)} disabled={savingNotes}
+                              className="p-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white transition-colors" title="Save Note"
+                            >{savingNotes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}</button>
+                            <button type="button" onClick={cancelEditingNotes} disabled={savingNotes}
+                              className="p-1 rounded hover:bg-black/[0.06] dark:hover:bg-white/[0.08] text-slate-400 hover:text-slate-200 transition-colors" title="Cancel"
+                            ><X className="w-3.5 h-3.5" /></button>
                           </div>
                         ) : (
                           <div className={`flex items-center justify-between gap-1 group ${isAdmin ? 'cursor-pointer hover:text-emerald-500' : ''}`}>
                             <span className="truncate" title={r.status === 'REJECTED' ? (r.rejectionReason || r.notesText || '') : (r.notesText || '')}>
                               {r.status === 'REJECTED' ? (r.rejectionReason ? `Reason: ${r.rejectionReason}` : (r.notesText || '—')) : (r.notesText || '—')}
                             </span>
-                            {isAdmin && (
-                              <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-60 shrink-0 text-emerald-500 transition-opacity" />
-                            )}
+                            {isAdmin && <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-60 shrink-0 text-emerald-500 transition-opacity" />}
                           </div>
                         )}
                       </td>
@@ -1474,6 +1609,212 @@ export default function OperationsForms() {
         )}
       </div>
       </>
+      )}
+
+      {/* ── ARCHIVES TAB ─────────────────────────────────────────────────────── */}
+      {!modal && activeTab === 'archives' && (
+        <div className="flex flex-col gap-4">
+          {archError && (
+            <div className="px-4 py-2.5 rounded-xl text-xs font-semibold" style={{ backgroundColor: 'rgba(220,38,38,0.08)', color: '#dc2626', border: '1px solid rgba(220,38,38,0.25)' }}>{archError}</div>
+          )}
+
+          {/* Archive Filters */}
+          <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
+              <div className="relative flex-1 min-w-[180px] col-span-2 sm:col-span-1">
+                <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
+                <input type="text" placeholder="Search ID, staff, branch, detail…"
+                  value={archSearchQuery} onChange={e => setArchSearchQuery(e.target.value)}
+                  className={`${inputCls} pl-8`} style={istyle}
+                />
+              </div>
+              {isAdmin && (
+                <div className="relative w-full sm:w-auto">
+                  <Building2 className="absolute left-2.5 top-2.5 w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
+                  <select value={archBranchFilter} onChange={e => setArchBranchFilter(e.target.value)} className={`${inputCls} pl-8 appearance-none cursor-pointer`} style={istyle} aria-label="Filter by branch">
+                    <option value="ALL">All branches</option>
+                    {branches.map(b => <option key={b.id} value={b.id}>{formatBranchName(b.name, b.id)}</option>)}
+                  </select>
+                </div>
+              )}
+              {isAdmin && (
+                <div className="relative w-full sm:w-auto">
+                  <select value={archStaffFilter} onChange={e => setArchStaffFilter(e.target.value)} className={`${inputCls} appearance-none cursor-pointer`} style={istyle} aria-label="Filter by staff">
+                    <option value="ALL">All staff</option>
+                    {archStaffOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                  </select>
+                </div>
+              )}
+              <div className="relative w-full sm:w-auto">
+                <Filter className="absolute left-2.5 top-2.5 w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
+                <select value={archTypeFilter} onChange={e => setArchTypeFilter(e.target.value as 'ALL' | TabId)} className={`${inputCls} pl-8 appearance-none cursor-pointer`} style={istyle} aria-label="Filter by type">
+                  <option value="ALL">All types</option>
+                  {(Object.keys(TAB_LABELS) as TabId[]).map(t => <option key={t} value={t}>{TAB_LABELS[t]}</option>)}
+                </select>
+              </div>
+              <div className="relative w-full sm:w-auto">
+                <select value={archStatusFilter} onChange={e => setArchStatusFilter(e.target.value as 'ALL' | 'DONE' | 'RELEASED' | 'CANCELLED')} className={`${inputCls} appearance-none cursor-pointer`} style={istyle} aria-label="Filter by status">
+                  <option value="ALL">All statuses</option>
+                  <option value="DONE">Done</option>
+                  <option value="RELEASED">Released</option>
+                  <option value="CANCELLED">Cancelled</option>
+                </select>
+              </div>
+              <div className="relative w-full sm:w-auto">
+                <Calendar className="absolute left-2.5 top-2.5 w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
+                <input type="month" value={archMonthFilter} onChange={e => setArchMonthFilter(e.target.value)} className={`${inputCls} pl-8`} style={istyle} aria-label="Filter by month" />
+              </div>
+            </div>
+          </div>
+
+          {/* Archive Table */}
+          <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            {archLoading ? (
+              <div className="flex items-center justify-center py-16 gap-2" style={{ color: textMuted }}>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span className="text-xs font-semibold">Loading archives…</span>
+              </div>
+            ) : archFilteredRows.length === 0 ? (
+              <div className="flex flex-col items-center py-16 gap-3">
+                <Archive className="w-8 h-8 opacity-25" style={{ color: textMuted }} />
+                <p className="text-xs font-semibold" style={{ color: textMuted }}>No archived requests found.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse" style={{ fontSize: '12px', color: textPrimary }}>
+                  <thead>
+                    <tr style={{ borderBottom: `2px solid ${border}`, color: textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
+                      <th className="px-3 py-3">Request ID</th>
+                      <th className="px-3 py-3">Type</th>
+                      <th className="px-3 py-3">Staff</th>
+                      <th className="px-3 py-3">Branch</th>
+                      <th className="px-3 py-3">Detail</th>
+                      <th className="px-3 py-3 text-right">Amount</th>
+                      <th className="px-3 py-3 text-center">Status</th>
+                      <th className="px-3 py-3">Archived By</th>
+                      <th className="px-3 py-3">Archived At</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {archFilteredRows.map((r, idx) => (
+                      <tr key={`arch-${r.type}-${r.id}`} onClick={() => openArchiveDetail(r)}
+                        className="cursor-pointer hover:opacity-80 transition-opacity"
+                        style={{ borderBottom: idx < archFilteredRows.length - 1 ? `1px solid ${border}` : 'none' }}
+                      >
+                        <td className="px-3 py-3 font-mono font-bold">#{r.id.slice(0, 8).toUpperCase()}</td>
+                        <td className="px-3 py-3">{TAB_LABELS[r.type]}</td>
+                        <td className="px-3 py-3 font-semibold">{r.requesterName}</td>
+                        <td className="px-3 py-3" style={{ color: textMuted }}>{r.branchLabel}</td>
+                        <td className="px-3 py-3" style={{ color: textMuted }}>{r.detail}</td>
+                        <td className="px-3 py-3 text-right tabular-nums">{r.amount != null ? `₱${r.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}</td>
+                        <td className="px-3 py-3 text-center">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase" style={{ color: archStatusColors[r.status] || textMuted, backgroundColor: `${archStatusColors[r.status] || textMuted}1a` }}>{r.status}</span>
+                        </td>
+                        <td className="px-3 py-3" style={{ color: textMuted }}>{r.archivedByName || '—'}</td>
+                        <td className="px-3 py-3" style={{ color: textMuted, whiteSpace: 'nowrap' }}>{archFormatDate(r.archivedAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Archive Detail Modal */}
+          {archSelected && (
+            <div className="fixed inset-0 z-[13000] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(6px)' }} onClick={() => setArchSelected(null)}>
+              <div className="w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden max-h-[85vh] flex flex-col" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }} onClick={e => e.stopPropagation()}>
+                <div className="px-5 py-4 flex items-start justify-between gap-3" style={{ borderBottom: `1px solid ${border}` }}>
+                  <div>
+                    <h2 className="text-sm font-black" style={{ color: textPrimary }}>#{archSelected.id.slice(0, 8).toUpperCase()} — {TAB_LABELS[archSelected.type]}</h2>
+                    <p className="text-xs mt-1" style={{ color: textMuted }}>{archSelected.requesterName} · {archSelected.branchLabel}</p>
+                  </div>
+                  <button type="button" onClick={() => setArchSelected(null)} className="p-1.5 rounded-lg hover:opacity-70" style={{ color: textMuted }}><X className="w-4 h-4" /></button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div><span className="font-bold block" style={{ color: textMuted }}>Status</span><span style={{ color: archStatusColors[archSelected.status] || textPrimary }}>{archSelected.status}</span></div>
+                    <div><span className="font-bold block" style={{ color: textMuted }}>Submitted</span>{archFormatDate(archSelected.createdAt)}</div>
+                    <div><span className="font-bold block" style={{ color: textMuted }}>Amount</span>{archSelected.amount != null ? `₱${archSelected.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}</div>
+                    <div><span className="font-bold block" style={{ color: textMuted }}>Detail</span>{archSelected.detail}</div>
+                    <div><span className="font-bold block" style={{ color: textMuted }}>Archived By</span>{archSelected.archivedByName || '—'}</div>
+                    <div><span className="font-bold block" style={{ color: textMuted }}>Archived At</span>{archFormatDate(archSelected.archivedAt)}</div>
+                    {archSelected.raw.notes && <div className="col-span-2"><span className="font-bold block" style={{ color: textMuted }}>Notes</span>{archSelected.raw.notes}</div>}
+                    {archSelected.raw.rejectionReason && <div className="col-span-2"><span className="font-bold block" style={{ color: textMuted }}>Rejection Reason</span>{archSelected.raw.rejectionReason}</div>}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5 text-xs font-black mb-2" style={{ color: textPrimary }}><Clock className="w-3.5 h-3.5" /> Status History</div>
+                    {archHistLoading ? (
+                      <div className="flex items-center gap-2 text-xs" style={{ color: textMuted }}><Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading…</div>
+                    ) : archHistory.length === 0 ? (
+                      <p className="text-xs" style={{ color: textMuted }}>No history recorded yet.</p>
+                    ) : (
+                      <ul className="space-y-2">
+                        {archHistory.map(h => (
+                          <li key={h.id} className="text-xs pl-3" style={{ borderLeft: `2px solid ${border}`, color: textMuted }}>
+                            <span className="font-bold" style={{ color: textPrimary }}>{h.previousStatus ? `${h.previousStatus} → ${h.newStatus}` : h.newStatus}</span>
+                            {' '}by {h.changedByName || 'system'} · {archFormatDate(h.createdAt)}
+                            {h.note && <div className="italic">"{h.note}"</div>}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+                {isAdmin && (
+                  <div className="px-5 py-4 flex justify-end" style={{ borderTop: `1px solid ${border}` }}>
+                    <button type="button" onClick={() => requestRestore(archSelected)} disabled={archRestoring}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-50"
+                      style={{ background: 'linear-gradient(135deg, #16A34A, #15803D)' }}
+                    >
+                      {archRestoring ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Undo2 className="w-3.5 h-3.5" />}
+                      Restore to Active
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+      )}
+
+      {/* Status dropdown menu for Admin / Management */}
+      {statusMenu && (
+        <>
+          <div className="fixed inset-0 z-[15900]" onClick={closeStatusMenu} onContextMenu={e => { e.preventDefault(); closeStatusMenu() }} />
+          <div
+            className="fixed z-[15950] min-w-[160px] rounded-xl shadow-2xl overflow-hidden py-1"
+            style={{
+              top: Math.min(statusMenu.y, window.innerHeight - 240),
+              left: Math.min(statusMenu.x, window.innerWidth - 180),
+              backgroundColor: cardBg,
+              border: `1px solid ${border}`,
+            }}
+          >
+            <div className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider border-b" style={{ color: textMuted, borderColor: border }}>
+              Change Status
+            </div>
+            {getStatusOptions(statusMenu.type).map(opt => {
+              const active = statusMenu.currentStatus === opt.value
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => onSelectStatus(statusMenu.type, statusMenu.id, opt.value)}
+                  className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold text-left hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
+                  style={{ color: opt.color }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: opt.color }} />
+                    <span>{opt.label}</span>
+                  </div>
+                  {active && <Check className="w-3.5 h-3.5 shrink-0" style={{ color: opt.color }} />}
+                </button>
+              )
+            })}
+          </div>
+        </>
       )}
 
       {/* Right-click context menu */}
@@ -1529,44 +1870,6 @@ export default function OperationsForms() {
                 <MenuItem icon={X} label="Cancel Request" color="#dc2626" onClick={() => { closeContextMenu(); requestCancelRecord(contextMenu.row.type, contextMenu.row.id, contextMenu.row.detail) }} />
               </>
             )}
-          </div>
-        </>
-      )}
-
-      {/* Status dropdown menu for Admin / Management */}
-      {statusMenu && (
-        <>
-          <div className="fixed inset-0 z-[15900]" onClick={closeStatusMenu} onContextMenu={e => { e.preventDefault(); closeStatusMenu() }} />
-          <div
-            className="fixed z-[15950] min-w-[160px] rounded-xl shadow-2xl overflow-hidden py-1"
-            style={{
-              top: Math.min(statusMenu.y, window.innerHeight - 240),
-              left: Math.min(statusMenu.x, window.innerWidth - 180),
-              backgroundColor: cardBg,
-              border: `1px solid ${border}`,
-            }}
-          >
-            <div className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider border-b" style={{ color: textMuted, borderColor: border }}>
-              Change Status
-            </div>
-            {getStatusOptions(statusMenu.type).map(opt => {
-              const active = statusMenu.currentStatus === opt.value
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => onSelectStatus(statusMenu.type, statusMenu.id, opt.value)}
-                  className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold text-left hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
-                  style={{ color: opt.color }}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: opt.color }} />
-                    <span>{opt.label}</span>
-                  </div>
-                  {active && <Check className="w-3.5 h-3.5 shrink-0" style={{ color: opt.color }} />}
-                </button>
-              )
-            })}
           </div>
         </>
       )}

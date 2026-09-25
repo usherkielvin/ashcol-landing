@@ -592,7 +592,7 @@ export default function Employees() {
 
       setEmployees(combined.map((s: any) => {
         const isMgmtOrAdmin = s.role?.toUpperCase() === 'MANAGEMENT' || s.role?.toUpperCase() === 'ADMIN'
-        const cleanJobTitle = s.jobTitle ? parseJobTitles(s.jobTitle).join(', ') : (isMgmtOrAdmin ? 'REGISTRATION' : '')
+        const cleanJobTitle = s.jobTitle ? parseJobTitles(s.jobTitle).join(', ') : ''
         return {
           id:          s.id,
           name:        formatPersonName(s.name || 'Unknown'),
@@ -767,7 +767,7 @@ export default function Employees() {
 
   const mapApiUserToEmployee = (s: any, branchMap: Record<string, string>): Employee => {
     const isMgmtOrAdmin = s.role?.toUpperCase() === 'MANAGEMENT' || s.role?.toUpperCase() === 'ADMIN'
-    const cleanJobTitle = s.jobTitle ? parseJobTitles(s.jobTitle).join(', ') : (isMgmtOrAdmin ? 'REGISTRATION' : '')
+    const cleanJobTitle = s.jobTitle ? parseJobTitles(s.jobTitle).join(', ') : ''
     return {
       id: s.id,
       name: formatPersonName(s.name || 'Unknown'),
