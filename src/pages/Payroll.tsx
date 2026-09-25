@@ -6,7 +6,7 @@ import {
   Search, Building2, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   SlidersHorizontal, Plus, X, RotateCcw, RefreshCw, Save, Loader2, EyeOff, Trash2,
   Stethoscope, Lightbulb, HardHat, PiggyBank, Wind, Recycle, ArrowBigDownDash, Snowflake,
-  Users, Clock, Receipt, ArrowRightLeft, ExternalLink, Lock, Unlock,
+  Users, Clock, Receipt, ArrowRightLeft, ExternalLink, Lock, Unlock, FileSpreadsheet,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -22,6 +22,7 @@ import {
   type PayrollWeek,
 } from '../utils/payrollWeeks'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
+import WeekSummaryModal from '../components/WeekSummaryModal'
 import {
   fetchAndMapPayroll,
   deduplicateAndMergePayroll,
@@ -306,7 +307,9 @@ function getSavedPayrollSelection(branchId?: string): SavedPayrollSelection | nu
         return parsed
       }
     }
-  } catch {}
+  } catch {
+    // Corrupt/foreign localStorage value — fall through to null, same as "nothing saved yet".
+  }
   return null
 }
 
@@ -482,6 +485,7 @@ export default function Payroll() {
   }, [branches, branchFilter])
 
   const [ratesModalOpen, setRatesModalOpen] = useState(false)
+  const [weekSummaryOpen, setWeekSummaryOpen] = useState(false)
   const [ratesSearch, setRatesSearch] = useState('')
   const [draftRates, setDraftRates] = useState<PayrollRates>(DEFAULT_PAYROLL_RATES)
   const [savingRates, setSavingRates] = useState(false)
@@ -780,7 +784,7 @@ export default function Payroll() {
     const today = todayYMD()
     const todaySlot = weeks.find(w => w.from <= today && today <= w.to)
     setActiveWeek(todaySlot ?? weeks[weeks.length - 1] ?? null)
-  }, [branchFilter, branches]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [branchFilter, branches])
 
   // Whenever the week list for the active month changes, auto-select:
   //   • the current selection if it still exists in this month's list, OR
@@ -1144,7 +1148,7 @@ export default function Payroll() {
       setInitialLoading(false)
       setSyncing(false)
     }
-  }, [branchFilter, monthsToFetch, branches, rates, canManagePayroll, savePayrollToBackend])
+  }, [branchFilter, monthsToFetch, branches, rates, canManagePayroll, savePayrollToBackend, activeWeek, closures])
 
   useEffect(() => {
     const token = getToken()
@@ -1171,7 +1175,6 @@ export default function Payroll() {
         })
       })
       .catch(() => {})
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -1716,6 +1719,27 @@ export default function Payroll() {
             >
               <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-500" />
               <span className="hidden md:inline">Payroll Settings</span>
+            </button>
+          )}
+
+          {/* Week Summary Showcase button */}
+          {branchFilter && (
+            <button
+              type="button"
+              onClick={() => setWeekSummaryOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all hover:border-emerald-500/50 shadow-xs cursor-pointer active:scale-95"
+              style={{
+                backgroundColor: isLight ? 'rgba(5,150,105,0.08)' : 'rgba(5,150,105,0.18)',
+                borderColor: '#05966950',
+                color: isLight ? '#059669' : '#34D399',
+              }}
+              title="Showcase weekly payroll summary breakdown for North or South branches"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
+              <span className="hidden sm:inline font-black">Week Summary</span>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                North / South
+              </span>
             </button>
           )}
       </div>
@@ -4071,6 +4095,15 @@ export default function Payroll() {
       )}
 
       <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />
+
+      <WeekSummaryModal
+        isOpen={weekSummaryOpen}
+        onClose={() => setWeekSummaryOpen(false)}
+        activeBranchId={branchFilter}
+        branches={branches}
+        activeWeek={activeWeek}
+        activeMonth={activeMonth}
+      />
     </div>
   )
 }
