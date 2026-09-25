@@ -177,9 +177,9 @@ export default function SearchTab() {
         >
           <div className="flex items-center justify-center gap-4 px-4 mx-auto w-max">
             {[
-              "BATANGAS", "BULACAN", "CANDELARIA", "DASMA, CAVITE", 
-              "GENTRI, CAVITE", "LAGUNA", "PAMPANGA", "RIZAL", 
-              "SILANG, CAVITE", "TAGUIG", "VALENZUELA"
+              "BULACAN", "CANDELARIA", "DASMA, CAVITE", 
+              "LAGUNA", "PAMPANGA", "RIZAL", 
+              "SILANG, CAVITE", "TAGUIG"
             ].map((branch, idx, arr) => (
               <div key={branch} className="flex items-center gap-4 shrink-0">
                 <span 

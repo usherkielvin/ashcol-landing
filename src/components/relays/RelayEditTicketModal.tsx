@@ -243,19 +243,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
   }
 
   const allAvailableBranches = useMemo(() => {
-    const list = [...(branches || [])].map(b => {
-      const isFranchise = Boolean((b as any).isFranchise || isFranchiseBranch(b.id) || isFranchiseBranch(b.name))
-      return isFranchise ? { ...b, isFranchise: true } : b
-    })
-    const hasValenzuela = list.some(b => isFranchiseBranch(b.name || b.id) && String(b.name || b.id).toUpperCase().includes('VALENZUELA'))
-    if (!hasValenzuela) {
-      list.push({ id: 'BR-VALENZUELA', name: 'ASHCOL VALENZUELA', isFranchise: true } as any)
-    }
-    const hasBatangas = list.some(b => isFranchiseBranch(b.name || b.id) && String(b.name || b.id).toUpperCase().includes('BATANGAS'))
-    if (!hasBatangas) {
-      list.push({ id: 'BR-BATANGAS', name: 'ASHCOL BATANGAS', isFranchise: true } as any)
-    }
-    return list
+    return (branches || []).filter(b => !(b as any).isFranchise && !isFranchiseBranch(b.id) && !isFranchiseBranch(b.name))
   }, [branches])
 
   return (

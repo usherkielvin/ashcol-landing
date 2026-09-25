@@ -3,6 +3,7 @@ import { Percent, Search, Building2, Calendar, CheckCircle2 } from 'lucide-react
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatBranchName, isPortalAdmin } from '../utils/api'
+import CollectionMarkPaidModal from '../components/collections/CollectionMarkPaidModal'
 
 interface CommissionItem {
   id: string
@@ -41,12 +42,14 @@ export default function Commissions() {
 
   const role = (user?.role || '').toLowerCase()
   const isAdmin = isPortalAdmin(role)
-  const canMarkPaid = isAdmin || role === 'manager' || role === 'management'
+  const isManager = role === 'manager'
+  const canMarkPaid = isAdmin || isManager || role === 'management' || role === 'staff' || role === 'employee'
 
   const [items, setItems] = useState<CommissionItem[]>([])
   const [initialLoading, setInitialLoading] = useState(true)
   const [fetching, setFetching] = useState(false)
   const [markingPaidId, setMarkingPaidId] = useState<string | null>(null)
+  const [confirmItem, setConfirmItem] = useState<CommissionItem | null>(null)
   const hasFetchedOnce = useRef(false)
 
   const [rawSearch, setRawSearch] = useState('')
@@ -140,19 +143,34 @@ export default function Commissions() {
     fetchCommissions()
   }, [fetchCommissions])
 
-  const markAsPaid = async (item: CommissionItem) => {
+  const markAsPaid = async (
+    item: CommissionItem,
+    amountPaid?: number,
+    datePaid?: string,
+    referenceNumber?: string,
+    whoPaid?: string,
+    customerName?: string
+  ) => {
     if (markingPaidId) return
     setMarkingPaidId(item.id)
     const now = new Date().toISOString()
     // Optimistic update
     setItems(prev => prev.map(it => it.id === item.id
-      ? { ...it, collectionResolved: true, status: 'PAID', collectionResolvedBy: user?.name || '', collectionResolvedAt: now }
+      ? {
+          ...it,
+          collectionResolved: true,
+          status: 'PAID',
+          collectionResolvedBy: user?.name || '',
+          collectionResolvedAt: now,
+          customer: customerName || it.customer,
+        }
       : it))
+    setConfirmItem(null)
     try {
       const res = await fetch(`${API_BASE_URL}/v1/reports/collections/${item.id}/resolve`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ amountPaid, datePaid, referenceNumber, whoPaid, customerName }),
       })
       if (!res.ok) {
         setItems(prev => prev.map(it => it.id === item.id ? { ...it, collectionResolved: false, status: 'PENDING' } : it))
@@ -405,7 +423,7 @@ export default function Commissions() {
                         ) : canMarkPaid ? (
                           <button
                             type="button"
-                            onClick={() => markAsPaid(item)}
+                            onClick={() => setConfirmItem(item)}
                             disabled={markingPaidId === item.id}
                             className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-all hover:opacity-80 disabled:opacity-50"
                             style={{ color: '#F59E0B', border: '1px solid #F59E0B' }}
@@ -424,6 +442,19 @@ export default function Commissions() {
           </div>
         )}
       </div>
+
+      {/* Mark as Paid / Scanner Modal */}
+      <CollectionMarkPaidModal
+        isOpen={Boolean(confirmItem)}
+        onClose={() => setConfirmItem(null)}
+        item={confirmItem}
+        isDark={!isLight}
+        onSave={async (amount, datePaid, refNo, whoPaid, customerName) => {
+          if (confirmItem) {
+            await markAsPaid(confirmItem, amount, datePaid, refNo, whoPaid, customerName)
+          }
+        }}
+      />
     </div>
   )
 }

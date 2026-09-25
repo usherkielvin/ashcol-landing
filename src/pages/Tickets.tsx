@@ -7900,12 +7900,14 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             <div className="flex items-center justify-center py-2.5 w-full shrink-0 z-20 relative marquee-viewport" style={{ borderBottom: `1px solid ${border}` }}>
               <div className="marquee-track" style={{ animationDuration: '32s' }}>
                 {[
-                  "BATANGAS", "BULACAN", "CANDELARIA", "DASMA, CAVITE",
-                  "GENTRI, CAVITE", "LAGUNA", "PAMPANGA", "RIZAL",
-                  "SILANG, CAVITE", "TAGUIG", "VALENZUELA",
-                ].concat(["BATANGAS", "BULACAN", "CANDELARIA", "DASMA, CAVITE",
-                  "GENTRI, CAVITE", "LAGUNA", "PAMPANGA", "RIZAL",
-                  "SILANG, CAVITE", "TAGUIG", "VALENZUELA"]).map((branch, idx) => (
+                  "BULACAN", "CANDELARIA", "DASMA, CAVITE",
+                  "LAGUNA", "PAMPANGA", "RIZAL",
+                  "SILANG, CAVITE", "TAGUIG",
+                ].concat([
+                  "BULACAN", "CANDELARIA", "DASMA, CAVITE",
+                  "LAGUNA", "PAMPANGA", "RIZAL",
+                  "SILANG, CAVITE", "TAGUIG",
+                ]).map((branch, idx) => (
                   <div key={`${branch}-${idx}`} className="flex items-center gap-4 shrink-0">
                     <span
                       className="text-[12px] md:text-[14px] font-black uppercase tracking-[0.15em] whitespace-nowrap"

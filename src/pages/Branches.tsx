@@ -651,34 +651,7 @@ export default function Branches() {
         }
       }
 
-      // Ensure franchise branches (Valenzuela, Batangas, Gen. Trias) are present
-      for (const pub of PUBLIC_BRANCHES.filter(p => p.isFranchise)) {
-        const exists = merged.some(b => isSameBaseBranch(b.id || '', pub.name) || (b.name || '').toUpperCase().includes(pub.tag.toUpperCase()))
-        if (!exists) {
-          merged.push({
-            id: `BR-${pub.tag.toUpperCase().replace(/[^A-Z0-9]/g, '')}`,
-            rawBranchId: `BR-${pub.tag.toUpperCase().replace(/[^A-Z0-9]/g, '')}`,
-            name: pub.name,
-            location: pub.tag,
-            address: pub.address,
-            phone: pub.phones[0] || '',
-            phones: pub.phones,
-            landline: pub.landline,
-            email: pub.email,
-            isActive: true,
-            tag: pub.tag,
-            color: pub.color,
-            mapUrl: pub.mapUrl,
-            region: pub.region || 'Luzon',
-            isHQ: false,
-            isFranchise: true,
-            oic: 'Unassigned',
-            drivers: [],
-            installers: [],
-          })
-        }
-      }
-      setBranches(merged)
+      setBranches(merged.filter(b => !b.isFranchise && !isFranchiseBranch(b.id) && !isFranchiseBranch(b.name)))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load branch directory')
     } finally {

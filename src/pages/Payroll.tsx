@@ -882,20 +882,14 @@ export default function Payroll() {
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data) return
-        const raw = (data?.data || data || []).map((b: any) => ({
-          id: b.id,
-          name: b.name,
-          payrollRates: b.payrollRates,
-          isFranchise: Boolean(b.isFranchise || isFranchiseBranch(b.id) || isFranchiseBranch(b.name)),
-        }))
-        const hasValenzuela = raw.some((b: any) => isFranchiseBranch(b.id || b.name) && String(b.id || b.name).toUpperCase().includes('VALENZUELA'))
-        if (!hasValenzuela) {
-          raw.push({ id: 'BR-VALENZUELA', name: 'ASHCOL VALENZUELA', isFranchise: true })
-        }
-        const hasBatangas = raw.some((b: any) => isFranchiseBranch(b.id || b.name) && String(b.id || b.name).toUpperCase().includes('BATANGAS'))
-        if (!hasBatangas) {
-          raw.push({ id: 'BR-BATANGAS', name: 'ASHCOL BATANGAS', isFranchise: true })
-        }
+        const raw = (data?.data || data || [])
+          .filter((b: any) => !b.isFranchise && !isFranchiseBranch(b.id) && !isFranchiseBranch(b.name))
+          .map((b: any) => ({
+            id: b.id,
+            name: b.name,
+            payrollRates: b.payrollRates,
+            isFranchise: false,
+          }))
         const sorted = raw.sort((a: any, b: any) => a.name.localeCompare(b.name))
         setBranches(sorted)
 
