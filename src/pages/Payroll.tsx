@@ -17,6 +17,8 @@ import {
   deduplicateAndMergePayroll,
   DEFAULT_PAYROLL_RATES,
   STANDARD_RATE_TABLE,
+  MANUAL_FEE_PREFIX,
+  type AutoStampedFee,
   type PayrollRow,
   type PayrollRates,
 } from '../utils/payrollDerive'
@@ -114,7 +116,7 @@ const customFieldsFeeTotal = (r: PayrollRow): number => {
   if (!r.customFields) return 0
   let sum = 0
   for (const [k, v] of Object.entries(r.customFields)) {
-    if (k.startsWith('ded:') || k.startsWith('xfer:')) continue
+    if (k.startsWith('ded:') || k.startsWith('xfer:') || k.startsWith(MANUAL_FEE_PREFIX)) continue
     sum += num(v)
   }
   return sum
@@ -366,6 +368,9 @@ export default function Payroll() {
   const [selectedInstaller, setSelectedInstaller] = useState<string | null>(null)
   // The job row whose full fee breakdown is open in the popup (desktop list view).
   const [detailRow, setDetailRow] = useState<PayrollRow | null>(null)
+  // Active cell being edited inline in the desktop table (null = none).
+  const [editingCell, setEditingCell] = useState<{ rowId: string; colKey: string } | null>(null)
+  const lastCellTapRef = useRef<{ rowId: string; colKey: string; time: number } | null>(null)
   // Which installer's Deductions modal is open (null = closed).
   const [deductionsModalInstaller, setDeductionsModalInstaller] = useState<string | null>(null)
   // Installer job list's horizontal scroll — which edges still hide columns (drives the fade +
@@ -887,8 +892,9 @@ export default function Payroll() {
           merged = deduplicateAndMergePayroll(savedRows, scheduleResult.rows)
         }
 
-        // Auto-save merged state if new schedule entries were discovered
-        if (canManagePayroll && merged.length > savedRows.length) {
+        // Auto-save when the sync added rows or changed existing ones (e.g. a Payroll Settings
+        // rate change re-stamping Allowance / Earth Grounding), so the saved sheet matches.
+        if (canManagePayroll && JSON.stringify(merged) !== JSON.stringify(savedRows)) {
           void savePayrollToBackend(merged, branchFilter, mKey)
         }
 
@@ -902,7 +908,7 @@ export default function Payroll() {
         for (const r of combinedSavedRows) {
           if (r.customFields) {
             for (const k of Object.keys(r.customFields)) {
-              if (k.startsWith('ded:') || k.startsWith('xfer:')) continue
+              if (k.startsWith('ded:') || k.startsWith('xfer:') || k.startsWith(MANUAL_FEE_PREFIX)) continue
               if (!known.has(k)) {
                 known.add(k)
                 const label = k.replace(/^custom_/, '').replace(/_/g, ' ')
@@ -1033,6 +1039,18 @@ export default function Payroll() {
     })
   }
 
+  // Allowance / Earth Grounding are auto-stamped from the branch rate on every sync; a hand edit
+  // (including clearing to zero) flags the row so re-syncs keep the user's value instead.
+  const setAutoStampedFee = (id: string, field: AutoStampedFee, v: string) => {
+    setRows(prev => {
+      const updated = prev.map(r => r.id === id
+        ? { ...r, [field]: v, customFields: { ...(r.customFields || {}), [MANUAL_FEE_PREFIX + field]: '1' } }
+        : r)
+      scheduleAutoSave(updated)
+      return updated
+    })
+  }
+
   const columnAccessors: Record<string, { get: (r: PayrollRow) => string; set: (id: string, v: string) => void }> = {
     date: { get: r => r.workDate, set: (id, v) => updateRow(id, { workDate: v }) },
     ticketNumber: { get: r => r.ticketNumber, set: (id, v) => updateRow(id, { ticketNumber: v }) },
@@ -1042,8 +1060,8 @@ export default function Payroll() {
     installationUpload: { get: r => r.installationUpload, set: (id, v) => updateRow(id, { installationUpload: v }) },
     installationFee: { get: r => r.installationFee, set: (id, v) => updateRow(id, { installationFee: v }) },
     totalPipeLength: { get: r => r.totalPipeLength, set: (id, v) => updateRow(id, { totalPipeLength: v }) },
-    earthGrounding: { get: r => r.earthGrounding, set: (id, v) => updateRow(id, { earthGrounding: v }) },
-    dailyAllowance: { get: r => r.dailyAllowance, set: (id, v) => updateRow(id, { dailyAllowance: v }) },
+    earthGrounding: { get: r => r.earthGrounding, set: (id, v) => setAutoStampedFee(id, 'earthGrounding', v) },
+    dailyAllowance: { get: r => r.dailyAllowance, set: (id, v) => setAutoStampedFee(id, 'dailyAllowance', v) },
     excessCopperTube: { get: r => r.excessCopperTube, set: (id, v) => updateRow(id, { excessCopperTube: v }) },
     hauling: { get: r => r.hauling, set: (id, v) => updateRow(id, { hauling: v }) },
     dismantling: { get: r => r.dismantling, set: (id, v) => updateRow(id, { dismantling: v }) },
@@ -1324,7 +1342,7 @@ export default function Payroll() {
   }
 
   return (
-    <div className="flex flex-col gap-4 pb-4 md:pb-4 h-full min-h-0">
+    <div className="flex flex-col gap-4 pb-4 md:pb-4 h-full min-h-0 overflow-y-auto overflow-x-hidden [&>*]:shrink-0">
       {/* Toolbar — branch, date, range, and search filters plus a sync action. */}
       <div
         className="relative z-30 -mx-5 md:mx-0 rounded-none md:rounded-2xl p-2.5 md:p-3.5 flex items-center gap-1.5 md:gap-2.5 overflow-visible shadow-xs"
@@ -1851,17 +1869,13 @@ export default function Payroll() {
                         {installerRows.map((row, idx) => (
                           <div
                             key={row.id}
-                            role="button"
                             tabIndex={0}
-                            title="Open this job"
-                            onClick={() => setDetailRow(row)}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault()
-                                setDetailRow(row)
-                              }
+                            title="Right-click to view job details · Double-click cell to edit"
+                            onContextMenu={e => {
+                              e.preventDefault()
+                              setDetailRow(row)
                             }}
-                            className={`pl-row grid cursor-pointer ${idx % 2 === 1 ? 'pl-zebra' : ''}`}
+                            className={`pl-row grid ${idx % 2 === 1 ? 'pl-zebra' : ''}`}
                             style={{ gridTemplateColumns: listGridTemplate, borderBottom: `1px solid ${border}`, fontSize: '13px', color: textPrimary }}
                           >
                             {groupVisibleColumns.map((col, i) => {
@@ -1869,15 +1883,134 @@ export default function Payroll() {
                               const empty = text === '—'
                               const isStatus = col.key === 'installationUpload'
                               const isDone = isStatus && /^DONE\b/i.test(text)
+                              const isReadOnly = Boolean(col.readOnlyWhenSynced && row.ticketId)
+                              const isEditing = editingCell?.rowId === row.id && editingCell?.colKey === col.key
+                              const acc = getColAccessor(col.key)
+
+                              const handleCellKeyDown = (e: React.KeyboardEvent) => {
+                                if (e.key === 'Enter' || e.key === 'Escape') {
+                                  e.preventDefault()
+                                  setEditingCell(null)
+                                } else if (e.key === 'Tab') {
+                                  e.preventDefault()
+                                  const editableCols = groupVisibleColumns.filter(c => !(c.readOnlyWhenSynced && Boolean(row.ticketId)))
+                                  const curIdx = editableCols.findIndex(c => c.key === col.key)
+                                  if (curIdx !== -1) {
+                                    const step = e.shiftKey ? -1 : 1
+                                    const nextCol = editableCols[curIdx + step]
+                                    if (nextCol) {
+                                      setEditingCell({ rowId: row.id, colKey: nextCol.key })
+                                      return
+                                    }
+                                  }
+                                  setEditingCell(null)
+                                }
+                              }
+
+                              const startCellEdit = () => {
+                                if (!isReadOnly) {
+                                  setEditingCell({ rowId: row.id, colKey: col.key })
+                                }
+                              }
+
+                              const handleCellTouchEnd = (e: React.TouchEvent) => {
+                                if (isReadOnly) return
+                                const now = Date.now()
+                                if (
+                                  lastCellTapRef.current &&
+                                  lastCellTapRef.current.rowId === row.id &&
+                                  lastCellTapRef.current.colKey === col.key &&
+                                  now - lastCellTapRef.current.time < 350
+                                ) {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  startCellEdit()
+                                  lastCellTapRef.current = null
+                                } else {
+                                  lastCellTapRef.current = { rowId: row.id, colKey: col.key, time: now }
+                                }
+                              }
+
+                              const inlineInputStyle: React.CSSProperties = {
+                                backgroundColor: isLight ? '#ffffff' : '#0f172a',
+                                borderColor: '#10B981',
+                                color: col.key === 'remit' ? remitAccent : textPrimary,
+                                boxShadow: '0 0 0 2px rgba(16, 185, 129, 0.25)',
+                              }
+
+                              if (isEditing) {
+                                return (
+                                  <div
+                                    key={col.key}
+                                    className={`px-1.5 py-1 flex items-center justify-start min-w-0 overflow-hidden text-left ${i === 0 ? 'pl-4' : ''} ${col.key === lastListPinKey ? 'pl-pin-edge' : ''}`}
+                                    style={{
+                                      ...listCellStyle(col, i, 'var(--pl-bg)'),
+                                      ...(col.key === 'remit' ? { backgroundColor: remitTint } : {}),
+                                    }}
+                                    onClick={e => e.stopPropagation()}
+                                    onDoubleClick={e => e.stopPropagation()}
+                                  >
+                                    {col.isMoney ? (
+                                      <NumericFormat
+                                        autoFocus
+                                        thousandSeparator=","
+                                        decimalScale={2}
+                                        allowNegative={false}
+                                        placeholder="0.00"
+                                        value={acc.get(row)}
+                                        onValueChange={values => acc.set(row.id, values.value)}
+                                        onFocus={e => e.target.select()}
+                                        onKeyDown={handleCellKeyDown}
+                                        onBlur={() => setEditingCell(null)}
+                                        onContextMenu={e => e.stopPropagation()}
+                                        className="w-full h-7 px-2 py-0.5 text-[13px] font-semibold rounded-md border outline-none text-right tabular-nums"
+                                        style={inlineInputStyle}
+                                      />
+                                    ) : col.key === 'date' ? (
+                                      <input
+                                        autoFocus
+                                        type="date"
+                                        value={acc.get(row)}
+                                        onChange={e => acc.set(row.id, e.target.value)}
+                                        onKeyDown={handleCellKeyDown}
+                                        onBlur={() => setEditingCell(null)}
+                                        onContextMenu={e => e.stopPropagation()}
+                                        className="w-full h-7 px-2 py-0.5 text-[13px] font-medium rounded-md border outline-none text-left"
+                                        style={{ ...inlineInputStyle, colorScheme: isLight ? 'light' : 'dark' }}
+                                      />
+                                    ) : (
+                                      <input
+                                        autoFocus
+                                        type="text"
+                                        value={acc.get(row)}
+                                        onChange={e => acc.set(row.id, e.target.value)}
+                                        onFocus={e => e.target.select()}
+                                        onKeyDown={handleCellKeyDown}
+                                        onBlur={() => setEditingCell(null)}
+                                        onContextMenu={e => e.stopPropagation()}
+                                        placeholder={col.key === 'remit' ? 'e.g. 1,000 CASH' : ''}
+                                        className={`w-full h-7 px-2 py-0.5 text-[13px] font-medium rounded-md border outline-none ${col.align === 'right' ? 'text-right tabular-nums' : 'text-left'}`}
+                                        style={inlineInputStyle}
+                                      />
+                                    )}
+                                  </div>
+                                )
+                              }
+
                               return (
                                 <div
                                   key={col.key}
-                                  className={`px-3 py-2.5 flex items-center justify-start min-w-0 overflow-hidden tabular-nums text-left ${i === 0 ? 'pl-6' : ''} ${col.key === lastListPinKey ? 'pl-pin-edge' : ''}`}
+                                  className={`px-3 py-2.5 flex items-center justify-start min-w-0 overflow-hidden tabular-nums text-left transition-colors select-none ${i === 0 ? 'pl-6' : ''} ${col.key === lastListPinKey ? 'pl-pin-edge' : ''} ${!isReadOnly ? 'cursor-text hover:bg-emerald-500/5' : ''}`}
                                   style={{
                                     ...listCellStyle(col, i, 'var(--pl-bg)'),
                                     ...(col.key === 'remit' ? { backgroundColor: remitTint } : {}),
                                   }}
-                                  title={empty ? undefined : text}
+                                  title={isReadOnly ? (empty ? undefined : text) : empty ? 'Double-click to edit' : `${text} · Double-click to edit`}
+                                  onDoubleClick={e => {
+                                    e.stopPropagation()
+                                    startCellEdit()
+                                  }}
+                                  onTouchEnd={handleCellTouchEnd}
                                 >
                                   <span
                                     className={`whitespace-nowrap ${col.key === 'customerName' ? 'font-semibold' : isStatus ? 'font-medium' : ''}`}

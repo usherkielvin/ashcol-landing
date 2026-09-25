@@ -369,15 +369,26 @@ export function mapTicketToPayrollRows(ticket: Ticket, branchName: string, rates
   }))
 }
 
-/** Stamps Daily Allowance once per (installer, workDate) — onto that day's first row only. */
+/** customFields flag marking a row's auto-stamped fee (Allowance / Earth Grounding) as hand-edited,
+ *  e.g. "manual:dailyAllowance" = "1". Flagged fields keep the user's value on every re-sync;
+ *  unflagged ones follow the branch's Payroll Settings rate. Not a fee — skip when summing. */
+export const MANUAL_FEE_PREFIX = 'manual:'
+export type AutoStampedFee = 'dailyAllowance' | 'earthGrounding'
+const isManualFee = (row: PayrollRow, field: AutoStampedFee) =>
+  row.customFields?.[MANUAL_FEE_PREFIX + field] === '1'
+
+/** Stamps Daily Allowance once per (installer, workDate) — onto that day's first row only.
+ *  A zero rate stamps blank rather than "0" so the column reads empty, not ₱0.00. */
 export function applyDailyAllowance(rows: PayrollRow[], rates: PayrollRates): PayrollRow[] {
   const seen = new Set<string>()
+  const allowance = rates.dailyAllowance > 0 ? String(rates.dailyAllowance) : ''
+  const grounding = rates.earthGrounding > 0 ? String(rates.earthGrounding) : ''
   return rows.map((row) => {
     if (!row.workDate) return row
     const key = `${row.installerName}|${row.workDate}`
     if (seen.has(key)) return row
     seen.add(key)
-    return { ...row, dailyAllowance: String(rates.dailyAllowance), earthGrounding: String(rates.earthGrounding) }
+    return { ...row, dailyAllowance: allowance, earthGrounding: grounding }
   })
 }
 
@@ -452,11 +463,6 @@ export function deduplicateAndMergePayroll(existing: PayrollRow[], incoming: Pay
       const isRowDone = /^DONE\b/i.test(row.installationUpload?.trim() || '')
       const rowInstallFeeNum = parseFloat(String(row.installationFee || '').replace(/[^0-9.-]/g, '')) || 0
       const freshInstallFeeNum = parseFloat(String(fresh.installationFee || '').replace(/[^0-9.-]/g, '')) || 0
-      const rowAllowanceNum = parseFloat(String(row.dailyAllowance || '').replace(/[^0-9.-]/g, '')) || 0
-      const freshAllowanceNum = parseFloat(String(fresh.dailyAllowance || '').replace(/[^0-9.-]/g, '')) || 0
-      const rowGroundingNum = parseFloat(String(row.earthGrounding || '').replace(/[^0-9.-]/g, '')) || 0
-      const freshGroundingNum = parseFloat(String(fresh.earthGrounding || '').replace(/[^0-9.-]/g, '')) || 0
-
       return {
         ...row,
         ticketNumber: row.ticketNumber?.trim() || fresh.ticketNumber || '',
@@ -466,8 +472,10 @@ export function deduplicateAndMergePayroll(existing: PayrollRow[], incoming: Pay
         brandCapacity: row.brandCapacity || fresh.brandCapacity || '',
         installationUpload: (!isRowDone && isFreshDone) ? fresh.installationUpload : (row.installationUpload || fresh.installationUpload || ''),
         installationFee: rowInstallFeeNum > 0 ? row.installationFee : (freshInstallFeeNum > 0 ? fresh.installationFee : (row.installationFee || '')),
-        dailyAllowance: rowAllowanceNum > 0 ? row.dailyAllowance : (freshAllowanceNum > 0 ? fresh.dailyAllowance : (row.dailyAllowance || '')),
-        earthGrounding: rowGroundingNum > 0 ? row.earthGrounding : (freshGroundingNum > 0 ? fresh.earthGrounding : (row.earthGrounding || '')),
+        // Auto-stamped from the branch rate: follow the current rate (so a Payroll Settings change,
+        // including to zero, reaches existing rows) unless the user edited this row's value by hand.
+        dailyAllowance: isManualFee(row, 'dailyAllowance') ? row.dailyAllowance : fresh.dailyAllowance,
+        earthGrounding: isManualFee(row, 'earthGrounding') ? row.earthGrounding : fresh.earthGrounding,
         actualCollected: row.actualCollected?.trim() ? row.actualCollected : (fresh.actualCollected || ''),
         amountCollected: row.amountCollected?.trim() ? row.amountCollected : (fresh.amountCollected || ''),
         sifQuotation: row.sifQuotation?.trim() ? row.sifQuotation : (fresh.sifQuotation || ''),
