@@ -140,17 +140,17 @@ export default function MessagesDropdown() {
 
       {open && (
         <div
-          className="absolute z-50 w-96 max-w-[92vw] rounded-2xl shadow-2xl overflow-hidden top-[calc(100%+8px)] right-0 flex flex-col"
-          style={{ backgroundColor: bg, border: `1px solid ${border}`, maxHeight: '32rem' }}
+          className="fixed inset-0 z-[99999] w-full h-[100dvh] flex flex-col sm:absolute sm:inset-auto sm:top-[calc(100%+8px)] sm:right-0 sm:w-96 sm:max-w-[92vw] sm:max-h-[32rem] sm:h-auto sm:rounded-2xl sm:shadow-2xl overflow-hidden animate-in fade-in duration-150"
+          style={{ backgroundColor: bg, border: `1px solid ${border}` }}
         >
           {/* Header */}
-          <div className="px-4 py-3 flex items-center justify-between shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
-            <h3 className="text-[17px] font-black" style={{ color: textPrimary }}>Chats</h3>
+          <div className="px-4 py-3.5 sm:py-3 flex items-center justify-between shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
+            <h3 className="text-lg sm:text-[17px] font-black tracking-tight" style={{ color: textPrimary }}>Chats</h3>
             <div className="flex items-center gap-1">
               <button
                 onClick={() => { setOpen(false); navigate('/messages') }}
                 title="Open full view"
-                className="p-1.5 rounded-lg transition-colors"
+                className="hidden sm:inline-flex p-1.5 rounded-lg transition-colors"
                 style={{ color: textMuted }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
@@ -160,38 +160,38 @@ export default function MessagesDropdown() {
               <button
                 onClick={() => setOpen(false)}
                 title="Close"
-                className="p-1.5 rounded-lg transition-colors"
+                className="p-2 sm:p-1.5 rounded-xl sm:rounded-lg transition-colors cursor-pointer"
                 style={{ color: textMuted }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5 sm:w-4 sm:h-4" />
               </button>
             </div>
           </div>
 
           {/* Search — matches both existing chats and staff you haven't messaged yet */}
-          <div className="px-3 pt-3 pb-2 shrink-0">
+          <div className="px-3.5 sm:px-3 pt-3 pb-2 shrink-0">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: textMuted }} />
+              <Search className="absolute left-3.5 sm:left-3 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-3.5 sm:h-3.5" style={{ color: textMuted }} />
               <input
                 type="text"
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 placeholder="Search Messenger…"
-                className="w-full pl-8 pr-3 py-2 rounded-xl text-[13px] focus:outline-none"
+                className="w-full pl-9 sm:pl-8 pr-3 py-2.5 sm:py-2 rounded-xl text-[14px] sm:text-[13px] focus:outline-none"
                 style={{ backgroundColor: inputBg, color: textPrimary }}
               />
             </div>
           </div>
 
           {/* Filter tabs */}
-          <div className="px-3 pb-2 flex items-center gap-2 shrink-0">
+          <div className="px-3.5 sm:px-3 pb-2 flex items-center gap-2 shrink-0">
             {(['all', 'unread'] as Filter[]).map(f => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className="px-3 py-1 rounded-full text-[12px] font-semibold capitalize transition-colors"
+                className="px-3.5 sm:px-3 py-1.5 sm:py-1 rounded-full text-xs font-semibold capitalize transition-colors cursor-pointer"
                 style={filter === f
                   ? { backgroundColor: '#10B981', color: '#ffffff' }
                   : { backgroundColor: inputBg, color: textMuted }}
@@ -204,8 +204,8 @@ export default function MessagesDropdown() {
           {/* List */}
           <div className="flex-1 min-h-0 overflow-y-auto">
             {!hasResults ? (
-              <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
-                <MessageSquare className="w-8 h-8" style={{ color: textMuted, opacity: 0.5 }} />
+              <div className="px-4 py-16 sm:py-10 flex flex-col items-center gap-2 text-center">
+                <MessageSquare className="w-10 h-10 sm:w-8 sm:h-8" style={{ color: textMuted, opacity: 0.5 }} />
                 <p className="text-sm font-medium" style={{ color: textMuted }}>
                   {query.trim() ? 'No matches' : conversations.length === 0 ? 'No conversations yet' : 'No unread chats'}
                 </p>
@@ -218,8 +218,8 @@ export default function MessagesDropdown() {
                   return (
                     <button
                       key={c.id}
-                      onClick={() => openChatWith({ conversationId: c.id })}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors"
+                      onClick={() => { openChatWith({ conversationId: c.id }); setOpen(false) }}
+                      className="w-full flex items-center gap-3 px-4 py-3 sm:py-2.5 text-left transition-colors cursor-pointer"
                       onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
                       onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
                     >
@@ -233,15 +233,15 @@ export default function MessagesDropdown() {
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-[13px] font-semibold truncate" style={{ color: textPrimary }}>{formatPersonName(c.otherUserName)}</p>
-                        <p className="text-[12px] truncate" style={{ color: c.unreadCount > 0 ? textPrimary : textMuted, fontWeight: c.unreadCount > 0 ? 600 : 400 }}>
+                        <p className="text-[14px] sm:text-[13px] font-semibold truncate" style={{ color: textPrimary }}>{formatPersonName(c.otherUserName)}</p>
+                        <p className="text-[13px] sm:text-[12px] truncate" style={{ color: c.unreadCount > 0 ? textPrimary : textMuted, fontWeight: c.unreadCount > 0 ? 600 : 400 }}>
                           {c.lastMessagePreview ? `${mine ? 'You: ' : ''}${c.lastMessagePreview}` : 'Say hi 👋'}
                         </p>
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
-                        <span className="text-[10px] font-medium" style={{ color: textMuted }}>{timeAgoShort(c.lastMessageAt)}</span>
+                        <span className="text-[11px] sm:text-[10px] font-medium" style={{ color: textMuted }}>{timeAgoShort(c.lastMessageAt)}</span>
                         {c.unreadCount > 0 && (
-                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: '#10B981' }} />
+                          <span className="w-2.5 h-2.5 sm:w-2 sm:h-2 rounded-full" style={{ backgroundColor: '#10B981' }} />
                         )}
                       </div>
                     </button>
@@ -250,21 +250,21 @@ export default function MessagesDropdown() {
 
                 {matchingNewMembers.length > 0 && (
                   <>
-                    <div className="px-4 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
+                    <div className="px-4 pt-3 pb-1.5 text-[11px] sm:text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
                       Start a chat
                     </div>
                     {matchingNewMembers.map(m => (
                       <button
                         key={m.id}
-                        onClick={() => openChatWith({ recipientId: m.id, recipientInfo: m })}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors"
+                        onClick={() => { openChatWith({ recipientId: m.id, recipientInfo: m }); setOpen(false) }}
+                        className="w-full flex items-center gap-3 px-4 py-3 sm:py-2.5 text-left transition-colors cursor-pointer"
                         onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
                         onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
                       >
                         <UserAvatar name={m.name} imageUrl={m.profileImage} size="sm" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-[13px] font-semibold truncate" style={{ color: textPrimary }}>{formatPersonName(m.name)}</p>
-                          <p className="text-[11px] truncate" style={{ color: textMuted }}>{m.jobTitle ? formatPersonName(m.jobTitle) : formatRole(m.role)}</p>
+                          <p className="text-[14px] sm:text-[13px] font-semibold truncate" style={{ color: textPrimary }}>{formatPersonName(m.name)}</p>
+                          <p className="text-[12px] sm:text-[11px] truncate" style={{ color: textMuted }}>{m.jobTitle ? formatPersonName(m.jobTitle) : formatRole(m.role)}</p>
                         </div>
                       </button>
                     ))}

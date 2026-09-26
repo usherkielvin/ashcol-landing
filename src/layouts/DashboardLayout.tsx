@@ -975,7 +975,7 @@ export default function DashboardLayout() {
 
         {/* ── Global Header (Mobile/Tablet/Desktop) ──────────────── */}
         <header 
-          className="flex-none z-30 backdrop-blur-md w-full min-w-0 max-w-full relative"
+          className={`flex-none z-30 backdrop-blur-md w-full min-w-0 max-w-full relative ${location.pathname.startsWith('/messages') ? 'hidden md:block' : ''}`}
           style={{ 
             backgroundColor: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(10,17,32,0.8)'
           }}
@@ -1242,7 +1242,7 @@ export default function DashboardLayout() {
               ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-2 md:p-3"
               : (currentPage === 'Payouts' || currentPage === 'Payroll')
                 ? "flex-1 flex flex-col min-h-0 overflow-hidden relative px-1.5 py-2 md:px-2 md:py-2.5"
-              : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search')
+              : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'Messages' || location.pathname.startsWith('/messages'))
                 ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
                 : (currentPage === 'Request Forms' || currentPage === 'Operations Forms')
                   ? "flex-1 overflow-y-auto px-6 py-6 relative"
@@ -1258,7 +1258,7 @@ export default function DashboardLayout() {
                    zIndex: 0,
                  }} />
           )}
-          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'DDRM' || currentPage === 'Payouts' || currentPage === 'Payroll') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
+          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'DDRM' || currentPage === 'Payouts' || currentPage === 'Payroll' || currentPage === 'Messages' || location.pathname.startsWith('/messages')) ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
             {/* Do not key Outlet by pathname — that remounts Schedules on every nav and forces a reload spinner. */}
             <Suspense fallback={
               <div className="flex items-center justify-center min-h-[50vh] w-full transition-opacity duration-200">
