@@ -196,6 +196,8 @@ export default function Commissions() {
   const isItemPaid = (item: CommissionItem) =>
     Boolean(item.collectionResolved || (item.amount != null && item.amount > 0) || item.status === 'PAID')
 
+  const shownAmount = (item: CommissionItem) => item.collectionAmountPaid ?? item.amount ?? 0
+
   const filteredItems = useMemo(() => {
     const term = search.toLowerCase()
     return items.filter(item => {
@@ -217,11 +219,11 @@ export default function Commissions() {
   }, [items, search, monthFilter, statusFilter])
 
   const totalCommission = useMemo(
-    () => filteredItems.reduce((acc, item) => acc + (item.amount || 0), 0),
+    () => filteredItems.reduce((acc, item) => acc + shownAmount(item), 0),
     [filteredItems]
   )
   const totalPending = useMemo(
-    () => filteredItems.filter(i => !isItemPaid(i)).reduce((acc, item) => acc + (item.amount || 0), 0),
+    () => filteredItems.filter(i => !isItemPaid(i)).reduce((acc, item) => acc + shownAmount(item), 0),
     [filteredItems]
   )
 
@@ -423,13 +425,13 @@ export default function Commissions() {
                           : '—'}
                       </td>
                       <td className="px-3 py-3 text-right tabular-nums" style={{ fontWeight: 500, color: '#10B981', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                        ₱{peso(item.amount)}
+                        ₱{peso(shownAmount(item))}
                       </td>
                       <td className="px-3 py-3 text-center" style={{ fontSize: '11px', fontWeight: 500 }}>
                         {canMarkPaid ? (
                           <button
                             type="button"
-                            onClick={() => setConfirmItem(item)}
+                            onClick={() => setConfirmItem({ ...item, amount: shownAmount(item) })}
                             disabled={markingPaidId === item.id}
                             title={paid ? 'Edit paid details' : 'Mark as paid'}
                             className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-all hover:opacity-80 disabled:opacity-50"

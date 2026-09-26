@@ -437,6 +437,14 @@ export async function fetchAndMapPayroll(
   }
 }
 
+export function normalizeInstallerName(name: string): string {
+  const upper = (name || '').trim().toUpperCase()
+  if (upper === 'JUSTINE' || upper === 'JUSTINE ROI' || upper === 'JUSTINE BIEN' || upper === 'JUSTINE ROI BIEN') {
+    return 'JUSTIN ROI BIEN'
+  }
+  return (name || '').trim()
+}
+
 /** Dedupe by ticketId+installerName so re-syncing never duplicates rows or clobbers hand edits,
  *  while automatically backfilling missing ticket numbers on previously saved rows. */
 export function deduplicateAndMergePayroll(existing: PayrollRow[], incoming: PayrollRow[]): PayrollRow[] {
@@ -444,19 +452,19 @@ export function deduplicateAndMergePayroll(existing: PayrollRow[], incoming: Pay
     (row) => row.customerName.trim() || row.installerName.trim() || row.amountCollected.trim() || row.installationFee.trim(),
   )
 
+  const makeRowKey = (row: PayrollRow) => {
+    const inst = normalizeInstallerName(row.installerName).toLowerCase()
+    return row.ticketId ? `tk:${row.ticketId}|${inst}` : `manual:${row.id}`
+  }
+
   const incomingMap = new Map<string, PayrollRow>()
   for (const row of incoming) {
-    const key = row.ticketId
-      ? `tk:${row.ticketId}|${row.installerName.trim().toLowerCase()}`
-      : `manual:${row.id}`
-    incomingMap.set(key, row)
+    incomingMap.set(makeRowKey(row), row)
   }
 
   // Update existing saved rows with fresh ticket metadata and missing details/fees
   const updatedExisting = nonEmpty.map((row) => {
-    const key = row.ticketId
-      ? `tk:${row.ticketId}|${row.installerName.trim().toLowerCase()}`
-      : `manual:${row.id}`
+    const key = makeRowKey(row)
     const fresh = incomingMap.get(key)
     if (fresh) {
       const isFreshDone = /^DONE\b/i.test(fresh.installationUpload?.trim() || '')
@@ -465,6 +473,7 @@ export function deduplicateAndMergePayroll(existing: PayrollRow[], incoming: Pay
       const freshInstallFeeNum = parseFloat(String(fresh.installationFee || '').replace(/[^0-9.-]/g, '')) || 0
       return {
         ...row,
+        installerName: normalizeInstallerName(row.installerName || fresh.installerName || ''),
         ticketNumber: row.ticketNumber?.trim() || fresh.ticketNumber || '',
         workDate: row.workDate || fresh.workDate || '',
         customerName: row.customerName || fresh.customerName || '',
@@ -481,25 +490,26 @@ export function deduplicateAndMergePayroll(existing: PayrollRow[], incoming: Pay
         sifQuotation: row.sifQuotation?.trim() ? row.sifQuotation : (fresh.sifQuotation || ''),
       }
     }
-    return row
+    return {
+      ...row,
+      installerName: normalizeInstallerName(row.installerName),
+    }
   })
 
   const existingKeys = new Set<string>()
   for (const row of updatedExisting) {
-    const key = row.ticketId
-      ? `tk:${row.ticketId}|${row.installerName.trim().toLowerCase()}`
-      : `manual:${row.id}`
-    existingKeys.add(key)
+    existingKeys.add(makeRowKey(row))
   }
 
   const deduped: PayrollRow[] = []
   for (const row of incoming) {
-    const key = row.ticketId
-      ? `tk:${row.ticketId}|${row.installerName.trim().toLowerCase()}`
-      : `manual:${row.id}`
+    const key = makeRowKey(row)
     if (existingKeys.has(key)) continue
     existingKeys.add(key)
-    deduped.push(row)
+    deduped.push({
+      ...row,
+      installerName: normalizeInstallerName(row.installerName),
+    })
   }
 
   return [...updatedExisting, ...deduped]
@@ -525,7 +535,7 @@ export function mapSavedPayrollEntry(e: any): PayrollRow {
     id: e.id || uid(),
     ticketId: e.ticketId || undefined,
     ticketNumber: e.ticketNumber || '',
-    installerName: e.installerName || '',
+    installerName: normalizeInstallerName(e.installerName || ''),
     workDate: e.workDate || '',
     customerName: e.customerName || '',
     cityAddress: e.cityAddress || '',
@@ -579,11 +589,23 @@ export const DEDUCTION_PREFIX = 'ded:'
 // Balances are a snapshot (latest wins); every other key is an amount that adds up.
 export const BALANCE_DEDUCTION_KEYS = new Set<DeductionKey>(['loanBalance', 'uniformBalance'])
 
+// Hold & release (carry-over) state rides along in customFields under reserved "hold:" keys —
+// same pattern as "ded:" deductions and "manual:" fee flags. See docs/payroll-hold-release-plan.md.
+export const HOLD_PREFIX = 'hold:'
+/** On hold in its own week — excluded from that week's totals, shown in the branch's Held Tickets view. */
+export const isHeldRow = (r: PayrollRow): boolean => r.customFields?.['hold:state'] === 'held'
+/** The original row after its hold was released — the payout now lives on its carry-over copy instead. */
+export const isReleasedOrig = (r: PayrollRow): boolean => r.customFields?.['hold:state'] === 'released'
+/** A carry-over copy landed in a later (target) week's month by a release. */
+export const isCarryOver = (r: PayrollRow): boolean => r.customFields?.['hold:carryOver'] === '1'
+/** Counts toward its own week's totals: not held, not a released original (its copy counts instead). */
+export const isActivePayRow = (r: PayrollRow): boolean => !isHeldRow(r) && !isReleasedOrig(r)
+
 export const customFieldsFeeTotal = (r: PayrollRow): number => {
   if (!r.customFields) return 0
   let sum = 0
   for (const [k, v] of Object.entries(r.customFields)) {
-    if (k.startsWith(DEDUCTION_PREFIX) || k.startsWith('xfer:') || k.startsWith(MANUAL_FEE_PREFIX)) continue
+    if (k.startsWith(DEDUCTION_PREFIX) || k.startsWith('xfer:') || k.startsWith(MANUAL_FEE_PREFIX) || k.startsWith(HOLD_PREFIX)) continue
     sum += toNum(v)
   }
   return sum

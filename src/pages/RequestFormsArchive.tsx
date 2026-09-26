@@ -114,7 +114,10 @@ export default function RequestFormsArchive() {
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'DONE' | 'RELEASED' | 'CANCELLED'>('ALL')
   const [branchFilter, setBranchFilter] = useState('ALL')
   const [staffFilter, setStaffFilter] = useState('ALL')
-  const [monthFilter, setMonthFilter] = useState('')
+  const [monthFilter, setMonthFilter] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
 
   const [selected, setSelected] = useState<UnifiedRow | null>(null)
   const [history, setHistory] = useState<HistoryEntry[]>([])
@@ -246,6 +249,25 @@ export default function RequestFormsArchive() {
     return Array.from(seen.entries()).sort((a, b) => a[1].localeCompare(b[1]))
   }, [unifiedRows])
 
+  const monthOptions = useMemo(() => {
+    const seen = new Set<string>()
+    unifiedRows.forEach(r => {
+      const d = (r.archivedAt || r.createdAt || '').slice(0, 7)
+      if (d) seen.add(d)
+    })
+    const now = new Date()
+    for (let i = 0; i < 24; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      seen.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+    }
+    return Array.from(seen).sort((a, b) => b.localeCompare(a))
+  }, [unifiedRows])
+
+  const monthLabel = (ym: string) => {
+    const [y, m] = ym.split('-')
+    return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  }
+
   const openDetail = async (row: UnifiedRow) => {
     setSelected(row)
     setHistory([])
@@ -354,7 +376,18 @@ export default function RequestFormsArchive() {
           </div>
           <div className="relative w-full sm:w-auto">
             <Calendar className="absolute left-2.5 top-2.5 w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
-            <input type="month" value={monthFilter} onChange={e => setMonthFilter(e.target.value)} className={`${inputCls} pl-8`} style={istyle} aria-label="Filter by month" />
+            <select
+              value={monthFilter}
+              onChange={e => setMonthFilter(e.target.value)}
+              className={`${inputCls} pl-8 pr-7 appearance-none cursor-pointer`}
+              style={istyle}
+              aria-label="Filter by month"
+            >
+              <option value="">All months</option>
+              {monthOptions.map(ym => (
+                <option key={ym} value={ym}>{monthLabel(ym)}</option>
+              ))}
+            </select>
           </div>
         </div>
       </div>

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import {
   X, Printer, Download, Copy, Check, RefreshCw,
-  Building2, RotateCcw, Search, Wrench
+  Building2, RotateCcw, Wrench
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { API_BASE_URL, formatBranchName, branchScopesMatch } from '../utils/api'
@@ -19,6 +19,9 @@ import {
   mapSavedPayrollEntry,
   installerTotal,
   deductionTotal,
+  isActivePayRow,
+  isCarryOver,
+  rowTotal,
   type PayrollRow,
 } from '../utils/payrollDerive'
 
@@ -271,7 +274,16 @@ export default function WeekSummaryModal({
 
     for (const b of regionBranches) {
       const bRows = branchData[b.id] || []
+      // Held rows and released originals never belong to a week's view (their payout, if any, now
+      // lives on their carry-over copy). A carry-over copy keeps its ORIGIN's workDate, so it's
+      // matched against this week by hold:targetWeekFrom/To instead — see payroll-hold-release-plan.md.
       const filtered = bRows.filter(r => {
+        if (!isActivePayRow(r)) return false
+        if (isCarryOver(r)) {
+          if (weekFrom && r.customFields?.['hold:targetWeekFrom'] !== weekFrom) return false
+          if (weekTo && r.customFields?.['hold:targetWeekTo'] !== weekTo) return false
+          return true
+        }
         if (!r.workDate) return true
         if (weekFrom && r.workDate < weekFrom) return false
         if (weekTo && r.workDate > weekTo) return false
@@ -280,7 +292,10 @@ export default function WeekSummaryModal({
 
       const groups = new Map<string, PayrollRow[]>()
       for (const r of filtered) {
-        const rawName = (r.installerName || 'Unassigned').trim().toUpperCase()
+        let rawName = (r.installerName || 'Unassigned').trim().toUpperCase()
+        if (rawName === 'JUSTINE' || rawName === 'JUSTINE ROI' || rawName === 'JUSTINE BIEN' || rawName === 'JUSTINE ROI BIEN') {
+          rawName = 'JUSTIN ROI BIEN'
+        }
         if (!groups.has(rawName)) groups.set(rawName, [])
         groups.get(rawName)!.push(r)
       }
@@ -302,8 +317,13 @@ export default function WeekSummaryModal({
         if (emp?.inHouse) continue
 
         const displayName = emp?.name ? emp.name.toUpperCase() : rawName
+        // This cut-off's own jobs only — a carry-over's payout is this installer's PREVIOUS
+        // cut-off's money, reported separately below, never folded into this week's amount.
+        const regularRows = iRows.filter(r => !isCarryOver(r))
+        const carryRows = iRows.filter(isCarryOver)
         // Same math as the Payroll page's "Payroll Amount" (installerNet), floored at zero for release.
-        const computedAmount = Math.max(0, installerTotal(iRows) - deductionTotal(iRows))
+        const computedAmount = Math.max(0, installerTotal(regularRows) - deductionTotal(iRows))
+        const carryOverTotal = carryRows.reduce((sum, r) => sum + rowTotal(r), 0)
 
         const rowKey = `${b.id}-${displayName}`
         const rowOverride = overrides[rowKey] || {}
@@ -314,7 +334,9 @@ export default function WeekSummaryModal({
         const onlineTransfer = rowOverride.onlineTransfer !== undefined
           ? rowOverride.onlineTransfer
           : (status === 'HOLD' ? 0 : Math.max(0, finalAmount - cash))
-        const prevSalary = rowOverride.prevSalary !== undefined ? rowOverride.prevSalary : 0
+        // Salary carried from a previous cut-off via a release — defaults to the sum of this
+        // installer's carry-over copies landing in this week, editable like any other cell.
+        const prevSalary = rowOverride.prevSalary !== undefined ? rowOverride.prevSalary : carryOverTotal
         const prevCashAdvance = rowOverride.prevCashAdvance !== undefined ? rowOverride.prevCashAdvance : 0
         const totalForRelease = rowOverride.totalForRelease !== undefined
           ? rowOverride.totalForRelease
@@ -349,12 +371,10 @@ export default function WeekSummaryModal({
 
   // Filter state for showcase
   const [selectedBranchFilter, setSelectedBranchFilter] = useState<string>('ALL')
-  const [searchQuery, setSearchQuery] = useState<string>('')
 
   // Reset filters when switching region
   useEffect(() => {
     setSelectedBranchFilter('ALL')
-    setSearchQuery('')
   }, [region])
 
   // Distinct branch names present in current region data
@@ -368,24 +388,11 @@ export default function WeekSummaryModal({
     return Array.from(counts.entries()).map(([name, count]) => ({ name, count }))
   }, [compiledRows])
 
-  // Filtered rows based on branch selection and search query
+  // Filtered rows based on branch selection
   const displayedRows = useMemo(() => {
-    return compiledRows.filter(r => {
-      if (selectedBranchFilter !== 'ALL' && r.branchName !== selectedBranchFilter) {
-        return false
-      }
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim()
-        const matchesInstaller = r.installerName.toLowerCase().includes(q)
-        const matchesBranch = r.branchName.toLowerCase().includes(q)
-        const matchesRemarks = (r.remarks || '').toLowerCase().includes(q)
-        const matchesAccount = (r.accountNo || '').toLowerCase().includes(q)
-        const matchesMop = (r.mop || '').toLowerCase().includes(q)
-        if (!matchesInstaller && !matchesBranch && !matchesRemarks && !matchesAccount && !matchesMop) return false
-      }
-      return true
-    })
-  }, [compiledRows, selectedBranchFilter, searchQuery])
+    if (selectedBranchFilter === 'ALL') return compiledRows
+    return compiledRows.filter(r => r.branchName === selectedBranchFilter)
+  }, [compiledRows, selectedBranchFilter])
 
   // Group displayed rows by branch
   const groupedByBranch = useMemo(() => {
@@ -437,7 +444,7 @@ export default function WeekSummaryModal({
   // Copy table to clipboard
   const handleCopy = () => {
     const lines: string[] = []
-    lines.push(`${region.toUpperCase()} INSTALLERS SUMMARY`)
+    lines.push(`${region.toUpperCase()} PAYOUTS SUMMARY`)
     lines.push(`CUT-OFF DATE:\t${formatShortDate(weekFrom)} to ${formatShortDate(weekTo)}`)
     lines.push(`PAYROLL DATE:\t${payrollDateStr}`)
     lines.push('')
@@ -510,7 +517,7 @@ export default function WeekSummaryModal({
   // Export as CSV
   const handleExportCSV = () => {
     const csvRows: string[] = []
-    csvRows.push(`"${region.toUpperCase()} INSTALLERS SUMMARY"`)
+    csvRows.push(`"${region.toUpperCase()} PAYOUTS SUMMARY"`)
     csvRows.push(`"CUT-OFF DATE: ${formatShortDate(weekFrom)} to ${formatShortDate(weekTo)}"`)
     csvRows.push(`"PAYROLL DATE: ${payrollDateStr}"`)
     csvRows.push('')
@@ -555,7 +562,7 @@ export default function WeekSummaryModal({
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.setAttribute('download', `${region}_installers_summary_${weekFrom}_${weekTo}.csv`)
+    link.setAttribute('download', `${region}_payouts_summary_${weekFrom}_${weekTo}.csv`)
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -681,94 +688,82 @@ export default function WeekSummaryModal({
       {/* Main Full-Tab Content Area */}
       <main className="flex-1 overflow-auto p-6 sm:p-10 bg-white dark:bg-slate-950 font-sans print:p-0 print:overflow-visible">
         {/* Title Header Block */}
-        <div className="mb-4 border-b pb-3 border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-baseline justify-between gap-3">
-          <div>
-            <div className="flex items-baseline gap-2">
-              <h1 className="text-xl sm:text-2xl font-bold text-slate-800 dark:text-slate-100 uppercase tracking-tight">
-                {region.toUpperCase()} INSTALLERS SUMMARY
-              </h1>
-              {selectedBranchFilter !== 'ALL' && (
-                <span className="text-xs sm:text-sm font-normal text-slate-500">
-                  — {selectedBranchFilter}
-                </span>
-              )}
-            </div>
-            <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex flex-wrap gap-x-6 gap-y-1 font-normal">
-              <span>
-                <span className="font-semibold text-slate-700 dark:text-slate-300">CUT-OFF DATE:</span>{' '}
-                {weekFrom ? formatShortDate(weekFrom) : '—'} to {weekTo ? formatShortDate(weekTo) : '—'}
+        <div className="mb-5 border-b pb-4 border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h1 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-slate-100 uppercase tracking-tight">
+              {region.toUpperCase()} PAYOUTS SUMMARY
+            </h1>
+            {selectedBranchFilter !== 'ALL' && (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#056434]/10 text-[#056434] dark:bg-emerald-500/20 dark:text-emerald-400 border border-[#056434]/20">
+                {selectedBranchFilter}
               </span>
-              <span>
-                <span className="font-semibold text-slate-700 dark:text-slate-300">PAYROLL DATE:</span> {payrollDateStr || '—'}
+            )}
+          </div>
+
+          {/* Cut-Off Date & Payroll Date right corner */}
+          <div className="flex items-center gap-3 sm:gap-4 self-start md:self-center flex-wrap">
+            <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs shadow-2xs">
+              <span className="font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-[10px]">
+                CUT-OFF DATE:
+              </span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200">
+                {weekFrom ? formatShortDate(weekFrom) : ''} to {weekTo ? formatShortDate(weekTo) : ''}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-xs shadow-2xs">
+              <span className="font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide text-[10px]">
+                PAYROLL DATE:
+              </span>
+              <span className="font-bold text-emerald-800 dark:text-emerald-300">
+                {payrollDateStr || ''}
               </span>
             </div>
           </div>
         </div>
 
-        {/* Simple Filter Controls */}
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600 dark:text-slate-400 print:hidden">
+        {/* Branch Filter Tabs Bar */}
+        <div className="mb-4 flex items-center justify-between gap-3 text-xs print:hidden">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium text-slate-500">Filter Branch:</span>
-            <button
-              type="button"
-              onClick={() => setSelectedBranchFilter('ALL')}
-              className={`px-2.5 py-1 rounded text-xs transition-colors cursor-pointer ${
-                selectedBranchFilter === 'ALL'
-                  ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 font-medium'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              All
-            </button>
-            {availableBranches.map(({ name }) => (
+            <span className="font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[11px] mr-1">
+              Filter Branch:
+            </span>
+            <div className="inline-flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 gap-1 flex-wrap">
               <button
-                key={name}
                 type="button"
-                onClick={() => setSelectedBranchFilter(name)}
-                className={`px-2.5 py-1 rounded text-xs transition-colors cursor-pointer ${
-                  selectedBranchFilter === name
-                    ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 font-medium'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                onClick={() => setSelectedBranchFilter('ALL')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  selectedBranchFilter === 'ALL'
+                    ? 'bg-[#056434] text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5'
                 }`}
               >
-                {name}
+                All ({compiledRows.length})
               </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search installer…"
-                className="h-8 pl-8 pr-7 text-xs rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 outline-none focus:border-slate-400 w-48 sm:w-56 font-normal"
-              />
-              {searchQuery && (
+              {availableBranches.map(({ name, count }) => (
                 <button
+                  key={name}
                   type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                  onClick={() => setSelectedBranchFilter(name)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    selectedBranchFilter === name
+                      ? 'bg-[#056434] text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5'
+                  }`}
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <span>{name}</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
+                      selectedBranchFilter === name
+                        ? 'bg-white/20 text-white'
+                        : 'bg-black/10 dark:bg-white/10 text-slate-500 dark:text-slate-400'
+                    }`}
+                  >
+                    {count}
+                  </span>
                 </button>
-              )}
+              ))}
             </div>
-
-            {(selectedBranchFilter !== 'ALL' || searchQuery) && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedBranchFilter('ALL')
-                  setSearchQuery('')
-                }}
-                className="text-xs text-rose-500 hover:underline cursor-pointer ml-1 font-normal"
-              >
-                Reset
-              </button>
-            )}
           </div>
         </div>
 
@@ -885,7 +880,7 @@ export default function WeekSummaryModal({
                             isHold ? 'bg-[#FEF08A] text-amber-950 dark:text-amber-200' : 'text-slate-900 dark:text-slate-100'
                           }`}
                         >
-                          {r.amount > 0 ? peso(r.amount) : '—'}
+                          {r.amount > 0 ? peso(r.amount) : ''}
                         </td>
 
                         {/* CASH (Editable) */}
@@ -893,7 +888,6 @@ export default function WeekSummaryModal({
                           <input
                             type="text"
                             value={r.cash ? peso(r.cash) : ''}
-                            placeholder="—"
                             onChange={e => {
                               const val = num(e.target.value)
                               updateRowOverride(rowKey, {
@@ -901,7 +895,7 @@ export default function WeekSummaryModal({
                                 onlineTransfer: Math.max(0, r.amount - val),
                               })
                             }}
-                            className="w-full h-9 text-right bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-sm sm:text-base font-number font-normal outline-none transition-all text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+                            className="w-full h-9 text-right bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-sm sm:text-base font-number font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
@@ -910,9 +904,8 @@ export default function WeekSummaryModal({
                           <input
                             type="text"
                             value={r.onlineTransfer ? peso(r.onlineTransfer) : ''}
-                            placeholder="—"
                             onChange={e => updateRowOverride(rowKey, { onlineTransfer: num(e.target.value) })}
-                            className="w-full h-9 text-right bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-sm sm:text-base font-number font-normal outline-none transition-all text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+                            className="w-full h-9 text-right bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-sm sm:text-base font-number font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
@@ -921,7 +914,6 @@ export default function WeekSummaryModal({
                           <input
                             type="text"
                             value={r.prevSalary ? peso(r.prevSalary) : ''}
-                            placeholder="—"
                             onChange={e => {
                               const val = num(e.target.value)
                               updateRowOverride(rowKey, {
@@ -929,7 +921,7 @@ export default function WeekSummaryModal({
                                 totalForRelease: (r.status === 'HOLD' ? 0 : r.amount) + val - r.prevCashAdvance,
                               })
                             }}
-                            className="w-full h-9 text-right bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-sm sm:text-base font-number font-normal outline-none transition-all text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+                            className="w-full h-9 text-right bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-sm sm:text-base font-number font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
@@ -938,7 +930,6 @@ export default function WeekSummaryModal({
                           <input
                             type="text"
                             value={r.prevCashAdvance ? peso(r.prevCashAdvance) : ''}
-                            placeholder="—"
                             onChange={e => {
                               const val = num(e.target.value)
                               updateRowOverride(rowKey, {
@@ -946,13 +937,13 @@ export default function WeekSummaryModal({
                                 totalForRelease: (r.status === 'HOLD' ? 0 : r.amount) + r.prevSalary - val,
                               })
                             }}
-                            className="w-full h-9 text-right bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-sm sm:text-base font-number font-normal outline-none transition-all text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+                            className="w-full h-9 text-right bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-sm sm:text-base font-number font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
                         {/* TOTAL FOR RELEASE */}
                         <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
-                          {r.totalForRelease > 0 ? peso(r.totalForRelease) : '—'}
+                          {r.totalForRelease > 0 ? peso(r.totalForRelease) : ''}
                         </td>
 
                         {/* MOP (Mode of Payment) */}
@@ -970,9 +961,8 @@ export default function WeekSummaryModal({
                           <input
                             type="text"
                             value={r.accountNo}
-                            placeholder="—"
                             onChange={e => updateRowOverride(rowKey, { accountNo: e.target.value })}
-                            className="w-full h-9 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1.5 font-number text-xs sm:text-sm font-normal outline-none tracking-normal transition-all text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+                            className="w-full h-9 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1.5 font-number text-xs sm:text-sm font-normal outline-none tracking-normal transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
@@ -1007,9 +997,8 @@ export default function WeekSummaryModal({
                           <input
                             type="text"
                             value={r.remarks}
-                            placeholder="Notes…"
                             onChange={e => updateRowOverride(rowKey, { remarks: e.target.value })}
-                            className="w-full h-9 bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-xs font-normal outline-none transition-all text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+                            className="w-full h-9 bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-xs font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
@@ -1038,19 +1027,18 @@ export default function WeekSummaryModal({
                     {peso(totals.totalAmount)}
                   </td>
                   <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
-                    {totals.totalCash > 0 ? peso(totals.totalCash) : '—'}
+                    {totals.totalCash > 0 ? peso(totals.totalCash) : ''}
                   </td>
                   <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
-                    {totals.totalOnline > 0 ? peso(totals.totalOnline) : '—'}
+                    {totals.totalOnline > 0 ? peso(totals.totalOnline) : ''}
                   </td>
                   <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
-                    {totals.totalPrevSalary > 0 ? peso(totals.totalPrevSalary) : '—'}
+                    {totals.totalPrevSalary > 0 ? peso(totals.totalPrevSalary) : ''}
                   </td>
                   <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-normal text-slate-400">
-                    —
                   </td>
                   <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
-                    {totals.totalRelease > 0 ? peso(totals.totalRelease) : '—'}
+                    {totals.totalRelease > 0 ? peso(totals.totalRelease) : ''}
                   </td>
                   <td colSpan={4} className="border border-black dark:border-slate-600"></td>
                   <td className="border border-black dark:border-slate-600 px-4 py-3 text-right text-base sm:text-lg font-number font-bold bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white">

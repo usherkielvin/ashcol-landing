@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useRef, useMemo, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams, useParams, useLocation } from 'react-router-dom'
 import { NumericFormat } from 'react-number-format'
 import {
   Search, Building2, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   SlidersHorizontal, Plus, X, RotateCcw, RefreshCw, Save, Loader2, EyeOff, Trash2,
   Stethoscope, Lightbulb, HardHat, PiggyBank, Wind, Recycle, ArrowBigDownDash, Snowflake,
   Users, Clock, Receipt, ArrowRightLeft, ExternalLink, Lock, Unlock, FileSpreadsheet,
+  Archive, PauseCircle, Send, Undo2,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -41,6 +42,10 @@ import {
   UNIFORM_PRICE_PER_PC,
   DEDUCTION_PREFIX,
   BALANCE_DEDUCTION_KEYS,
+  HOLD_PREFIX,
+  isHeldRow,
+  isCarryOver,
+  isActivePayRow,
   type DeductionKey,
   type AutoStampedFee,
   type PayrollRow,
@@ -99,12 +104,14 @@ const rowAddOns = (r: PayrollRow): number => Math.max(0, rowTotal(r) - num(r.ins
 // etc. — so service branches (mostly cleanings) don't read as zero work. installerRows is already
 // scoped to the active date-range filter, so this is automatically "within the selected range" too.
 const isCompletedRow = (r: PayrollRow) => /^DONE\b/i.test(r.installationUpload.trim())
-const completedJobsCount = (installerRows: PayrollRow[]) => installerRows.filter(isCompletedRow).length
+// Carry-over copies are a payout landing in this week, not a job actually done in it — they'd
+// otherwise double-count (or mis-attribute) completed-job stats against the copy's own workDate.
+const completedJobsCount = (installerRows: PayrollRow[]) => installerRows.filter(r => !isCarryOver(r) && isCompletedRow(r)).length
 /** "2 Cleaning · 1 Install" — what kind of work those completed jobs were, most frequent first. */
 const completedJobsBreakdown = (installerRows: PayrollRow[]) => {
   const counts = new Map<string, number>()
   for (const r of installerRows) {
-    if (!isCompletedRow(r)) continue
+    if (isCarryOver(r) || !isCompletedRow(r)) continue
     const kind = titleCase(r.installationUpload.trim().replace(/^DONE\s*/i, '')) || 'Job'
     counts.set(kind, (counts.get(kind) || 0) + 1)
   }
@@ -115,7 +122,8 @@ const completedJobsBreakdown = (installerRows: PayrollRow[]) => {
 // down to its numeric amount, ignoring the payment-method text.
 const parseMoneyText = (s: string | number | null | undefined) => num(s)
 const remittanceTotal = (rowsIn: PayrollRow[]) => rowsIn.reduce((sum, r) => sum + parseMoneyText(r.actualCollected), 0)
-const baseInstallTotal = (rowsIn: PayrollRow[]) => rowsIn.reduce((sum, r) => sum + num(r.installationFee), 0)
+// A carry-over's full payout counts as Add-ons (Add-ons = gross − base), never Base Install.
+const baseInstallTotal = (rowsIn: PayrollRow[]) => rowsIn.reduce((sum, r) => sum + (isCarryOver(r) ? 0 : num(r.installationFee)), 0)
 
 
 
@@ -230,6 +238,12 @@ const PAYROLL_WEEK_KEY = (branchId: string) => `ashcol-payroll-week-${branchId}`
 const PAYROLL_LAST_SELECTION_KEY = 'ashcol-payroll-last-selection'
 const MIN_COLUMN_WIDTH = 70
 
+export const normalizeSlug = (str: string) =>
+  str.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+
+export const compactSlug = (str: string) =>
+  str.toLowerCase().replace(/[^a-z0-9]/g, '')
+
 interface SavedPayrollSelection {
   month: string
   weekFrom: string
@@ -327,6 +341,11 @@ export default function Payroll() {
     const raw = (user as any)?.firstName || user?.name || (user as any)?.username || 'ADMIN'
     return String(raw).trim().split(/\s+/)[0].toUpperCase()
   }, [user])
+  // Full logged-in user name — recorded on hold/release actions (see docs/payroll-hold-release-plan.md).
+  const userDisplayName = useMemo(() => {
+    const raw = user?.name || (user as any)?.firstName || (user as any)?.username || 'ADMIN'
+    return String(raw).trim().toUpperCase()
+  }, [user])
 
   const [rows, setRows] = useState<PayrollRow[]>([])
   const [initialLoading, setInitialLoading] = useState(true)
@@ -337,8 +356,105 @@ export default function Payroll() {
   // Header shows no save-status indicator per the simplified toolbar — the setter still
   // drives autosave logic below, the value itself just isn't rendered anywhere right now.
   const [, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  const [branches, setBranches] = useState<{ id: string; name: string; payrollRates?: string | null }[]>([])
+  const [branchFilter, setBranchFilter] = useState(() => {
+    if (canManagePayroll) {
+      const savedPayrollBranch = localStorage.getItem(PAYROLL_BRANCH_KEY)
+      if (savedPayrollBranch) return savedPayrollBranch
+      const activeBranch = localStorage.getItem('ashcol-global-branch-id')
+      if (activeBranch && activeBranch !== 'ALL_BRANCHES') return activeBranch
+      return 'BR-TAGUIG-SALES'
+    }
+    return user?.branchId || 'BR-TAGUIG-SALES'
+  })
+  useEffect(() => {
+    if (canManagePayroll && branchFilter) localStorage.setItem(PAYROLL_BRANCH_KEY, branchFilter)
+  }, [canManagePayroll, branchFilter])
+
+  const { branchSlug, installerSlug } = useParams<{ branchSlug?: string; installerSlug?: string }>()
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
+  const installerFromUrl = searchParams.get('installer') || searchParams.get('member')
+
   // null = the roster (list of installers); a name = that installer's own table.
-  const [selectedInstaller, setSelectedInstaller] = useState<string | null>(null)
+  const [selectedInstaller, setSelectedInstaller] = useState<string | null>(installerFromUrl || null)
+
+  // Seamlessly redirect legacy /payroll paths to clean /payouts URLs
+  useEffect(() => {
+    if (location.pathname.startsWith('/payroll')) {
+      const newPath = location.pathname.replace(/^\/payroll/, '/payouts')
+      navigate(newPath + location.search, { replace: true })
+    }
+  }, [location.pathname, location.search, navigate])
+
+  // Sync active branch with branchSlug in URL (e.g. /payouts/taguig-sales or /payouts/taguigsales)
+  useEffect(() => {
+    if (!branchSlug || branches.length === 0) return
+    const clean = normalizeSlug(branchSlug)
+    const compact = compactSlug(branchSlug)
+    const matched = branches.find(b =>
+      normalizeSlug(b.id) === clean ||
+      compactSlug(b.id) === compact ||
+      normalizeSlug(b.name) === clean ||
+      compactSlug(b.name) === compact
+    )
+    if (matched && matched.id !== branchFilter) {
+      setBranchFilter(matched.id)
+    }
+  }, [branchSlug, branches, branchFilter])
+
+  // Sync selected installer from URL path slug or fallback searchParams
+  useEffect(() => {
+    if (installerSlug) {
+      const clean = normalizeSlug(installerSlug)
+      const compact = compactSlug(installerSlug)
+      const allNames = Array.from(new Set(rows.map(r => resolveGroupKey(r.installerName)).filter(Boolean)))
+      // 1. Exact slug match (e.g. "allan-bellen" or "allanbellen")
+      let matched = allNames.find(n => normalizeSlug(n) === clean || compactSlug(n) === compact)
+      // 2. Prefix / first name match (e.g. "allan" matches "ALLAN BELLEN")
+      if (!matched) {
+        matched = allNames.find(n => {
+          const nClean = normalizeSlug(n)
+          const nCompact = compactSlug(n)
+          return nClean.split('-')[0] === clean || nClean.startsWith(clean + '-') || nCompact.startsWith(compact)
+        })
+      }
+      // 3. Fallback: resolve clean slug via installer aliases (e.g. "justine" -> "JUSTIN ROI BIEN")
+      if (!matched) {
+        const resolved = resolveGroupKey(clean)
+        matched = allNames.find(n => n === resolved || normalizeSlug(n) === normalizeSlug(resolved))
+      }
+      if (matched) {
+        if (matched !== selectedInstaller) {
+          setSelectedInstaller(matched)
+        }
+        return
+      }
+    }
+
+    // Fallback: searchParams (?installer=... or ?member=...)
+    const urlInstaller = searchParams.get('installer') || searchParams.get('member')
+    if (urlInstaller && urlInstaller !== selectedInstaller) {
+      setSelectedInstaller(urlInstaller)
+    } else if (!installerSlug && !urlInstaller && selectedInstaller) {
+      setSelectedInstaller(null)
+    }
+  }, [installerSlug, searchParams, rows, selectedInstaller])
+
+  const handleSelectInstaller = useCallback((name: string | null) => {
+    setSelectedInstaller(name)
+    const currentBranch = branches.find(b => b.id === branchFilter)
+    const bSlug = currentBranch ? normalizeSlug(currentBranch.name) : (branchFilter ? normalizeSlug(branchFilter) : '')
+    if (name) {
+      const iSlug = normalizeSlug(name)
+      const targetPath = bSlug ? `/payouts/${bSlug}/${iSlug}` : `/payouts/all/${iSlug}`
+      navigate(targetPath, { replace: false })
+    } else {
+      const targetPath = bSlug ? `/payouts/${bSlug}` : '/payouts'
+      navigate(targetPath, { replace: false })
+    }
+  }, [branches, branchFilter, navigate])
   // The job row whose full fee breakdown is open in the popup (desktop list view).
   const [detailRow, setDetailRow] = useState<PayrollRow | null>(null)
   // Active cell being edited inline in the desktop table (null = none).
@@ -346,6 +462,20 @@ export default function Payroll() {
   const lastCellTapRef = useRef<{ rowId: string; colKey: string; time: number } | null>(null)
   // Which installer's Deductions modal is open (null = closed).
   const [deductionsModalInstaller, setDeductionsModalInstaller] = useState<string | null>(null)
+  // Hold & release (carry-over to a later week) — see docs/payroll-hold-release-plan.md.
+  const [holdModalRow, setHoldModalRow] = useState<PayrollRow | null>(null)
+  const [holdReason, setHoldReason] = useState('')
+  const [holdSubmitting, setHoldSubmitting] = useState(false)
+  const [heldTicketsOpen, setHeldTicketsOpen] = useState(false)
+  const [heldTicketsLoading, setHeldTicketsLoading] = useState(false)
+  const [heldTickets, setHeldTickets] = useState<{ row: PayrollRow; month: string }[]>([])
+  const [heldInstallerFilter, setHeldInstallerFilter] = useState('')
+  const [heldSearch, setHeldSearch] = useState('')
+  const [releaseFor, setReleaseFor] = useState<{ row: PayrollRow; month: string } | null>(null)
+  const [releaseTargetWeek, setReleaseTargetWeek] = useState<PayrollWeek | null>(null)
+  const [releaseApprovalNote, setReleaseApprovalNote] = useState('')
+  const [releaseSubmitting, setReleaseSubmitting] = useState(false)
+  const [undoingRowKey, setUndoingRowKey] = useState<string | null>(null)
   // Installer job list's horizontal scroll — which edges still hide columns (drives the fade +
   // arrow cues) and whether it's scrolled at all (drives the pinned-column shadow).
   const listScrollRef = useRef<HTMLDivElement | null>(null)
@@ -368,23 +498,6 @@ export default function Payroll() {
   // '' = all installers. Narrows the roster list to one technician, independent of the free-text
   // search box above — the dropdown's own options always list the branch's full roster.
   const [technicianFilter, setTechnicianFilter] = useState('')
-  const [branches, setBranches] = useState<{ id: string; name: string; payrollRates?: string | null }[]>([])
-
-  const [branchFilter, setBranchFilter] = useState(() => {
-    if (canManagePayroll) {
-      const savedPayrollBranch = localStorage.getItem(PAYROLL_BRANCH_KEY)
-      if (savedPayrollBranch) return savedPayrollBranch
-      const activeBranch = localStorage.getItem('ashcol-global-branch-id')
-      if (activeBranch && activeBranch !== 'ALL_BRANCHES') return activeBranch
-      return 'BR-TAGUIG-SALES'
-    }
-    return user?.branchId || 'BR-TAGUIG-SALES'
-  })
-  // Persist Payroll's own branch choice so a reload comes back to it, not whatever the
-  // app-wide branch switcher happens to be set to elsewhere.
-  useEffect(() => {
-    if (canManagePayroll && branchFilter) localStorage.setItem(PAYROLL_BRANCH_KEY, branchFilter)
-  }, [canManagePayroll, branchFilter])
 
   // Track the previous branch to distinguish between initial mount / branch list loading
   // vs. an actual user-initiated branch change.
@@ -485,14 +598,14 @@ export default function Payroll() {
   }
 
   // Keyed by installer name — column visibility is per-installer-table, not shared globally.
-  const [hiddenColumnsByInstaller, setHiddenColumnsByInstaller] = useState<Record<string, Set<ColumnKey>>>(() => {
+  const [hiddenColumnsByInstaller, setHiddenColumnsByInstaller] = useState<Record<string, Set<string>>>(() => {
     try {
       const raw = localStorage.getItem(HIDDEN_COLUMNS_KEY)
       if (!raw) return {}
       const obj = JSON.parse(raw) as Record<string, string[]>
-      const result: Record<string, Set<ColumnKey>> = {}
+      const result: Record<string, Set<string>> = {}
       for (const [name, arr] of Object.entries(obj)) {
-        result[name] = new Set(arr.filter((k): k is ColumnKey => COLUMN_DEFS.some(c => c.key === k)))
+        result[name] = new Set(arr)
       }
       return result
     } catch {
@@ -500,11 +613,11 @@ export default function Payroll() {
     }
   })
   useEffect(() => {
-    const serializable: Record<string, ColumnKey[]> = {}
+    const serializable: Record<string, string[]> = {}
     for (const [name, set] of Object.entries(hiddenColumnsByInstaller)) serializable[name] = Array.from(set)
     localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify(serializable))
   }, [hiddenColumnsByInstaller])
-  const hiddenColumnsFor = (installerName: string): Set<ColumnKey> =>
+  const hiddenColumnsFor = (installerName: string): Set<string> =>
     hiddenColumnsByInstaller[installerName] ?? new Set(DEFAULT_HIDDEN_COLUMNS)
   const [columnManagerFor, setColumnManagerFor] = useState<string | null>(null)
   const [columnSearch, setColumnSearch] = useState('')
@@ -630,6 +743,21 @@ export default function Payroll() {
         }
       }
     }
+
+    // Specific technician aliases / spelling normalization:
+    // In Taguig Services, Justin Roi Bien is frequently entered as "JUSTINE", "JUSTINE ROI", or "JUSTIN ROI"
+    const justinAccount = sorted.find(t => {
+      const u = (t.name || '').trim().toUpperCase()
+      return u.includes('JUSTIN') && (u.includes('ROI') || u.includes('BIEN'))
+    })
+    const justinTarget = justinAccount?.name?.trim().toUpperCase() || 'JUSTIN ROI BIEN'
+    map['JUSTINE'] = justinTarget
+    map['JUSTINE ROI'] = justinTarget
+    map['JUSTINE BIEN'] = justinTarget
+    map['JUSTINE ROI BIEN'] = justinTarget
+    map['JUSTIN ROI'] = justinTarget
+    map['JUSTIN'] = justinTarget
+
     return map
   }, [branchTechnicians, branchFilter])
 
@@ -638,6 +766,16 @@ export default function Payroll() {
   const resolvePrefixAlias = (word: string): string | null => {
     if (word.length < 3) return null
     const wUpper = word.toUpperCase()
+
+    // Explicit override for Justine -> Justin Roi Bien
+    if (wUpper === 'JUSTINE' || wUpper.startsWith('JUSTINE')) {
+      const justin = branchTechnicians.find(t => {
+        const u = (t.name || '').trim().toUpperCase()
+        return u.includes('JUSTIN') && (u.includes('ROI') || u.includes('BIEN'))
+      })
+      return justin?.name?.trim().toUpperCase() || 'JUSTIN ROI BIEN'
+    }
+
     const sorted = [...branchTechnicians].sort((a, b) => {
       const aMatch = branchFilter && a.branchId === branchFilter ? 1 : 0
       const bMatch = branchFilter && b.branchId === branchFilter ? 1 : 0
@@ -956,6 +1094,53 @@ export default function Payroll() {
     searchTimer.current = setTimeout(() => setSearch(value), 200)
   }
 
+  // Row -> backend entry payload shape, shared by the debounced full-month save below and
+  // mutateSavedMonth (hold/release/undo — see docs/payroll-hold-release-plan.md).
+  const buildPayrollEntries = (data: PayrollRow[]) => data.map((r, idx) => ({
+    ticketId: r.ticketId || null,
+    ticketNumber: r.ticketNumber || null,
+    installerName: r.installerName,
+    sortOrder: idx,
+    workDate: r.workDate || null,
+    customerName: r.customerName || null,
+    cityAddress: r.cityAddress || null,
+    brandCapacity: r.brandCapacity || null,
+    sifQuotation: r.sifQuotation || null,
+    totalPipeLength: r.totalPipeLength || null,
+    installationUpload: r.installationUpload || null,
+    amountCollected: r.amountCollected ? num(r.amountCollected) : null,
+    actualCollected: r.actualCollected || null,
+    installationFee: r.installationFee ? num(r.installationFee) : null,
+    earthGrounding: r.earthGrounding ? num(r.earthGrounding) : null,
+    dailyAllowance: r.dailyAllowance ? num(r.dailyAllowance) : null,
+    excessCopperTube: r.excessCopperTube ? num(r.excessCopperTube) : null,
+    hauling: r.hauling ? num(r.hauling) : null,
+    dismantling: r.dismantling ? num(r.dismantling) : null,
+    electricalWorks: r.electricalWorks ? num(r.electricalWorks) : null,
+    chippingWorks: r.chippingWorks ? num(r.chippingWorks) : null,
+    breaker: r.breaker ? num(r.breaker) : null,
+    powerSupplyLaborOnly: r.powerSupplyLaborOnly ? num(r.powerSupplyLaborOnly) : null,
+    powerSupplyLaborMaterials: r.powerSupplyLaborMaterials ? num(r.powerSupplyLaborMaterials) : null,
+    specialBracketCatwalk: r.specialBracketCatwalk ? num(r.specialBracketCatwalk) : null,
+    specialBracketWelding: r.specialBracketWelding ? num(r.specialBracketWelding) : null,
+    excessCopperTubeLaborOnly: r.excessCopperTubeLaborOnly ? num(r.excessCopperTubeLaborOnly) : null,
+    relocationAccuFcu: r.relocationAccuFcu ? num(r.relocationAccuFcu) : null,
+    systemReprocessLabor: r.systemReprocessLabor ? num(r.systemReprocessLabor) : null,
+    drainPumpInstallation: r.drainPumpInstallation ? num(r.drainPumpInstallation) : null,
+    scaffoldingInstallation: r.scaffoldingInstallation ? num(r.scaffoldingInstallation) : null,
+    flushingOldPipe: r.flushingOldPipe ? num(r.flushingOldPipe) : null,
+    sterneBracket: r.sterneBracket ? num(r.sterneBracket) : null,
+    breakerInstallationLabor: r.breakerInstallationLabor ? num(r.breakerInstallationLabor) : null,
+    chargingOfFreon: r.chargingOfFreon ? num(r.chargingOfFreon) : null,
+    materialsReturn: r.materialsReturn ? num(r.materialsReturn) : null,
+    installationChecklist: r.installationChecklist || null,
+    videoUpload: r.videoUpload || null,
+    remarks: r.remarks || null,
+    audited: r.audited || null,
+    status: r.status || 'PENDING',
+    customFields: r.customFields && Object.keys(r.customFields).length > 0 ? JSON.stringify(r.customFields) : null,
+  }))
+
   // Core background save routine
   const savePayrollToBackend = useCallback(async (data: PayrollRow[], bId: string, mKey: string) => {
     if (!bId || !mKey) return
@@ -965,54 +1150,10 @@ export default function Payroll() {
     }
     setSaveStatus('saving')
     try {
-      const entries = data.map((r, idx) => ({
-        ticketId: r.ticketId || null,
-        ticketNumber: r.ticketNumber || null,
-        installerName: r.installerName,
-        sortOrder: idx,
-        workDate: r.workDate || null,
-        customerName: r.customerName || null,
-        cityAddress: r.cityAddress || null,
-        brandCapacity: r.brandCapacity || null,
-        sifQuotation: r.sifQuotation || null,
-        totalPipeLength: r.totalPipeLength || null,
-        installationUpload: r.installationUpload || null,
-        amountCollected: r.amountCollected ? num(r.amountCollected) : null,
-        actualCollected: r.actualCollected || null,
-        installationFee: r.installationFee ? num(r.installationFee) : null,
-        earthGrounding: r.earthGrounding ? num(r.earthGrounding) : null,
-        dailyAllowance: r.dailyAllowance ? num(r.dailyAllowance) : null,
-        excessCopperTube: r.excessCopperTube ? num(r.excessCopperTube) : null,
-        hauling: r.hauling ? num(r.hauling) : null,
-        dismantling: r.dismantling ? num(r.dismantling) : null,
-        electricalWorks: r.electricalWorks ? num(r.electricalWorks) : null,
-        chippingWorks: r.chippingWorks ? num(r.chippingWorks) : null,
-        breaker: r.breaker ? num(r.breaker) : null,
-        powerSupplyLaborOnly: r.powerSupplyLaborOnly ? num(r.powerSupplyLaborOnly) : null,
-        powerSupplyLaborMaterials: r.powerSupplyLaborMaterials ? num(r.powerSupplyLaborMaterials) : null,
-        specialBracketCatwalk: r.specialBracketCatwalk ? num(r.specialBracketCatwalk) : null,
-        specialBracketWelding: r.specialBracketWelding ? num(r.specialBracketWelding) : null,
-        excessCopperTubeLaborOnly: r.excessCopperTubeLaborOnly ? num(r.excessCopperTubeLaborOnly) : null,
-        relocationAccuFcu: r.relocationAccuFcu ? num(r.relocationAccuFcu) : null,
-        systemReprocessLabor: r.systemReprocessLabor ? num(r.systemReprocessLabor) : null,
-        drainPumpInstallation: r.drainPumpInstallation ? num(r.drainPumpInstallation) : null,
-        scaffoldingInstallation: r.scaffoldingInstallation ? num(r.scaffoldingInstallation) : null,
-        flushingOldPipe: r.flushingOldPipe ? num(r.flushingOldPipe) : null,
-        sterneBracket: r.sterneBracket ? num(r.sterneBracket) : null,
-        breakerInstallationLabor: r.breakerInstallationLabor ? num(r.breakerInstallationLabor) : null,
-        chargingOfFreon: r.chargingOfFreon ? num(r.chargingOfFreon) : null,
-        materialsReturn: r.materialsReturn ? num(r.materialsReturn) : null,
-        installationChecklist: r.installationChecklist || null,
-        videoUpload: r.videoUpload || null,
-        remarks: r.remarks || null,
-        audited: r.audited || null,
-        status: r.status || 'PENDING',
-        customFields: r.customFields && Object.keys(r.customFields).length > 0 ? JSON.stringify(r.customFields) : null,
-      }))
       const res = await fetch(`${API_BASE_URL}/v1/payroll`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ branchId: bId, periodMonth: mKey, entries }),
+        body: JSON.stringify({ branchId: bId, periodMonth: mKey, entries: buildPayrollEntries(data) }),
       })
       if (res.ok) {
         setSaveStatus('saved')
@@ -1027,6 +1168,58 @@ export default function Payroll() {
       setSaveStatus('error')
     }
   }, [activeWeek, closures])
+
+  // Fetches exactly one branch+month's saved rows, applies `mutate`, and PUTs the result back —
+  // used by hold/release/undo so they never touch a month that isn't already loaded into `rows`
+  // (a debounced full-month save racing a partial month would overwrite it with just the mutation).
+  const mutateSavedMonth = useCallback(async (
+    bId: string,
+    monthKey: string,
+    mutate: (rowsIn: PayrollRow[]) => PayrollRow[],
+  ): Promise<boolean> => {
+    if (!bId || !monthKey) return false
+    try {
+      const params = new URLSearchParams({ branchId: bId, month: monthKey })
+      const getRes = await fetch(`${API_BASE_URL}/v1/payroll?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      })
+      const list = getRes.ok ? await getRes.json() : []
+      const monthRows: PayrollRow[] = (Array.isArray(list) ? list : []).map(mapSavedPayrollEntry)
+      const mutated = mutate(monthRows)
+      const putRes = await fetch(`${API_BASE_URL}/v1/payroll`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ branchId: bId, periodMonth: monthKey, entries: buildPayrollEntries(mutated) }),
+      })
+      return putRes.ok
+    } catch (e) {
+      console.error('Failed to mutate saved payroll month:', e)
+      return false
+    }
+  }, [])
+
+  // Backend PUTs regenerate every row's id on each save (a full month replace, not a per-row
+  // upsert — see PayrollService.replaceEntries) so an id captured from an earlier fetch can't be
+  // trusted against a fresh one. Match by business identity instead: ticketId is a stable ticket
+  // reference; hand-added rows fall back to ticketNumber+installer+workDate.
+  const rowMatchKey = (r: PayrollRow): string =>
+    r.ticketId
+      ? `tk:${r.ticketId}|${r.installerName.trim().toLowerCase()}`
+      : `nt:${(r.ticketNumber || '').trim().toLowerCase()}|${r.installerName.trim().toLowerCase()}|${r.workDate || ''}`
+
+  // A carry-over copy keeps its origin's ticketNumber/installerName/workDate (and its
+  // hold:originTicketId), so this reproduces the ORIGINAL row's own rowMatchKey from the copy.
+  const originMatchKeyOf = (copy: PayrollRow): string => {
+    const origTicketId = copy.customFields?.['hold:originTicketId']
+    return origTicketId
+      ? `tk:${origTicketId}|${copy.installerName.trim().toLowerCase()}`
+      : `nt:${(copy.ticketNumber || '').trim().toLowerCase()}|${copy.installerName.trim().toLowerCase()}|${copy.workDate || ''}`
+  }
+
+  // Which month a row's own save belongs to — a carry-over copy pins its month via hold:saveMonth
+  // (its workDate is the ORIGIN's, which is the wrong month to group it under; see flushSave below).
+  const saveMonthOf = (r: PayrollRow): string =>
+    r.customFields?.[HOLD_PREFIX + 'saveMonth'] || (r.workDate ? r.workDate.slice(0, 7) : (dateFrom ? dateFrom.slice(0, 7) : new Date().toISOString().slice(0, 7)))
 
   const monthsToFetch = useMemo(() => {
     const set = new Set<string>()
@@ -1098,7 +1291,7 @@ export default function Payroll() {
         for (const r of combinedSavedRows) {
           if (r.customFields) {
             for (const k of Object.keys(r.customFields)) {
-              if (k.startsWith('ded:') || k.startsWith('xfer:') || k.startsWith(MANUAL_FEE_PREFIX)) continue
+              if (k.startsWith('ded:') || k.startsWith('xfer:') || k.startsWith(MANUAL_FEE_PREFIX) || k.startsWith(HOLD_PREFIX)) continue
               if (!known.has(k)) {
                 known.add(k)
                 const label = k.replace(/^custom_/, '').replace(/_/g, ' ')
@@ -1152,6 +1345,244 @@ export default function Payroll() {
     void loadAndSync()
   }, [loadAndSync])
 
+  // Held Tickets — the whole branch, scanning the active month + the 2 months before it (the
+  // payroll API only takes a single ?month=, there's no all-months endpoint). Kept live (not just
+  // fetched when the modal opens) so the toolbar's "Held Tickets (N)" badge stays accurate.
+  const refreshHeldTickets = useCallback(async () => {
+    if (!branchFilter) {
+      setHeldTickets([])
+      return
+    }
+    setHeldTicketsLoading(true)
+    try {
+      const months = [activeMonth, prevMonth(activeMonth), prevMonth(prevMonth(activeMonth))]
+      const collected: { row: PayrollRow; month: string }[] = []
+      for (const m of months) {
+        const params = new URLSearchParams({ branchId: branchFilter, month: m })
+        const res = await fetch(`${API_BASE_URL}/v1/payroll?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        })
+        if (!res.ok) continue
+        const list = await res.json()
+        const monthRows: PayrollRow[] = (Array.isArray(list) ? list : []).map(mapSavedPayrollEntry)
+        for (const r of monthRows) {
+          if (isHeldRow(r)) collected.push({ row: r, month: m })
+        }
+      }
+      setHeldTickets(collected)
+    } catch (e) {
+      console.error('Failed to load held payroll tickets:', e)
+    } finally {
+      setHeldTicketsLoading(false)
+    }
+  }, [branchFilter, activeMonth])
+
+  useEffect(() => {
+    void refreshHeldTickets()
+  }, [refreshHeldTickets])
+
+  // Automatically fetch fresh held tickets on time whenever the popup opens
+  useEffect(() => {
+    if (heldTicketsOpen) {
+      void refreshHeldTickets()
+    }
+  }, [heldTicketsOpen, refreshHeldTickets])
+
+  // Put a job on hold — excludes it from its own week's totals until released. See "Hold action"
+  // in docs/payroll-hold-release-plan.md. Reason is required; the row must not already be a
+  // carry-over copy (only an original job can be held).
+  const submitHold = async () => {
+    if (!holdModalRow || !branchFilter || !activeWeek || !holdReason.trim()) return
+    setHoldSubmitting(true)
+    try {
+      const targetKey = rowMatchKey(holdModalRow)
+      const month = saveMonthOf(holdModalRow)
+      const heldAt = new Date().toISOString()
+      const heldBy = userDisplayName
+      const reason = holdReason.trim()
+      const ok = await mutateSavedMonth(branchFilter, month, rowsIn => rowsIn.map(r => rowMatchKey(r) === targetKey ? {
+        ...r,
+        customFields: {
+          ...(r.customFields || {}),
+          'hold:state': 'held',
+          'hold:reason': reason,
+          'hold:heldAt': heldAt,
+          'hold:heldBy': heldBy,
+          'hold:heldWeekFrom': activeWeek.from,
+          'hold:heldWeekTo': activeWeek.to,
+        },
+      } : r))
+      if (ok) {
+        setHoldModalRow(null)
+        setHoldReason('')
+        await loadAndSync(true)
+        void refreshHeldTickets()
+      } else {
+        setConfirmDialog({
+          title: 'Could Not Put on Hold',
+          message: 'Something went wrong saving this hold. Please try again.',
+          confirmText: 'OK',
+          variant: 'info',
+          onConfirm: () => {},
+        })
+      }
+    } finally {
+      setHoldSubmitting(false)
+    }
+  }
+
+  const openReleaseModal = (row: PayrollRow, month: string) => {
+    const defaultOpen = activeWeek && !closures.some(c => c.branchId === branchFilter && c.weekFrom === activeWeek.from && c.weekTo === activeWeek.to)
+    setReleaseFor({ row, month })
+    setReleaseTargetWeek(defaultOpen ? activeWeek : null)
+    setReleaseApprovalNote('')
+    setHeldTicketsOpen(false)
+  }
+
+  // Release a held ticket's full payout as a carry-over into an open target week — see "Release
+  // flow" in docs/payroll-hold-release-plan.md. The copy is inserted first; if marking the
+  // original as released then fails, the copy is removed so the payout is never counted twice.
+  const submitRelease = async () => {
+    if (!releaseFor || !branchFilter || !releaseTargetWeek) return
+    setReleaseSubmitting(true)
+    try {
+      const { row: heldRow, month: originMonth } = releaseFor
+      const targetWeek = releaseTargetWeek
+      const releasedAt = new Date().toISOString()
+      const releasedBy = userDisplayName
+      const approvalNote = releaseApprovalNote.trim()
+      const copyMarker = `cp-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+      const copyMonth = targetWeek.from.slice(0, 7)
+
+      // Deductions are per-period, attached to whichever row happens to hold them for that
+      // installer's week (see setDeduction) — never carry them into the copy's own new period.
+      const copyFields: Record<string, string> = {}
+      for (const [k, v] of Object.entries(heldRow.customFields || {})) {
+        if (k.startsWith(HOLD_PREFIX) || k.startsWith(DEDUCTION_PREFIX)) continue
+        copyFields[k] = v
+      }
+      copyFields['hold:carryOver'] = '1'
+      copyFields['hold:originRowId'] = heldRow.id
+      copyFields['hold:originMonth'] = originMonth
+      copyFields['hold:originWeekFrom'] = heldRow.customFields?.['hold:heldWeekFrom'] || ''
+      copyFields['hold:originWeekTo'] = heldRow.customFields?.['hold:heldWeekTo'] || ''
+      copyFields['hold:originTicketId'] = heldRow.ticketId || ''
+      copyFields['hold:targetWeekFrom'] = targetWeek.from
+      copyFields['hold:targetWeekTo'] = targetWeek.to
+      copyFields['hold:saveMonth'] = copyMonth
+      copyFields['hold:approvalNote'] = approvalNote
+      copyFields['hold:releasedBy'] = releasedBy
+      copyFields['hold:releasedAt'] = releasedAt
+      copyFields['hold:copyMarker'] = copyMarker
+
+      const copyRow: PayrollRow = { ...heldRow, id: copyMarker, ticketId: undefined, customFields: copyFields }
+
+      const insertOk = await mutateSavedMonth(branchFilter, copyMonth, rowsIn => [...rowsIn, copyRow])
+      if (!insertOk) {
+        setConfirmDialog({
+          title: 'Release Failed',
+          message: 'Could not save the carry-over into the target week. No changes were made.',
+          confirmText: 'OK',
+          variant: 'info',
+          onConfirm: () => {},
+        })
+        return
+      }
+
+      const origKey = rowMatchKey(heldRow)
+      const markOk = await mutateSavedMonth(branchFilter, originMonth, rowsIn => rowsIn.map(r => rowMatchKey(r) === origKey ? {
+        ...r,
+        customFields: {
+          ...(r.customFields || {}),
+          'hold:state': 'released',
+          'hold:releasedAt': releasedAt,
+          'hold:releasedBy': releasedBy,
+          'hold:approvalNote': approvalNote,
+          'hold:targetWeekFrom': targetWeek.from,
+          'hold:targetWeekTo': targetWeek.to,
+          'hold:copyId': copyMarker,
+        },
+      } : r))
+
+      if (!markOk) {
+        // Roll back the copy so the payout is never counted both as held AND released.
+        await mutateSavedMonth(branchFilter, copyMonth, rowsIn => rowsIn.filter(r => r.customFields?.['hold:copyMarker'] !== copyMarker))
+        setConfirmDialog({
+          title: 'Release Failed',
+          message: 'Could not update the original held ticket, so the release was rolled back. No changes were made.',
+          confirmText: 'OK',
+          variant: 'info',
+          onConfirm: () => {},
+        })
+        return
+      }
+
+      setReleaseFor(null)
+      setReleaseTargetWeek(null)
+      setReleaseApprovalNote('')
+      await loadAndSync(true)
+      void refreshHeldTickets()
+    } finally {
+      setReleaseSubmitting(false)
+    }
+  }
+
+  // Undo a release — removes the carry-over copy and puts the original back on hold.
+  const submitUndoRelease = async (copy: PayrollRow) => {
+    if (!branchFilter) return
+    const marker = copy.customFields?.['hold:copyMarker']
+    const copyMonth = copy.customFields?.['hold:saveMonth'] || copy.customFields?.['hold:targetWeekFrom']?.slice(0, 7) || ''
+    const originMonth = copy.customFields?.['hold:originMonth'] || ''
+    if (!marker || !copyMonth || !originMonth) return
+    const undoKey = marker
+    setUndoingRowKey(undoKey)
+    try {
+      const removeOk = await mutateSavedMonth(branchFilter, copyMonth, rowsIn => rowsIn.filter(r => r.customFields?.['hold:copyMarker'] !== marker))
+      if (!removeOk) {
+        setConfirmDialog({
+          title: 'Undo Failed',
+          message: 'Could not remove the carry-over. Please try again.',
+          confirmText: 'OK',
+          variant: 'info',
+          onConfirm: () => {},
+        })
+        return
+      }
+
+      const origKey = originMatchKeyOf(copy)
+      const restoreOk = await mutateSavedMonth(branchFilter, originMonth, rowsIn => rowsIn.map(r => {
+        if (rowMatchKey(r) !== origKey) return r
+        const cf = { ...(r.customFields || {}) }
+        cf['hold:state'] = 'held'
+        delete cf['hold:releasedAt']
+        delete cf['hold:releasedBy']
+        delete cf['hold:approvalNote']
+        delete cf['hold:targetWeekFrom']
+        delete cf['hold:targetWeekTo']
+        delete cf['hold:copyId']
+        return { ...r, customFields: cf }
+      }))
+
+      if (!restoreOk) {
+        // Put the copy back — otherwise the payout would vanish (neither held nor released).
+        await mutateSavedMonth(branchFilter, copyMonth, rowsIn => [...rowsIn, copy])
+        setConfirmDialog({
+          title: 'Undo Failed',
+          message: 'Could not restore the original hold, so the undo was rolled back. No changes were made.',
+          confirmText: 'OK',
+          variant: 'info',
+          onConfirm: () => {},
+        })
+        return
+      }
+
+      await loadAndSync(true)
+      void refreshHeldTickets()
+    } finally {
+      setUndoingRowKey(null)
+    }
+  }
+
   // Shared by every mutation below — groups by month (a row can belong to a different month
   // than the active filter) and pushes each group to its own backend save.
   const flushSave = (updated: PayrollRow[]) => {
@@ -1159,7 +1590,7 @@ export default function Payroll() {
     if (canManagePayroll && branchFilter) {
       const monthGroups = new Map<string, PayrollRow[]>()
       for (const r of updated) {
-        const m = r.workDate ? r.workDate.slice(0, 7) : (dateFrom ? dateFrom.slice(0, 7) : new Date().toISOString().slice(0, 7))
+        const m = saveMonthOf(r)
         if (!monthGroups.has(m)) monthGroups.set(m, [])
         monthGroups.get(m)!.push(r)
       }
@@ -1214,11 +1645,15 @@ export default function Payroll() {
   // a balance overwrites the latest row that holds one, else the latest job.
   const setDeduction = (installerRows: PayrollRow[], key: DeductionKey, value: string) => {
     if (isWeekClosed || installerRows.length === 0) return
-    let targetId = installerRows[0].id
+    // A carry-over copy sorts by its ORIGIN's (older) workDate, so it can land first/last in the
+    // period — never let it hold a deduction, or undoing the release deletes it (see plan landmine 5).
+    const eligible = installerRows.filter(r => !isCarryOver(r) && isActivePayRow(r))
+    const pool = eligible.length > 0 ? eligible : installerRows
+    let targetId = pool[0].id
     let stored = value
     if (BALANCE_DEDUCTION_KEYS.has(key)) {
-      const holder = [...installerRows].reverse().find(r => rawDeduction(r, key))
-      targetId = (holder ?? installerRows[installerRows.length - 1]).id
+      const holder = [...pool].reverse().find(r => rawDeduction(r, key))
+      targetId = (holder ?? pool[pool.length - 1]).id
     } else {
       const others = installerRows.reduce((sum, r) => r.id === targetId ? sum : sum + num(rawDeduction(r, key)), 0)
       const own = num(value) - others
@@ -1304,7 +1739,7 @@ export default function Payroll() {
 
   // Shared helper — used both by the column manager checkboxes (via toggleColumn) and the
   // right-click context menu (which knows the installer name directly, without the modal).
-  const toggleColumnForInstaller = (installerName: string, key: ColumnKey) => {
+  const toggleColumnForInstaller = (installerName: string, key: string) => {
     if (COLUMN_DEFS.find(c => c.key === key)?.pinned) return
     setHiddenColumnsByInstaller(prev => {
       const current = prev[installerName] ?? new Set(DEFAULT_HIDDEN_COLUMNS)
@@ -1314,7 +1749,7 @@ export default function Payroll() {
       return { ...prev, [installerName]: next }
     })
   }
-  const toggleColumn = (key: ColumnKey) => {
+  const toggleColumn = (key: string) => {
     if (!columnManagerFor) return
     toggleColumnForInstaller(columnManagerFor, key)
   }
@@ -1326,9 +1761,30 @@ export default function Payroll() {
   // hiddenColumnsByInstaller state the per-checkbox toggles use, so it's fully undoable.
   const applyColumnPreset = (cats: ColumnCategory[]) => {
     if (!columnManagerFor) return
-    const toHide = COLUMN_DEFS.filter(c => !c.pinned && !cats.includes(c.category as ColumnCategory)).map(c => c.key as ColumnKey)
+    const toHide = [
+      ...COLUMN_DEFS.filter(c => !c.pinned && !cats.includes(c.category as ColumnCategory)).map(c => c.key),
+      ...customColumnDefs.map(c => c.key),
+    ]
     setHiddenColumnsByInstaller(prev => ({ ...prev, [columnManagerFor]: new Set(toHide) }))
   }
+
+  // Checks whether every ticket/row for this installer has zero or empty input in the column
+  const isColumnEmpty = useCallback((key: string, installerRows: PayrollRow[]): boolean => {
+    if (!installerRows || installerRows.length === 0) return true
+    for (const r of installerRows) {
+      const accessor = columnAccessors[key]
+      const raw = accessor ? accessor.get(r) : r.customFields?.[key]
+      const colDef = COLUMN_DEFS.find(c => c.key === key)
+      const isMoney = colDef ? !!colDef.isMoney : (key.startsWith('custom_') || true)
+      if (isMoney) {
+        if (num(String(raw)) !== 0) return false
+      } else {
+        const str = String(raw || '').trim()
+        if (str !== '' && str !== '—' && str !== '-') return false
+      }
+    }
+    return true
+  }, [columnAccessors])
 
   // The grouping key IS the resolved identity now (not the raw ticket text), so "CRIS" and
   // "CRISANTO" — or any other alias of the same technician — collapse into one roster row
@@ -1349,13 +1805,29 @@ export default function Payroll() {
   // Every technician option the dropdown can offer — scoped to the selected date range (only
   // installers with a job in that window show up), but independent of technicianFilter itself
   // (so picking one doesn't collapse the list to just itself) and of the free-text search.
+  // Held rows and released originals never belong to a week's view (their payout, if any, now
+  // lives on their carry-over copy — see isActivePayRow). A carry-over copy keeps its ORIGIN's
+  // workDate, so it must be matched against the range by its hold:targetWeekFrom/To instead.
+  const rowInActiveWindow = (row: PayrollRow): boolean => {
+    if (!isActivePayRow(row)) return false
+    if (isCarryOver(row)) {
+      if (dateFrom && row.customFields?.['hold:targetWeekFrom'] !== dateFrom) return false
+      if (dateTo && row.customFields?.['hold:targetWeekTo'] !== dateTo) return false
+      return true
+    }
+    // Rows with no date (rare hand-added rows) aren't excluded by a date range —
+    // there's nothing to range-check, so they stay visible regardless of the filter.
+    if (row.workDate) {
+      if (dateFrom && row.workDate < dateFrom) return false
+      if (dateTo && row.workDate > dateTo) return false
+    }
+    return true
+  }
+
   const technicianOptions = useMemo(() => {
     const set = new Set<string>()
     for (const row of rows) {
-      if (row.workDate) {
-        if (dateFrom && row.workDate < dateFrom) continue
-        if (dateTo && row.workDate > dateTo) continue
-      }
+      if (!rowInActiveWindow(row)) continue
       const key = resolveGroupKey(row.installerName)
       if (inHouseTechnicianNames.has(key)) continue
       set.add(key)
@@ -1377,12 +1849,7 @@ export default function Payroll() {
         || r.customerName.toLowerCase().includes(term)
         || r.cityAddress.toLowerCase().includes(term)
       )) return false
-      // Rows with no date (rare hand-added rows) aren't excluded by a date range —
-      // there's nothing to range-check, so they stay visible regardless of the filter.
-      if (r.workDate) {
-        if (dateFrom && r.workDate < dateFrom) return false
-        if (dateTo && r.workDate > dateTo) return false
-      }
+      if (!rowInActiveWindow(r)) return false
       return true
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1408,6 +1875,48 @@ export default function Payroll() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredRows, installerAliases])
 
+  // Active tickets for the selected installer in the currently selected week (following the week selected on the list)
+  const selectedInstallerRows = useMemo(() => {
+    if (!selectedInstaller) return []
+    const term = search.toLowerCase()
+    const memberRows = rows.filter(r => {
+      const key = resolveGroupKey(r.installerName)
+      if (key !== selectedInstaller) return false
+      if (!isActivePayRow(r)) return false
+      if (!rowInActiveWindow(r)) return false
+      if (term && !(
+        r.installerName.toLowerCase().includes(term)
+        || r.customerName.toLowerCase().includes(term)
+        || r.cityAddress.toLowerCase().includes(term)
+      )) return false
+      return true
+    })
+    return memberRows.sort((a, b) => {
+      if (!a.workDate) return 1
+      if (!b.workDate) return -1
+      return a.workDate.localeCompare(b.workDate)
+    })
+  }, [rows, selectedInstaller, search, installerAliases, dateFrom, dateTo])
+
+  // Automatically hides any non-pinned columns that have no input across all rows for this installer
+  const hideEmptyColumnsFor = useCallback((installerName: string) => {
+    const installerRows = selectedInstaller === installerName
+      ? selectedInstallerRows
+      : (grouped.find(([name]) => name === installerName)?.[1] || [])
+    const allCols: { key: string; pinned?: boolean }[] = [
+      ...COLUMN_DEFS,
+      ...customColumnDefs.map(c => ({ key: c.key, pinned: false })),
+    ]
+    const newHidden = new Set<string>()
+    for (const c of allCols) {
+      if (c.pinned) continue
+      if (isColumnEmpty(c.key, installerRows)) {
+        newHidden.add(c.key)
+      }
+    }
+    setHiddenColumnsByInstaller(prev => ({ ...prev, [installerName]: newHidden }))
+  }, [selectedInstaller, selectedInstallerRows, grouped, customColumnDefs, isColumnEmpty])
+
   const grandTotal = useMemo(() => grouped.reduce((sum, [, r]) => sum + installerTotal(r), 0), [grouped])
   const globalDeductionTotal = useMemo(() => grouped.reduce((sum, [, r]) => sum + deductionTotal(r), 0), [grouped])
   const globalBaseInstallTotal = useMemo(() => baseInstallTotal(filteredRows), [filteredRows])
@@ -1419,13 +1928,16 @@ export default function Payroll() {
     : ''
 
 
-  // If filters change out from under the selected installer (different month/branch/search
+  // If filters change out from under the selected installer (different week/month/branch/search
   // leaves them with zero rows), fall back to the roster instead of showing a stuck blank page.
   useEffect(() => {
-    if (selectedInstaller && !grouped.some(([name]) => name === selectedInstaller)) {
-      setSelectedInstaller(null)
+    if (selectedInstaller && rows.length > 0 && !initialLoading) {
+      const exists = rows.some(r => resolveGroupKey(r.installerName) === selectedInstaller && isActivePayRow(r) && rowInActiveWindow(r))
+      if (!exists) {
+        handleSelectInstaller(null)
+      }
     }
-  }, [grouped, selectedInstaller])
+  }, [rows, selectedInstaller, initialLoading, handleSelectInstaller, dateFrom, dateTo])
 
   // Same fallback for the technician dropdown — narrowing the date range can drop the
   // selected technician's only job out of range, so clear it instead of showing a stuck
@@ -1450,12 +1962,21 @@ export default function Payroll() {
 
   const visibleColumnsFor = (installerName: string): ColumnDef[] => {
     const hidden = hiddenColumnsFor(installerName)
-    const fixed = COLUMN_DEFS.filter(c => c.pinned || !hidden.has(c.key as ColumnKey))
-    // Custom columns always show, right after the fixed set — no per-installer hide/show yet.
-    const custom: ColumnDef[] = customColumnDefs.map(cc => ({
-      key: cc.key, label: cc.label, width: 120, align: 'right', isMoney: true,
-    }))
-    return [...fixed, ...custom]
+    // Non-trailing columns from standard definitions
+    const fixedMiddle = COLUMN_DEFS.filter(
+      c => c.key !== 'remarks' && c.key !== 'audited' && (c.pinned || !hidden.has(c.key))
+    )
+    // Custom added columns (always stay on the left side of remarks and audited)
+    const custom: ColumnDef[] = customColumnDefs
+      .filter(cc => !hidden.has(cc.key))
+      .map(cc => ({
+        key: cc.key, label: cc.label, width: 120, align: 'right', isMoney: true,
+      }))
+    // Remarks and Audited are permanently fixed to the far-right last columns
+    const trailing: ColumnDef[] = COLUMN_DEFS.filter(
+      c => (c.key === 'remarks' || c.key === 'audited') && (c.pinned || !hidden.has(c.key))
+    )
+    return [...fixedMiddle, ...custom, ...trailing]
   }
   const zebraBg = isLight ? '#f8fafc' : '#0c1420'
   const rowHoverBg = isLight ? '#eef2f7' : '#111d33'
@@ -1549,7 +2070,17 @@ export default function Payroll() {
               <Building2 className="absolute left-3 w-4 h-4 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
               <select
                 value={branchFilter}
-                onChange={e => setBranchFilter(e.target.value)}
+                onChange={e => {
+                  const newBranchId = e.target.value
+                  setBranchFilter(newBranchId)
+                  setSelectedInstaller(null)
+                  const b = branches.find(x => x.id === newBranchId)
+                  if (b) {
+                    navigate(`/payouts/${normalizeSlug(b.name)}`)
+                  } else {
+                    navigate('/payouts')
+                  }
+                }}
                 className="w-full pl-9 pr-8 py-1.5 md:py-2 rounded-xl text-xs font-bold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#10B981]/50 border transition-all truncate"
                 style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
                 aria-label="Filter by Branch"
@@ -1686,15 +2217,17 @@ export default function Payroll() {
               onClick={openRatesModal}
               className="flex items-center gap-1.5 px-3 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all hover:border-emerald-500/50"
               style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-              title="Set this branch's payroll rates"
+              title="Set this branch's payout rates"
             >
               <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-500" />
-              <span className="hidden md:inline">Payroll Settings</span>
+              <span className="hidden md:inline">Payout Settings</span>
             </button>
           )}
 
-          {/* Week Summary Showcase button */}
-          {branchFilter && (
+
+
+          {/* Week Summary Showcase button — hidden on member table view */}
+          {branchFilter && !selectedInstaller && (
             <button
               type="button"
               onClick={() => setWeekSummaryOpen(true)}
@@ -1704,7 +2237,7 @@ export default function Payroll() {
                 borderColor: '#05966950',
                 color: isLight ? '#059669' : '#34D399',
               }}
-              title="Showcase weekly payroll summary breakdown for North or South branches"
+              title="Showcase weekly payouts summary breakdown for North or South branches"
             >
               <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
               <span className="hidden sm:inline font-black">Week Summary</span>
@@ -1716,8 +2249,8 @@ export default function Payroll() {
       </div>
 
 
-      {/* Week-tab strip */}
-      {branchFilter && branchWeeks.length > 0 && (
+      {/* Week-tab strip — hidden on member table view */}
+      {branchFilter && branchWeeks.length > 0 && !selectedInstaller && (
         <div
           className="-mx-5 md:mx-0 px-3 md:px-0 py-2 md:py-2.5 flex items-center justify-between gap-2 overflow-x-auto"
           style={{ borderBottom: `1px solid ${border}` }}
@@ -1864,42 +2397,57 @@ export default function Payroll() {
       ) : !branchFilter ? (
         <div className="rounded-2xl p-10 flex flex-col items-center justify-center gap-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
           <Building2 className="w-10 h-10 opacity-25" />
-          <p className="text-sm font-semibold" style={{ color: textMuted }}>Select a branch to view payroll.</p>
+          <p className="text-sm font-semibold" style={{ color: textMuted }}>Select a branch to view payouts.</p>
         </div>
       ) : grouped.length === 0 ? (
         <div className="rounded-2xl p-10 flex flex-col items-center justify-center gap-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
           <CheckCircle2 className="w-10 h-10 opacity-25 text-emerald-500" />
-          <p className="text-sm font-semibold" style={{ color: textMuted }}>No payroll entries yet — try "Sync from Schedules".</p>
+          <p className="text-sm font-semibold" style={{ color: textMuted }}>No payout entries yet — try "Sync Latest".</p>
         </div>
       ) : selectedInstaller ? (
-        // Detail view — just the selected installer's own table. No branch letterhead here —
-        // the installer's own name in the masthead below already says whose payroll this is.
+        // Detail view — just the selected installer's own table for the selected week.
         <div className="flex flex-col gap-4">
-          <button
-            type="button"
-            onClick={() => setSelectedInstaller(null)}
-            className="flex items-center gap-1.5 self-start px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
-            style={{ color: textMuted, backgroundColor: isLight ? '#eef2f7' : '#111d33' }}
-          >
-            <ChevronLeft className="w-3.5 h-3.5" />
-            All installers
-          </button>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <button
+              type="button"
+              onClick={() => handleSelectInstaller(null)}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all border shadow-2xs hover:border-emerald-500/50 cursor-pointer active:scale-95"
+              style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
+              title="Return to installers list"
+            >
+              <ChevronLeft className="w-4 h-4 text-emerald-500" />
+              <span>Back to All Installers</span>
+            </button>
+            <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-bold shadow-2xs" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}>
+              <Calendar className="w-3.5 h-3.5 text-emerald-500" />
+              <span>{activeWeek ? `Week ${activeWeek.weekNumber} (${activeWeek.label})` : formatMonth(activeMonth)}</span>
+              <span className="mx-1 text-slate-300 dark:text-slate-700">•</span>
+              <span className="text-emerald-600 dark:text-emerald-400 font-extrabold">{selectedInstallerRows.length} {selectedInstallerRows.length === 1 ? 'ticket' : 'tickets'}</span>
+            </div>
+          </div>
 
-          {grouped.filter(([name]) => name === selectedInstaller).map(([installerName, installerRows]) => {
+          {(() => {
+            const installerName = selectedInstaller
+            const installerRows = selectedInstallerRows
             const groupVisibleColumns = visibleColumnsFor(installerName)
+            // The job table/cards render only this period's own jobs; a released hold's carry-over
+            // copy gets its own table below instead (see docs/payroll-hold-release-plan.md). Gross,
+            // Net and roster totals still use the full installerRows (both lists) — see footer below.
+            const regularRows = installerRows.filter(r => !isCarryOver(r))
+            const carryRows = installerRows.filter(isCarryOver)
             // Each column is sized to its own content — the longest value (or the column's
             // total), or its header wrapped onto two lines — so nothing gets squashed or cut
             // off. Wide screens share the spare room out; narrow ones scroll sideways.
             const listTotals = groupVisibleColumns.map(col => {
-              if (col.key === 'remit') return remittanceTotal(installerRows)
+              if (col.key === 'remit') return remittanceTotal(regularRows)
               if (!col.isMoney) return null
-              return installerRows.reduce((sum, r) => sum + num(String(columnAccessors[col.key]?.get(r) ?? '')), 0)
+              return regularRows.reduce((sum, r) => sum + num(String(columnAccessors[col.key]?.get(r) ?? '')), 0)
             })
             const listWidths = groupVisibleColumns.map((col, i) => {
               const label = col.label.toUpperCase()
               const headW = measureText(label, LIST_HEAD_FONT, LIST_HEAD_TRACKING)
               let cellW = 0
-              for (const row of installerRows) {
+              for (const row of regularRows) {
                 const text = listCellText(col, row)
                 const w = measureText(text, col.key === 'customerName' ? LIST_CELL_BOLD_FONT : LIST_CELL_FONT)
                 if (w > cellW) cellW = w
@@ -1944,16 +2492,27 @@ export default function Payroll() {
                   <span className="text-xl md:text-2xl font-black uppercase tracking-wide text-center whitespace-nowrap" style={{ color: textPrimary }}>
                     {displayInstallerName(installerName).toUpperCase()}
                   </span>
-                  <div className="flex justify-end">
+                  <div className="flex items-center gap-2 justify-end">
+                    <button
+                      type="button"
+                      onClick={() => hideEmptyColumnsFor(installerName)}
+                      title="Hide all columns that have no values across all tickets for this technician"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50 cursor-pointer shadow-xs"
+                      style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
+                    >
+                      <EyeOff className="w-3.5 h-3.5 text-slate-400" />
+                      <span className="hidden sm:inline">Hide Empty Columns</span>
+                      <span className="sm:hidden">Hide Empty</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => openColumnManager(installerName)}
                       title="Show/hide columns"
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50 cursor-pointer"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50 cursor-pointer shadow-xs"
                       style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
                     >
                       <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-500" />
-                      Columns
+                      <span>Columns</span>
                     </button>
                   </div>
                 </div>
@@ -1989,7 +2548,7 @@ export default function Payroll() {
                           {groupVisibleColumns.map((col, i) => (
                             <div
                               key={col.key}
-                              className={`relative px-3 py-2.5 flex items-center leading-tight select-none text-left ${i === 0 ? 'pl-6' : ''} ${col.key === lastListPinKey ? 'pl-pin-edge' : ''}`}
+                              className={`relative px-3 py-2.5 flex items-center leading-tight select-none text-left ${col.key === lastListPinKey ? 'pl-pin-edge' : ''}`}
                               style={{
                                 ...listCellStyle(col, i, headerBg),
                                 color: col.key === 'remit' ? remitAccent : textMuted,
@@ -2001,7 +2560,7 @@ export default function Payroll() {
                                 setColCtxMenu({ x: e.clientX, y: e.clientY, col, installerName })
                               }}
                             >
-                              <span className="flex-1 min-w-0 overflow-hidden whitespace-nowrap">{col.label}</span>
+                              <span className="flex-1 min-w-0 overflow-hidden whitespace-nowrap text-left">{col.label}</span>
                               {/* Drag to resize (saved across reloads); double-click to auto-fit again. */}
                               <span
                                 onMouseDown={startColumnResize(col.key)}
@@ -2020,7 +2579,7 @@ export default function Payroll() {
                         </div>
 
                         {/* Job rows */}
-                        {installerRows.map((row, idx) => (
+                        {regularRows.map((row, idx) => (
                           <div
                             key={row.id}
                             tabIndex={0}
@@ -2096,7 +2655,7 @@ export default function Payroll() {
                                 return (
                                   <div
                                     key={col.key}
-                                    className={`px-1.5 py-1 flex items-center justify-start min-w-0 overflow-hidden text-left ${i === 0 ? 'pl-4' : ''} ${col.key === lastListPinKey ? 'pl-pin-edge' : ''}`}
+                                    className={`px-1.5 py-1 flex items-center justify-start min-w-0 overflow-hidden text-left ${col.key === lastListPinKey ? 'pl-pin-edge' : ''}`}
                                     style={{
                                       ...listCellStyle(col, i, 'var(--pl-bg)'),
                                       ...(col.key === 'remit' ? { backgroundColor: remitTint } : {}),
@@ -2154,7 +2713,7 @@ export default function Payroll() {
                               return (
                                 <div
                                   key={col.key}
-                                  className={`px-3 py-2.5 flex items-center justify-start min-w-0 overflow-hidden tabular-nums text-left transition-colors select-none ${i === 0 ? 'pl-6' : ''} ${col.key === lastListPinKey ? 'pl-pin-edge' : ''} ${!isReadOnly ? 'cursor-text hover:bg-emerald-500/5' : ''}`}
+                                  className={`px-3 py-2.5 flex items-center justify-start min-w-0 overflow-hidden tabular-nums text-left transition-colors select-none ${col.key === lastListPinKey ? 'pl-pin-edge' : ''} ${!isReadOnly ? 'cursor-text hover:bg-emerald-500/5' : ''}`}
                                   style={{
                                     ...listCellStyle(col, i, 'var(--pl-bg)'),
                                     ...(col.key === 'remit' ? { backgroundColor: remitTint } : {}),
@@ -2167,7 +2726,7 @@ export default function Payroll() {
                                   onTouchEnd={handleCellTouchEnd}
                                 >
                                   <span
-                                    className={`whitespace-nowrap ${col.key === 'customerName' ? 'font-semibold' : isStatus ? 'font-medium' : ''}`}
+                                    className={`whitespace-nowrap text-left ${col.key === 'customerName' ? 'font-semibold' : isStatus ? 'font-medium' : ''}`}
                                     style={{
                                       color: empty
                                         ? textMuted
@@ -2189,7 +2748,7 @@ export default function Payroll() {
                           </div>
                         ))}
 
-                        {installerRows.length === 0 ? (
+                        {regularRows.length === 0 ? (
                           <div className="px-6 py-8 text-center text-xs font-semibold" style={{ color: textMuted }}>
                             No jobs for this period.
                           </div>
@@ -2201,7 +2760,7 @@ export default function Payroll() {
                               return (
                                 <div
                                   key={col.key}
-                                  className={`px-3 py-2.5 flex items-center min-w-0 overflow-hidden tabular-nums font-bold text-left ${i === 0 ? 'pl-6' : ''} ${col.key === lastListPinKey ? 'pl-pin-edge' : ''}`}
+                                  className={`px-3 py-2.5 flex items-center min-w-0 overflow-hidden tabular-nums font-bold text-left ${col.key === lastListPinKey ? 'pl-pin-edge' : ''}`}
                                   style={{
                                     ...listCellStyle(col, i, headerBg),
                                     ...(col.key === 'remit' ? { backgroundColor: remitTint, color: remitAccent } : {}),
@@ -2256,7 +2815,7 @@ export default function Payroll() {
                     (editable only for manually added rows with no ticketId); every other
                     visible column becomes a label/value row below it. */}
                   <div className="md:hidden flex flex-col gap-2 p-3" style={{ backgroundColor: headerBg }}>
-                    {installerRows.map(row => (
+                    {regularRows.map(row => (
                       <div
                         key={row.id}
                         className="rounded-xl border p-3 flex flex-col gap-2"
@@ -2333,6 +2892,119 @@ export default function Payroll() {
                     ))}
                   </div>
 
+                  {/* Released Hold Tickets (Carried Over) — a released hold's full payout, counted
+                      under Add-ons in the footer below, not inline with this period's own jobs. */}
+                  {carryRows.length > 0 && (
+                    <div style={{ borderTop: `1px solid ${border}` }}>
+                      <div className="px-6 py-3 flex items-center gap-2" style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}>
+                        <Undo2 className="w-3.5 h-3.5 text-violet-500" />
+                        <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>
+                          Released Hold Tickets (Carried Over)
+                        </span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.16)', color: '#8B5CF6' }}>
+                          {carryRows.length}
+                        </span>
+                      </div>
+
+                      {/* Desktop table */}
+                      <div className="hidden md:block overflow-x-auto">
+                        <table className="w-full text-[13px]" style={{ color: textPrimary }}>
+                          <thead>
+                            <tr className="text-[11px] font-bold uppercase tracking-wide" style={{ color: textMuted, backgroundColor: cardBg }}>
+                              <th className="px-6 py-2 text-left" style={{ borderBottom: `1px solid ${border}` }}>Date</th>
+                              <th className="px-3 py-2 text-left" style={{ borderBottom: `1px solid ${border}` }}>Ticket</th>
+                              <th className="px-3 py-2 text-left" style={{ borderBottom: `1px solid ${border}` }}>Customer</th>
+                              <th className="px-3 py-2 text-left" style={{ borderBottom: `1px solid ${border}` }}>Released From</th>
+                              <th className="px-3 py-2 text-left" style={{ borderBottom: `1px solid ${border}` }}>Note / Approver</th>
+                              <th className="px-3 py-2 text-right" style={{ borderBottom: `1px solid ${border}` }}>Payout</th>
+                              <th className="px-6 py-2 text-right" style={{ borderBottom: `1px solid ${border}` }}></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {carryRows.map((row, idx) => {
+                              const undoKey = row.customFields?.['hold:copyMarker'] || row.id
+                              const fromLabel = row.customFields?.['hold:originWeekFrom'] && row.customFields?.['hold:originWeekTo']
+                                ? `${shortDate(row.customFields['hold:originWeekFrom'])} – ${shortDate(row.customFields['hold:originWeekTo'])}`
+                                : '—'
+                              return (
+                                <tr key={row.id} className={idx % 2 === 1 ? '' : ''} style={{ backgroundColor: idx % 2 === 1 ? zebraBg : cardBg }}>
+                                  <td className="px-6 py-2.5">{row.workDate ? shortDate(row.workDate) : '—'}</td>
+                                  <td className="px-3 py-2.5">{row.ticketNumber || '—'}</td>
+                                  <td className="px-3 py-2.5 font-semibold">{row.customerName || '—'}</td>
+                                  <td className="px-3 py-2.5">
+                                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.14)', color: '#8B5CF6' }}>
+                                      Week of {fromLabel}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2.5 max-w-[220px] truncate" style={{ color: textMuted }} title={row.customFields?.['hold:approvalNote'] || ''}>
+                                    {row.customFields?.['hold:approvalNote'] || '—'}
+                                    {row.customFields?.['hold:releasedBy'] && (
+                                      <span className="block text-[10px] font-semibold opacity-70">by {row.customFields['hold:releasedBy']}</span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2.5 text-right font-bold tabular-nums">₱{peso(rowTotal(row))}</td>
+                                  <td className="px-6 py-2.5 text-right">
+                                    {canManagePayroll && !isWeekClosed && (
+                                      <button
+                                        type="button"
+                                        onClick={() => void submitUndoRelease(row)}
+                                        disabled={undoingRowKey === undoKey}
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors hover:border-rose-500/50 hover:text-rose-500 disabled:opacity-50 cursor-pointer"
+                                        style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}
+                                      >
+                                        <Undo2 className="w-3 h-3" />
+                                        {undoingRowKey === undoKey ? 'Undoing…' : 'Undo release'}
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Mobile cards */}
+                      <div className="md:hidden flex flex-col gap-2 p-3" style={{ backgroundColor: headerBg }}>
+                        {carryRows.map(row => {
+                          const undoKey = row.customFields?.['hold:copyMarker'] || row.id
+                          const fromLabel = row.customFields?.['hold:originWeekFrom'] && row.customFields?.['hold:originWeekTo']
+                            ? `${shortDate(row.customFields['hold:originWeekFrom'])} – ${shortDate(row.customFields['hold:originWeekTo'])}`
+                            : '—'
+                          return (
+                            <div key={row.id} className="rounded-xl border p-3 flex flex-col gap-1.5" style={{ backgroundColor: cardBg, borderColor: border }}>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-sm font-extrabold truncate" style={{ color: textPrimary }}>{row.customerName || 'No customer'}</span>
+                                <span className="font-bold tabular-nums shrink-0" style={{ color: textPrimary }}>₱{peso(rowTotal(row))}</span>
+                              </div>
+                              <div className="text-[11px] font-semibold" style={{ color: textMuted }}>
+                                {row.workDate ? shortDate(row.workDate) : 'No date'} &middot; {row.ticketNumber || 'No ticket'}
+                              </div>
+                              <span className="self-start px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.14)', color: '#8B5CF6' }}>
+                                Released from week of {fromLabel}
+                              </span>
+                              {row.customFields?.['hold:approvalNote'] && (
+                                <span className="text-[11px]" style={{ color: textMuted }}>{row.customFields['hold:approvalNote']}</span>
+                              )}
+                              {canManagePayroll && !isWeekClosed && (
+                                <button
+                                  type="button"
+                                  onClick={() => void submitUndoRelease(row)}
+                                  disabled={undoingRowKey === undoKey}
+                                  className="self-start inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition-colors hover:border-rose-500/50 hover:text-rose-500 disabled:opacity-50 cursor-pointer mt-1"
+                                  style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}
+                                >
+                                  <Undo2 className="w-3 h-3" />
+                                  {undoingRowKey === undoKey ? 'Undoing…' : 'Undo release'}
+                                </button>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Jobs tab footer: Deductions summary with button on the left, Net payroll summary on the right */}
                   {(() => {
                     const gross = installerTotal(installerRows)
@@ -2342,33 +3014,48 @@ export default function Payroll() {
                     const dedRed = isLight ? '#DC2626' : '#F87171'
                     return (
                       <div className="flex flex-col lg:flex-row items-stretch" style={{ backgroundColor: headerBg, borderTop: `1px solid ${border}` }}>
-                        {/* Deductions banner */}
-                        <div className="flex-1 min-w-0 px-5 md:px-6 py-4 flex flex-col justify-center gap-2">
-                          <div className="flex flex-wrap items-center gap-2.5">
-                            <Receipt className="w-4 h-4 text-amber-500" />
-                            <span className="text-xs font-bold uppercase tracking-wider" style={{ color: textPrimary }}>Period Deductions</span>
-                            {totalDeduction > 0 ? (
-                              <span className="text-xs font-bold tabular-nums px-2 py-0.5 rounded-full" style={{ backgroundColor: isLight ? '#fee2e2' : '#7f1d1d', color: dedRed }}>
+                        {/* Deductions & Actions footer buttons — clean buttons, no icons, rich background colors */}
+                        <div className="flex-1 min-w-0 px-5 md:px-6 py-4 flex items-center gap-3 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => setDeductionsModalInstaller(installerName)}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+                            style={{
+                              backgroundColor: totalDeduction > 0 ? (isLight ? '#F59E0B' : '#D97706') : (isLight ? '#FEF3C7' : '#78350F40'),
+                              color: totalDeduction > 0 ? '#FFFFFF' : (isLight ? '#92400E' : '#FDE68A'),
+                              border: totalDeduction > 0 ? '1px solid #D97706' : (isLight ? '1px solid #FCD34D' : '1px solid #92400E'),
+                            }}
+                          >
+                            <span>View Deductions</span>
+                            {totalDeduction > 0 && (
+                              <span className="text-[11px] font-extrabold px-1.5 py-0.5 rounded-md bg-black/20 text-white">
                                 −₱{peso(totalDeduction)}
                               </span>
-                            ) : (
-                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: isLight ? '#f1f5f9' : '#0d1520', color: textMuted }}>
-                                ₱0.00
-                              </span>
                             )}
-                            <button
-                              type="button"
-                              onClick={() => setDeductionsModalInstaller(installerName)}
-                              className="ml-auto sm:ml-2 px-3 py-1 rounded-lg text-xs font-bold border transition-colors hover:border-amber-500/50 cursor-pointer flex items-center gap-1.5"
-                              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                            >
-                              <span>View Deductions</span>
-                              <ChevronRight className="w-3.5 h-3.5 text-amber-500" />
-                            </button>
-                          </div>
-                          <p className="text-xs font-medium" style={{ color: textMuted }}>
-                            Late minutes, AC loans &amp; cash advances, incomplete uploads, losses, uniform, and remit penalties.
-                          </p>
+                          </button>
+
+                          {canManagePayroll && (() => {
+                            const installerHeldCount = heldTickets.filter(h => resolveGroupKey(h.row.installerName) === resolveGroupKey(installerName)).length
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setHeldInstallerFilter(resolveGroupKey(installerName))
+                                  setHeldTicketsOpen(true)
+                                  void refreshHeldTickets()
+                                }}
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+                                style={{
+                                  backgroundColor: installerHeldCount > 0 ? (isLight ? '#EA580C' : '#C2410C') : (isLight ? '#F1F5F9' : '#1E293B'),
+                                  color: installerHeldCount > 0 ? '#FFFFFF' : (isLight ? '#475569' : '#94A3B8'),
+                                  border: installerHeldCount > 0 ? '1px solid #C2410C' : (isLight ? '1px solid #CBD5E1' : '1px solid #334155'),
+                                }}
+                                title={`View held tickets for ${displayInstallerName(installerName)}`}
+                              >
+                                <span>Held Tickets ({installerHeldCount})</span>
+                              </button>
+                            )
+                          })()}
                         </div>
 
                         {/* Net payroll */}
@@ -2392,7 +3079,7 @@ export default function Payroll() {
                             className="rounded-xl px-4 py-3 flex items-center justify-between gap-3"
                             style={{ backgroundColor: isLight ? 'rgba(16,185,129,0.10)' : 'rgba(16,185,129,0.16)', border: '1px solid rgba(16,185,129,0.45)' }}
                           >
-                            <span className="text-xs font-extrabold uppercase tracking-wider" style={{ color: isLight ? '#047857' : '#34D399' }}>Net Payroll</span>
+                            <span className="text-xs font-extrabold uppercase tracking-wider" style={{ color: isLight ? '#047857' : '#34D399' }}>Net Payout</span>
                             <span className="text-xl font-extrabold tabular-nums" style={{ color: net < 0 ? dedRed : (isLight ? '#047857' : '#34D399') }}>
                               {net < 0 ? '−' : ''}₱{peso(Math.abs(net))}
                             </span>
@@ -2403,7 +3090,7 @@ export default function Payroll() {
                   })()}
               </div>
             )
-          })}
+          })()}
         </div>
       ) : (
         // Roster / summary — one continuous ledger table covering the whole selected period (not
@@ -2417,8 +3104,8 @@ export default function Payroll() {
           >
             <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70" style={{ color: textMuted }}>Installer</span>
             <span className="text-[10px] font-semibold uppercase tracking-wider text-center opacity-70" style={{ color: textMuted }}>Completed Jobs</span>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-right opacity-70" style={{ color: textMuted }}>Payroll Amount</span>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-center opacity-70" style={{ color: textMuted }}>Payroll Status</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-right opacity-70" style={{ color: textMuted }}>Payout Amount</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-center opacity-70" style={{ color: textMuted }}>Payout Status</span>
           </div>
 
           {/* Data rows — hairline dividers, no per-row cards/shadows, just a row-hover tint */}
@@ -2426,19 +3113,23 @@ export default function Payroll() {
             // Net of this period's deductions (Late / Loan / Uniform …) — what the installer takes home.
             const total = installerNet(installerRows)
             const isComplete = installerRows.length > 0 && installerRows.every(r => r.status === 'COMPLETE')
-            const summaryRemarks = installerRows[0]?.remarks || ''
-            const summaryAudited = installerRows[0]?.audited || ''
+            // A carry-over copy keeps its ORIGIN's (older) workDate, so it can sort first in the
+            // period — never read the period's own remarks/audited off of it (same landmine as
+            // setDeduction above; see docs/payroll-hold-release-plan.md).
+            const summaryRow = installerRows.find(r => !isCarryOver(r)) ?? installerRows[0]
+            const summaryRemarks = summaryRow?.remarks || ''
+            const summaryAudited = summaryRow?.audited || ''
             return (
               <div
                 key={installerName}
                 role="button"
                 tabIndex={0}
-                title={`Open ${displayInstallerName(installerName).toUpperCase()}'s payroll`}
-                onClick={() => setSelectedInstaller(installerName)}
+                title={`Open ${displayInstallerName(installerName).toUpperCase()}'s payout`}
+                onClick={() => handleSelectInstaller(installerName)}
                 onKeyDown={e => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault()
-                    setSelectedInstaller(installerName)
+                    handleSelectInstaller(installerName)
                   }
                 }}
                 className="grid items-center gap-x-4 gap-y-3 px-6 md:px-7 py-5 md:py-6 transition-colors cursor-pointer"
@@ -2515,12 +3206,12 @@ export default function Payroll() {
                         <button
                           type="button"
                           onClick={e => {
-                            // The whole row opens the payroll — completing is its own action.
+                            // The whole row opens the payout — completing is its own action.
                             e.stopPropagation()
                             setCompleteModalFor(installerName)
                             setCompleteRemarks(summaryRemarks)
                           }}
-                          title="Click to complete payroll"
+                          title="Click to complete payout"
                           className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border text-xs font-semibold transition-colors cursor-pointer"
                           style={{
                             color: '#D97706',
@@ -2539,21 +3230,42 @@ export default function Payroll() {
 
           {/* Totals footer */}
           <div
-            className="flex flex-wrap items-center justify-end gap-x-9 gap-y-2 px-6 md:px-7 py-5"
+            className="flex flex-wrap items-center justify-between gap-4 px-6 md:px-7 py-5"
             style={{ backgroundColor: isLight ? '#f8fafc' : '#0d1520', borderTop: `1px solid ${border}` }}
           >
-            {([
-              { label: 'Remittance Collected', value: globalRemittanceTotal, color: remitAccent },
-              { label: 'Base Install Total', value: globalBaseInstallTotal, color: textPrimary },
-              { label: 'Total Add-on Pay', value: globalAddOnTotal, color: textPrimary },
-              { label: 'Total Deductions', value: globalDeductionTotal, color: globalDeductionTotal > 0 ? (isLight ? '#DC2626' : '#F87171') : textPrimary },
-              { label: 'Net Payout Due', value: grandTotal - globalDeductionTotal, color: '#10B981' },
-            ] as const).map(tile => (
-              <div key={tile.label} className="flex flex-col items-end">
-                <span className="text-[10px] font-medium uppercase tracking-wider opacity-60" style={{ color: textMuted }}>{tile.label}</span>
-                <span className="text-sm font-bold tabular-nums" style={{ color: tile.color }}>₱{peso(tile.value)}</span>
-              </div>
-            ))}
+            {canManagePayroll && (
+              <button
+                type="button"
+                onClick={() => {
+                  setHeldInstallerFilter('')
+                  setHeldTicketsOpen(true)
+                  void refreshHeldTickets()
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+                style={{
+                  backgroundColor: heldTickets.length > 0 ? (isLight ? '#EA580C' : '#C2410C') : (isLight ? '#F1F5F9' : '#1E293B'),
+                  color: heldTickets.length > 0 ? '#FFFFFF' : (isLight ? '#475569' : '#94A3B8'),
+                  border: heldTickets.length > 0 ? '1px solid #C2410C' : (isLight ? '1px solid #CBD5E1' : '1px solid #334155'),
+                }}
+                title="View every job currently on hold across this branch"
+              >
+                <span>Held Tickets ({heldTickets.length})</span>
+              </button>
+            )}
+            <div className="flex flex-wrap items-center justify-end gap-x-9 gap-y-2 ml-auto">
+              {([
+                { label: 'Remittance Collected', value: globalRemittanceTotal, color: remitAccent },
+                { label: 'Base Install Total', value: globalBaseInstallTotal, color: textPrimary },
+                { label: 'Total Add-on Pay', value: globalAddOnTotal, color: textPrimary },
+                { label: 'Total Deductions', value: globalDeductionTotal, color: globalDeductionTotal > 0 ? (isLight ? '#DC2626' : '#F87171') : textPrimary },
+                { label: 'Net Payout Due', value: grandTotal - globalDeductionTotal, color: '#10B981' },
+              ] as const).map(tile => (
+                <div key={tile.label} className="flex flex-col items-end">
+                  <span className="text-[10px] font-medium uppercase tracking-wider opacity-60" style={{ color: textMuted }}>{tile.label}</span>
+                  <span className="text-sm font-bold tabular-nums" style={{ color: tile.color }}>₱{peso(tile.value)}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -2563,8 +3275,13 @@ export default function Payroll() {
 
       {columnManagerFor && (() => {
         const hidden = hiddenColumnsFor(columnManagerFor)
-        const totalVisible = COLUMN_DEFS.filter(c => !c.pinned && !hidden.has(c.key as ColumnKey)).length
-        const totalToggleable = COLUMN_DEFS.filter(c => !c.pinned).length
+        const activeInstallerRows = grouped.find(([name]) => name === columnManagerFor)?.[1] || []
+        const allToggleableCols = [
+          ...COLUMN_DEFS.filter(c => !c.pinned),
+          ...customColumnDefs.map(c => ({ key: c.key, label: c.label, pinned: false, category: 'admin' as ColumnCategory })),
+        ]
+        const totalVisible = allToggleableCols.filter(c => !hidden.has(c.key)).length
+        const totalToggleable = allToggleableCols.length
 
         /* Category accent palette */
         const CAT_ACCENT: Record<ColumnCategory, { color: string; bg: string }> = {
@@ -2657,12 +3374,22 @@ export default function Payroll() {
                     key={preset.label}
                     type="button"
                     onClick={() => applyColumnPreset(preset.cats)}
-                    className="px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap border transition-all hover:border-emerald-500/60 hover:text-emerald-500"
+                    className="px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap border transition-all hover:border-emerald-500/60 hover:text-emerald-500 cursor-pointer"
                     style={{ color: textMuted, backgroundColor: inputBg, borderColor: inputBorder }}
                   >
                     {preset.label}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => columnManagerFor && hideEmptyColumnsFor(columnManagerFor)}
+                  className="px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap border transition-all hover:border-emerald-500/60 hover:text-emerald-500 flex items-center gap-1.5 cursor-pointer"
+                  style={{ color: '#10B981', backgroundColor: isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)', borderColor: '#10B98150' }}
+                  title="Automatically hide any columns that have zero/empty values across all tickets for this installer"
+                >
+                  <EyeOff className="w-3 h-3" />
+                  <span>Hide Empty Columns</span>
+                </button>
               </div>
 
               <div className="flex-1" />
@@ -2685,15 +3412,15 @@ export default function Payroll() {
               <button
                 type="button"
                 onClick={() => setHiddenColumnsByInstaller(prev => ({ ...prev, [columnManagerFor]: new Set() }))}
-                className="px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap border transition-all hover:border-emerald-500/60"
+                className="px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap border transition-all hover:border-emerald-500/60 cursor-pointer"
                 style={{ color: '#10B981', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.10)', borderColor: isLight ? '#a7f3d0' : 'rgba(16,185,129,0.25)' }}
               >
                 Show all
               </button>
               <button
                 type="button"
-                onClick={() => setHiddenColumnsByInstaller(prev => ({ ...prev, [columnManagerFor]: new Set(COLUMN_DEFS.filter(c => !c.pinned).map(c => c.key as ColumnKey)) }))}
-                className="px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap border transition-all hover:border-red-400/50 hover:text-red-400"
+                onClick={() => setHiddenColumnsByInstaller(prev => ({ ...prev, [columnManagerFor]: new Set(allToggleableCols.map(c => c.key)) }))}
+                className="px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap border transition-all hover:border-red-400/50 hover:text-red-400 cursor-pointer"
                 style={{ color: textMuted, backgroundColor: inputBg, borderColor: inputBorder }}
               >
                 Hide all
@@ -2713,7 +3440,7 @@ export default function Payroll() {
                   if (cols.length === 0) return null
                   const meta = CATEGORY_META[cat]
                   const acc = CAT_ACCENT[cat]
-                  const visibleCount = cols.filter(c => !hidden.has(c.key as ColumnKey)).length
+                  const visibleCount = cols.filter(c => !hidden.has(c.key)).length
                   const allOn = visibleCount === cols.length
                   const anyOn = visibleCount > 0
 
@@ -2735,9 +3462,9 @@ export default function Payroll() {
                           if (!columnManagerFor) return
                           const newHidden = new Set(hidden)
                           if (allOn) {
-                            cols.forEach(c => newHidden.add(c.key as ColumnKey))
+                            cols.forEach(c => newHidden.add(c.key))
                           } else {
-                            cols.forEach(c => newHidden.delete(c.key as ColumnKey))
+                            cols.forEach(c => newHidden.delete(c.key))
                           }
                           setHiddenColumnsByInstaller(prev => ({ ...prev, [columnManagerFor]: newHidden }))
                         }}
@@ -2762,7 +3489,8 @@ export default function Payroll() {
                       {/* Column rows */}
                       <div className="flex flex-col" style={{ backgroundColor: cardBg }}>
                         {cols.map((col, i) => {
-                          const on = !hidden.has(col.key as ColumnKey)
+                          const on = !hidden.has(col.key)
+                          const empty = isColumnEmpty(col.key, activeInstallerRows)
                           return (
                             <label
                               key={col.key}
@@ -2776,7 +3504,7 @@ export default function Payroll() {
                                 <input
                                   type="checkbox"
                                   checked={on}
-                                  onChange={() => toggleColumn(col.key as ColumnKey)}
+                                  onChange={() => toggleColumn(col.key)}
                                 />
                                 <span className="col-toggle-track" />
                                 <span className="col-toggle-thumb" />
@@ -2787,6 +3515,14 @@ export default function Payroll() {
                               >
                                 {col.label}
                               </span>
+                              {empty && (
+                                <span
+                                  className="text-[9px] font-bold px-1.5 py-0.5 rounded tracking-wider uppercase opacity-60"
+                                  style={{ backgroundColor: isLight ? '#f1f5f9' : '#0d1520', color: textMuted }}
+                                >
+                                  No inputs
+                                </span>
+                              )}
                             </label>
                           )
                         })}
@@ -2847,31 +3583,51 @@ export default function Payroll() {
 
                 {/* Custom list */}
                 {customColumnDefs.length > 0 ? (
-                  customColumnDefs.map((cc, idx) => (
-                    <div
-                      key={cc.key}
-                      className="flex items-center gap-3 px-4 py-2.5 transition-colors col-mgr-row"
-                      style={{ borderTop: idx > 0 ? `1px solid ${border}` : 'none', backgroundColor: cardBg }}
-                    >
-                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: '#10B981' }} />
-                      <span className="text-xs font-bold flex-1 truncate" style={{ color: textPrimary }}>{cc.label}</span>
-                      <span
-                        className="text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 truncate max-w-[120px]"
-                        title={cc.key}
-                        style={{ backgroundColor: isLight ? '#f1f5f9' : '#0d1520', color: textMuted }}
+                  customColumnDefs.map((cc, idx) => {
+                    const on = !hidden.has(cc.key)
+                    const empty = isColumnEmpty(cc.key, activeInstallerRows)
+                    return (
+                      <div
+                        key={cc.key}
+                        className="flex items-center gap-3 px-4 py-2.5 transition-colors col-mgr-row"
+                        style={{ borderTop: idx > 0 ? `1px solid ${border}` : 'none', backgroundColor: cardBg }}
                       >
-                        {cc.key}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => removeCustomColumn(cc.key)}
-                        className="p-1.5 rounded-lg hover:bg-red-500/15 transition-colors shrink-0"
-                        title={`Delete "${cc.label}" from all installer tables`}
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                      </button>
-                    </div>
-                  ))
+                        <span className="col-toggle">
+                          <input
+                            type="checkbox"
+                            checked={on}
+                            onChange={() => toggleColumn(cc.key)}
+                          />
+                          <span className="col-toggle-track" />
+                          <span className="col-toggle-thumb" />
+                        </span>
+                        <span className="text-xs font-bold flex-1 truncate" style={{ color: on ? textPrimary : textMuted }}>{cc.label}</span>
+                        {empty && (
+                          <span
+                            className="text-[9px] font-bold px-1.5 py-0.5 rounded tracking-wider uppercase opacity-60 shrink-0"
+                            style={{ backgroundColor: isLight ? '#f1f5f9' : '#0d1520', color: textMuted }}
+                          >
+                            No inputs
+                          </span>
+                        )}
+                        <span
+                          className="text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 truncate max-w-[120px]"
+                          title={cc.key}
+                          style={{ backgroundColor: isLight ? '#f1f5f9' : '#0d1520', color: textMuted }}
+                        >
+                          {cc.key}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeCustomColumn(cc.key)}
+                          className="p-1.5 rounded-lg hover:bg-red-500/15 transition-colors shrink-0 cursor-pointer"
+                          title={`Delete "${cc.label}" from all installer tables`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                        </button>
+                      </div>
+                    )
+                  })
                 ) : (
                   <div
                     className="text-xs font-medium text-center py-5 px-4"
@@ -2895,7 +3651,7 @@ export default function Payroll() {
                 <button
                   type="button"
                   onClick={() => setColumnManagerFor(null)}
-                  className="px-5 py-2 rounded-xl text-xs font-bold text-white transition-opacity hover:opacity-90"
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-white transition-opacity hover:opacity-90 cursor-pointer"
                   style={{ background: 'linear-gradient(135deg,#10B981,#059669)', boxShadow: '0 4px 12px rgba(16,185,129,0.30)' }}
                 >
                   Done
@@ -3305,6 +4061,28 @@ export default function Payroll() {
                   </div>
                 </div>
 
+                {/* Put on Hold — carries this job's payout to a later week's Held Tickets list
+                    instead of this week's totals; see docs/payroll-hold-release-plan.md. */}
+                {canManagePayroll && !isWeekClosed && !isCarryOver(liveRow) && (
+                  <div
+                    className="flex items-center justify-between gap-3 px-6 py-2.5 shrink-0"
+                    style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#fafafa' : '#080f1c' }}
+                  >
+                    <span className="text-[11px] font-medium opacity-60" style={{ color: textMuted }}>
+                      Carry this job's payout to a later payroll week
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => { setDetailRow(null); setHoldModalRow(liveRow); setHoldReason('') }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all hover:border-amber-500/60 hover:bg-amber-500/10 shrink-0 cursor-pointer"
+                      style={{ color: '#D97706', borderColor: isLight ? '#fde68a' : 'rgba(217,119,6,0.35)', backgroundColor: isLight ? '#fffbeb' : 'rgba(217,119,6,0.08)' }}
+                    >
+                      <PauseCircle className="w-3.5 h-3.5" />
+                      Put on Hold
+                    </button>
+                  </div>
+                )}
+
                 {/* View Ticket action — jumps to the actual ticket behind this payroll row */}
                 {(liveRow.ticketId || liveRow.ticketNumber) && (
                   <div
@@ -3465,7 +4243,7 @@ export default function Payroll() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2.5 flex-wrap">
                         <h2 className="text-base font-extrabold tracking-tight" style={{ color: textPrimary }}>
-                          Payroll Rate Settings
+                          Payout Rate Settings
                         </h2>
                         <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
                           {currentBranchDisplay || 'Branch'}
@@ -3974,7 +4752,7 @@ export default function Payroll() {
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-emerald-500" />
                 <h2 className="text-sm font-black uppercase tracking-wide" style={{ color: textPrimary }}>
-                  COMPLETE PAYROLL — {displayInstallerName(completeModalFor).toUpperCase()}
+                  COMPLETE PAYOUT — {displayInstallerName(completeModalFor).toUpperCase()}
                 </h2>
               </div>
               <button type="button" onClick={() => setCompleteModalFor(null)} className="p-1.5 rounded-lg hover:bg-slate-500/10 transition-colors">
@@ -4053,6 +4831,328 @@ export default function Payroll() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Hold modal — see docs/payroll-hold-release-plan.md */}
+      {holdModalRow && createPortal(
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-2xl border shadow-2xl flex flex-col overflow-hidden" style={{ backgroundColor: cardBg, borderColor: border }}>
+            <div className="flex items-start justify-between gap-3 px-6 py-4 shrink-0" style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <PauseCircle className="w-4 h-4 text-amber-500" />
+                  <span className="text-sm font-extrabold uppercase tracking-wide" style={{ color: textPrimary }}>Put on Hold</span>
+                </div>
+                <div className="text-xs font-semibold mt-1 truncate" style={{ color: textMuted }}>
+                  {holdModalRow.customerName || 'No customer'} · {holdModalRow.ticketNumber || 'No ticket'}
+                  {' · '}<span className="text-emerald-500">{displayInstallerName(holdModalRow.installerName)}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setHoldModalRow(null); setHoldReason('') }}
+                className="p-2 rounded-full shrink-0 border cursor-pointer hover:bg-red-500 hover:border-red-500 hover:text-white transition-all"
+                style={{ color: textMuted, backgroundColor: inputBg, borderColor: inputBorder }}
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" strokeWidth={2.5} />
+              </button>
+            </div>
+            <div className="px-6 py-5 flex flex-col gap-3">
+              <div
+                className="flex items-center justify-between rounded-xl px-4 py-3"
+                style={{ backgroundColor: isLight ? '#fffbeb' : 'rgba(217,119,6,0.08)', border: `1px solid ${isLight ? '#fde68a' : 'rgba(217,119,6,0.3)'}` }}
+              >
+                <span className="text-xs font-bold uppercase tracking-wide" style={{ color: '#D97706' }}>Job Payout</span>
+                <span className="text-lg font-extrabold tabular-nums" style={{ color: '#D97706' }}>₱{peso(rowTotal(holdModalRow))}</span>
+              </div>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Reason (required)</span>
+                <textarea
+                  rows={3}
+                  value={holdReason}
+                  onChange={e => setHoldReason(e.target.value)}
+                  placeholder="Why is this job's payout being held? e.g. Approved by Ma'am Patt"
+                  className="w-full rounded-xl border p-3 text-xs font-semibold outline-none focus:ring-2 focus:ring-amber-500/40 resize-none"
+                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                />
+              </label>
+            </div>
+            <div
+              className="flex items-center justify-end gap-3 px-6 py-4 shrink-0"
+              style={{ backgroundColor: isLight ? 'rgba(241, 245, 249, 0.7)' : 'rgba(15, 26, 46, 0.7)', borderTop: `1px solid ${border}` }}
+            >
+              <button
+                type="button"
+                onClick={() => { setHoldModalRow(null); setHoldReason('') }}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold border transition-all hover:opacity-80 cursor-pointer"
+                style={{ borderColor: border, color: textMuted, backgroundColor: inputBg }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitHold()}
+                disabled={!holdReason.trim() || holdSubmitting}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black text-white transition-all shadow-md disabled:opacity-50 cursor-pointer"
+                style={{ background: '#D97706' }}
+              >
+                {holdSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <PauseCircle className="w-4 h-4" />}
+                <span>{holdSubmitting ? 'Holding…' : 'Confirm Hold'}</span>
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Held Tickets — branch-wide, spans the active month + the 2 months before it; see
+          docs/payroll-hold-release-plan.md */}
+      {heldTicketsOpen && createPortal(
+        (() => {
+          const term = heldSearch.trim().toLowerCase()
+          const heldInstallerOptions = Array.from(new Set([
+            ...heldTickets.map(({ row }) => resolveGroupKey(row.installerName)),
+            ...(heldInstallerFilter ? [heldInstallerFilter] : []),
+            ...technicianOptions,
+          ])).sort((a, b) => a.localeCompare(b))
+          const visibleHeld = heldTickets.filter(({ row }) => {
+            const groupKey = resolveGroupKey(row.installerName)
+            if (heldInstallerFilter && groupKey !== heldInstallerFilter) return false
+            if (term && !(
+              row.customerName.toLowerCase().includes(term)
+              || (row.ticketNumber || '').toLowerCase().includes(term)
+              || row.installerName.toLowerCase().includes(term)
+            )) return false
+            return true
+          })
+          return (
+            <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-150">
+              <div
+                className="w-full max-w-5xl rounded-2xl border shadow-2xl flex flex-col overflow-hidden"
+                style={{ maxHeight: '90vh', backgroundColor: cardBg, borderColor: border }}
+              >
+                <div className="flex items-start justify-between gap-3 px-6 py-4 shrink-0" style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Archive className="w-5 h-5 text-amber-500 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <div className="text-base font-extrabold uppercase tracking-wide truncate" style={{ color: textPrimary }}>
+                          Held Tickets — {heldInstallerFilter ? displayInstallerName(heldInstallerFilter).toUpperCase() : (currentBranchDisplay || 'Branch')}
+                        </div>
+                        {heldTicketsLoading && <Loader2 className="w-4 h-4 animate-spin text-amber-500 shrink-0" />}
+                      </div>
+                      <div className="text-xs font-semibold" style={{ color: textMuted }}>
+                        {heldTicketsLoading ? 'Loading latest tickets…' : `${visibleHeld.length} held job${visibleHeld.length === 1 ? '' : 's'}`}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setHeldTicketsOpen(false)}
+                    className="p-2.5 rounded-full shrink-0 border cursor-pointer hover:bg-red-500 hover:border-red-500 hover:text-white transition-all"
+                    style={{ color: textMuted, backgroundColor: inputBg, borderColor: inputBorder }}
+                    aria-label="Close"
+                  >
+                    <X className="w-5 h-5" strokeWidth={2.5} />
+                  </button>
+                </div>
+
+                <div className="px-6 py-3 flex flex-wrap items-center gap-2 border-b shrink-0" style={{ borderColor: border }}>
+                  <div className="relative w-48 md:w-60">
+                    <Users className="absolute left-3 w-3.5 h-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
+                    <select
+                      value={heldInstallerFilter}
+                      onChange={e => setHeldInstallerFilter(e.target.value)}
+                      className="w-full pl-8 pr-6 py-1.5 rounded-lg text-xs font-bold appearance-none cursor-pointer border truncate"
+                      style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
+                    >
+                      <option value="">ALL TECHNICIANS</option>
+                      {heldInstallerOptions.map(name => (
+                        <option key={name} value={name}>{displayInstallerName(name).toUpperCase()}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="relative w-48 md:w-64">
+                    <Search className="absolute left-3 w-3.5 h-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
+                    <input
+                      type="text"
+                      placeholder="Search…"
+                      value={heldSearch}
+                      onChange={e => setHeldSearch(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 rounded-lg text-xs font-semibold border"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                  {visibleHeld.length === 0 ? (
+                    <div className="py-16 text-center text-xs font-semibold" style={{ color: textMuted }}>
+                      {heldTicketsLoading ? 'Loading held tickets…' : 'No held tickets match this filter.'}
+                    </div>
+                  ) : (
+                    <table className="w-full text-[13px]" style={{ color: textPrimary }}>
+                      <thead className="sticky top-0" style={{ backgroundColor: headerBg }}>
+                        <tr className="text-[11px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>
+                          <th className="px-6 py-2.5 text-left" style={{ borderBottom: `1px solid ${border}` }}>Date</th>
+                          <th className="px-3 py-2.5 text-left" style={{ borderBottom: `1px solid ${border}` }}>Ticket</th>
+                          <th className="px-3 py-2.5 text-left" style={{ borderBottom: `1px solid ${border}` }}>Customer</th>
+                          <th className="px-3 py-2.5 text-left" style={{ borderBottom: `1px solid ${border}` }}>Installer</th>
+                          <th className="px-3 py-2.5 text-left" style={{ borderBottom: `1px solid ${border}` }}>Original Week</th>
+                          <th className="px-3 py-2.5 text-left" style={{ borderBottom: `1px solid ${border}` }}>Reason</th>
+                          <th className="px-3 py-2.5 text-left" style={{ borderBottom: `1px solid ${border}` }}>Held By</th>
+                          <th className="px-3 py-2.5 text-right" style={{ borderBottom: `1px solid ${border}` }}>Payout</th>
+                          <th className="px-6 py-2.5 text-right" style={{ borderBottom: `1px solid ${border}` }}></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleHeld.map(({ row, month }, idx) => {
+                          const weekLabel = row.customFields?.['hold:heldWeekFrom'] && row.customFields?.['hold:heldWeekTo']
+                            ? `${shortDate(row.customFields['hold:heldWeekFrom'])} – ${shortDate(row.customFields['hold:heldWeekTo'])}`
+                            : '—'
+                          return (
+                            <tr key={`${month}-${row.id}`} style={{ backgroundColor: idx % 2 === 1 ? zebraBg : cardBg }}>
+                              <td className="px-6 py-2.5 whitespace-nowrap">{row.workDate ? shortDate(row.workDate) : '—'}</td>
+                              <td className="px-3 py-2.5 whitespace-nowrap">{row.ticketNumber || '—'}</td>
+                              <td className="px-3 py-2.5 font-semibold max-w-[180px] truncate">{row.customerName || '—'}</td>
+                              <td className="px-3 py-2.5 whitespace-nowrap text-emerald-600 dark:text-emerald-400 font-bold">{displayInstallerName(row.installerName)}</td>
+                              <td className="px-3 py-2.5 whitespace-nowrap">{weekLabel}</td>
+                              <td className="px-3 py-2.5 max-w-[220px] truncate" style={{ color: textMuted }} title={row.customFields?.['hold:reason'] || ''}>
+                                {row.customFields?.['hold:reason'] || '—'}
+                              </td>
+                              <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: textMuted }}>
+                                {row.customFields?.['hold:heldBy'] || '—'}
+                                {row.customFields?.['hold:heldAt'] && (
+                                  <span className="block text-[10px] opacity-70">{new Date(row.customFields['hold:heldAt']).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2.5 text-right font-bold tabular-nums whitespace-nowrap">₱{peso(rowTotal(row))}</td>
+                              <td className="px-6 py-2.5 text-right whitespace-nowrap">
+                                {canManagePayroll && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openReleaseModal(row, month)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-all hover:border-emerald-500/60 hover:bg-emerald-500/10 cursor-pointer"
+                                    style={{ color: '#10B981', borderColor: isLight ? '#a7f3d0' : 'rgba(16,185,129,0.35)', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.08)' }}
+                                  >
+                                    <Send className="w-3 h-3" />
+                                    Release to Payouts
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            </div>
+          )
+        })(),
+        document.body
+      )}
+
+      {/* Release modal — see docs/payroll-hold-release-plan.md */}
+      {releaseFor && createPortal(
+        (() => {
+          const targetWeekOptions = [
+            ...weeksOfMonth(activeMonth, cycle),
+            ...weeksOfMonth(nextMonth(activeMonth), cycle),
+          ].filter(w => !closures.some(c => c.branchId === branchFilter && c.weekFrom === w.from && c.weekTo === w.to))
+          return (
+            <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-150">
+              <div className="w-full max-w-md rounded-2xl border shadow-2xl flex flex-col overflow-hidden" style={{ backgroundColor: cardBg, borderColor: border }}>
+                <div className="flex items-start justify-between gap-3 px-6 py-4 shrink-0" style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Send className="w-4 h-4 text-emerald-500" />
+                      <span className="text-sm font-extrabold uppercase tracking-wide" style={{ color: textPrimary }}>Release to Payouts</span>
+                    </div>
+                    <div className="text-xs font-semibold mt-1 truncate" style={{ color: textMuted }}>
+                      {releaseFor.row.customerName || 'No customer'} · {releaseFor.row.ticketNumber || 'No ticket'}
+                      {' · '}<span className="text-emerald-500">{displayInstallerName(releaseFor.row.installerName)}</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setReleaseFor(null); setReleaseTargetWeek(null); setReleaseApprovalNote('') }}
+                    className="p-2 rounded-full shrink-0 border cursor-pointer hover:bg-red-500 hover:border-red-500 hover:text-white transition-all"
+                    style={{ color: textMuted, backgroundColor: inputBg, borderColor: inputBorder }}
+                    aria-label="Close"
+                  >
+                    <X className="w-4 h-4" strokeWidth={2.5} />
+                  </button>
+                </div>
+                <div className="px-6 py-5 flex flex-col gap-3">
+                  <div
+                    className="flex items-center justify-between rounded-xl px-4 py-3"
+                    style={{ backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.08)', border: `1px solid ${isLight ? '#a7f3d0' : 'rgba(16,185,129,0.3)'}` }}
+                  >
+                    <span className="text-xs font-bold uppercase tracking-wide" style={{ color: '#059669' }}>Full Payout (counts as Add-ons)</span>
+                    <span className="text-lg font-extrabold tabular-nums" style={{ color: '#059669' }}>₱{peso(rowTotal(releaseFor.row))}</span>
+                  </div>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Target Week (open weeks only)</span>
+                    <select
+                      value={releaseTargetWeek ? `${releaseTargetWeek.from}|${releaseTargetWeek.to}` : ''}
+                      onChange={e => {
+                        const [from, to] = e.target.value.split('|')
+                        setReleaseTargetWeek(targetWeekOptions.find(w => w.from === from && w.to === to) || null)
+                      }}
+                      className="w-full px-3 py-2.5 rounded-xl border text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500/40"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                    >
+                      <option value="">Select a target week…</option>
+                      {targetWeekOptions.map(w => (
+                        <option key={`${w.from}|${w.to}`} value={`${w.from}|${w.to}`}>
+                          {formatMonth(w.owningMonth)} — Week {w.weekNumber} ({w.label})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Approval Note (optional)</span>
+                    <textarea
+                      rows={2}
+                      value={releaseApprovalNote}
+                      onChange={e => setReleaseApprovalNote(e.target.value)}
+                      placeholder="e.g. Approved by Ma'am Patt"
+                      className="w-full rounded-xl border p-3 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/40 resize-none"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                    />
+                  </label>
+                </div>
+                <div
+                  className="flex items-center justify-end gap-3 px-6 py-4 shrink-0"
+                  style={{ backgroundColor: isLight ? 'rgba(241, 245, 249, 0.7)' : 'rgba(15, 26, 46, 0.7)', borderTop: `1px solid ${border}` }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => { setReleaseFor(null); setReleaseTargetWeek(null); setReleaseApprovalNote('') }}
+                    className="px-5 py-2.5 rounded-xl text-xs font-bold border transition-all hover:opacity-80 cursor-pointer"
+                    style={{ borderColor: border, color: textMuted, backgroundColor: inputBg }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void submitRelease()}
+                    disabled={!releaseTargetWeek || releaseSubmitting}
+                    className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black text-white transition-all shadow-md disabled:opacity-50 cursor-pointer"
+                    style={{ background: '#10B981' }}
+                  >
+                    {releaseSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    <span>{releaseSubmitting ? 'Releasing…' : 'Confirm Release'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        })(),
+        document.body
       )}
 
       <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />

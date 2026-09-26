@@ -148,7 +148,12 @@ export default function App() {
             <Route path="/collections" element={<ForCollections />} />
             <Route path="/commissions" element={<Commissions />} />
             <Route path="/cash-advances" element={<CashAdvances />} />
+            <Route path="/payouts" element={<Payroll />} />
+            <Route path="/payouts/:branchSlug" element={<Payroll />} />
+            <Route path="/payouts/:branchSlug/:installerSlug" element={<Payroll />} />
             <Route path="/payroll" element={<Payroll />} />
+            <Route path="/payroll/:branchSlug" element={<Payroll />} />
+            <Route path="/payroll/:branchSlug/:installerSlug" element={<Payroll />} />
             <Route path="/lineup" element={<LineUp />} />
             <Route path="/weekly-field-schedule" element={<Navigate to="/lineup?tab=weekly" replace />} />
             <Route path="/service-report" element={<DailyServiceReport />} />
