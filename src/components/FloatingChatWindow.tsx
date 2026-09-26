@@ -23,9 +23,10 @@ export default function FloatingChatWindow() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const messageCacheRef = useRef<Record<string, ChatMessage[]>>({})
 
@@ -35,11 +36,40 @@ export default function FloatingChatWindow() {
     [conversations, activeId]
   )
 
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+
+    const handleResize = () => {
+      setViewportHeight(vv.height)
+      window.scrollTo(0, 0)
+    }
+
+    vv.addEventListener('resize', handleResize)
+    vv.addEventListener('scroll', handleResize)
+    handleResize()
+
+    return () => {
+      vv.removeEventListener('resize', handleResize)
+      vv.removeEventListener('scroll', handleResize)
+    }
+  }, [])
+
   const focusInput = useCallback(() => {
+    window.scrollTo(0, 0)
     inputRef.current?.focus()
-    requestAnimationFrame(() => inputRef.current?.focus())
-    const t1 = setTimeout(() => inputRef.current?.focus(), 50)
-    const t2 = setTimeout(() => inputRef.current?.focus(), 160)
+    requestAnimationFrame(() => {
+      window.scrollTo(0, 0)
+      inputRef.current?.focus()
+    })
+    const t1 = setTimeout(() => {
+      window.scrollTo(0, 0)
+      inputRef.current?.focus()
+    }, 50)
+    const t2 = setTimeout(() => {
+      window.scrollTo(0, 0)
+      inputRef.current?.focus()
+    }, 160)
     return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [])
 
@@ -116,6 +146,7 @@ export default function FloatingChatWindow() {
     if (!content || sending) return
     setSending(true)
     setDraft('')
+    if (inputRef.current) inputRef.current.style.height = 'auto'
     try {
       const sent = activeId
         ? await sendMessage({ conversationId: activeId, content })
@@ -135,7 +166,11 @@ export default function FloatingChatWindow() {
   return (
     <div
       className="fixed inset-0 sm:inset-auto sm:bottom-6 sm:right-6 w-full sm:w-[380px] h-[100dvh] sm:h-[480px] sm:rounded-2xl shadow-2xl flex flex-col z-[999999] overflow-hidden animate-in fade-in duration-150"
-      style={{ backgroundColor: bg, border: `1px solid ${border}` }}
+      style={{
+        backgroundColor: bg,
+        border: `1px solid ${border}`,
+        height: viewportHeight && window.innerWidth < 640 ? `${viewportHeight}px` : undefined,
+      }}
     >
       {/* Header */}
       <div className="px-3 sm:px-3 py-3 sm:py-2.5 flex items-center justify-between gap-2 shrink-0" style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1626' }}>
@@ -224,21 +259,36 @@ export default function FloatingChatWindow() {
 
       {/* Input Bar */}
       <div className="p-3 sm:p-2.5 shrink-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]" style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#ffffff' : '#0A1120' }}>
-        <div className="relative flex items-center">
-          <input
+        <div className="relative flex items-end">
+          <textarea
             ref={inputRef}
-            type="text"
+            rows={1}
             value={draft}
-            onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleSend() } }}
+            onChange={e => {
+              setDraft(e.target.value)
+              e.target.style.height = 'auto'
+              e.target.style.height = `${Math.min(e.target.scrollHeight, 100)}px`
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                void handleSend()
+              }
+            }}
             placeholder="Type a message…"
-            className="w-full pl-3.5 pr-11 py-2.5 sm:py-2 rounded-xl text-sm sm:text-[12.5px] focus:outline-none"
-            style={{ backgroundColor: inputBg, color: textPrimary }}
+            autoFocus
+            enterKeyHint="send"
+            inputMode="text"
+            autoComplete="off"
+            autoCorrect="on"
+            spellCheck={false}
+            className="w-full pl-3.5 pr-11 py-2.5 sm:py-2 rounded-xl text-sm sm:text-[12.5px] focus:outline-none resize-none overflow-y-auto leading-normal max-h-[100px]"
+            style={{ backgroundColor: inputBg, color: textPrimary, minHeight: '38px' }}
           />
           <button
             onClick={() => void handleSend()}
             disabled={!draft.trim() || sending}
-            className="absolute right-1.5 p-2 sm:p-1.5 rounded-lg transition-colors cursor-pointer"
+            className="absolute right-1.5 bottom-1.5 p-2 sm:p-1.5 rounded-lg transition-colors cursor-pointer"
             style={{
               backgroundColor: draft.trim() ? '#10B981' : 'transparent',
               color: draft.trim() ? '#ffffff' : textMuted,

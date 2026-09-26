@@ -53,19 +53,50 @@ export default function Messages() {
   const [members, setMembers] = useState<Member[]>([])
   const [activeId, setActiveId] = useState<string | undefined>(conversationId)
   const [showListMobile, setShowListMobile] = useState(!conversationId && !recipientId)
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const messageCacheRef = useRef<Record<string, ChatMessage[]>>({})
 
   const isNewThread = !!recipientId && !conversationId
 
+  // Track visual viewport on mobile so keyboard opens without pushing header offscreen or creating blank voids
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+
+    const handleResize = () => {
+      setViewportHeight(vv.height)
+      window.scrollTo(0, 0)
+    }
+
+    vv.addEventListener('resize', handleResize)
+    vv.addEventListener('scroll', handleResize)
+    handleResize()
+
+    return () => {
+      vv.removeEventListener('resize', handleResize)
+      vv.removeEventListener('scroll', handleResize)
+    }
+  }, [])
+
   const focusInput = useCallback(() => {
+    window.scrollTo(0, 0)
     inputRef.current?.focus()
-    requestAnimationFrame(() => inputRef.current?.focus())
-    const t1 = setTimeout(() => inputRef.current?.focus(), 50)
-    const t2 = setTimeout(() => inputRef.current?.focus(), 160)
+    requestAnimationFrame(() => {
+      window.scrollTo(0, 0)
+      inputRef.current?.focus()
+    })
+    const t1 = setTimeout(() => {
+      window.scrollTo(0, 0)
+      inputRef.current?.focus()
+    }, 50)
+    const t2 = setTimeout(() => {
+      window.scrollTo(0, 0)
+      inputRef.current?.focus()
+    }, 160)
     return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [])
 
@@ -160,6 +191,7 @@ export default function Messages() {
     if (!content || sending) return
     setSending(true)
     setDraft('')
+    if (inputRef.current) inputRef.current.style.height = 'auto'
     try {
       const sent = activeId
         ? await sendMessage({ conversationId: activeId, content })
@@ -208,7 +240,13 @@ export default function Messages() {
   let lastDayLabel = ''
 
   return (
-    <div className="flex flex-1 w-full h-full sm:p-4 min-h-0 overflow-hidden">
+    <div
+      className="flex flex-1 w-full h-full sm:p-4 min-h-0 overflow-hidden"
+      style={{
+        height: viewportHeight ? `${viewportHeight}px` : '100%',
+        maxHeight: viewportHeight ? `${viewportHeight}px` : '100dvh',
+      }}
+    >
       <div
         className="flex flex-1 w-full h-full rounded-none sm:rounded-2xl overflow-hidden border-0 sm:border min-h-0"
         style={{ backgroundColor: panelBg, borderColor: border }}
@@ -382,22 +420,36 @@ export default function Messages() {
               </div>
 
               <div className="p-3 shrink-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]" style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#ffffff' : '#0A1120' }}>
-                <div className="relative flex items-center">
-                  <input
+                <div className="relative flex items-end">
+                  <textarea
                     ref={inputRef}
-                    type="text"
+                    rows={1}
                     value={draft}
-                    onChange={e => setDraft(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleSend() } }}
+                    onChange={e => {
+                      setDraft(e.target.value)
+                      e.target.style.height = 'auto'
+                      e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        void handleSend()
+                      }
+                    }}
                     placeholder="Type a message…"
                     autoFocus
-                    className="w-full pl-4 pr-12 py-2.5 rounded-xl text-sm sm:text-[13px] focus:outline-none"
-                    style={{ backgroundColor: inputBg, color: textPrimary }}
+                    enterKeyHint="send"
+                    inputMode="text"
+                    autoComplete="off"
+                    autoCorrect="on"
+                    spellCheck={false}
+                    className="w-full pl-4 pr-12 py-2.5 rounded-xl text-sm sm:text-[13px] focus:outline-none resize-none overflow-y-auto leading-normal max-h-[120px]"
+                    style={{ backgroundColor: inputBg, color: textPrimary, minHeight: '42px' }}
                   />
                   <button
                     onClick={() => void handleSend()}
                     disabled={!draft.trim() || sending}
-                    className="absolute right-2 p-2 rounded-lg transition-colors cursor-pointer"
+                    className="absolute right-2 bottom-1.5 p-2 rounded-lg transition-colors cursor-pointer"
                     style={{
                       backgroundColor: draft.trim() ? '#10B981' : 'transparent',
                       color: draft.trim() ? '#ffffff' : textMuted,
