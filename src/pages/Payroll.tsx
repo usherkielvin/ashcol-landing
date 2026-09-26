@@ -6,7 +6,7 @@ import {
   Search, Building2, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   SlidersHorizontal, Plus, X, RotateCcw, RefreshCw, Save, Loader2, EyeOff, Trash2,
   Stethoscope, Lightbulb, HardHat, PiggyBank, Wind, Recycle, ArrowBigDownDash, Snowflake,
-  Users, Clock, Receipt, ArrowRightLeft, ExternalLink, Lock, Unlock, FileSpreadsheet,
+  Users, Receipt, ArrowRightLeft, ExternalLink, Lock, Unlock, FileSpreadsheet,
   Archive, PauseCircle, Send, Undo2,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -211,9 +211,9 @@ const COLUMN_DEFS: ColumnDef[] = [
   { key: 'audited', label: 'Audited', width: 90, align: 'left', pinned: true },
 ]
 
-// Roster columns: Installer | Aircon Units | Payroll Amount | Payroll Status. There's no action
-// column — the whole row opens that installer's payroll.
-const ROSTER_GRID_TEMPLATE = 'minmax(240px, 2fr) 190px 170px 220px'
+// Roster columns: Installer (completed-jobs count folded into its subtitle) | Payroll Amount |
+// Payroll Status | Remarks. There's no action column — the whole row opens that installer's payroll.
+const ROSTER_GRID_TEMPLATE = 'minmax(260px, 2fr) 160px 200px minmax(220px, 1.6fr)'
 
 const COLUMN_PRESETS: { label: string; cats: ColumnCategory[] }[] = [
   { label: 'Standard', cats: ['standard'] },
@@ -490,6 +490,9 @@ export default function Payroll() {
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null)
   const [completeModalFor, setCompleteModalFor] = useState<string | null>(null)
   const [completeRemarks, setCompleteRemarks] = useState('')
+  // Inline-edited Remarks cell in the roster table — which installer (null = none) and its draft text.
+  const [editingRemarksFor, setEditingRemarksFor] = useState<string | null>(null)
+  const [remarksDraft, setRemarksDraft] = useState('')
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [rawSearch, setRawSearch] = useState('')
@@ -3103,9 +3106,9 @@ export default function Payroll() {
             style={{ gridTemplateColumns: ROSTER_GRID_TEMPLATE, backgroundColor: isLight ? '#f8fafc' : '#0d1520', borderBottom: `1px solid ${border}` }}
           >
             <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70" style={{ color: textMuted }}>Installer</span>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-center opacity-70" style={{ color: textMuted }}>Completed Jobs</span>
             <span className="text-[10px] font-semibold uppercase tracking-wider text-right opacity-70" style={{ color: textMuted }}>Payout Amount</span>
             <span className="text-[10px] font-semibold uppercase tracking-wider text-center opacity-70" style={{ color: textMuted }}>Payout Status</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70" style={{ color: textMuted }}>Remarks</span>
           </div>
 
           {/* Data rows — hairline dividers, no per-row cards/shadows, just a row-hover tint */}
@@ -3140,7 +3143,7 @@ export default function Payroll() {
                 onMouseEnter={e => { e.currentTarget.style.backgroundColor = isLight ? '#f8fafc' : '#0d1520' }}
                 onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}
               >
-                    {/* 1. INSTALLER */}
+                    {/* 1. INSTALLER — name, with completed-jobs count/breakdown folded into a subtitle */}
                     <div className="flex items-center gap-3.5 min-w-0">
                       <div
                         className="w-11 h-11 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
@@ -3148,24 +3151,18 @@ export default function Payroll() {
                       >
                         {getInitials(displayInstallerName(installerName))}
                       </div>
-                      <span className="text-sm md:text-base font-bold truncate uppercase tracking-tight" style={{ color: textPrimary }}>
-                        {displayInstallerName(installerName).toUpperCase()}
-                      </span>
-                    </div>
-
-                    {/* 2. COMPLETED JOBS — count plus what kind of work it was */}
-                    <div className="flex flex-col items-center justify-center min-w-0">
-                      <span className="text-lg md:text-xl font-bold tabular-nums tracking-tight" style={{ color: textPrimary }}>
-                        {completedJobsCount(installerRows)}
-                      </span>
-                      {completedJobsBreakdown(installerRows) && (
-                        <span className="text-[11px] font-medium truncate max-w-full" style={{ color: textMuted }} title={completedJobsBreakdown(installerRows)}>
-                          {completedJobsBreakdown(installerRows)}
+                      <div className="min-w-0 flex flex-col gap-0.5">
+                        <span className="text-sm md:text-base font-bold truncate uppercase tracking-tight" style={{ color: textPrimary }}>
+                          {displayInstallerName(installerName).toUpperCase()}
                         </span>
-                      )}
+                        <span className="text-[11px] font-semibold truncate" style={{ color: textMuted }} title={completedJobsBreakdown(installerRows) || undefined}>
+                          <span className="tabular-nums" style={{ color: textPrimary }}>{completedJobsCount(installerRows)}</span> completed
+                          {completedJobsBreakdown(installerRows) ? ` · ${completedJobsBreakdown(installerRows)}` : ''}
+                        </span>
+                      </div>
                     </div>
 
-                    {/* 3. PAYROLL AMOUNT — negative when deductions outweigh the period's gross
+                    {/* 2. PAYROLL AMOUNT — negative when deductions outweigh the period's gross
                         (e.g. an unpaid loan balance), so this needs the same sign-then-peso
                         formatting and red/green split as the Net Payroll tiles below. */}
                     <div className="flex items-center justify-end">
@@ -3177,50 +3174,71 @@ export default function Payroll() {
                       </span>
                     </div>
 
-                    {/* 4. STATUS (LAST COLUMN TO THE RIGHT) */}
+                    {/* 3. STATUS — a plain dropdown, not a colored badge. Switching to Completed
+                        still opens the modal to capture who completed it; switching back to
+                        Pending applies immediately. */}
                     <div className="flex justify-center">
-                      {isComplete ? (
-                        <div
-                          className="w-full flex flex-col items-center justify-center px-3.5 py-2 rounded-xl border text-center select-none"
-                          style={{
-                            color: '#10B981',
-                            backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.14)',
-                            borderColor: '#10B98160',
+                      <select
+                        value={isComplete ? 'COMPLETE' : 'PENDING'}
+                        disabled={isWeekClosed}
+                        onClick={e => e.stopPropagation()}
+                        onChange={e => {
+                          e.stopPropagation()
+                          if (e.target.value === 'COMPLETE') {
+                            setCompleteModalFor(installerName)
+                            setCompleteRemarks(summaryRemarks)
+                          } else {
+                            updateInstallerRows(installerName, { status: 'PENDING' })
+                          }
+                        }}
+                        title={isComplete ? `Completed by ${titleCase(summaryAudited || userFirstName)}` : 'Mark this payout complete'}
+                        className="text-xs font-bold bg-transparent border-0 outline-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+                        style={{ color: isComplete ? '#10B981' : '#D97706' }}
+                      >
+                        <option value="PENDING">Pending</option>
+                        <option value="COMPLETE">Completed</option>
+                      </select>
+                    </div>
+
+                    {/* 4. REMARKS — wide column, click to edit inline instead of a truncated
+                        sliver inside the status badge. */}
+                    <div className="min-w-0 flex items-center" onClick={e => e.stopPropagation()}>
+                      {editingRemarksFor === installerName ? (
+                        <textarea
+                          autoFocus
+                          rows={2}
+                          value={remarksDraft}
+                          onChange={e => setRemarksDraft(e.target.value.toUpperCase())}
+                          onBlur={() => {
+                            updateInstallerRows(installerName, { remarks: remarksDraft.trim() })
+                            setEditingRemarksFor(null)
                           }}
-                          title={summaryRemarks ? `Remarks: ${summaryRemarks}` : undefined}
-                        >
-                          <div className="flex items-center gap-1.5 text-[11px] font-semibold max-w-full">
-                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
-                            <span className="truncate">Completed by {titleCase(summaryAudited || userFirstName)}</span>
-                          </div>
-                          <span className="text-[10px] font-medium mt-0.5 opacity-60">
-                            {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </span>
-                          {summaryRemarks && (
-                            <span className="text-[10px] font-medium truncate max-w-full mt-0.5 px-1 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                              {summaryRemarks}
-                            </span>
-                          )}
-                        </div>
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault()
+                              ;(e.target as HTMLTextAreaElement).blur()
+                            } else if (e.key === 'Escape') {
+                              setEditingRemarksFor(null)
+                            }
+                          }}
+                          className="w-full text-xs font-medium leading-snug bg-transparent border rounded-lg px-2.5 py-1.5 outline-none resize-none focus:ring-2 focus:ring-emerald-500/40"
+                          style={{ color: textPrimary, borderColor: inputBorder, backgroundColor: inputBg }}
+                        />
                       ) : (
                         <button
                           type="button"
-                          onClick={e => {
-                            // The whole row opens the payout — completing is its own action.
-                            e.stopPropagation()
-                            setCompleteModalFor(installerName)
-                            setCompleteRemarks(summaryRemarks)
-                          }}
-                          title="Click to complete payout"
-                          className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border text-xs font-semibold transition-colors cursor-pointer"
-                          style={{
-                            color: '#D97706',
-                            backgroundColor: isLight ? '#FFFBEB' : 'rgba(245,158,11,0.14)',
-                            borderColor: '#F59E0B60',
-                          }}
+                          disabled={isWeekClosed}
+                          onClick={() => { setRemarksDraft(summaryRemarks); setEditingRemarksFor(installerName) }}
+                          className="w-full text-left rounded-lg px-2.5 py-1.5 -mx-2.5 transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-text disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                          title={summaryRemarks || 'Click to add a remark'}
                         >
-                          <Clock className="w-3.5 h-3.5" />
-                          <span>Pending</span>
+                          {summaryRemarks ? (
+                            <span className="text-xs font-medium leading-snug line-clamp-2 block" style={{ color: textPrimary }}>
+                              {summaryRemarks}
+                            </span>
+                          ) : (
+                            <span className="text-xs italic" style={{ color: textMuted, opacity: 0.6 }}>Click to add a remark</span>
+                          )}
                         </button>
                       )}
                     </div>
