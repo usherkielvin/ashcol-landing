@@ -1381,8 +1381,8 @@ export default function Payroll() {
     try {
       const months = [activeMonth, prevMonth(activeMonth), prevMonth(prevMonth(activeMonth))]
       const collected: { row: PayrollRow; month: string }[] = []
-      // Track unique held rows by business key (ticketId|installer or ticket#+installer+date)
-      // to prevent the same ticket showing up multiple times from overlapping month scans.
+      // Deduplicate across months by business key (ticketId|installer or ticket#+installer+date).
+      // Also auto-cleans any duplicate held rows from the DB in the background.
       const seenKeys = new Set<string>()
       for (const m of months) {
         const params = new URLSearchParams({ branchId: branchFilter, month: m })
@@ -1392,16 +1392,44 @@ export default function Payroll() {
         if (!res.ok) continue
         const list = await res.json()
         const monthRows: PayrollRow[] = (Array.isArray(list) ? list : []).map(mapSavedPayrollEntry)
-        for (const r of monthRows) {
-          if (!isHeldRow(r)) continue
-          // Deduplicate: use ticketId+installer if available, else ticketNumber+installer+workDate
+
+        // Track which held rows in this month are unique vs duplicate.
+        const heldInMonth = monthRows.filter(r => isHeldRow(r))
+        const uniqueKeysThisMonth = new Set<string>()
+        let hasDuplicatesInMonth = false
+        for (const r of heldInMonth) {
           const installer = (r.installerName || '').trim().toLowerCase()
           const dedupKey = r.ticketId
             ? `tk:${r.ticketId}|${installer}`
             : `nt:${(r.ticketNumber || '').trim().toLowerCase()}|${installer}|${r.workDate || ''}`
-          if (seenKeys.has(dedupKey)) continue
-          seenKeys.add(dedupKey)
-          collected.push({ row: r, month: m })
+          if (uniqueKeysThisMonth.has(dedupKey)) {
+            hasDuplicatesInMonth = true
+          } else {
+            uniqueKeysThisMonth.add(dedupKey)
+          }
+          // Cross-month dedup (display only)
+          if (!seenKeys.has(dedupKey)) {
+            seenKeys.add(dedupKey)
+            collected.push({ row: r, month: m })
+          }
+        }
+
+        // If this month had duplicate held rows, silently clean the DB:
+        // strip all but the first unique occurrence of each held key.
+        if (hasDuplicatesInMonth && canManagePayroll) {
+          const seenInMonth = new Set<string>()
+          void mutateSavedMonth(branchFilter, m, rowsIn => {
+            return rowsIn.filter(r => {
+              if (!isHeldRow(r)) return true  // keep non-held rows untouched
+              const installer = (r.installerName || '').trim().toLowerCase()
+              const key = r.ticketId
+                ? `tk:${r.ticketId}|${installer}`
+                : `nt:${(r.ticketNumber || '').trim().toLowerCase()}|${installer}|${r.workDate || ''}`
+              if (seenInMonth.has(key)) return false  // drop duplicate
+              seenInMonth.add(key)
+              return true
+            })
+          })
         }
       }
       setHeldTickets(collected)
@@ -1410,7 +1438,7 @@ export default function Payroll() {
     } finally {
       setHeldTicketsLoading(false)
     }
-  }, [branchFilter, activeMonth])
+  }, [branchFilter, activeMonth, canManagePayroll, mutateSavedMonth])
 
   useEffect(() => {
     void refreshHeldTickets()
@@ -5266,8 +5294,8 @@ export default function Payroll() {
           return (
             <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-150">
               <div
-                className="w-full max-w-5xl rounded-2xl border shadow-2xl flex flex-col overflow-hidden"
-                style={{ maxHeight: '90vh', backgroundColor: cardBg, borderColor: border }}
+                className="w-full max-w-7xl rounded-2xl border shadow-2xl flex flex-col overflow-hidden"
+                style={{ maxHeight: '92vh', backgroundColor: cardBg, borderColor: border }}
               >
                 <div className="flex items-start justify-between gap-3 px-6 py-4 shrink-0" style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}>
                   <div className="flex items-center gap-2.5 min-w-0">
