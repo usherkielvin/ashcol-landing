@@ -7,7 +7,7 @@ import {
   SlidersHorizontal, Plus, X, RotateCcw, RefreshCw, Save, Loader2, EyeOff, Trash2,
   Stethoscope, Lightbulb, HardHat, PiggyBank, Wind, Recycle, ArrowBigDownDash, Snowflake,
   Users, Receipt, ArrowRightLeft, ExternalLink, Lock, Unlock, FileSpreadsheet,
-  Archive, PauseCircle, Send, Undo2,
+  Archive, PauseCircle, Send, Undo2, MoreVertical,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -561,6 +561,24 @@ export default function Payroll() {
 
   const [ratesModalOpen, setRatesModalOpen] = useState(false)
   const [weekSummaryOpen, setWeekSummaryOpen] = useState(false)
+  // Mobile toolbar: every filter (branch/period/technician/search) plus the overflow actions
+  // collapse into a small icon that opens one of these popovers — only one open at a time,
+  // all sharing one outside-click-to-close handler — so the header stays a single tidy row
+  // instead of a wall of text pills (desktop keeps the full inline controls, untouched).
+  const [mobilePopover, setMobilePopover] = useState<'branch' | 'period' | 'technician' | 'search' | 'more' | null>(null)
+  const mobileToolbarRef = useRef<HTMLDivElement | null>(null)
+  const toggleMobilePopover = (key: 'branch' | 'period' | 'technician' | 'search' | 'more') =>
+    setMobilePopover(p => (p === key ? null : key))
+  useEffect(() => {
+    if (!mobilePopover) return
+    const onPointerDown = (e: MouseEvent) => {
+      if (mobileToolbarRef.current && !mobileToolbarRef.current.contains(e.target as Node)) {
+        setMobilePopover(null)
+      }
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    return () => document.removeEventListener('mousedown', onPointerDown)
+  }, [mobilePopover])
   const [ratesSearch, setRatesSearch] = useState('')
   const [draftRates, setDraftRates] = useState<PayrollRates>(DEFAULT_PAYROLL_RATES)
   const [savingRates, setSavingRates] = useState(false)
@@ -1186,7 +1204,10 @@ export default function Payroll() {
       const getRes = await fetch(`${API_BASE_URL}/v1/payroll?${params.toString()}`, {
         headers: { Authorization: `Bearer ${getToken()}` },
       })
-      const list = getRes.ok ? await getRes.json() : []
+      // A failed GET must never fall through to an empty/partial list — that would PUT a wiped
+      // month back (this is a full-month replace endpoint). Bail out instead of risking data loss.
+      if (!getRes.ok) return false
+      const list = await getRes.json()
       const monthRows: PayrollRow[] = (Array.isArray(list) ? list : []).map(mapSavedPayrollEntry)
       const mutated = mutate(monthRows)
       const putRes = await fetch(`${API_BASE_URL}/v1/payroll`, {
@@ -1360,6 +1381,9 @@ export default function Payroll() {
     try {
       const months = [activeMonth, prevMonth(activeMonth), prevMonth(prevMonth(activeMonth))]
       const collected: { row: PayrollRow; month: string }[] = []
+      // Track unique held rows by business key (ticketId|installer or ticket#+installer+date)
+      // to prevent the same ticket showing up multiple times from overlapping month scans.
+      const seenKeys = new Set<string>()
       for (const m of months) {
         const params = new URLSearchParams({ branchId: branchFilter, month: m })
         const res = await fetch(`${API_BASE_URL}/v1/payroll?${params.toString()}`, {
@@ -1369,7 +1393,15 @@ export default function Payroll() {
         const list = await res.json()
         const monthRows: PayrollRow[] = (Array.isArray(list) ? list : []).map(mapSavedPayrollEntry)
         for (const r of monthRows) {
-          if (isHeldRow(r)) collected.push({ row: r, month: m })
+          if (!isHeldRow(r)) continue
+          // Deduplicate: use ticketId+installer if available, else ticketNumber+installer+workDate
+          const installer = (r.installerName || '').trim().toLowerCase()
+          const dedupKey = r.ticketId
+            ? `tk:${r.ticketId}|${installer}`
+            : `nt:${(r.ticketNumber || '').trim().toLowerCase()}|${installer}|${r.workDate || ''}`
+          if (seenKeys.has(dedupKey)) continue
+          seenKeys.add(dedupKey)
+          collected.push({ row: r, month: m })
         }
       }
       setHeldTickets(collected)
@@ -1394,33 +1426,29 @@ export default function Payroll() {
   // Put a job on hold — excludes it from its own week's totals until released. See "Hold action"
   // in docs/payroll-hold-release-plan.md. Reason is required; the row must not already be a
   // carry-over copy (only an original job can be held).
+  //
+  // Uses mutateSavedMonth (atomic GET → mutate → PUT) so the hold is saved reliably even when
+  // the row sits in a frozen/closed week — flushSave sends the full month and fails isSameExcept
+  // checks on frozen rows, causing the "Could Not Put on Hold" error and silent duplicates.
   const submitHold = async () => {
-    if (!holdModalRow || !branchFilter || !activeWeek || !holdReason.trim()) return
+    if (!holdModalRow || !branchFilter || !activeWeek || !holdReason.trim() || isWeekClosed) return
     setHoldSubmitting(true)
+    const heldFields = {
+      ...(holdModalRow.customFields || {}),
+      'hold:state': 'held',
+      'hold:reason': holdReason.trim(),
+      'hold:heldAt': new Date().toISOString(),
+      'hold:heldBy': userDisplayName,
+      'hold:heldWeekFrom': activeWeek.from,
+      'hold:heldWeekTo': activeWeek.to,
+    }
+    const originMonth = saveMonthOf(holdModalRow)
+    const origKey = rowMatchKey(holdModalRow)
     try {
-      const targetKey = rowMatchKey(holdModalRow)
-      const month = saveMonthOf(holdModalRow)
-      const heldAt = new Date().toISOString()
-      const heldBy = userDisplayName
-      const reason = holdReason.trim()
-      const ok = await mutateSavedMonth(branchFilter, month, rowsIn => rowsIn.map(r => rowMatchKey(r) === targetKey ? {
-        ...r,
-        customFields: {
-          ...(r.customFields || {}),
-          'hold:state': 'held',
-          'hold:reason': reason,
-          'hold:heldAt': heldAt,
-          'hold:heldBy': heldBy,
-          'hold:heldWeekFrom': activeWeek.from,
-          'hold:heldWeekTo': activeWeek.to,
-        },
-      } : r))
-      if (ok) {
-        setHoldModalRow(null)
-        setHoldReason('')
-        await loadAndSync(true)
-        void refreshHeldTickets()
-      } else {
+      const ok = await mutateSavedMonth(branchFilter, originMonth, rowsIn =>
+        rowsIn.map(r => rowMatchKey(r) === origKey ? { ...r, customFields: heldFields } : r)
+      )
+      if (!ok) {
         setConfirmDialog({
           title: 'Could Not Put on Hold',
           message: 'Something went wrong saving this hold. Please try again.',
@@ -1428,7 +1456,14 @@ export default function Payroll() {
           variant: 'info',
           onConfirm: () => {},
         })
+        return
       }
+      // Update local rows to reflect the held state instantly — no re-fetch needed.
+      setRows(prev => prev.map(r => r.id === holdModalRow.id ? { ...r, customFields: heldFields } : r))
+      setHoldModalRow(null)
+      setHoldReason('')
+      // Refresh the held tickets list from server so the count and list are accurate.
+      void refreshHeldTickets()
     } finally {
       setHoldSubmitting(false)
     }
@@ -2064,12 +2099,14 @@ export default function Payroll() {
     <div className="flex flex-col gap-4 pb-4 md:pb-4 h-full min-h-0 overflow-y-auto overflow-x-hidden [&>*]:shrink-0">
       {/* Toolbar — branch, date, range, and search filters plus a sync action. */}
       <div
-        className="relative z-30 -mx-5 md:mx-0 rounded-none md:rounded-2xl p-2.5 md:p-3.5 flex items-center gap-1.5 md:gap-2.5 overflow-visible shadow-xs"
+        className="relative z-30 -mx-1.5 md:mx-0 rounded-none md:rounded-2xl p-2.5 md:p-3.5 overflow-visible shadow-xs"
         style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}`, borderBottom: `1px solid ${border}`, borderLeft: `1px solid ${border}`, borderRight: `1px solid ${border}` }}
       >
+        {/* Desktop/tablet — full inline controls, unchanged */}
+        <div className="hidden md:flex items-center gap-2.5">
           {/* Branch filter */}
           {canManagePayroll ? (
-            <div className="relative w-36 md:w-48 lg:w-52 shrink-0">
+            <div className="relative flex-1 min-w-[130px] md:flex-none md:w-48 lg:w-52 shrink-0">
               <Building2 className="absolute left-3 w-4 h-4 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
               <select
                 value={branchFilter}
@@ -2137,7 +2174,7 @@ export default function Payroll() {
 
           {/* Technician filter — narrows the roster below to one installer */}
           {branchFilter && (
-            <div className="relative w-32 md:w-44 lg:w-48 shrink-0">
+            <div className="relative flex-1 min-w-[120px] md:flex-none md:w-44 lg:w-48 shrink-0">
               <Users className="absolute left-3 w-4 h-4 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
               <select
                 value={technicianFilter}
@@ -2156,7 +2193,7 @@ export default function Payroll() {
           )}
 
           {/* Search */}
-          <div className="relative w-32 md:w-60 lg:w-64 shrink-0">
+          <div className="relative flex-1 min-w-[120px] md:flex-none md:w-60 lg:w-64 shrink-0">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: textMuted }} />
             <input
               type="text"
@@ -2174,7 +2211,7 @@ export default function Payroll() {
               type="button"
               onClick={() => void loadAndSync(true)}
               disabled={syncing || initialLoading || isWeekClosed}
-              className="flex items-center gap-2 px-3.5 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all shadow-xs disabled:opacity-50 cursor-pointer hover:border-emerald-500/50 active:scale-95"
+              className="hidden md:flex items-center gap-2 px-3.5 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all shadow-xs disabled:opacity-50 cursor-pointer hover:border-emerald-500/50 active:scale-95"
               style={
                 isWeekClosed
                   ? {
@@ -2218,7 +2255,7 @@ export default function Payroll() {
             <button
               type="button"
               onClick={openRatesModal}
-              className="flex items-center gap-1.5 px-3 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all hover:border-emerald-500/50"
+              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all hover:border-emerald-500/50"
               style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
               title="Set this branch's payout rates"
             >
@@ -2234,7 +2271,7 @@ export default function Payroll() {
             <button
               type="button"
               onClick={() => setWeekSummaryOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all hover:border-emerald-500/50 shadow-xs cursor-pointer active:scale-95"
+              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all hover:border-emerald-500/50 shadow-xs cursor-pointer active:scale-95"
               style={{
                 backgroundColor: isLight ? 'rgba(5,150,105,0.08)' : 'rgba(5,150,105,0.18)',
                 borderColor: '#05966950',
@@ -2249,93 +2286,336 @@ export default function Payroll() {
               </span>
             </button>
           )}
-      </div>
+        </div>
 
-
-      {/* Week-tab strip — hidden on member table view */}
-      {branchFilter && branchWeeks.length > 0 && !selectedInstaller && (
-        <div
-          className="-mx-5 md:mx-0 px-3 md:px-0 py-2 md:py-2.5 flex items-center justify-between gap-2 overflow-x-auto"
-          style={{ borderBottom: `1px solid ${border}` }}
-        >
-          <div className="flex items-center gap-1.5 min-w-0">
-            {branchWeeks.map(w => {
-              const isActive = activeWeek?.from === w.from && activeWeek?.to === w.to
-              const today = todayYMD()
-              const isCurrent = w.from <= today && today <= w.to
-              const isClosed = closures.some(c => c.branchId === branchFilter && c.weekFrom === w.from && c.weekTo === w.to)
-              return (
-                <button
-                  key={w.from}
-                  type="button"
-                  onClick={() => setActiveWeek(w)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all active:scale-95 whitespace-nowrap border"
-                  style={{
-                    backgroundColor: isActive ? (isLight ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.2)') : inputBg,
-                    borderColor: isActive ? '#10B981' : inputBorder,
-                    color: isActive ? '#10B981' : textMuted,
-                    boxShadow: isActive ? '0 0 0 1px #10B98140' : 'none',
-                  }}
+        {/* Mobile — one compact row of icon buttons, each opening its own popover.
+            Replaces the text-heavy selects/pills above, which don't fit a phone header. */}
+        <div className="flex md:hidden items-center gap-2" ref={mobileToolbarRef}>
+          {/* Branch */}
+          {canManagePayroll ? (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => toggleMobilePopover('branch')}
+                className="flex items-center justify-center w-9 h-9 rounded-xl border transition-all active:scale-95 shrink-0"
+                style={{ backgroundColor: inputBg, borderColor: mobilePopover === 'branch' ? '#10B981' : inputBorder }}
+                title="Filter by branch"
+                aria-label="Filter by branch"
+                aria-expanded={mobilePopover === 'branch'}
+              >
+                <Building2 className="w-4 h-4" style={{ color: branchFilter ? '#10B981' : textMuted }} />
+              </button>
+              {mobilePopover === 'branch' && (
+                <div
+                  className="absolute left-0 top-full mt-1.5 z-40 w-64 max-h-80 overflow-y-auto rounded-xl border shadow-lg py-1"
+                  style={{ backgroundColor: cardBg, borderColor: border }}
                 >
-                  {isClosed && (
-                    <span title="Week closed & locked" className="inline-flex items-center shrink-0">
-                      <Lock className="w-3 h-3 text-amber-500" />
+                  {branches.filter(b => !(Boolean((b as any).isFranchise) || isFranchiseBranch(b.id) || isFranchiseBranch(b.name))).map(b => (
+                    <button
+                      key={b.id}
+                      type="button"
+                      onClick={() => {
+                        setBranchFilter(b.id)
+                        setSelectedInstaller(null)
+                        navigate(`/payouts/${normalizeSlug(b.name)}`)
+                        setMobilePopover(null)
+                      }}
+                      className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-xs font-bold text-left"
+                      style={{ color: b.id === branchFilter ? '#10B981' : textPrimary, backgroundColor: b.id === branchFilter ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)') : 'transparent' }}
+                    >
+                      <span className="truncate">{formatBranchName(b.name)}</span>
+                      {b.id === branchFilter && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#10B981' }} />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div
+              className="flex items-center justify-center w-9 h-9 rounded-xl border shrink-0"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+              title={branches.find(b => b.id === branchFilter)?.name ? formatBranchName(branches.find(b => b.id === branchFilter)!.name) : formatBranchName(user?.branchId || 'My Branch')}
+            >
+              <Building2 className="w-4 h-4 text-emerald-500" />
+            </div>
+          )}
+
+          {/* Period — month nav + week list combined into one popover */}
+          {branchFilter && branchWeeks.length > 0 && !selectedInstaller && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => toggleMobilePopover('period')}
+                className="flex items-center justify-center w-9 h-9 rounded-xl border transition-all active:scale-95 shrink-0"
+                style={{ backgroundColor: inputBg, borderColor: mobilePopover === 'period' ? '#10B981' : inputBorder }}
+                title="Select payroll period"
+                aria-label="Select payroll period"
+                aria-expanded={mobilePopover === 'period'}
+              >
+                <Calendar className="w-4 h-4 text-emerald-500" />
+              </button>
+              {mobilePopover === 'period' && (
+                <div
+                  className="absolute left-0 top-full mt-1.5 z-40 w-72 rounded-xl border shadow-lg overflow-hidden"
+                  style={{ backgroundColor: cardBg, borderColor: border }}
+                >
+                  <div className="flex items-center justify-between px-2 py-2 border-b" style={{ borderColor: border }}>
+                    <button
+                      type="button"
+                      onClick={() => setActiveMonth(m => prevMonth(m))}
+                      className="p-1.5 rounded-lg transition-colors hover:bg-emerald-500/15 active:scale-90"
+                      title="Previous month"
+                      style={{ color: textMuted }}
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <span className="text-xs font-black tracking-tight" style={{ color: textPrimary }}>
+                      {formatMonth(activeMonth)}
                     </span>
-                  )}
-                  <span className="font-black" style={{ color: isActive ? '#10B981' : textPrimary }}>
-                    Week {w.weekNumber}
-                  </span>
-                  <span className="opacity-70">{w.label}</span>
-                  {isCurrent && (
-                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#10B981' }} title="Current week" />
-                  )}
-                </button>
-              )
-            })}
-          </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveMonth(m => nextMonth(m))}
+                      className="p-1.5 rounded-lg transition-colors hover:bg-emerald-500/15 active:scale-90"
+                      title="Next month"
+                      style={{ color: textMuted }}
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto py-1">
+                    {branchWeeks.map(w => {
+                      const isActive = activeWeek?.from === w.from && activeWeek?.to === w.to
+                      const today = todayYMD()
+                      const isCurrent = w.from <= today && today <= w.to
+                      const isClosed = closures.some(c => c.branchId === branchFilter && c.weekFrom === w.from && c.weekTo === w.to)
+                      return (
+                        <button
+                          key={w.from}
+                          type="button"
+                          onClick={() => { setActiveWeek(w); setMobilePopover(null) }}
+                          className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-xs font-bold text-left"
+                          style={{ color: isActive ? '#10B981' : textPrimary, backgroundColor: isActive ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)') : 'transparent' }}
+                        >
+                          <span className="flex items-center gap-1.5 min-w-0">
+                            {isClosed && <Lock className="w-3 h-3 text-amber-500 shrink-0" />}
+                            <span className="truncate">Week {w.weekNumber} · {w.label}</span>
+                          </span>
+                          {isCurrent && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#10B981' }} />}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div
+                    className="px-3.5 py-2 border-t text-[10px] font-bold uppercase tracking-widest text-center"
+                    style={{ borderColor: border, color: textMuted }}
+                  >
+                    {cycle === 'friday' ? 'Fri - Thu cycle' : 'Mon - Sun cycle'}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Week Closed Status & Action */}
-            {isWeekClosed ? (
-              <div className="flex items-center gap-1.5">
-                <span
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border shrink-0 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
-                  title={activeWeekClosure?.closedBy ? `Closed by ${activeWeekClosure.closedBy}${activeWeekClosure.closedAt ? ` on ${new Date(activeWeekClosure.closedAt).toLocaleDateString()}` : ''}` : 'Week is closed & locked'}
+          {/* Technician */}
+          {branchFilter && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => toggleMobilePopover('technician')}
+                className="flex items-center justify-center w-9 h-9 rounded-xl border transition-all active:scale-95 shrink-0"
+                style={{ backgroundColor: inputBg, borderColor: mobilePopover === 'technician' ? '#10B981' : (technicianFilter ? '#10B981' : inputBorder) }}
+                title="Filter by technician"
+                aria-label="Filter by technician"
+                aria-expanded={mobilePopover === 'technician'}
+              >
+                <Users className="w-4 h-4" style={{ color: technicianFilter ? '#10B981' : textMuted }} />
+              </button>
+              {mobilePopover === 'technician' && (
+                <div
+                  className="absolute left-0 top-full mt-1.5 z-40 w-64 max-h-80 overflow-y-auto rounded-xl border shadow-lg py-1"
+                  style={{ backgroundColor: cardBg, borderColor: border }}
                 >
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>Closed</span>
-                </span>
-                {canManageClosures && (
                   <button
                     type="button"
-                    onClick={handleReopenWeek}
-                    disabled={reopeningWeek}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-all hover:bg-emerald-500/10 hover:border-emerald-500/40 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 active:scale-95 cursor-pointer disabled:opacity-50"
-                    title="Reopen this week for edits"
+                    onClick={() => { setTechnicianFilter(''); setMobilePopover(null) }}
+                    className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-xs font-bold text-left"
+                    style={{ color: !technicianFilter ? '#10B981' : textPrimary, backgroundColor: !technicianFilter ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)') : 'transparent' }}
                   >
-                    <Unlock className="w-3.5 h-3.5" />
-                    <span>{reopeningWeek ? 'Reopening…' : 'Reopen'}</span>
+                    ALL TECHNICIANS
                   </button>
-                )}
-              </div>
-            ) : (
-              canManageClosures && activeWeek && (
-                <button
-                  type="button"
-                  onClick={handleCloseWeek}
-                  disabled={closingWeek}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-all hover:bg-amber-500/10 hover:border-amber-500/40 text-amber-600 dark:text-amber-400 border-amber-500/30 active:scale-95 cursor-pointer disabled:opacity-50"
-                  title="Close and lock this payroll week"
-                >
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>{closingWeek ? 'Closing…' : 'Close Week'}</span>
-                </button>
-              )
-            )}
+                  {technicianOptions.map(name => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => { setTechnicianFilter(name); setMobilePopover(null) }}
+                      className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-xs font-bold text-left"
+                      style={{ color: technicianFilter === name ? '#10B981' : textPrimary, backgroundColor: technicianFilter === name ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)') : 'transparent' }}
+                    >
+                      <span className="truncate">{displayInstallerName(name).toUpperCase()}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
+          {/* Search */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => toggleMobilePopover('search')}
+              className="flex items-center justify-center w-9 h-9 rounded-xl border transition-all active:scale-95 shrink-0"
+              style={{ backgroundColor: inputBg, borderColor: mobilePopover === 'search' ? '#10B981' : (rawSearch ? '#10B981' : inputBorder) }}
+              title="Search"
+              aria-label="Search"
+              aria-expanded={mobilePopover === 'search'}
+            >
+              <Search className="w-4 h-4" style={{ color: rawSearch ? '#10B981' : textMuted }} />
+            </button>
+            {mobilePopover === 'search' && (
+              <div
+                className="absolute left-0 top-full mt-1.5 z-40 w-64 rounded-xl border shadow-lg p-2"
+                style={{ backgroundColor: cardBg, borderColor: border }}
+              >
+                <div className="relative">
+                  <Search className="absolute left-3 w-3.5 h-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="Search installer..."
+                    value={rawSearch}
+                    onChange={e => handleSearchChange(e.target.value)}
+                    className="w-full pl-8 pr-2.5 py-2 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all border"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* More actions — Sync/Payout Settings/Week Summary */}
+          {branchFilter && (
+            <div className="relative ml-auto">
+              <button
+                type="button"
+                onClick={() => toggleMobilePopover('more')}
+                className="flex items-center justify-center w-9 h-9 rounded-xl border transition-all active:scale-95 shrink-0"
+                style={{
+                  backgroundColor: syncFailed && !syncing ? (isLight ? 'rgba(220,38,38,0.08)' : 'rgba(248,113,113,0.14)') : inputBg,
+                  borderColor: syncFailed && !syncing ? (isLight ? '#DC262660' : '#F8717160') : inputBorder,
+                  color: syncFailed && !syncing ? (isLight ? '#DC2626' : '#F87171') : textPrimary,
+                }}
+                title="More actions"
+                aria-label="More actions"
+                aria-expanded={mobilePopover === 'more'}
+              >
+                <MoreVertical className="w-4 h-4" />
+              </button>
+              {mobilePopover === 'more' && (
+                <div
+                  className="absolute right-0 top-full mt-1.5 z-40 w-60 rounded-xl border shadow-lg overflow-hidden py-1"
+                  style={{ backgroundColor: cardBg, borderColor: border }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => { void loadAndSync(true); setMobilePopover(null) }}
+                    disabled={syncing || initialLoading || isWeekClosed}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-bold text-left disabled:opacity-50"
+                    style={{
+                      color: isWeekClosed
+                        ? textMuted
+                        : syncFailed && !syncing
+                          ? (isLight ? '#DC2626' : '#F87171')
+                          : '#10B981',
+                    }}
+                  >
+                    {isWeekClosed ? (
+                      <Lock className="w-4 h-4 text-amber-500 shrink-0" />
+                    ) : (
+                      <RefreshCw className={`w-4 h-4 shrink-0 ${syncing ? 'animate-spin' : ''}`} />
+                    )}
+                    <span>{isWeekClosed ? 'Week Locked' : syncing ? 'Syncing…' : syncFailed ? 'Sync failed — Retry' : 'Sync Latest'}</span>
+                  </button>
+
+                  {canManagePayroll && (
+                    <button
+                      type="button"
+                      onClick={() => { openRatesModal(); setMobilePopover(null) }}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-bold text-left"
+                      style={{ color: textPrimary }}
+                    >
+                      <SlidersHorizontal className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <span>Payout Settings</span>
+                    </button>
+                  )}
+
+                  {!selectedInstaller && (
+                    <button
+                      type="button"
+                      onClick={() => { setWeekSummaryOpen(true); setMobilePopover(null) }}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-bold text-left"
+                      style={{ color: isLight ? '#059669' : '#34D399' }}
+                    >
+                      <FileSpreadsheet className="w-4 h-4 shrink-0" />
+                      <span>Week Summary (North / South)</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Week selector — desktop/tablet pill strip. Mobile handles this inside the Period
+          popover above instead (a horizontally-scrolling strip doesn't fit a phone header). */}
+      {branchFilter && branchWeeks.length > 0 && !selectedInstaller && (
+        <div
+          className="hidden md:block px-0 py-2.5"
+          style={{ borderBottom: `1px solid ${border}` }}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+              {branchWeeks.map(w => {
+                const isActive = activeWeek?.from === w.from && activeWeek?.to === w.to
+                const today = todayYMD()
+                const isCurrent = w.from <= today && today <= w.to
+                const isClosed = closures.some(c => c.branchId === branchFilter && c.weekFrom === w.from && c.weekTo === w.to)
+                return (
+                  <button
+                    key={w.from}
+                    type="button"
+                    onClick={() => setActiveWeek(w)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all active:scale-95 whitespace-nowrap border"
+                    style={{
+                      backgroundColor: isActive ? (isLight ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.2)') : inputBg,
+                      borderColor: isActive ? '#10B981' : inputBorder,
+                      color: isActive ? '#10B981' : textMuted,
+                      boxShadow: isActive ? '0 0 0 1px #10B98140' : 'none',
+                    }}
+                  >
+                    {isClosed && (
+                      <span title="Week closed & locked" className="inline-flex items-center shrink-0">
+                        <Lock className="w-3 h-3 text-amber-500" />
+                      </span>
+                    )}
+                    <span className="font-black" style={{ color: isActive ? '#10B981' : textPrimary }}>
+                      Week {w.weekNumber}
+                    </span>
+                    <span className="opacity-70">{w.label}</span>
+                    {isCurrent && (
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#10B981' }} title="Current week" />
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Week cycle — a plain label, not a badge. Close/Reopen controls live at the bottom
+                of the installer list now (see the roster footer below). */}
             <span
-              className="text-[10px] font-black uppercase tracking-widest shrink-0 px-2 py-1 rounded-lg border"
-              style={{ color: textMuted, backgroundColor: inputBg, borderColor: inputBorder }}
+              className="text-[10px] font-bold uppercase tracking-widest shrink-0"
+              style={{ color: textMuted }}
               title={cycle === 'friday' ? 'North branch cycle: Fri-Thu' : 'South branch cycle: Mon-Sun'}
             >
               {cycle === 'friday' ? 'Fri - Thu' : 'Mon - Sun'}
@@ -3251,25 +3531,64 @@ export default function Payroll() {
             className="flex flex-wrap items-center justify-between gap-4 px-6 md:px-7 py-5"
             style={{ backgroundColor: isLight ? '#f8fafc' : '#0d1520', borderTop: `1px solid ${border}` }}
           >
-            {canManagePayroll && (
-              <button
-                type="button"
-                onClick={() => {
-                  setHeldInstallerFilter('')
-                  setHeldTicketsOpen(true)
-                  void refreshHeldTickets()
-                }}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
-                style={{
-                  backgroundColor: heldTickets.length > 0 ? (isLight ? '#EA580C' : '#C2410C') : (isLight ? '#F1F5F9' : '#1E293B'),
-                  color: heldTickets.length > 0 ? '#FFFFFF' : (isLight ? '#475569' : '#94A3B8'),
-                  border: heldTickets.length > 0 ? '1px solid #C2410C' : (isLight ? '1px solid #CBD5E1' : '1px solid #334155'),
-                }}
-                title="View every job currently on hold across this branch"
-              >
-                <span>Held Tickets ({heldTickets.length})</span>
-              </button>
-            )}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {canManagePayroll && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHeldInstallerFilter('')
+                    setHeldTicketsOpen(true)
+                    void refreshHeldTickets()
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+                  style={{
+                    backgroundColor: heldTickets.length > 0 ? (isLight ? '#EA580C' : '#C2410C') : (isLight ? '#F1F5F9' : '#1E293B'),
+                    color: heldTickets.length > 0 ? '#FFFFFF' : (isLight ? '#475569' : '#94A3B8'),
+                    border: heldTickets.length > 0 ? '1px solid #C2410C' : (isLight ? '1px solid #CBD5E1' : '1px solid #334155'),
+                  }}
+                  title="View every job currently on hold across this branch"
+                >
+                  <span>Held Tickets ({heldTickets.length})</span>
+                </button>
+              )}
+
+              {/* Close/Reopen this week — moved down here, out of the week-tab strip, and
+                  labeled with the branch so it's unambiguous which payout period it locks. */}
+              {canManageClosures && activeWeek && (
+                isWeekClosed ? (
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border shrink-0 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                      title={activeWeekClosure?.closedBy ? `Closed by ${activeWeekClosure.closedBy}${activeWeekClosure.closedAt ? ` on ${new Date(activeWeekClosure.closedAt).toLocaleDateString()}` : ''}` : 'Week is closed & locked'}
+                    >
+                      <Lock className="w-3.5 h-3.5" />
+                      <span>Week Closed</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleReopenWeek}
+                      disabled={reopeningWeek}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-emerald-500/10 hover:border-emerald-500/40 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 active:scale-95 cursor-pointer disabled:opacity-50 shadow-xs"
+                      title="Reopen this week for edits"
+                    >
+                      <Unlock className="w-3.5 h-3.5" />
+                      <span>{reopeningWeek ? 'Reopening…' : `Reopen This Week — ${currentBranchDisplay || 'Branch'} Payouts`}</span>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleCloseWeek}
+                    disabled={closingWeek}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-amber-500/10 hover:border-amber-500/40 text-amber-600 dark:text-amber-400 border-amber-500/30 active:scale-95 cursor-pointer disabled:opacity-50 shadow-xs"
+                    title="Close and lock this payroll week"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>{closingWeek ? 'Closing…' : `Close This Week — ${currentBranchDisplay || 'Branch'} Payouts`}</span>
+                  </button>
+                )
+              )}
+            </div>
             <div className="flex flex-wrap items-center justify-end gap-x-9 gap-y-2 ml-auto">
               {([
                 { label: 'Remittance Collected', value: globalRemittanceTotal, color: remitAccent },
@@ -4910,7 +5229,7 @@ export default function Payroll() {
               </button>
               <button
                 type="button"
-                onClick={() => void submitHold()}
+                onClick={() => { void submitHold() }}
                 disabled={!holdReason.trim() || holdSubmitting}
                 className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black text-white transition-all shadow-md disabled:opacity-50 cursor-pointer"
                 style={{ background: '#D97706' }}

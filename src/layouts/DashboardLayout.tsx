@@ -28,20 +28,15 @@ import {
   MdOutlineAltRoute,
   MdOutlineChecklist,
   MdOutlineInsertChartOutlined,
-  MdOutlineReceipt,
-  MdOutlineMonetizationOn,
-  MdOutlineBarChart,
   MdOutlineAccountBalanceWallet,
   MdOutlinePhone,
   MdOutlinePhoneInTalk,
-  MdOutlinePercent,
-  MdOutlineAttachMoney,
-  MdOutlinePayments,
   MdMenuBook,
   MdOutlinePerson,
   MdOutlineStorefront,
 } from 'react-icons/md'
 import { FiMinus, FiPlus } from 'react-icons/fi'
+import { DailyTransactionsIcon, ExpensesIcon, CollectionsIcon, CommissionsIcon, CashAdvanceIcon, PayoutsIcon } from '../components/icons/FinanceIcons'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortalAdmin, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry, formatBranchName, canMemberAccessRelaysAndTicketCreation, canMemberAccessDdrm, canMemberAccessPayroll, isSystemAdmin, isPortalStaffUser, isWarrantyRegistrar, getUserViewBranchIds, isBranchReadOnlyForUser, branchScopesMatch, isFranchiseBranch } from '../utils/api'
 import UserAvatar from '../components/UserAvatar'
@@ -120,14 +115,14 @@ function buildNavGroups(navLinks: NavLinkDef[]) {
       title: 'Finance',
       Icon: MdOutlineInsertChartOutlined,
       subItems: [
-        { name: 'Daily Transactions', icon: <MdOutlineBarChart size={16} />, path: findPath('Daily Transaction') },
-        { name: 'Expenses', icon: <MdOutlineReceipt size={16} />, path: findPath('Expense Records') },
-        { name: 'Collections', icon: <MdOutlineMonetizationOn size={16} />, path: findPath('For Collections') },
-        { name: 'Commissions', icon: <MdOutlinePercent size={16} />, path: findPath('Commissions') },
-        { name: 'Cash Advance', icon: <MdOutlineAttachMoney size={16} />, path: findPath('Cash Advance') },
-        { name: 'Payouts', icon: <MdOutlinePayments size={16} />, path: findPath('Payouts') },
-        { name: 'Bills', icon: <MdOutlineAccountBalanceWallet size={16} />, path: findPath('Bills') },
-        { name: 'Telecoms', icon: <MdOutlinePhone size={16} />, path: findPath('Telecoms') },
+        { name: 'Daily Transactions', icon: <DailyTransactionsIcon size={16} />, path: findPath('Daily Transaction') },
+        { name: 'Expenses', icon: <ExpensesIcon size={16} />, path: findPath('Expense Records') },
+        { name: 'Collections', icon: <CollectionsIcon size={16} />, path: findPath('For Collections') },
+        { name: 'Commissions', icon: <CommissionsIcon size={16} />, path: findPath('Commissions') },
+        { name: 'Cash Advance', icon: <CashAdvanceIcon size={16} />, path: findPath('Cash Advance') },
+        { name: 'Payouts', icon: <PayoutsIcon size={16} />, path: findPath('Payouts') },
+        // { name: 'Bills', icon: <MdOutlineAccountBalanceWallet size={16} />, path: findPath('Bills') },
+        // { name: 'Telecoms', icon: <MdOutlinePhone size={16} />, path: findPath('Telecoms') },
       ].filter(s => navLinks.some(l => l.path === s.path)),
     },
     {
@@ -546,8 +541,8 @@ export default function DashboardLayout() {
     { name: 'HRIS',              path: '/admin-hris',       icon: Calendar,        roles: ['admin', 'management', 'manager'] },
     { name: 'DDRM',              path: '/ddrm',             icon: Route,           roles: canAccessDdrm ? ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] : ['admin', 'management', 'manager'] },
     { name: 'Request Forms',     path: '/operations-forms', icon: ClipboardList, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
-    { name: 'Bills',             path: '/admin-bills',      icon: Landmark,        roles: ['admin', 'management', 'manager'] },
-    { name: 'Telecoms',          path: '/admin-telecom',    icon: Wifi,            roles: ['admin', 'management', 'manager'] },
+    // { name: 'Bills',             path: '/admin-bills',      icon: Landmark,        roles: ['admin', 'management', 'manager'] },
+    // { name: 'Telecoms',          path: '/admin-telecom',    icon: Wifi,            roles: ['admin', 'management', 'manager'] },
   ]
 
   const role = (user?.role || '').toLowerCase()

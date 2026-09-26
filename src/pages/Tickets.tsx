@@ -6,12 +6,12 @@ import {
   Eye, Loader2, Pencil,
   ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Maximize2,
   UsersRound, ChevronDown, SlidersHorizontal, CalendarRange,
-  TrendingUp, Receipt, Radio, Download, MessageSquare,
+  Download, MessageSquare,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useArctic } from '../contexts/ArcticContext'
-import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, isNegotiatorCandidate, isAccountActive, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, isPortalAdmin, isCoordinatorOrOicUser, getActivePortalBranchId, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, DEALERS_UPDATED_EVENT, notifyDealersUpdated, getUserViewBranchIds, isBranchReadOnlyForUser, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, isNegotiatorCandidate, isAccountActive, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, isPortalAdmin, isCoordinatorOrOicUser, getActivePortalBranchId, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, DEALERS_UPDATED_EVENT, notifyDealersUpdated, getUserViewBranchIds, isBranchReadOnlyForUser, canMemberAccessPayroll, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import {
   cacheTicketsByNumber,
   cacheTicketByNumber,
@@ -405,13 +405,87 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const green = '#16A34A'
   const textGreen = isLight ? '#16A34A' : '#4ade80'
 
+// Clean, accurate, PH-tailored icons for the everyday quick actions launcher
+const QuickTicketIcon = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
+  <svg className={className} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
+    <path d="m9 12 2 2 4-4" strokeWidth="2.2" />
+  </svg>
+)
+
+const QuickScheduleIcon = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
+  <svg className={className} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect width="18" height="18" x="3" y="4" rx="2" />
+    <path d="M3 10h18" />
+    <path d="M8 2v4" />
+    <path d="M16 2v4" />
+    <circle cx="16" cy="16" r="3" />
+    <path d="M16 14.5v1.5l1 1" />
+  </svg>
+)
+
+const QuickDailyTxIcon = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
+  <svg className={className} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect width="18" height="18" x="3" y="3" rx="2" />
+    <path d="M3 9h18" />
+    <path d="M9 21V9" />
+    <path d="m13 13 2 2 4-4" strokeWidth="2" />
+  </svg>
+)
+
+const QuickExpensesIcon = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
+  <svg className={className} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
+    <path d="M8 7h8" />
+    <path d="M8 11h8" />
+    <path d="M8 15h5" />
+  </svg>
+)
+
+// Philippine Peso (₱) Banknote icon for installer and technician payouts
+const QuickPesoPayoutIcon = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
+  <svg className={className} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect width="20" height="14" x="2" y="5" rx="2.5" />
+    <circle cx="12" cy="12" r="3.8" strokeWidth="1.5" />
+    <path d="M10.8 9.5h2a1.25 1.25 0 0 1 0 2.5h-2v2.5" strokeWidth="1.8" />
+    <path d="M9.8 10.3h4.4" strokeWidth="1.4" />
+    <path d="M9.8 11.6h4.4" strokeWidth="1.4" />
+  </svg>
+)
+
+// Field technician crew lineup & dispatch (Hard hat installer roster)
+const QuickLineupIcon = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
+  <svg className={className} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M2 18a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v2H2v-2Z" />
+    <path d="M12 4a5 5 0 0 0-5 5v2h10V9a5 5 0 0 0-5-5Z" />
+    <path d="M4 11h16" />
+    <path d="M12 4V2" />
+  </svg>
+)
+
+const QuickRequestFormsIcon = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
+  <svg className={className} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <polyline points="14 2 14 8 20 8" />
+    <path d="M8 13h8" />
+    <path d="M8 17h5" />
+    <path d="m14.5 17.5 1.5-1.5 2.5 2.5" strokeWidth="1.8" />
+  </svg>
+)
+
   // Overview/search landing quick links — hidden once a search is in progress.
+  // Mirrors the everyday-action set staff reach from the sidebar, laid out as a
+  // tap-friendly icon grid so the mobile home screen doubles as a quick-launcher.
+  const canAccessPayoutsQuick = canMemberAccessPayroll(user) || isAdmin || isManager
   const overviewQuickLinks = [
-    { label: 'Schedules', to: '/schedules', icon: CalendarDays },
-    { label: 'Daily Transaction', to: '/audit-report', icon: TrendingUp },
-    { label: 'Expenses', to: '/audit-expenses', icon: Receipt },
-    { label: 'Relays', to: '/relays', icon: Radio, adminOnly: true },
-  ].filter(link => !link.adminOnly || isPortalAdmin(user?.role))
+    { label: 'My Tickets', to: '/my-tickets', icon: QuickTicketIcon },
+    { label: 'Schedules', to: '/schedules', icon: QuickScheduleIcon },
+    { label: 'Daily Transaction', to: '/audit-report', icon: QuickDailyTxIcon },
+    { label: 'Expenses', to: '/audit-expenses', icon: QuickExpensesIcon },
+    { label: 'Payouts', to: '/payouts', icon: QuickPesoPayoutIcon, hidden: !canAccessPayoutsQuick },
+    { label: 'LINEUP', to: '/lineup', icon: QuickLineupIcon },
+    { label: 'Request Forms', to: '/operations-forms', icon: QuickRequestFormsIcon },
+  ].filter(link => !link.hidden)
 
   // ─────────────────────────────────────────────────────────────
   const initialSchedulesRef = useRef<ReturnType<typeof getInitialSchedulesFromCache> | null>(null)
@@ -8041,14 +8115,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             </div>
 
             <div
-              className={`flex-1 min-h-0 px-3 md:px-8 bg-transparent relative ${overviewSearchInput || overviewResults.length > 0 ? 'overflow-y-auto flex flex-col' : 'overflow-hidden'
-                }`}
+              className="flex-1 min-h-0 px-3 md:px-8 bg-transparent relative overflow-y-auto flex flex-col"
             >
               <div
                 className={
                   overviewSearchInput || overviewResults.length > 0
                     ? 'max-w-4xl w-full mx-auto flex flex-col'
-                    : 'w-full max-w-4xl mx-auto px-3 md:px-0 pt-10 md:pt-16 flex flex-col items-center gap-6 md:gap-8'
+                    : 'w-full max-w-4xl mx-auto px-3 md:px-0 pt-6 pb-8 md:pt-14 flex flex-col items-center gap-5 md:gap-8'
                 }
               >
 
@@ -8103,21 +8176,41 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     )}
                   </div>
 
-                  {/* Quick Links — only shown before a search has been entered */}
+                  {/* Quick Actions launcher — only shown before a search has been entered.
+                      Tap-target icon tiles (mobile-home-screen style) so staff can jump
+                      straight into any everyday section without opening the sidebar. */}
                   {!overviewSearchInput && overviewResults.length === 0 && overviewQuickLinks.length > 0 && (
-                    <div className="flex flex-wrap items-center justify-center gap-2 md:gap-3">
-                      {overviewQuickLinks.map(link => (
-                        <button
-                          key={link.to}
-                          type="button"
-                          onClick={() => navigate(link.to)}
-                          className="flex items-center gap-1.5 px-3.5 py-2 md:px-4 md:py-2.5 rounded-full border text-xs md:text-sm font-semibold transition-[transform,box-shadow,background-color,border-color] duration-150 hover:-translate-y-0.5 hover:shadow-sm active:scale-95"
-                          style={{ backgroundColor: cardBg, borderColor: border, color: textPrimary }}
-                        >
-                          <link.icon className="w-3.5 h-3.5 md:w-4 md:h-4" style={{ color: green }} />
-                          {link.label}
-                        </button>
-                      ))}
+                    <div className="w-full max-w-4xl mx-auto flex flex-col gap-2.5 md:gap-3">
+                      <div className="flex items-center gap-2 px-1">
+                        <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>
+                          Quick Actions
+                        </span>
+                        <span className="flex-1 h-px" style={{ backgroundColor: border }} />
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2.5 md:gap-3">
+                        {overviewQuickLinks.map(link => (
+                          <button
+                            key={link.to}
+                            type="button"
+                            onClick={() => navigate(link.to)}
+                            className="group flex flex-col items-center justify-center gap-2 py-4 px-2 rounded-2xl border shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md active:scale-95 cursor-pointer"
+                            style={{ backgroundColor: cardBg, borderColor: border }}
+                          >
+                            <span
+                              className="flex items-center justify-center w-11 h-11 md:w-12 md:h-12 rounded-full shrink-0 transition-transform duration-200 group-hover:scale-110"
+                              style={{ backgroundColor: `${green}15` }}
+                            >
+                              <link.icon className="w-5 h-5 md:w-6 md:h-6 transition-colors" style={{ color: green }} />
+                            </span>
+                            <span
+                              className="text-[11px] md:text-xs font-bold text-center leading-tight line-clamp-2 transition-colors"
+                              style={{ color: textPrimary }}
+                            >
+                              {link.label}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>

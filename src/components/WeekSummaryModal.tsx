@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import {
   X, Printer, Download, Copy, Check, RefreshCw,
-  Building2, RotateCcw, Wrench
+  Building2, RotateCcw, Wrench, PauseCircle, CircleDollarSign, Wallet, Sparkles
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { API_BASE_URL, formatBranchName, branchScopesMatch } from '../utils/api'
@@ -579,49 +579,63 @@ export default function WeekSummaryModal({
     <div className="fixed inset-0 z-[999999] w-screen h-screen flex flex-col bg-white dark:bg-slate-950 overflow-hidden animate-in fade-in duration-150">
       {/* Top executive toolbar */}
       <header
-        className="h-16 px-6 sm:px-8 border-b shrink-0 flex items-center justify-between gap-4 print:hidden"
+        className="px-3 sm:px-6 md:px-8 py-2.5 md:h-16 md:py-0 border-b shrink-0 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 md:gap-4 print:hidden"
         style={{
           backgroundColor: isLight ? '#F8FAFC' : '#0B1324',
           borderColor: isLight ? '#E2E8F0' : '#1E2D48',
         }}
       >
-        {/* Region Switcher Tabs */}
-        <div className="flex items-center gap-2 p-1 rounded-xl border bg-black/5 dark:bg-white/5">
+        <div className="flex items-center justify-between gap-2 md:contents">
+          {/* Region Switcher Tabs */}
+          <div className="flex items-center gap-1.5 md:gap-2 p-1 rounded-xl border bg-black/5 dark:bg-white/5 overflow-x-auto hide-scrollbar">
+            <button
+              type="button"
+              onClick={() => setRegion('north')}
+              className={`flex items-center gap-1.5 md:gap-2.5 px-3 md:px-5 py-1.5 md:py-2 rounded-lg text-xs md:text-sm font-black transition-all cursor-pointer whitespace-nowrap ${
+                region === 'north'
+                  ? 'bg-[#056434] text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Building2 className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" />
+              <span>NORTH</span>
+              <span className="text-[10px] md:text-xs opacity-80 font-bold">(Fri-Thu)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setRegion('south')}
+              className={`flex items-center gap-1.5 md:gap-2.5 px-3 md:px-5 py-1.5 md:py-2 rounded-lg text-xs md:text-sm font-black transition-all cursor-pointer whitespace-nowrap ${
+                region === 'south'
+                  ? 'bg-[#056434] text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Building2 className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" />
+              <span>SOUTH</span>
+              <span className="text-[10px] md:text-xs opacity-80 font-bold">(Mon-Sun)</span>
+            </button>
+          </div>
+
+          {/* Close button lives next to the region tabs on mobile so it's always reachable
+              without scrolling the action-button row. */}
           <button
             type="button"
-            onClick={() => setRegion('north')}
-            className={`flex items-center gap-2.5 px-5 py-2 rounded-lg text-sm font-black transition-all cursor-pointer ${
-              region === 'north'
-                ? 'bg-[#056434] text-white shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
+            onClick={onClose}
+            className="md:hidden p-2 rounded-xl hover:bg-black/10 dark:hover:bg-white/10 transition-colors shrink-0 cursor-pointer"
+            title="Close Summary (Esc)"
+            aria-label="Close modal"
           >
-            <Building2 className="w-4 h-4" />
-            <span>NORTH SUMMARY</span>
-            <span className="text-xs opacity-80 font-bold">(Fri - Thu)</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setRegion('south')}
-            className={`flex items-center gap-2.5 px-5 py-2 rounded-lg text-sm font-black transition-all cursor-pointer ${
-              region === 'south'
-                ? 'bg-[#056434] text-white shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <Building2 className="w-4 h-4" />
-            <span>SOUTH SUMMARY</span>
-            <span className="text-xs opacity-80 font-bold">(Mon - Sun)</span>
+            <X className="w-5 h-5 text-slate-500 hover:text-slate-900 dark:hover:text-white" />
           </button>
         </div>
 
-        {/* Action buttons */}
-        <div className="flex items-center gap-3">
+        {/* Action buttons — icon-only on mobile, horizontally scrollable so nothing clips */}
+        <div className="flex items-center gap-2 md:gap-3 overflow-x-auto hide-scrollbar">
           <button
             type="button"
             onClick={() => void fetchData()}
             disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold border transition-all hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 cursor-pointer"
+            className="flex items-center gap-2 px-3 md:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold border transition-all hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 cursor-pointer shrink-0"
             style={{ borderColor: isLight ? '#CBD5E1' : '#243452' }}
             title="Refresh numbers from all branches"
           >
@@ -632,18 +646,18 @@ export default function WeekSummaryModal({
           <button
             type="button"
             onClick={handleCopy}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold border transition-all hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer shadow-xs"
+            className="flex items-center gap-2 px-3 md:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold border transition-all hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer shadow-xs shrink-0"
             style={{ borderColor: isLight ? '#CBD5E1' : '#243452' }}
             title="Copy table formatted for Excel or Google Sheets"
           >
             {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
-            <span>{copied ? 'Copied to Clipboard!' : 'Copy for Excel'}</span>
+            <span className="hidden sm:inline">{copied ? 'Copied to Clipboard!' : 'Copy for Excel'}</span>
           </button>
 
           <button
             type="button"
             onClick={handleExportCSV}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold border transition-all hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+            className="flex items-center gap-2 px-3 md:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold border transition-all hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer shrink-0"
             style={{ borderColor: isLight ? '#CBD5E1' : '#243452' }}
             title="Download clean CSV spreadsheet"
           >
@@ -654,29 +668,29 @@ export default function WeekSummaryModal({
           <button
             type="button"
             onClick={handlePrint}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-[#056434] hover:bg-[#04522a] text-white transition-all shadow-sm cursor-pointer"
+            className="flex items-center gap-2 px-3 md:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-[#056434] hover:bg-[#04522a] text-white transition-all shadow-sm cursor-pointer shrink-0"
             title="Print sheet or save as PDF"
           >
             <Printer className="w-4 h-4" />
-            <span>Print</span>
+            <span className="hidden sm:inline">Print</span>
           </button>
 
           {Object.keys(overrides).length > 0 && (
             <button
               type="button"
               onClick={resetOverrides}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold text-rose-500 border border-rose-500/30 hover:bg-rose-500/10 transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold text-rose-500 border border-rose-500/30 hover:bg-rose-500/10 transition-colors cursor-pointer shrink-0"
               title="Reset all manual cell edits to original calculated numbers"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset Edits</span>
+              <span className="hidden sm:inline">Reset Edits</span>
             </button>
           )}
 
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-xl hover:bg-black/10 dark:hover:bg-white/10 transition-colors ml-2 cursor-pointer"
+            className="hidden md:flex p-2 rounded-xl hover:bg-black/10 dark:hover:bg-white/10 transition-colors ml-2 cursor-pointer shrink-0"
             title="Close Summary (Esc)"
             aria-label="Close modal"
           >
@@ -767,8 +781,8 @@ export default function WeekSummaryModal({
           </div>
         </div>
 
-        {/* Table Container */}
-        <div className="overflow-x-auto border border-black dark:border-slate-600 rounded-sm print:border-black bg-white dark:bg-slate-950">
+        {/* Table Container — desktop/tablet only; phones get the card list below */}
+        <div className="hidden md:block overflow-x-auto border border-black dark:border-slate-600 rounded-sm print:border-black bg-white dark:bg-slate-950">
           <table className="w-full border-collapse text-xs text-slate-900 dark:text-slate-100 min-w-[1300px]">
             <thead>
               {/* Dark Green Header Row (matching Excel) */}
@@ -1050,9 +1064,234 @@ export default function WeekSummaryModal({
           </table>
         </div>
 
-        {/* Bottom Summary Breakdown Card matching Excel */}
+        {/* Mobile Card List — phones only; the wide Excel-style table above doesn't fit a phone
+            screen, so each installer becomes a compact, editable card grouped under its branch. */}
+        <div className="md:hidden flex flex-col gap-5">
+          {displayedRows.length === 0 ? (
+            <div className="py-16 text-center text-slate-400 dark:text-slate-500 text-sm italic">
+              {loading ? 'Compiling payroll numbers across all branch sheets…' : 'No payroll entries match the selected filter.'}
+            </div>
+          ) : (
+            Array.from(groupedByBranch.entries()).map(([branchName, rows]) => {
+              const branchSubtotal = rows.reduce((s, r) => s + r.amount, 0)
+              return (
+                <div key={branchName} className="flex flex-col gap-2.5">
+                  {/* Branch header */}
+                  <div className="flex items-center justify-between px-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="w-1.5 h-5 rounded-full bg-[#056434] shrink-0" />
+                      <span className="text-[13px] font-black uppercase tracking-wide text-slate-800 dark:text-slate-100 truncate">
+                        {branchName}
+                      </span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 shrink-0">
+                        {rows.length}
+                      </span>
+                    </div>
+                    <span className="text-sm font-black font-number text-[#056434] dark:text-emerald-400 shrink-0">
+                      ₱{peso(branchSubtotal)}
+                    </span>
+                  </div>
+
+                  {rows.map(r => {
+                    const rowKey = `${r.branchId}-${r.installerName}`
+                    const isHold = r.status === 'HOLD'
+                    const hasPrevCarry = r.prevSalary > 0 || r.prevCashAdvance > 0
+
+                    return (
+                      <div
+                        key={rowKey}
+                        className={`rounded-2xl border overflow-hidden shadow-sm ${
+                          isHold
+                            ? 'border-amber-300 dark:border-amber-700'
+                            : r.isHighlighted
+                              ? 'border-emerald-300 dark:border-emerald-700'
+                              : 'border-slate-200 dark:border-slate-800'
+                        }`}
+                      >
+                        {/* Name + status */}
+                        <div className="flex items-center justify-between gap-2 px-4 py-3 bg-slate-50 dark:bg-slate-900/60">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const emp = employees.find(e => {
+                                const n = (e.name || '').trim().toUpperCase()
+                                const nick = (e.nickname || '').trim().toUpperCase()
+                                return n === r.installerName || (nick && nick === r.installerName) || n.includes(r.installerName) || r.installerName.includes(n)
+                              })
+                              setHistoryModalInstaller({
+                                id: emp?.id || r.installerName,
+                                name: emp?.name || r.installerName,
+                                email: emp?.email || '',
+                                jobTitle: emp?.jobTitle || 'INSTALLER',
+                                branchName: r.branchName || branchName,
+                              })
+                            }}
+                            className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-slate-100 uppercase text-sm text-left min-w-0 cursor-pointer"
+                          >
+                            <span className="truncate">{r.installerName}</span>
+                            <Wrench className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                          </button>
+                          <select
+                            value={r.status}
+                            onChange={e => {
+                              const s = e.target.value as 'SENT' | 'PAID' | 'HOLD'
+                              updateRowOverride(rowKey, {
+                                status: s,
+                                totalForRelease: s === 'HOLD' ? r.prevSalary : r.amount + r.prevSalary,
+                                onlineTransfer: s === 'HOLD' ? 0 : Math.max(0, r.amount - r.cash),
+                              })
+                            }}
+                            className={`h-7 px-2 rounded-full text-[10px] font-black border uppercase outline-none cursor-pointer transition-all shrink-0 ${
+                              isHold
+                                ? 'bg-[#FEF08A] text-amber-950 border-amber-400'
+                                : r.status === 'PAID'
+                                  ? 'bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-300 dark:border-emerald-700'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700'
+                            }`}
+                          >
+                            <option value="SENT">SENT</option>
+                            <option value="PAID">PAID</option>
+                            <option value="HOLD">HOLD</option>
+                          </select>
+                        </div>
+
+                        {/* Amount hero */}
+                        <div className={`flex items-center justify-between px-4 py-3 border-t border-slate-200 dark:border-slate-800 ${isHold ? 'bg-[#FEF9C3] dark:bg-amber-950/30' : 'bg-white dark:bg-slate-950'}`}>
+                          <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            This Cut-Off Amount
+                          </span>
+                          <span className={`text-lg font-black font-number ${isHold ? 'text-amber-900 dark:text-amber-300' : 'text-slate-900 dark:text-white'}`}>
+                            {r.amount > 0 ? `₱${peso(r.amount)}` : '—'}
+                          </span>
+                        </div>
+
+                        {/* Cash / Online split */}
+                        <div className="grid grid-cols-2 divide-x divide-slate-200 dark:divide-slate-800 border-t border-slate-200 dark:border-slate-800">
+                          <label className="flex flex-col gap-1 px-4 py-2.5">
+                            <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">Cash</span>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={r.cash ? peso(r.cash) : ''}
+                              placeholder="0.00"
+                              onChange={e => {
+                                const val = num(e.target.value)
+                                updateRowOverride(rowKey, {
+                                  cash: val,
+                                  onlineTransfer: Math.max(0, r.amount - val),
+                                })
+                              }}
+                              className="w-full bg-transparent outline-none text-sm font-number font-semibold text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-700"
+                            />
+                          </label>
+                          <label className="flex flex-col gap-1 px-4 py-2.5">
+                            <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">Online Transfer</span>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={r.onlineTransfer ? peso(r.onlineTransfer) : ''}
+                              placeholder="0.00"
+                              onChange={e => updateRowOverride(rowKey, { onlineTransfer: num(e.target.value) })}
+                              className="w-full bg-transparent outline-none text-sm font-number font-semibold text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-700"
+                            />
+                          </label>
+                        </div>
+
+                        {/* Previous cut-off carry — only worth a row when it actually applies */}
+                        {(hasPrevCarry || isHold) && (
+                          <div className="grid grid-cols-2 divide-x divide-amber-200 dark:divide-amber-900/60 border-t border-slate-200 dark:border-slate-800 bg-amber-50/60 dark:bg-amber-950/20">
+                            <label className="flex flex-col gap-1 px-4 py-2.5">
+                              <span className="text-[9.5px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-500">Prev. Salary</span>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={r.prevSalary ? peso(r.prevSalary) : ''}
+                                placeholder="0.00"
+                                onChange={e => {
+                                  const val = num(e.target.value)
+                                  updateRowOverride(rowKey, {
+                                    prevSalary: val,
+                                    totalForRelease: (r.status === 'HOLD' ? 0 : r.amount) + val - r.prevCashAdvance,
+                                  })
+                                }}
+                                className="w-full bg-transparent outline-none text-sm font-number font-semibold text-slate-900 dark:text-slate-100 placeholder:text-amber-300 dark:placeholder:text-amber-800"
+                              />
+                            </label>
+                            <label className="flex flex-col gap-1 px-4 py-2.5">
+                              <span className="text-[9.5px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-500">Prev. Cash Adv.</span>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={r.prevCashAdvance ? peso(r.prevCashAdvance) : ''}
+                                placeholder="0.00"
+                                onChange={e => {
+                                  const val = num(e.target.value)
+                                  updateRowOverride(rowKey, {
+                                    prevCashAdvance: val,
+                                    totalForRelease: (r.status === 'HOLD' ? 0 : r.amount) + r.prevSalary - val,
+                                  })
+                                }}
+                                className="w-full bg-transparent outline-none text-sm font-number font-semibold text-slate-900 dark:text-slate-100 placeholder:text-amber-300 dark:placeholder:text-amber-800"
+                              />
+                            </label>
+                          </div>
+                        )}
+
+                        {/* MOP / Account No */}
+                        <div className="grid grid-cols-2 divide-x divide-slate-200 dark:divide-slate-800 border-t border-slate-200 dark:border-slate-800">
+                          <label className="flex flex-col gap-1 px-4 py-2.5">
+                            <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">MOP</span>
+                            <input
+                              type="text"
+                              value={r.mop}
+                              onChange={e => updateRowOverride(rowKey, { mop: e.target.value.toUpperCase() })}
+                              className="w-full bg-transparent outline-none uppercase text-sm font-semibold text-slate-900 dark:text-slate-100"
+                            />
+                          </label>
+                          <label className="flex flex-col gap-1 px-4 py-2.5">
+                            <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">Account No.</span>
+                            <input
+                              type="text"
+                              value={r.accountNo}
+                              onChange={e => updateRowOverride(rowKey, { accountNo: e.target.value })}
+                              className="w-full bg-transparent outline-none text-sm font-number font-semibold text-slate-900 dark:text-slate-100"
+                            />
+                          </label>
+                        </div>
+
+                        {/* Remarks */}
+                        <label className="flex flex-col gap-1 px-4 py-2.5 border-t border-slate-200 dark:border-slate-800">
+                          <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">Remarks</span>
+                          <input
+                            type="text"
+                            value={r.remarks}
+                            placeholder="—"
+                            onChange={e => updateRowOverride(rowKey, { remarks: e.target.value })}
+                            className="w-full bg-transparent outline-none text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-700"
+                          />
+                        </label>
+
+                        {/* Total for release footer */}
+                        <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 dark:border-slate-800 bg-emerald-50 dark:bg-emerald-950/30">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                            Total for Release
+                          </span>
+                          <span className="text-base font-black font-number text-emerald-700 dark:text-emerald-400">
+                            {r.totalForRelease > 0 ? `₱${peso(r.totalForRelease)}` : '—'}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })
+          )}
+        </div>
+
+        {/* Bottom Summary Breakdown — Excel-style table on desktop/print */}
         {displayedRows.length > 0 && (
-          <div className="mt-8 print:mt-6">
+          <div className="hidden md:block mt-8 print:block print:mt-6">
             <div className="w-full sm:w-[500px] border border-black dark:border-slate-600 bg-white dark:bg-slate-900 font-sans shadow-xs rounded-sm overflow-hidden text-sm">
               <table className="w-full border-collapse">
                 <tbody>
@@ -1090,6 +1329,76 @@ export default function WeekSummaryModal({
                   </tr>
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* Mobile Summary Card — same numbers, laid out as a receipt-style breakdown
+            that ends in one unmissable grand-total banner instead of a cramped table. */}
+        {displayedRows.length > 0 && (
+          <div className="md:hidden print:hidden mt-6 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-slate-100 dark:border-slate-800">
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                {region.toUpperCase()} Payout Breakdown
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/40 shrink-0">
+                  <PauseCircle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                </span>
+                <span className="text-xs font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                  Less Hold (Current Cut-Off)
+                </span>
+              </div>
+              <span className="text-sm font-black font-number text-amber-700 dark:text-amber-400 shrink-0">
+                {totals.holdAmount > 0 ? `-₱${peso(totals.holdAmount)}` : '₱0.00'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 shrink-0">
+                  <CircleDollarSign className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                </span>
+                <span className="text-xs font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                  Final Total (Current Cut-Off)
+                </span>
+              </div>
+              <span className="text-sm font-black font-number text-slate-900 dark:text-slate-100 shrink-0">
+                ₱{peso(totals.finalTotal)}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 shrink-0">
+                  <Wallet className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                </span>
+                <span className="text-xs font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                  From Previous Cut-Off
+                </span>
+              </div>
+              <span className="text-sm font-black font-number text-slate-900 dark:text-slate-100 shrink-0">
+                +₱{peso(totals.totalPrevSalary)}
+              </span>
+            </div>
+
+            {/* Grand total banner */}
+            <div className="flex items-center justify-between gap-3 px-4 py-4 bg-gradient-to-r from-[#056434] to-[#0a8a49]">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="flex items-center justify-center w-9 h-9 rounded-full bg-white/15 shrink-0">
+                  <Sparkles className="w-[18px] h-[18px] text-white" />
+                </span>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-100">Grand Total</span>
+                  <span className="text-[10px] text-emerald-200/80">Ready for release</span>
+                </div>
+              </div>
+              <span className="text-xl font-black font-number text-white shrink-0">
+                ₱{peso(totals.grandTotal)}
+              </span>
             </div>
           </div>
         )}
