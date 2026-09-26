@@ -15,6 +15,9 @@ interface CommissionItem {
   hp?: string
   dateInstalled?: string
   amount?: number
+  /** What was actually paid, as entered when marking paid. The backend falls back to `amount`
+   *  when nothing was entered, so this is the figure to show. */
+  collectionAmountPaid?: number | null
   collectionResolved: boolean
   status?: string
   collectionResolvedBy?: string
@@ -163,7 +166,7 @@ export default function Commissions() {
           collectionResolvedBy: user?.name || '',
           collectionResolvedAt: now,
           customer: customerName || it.customer,
-          amount: amountPaid ?? it.amount,
+          collectionAmountPaid: amountPaid ?? it.collectionAmountPaid,
         }
       : it))
     setConfirmItem(null)
@@ -175,7 +178,7 @@ export default function Commissions() {
       })
       if (!res.ok) {
         setItems(prev => prev.map(it => it.id === item.id
-          ? { ...it, collectionResolved: false, status: 'PENDING', amount: item.amount }
+          ? { ...it, collectionResolved: false, status: 'PENDING', collectionAmountPaid: item.collectionAmountPaid }
           : it))
       } else {
         try { sessionStorage.removeItem(cacheKey()) } catch { /* ignore */ }
@@ -183,7 +186,7 @@ export default function Commissions() {
     } catch (e) {
       console.error('Failed to mark commission as paid', e)
       setItems(prev => prev.map(it => it.id === item.id
-        ? { ...it, collectionResolved: false, status: 'PENDING', amount: item.amount }
+        ? { ...it, collectionResolved: false, status: 'PENDING', collectionAmountPaid: item.collectionAmountPaid }
         : it))
     } finally {
       setMarkingPaidId(null)

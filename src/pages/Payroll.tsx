@@ -29,6 +29,19 @@ import {
   DEFAULT_PAYROLL_RATES,
   STANDARD_RATE_TABLE,
   MANUAL_FEE_PREFIX,
+  mapSavedPayrollEntry,
+  rowTotal,
+  installerTotal,
+  installerNet,
+  deductionTotal,
+  deductionValue,
+  lateDeduction,
+  rawDeduction,
+  LATE_RATE_PER_MINUTE,
+  UNIFORM_PRICE_PER_PC,
+  DEDUCTION_PREFIX,
+  BALANCE_DEDUCTION_KEYS,
+  type DeductionKey,
   type AutoStampedFee,
   type PayrollRow,
   type PayrollRates,
@@ -47,7 +60,6 @@ const peso = (v: number | string | null | undefined) => {
   const n = num(v)
   return n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
-const uid = () => Math.random().toString(36).slice(2)
 const shortDate = (ymd: string) => {
   if (!ymd) return ''
   const [y, m, d] = ymd.split('-').map(Number)
@@ -81,32 +93,7 @@ const avatarColor = (name: string) => {
 
 // Legacy date helpers removed — week logic now lives in payrollWeeks.ts
 
-const customFieldsFeeTotal = (r: PayrollRow): number => {
-  if (!r.customFields) return 0
-  let sum = 0
-  for (const [k, v] of Object.entries(r.customFields)) {
-    if (k.startsWith('ded:') || k.startsWith('xfer:') || k.startsWith(MANUAL_FEE_PREFIX)) continue
-    sum += num(v)
-  }
-  return sum
-}
-
-// Mirrors the sheet's "PAYROLL DUE" — sum of every fee-type column, whether or not that
-// column is currently shown (a hidden column can still hold an amount), including branch custom columns.
-const rowTotal = (r: PayrollRow): number =>
-  num(r.installationFee) + num(r.earthGrounding) + num(r.dailyAllowance)
-  + num(r.excessCopperTube) + num(r.hauling) + num(r.dismantling) + num(r.electricalWorks)
-  + num(r.chippingWorks) + num(r.breaker) + num(r.powerSupplyLaborOnly) + num(r.powerSupplyLaborMaterials)
-  + num(r.specialBracketCatwalk) + num(r.specialBracketWelding) + num(r.excessCopperTubeLaborOnly)
-  + num(r.relocationAccuFcu) + num(r.systemReprocessLabor) + num(r.drainPumpInstallation)
-  + num(r.scaffoldingInstallation) + num(r.flushingOldPipe) + num(r.sterneBracket)
-  + num(r.breakerInstallationLabor) + num(r.chargingOfFreon) + num(r.materialsReturn)
-  + customFieldsFeeTotal(r)
-
 const rowAddOns = (r: PayrollRow): number => Math.max(0, rowTotal(r) - num(r.installationFee))
-
-const installerTotal = (installerRows: PayrollRow[]) =>
-  installerRows.reduce((sum, r) => sum + rowTotal(r), 0)
 
 // A job counts once its schedule status is a DONE outcome — install, cleaning, checkup, service,
 // etc. — so service branches (mostly cleanings) don't read as zero work. installerRows is already
@@ -130,34 +117,6 @@ const parseMoneyText = (s: string | number | null | undefined) => num(s)
 const remittanceTotal = (rowsIn: PayrollRow[]) => rowsIn.reduce((sum, r) => sum + parseMoneyText(r.actualCollected), 0)
 const baseInstallTotal = (rowsIn: PayrollRow[]) => rowsIn.reduce((sum, r) => sum + num(r.installationFee), 0)
 
-// Per-installer deductions for the period — the bottom block of the branch's payroll sheet
-// (Late / AC Loan-CA / Incomplete Upload / Losses / Remit / Uniform). They ride along in each
-// row's customFields under reserved "ded:" keys, so the existing payroll save persists them.
-const LATE_RATE_PER_MINUTE = 1.6
-const UNIFORM_PRICE_PER_PC = 850
-type DeductionKey =
-  | 'lateMinutes' | 'loan' | 'loanBalance' | 'incompleteUpload' | 'losses' | 'remitPenalty' | 'uniform' | 'uniformBalance'
-const DEDUCTION_PREFIX = 'ded:'
-// Balances are a snapshot (latest wins); every other key is an amount that adds up.
-const BALANCE_DEDUCTION_KEYS = new Set<DeductionKey>(['loanBalance', 'uniformBalance'])
-const rawDeduction = (r: PayrollRow, key: DeductionKey) => r.customFields?.[DEDUCTION_PREFIX + key] || ''
-/** Amounts sum across every row in range — each week's value sits on that week's first job —
- *  so a month view shows the month's total. Balances take the latest row that has one. */
-const deductionValue = (rowsIn: PayrollRow[], key: DeductionKey): number => {
-  if (BALANCE_DEDUCTION_KEYS.has(key)) {
-    for (let i = rowsIn.length - 1; i >= 0; i--) {
-      const v = rawDeduction(rowsIn[i], key)
-      if (v) return num(v)
-    }
-    return 0
-  }
-  return rowsIn.reduce((sum, r) => sum + num(rawDeduction(r, key)), 0)
-}
-const lateDeduction = (rowsIn: PayrollRow[]) => deductionValue(rowsIn, 'lateMinutes') * LATE_RATE_PER_MINUTE
-const deductionTotal = (rowsIn: PayrollRow[]) =>
-  lateDeduction(rowsIn) + deductionValue(rowsIn, 'loan') + deductionValue(rowsIn, 'incompleteUpload')
-  + deductionValue(rowsIn, 'losses') + deductionValue(rowsIn, 'remitPenalty') + deductionValue(rowsIn, 'uniform')
-const installerNet = (installerRows: PayrollRow[]) => installerTotal(installerRows) - deductionTotal(installerRows)
 
 
 type ColumnKey =
@@ -588,22 +547,38 @@ export default function Payroll() {
   // cleanInstallerName in schedulePrefill.ts — that's what payrollDerive.ts groups rows by),
   // so the payroll page has to resolve that short form back to the real technician. Fetches
   // every EMPLOYEE tagged INSTALLER or TECHNICIAN for the selected branch.
-  const [branchTechnicians, setBranchTechnicians] = useState<{ id: string; name: string; nickname: string; jobTitle: string; inHouse: boolean }[]>([])
+  // Schedule tickets only ever carry an installer's first name/nickname (see
+  // cleanInstallerName in schedulePrefill.ts — that's what payrollDerive.ts groups rows by),
+  // so the payroll page has to resolve that short form back to the real technician account.
+  // Fetches every employee/technician to map names back to their full account names.
+  const [branchTechnicians, setBranchTechnicians] = useState<{ id: string; name: string; nickname: string; jobTitle: string; inHouse: boolean; branchId?: string }[]>([])
   useEffect(() => {
-    if (!branchFilter) { setBranchTechnicians([]); return }
     let cancelled = false
-    fetch(`${API_BASE_URL}/user/all?role=EMPLOYEE`, { headers: { Authorization: `Bearer ${getToken()}` } })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (cancelled || !data) return
-        const list: any[] = data?.data || []
-        const filtered = list
-          .filter(u => u.branchId === branchFilter)
-          .filter(u => /INSTALLER|TECHNICIAN/i.test(u.jobTitle || ''))
-          .map(u => ({ id: u.id, name: String(u.name || '').trim(), nickname: String(u.nickname || '').trim(), jobTitle: u.jobTitle || '', inHouse: !!u.inHouse }))
-        setBranchTechnicians(filtered)
-      })
-      .catch(() => {})
+    const loadUsers = async () => {
+      try {
+        let res = await fetch(`${API_BASE_URL}/user/all`, { headers: { Authorization: `Bearer ${getToken()}` } })
+        if (!res.ok) {
+          res = await fetch(`${API_BASE_URL}/user/all?role=EMPLOYEE`, { headers: { Authorization: `Bearer ${getToken()}` } })
+        }
+        if (res.ok) {
+          const data = await res.json()
+          if (cancelled || !data) return
+          const list: any[] = data?.data || []
+          const mapped = list
+            .filter(u => u && u.name)
+            .map(u => ({
+              id: u.id,
+              name: String(u.name || '').trim(),
+              nickname: String(u.nickname || '').trim(),
+              jobTitle: u.jobTitle || '',
+              inHouse: !!u.inHouse,
+              branchId: u.branchId || '',
+            }))
+          setBranchTechnicians(mapped)
+        }
+      } catch {}
+    }
+    loadUsers()
     return () => { cancelled = true }
   }, [branchFilter])
 
@@ -614,58 +589,99 @@ export default function Payroll() {
   const inHouseTechnicianNames = useMemo(() => {
     const set = new Set<string>()
     for (const t of branchTechnicians) {
-      if (t.inHouse && t.name) set.add(t.name.toUpperCase())
+      if (t.inHouse && t.name) {
+        set.add(t.name.trim().toUpperCase())
+        if (t.nickname) set.add(t.nickname.trim().toUpperCase())
+      }
     }
     return set
   }, [branchTechnicians])
 
-  // Exact aliases only — the account's own `nickname` field (set by hand for cases like
-  // "RYAN" for "MARCYAN ZANTUA" that have zero textual relationship to the real name — see
-  // scripts/postgres/set_installer_nicknames.sql) plus every word of their real name (covers
-  // "JHON PATRICK PRIZA" going by "PATRICK" on tickets). First match wins on a collision.
+  // Exact aliases and word lookups to resolve ticket nicknames or first names to full account names.
   const installerAliases = useMemo(() => {
     const map: Record<string, string> = {}
-    for (const t of branchTechnicians) {
-      if (t.nickname && !map[t.nickname.toUpperCase()]) map[t.nickname.toUpperCase()] = t.name
-      for (const word of t.name.split(/\s+/)) {
-        const key = word.toUpperCase()
-        if (key && !map[key]) map[key] = t.name
+    
+    // Sort so technicians in the active branch have highest priority on name collision
+    const sorted = [...branchTechnicians].sort((a, b) => {
+      const aMatch = branchFilter && a.branchId === branchFilter ? 1 : 0
+      const bMatch = branchFilter && b.branchId === branchFilter ? 1 : 0
+      return bMatch - aMatch
+    })
+
+    for (const t of sorted) {
+      const fullName = t.name.trim()
+      if (!fullName) continue
+      const fullUpper = fullName.toUpperCase()
+
+      // Exact full name maps to full name
+      if (!map[fullUpper]) map[fullUpper] = fullUpper
+
+      // Exact nickname maps to full name
+      if (t.nickname) {
+        const nickUpper = t.nickname.trim().toUpperCase()
+        if (nickUpper && !map[nickUpper]) map[nickUpper] = fullUpper
+      }
+
+      // Every word in their full name (e.g. "JHON", "MARIANO", "PRIZA")
+      for (const word of fullName.split(/[\s-]+/)) {
+        const key = word.trim().toUpperCase()
+        if (key && key.length >= 2 && !map[key]) {
+          map[key] = fullUpper
+        }
       }
     }
     return map
-  }, [branchTechnicians])
+  }, [branchTechnicians, branchFilter])
 
   // Fuzzy fallback for shortened-but-related nicknames ("CRIS" for "CRISANTO") that aren't
-  // worth a manual nickname entry — only kicks in once the exact alias map above has no hit,
-  // and only for a >=4-char prefix so it doesn't over-match short/common fragments.
+  // worth a manual nickname entry.
   const resolvePrefixAlias = (word: string): string | null => {
-    if (word.length < 4) return null
-    for (const t of branchTechnicians) {
-      for (const real of t.name.split(/\s+/)) {
-        if (real.length > word.length && real.toUpperCase().startsWith(word.toUpperCase())) return t.name
+    if (word.length < 3) return null
+    const wUpper = word.toUpperCase()
+    const sorted = [...branchTechnicians].sort((a, b) => {
+      const aMatch = branchFilter && a.branchId === branchFilter ? 1 : 0
+      const bMatch = branchFilter && b.branchId === branchFilter ? 1 : 0
+      return bMatch - aMatch
+    })
+
+    for (const t of sorted) {
+      const fullUpper = (t.name || '').trim().toUpperCase()
+      if (!fullUpper) continue
+      if (fullUpper.startsWith(wUpper)) return fullUpper
+      for (const real of fullUpper.split(/[\s-]+/)) {
+        if (real.length >= word.length && real.startsWith(wUpper)) return fullUpper
       }
     }
     return null
   }
 
-  /** The one true name-resolution function — used both to LABEL a roster group and to decide
-   *  which group a row belongs to in the first place (resolveGroupKey below), so "CRIS" and
-   *  "CRISANTO" collapse into the same installer instead of showing as two separate rows. */
+  /** The one true name-resolution function — resolves ticket short names back to full account name. */
   const resolveInstallerIdentity = (raw: string): string => {
     const trimmed = raw.trim()
     if (!trimmed) return trimmed
-    // Uppercased throughout — matches how every ticket-derived short name already arrives
-    // (payrollDerive.ts uppercases those) and the table's own all-caps styling, regardless of
-    // whatever casing the account's real name was typed in ("Allan Bellen" → "ALLAN BELLEN").
-    const whole = installerAliases[trimmed.toUpperCase()]
+    const upper = trimmed.toUpperCase()
+
+    // 1. Direct alias or whole-string match in dictionary
+    const whole = installerAliases[upper]
     if (whole) return whole.toUpperCase()
+
+    // 2. Direct exact match against any user account
+    for (const t of branchTechnicians) {
+      const tName = (t.name || '').trim().toUpperCase()
+      const tNick = (t.nickname || '').trim().toUpperCase()
+      if (tName === upper || (tNick && tNick === upper)) return tName
+    }
+
+    // 3. Match each segment or fuzzy prefix
     for (const word of trimmed.split(/[\s-]+/)) {
-      const exact = installerAliases[word.toUpperCase()]
+      const wUpper = word.toUpperCase()
+      const exact = installerAliases[wUpper]
       if (exact) return exact.toUpperCase()
       const fuzzy = resolvePrefixAlias(word)
       if (fuzzy) return fuzzy.toUpperCase()
     }
-    return trimmed
+
+    return upper
   }
   const displayInstallerName = (shortName: string) => resolveInstallerIdentity(shortName)
 
@@ -1046,52 +1062,7 @@ export default function Payroll() {
         let savedRows: PayrollRow[] = []
         if (res.ok) {
           const list = await res.json()
-          savedRows = (Array.isArray(list) ? list : []).map((e: any) => ({
-            id: e.id || uid(),
-            ticketId: e.ticketId || undefined,
-            ticketNumber: e.ticketNumber || '',
-            installerName: e.installerName || '',
-            workDate: e.workDate || '',
-            customerName: e.customerName || '',
-            cityAddress: e.cityAddress || '',
-            brandCapacity: e.brandCapacity || '',
-            sifQuotation: e.sifQuotation || '',
-            totalPipeLength: e.totalPipeLength || '',
-            amountCollected: e.amountCollected != null ? String(e.amountCollected) : '',
-            actualCollected: e.actualCollected || '',
-            installationUpload: e.installationUpload || '',
-            installationFee: e.installationFee != null ? String(e.installationFee) : '',
-            earthGrounding: e.earthGrounding != null ? String(e.earthGrounding) : '',
-            dailyAllowance: e.dailyAllowance != null ? String(e.dailyAllowance) : '',
-            excessCopperTube: e.excessCopperTube != null ? String(e.excessCopperTube) : '',
-            hauling: e.hauling != null ? String(e.hauling) : '',
-            dismantling: e.dismantling != null ? String(e.dismantling) : '',
-            electricalWorks: e.electricalWorks != null ? String(e.electricalWorks) : '',
-            chippingWorks: e.chippingWorks != null ? String(e.chippingWorks) : '',
-            breaker: e.breaker != null ? String(e.breaker) : '',
-            powerSupplyLaborOnly: e.powerSupplyLaborOnly != null ? String(e.powerSupplyLaborOnly) : '',
-            powerSupplyLaborMaterials: e.powerSupplyLaborMaterials != null ? String(e.powerSupplyLaborMaterials) : '',
-            specialBracketCatwalk: e.specialBracketCatwalk != null ? String(e.specialBracketCatwalk) : '',
-            specialBracketWelding: e.specialBracketWelding != null ? String(e.specialBracketWelding) : '',
-            excessCopperTubeLaborOnly: e.excessCopperTubeLaborOnly != null ? String(e.excessCopperTubeLaborOnly) : '',
-            relocationAccuFcu: e.relocationAccuFcu != null ? String(e.relocationAccuFcu) : '',
-            systemReprocessLabor: e.systemReprocessLabor != null ? String(e.systemReprocessLabor) : '',
-            drainPumpInstallation: e.drainPumpInstallation != null ? String(e.drainPumpInstallation) : '',
-            scaffoldingInstallation: e.scaffoldingInstallation != null ? String(e.scaffoldingInstallation) : '',
-            flushingOldPipe: e.flushingOldPipe != null ? String(e.flushingOldPipe) : '',
-            sterneBracket: e.sterneBracket != null ? String(e.sterneBracket) : '',
-            breakerInstallationLabor: e.breakerInstallationLabor != null ? String(e.breakerInstallationLabor) : '',
-            chargingOfFreon: e.chargingOfFreon != null ? String(e.chargingOfFreon) : '',
-            materialsReturn: e.materialsReturn != null ? String(e.materialsReturn) : '',
-            installationChecklist: e.installationChecklist || '',
-            videoUpload: e.videoUpload || '',
-            remarks: e.remarks || '',
-            audited: e.audited || '',
-            status: e.status || 'PENDING',
-            customFields: (() => {
-              try { return e.customFields ? JSON.parse(e.customFields) : {} } catch { return {} }
-            })(),
-          }))
+          savedRows = (Array.isArray(list) ? list : []).map(mapSavedPayrollEntry)
         }
 
         // If the active week is closed, use saved rows only and skip schedule sync & auto-save
@@ -1641,9 +1612,9 @@ export default function Payroll() {
                 style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
                 aria-label="Filter by Technician"
               >
-                <option value="">All technicians</option>
+                <option value="">ALL TECHNICIANS</option>
                 {technicianOptions.map(name => (
-                  <option key={name} value={name}>{titleCase(displayInstallerName(name))}</option>
+                  <option key={name} value={name}>{displayInstallerName(name).toUpperCase()}</option>
                 ))}
               </select>
               <ChevronDown className="absolute right-3 w-3.5 h-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
@@ -1853,11 +1824,8 @@ export default function Payroll() {
         >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 sm:px-7 py-5">
             <div className="min-w-0">
-              <div className="text-base font-bold tracking-tight truncate" style={{ color: textPrimary }}>
-                {currentBranchDisplay || 'Branch'} Installer&rsquo;s Payroll
-              </div>
-              <div className="text-xs font-medium opacity-70" style={{ color: textMuted }}>
-                Weekly payroll &amp; allowance summary
+              <div className="text-base font-bold tracking-tight truncate uppercase" style={{ color: textPrimary }}>
+                {currentBranchDisplay ? `${currentBranchDisplay.toUpperCase()} WEEKLY PAYOUTS` : 'WEEKLY PAYOUTS'}
               </div>
             </div>
 
@@ -1973,8 +1941,8 @@ export default function Payroll() {
                   style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}
                 >
                   <div />
-                  <span className="text-xl md:text-2xl font-extrabold uppercase tracking-wide text-center whitespace-nowrap" style={{ color: textPrimary }}>
-                    {titleCase(displayInstallerName(installerName))}
+                  <span className="text-xl md:text-2xl font-black uppercase tracking-wide text-center whitespace-nowrap" style={{ color: textPrimary }}>
+                    {displayInstallerName(installerName).toUpperCase()}
                   </span>
                   <div className="flex justify-end">
                     <button
@@ -2465,7 +2433,7 @@ export default function Payroll() {
                 key={installerName}
                 role="button"
                 tabIndex={0}
-                title={`Open ${titleCase(displayInstallerName(installerName))}'s payroll`}
+                title={`Open ${displayInstallerName(installerName).toUpperCase()}'s payroll`}
                 onClick={() => setSelectedInstaller(installerName)}
                 onKeyDown={e => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -2487,10 +2455,10 @@ export default function Payroll() {
                         className="w-11 h-11 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
                         style={{ background: avatarColor(installerName) }}
                       >
-                        {getInitials(installerName)}
+                        {getInitials(displayInstallerName(installerName))}
                       </div>
-                      <span className="text-sm md:text-base font-semibold truncate" style={{ color: textPrimary }}>
-                        {titleCase(displayInstallerName(installerName))}
+                      <span className="text-sm md:text-base font-bold truncate uppercase tracking-tight" style={{ color: textPrimary }}>
+                        {displayInstallerName(installerName).toUpperCase()}
                       </span>
                     </div>
 
@@ -2569,30 +2537,23 @@ export default function Payroll() {
             )
           })}
 
-          {/* Totals footer — reads as a ledger's own TOTAL line, not a KPI dashboard: no icon
-              chips, no rainbow palette, just labels-over-numbers with the net payout accented. */}
+          {/* Totals footer */}
           <div
-            className="flex flex-wrap items-center justify-between gap-x-10 gap-y-3 px-6 md:px-7 py-5"
+            className="flex flex-wrap items-center justify-end gap-x-9 gap-y-2 px-6 md:px-7 py-5"
             style={{ backgroundColor: isLight ? '#f8fafc' : '#0d1520', borderTop: `1px solid ${border}` }}
           >
-            <div className="flex items-center gap-1.5 text-xs font-medium opacity-60" style={{ color: textMuted }}>
-              <Users className="w-3.5 h-3.5" />
-              {grouped.length} installer{grouped.length !== 1 ? 's' : ''}
-            </div>
-            <div className="flex flex-wrap items-center gap-x-9 gap-y-2">
-              {([
-                { label: 'Remittance Collected', value: globalRemittanceTotal, color: remitAccent },
-                { label: 'Base Install Total', value: globalBaseInstallTotal, color: textPrimary },
-                { label: 'Total Add-on Pay', value: globalAddOnTotal, color: textPrimary },
-                { label: 'Total Deductions', value: globalDeductionTotal, color: globalDeductionTotal > 0 ? (isLight ? '#DC2626' : '#F87171') : textPrimary },
-                { label: 'Net Payout Due', value: grandTotal - globalDeductionTotal, color: '#10B981' },
-              ] as const).map(tile => (
-                <div key={tile.label} className="flex flex-col items-end">
-                  <span className="text-[10px] font-medium uppercase tracking-wider opacity-60" style={{ color: textMuted }}>{tile.label}</span>
-                  <span className="text-sm font-bold tabular-nums" style={{ color: tile.color }}>₱{peso(tile.value)}</span>
-                </div>
-              ))}
-            </div>
+            {([
+              { label: 'Remittance Collected', value: globalRemittanceTotal, color: remitAccent },
+              { label: 'Base Install Total', value: globalBaseInstallTotal, color: textPrimary },
+              { label: 'Total Add-on Pay', value: globalAddOnTotal, color: textPrimary },
+              { label: 'Total Deductions', value: globalDeductionTotal, color: globalDeductionTotal > 0 ? (isLight ? '#DC2626' : '#F87171') : textPrimary },
+              { label: 'Net Payout Due', value: grandTotal - globalDeductionTotal, color: '#10B981' },
+            ] as const).map(tile => (
+              <div key={tile.label} className="flex flex-col items-end">
+                <span className="text-[10px] font-medium uppercase tracking-wider opacity-60" style={{ color: textMuted }}>{tile.label}</span>
+                <span className="text-sm font-bold tabular-nums" style={{ color: tile.color }}>₱{peso(tile.value)}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -2670,7 +2631,7 @@ export default function Payroll() {
                   Manage Columns
                 </h2>
                 <p className="text-[11px] font-medium mt-0.5" style={{ color: textMuted }}>
-                  {displayInstallerName(columnManagerFor)} &mdash; <span style={{ color: '#10B981' }}>{totalVisible}</span>/{totalToggleable} visible
+                  {displayInstallerName(columnManagerFor).toUpperCase()} &mdash; <span style={{ color: '#10B981' }}>{totalVisible}</span>/{totalToggleable} visible
                 </p>
               </div>
               <button
@@ -3891,8 +3852,8 @@ export default function Payroll() {
                       <Receipt className="w-5 h-5 text-amber-500" />
                     </div>
                     <div className="min-w-0">
-                      <h2 className="text-base font-extrabold tracking-tight truncate" style={{ color: textPrimary }}>
-                        {titleCase(displayInstallerName(deductionsModalInstaller))}&rsquo;s Deductions &amp; Adjustments
+                      <h2 className="text-base font-extrabold tracking-tight truncate uppercase" style={{ color: textPrimary }}>
+                        {displayInstallerName(deductionsModalInstaller).toUpperCase()}&rsquo;s Deductions &amp; Adjustments
                       </h2>
                       <p className="text-xs font-semibold mt-1 leading-snug" style={{ color: textMuted }}>
                         Late minutes, AC loans &amp; cash advances, incomplete uploads, losses, uniform, and remit penalties.
@@ -4013,7 +3974,7 @@ export default function Payroll() {
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-emerald-500" />
                 <h2 className="text-sm font-black uppercase tracking-wide" style={{ color: textPrimary }}>
-                  COMPLETE PAYROLL — {displayInstallerName(completeModalFor)}
+                  COMPLETE PAYROLL — {displayInstallerName(completeModalFor).toUpperCase()}
                 </h2>
               </div>
               <button type="button" onClick={() => setCompleteModalFor(null)} className="p-1.5 rounded-lg hover:bg-slate-500/10 transition-colors">

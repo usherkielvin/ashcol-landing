@@ -504,3 +504,120 @@ export function deduplicateAndMergePayroll(existing: PayrollRow[], incoming: Pay
 
   return [...updatedExisting, ...deduped]
 }
+
+// ── Saved entries + totals ───────────────────────────────────────────────────
+// Shared by the Payroll page and the week summary so both compute an installer's pay the same way.
+
+const toNum = (v: number | string | null | undefined): number => {
+  if (v == null) return 0
+  if (typeof v === 'number') return isNaN(v) ? 0 : v
+  const cleaned = String(v).replace(/[^0-9.-]/g, '')
+  if (!cleaned) return 0
+  const parsed = parseFloat(cleaned)
+  return isNaN(parsed) ? 0 : parsed
+}
+const moneyStr = (v: unknown) => (v != null ? String(v) : '')
+
+/** Maps a raw /v1/payroll entry (fees as numbers, customFields as a JSON string) to a PayrollRow. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function mapSavedPayrollEntry(e: any): PayrollRow {
+  return {
+    id: e.id || uid(),
+    ticketId: e.ticketId || undefined,
+    ticketNumber: e.ticketNumber || '',
+    installerName: e.installerName || '',
+    workDate: e.workDate || '',
+    customerName: e.customerName || '',
+    cityAddress: e.cityAddress || '',
+    brandCapacity: e.brandCapacity || '',
+    sifQuotation: e.sifQuotation || '',
+    totalPipeLength: e.totalPipeLength || '',
+    amountCollected: moneyStr(e.amountCollected),
+    actualCollected: e.actualCollected || '',
+    installationUpload: e.installationUpload || '',
+    installationFee: moneyStr(e.installationFee),
+    earthGrounding: moneyStr(e.earthGrounding),
+    dailyAllowance: moneyStr(e.dailyAllowance),
+    excessCopperTube: moneyStr(e.excessCopperTube),
+    hauling: moneyStr(e.hauling),
+    dismantling: moneyStr(e.dismantling),
+    electricalWorks: moneyStr(e.electricalWorks),
+    chippingWorks: moneyStr(e.chippingWorks),
+    breaker: moneyStr(e.breaker),
+    powerSupplyLaborOnly: moneyStr(e.powerSupplyLaborOnly),
+    powerSupplyLaborMaterials: moneyStr(e.powerSupplyLaborMaterials),
+    specialBracketCatwalk: moneyStr(e.specialBracketCatwalk),
+    specialBracketWelding: moneyStr(e.specialBracketWelding),
+    excessCopperTubeLaborOnly: moneyStr(e.excessCopperTubeLaborOnly),
+    relocationAccuFcu: moneyStr(e.relocationAccuFcu),
+    systemReprocessLabor: moneyStr(e.systemReprocessLabor),
+    drainPumpInstallation: moneyStr(e.drainPumpInstallation),
+    scaffoldingInstallation: moneyStr(e.scaffoldingInstallation),
+    flushingOldPipe: moneyStr(e.flushingOldPipe),
+    sterneBracket: moneyStr(e.sterneBracket),
+    breakerInstallationLabor: moneyStr(e.breakerInstallationLabor),
+    chargingOfFreon: moneyStr(e.chargingOfFreon),
+    materialsReturn: moneyStr(e.materialsReturn),
+    installationChecklist: e.installationChecklist || '',
+    videoUpload: e.videoUpload || '',
+    remarks: e.remarks || '',
+    audited: e.audited || '',
+    status: e.status || 'PENDING',
+    customFields: (() => {
+      if (e.customFields && typeof e.customFields === 'object') return e.customFields
+      try { return e.customFields ? JSON.parse(e.customFields) : {} } catch { return {} }
+    })(),
+  }
+}
+
+// Per-installer deductions ride along in each row's customFields under reserved "ded:" keys.
+export const LATE_RATE_PER_MINUTE = 1.6
+export const UNIFORM_PRICE_PER_PC = 850
+export type DeductionKey =
+  | 'lateMinutes' | 'loan' | 'loanBalance' | 'incompleteUpload' | 'losses' | 'remitPenalty' | 'uniform' | 'uniformBalance'
+export const DEDUCTION_PREFIX = 'ded:'
+// Balances are a snapshot (latest wins); every other key is an amount that adds up.
+export const BALANCE_DEDUCTION_KEYS = new Set<DeductionKey>(['loanBalance', 'uniformBalance'])
+
+export const customFieldsFeeTotal = (r: PayrollRow): number => {
+  if (!r.customFields) return 0
+  let sum = 0
+  for (const [k, v] of Object.entries(r.customFields)) {
+    if (k.startsWith(DEDUCTION_PREFIX) || k.startsWith('xfer:') || k.startsWith(MANUAL_FEE_PREFIX)) continue
+    sum += toNum(v)
+  }
+  return sum
+}
+
+/** Mirrors the sheet's "PAYROLL DUE" — every fee-type column (shown or hidden) plus custom columns. */
+export const rowTotal = (r: PayrollRow): number =>
+  toNum(r.installationFee) + toNum(r.earthGrounding) + toNum(r.dailyAllowance)
+  + toNum(r.excessCopperTube) + toNum(r.hauling) + toNum(r.dismantling) + toNum(r.electricalWorks)
+  + toNum(r.chippingWorks) + toNum(r.breaker) + toNum(r.powerSupplyLaborOnly) + toNum(r.powerSupplyLaborMaterials)
+  + toNum(r.specialBracketCatwalk) + toNum(r.specialBracketWelding) + toNum(r.excessCopperTubeLaborOnly)
+  + toNum(r.relocationAccuFcu) + toNum(r.systemReprocessLabor) + toNum(r.drainPumpInstallation)
+  + toNum(r.scaffoldingInstallation) + toNum(r.flushingOldPipe) + toNum(r.sterneBracket)
+  + toNum(r.breakerInstallationLabor) + toNum(r.chargingOfFreon) + toNum(r.materialsReturn)
+  + customFieldsFeeTotal(r)
+
+export const installerTotal = (installerRows: PayrollRow[]) =>
+  installerRows.reduce((sum, r) => sum + rowTotal(r), 0)
+
+export const rawDeduction = (r: PayrollRow, key: DeductionKey) => r.customFields?.[DEDUCTION_PREFIX + key] || ''
+/** Amounts sum across every row in range (each week's value sits on that week's first job);
+ *  balances take the latest row that has one. */
+export const deductionValue = (rowsIn: PayrollRow[], key: DeductionKey): number => {
+  if (BALANCE_DEDUCTION_KEYS.has(key)) {
+    for (let i = rowsIn.length - 1; i >= 0; i--) {
+      const v = rawDeduction(rowsIn[i], key)
+      if (v) return toNum(v)
+    }
+    return 0
+  }
+  return rowsIn.reduce((sum, r) => sum + toNum(rawDeduction(r, key)), 0)
+}
+export const lateDeduction = (rowsIn: PayrollRow[]) => deductionValue(rowsIn, 'lateMinutes') * LATE_RATE_PER_MINUTE
+export const deductionTotal = (rowsIn: PayrollRow[]) =>
+  lateDeduction(rowsIn) + deductionValue(rowsIn, 'loan') + deductionValue(rowsIn, 'incompleteUpload')
+  + deductionValue(rowsIn, 'losses') + deductionValue(rowsIn, 'remitPenalty') + deductionValue(rowsIn, 'uniform')
+export const installerNet = (installerRows: PayrollRow[]) => installerTotal(installerRows) - deductionTotal(installerRows)

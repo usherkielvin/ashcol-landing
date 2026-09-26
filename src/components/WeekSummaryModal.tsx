@@ -5,7 +5,7 @@ import {
   Building2, RotateCcw, Search, Wrench
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
-import { API_BASE_URL, formatBranchName } from '../utils/api'
+import { API_BASE_URL, formatBranchName, branchScopesMatch } from '../utils/api'
 import InstallerTicketHistoryModal from './InstallerTicketHistoryModal'
 import type { HistoryPerson } from './TicketHistoryTable'
 import {
@@ -16,6 +16,9 @@ import {
 } from '../utils/payrollWeeks'
 import {
   deduplicateAndMergePayroll,
+  mapSavedPayrollEntry,
+  installerTotal,
+  deductionTotal,
   type PayrollRow,
 } from '../utils/payrollDerive'
 
@@ -223,7 +226,9 @@ export default function WeekSummaryModal({
               if (res.ok) {
                 const list = await res.json()
                 if (Array.isArray(list)) {
-                  branchRows = deduplicateAndMergePayroll(branchRows, list)
+                  // Raw entries hold fees as numbers and customFields as a JSON string — map them
+                  // first, or the totals below read string characters instead of deduction keys.
+                  branchRows = deduplicateAndMergePayroll(branchRows, list.map(mapSavedPayrollEntry))
                 }
               }
             } catch (err) {
@@ -260,40 +265,6 @@ export default function WeekSummaryModal({
     return formatBranchName(nameOrId).toUpperCase()
   }
 
-  // Calculate fee totals for a single row
-  const calcRowTotal = (r: PayrollRow): number => {
-    let feeSum = num(r.installationFee) + num(r.earthGrounding) + num(r.dailyAllowance)
-      + num(r.excessCopperTube) + num(r.hauling) + num(r.dismantling) + num(r.electricalWorks)
-      + num(r.chippingWorks) + num(r.breaker) + num(r.powerSupplyLaborOnly) + num(r.powerSupplyLaborMaterials)
-      + num(r.specialBracketCatwalk) + num(r.specialBracketWelding) + num(r.excessCopperTubeLaborOnly)
-      + num(r.relocationAccuFcu) + num(r.systemReprocessLabor) + num(r.drainPumpInstallation)
-      + num(r.scaffoldingInstallation) + num(r.flushingOldPipe) + num(r.sterneBracket)
-      + num(r.breakerInstallationLabor) + num(r.chargingOfFreon) + num(r.materialsReturn)
-    if (r.customFields) {
-      for (const [k, v] of Object.entries(r.customFields)) {
-        if (k.startsWith('ded:') || k.startsWith('xfer:') || k.startsWith('manual:')) continue
-        feeSum += num(v)
-      }
-    }
-    return feeSum
-  }
-
-  // Calculate deduction totals for rows
-  const calcDeductions = (rows: PayrollRow[]): number => {
-    let total = 0
-    for (const r of rows) {
-      if (!r.customFields) continue
-      for (const [k, v] of Object.entries(r.customFields)) {
-        if (k.startsWith('ded:')) {
-          const val = num(v)
-          if (k === 'ded:lateMinutes') total += val * 1.6
-          else if (k !== 'ded:loanBalance' && k !== 'ded:uniformBalance') total += val
-        }
-      }
-    }
-    return total
-  }
-
   // Build the compiled list of installer rows per branch
   const compiledRows = useMemo<InstallerSummaryRow[]>(() => {
     const list: InstallerSummaryRow[] = []
@@ -317,16 +288,22 @@ export default function WeekSummaryModal({
       const branchLabel = getBranchLabel(b.name || b.id)
 
       for (const [rawName, iRows] of groups.entries()) {
-        const emp = employees.find(e => {
+        const matchesName = (e: any) => {
           const n = (e.name || '').trim().toUpperCase()
           const nick = (e.nickname || '').trim().toUpperCase()
           return n === rawName || (nick && nick === rawName) || n.includes(rawName) || rawName.includes(n)
-        })
+        }
+        // Prefer a same-branch match so a namesake in another branch can't supply the wrong
+        // name, phone, or in-house flag.
+        const emp = employees.find(e => matchesName(e) && branchScopesMatch(e.branchId, b.id))
+          || employees.find(matchesName)
+
+        // In-house (salaried) technicians aren't on the per-job payroll — same rule as the Payroll page.
+        if (emp?.inHouse) continue
 
         const displayName = emp?.name ? emp.name.toUpperCase() : rawName
-        const gross = iRows.reduce((sum, r) => sum + calcRowTotal(r), 0)
-        const ded = calcDeductions(iRows)
-        const computedAmount = Math.max(0, gross - ded)
+        // Same math as the Payroll page's "Payroll Amount" (installerNet), floored at zero for release.
+        const computedAmount = Math.max(0, installerTotal(iRows) - deductionTotal(iRows))
 
         const rowKey = `${b.id}-${displayName}`
         const rowOverride = overrides[rowKey] || {}
@@ -441,7 +418,9 @@ export default function WeekSummaryModal({
     }
 
     const finalTotal = totalAmount - holdAmount
-    const grandTotal = finalTotal + totalRelease
+    // totalRelease already includes this cut-off's amount, so adding it to finalTotal counted the
+    // current week twice. Grand total = this cut-off (less hold) + salary carried from the previous one.
+    const grandTotal = finalTotal + totalPrevSalary
 
     return {
       totalAmount,
@@ -519,7 +498,7 @@ export default function WeekSummaryModal({
     lines.push('')
     lines.push(`LESS HOLD (CURRENT CUT-OFF):\t${totals.holdAmount.toFixed(2)}`)
     lines.push(`FINAL TOTAL (CURRENT CUT-OFF):\t${totals.finalTotal.toFixed(2)}`)
-    lines.push(`FROM PREVIOUS CUT-OFF:\t${totals.totalRelease.toFixed(2)}`)
+    lines.push(`FROM PREVIOUS CUT-OFF:\t${totals.totalPrevSalary.toFixed(2)}`)
     lines.push(`GRAND TOTAL:\t${totals.grandTotal.toFixed(2)}`)
 
     navigator.clipboard.writeText(lines.join('\n')).then(() => {
@@ -1110,7 +1089,7 @@ export default function WeekSummaryModal({
                       FROM PREVIOUS CUT-OFF:
                     </td>
                     <td className="px-5 py-3 text-right font-number font-bold text-sm sm:text-base text-slate-900 dark:text-slate-100">
-                      {peso(totals.totalRelease)}
+                      {peso(totals.totalPrevSalary)}
                     </td>
                   </tr>
                   <tr className="bg-slate-50 dark:bg-slate-800/60 h-14">
