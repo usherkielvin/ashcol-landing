@@ -54,17 +54,31 @@ export default function Messages() {
   const [activeId, setActiveId] = useState<string | undefined>(conversationId)
   const [showListMobile, setShowListMobile] = useState(!conversationId && !recipientId)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const messageCacheRef = useRef<Record<string, ChatMessage[]>>({})
 
   const isNewThread = !!recipientId && !conversationId
+
+  const focusInput = useCallback(() => {
+    inputRef.current?.focus()
+    requestAnimationFrame(() => inputRef.current?.focus())
+    const t1 = setTimeout(() => inputRef.current?.focus(), 50)
+    const t2 = setTimeout(() => inputRef.current?.focus(), 160)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [])
 
   useEffect(() => {
     setActiveId(conversationId)
     setShowListMobile(!conversationId && !recipientId)
-    // Focus input when selecting a conversation
-    setTimeout(() => inputRef.current?.focus(), 50)
-  }, [conversationId, recipientId])
+    if (conversationId || recipientId) {
+      if (conversationId && messageCacheRef.current[conversationId]) {
+        setMessages(messageCacheRef.current[conversationId])
+      }
+      return focusInput()
+    }
+  }, [conversationId, recipientId, focusInput])
 
   // Directory lookup for the "new thread" recipient header (and as an id->user fallback)
   useEffect(() => {
@@ -92,9 +106,10 @@ export default function Messages() {
   )
 
   const loadMessages = useCallback(async (id: string, { silent }: { silent?: boolean } = {}) => {
-    if (!silent) setMessagesLoading(true)
+    if (!silent && !messageCacheRef.current[id]) setMessagesLoading(true)
     try {
       const msgs = await getMessages(id)
+      messageCacheRef.current[id] = msgs
       setMessages(prev => {
         if (prev.length === msgs.length && prev[prev.length - 1]?.id === msgs[msgs.length - 1]?.id) {
           return prev
@@ -111,16 +126,34 @@ export default function Messages() {
   useEffect(() => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
     if (!activeId) { setMessages([]); return }
-    void loadMessages(activeId)
+    const cached = messageCacheRef.current[activeId]
+    if (cached) {
+      setMessages(cached)
+      void loadMessages(activeId, { silent: true })
+    } else {
+      void loadMessages(activeId)
+    }
     pollRef.current = setInterval(() => {
       if (document.visibilityState === 'visible') void loadMessages(activeId, { silent: true })
     }, POLL_MS)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [activeId, loadMessages])
 
+  const scrollToBottom = useCallback((instant = true) => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+    }
+    messagesEndRef.current?.scrollIntoView({ behavior: instant ? 'auto' : 'smooth' })
+  }, [])
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    if (messages.length > 0) {
+      scrollToBottom(true)
+      const t1 = setTimeout(() => scrollToBottom(true), 30)
+      const t2 = setTimeout(() => scrollToBottom(true), 120)
+      return () => { clearTimeout(t1); clearTimeout(t2) }
+    }
+  }, [messages, activeId, scrollToBottom])
 
   const handleSend = async () => {
     const content = draft.trim()
@@ -222,7 +255,12 @@ export default function Messages() {
                 return (
                   <button
                     key={c.id}
-                    onClick={() => { navigate(`/messages/${c.id}`); setShowListMobile(false) }}
+                    onClick={() => {
+                      setActiveId(c.id)
+                      setShowListMobile(false)
+                      navigate(`/messages/${c.id}`)
+                      focusInput()
+                    }}
                     className="w-full flex items-center gap-3 px-4 py-3 sm:py-2.5 text-left transition-colors cursor-pointer"
                     style={{ backgroundColor: isActive ? hoverBg : 'transparent' }}
                     onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg }}
@@ -298,9 +336,13 @@ export default function Messages() {
                 </button>
               </div>
 
-              <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-1">
-                {messagesLoading ? (
-                  <div className="flex-1 flex items-center justify-center text-[13px]" style={{ color: textMuted }}>Loading…</div>
+              <div ref={messagesContainerRef} className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-1" style={{ backgroundColor: bg }}>
+                {messagesLoading && messages.length === 0 ? (
+                  <div className="flex-1 flex flex-col justify-end gap-2 p-2 animate-pulse opacity-40">
+                    <div className="w-48 h-8 rounded-2xl self-start" style={{ backgroundColor: bubbleTheirs }} />
+                    <div className="w-64 h-10 rounded-2xl self-end" style={{ backgroundColor: '#10B981' }} />
+                    <div className="w-40 h-8 rounded-2xl self-start" style={{ backgroundColor: bubbleTheirs }} />
+                  </div>
                 ) : messages.length === 0 ? (
                   <div className="flex-1 flex items-center justify-center text-sm sm:text-[13px]" style={{ color: textMuted }}>
                     No messages yet — say hi 👋

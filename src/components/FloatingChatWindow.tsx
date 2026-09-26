@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { X, Send, Maximize2, ChevronLeft } from 'lucide-react'
 import { useFloatingChat } from '../contexts/FloatingChatContext'
@@ -24,8 +24,10 @@ export default function FloatingChatWindow() {
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const messageCacheRef = useRef<Record<string, ChatMessage[]>>({})
 
   const activeId = openChat?.conversationId
   const activeConversation = useMemo(
@@ -33,30 +35,59 @@ export default function FloatingChatWindow() {
     [conversations, activeId]
   )
 
+  const focusInput = useCallback(() => {
+    inputRef.current?.focus()
+    requestAnimationFrame(() => inputRef.current?.focus())
+    const t1 = setTimeout(() => inputRef.current?.focus(), 50)
+    const t2 = setTimeout(() => inputRef.current?.focus(), 160)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [])
+
+  const scrollToBottom = useCallback((instant = true) => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+    }
+    messagesEndRef.current?.scrollIntoView({ behavior: instant ? 'auto' : 'smooth' })
+  }, [])
+
   useEffect(() => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
-    setMessages([])
-    if (!activeId) return
+    if (!activeId) {
+      setMessages([])
+      focusInput()
+      return
+    }
+    const cached = messageCacheRef.current[activeId]
+    if (cached) {
+      setMessages(cached)
+    }
     const load = (silent?: boolean) => {
       getMessages(activeId).then(msgs => {
+        messageCacheRef.current[activeId] = msgs
         if (!silent) setMessages(msgs)
         else setMessages(prev => (prev.length === msgs.length ? prev : msgs))
       }).catch(() => {})
     }
-    load()
+    load(!!cached)
     pollRef.current = setInterval(() => {
       if (document.visibilityState === 'visible') load(true)
     }, POLL_MS)
+    focusInput()
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
-  }, [activeId, getMessages])
+  }, [activeId, getMessages, focusInput])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    if (messages.length > 0) {
+      scrollToBottom(true)
+      const t1 = setTimeout(() => scrollToBottom(true), 30)
+      const t2 = setTimeout(() => scrollToBottom(true), 120)
+      return () => { clearTimeout(t1); clearTimeout(t2) }
+    }
+  }, [messages, scrollToBottom])
 
   useEffect(() => {
-    if (openChat) setTimeout(() => inputRef.current?.focus(), 50)
-  }, [openChat])
+    if (openChat) focusInput()
+  }, [openChat, focusInput])
 
   if (!openChat || location.pathname.startsWith('/messages')) return null
 
@@ -152,7 +183,7 @@ export default function FloatingChatWindow() {
       </div>
 
       {/* Messages List */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-3 flex flex-col gap-1">
+      <div ref={messagesContainerRef} className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-3 flex flex-col gap-1">
         {messages.length === 0 ? (
           <div className="flex-1 flex items-center justify-center text-sm sm:text-[12px]" style={{ color: textMuted }}>
             No messages yet — say hi 👋
