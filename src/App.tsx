@@ -31,7 +31,7 @@ const AuditFinanceExpenses = lazyWithPreload(() => import('./pages/AuditFinanceE
 const ForCollections = lazyWithPreload(() => import('./pages/ForCollections'))
 const Commissions = lazyWithPreload(() => import('./pages/Commissions'))
 const CashAdvances = lazyWithPreload(() => import('./pages/CashAdvances'))
-const Payroll = lazyWithPreload(() => import('./pages/Payroll'))
+const Payouts = lazyWithPreload(() => import('./pages/Payouts'))
 const DailyServiceReport = lazyWithPreload(() => import('./pages/DailyServiceReport'))
 const Registration = lazyWithPreload(() => import('./pages/Registration'))
 const HappyCalls = lazyWithPreload(() => import('./pages/HappyCalls'))
@@ -148,12 +148,12 @@ export default function App() {
             <Route path="/collections" element={<ForCollections />} />
             <Route path="/commissions" element={<Commissions />} />
             <Route path="/cash-advances" element={<CashAdvances />} />
-            <Route path="/payouts" element={<Payroll />} />
-            <Route path="/payouts/:branchSlug" element={<Payroll />} />
-            <Route path="/payouts/:branchSlug/:installerSlug" element={<Payroll />} />
-            <Route path="/payroll" element={<Payroll />} />
-            <Route path="/payroll/:branchSlug" element={<Payroll />} />
-            <Route path="/payroll/:branchSlug/:installerSlug" element={<Payroll />} />
+            <Route path="/payouts" element={<Payouts />} />
+            <Route path="/payouts/:branchSlug" element={<Payouts />} />
+            <Route path="/payouts/:branchSlug/:installerSlug" element={<Payouts />} />
+            <Route path="/payroll" element={<Payouts />} />
+            <Route path="/payroll/:branchSlug" element={<Payouts />} />
+            <Route path="/payroll/:branchSlug/:installerSlug" element={<Payouts />} />
             <Route path="/lineup" element={<LineUp />} />
             <Route path="/weekly-field-schedule" element={<Navigate to="/lineup?tab=weekly" replace />} />
             <Route path="/service-report" element={<DailyServiceReport />} />

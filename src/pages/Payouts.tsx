@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatBranchName, isPortalAdmin, isPayrollMember, isFranchiseBranch } from '../utils/api'
+import { API_BASE_URL, formatBranchName, isPortalAdmin, isPayrollMember, isFranchiseBranch, formatPersonName } from '../utils/api'
 import {
   branchWeekCycle,
   weeksOfMonth,
@@ -317,7 +317,7 @@ interface CustomColumnDef {
   label: string
 }
 
-export default function Payroll() {
+export default function Payouts() {
   const { theme } = useTheme()
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -343,8 +343,8 @@ export default function Payroll() {
   }, [user])
   // Full logged-in user name — recorded on hold/release actions (see docs/payroll-hold-release-plan.md).
   const userDisplayName = useMemo(() => {
-    const raw = user?.name || (user as any)?.firstName || (user as any)?.username || 'ADMIN'
-    return String(raw).trim().toUpperCase()
+    const raw = user?.name || (user as any)?.fullName || (user as any)?.firstName || (user?.email ? user.email.split('@')[0] : 'ADMIN')
+    return formatPersonName(String(raw).trim()) || 'Admin'
   }, [user])
 
   const [rows, setRows] = useState<PayrollRow[]>([])
@@ -2262,7 +2262,7 @@ export default function Payroll() {
               }
               title={
                 isWeekClosed
-                  ? 'This payroll week is closed and locked — syncing is disabled'
+                  ? 'This payout week is closed and locked — syncing is disabled'
                   : syncFailed
                   ? "Couldn't pull the latest jobs from Schedules — showing only previously saved rows, which may stop partway through the period. Click to retry."
                   : 'Sync latest completed job orders from Schedules (DONE INSTALL, DONE CLEANING, DONE CHECKUP, DONE SERVICE, etc.)'
@@ -2376,8 +2376,8 @@ export default function Payroll() {
                 onClick={() => toggleMobilePopover('period')}
                 className="flex items-center justify-center w-9 h-9 rounded-xl border transition-all active:scale-95 shrink-0"
                 style={{ backgroundColor: inputBg, borderColor: mobilePopover === 'period' ? '#10B981' : inputBorder }}
-                title="Select payroll period"
-                aria-label="Select payroll period"
+                title="Select payout period"
+                aria-label="Select payout period"
                 aria-expanded={mobilePopover === 'period'}
               >
                 <Calendar className="w-4 h-4 text-emerald-500" />
@@ -3250,7 +3250,7 @@ export default function Payroll() {
                                   <td className="px-3 py-2.5 max-w-[220px] truncate" style={{ color: textMuted }} title={row.customFields?.['hold:approvalNote'] || ''}>
                                     {row.customFields?.['hold:approvalNote'] || '—'}
                                     {row.customFields?.['hold:releasedBy'] && (
-                                      <span className="block text-[10px] font-semibold opacity-70">by {row.customFields['hold:releasedBy']}</span>
+                                      <span className="block text-[10px] font-semibold opacity-70">by {formatPersonName(row.customFields['hold:releasedBy'])}</span>
                                     )}
                                   </td>
                                   <td className="px-3 py-2.5 text-right font-bold tabular-nums">₱{peso(rowTotal(row))}</td>
@@ -3609,7 +3609,7 @@ export default function Payroll() {
                     onClick={handleCloseWeek}
                     disabled={closingWeek}
                     className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-amber-500/10 hover:border-amber-500/40 text-amber-600 dark:text-amber-400 border-amber-500/30 active:scale-95 cursor-pointer disabled:opacity-50 shadow-xs"
-                    title="Close and lock this payroll week"
+                    title="Close and lock this payout week"
                   >
                     <Lock className="w-3.5 h-3.5" />
                     <span>{closingWeek ? 'Closing…' : `Close This Week — ${currentBranchDisplay || 'Branch'} Payouts`}</span>
@@ -4434,7 +4434,7 @@ export default function Payroll() {
                     style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#fafafa' : '#080f1c' }}
                   >
                     <span className="text-[11px] font-medium opacity-60" style={{ color: textMuted }}>
-                      Carry this job's payout to a later payroll week
+                      Carry this job's payout to a later payout week
                     </span>
                     <button
                       type="button"
@@ -5062,7 +5062,7 @@ export default function Payroll() {
                       className="rounded-xl px-4 py-3 flex items-center justify-between gap-3"
                       style={{ backgroundColor: isLight ? 'rgba(16,185,129,0.10)' : 'rgba(16,185,129,0.16)', border: '1px solid rgba(16,185,129,0.45)' }}
                     >
-                      <span className="text-xs font-extrabold uppercase tracking-wider" style={{ color: isLight ? '#047857' : '#34D399' }}>Net Payroll</span>
+                      <span className="text-xs font-extrabold uppercase tracking-wider" style={{ color: isLight ? '#047857' : '#34D399' }}>Net Payout</span>
                       <span className="text-xl font-extrabold tabular-nums" style={{ color: net < 0 ? dedRed : (isLight ? '#047857' : '#34D399') }}>
                         {net < 0 ? '−' : ''}₱{peso(Math.abs(net))}
                       </span>
@@ -5387,7 +5387,7 @@ export default function Payroll() {
                                 {row.customFields?.['hold:reason'] || '—'}
                               </td>
                               <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: textMuted }}>
-                                {row.customFields?.['hold:heldBy'] || '—'}
+                                {row.customFields?.['hold:heldBy'] ? formatPersonName(row.customFields['hold:heldBy']) : '—'}
                                 {row.customFields?.['hold:heldAt'] && (
                                   <span className="block text-[10px] opacity-70">{new Date(row.customFields['hold:heldAt']).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                                 )}

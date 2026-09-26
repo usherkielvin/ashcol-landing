@@ -446,7 +446,7 @@ export default function WeekSummaryModal({
     const lines: string[] = []
     lines.push(`${region.toUpperCase()} PAYOUTS SUMMARY`)
     lines.push(`CUT-OFF DATE:\t${formatShortDate(weekFrom)} to ${formatShortDate(weekTo)}`)
-    lines.push(`PAYROLL DATE:\t${payrollDateStr}`)
+    lines.push(`PAYOUT DATE:\t${payrollDateStr}`)
     lines.push('')
     lines.push([
       'BRANCH',
@@ -454,7 +454,7 @@ export default function WeekSummaryModal({
       'AMOUNT',
       'CASH',
       'ONLINE TRANSFER',
-      'SALARY AMOUNT FROM PREVIOUS PAYROLL',
+      'SALARY AMOUNT FROM PREVIOUS PAYOUT',
       'CASH ADVANCE FROM PREVIOUS SALARY ON-HOLD',
       'TOTAL AMOUNT OF SALARY FOR RELEASE THIS PAYOUT',
       'MOP',
@@ -519,7 +519,7 @@ export default function WeekSummaryModal({
     const csvRows: string[] = []
     csvRows.push(`"${region.toUpperCase()} PAYOUTS SUMMARY"`)
     csvRows.push(`"CUT-OFF DATE: ${formatShortDate(weekFrom)} to ${formatShortDate(weekTo)}"`)
-    csvRows.push(`"PAYROLL DATE: ${payrollDateStr}"`)
+    csvRows.push(`"PAYOUT DATE: ${payrollDateStr}"`)
     csvRows.push('')
     csvRows.push([
       '"BRANCH"',
@@ -527,7 +527,7 @@ export default function WeekSummaryModal({
       '"AMOUNT"',
       '"CASH"',
       '"ONLINE TRANSFER"',
-      '"SALARY AMOUNT FROM PREVIOUS PAYROLL"',
+      '"SALARY AMOUNT FROM PREVIOUS PAYOUT"',
       '"CASH ADVANCE FROM PREVIOUS SALARY ON-HOLD"',
       '"TOTAL AMOUNT OF SALARY FOR RELEASE THIS PAYOUT"',
       '"MOP"',
@@ -727,7 +727,7 @@ export default function WeekSummaryModal({
 
             <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-xs shadow-2xs">
               <span className="font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide text-[10px]">
-                PAYROLL DATE:
+                PAYOUT DATE:
               </span>
               <span className="font-bold text-emerald-800 dark:text-emerald-300">
                 {payrollDateStr || ''}
@@ -828,7 +828,7 @@ export default function WeekSummaryModal({
               {/* Secondary Sub-Row for Yellow Header */}
               <tr className="bg-[#FFFF00] text-black font-bold text-[11px] text-center border-b border-black">
                 <th className="border border-black px-2 py-2 w-[115px] leading-tight font-bold">
-                  SALARY AMOUNT<br />FROM PREVIOUS<br />PAYROLL
+                  SALARY AMOUNT<br />FROM PREVIOUS<br />PAYOUT
                 </th>
                 <th className="border border-black px-2 py-2 w-[115px] leading-tight font-bold">
                   CASH ADVANCE<br />FROM PREVIOUS<br />SALARY ON-HOLD
@@ -840,7 +840,7 @@ export default function WeekSummaryModal({
               {displayedRows.length === 0 ? (
                 <tr>
                   <td colSpan={13} className="py-16 text-center text-slate-400 font-normal text-sm italic">
-                    {loading ? 'Compiling payroll numbers across all branch sheets…' : 'No payroll entries match the selected filter.'}
+                    {loading ? 'Compiling payout numbers across all branch sheets…' : 'No payout entries match the selected filter.'}
                   </td>
                 </tr>
               ) : (
@@ -1069,7 +1069,7 @@ export default function WeekSummaryModal({
         <div className="md:hidden flex flex-col gap-5">
           {displayedRows.length === 0 ? (
             <div className="py-16 text-center text-slate-400 dark:text-slate-500 text-sm italic">
-              {loading ? 'Compiling payroll numbers across all branch sheets…' : 'No payroll entries match the selected filter.'}
+              {loading ? 'Compiling payout numbers across all branch sheets…' : 'No payout entries match the selected filter.'}
             </div>
           ) : (
             Array.from(groupedByBranch.entries()).map(([branchName, rows]) => {
