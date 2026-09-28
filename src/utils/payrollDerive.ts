@@ -256,9 +256,9 @@ function classifyJobRateKey(ticket: Ticket): JobRateKind | null {
 }
 
 // Negotiation/Quotation close out a sales conversation, not a job order a crew performs.
-// Survey is excluded too — it doesn't owe an installer fee, so it shouldn't show up as a
-// payroll job row at all.
-const NON_INSTALLER_CLOSINGS = new Set(['DONE_NEGOTIATION', 'DONE_QUOTATION', 'DONE_SURVEY'])
+// Survey is NOT excluded: a done survey earns the branch's flat Survey fee (₱100 default, see
+// PayrollRates.survey), so it shows up as a payroll job row.
+const NON_INSTALLER_CLOSINGS = new Set(['DONE_NEGOTIATION', 'DONE_QUOTATION'])
 
 /** Every job order an installer actually finished — install and cleaning, plus checkups,
  *  services, backjobs, mounting, dismantling, relocation, reprocess. Service branches
