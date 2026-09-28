@@ -953,6 +953,18 @@ export function isCoordinatorOrOicUser(user?: PortalUserLike | null) {
     || jobTitle === 'oic'
 }
 
+/** A MANAGEMENT-role member assigned to one specific branch and tagged COORDINATOR is meant to
+ *  act as that branch's coordinator, not get the unrestricted admin dashboard — ADMIN accounts
+ *  are unaffected (they always get full portal access; there's no "assigned to one branch" case
+ *  for them). Without this, isSalesWorkspaceUser/isServiceWorkspaceUser's blanket
+ *  isPortalAdmin(role) exclusion overrode the coordinator tag entirely. */
+export function isManagementCoordinatorScopedToBranch(user?: PortalUserLike | null): boolean {
+  if (!user) return false
+  return normalizeUserValue(user.role) === 'management'
+    && !!user.branchId
+    && isCoordinatorOrOicUser(user)
+}
+
 export function isServiceWorkspaceBranchOrTitle(user?: PortalUserLike | null): boolean {
   if (!user) return false
   const branchId = resolveScopedBranchId(user.branchId).toLowerCase()
@@ -965,7 +977,7 @@ export function isServiceWorkspaceBranchOrTitle(user?: PortalUserLike | null): b
 
 export function isSalesWorkspaceUser(user?: PortalUserLike | null) {
   if (!user) return false
-  if (isPortalAdmin(user.role)) return false
+  if (isPortalAdmin(user.role) && !isManagementCoordinatorScopedToBranch(user)) return false
   if (isServiceWorkspaceBranchOrTitle(user)) return false
   if (isCoordinatorOrOicUser(user)) return true
   const branchId = normalizeUserValue(user.branchId)
@@ -978,7 +990,7 @@ export function isSalesWorkspaceUser(user?: PortalUserLike | null) {
 
 export function isServiceWorkspaceUser(user?: PortalUserLike | null) {
   if (!user) return false
-  if (isPortalAdmin(user.role)) return false
+  if (isPortalAdmin(user.role) && !isManagementCoordinatorScopedToBranch(user)) return false
   if (isServiceWorkspaceBranchOrTitle(user)) return true
   if (isCoordinatorOrOicUser(user)) return false
   const branchId = normalizeUserValue(user.branchId)
