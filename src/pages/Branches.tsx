@@ -4,17 +4,14 @@ import { Search, MapPin, Phone, Mail, Building2, ExternalLink, Edit3, X, Loader2
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { PUBLIC_BRANCHES } from '../data/branches'
-import { API_BASE_URL, isSameBaseBranch, resolveScopedBranchId, isMayDtrEditWindow, isEmployeePortalRole, isPortalAdmin, isTaguigServicesScope, isFranchiseBranch } from '../utils/api'
+import { API_BASE_URL, isSameBaseBranch, resolveScopedBranchId, isPortalAdmin, isTaguigServicesScope, isFranchiseBranch } from '../utils/api'
 import {
-  buildBranchRoster,
-  isDriverEmployee,
   isInstallerEmployee,
   isSalesCoordinatorEmployee,
-  notifyBranchRosterUpdated,
   resolveBranchApiId,
-  saveBranchRosterToLineup,
   type BranchRoster,
 } from '../utils/branchRoster'
+
 
 interface AuditRow {
   id?: string | null
@@ -192,7 +189,6 @@ export default function Branches() {
 
   const [branches, setBranches] = useState<Branch[]>([])
   const [managers, setManagers] = useState<any[]>([])
-  const [employeesList, setEmployeesList] = useState<any[]>([])
   /** Today's cash-on-hand per branch line — powers the deposit-due badge on each branch card. */
   const [cohRows, setCohRows] = useState<AuditRow[]>([])
 
@@ -216,7 +212,6 @@ export default function Branches() {
     targetDailyQuota: ''
   })
   const [editRoster, setEditRoster] = useState<BranchRoster>({ drivers: [], installers: [] })
-  const [newDriverName, setNewDriverName] = useState('')
   const [saving, setSaving] = useState(false)
   const [showOicMenu, setShowOicMenu] = useState(false)
   const [oicSearchQuery, setOicSearchQuery] = useState('')
@@ -461,7 +456,6 @@ export default function Branches() {
 
       // Employees list for roster & crew selection
       const effectiveEmployees = employeesList.length > 0 ? employeesList : unifiedUsers
-      setEmployeesList(effectiveEmployees)
 
       const lineupByBranchId: Record<string, { drivers: string[]; installers: string[] }> = {}
       await Promise.all(
@@ -664,27 +658,8 @@ export default function Branches() {
       drivers: [...(branch.drivers || [])].map((d) => d.toUpperCase()),
       installers: [...(branch.installers || [])].map((i) => i.toUpperCase()),
     })
-    setNewDriverName('')
     setShowOicMenu(false)
     setOicSearchQuery('')
-  }
-
-  const addRosterName = (kind: 'drivers' | 'installers', raw: string) => {
-    const name = raw.trim().toUpperCase()
-    if (!name) return
-    setEditRoster((prev) => {
-      const list = prev[kind]
-      if (list.some((n) => n.toUpperCase() === name)) return prev
-      return { ...prev, [kind]: [...list, name] }
-    })
-    if (kind === 'drivers') setNewDriverName('')
-  }
-
-  const removeRosterName = (kind: 'drivers' | 'installers', name: string) => {
-    setEditRoster((prev) => ({
-      ...prev,
-      [kind]: prev[kind].filter((n) => n !== name),
-    }))
   }
 
   // Group all available users for OIC assignment with special priority for Management & Leadership
@@ -782,80 +757,6 @@ export default function Branches() {
     return managers.find((m: any) => String(m.id) === String(editForm.managerId)) || null
   }, [editForm.managerId, managers])
 
-  // Installer accounts only — filtered strictly by current branch and installer role, with name CAPSLOCKED
-  const editBranchInstallerOptions = useMemo(() => {
-    if (!editingBranch?.id) return []
-    const branchKey = editingBranch.id || ''
-    const apiId = resolveBranchApiId(branchKey)
-    const suffix = branchKey.endsWith('-services') ? 'services' : branchKey.endsWith('-sales') ? 'sales' : null
-    const branchLabel = String(editingBranch.name || '').replace(/^(ashcol\s+)/i, '').trim().toUpperCase()
-
-    return employeesList
-      .filter((e: any) => {
-        // Must be an installer account member — NO OTHERS!
-        if (!isInstallerEmployee(e)) return false
-
-        const matches =
-          e.branchId === branchKey
-          || e.branchId === apiId
-          || (apiId && isSameBaseBranch(e.branchId, apiId))
-          || (branchKey && isSameBaseBranch(e.branchId, branchKey))
-          || (suffix ? (e.branchId === `${apiId}-${suffix}`) : false)
-        if (!matches) return false
-        if (!suffix) return true
-        const isServiceStaff = isTaguigServicesScope(e.branchId || apiId, e.email, e.jobTitle)
-        return suffix === 'services' ? isServiceStaff : !isServiceStaff
-      })
-      .map((e: any) => {
-        const capName = String(e.name || '').trim().toUpperCase()
-        const roleLabel = String(e.jobTitle || e.role || 'INSTALLER').trim().toUpperCase()
-        return {
-          id: String(e.id || ''),
-          name: capName,
-          label: `${capName} — ${roleLabel} (${branchLabel})`,
-          jobTitle: e.jobTitle,
-          role: e.role,
-        }
-      })
-      .filter((e) => e.id && e.name)
-      .sort((a, b) => a.name.localeCompare(b.name))
-  }, [editingBranch, employeesList])
-
-  // Driver accounts only — filtered strictly by current branch and driver role, with name CAPSLOCKED
-  const editBranchDriverOptions = useMemo(() => {
-    if (!editingBranch?.id) return []
-    const branchKey = editingBranch.id || ''
-    const apiId = resolveBranchApiId(branchKey)
-    const suffix = branchKey.endsWith('-services') ? 'services' : branchKey.endsWith('-sales') ? 'sales' : null
-    const branchLabel = String(editingBranch.name || '').replace(/^(ashcol\s+)/i, '').trim().toUpperCase()
-
-    return employeesList
-      .filter((e: any) => {
-        if (!isDriverEmployee(e)) return false
-        const matches =
-          e.branchId === branchKey
-          || e.branchId === apiId
-          || (apiId && isSameBaseBranch(e.branchId, apiId))
-          || (branchKey && isSameBaseBranch(e.branchId, branchKey))
-        if (!matches) return false
-        if (!suffix) return true
-        const isServiceStaff = isTaguigServicesScope(e.branchId || apiId, e.email, e.jobTitle)
-        return suffix === 'services' ? isServiceStaff : !isServiceStaff
-      })
-      .map((e: any) => {
-        const capName = String(e.name || '').trim().toUpperCase()
-        return {
-          id: String(e.id || ''),
-          name: capName,
-          label: `${capName} — DRIVER (${branchLabel})`,
-          jobTitle: e.jobTitle,
-          role: e.role,
-        }
-      })
-      .filter((e) => e.id && e.name)
-      .sort((a, b) => a.name.localeCompare(b.name))
-  }, [editingBranch, employeesList])
-
   /** The other branch card, if any, backed by the same underlying branch record as the one
    *  being edited (i.e. Taguig Sales/Services still sharing a single physical branch row).
    *  Toggling Active/Inactive there flips BOTH cards since it's one database record. */
@@ -930,24 +831,8 @@ export default function Branches() {
         throw new Error(errMsg)
       }
 
-      // Persist roster to localStorage so updates are immediately visible and preserved
-      try {
-        const rosterJson = JSON.stringify(editRoster)
-        if (editingBranch.id) localStorage.setItem(`ashcol-branch-roster-${editingBranch.id}`, rosterJson)
-        if (targetId) localStorage.setItem(`ashcol-branch-roster-${targetId}`, rosterJson)
-        if (apiBranchId) localStorage.setItem(`ashcol-branch-roster-${apiBranchId}`, rosterJson)
-      } catch (e) {
-        console.warn('Could not persist roster to localStorage', e)
-      }
-
-      // Sync roster to lineup schedule in background (non-blocking)
-      try {
-        await saveBranchRosterToLineup(token, editingBranch.id || targetId, editRoster, API_BASE_URL)
-        notifyBranchRosterUpdated()
-      } catch (lineupErr) {
-        console.warn('Could not sync branch roster to weekly lineup:', lineupErr)
-      }
-      
+      // The installer list on this page is read from member accounts and drivers aren't shown, so
+      // saving branch details no longer writes any roster to the LINEUP or to local storage.
       setEditingBranch(null)
       await fetchAllData()
     } catch (err) {
@@ -2173,134 +2058,29 @@ export default function Branches() {
                 </h4>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  {/* DRIVERS */}
-                  <div className="flex flex-col gap-2.5 p-4 rounded-xl border" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1527' }}>
-                    <label className="text-[11px] font-black uppercase tracking-wider text-blue-500">
-                      Drivers ({editRoster.drivers.length})
-                    </label>
-
-                    {/* Chips */}
-                    <div className="flex flex-wrap gap-1.5 min-h-[36px] p-2 rounded-lg border bg-white dark:bg-slate-900/60" style={{ borderColor: border }}>
-                      {editRoster.drivers.length === 0 ? (
-                        <span className="text-[11px] text-slate-400 italic self-center">No drivers assigned yet</span>
-                      ) : (
-                        editRoster.drivers.map((name) => (
-                          <span
-                            key={name}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20"
-                          >
-                            {name}
-                            <button
-                              type="button"
-                              onClick={() => removeRosterName('drivers', name)}
-                              className="hover:text-red-500 transition-colors"
-                              disabled={saving}
-                              aria-label={`Remove ${name}`}
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </span>
-                        ))
-                      )}
-                    </div>
-
-                    {/* Add Input */}
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newDriverName}
-                        onChange={(e) => setNewDriverName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
-                            addRosterName('drivers', newDriverName)
-                          }
-                        }}
-                        placeholder="Type driver name & press Enter"
-                        disabled={saving}
-                        style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                        className="border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-blue-500 flex-1 font-medium"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => addRosterName('drivers', newDriverName)}
-                        disabled={saving || !newDriverName.trim()}
-                        className="px-3.5 py-2 rounded-xl border text-xs font-bold text-blue-600 border-blue-500/30 hover:bg-blue-500/10 disabled:opacity-40 transition-colors flex items-center gap-1 shrink-0"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        Add
-                      </button>
-                    </div>
-
-                    {/* Quick pick dropdown */}
-                    {editBranchDriverOptions.length > 0 && (
-                      <select
-                        value=""
-                        onChange={(e) => {
-                          if (e.target.value) addRosterName('drivers', e.target.value)
-                        }}
-                        disabled={saving}
-                        style={{ backgroundColor: inputBg, borderColor: border, color: textMuted }}
-                        className="border rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 w-full cursor-pointer"
-                      >
-                        <option value="">+ Pick from registered personnel...</option>
-                        {editBranchDriverOptions.map((e) => (
-                          <option key={e.id} value={e.name}>
-                            {e.label}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
-
-                  {/* TECHNICIANS */}
-                  <div className="flex flex-col gap-2.5 p-4 rounded-xl border" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1527' }}>
+                  {/* TECHNICIANS — read-only: built from the member accounts created for this branch
+                      (full account name), so nothing is typed in by hand and nobody is listed twice. */}
+                  <div className="md:col-span-2 flex flex-col gap-2.5 p-4 rounded-xl border" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1527' }}>
                     <label className="text-[11px] font-black uppercase tracking-wider text-emerald-500">
-                      Technicians ({editRoster.installers.length})
+                      Installers & Technicians ({editRoster.installers.length})
                     </label>
-
-                    {/* Chips */}
                     <div className="flex flex-wrap gap-1.5 min-h-[36px] p-2 rounded-lg border bg-white dark:bg-slate-900/60" style={{ borderColor: border }}>
                       {editRoster.installers.length === 0 ? (
-                        <span className="text-[11px] text-slate-400 italic self-center">No technicians assigned yet</span>
+                        <span className="text-[11px] text-slate-400 italic self-center">No installer accounts in this branch yet</span>
                       ) : (
                         editRoster.installers.map((name) => (
                           <span
                             key={name}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20"
+                            className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20"
                           >
                             {name}
-                            <button
-                              type="button"
-                              onClick={() => removeRosterName('installers', name)}
-                              className="hover:text-red-500 transition-colors"
-                              disabled={saving}
-                              aria-label={`Remove ${name}`}
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
                           </span>
                         ))
                       )}
                     </div>
-
-                    {/* Pick from list dropdown (NO TYPING) */}
-                    <select
-                      value=""
-                      onChange={(e) => {
-                        if (e.target.value) addRosterName('installers', e.target.value)
-                      }}
-                      disabled={saving}
-                      style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-                      className="border rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:border-emerald-500 w-full cursor-pointer transition-colors"
-                    >
-                      <option value="">+ Pick technician from list...</option>
-                      {editBranchInstallerOptions.map((e) => (
-                        <option key={e.id} value={e.name}>
-                          {e.name}
-                        </option>
-                      ))}
-                    </select>
+                    <p className="text-[11px]" style={{ color: textMuted }}>
+                      This list follows member accounts. To add or move an installer, create or edit their account under Members.
+                    </p>
                   </div>
                 </div>
               </div>
