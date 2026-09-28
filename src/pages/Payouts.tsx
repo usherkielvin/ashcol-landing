@@ -651,6 +651,7 @@ export default function Payouts() {
   // collapse into a small icon that opens one of these popovers — only one open at a time,
   // all sharing one outside-click-to-close handler — so the header stays a single tidy row
   // instead of a wall of text pills (desktop keeps the full inline controls, untouched).
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(null)
   const [mobilePopover, setMobilePopover] = useState<'branch' | 'period' | 'technician' | 'search' | 'more' | null>(null)
   const mobileToolbarRef = useRef<HTMLDivElement | null>(null)
   const toggleMobilePopover = (key: 'branch' | 'period' | 'technician' | 'search' | 'more') =>
@@ -2526,11 +2527,15 @@ export default function Payouts() {
   }
 
   return (
-    <div className="flex flex-col gap-4 pb-4 md:pb-4 h-full min-h-0 overflow-y-auto overflow-x-hidden [&>*]:shrink-0">
+    <div className="flex flex-col gap-4 pb-4 md:pb-4 h-full min-h-0 overflow-y-auto overflow-x-hidden overscroll-none touch-pan-y [&>*]:shrink-0">
       {/* Toolbar — branch, date, range, and search filters plus a sync action. */}
       <div
-        className={`relative z-30 -mx-1.5 md:mx-0 rounded-none md:rounded-2xl p-2.5 md:p-3.5 overflow-visible shadow-xs ${selectedInstaller ? 'hidden' : ''}`}
-        style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}`, borderBottom: `1px solid ${border}`, borderLeft: `1px solid ${border}`, borderRight: `1px solid ${border}` }}
+        className={`relative z-30 -mx-1.5 md:mx-0 rounded-none md:rounded-2xl p-2.5 md:p-3.5 overflow-visible shadow-none md:shadow-xs border border-transparent md:border-[var(--tb-border)] bg-[var(--tb-page-bg)] md:bg-[var(--tb-card-bg)] ${selectedInstaller ? 'hidden' : ''}`}
+        style={{
+          ['--tb-card-bg' as string]: cardBg,
+          ['--tb-border' as string]: border,
+          ['--tb-page-bg' as string]: isLight ? '#f1f5f9' : '#060B18',
+        }}
       >
         {/* Desktop/tablet — full inline controls, unchanged */}
         <div className="hidden md:flex items-center gap-2.5">
@@ -3139,22 +3144,26 @@ export default function Payouts() {
       ) : selectedInstaller ? (
         // Detail view — just the selected installer's own table for the selected week.
         <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center justify-between gap-2 md:gap-3">
             <button
               type="button"
               onClick={() => handleSelectInstaller(null)}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all border shadow-2xs hover:border-emerald-500/50 cursor-pointer active:scale-95"
+              aria-label="Back to all installers"
+              className="flex items-center justify-center gap-2 w-8 h-8 md:w-auto md:h-auto md:px-3.5 md:py-2 rounded-xl text-xs font-bold transition-all border shadow-2xs hover:border-emerald-500/50 cursor-pointer active:scale-95"
               style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
               title="Return to installers list"
             >
               <ChevronLeft className="w-4 h-4 text-emerald-500" />
-              <span>Back to All Installers</span>
+              <span className="hidden md:inline">Back to All Installers</span>
             </button>
-            <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-bold shadow-2xs" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}>
+            <div className="flex items-center gap-1.5 md:gap-2 px-2.5 md:px-3.5 h-8 md:h-auto md:py-2 rounded-xl border text-[11px] md:text-xs font-bold shadow-2xs" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}>
               <Calendar className="w-3.5 h-3.5 text-emerald-500" />
-              <span>{activeWeek ? `Week ${activeWeek.weekNumber} (${activeWeek.label})` : formatMonth(activeMonth)}</span>
-              <span className="mx-1 text-slate-300 dark:text-slate-700">•</span>
-              <span className="text-emerald-600 dark:text-emerald-400 font-extrabold">{selectedInstallerRows.length} {selectedInstallerRows.length === 1 ? 'ticket' : 'tickets'}</span>
+              <span className="md:hidden">{activeWeek ? `Wk ${activeWeek.weekNumber}` : formatMonth(activeMonth)}</span>
+              <span className="hidden md:inline">{activeWeek ? `Week ${activeWeek.weekNumber} (${activeWeek.label})` : formatMonth(activeMonth)}</span>
+              <span className="mx-0.5 md:mx-1 text-slate-300 dark:text-slate-700">•</span>
+              <span className="text-emerald-600 dark:text-emerald-400 font-extrabold">
+                {selectedInstallerRows.length}<span className="hidden md:inline"> {selectedInstallerRows.length === 1 ? 'ticket' : 'tickets'}</span>
+              </span>
             </div>
           </div>
 
@@ -3217,26 +3226,26 @@ export default function Payouts() {
             return (
               <div key={installerName} className="rounded-2xl border shadow-sm overflow-hidden" style={{ backgroundColor: cardBg, borderColor: border }}>
                 <div
-                  className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-6 py-4"
+                  className="flex items-center justify-between gap-2 md:grid md:grid-cols-[1fr_auto_1fr] md:gap-3 px-3 md:px-6 py-2.5 md:py-4"
                   style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}
                 >
-                  <div className="flex items-center gap-2 min-w-0" title="Branch">
-                    <Building2 className="w-4 h-4 shrink-0 text-emerald-500" />
-                    <span className="text-xs md:text-sm font-extrabold uppercase tracking-wider truncate" style={{ color: textMuted }}>
+                  <div className="hidden md:flex items-center gap-2 min-w-0" title="Branch">
+                    <Building2 className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0 text-emerald-500" />
+                    <span className="text-[11px] md:text-sm font-extrabold uppercase tracking-wider truncate" style={{ color: textMuted }}>
                       {currentBranchDisplay || 'Branch'}
                     </span>
                   </div>
-                  <span className="text-xl md:text-2xl font-black uppercase tracking-wide text-center whitespace-nowrap" style={{ color: textPrimary }}>
+                  <span className="order-1 md:order-none flex-1 min-w-0 text-[13px] md:text-2xl font-black uppercase tracking-wide text-left md:text-center truncate md:whitespace-nowrap" style={{ color: textPrimary }}>
                     {displayInstallerName(installerName).toUpperCase()}
                   </span>
-                  <div className="flex items-center gap-2 justify-end">
+                  <div className="order-2 md:order-none flex items-center gap-1.5 md:gap-2 justify-end shrink-0">
                     {/* Kept on the installer view even though the filter bar is hidden here */}
                     <button
                       type="button"
                       onClick={() => void loadAndSync(true)}
                       disabled={syncing || initialLoading || isWeekClosed}
                       title={isWeekClosed ? 'This payout week is closed and locked — syncing is disabled' : 'Sync latest completed job orders from Schedules'}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50 cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex items-center justify-center gap-1.5 w-8 h-8 md:w-auto md:h-auto md:px-3 md:py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50 cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{ color: '#10B981', backgroundColor: isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)', borderColor: '#10B98150' }}
                     >
                       {isWeekClosed ? <Lock className="w-3.5 h-3.5 text-amber-500" /> : <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />}
@@ -3247,7 +3256,7 @@ export default function Payouts() {
                         type="button"
                         onClick={openRatesModal}
                         title="Set this branch's payout rates"
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50 cursor-pointer shadow-xs"
+                        className="flex items-center justify-center gap-1.5 w-8 h-8 md:w-auto md:h-auto md:px-3 md:py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50 cursor-pointer shadow-xs"
                         style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
                       >
                         <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-500" />
@@ -3258,22 +3267,21 @@ export default function Payouts() {
                       type="button"
                       onClick={() => hideEmptyColumnsFor(installerName)}
                       title="Hide all columns that have no values across all tickets for this technician"
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50 cursor-pointer shadow-xs"
+                      className="hidden md:flex items-center justify-center gap-1.5 w-8 h-8 md:w-auto md:h-auto md:px-3 md:py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50 cursor-pointer shadow-xs"
                       style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
                     >
                       <EyeOff className="w-3.5 h-3.5 text-slate-400" />
-                      <span className="hidden sm:inline">Hide Empty Columns</span>
-                      <span className="sm:hidden">Hide Empty</span>
+                      <span className="hidden md:inline">Hide Empty Columns</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => openColumnManager(installerName)}
                       title="Show/hide columns"
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50 cursor-pointer shadow-xs"
+                      className="flex items-center justify-center gap-1.5 w-8 h-8 md:w-auto md:h-auto md:px-3 md:py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50 cursor-pointer shadow-xs"
                       style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
                     >
                       <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-500" />
-                      <span>Columns</span>
+                      <span className="hidden md:inline">Columns</span>
                     </button>
                   </div>
                 </div>
@@ -3604,85 +3612,138 @@ export default function Payouts() {
                     spreadsheet row. Date/Ticket #/Customer Name become the card header
                     (editable only for manually added rows with no ticketId); every other
                     visible column becomes a label/value row below it. */}
-                  <div className="md:hidden flex flex-col gap-2 p-3" style={{ backgroundColor: headerBg }}>
-                    {regularRows.map(row => (
-                      <div
-                        key={row.id}
-                        className="rounded-xl border p-3 flex flex-col gap-2"
-                        style={{ backgroundColor: cardBg, borderColor: border }}
-                      >
-                        <div className="min-w-0">
-                          <div className="min-w-0">
-                            {row.ticketId ? (
-                              <>
-                                <div className="text-sm font-extrabold truncate" style={{ color: textPrimary }}>
-                                  {row.customerName || 'No customer'}
-                                </div>
-                                <div className="text-[11px] font-semibold" style={{ color: textMuted }}>
-                                  {row.workDate ? shortDate(row.workDate) : 'No date'} &middot; {row.ticketNumber || 'No ticket'}
-                                </div>
-                              </>
-                            ) : (
-                              <div className="flex flex-col gap-1">
-                                <input
-                                  type="text"
-                                  placeholder="Customer name"
-                                  value={row.customerName}
-                                  disabled={isWeekClosed}
-                                  onChange={e => updateRow(row.id, { customerName: e.target.value })}
-                                  className="text-sm font-extrabold bg-transparent border-0 outline-none w-full disabled:opacity-70 disabled:cursor-not-allowed"
-                                  style={{ color: textPrimary }}
-                                />
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="date"
-                                    value={row.workDate}
-                                    disabled={isWeekClosed}
-                                    onChange={e => updateRow(row.id, { workDate: e.target.value })}
-                                    className="text-[11px] font-semibold bg-transparent border-0 outline-none disabled:opacity-70 disabled:cursor-not-allowed"
-                                    style={{ color: textMuted, colorScheme: isLight ? 'light' : 'dark' }}
-                                  />
-                                  <input
-                                    type="text"
-                                    placeholder="Ticket"
-                                    value={row.ticketNumber}
-                                    disabled={isWeekClosed}
-                                    onChange={e => updateRow(row.id, { ticketNumber: e.target.value })}
-                                    className="text-[11px] font-semibold bg-transparent border-0 outline-none w-20 disabled:opacity-70 disabled:cursor-not-allowed"
-                                    style={{ color: textMuted }}
-                                  />
-                                </div>
+                  <div className="md:hidden flex flex-col gap-2 p-2.5" style={{ backgroundColor: headerBg }}>
+                    {regularRows.map(row => {
+                      const expanded = expandedJobId === row.id
+                      const colOf = (k: string) => COLUMN_DEFS.find(c => c.key === k)
+                      const cellOf = (k: string) => { const c = colOf(k); return c ? listCellText(c, row) : '' }
+                      const clean = (t: string) => (t && t !== '—' ? t : '')
+                      const statusText = clean(cellOf('installationUpload'))
+                      const isDoneStatus = /^DONE\b/i.test(statusText)
+                      const brandText = clean(cellOf('brandCapacity'))
+                      const remitText = clean(cellOf('remit'))
+                      const unpaid = paymentStatusOf(row) !== 'PAID'
+                      const toggle = () => setExpandedJobId(id => (id === row.id ? null : row.id))
+                      return (
+                        <div
+                          key={row.id}
+                          className="rounded-xl border overflow-hidden"
+                          style={{ backgroundColor: cardBg, borderColor: expanded ? '#10B981' : border }}
+                        >
+                          <div className="px-3 py-2.5 flex flex-col gap-1.5 cursor-pointer" onClick={toggle}>
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                {row.ticketId ? (
+                                  <>
+                                    <div className="text-[13px] font-extrabold truncate leading-tight" style={{ color: textPrimary }}>
+                                      {row.customerName || 'No customer'}
+                                    </div>
+                                    <div className="text-[11px] font-semibold mt-0.5" style={{ color: textMuted }}>
+                                      {row.workDate ? shortDate(row.workDate) : 'No date'} &middot; {row.ticketNumber || 'No ticket'}
+                                    </div>
+                                  </>
+                                ) : (
+                                  <div className="flex flex-col gap-0.5" onClick={e => e.stopPropagation()}>
+                                    <input
+                                      type="text"
+                                      placeholder="Customer name"
+                                      value={row.customerName}
+                                      disabled={isWeekClosed}
+                                      onChange={e => updateRow(row.id, { customerName: e.target.value })}
+                                      className="text-[13px] font-extrabold bg-transparent border-0 outline-none w-full disabled:opacity-70 disabled:cursor-not-allowed"
+                                      style={{ color: textPrimary }}
+                                    />
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="date"
+                                        value={row.workDate}
+                                        disabled={isWeekClosed}
+                                        onChange={e => updateRow(row.id, { workDate: e.target.value })}
+                                        className="text-[11px] font-semibold bg-transparent border-0 outline-none disabled:opacity-70 disabled:cursor-not-allowed"
+                                        style={{ color: textMuted, colorScheme: isLight ? 'light' : 'dark' }}
+                                      />
+                                      <input
+                                        type="text"
+                                        placeholder="Ticket"
+                                        value={row.ticketNumber}
+                                        disabled={isWeekClosed}
+                                        onChange={e => updateRow(row.id, { ticketNumber: e.target.value })}
+                                        className="text-[11px] font-semibold bg-transparent border-0 outline-none w-20 disabled:opacity-70 disabled:cursor-not-allowed"
+                                        style={{ color: textMuted }}
+                                      />
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
-                        </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="text-sm font-black tabular-nums" style={{ color: '#10B981' }}>₱{peso(rowTotal(row))}</span>
+                                <ChevronDown className={`w-4 h-4 transition-transform ${expanded ? 'rotate-180' : ''}`} style={{ color: textMuted }} />
+                              </div>
+                            </div>
 
-                        <div className="flex flex-col" style={{ borderTop: `1px solid ${border}` }}>
-                          {groupVisibleColumns
-                            .filter(col => !['date', 'ticketNumber', 'customerName'].includes(col.key))
-                            .map(col => (
-                              <div
-                                key={col.key}
-                                className="flex items-center justify-between gap-2 py-1.5"
-                                style={{ borderBottom: `1px solid ${border}` }}
-                              >
+                            <div className="flex flex-wrap items-center gap-1">
+                              {statusText && (
                                 <span
-                                  className="text-[10px] font-bold uppercase tracking-wide shrink-0"
-                                  style={{ color: col.key === 'remit' ? remitAccent : textMuted }}
+                                  className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide"
+                                  style={{
+                                    backgroundColor: isDoneStatus ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.14)',
+                                    color: isDoneStatus ? (isLight ? '#047857' : '#34D399') : (isLight ? '#b45309' : '#fbbf24'),
+                                  }}
                                 >
-                                  {col.label}
+                                  {statusText}
                                 </span>
-                                <div className="max-w-[55%] flex-1">
-                                  {renderMobileCellValue(col, row)}
-                                </div>
-                              </div>
-                            ))}
+                              )}
+                              <span
+                                className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide"
+                                style={{
+                                  backgroundColor: unpaid ? 'rgba(217,119,6,0.14)' : 'rgba(16,185,129,0.12)',
+                                  color: unpaid ? '#D97706' : '#10B981',
+                                }}
+                              >
+                                {unpaid ? 'Unpaid' : 'Paid'}
+                              </span>
+                              {brandText && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ backgroundColor: inputBg, color: textMuted }}>
+                                  {brandText}
+                                </span>
+                              )}
+                              {remitText && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold tabular-nums" style={{ backgroundColor: remitTint, color: remitAccent }}>
+                                  {remitText}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {expanded && (
+                            <div className="px-3 pb-2 flex flex-col" style={{ borderTop: `1px solid ${border}` }}>
+                              {groupVisibleColumns
+                                .filter(col => !['date', 'ticketNumber', 'customerName'].includes(col.key))
+                                .map(col => (
+                                  <div
+                                    key={col.key}
+                                    className="flex items-center justify-between gap-2 py-1.5"
+                                    style={{ borderBottom: `1px solid ${border}` }}
+                                  >
+                                    <span
+                                      className="text-[10px] font-bold uppercase tracking-wide shrink-0"
+                                      style={{ color: col.key === 'remit' ? remitAccent : textMuted }}
+                                    >
+                                      {col.label}
+                                    </span>
+                                    <div className="max-w-[55%] flex-1">
+                                      {renderMobileCellValue(col, row)}
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
 
-                  {/* Released Hold Tickets (Carried Over) — a released hold's full payout, counted
+{/* Released Hold Tickets (Carried Over) — a released hold's full payout, counted
                       under Add-ons in the footer below, not inline with this period's own jobs. */}
                   {carryRows.length > 0 && (
                     <div style={{ borderTop: `1px solid ${border}` }}>
@@ -3932,18 +3993,18 @@ export default function Payouts() {
                     handleSelectInstaller(installerName)
                   }
                 }}
-                className="grid items-center gap-x-4 gap-y-3 px-6 md:px-7 py-5 md:py-6 transition-colors cursor-pointer"
+                className="grid grid-cols-[minmax(0,1fr)_auto] md:[grid-template-columns:var(--roster-cols)] items-center gap-x-3 md:gap-x-4 gap-y-2 md:gap-y-3 px-4 md:px-7 py-3.5 md:py-6 transition-colors cursor-pointer"
                 style={{
-                  gridTemplateColumns: ROSTER_GRID_TEMPLATE,
+                  ['--roster-cols' as string]: ROSTER_GRID_TEMPLATE,
                   borderTop: rowIndex === 0 ? 'none' : `1px solid ${border}`,
                 }}
                 onMouseEnter={e => { e.currentTarget.style.backgroundColor = isLight ? '#f8fafc' : '#0d1520' }}
                 onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}
               >
                     {/* 1. INSTALLER — name, with completed-jobs count/breakdown folded into a subtitle */}
-                    <div className="flex items-center gap-3.5 min-w-0">
+                    <div className="flex items-center gap-3 md:gap-3.5 min-w-0">
                       <div
-                        className="w-11 h-11 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
+                        className="w-10 h-10 md:w-11 md:h-11 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
                         style={{ background: avatarColor(installerName) }}
                       >
                         {getInitials(displayInstallerName(installerName))}
@@ -3974,7 +4035,7 @@ export default function Payouts() {
                     {/* 3. STATUS — a plain dropdown, not a colored badge. Switching to Completed
                         still opens the modal to capture who completed it; switching back to
                         Pending applies immediately. */}
-                    <div className="flex justify-center">
+                    <div className="order-4 md:order-none flex justify-end md:justify-center">
                       <select
                         value={isComplete ? 'COMPLETE' : 'PENDING'}
                         disabled={isWeekClosed}
@@ -3999,7 +4060,7 @@ export default function Payouts() {
 
                     {/* 4. REMARKS — wide column, click to edit inline instead of a truncated
                         sliver inside the status badge. */}
-                    <div className="min-w-0 flex items-center" onClick={e => e.stopPropagation()}>
+                    <div className="order-3 md:order-none min-w-0 flex items-center" onClick={e => e.stopPropagation()}>
                       {editingRemarksFor === installerName ? (
                         <textarea
                           autoFocus
@@ -4026,7 +4087,7 @@ export default function Payouts() {
                           type="button"
                           disabled={isWeekClosed}
                           onClick={() => { setRemarksDraft(summaryRemarks); setEditingRemarksFor(installerName) }}
-                          className="w-full text-left rounded-lg px-2.5 py-1.5 -mx-2.5 transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-text disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                          className="w-full text-left rounded-lg px-2.5 py-1 md:py-1.5 -mx-2.5 transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-text disabled:cursor-not-allowed disabled:hover:bg-transparent"
                           title={summaryRemarks || 'Click to add a remark'}
                         >
                           {summaryRemarks ? (
@@ -4045,7 +4106,7 @@ export default function Payouts() {
 
           {/* Totals footer */}
           <div
-            className="flex flex-wrap items-center justify-between gap-4 px-6 md:px-7 py-5"
+            className="flex flex-wrap items-center justify-between gap-3 md:gap-4 px-4 md:px-7 py-4 md:py-5"
             style={{ backgroundColor: isLight ? '#f8fafc' : '#0d1520', borderTop: `1px solid ${border}` }}
           >
             <div className="flex flex-wrap items-center gap-2.5">
@@ -4118,7 +4179,7 @@ export default function Payouts() {
                 )
               )}
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-x-9 gap-y-2 ml-auto">
+            <div className="grid grid-cols-2 w-full gap-x-4 gap-y-3 md:flex md:flex-wrap md:items-center md:justify-end md:gap-x-9 md:gap-y-2 md:ml-auto md:w-auto">
               {([
                 { label: 'Remittance Collected', value: globalRemittanceTotal, color: remitAccent },
                 { label: 'Base Install Total', value: globalBaseInstallTotal, color: textPrimary },
@@ -4126,7 +4187,7 @@ export default function Payouts() {
                 { label: 'Total Deductions', value: globalDeductionTotal, color: globalDeductionTotal > 0 ? (isLight ? '#DC2626' : '#F87171') : textPrimary },
                 { label: 'Net Payout Due', value: grandTotal - globalDeductionTotal, color: '#10B981' },
               ] as const).map(tile => (
-                <div key={tile.label} className="flex flex-col items-end">
+                <div key={tile.label} className="flex flex-col items-start md:items-end">
                   <span className="text-[10px] font-medium uppercase tracking-wider opacity-60" style={{ color: textMuted }}>{tile.label}</span>
                   <span className="text-sm font-bold tabular-nums" style={{ color: tile.color }}>₱{peso(tile.value)}</span>
                 </div>

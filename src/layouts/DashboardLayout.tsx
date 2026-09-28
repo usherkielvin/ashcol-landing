@@ -708,7 +708,11 @@ export default function DashboardLayout() {
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
           ${sidebarCollapsed ? 'md:w-[64px]' : 'w-[260px] md:w-[220px] lg:w-[240px]'}
         `}
-        style={{ transition: 'width 120ms cubic-bezier(0.4,0,0.2,1), transform 200ms cubic-bezier(0.4,0,0.2,1)' }}
+        style={{
+          transition: 'width 120ms cubic-bezier(0.4,0,0.2,1), transform 200ms cubic-bezier(0.4,0,0.2,1)',
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        }}
       >
         {/* Brand */}
         <div
@@ -996,6 +1000,11 @@ export default function DashboardLayout() {
         {/* ── Global Header (Mobile/Tablet/Desktop) ──────────────── */}
         <header 
           className={`flex-none z-30 md:backdrop-blur-md w-full min-w-0 max-w-full relative ${isLight ? 'bg-[#f1f5f9] md:bg-white/80' : 'bg-[#060B18] md:bg-[#0A1120]/80'} ${location.pathname.startsWith('/messages') ? 'hidden md:block' : ''}`}
+          style={{
+            paddingTop: 'env(safe-area-inset-top, 0px)',
+            paddingLeft: 'env(safe-area-inset-left, 0px)',
+            paddingRight: 'env(safe-area-inset-right, 0px)',
+          }}
         >
           {/* Top row: title + icons */}
           <div className="h-14 flex items-center justify-between px-4 md:px-6 lg:px-8 relative min-w-0">
@@ -1254,6 +1263,7 @@ export default function DashboardLayout() {
         {/* ── Page Content ───────────────────────────────── */}
         <main
           ref={mainContentRef}
+          style={{ overscrollBehavior: 'none', touchAction: 'pan-y' }}
           className={
             currentPage === 'DDRM'
               ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-2 md:p-3"
@@ -1263,9 +1273,18 @@ export default function DashboardLayout() {
                 ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
                 : (currentPage === 'Request Forms' || currentPage === 'Operations Forms')
                   ? "flex-1 overflow-y-auto px-6 py-6 relative"
-                  : "flex-1 overflow-y-auto p-5 md:p-8 relative"
+                  : "flex-1 overflow-y-auto p-4 sm:p-5 md:p-8 relative"
           }
-          style={{ overscrollBehavior: 'none', touchAction: 'pan-y' }}
+          style={{
+            overscrollBehavior: 'none',
+            touchAction: 'pan-y',
+            paddingLeft: 'env(safe-area-inset-left, 0px)',
+            paddingRight: 'env(safe-area-inset-right, 0px)',
+            ...( (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'Messages' || currentPage === 'DDRM' || currentPage === 'Payouts' || currentPage === 'Payroll' || location.pathname.startsWith('/messages'))
+              ? { paddingBottom: 'env(safe-area-inset-bottom, 0px)' }
+              : { paddingBottom: 'max(1.5rem, calc(1.5rem + env(safe-area-inset-bottom, 0px)))' }
+            )
+          }}
         >
           {/* Subtle ambient gradient */}
           {!isLight && (

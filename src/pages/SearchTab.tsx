@@ -183,8 +183,14 @@ export default function SearchTab() {
       {(() => {
         const hasActiveSearch = Boolean(overviewSearchInput.trim() || filterBranchId || filterDate || overviewResults.length > 0)
         return (
-          <div className={`flex-1 flex flex-col min-h-0 px-3 md:px-8 bg-transparent transition-all duration-300 ${hasActiveSearch ? 'overflow-y-auto justify-start' : 'overflow-hidden justify-center py-4 md:py-6'}`}>
-            <div className={`max-w-4xl w-full mx-auto flex flex-col animate-in fade-in transition-all duration-500 ease-out ${hasActiveSearch ? '' : 'pb-[15vh] gap-6 md:gap-8'}`}>
+          <div
+            className={`flex-1 flex flex-col min-h-0 px-3 md:px-8 bg-transparent transition-all duration-300 ${hasActiveSearch ? 'overflow-y-auto justify-start' : 'overflow-hidden justify-center py-2 sm:py-4 md:py-6'}`}
+            style={{
+              overscrollBehavior: hasActiveSearch ? 'auto' : 'none',
+              touchAction: hasActiveSearch ? 'pan-y' : 'none',
+            }}
+          >
+            <div className={`max-w-4xl w-full mx-auto flex flex-col animate-in fade-in transition-all duration-500 ease-out ${hasActiveSearch ? '' : 'gap-4 sm:gap-6 md:gap-8 my-auto'}`}>
 
               {/* Logo + Input Container */}
               <div

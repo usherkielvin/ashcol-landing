@@ -3,12 +3,13 @@ import ReactDOM from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   CalendarDays,
-  AlertTriangle, X, ChevronRight, Eye, Download,
+  AlertTriangle, X, ChevronLeft, ChevronRight, Eye, Download,
   ArrowUp, ArrowDown,
   MoreVertical,
   Loader2,
   Trash2, ClipboardList, Upload, Check, FileEdit,
-  History as HistoryIcon
+  History as HistoryIcon,
+  BarChart2
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -231,6 +232,21 @@ export default function DailyAuditReport() {
   }, [])
 
   const [selectedRow, setSelectedRow] = useState<AuditRow | null>(null)
+
+  // While the full-screen details sheet is open, tint the phone status bar to the sheet's own
+  // color so the sheet and status bar read as one surface.
+  useEffect(() => {
+    if (!selectedRow) return
+    const meta = document.querySelector('meta[name="theme-color"]')
+    const prevMeta = meta?.getAttribute('content') ?? null
+    const prevHtmlBg = document.documentElement.style.backgroundColor
+    meta?.setAttribute('content', cardBg)
+    document.documentElement.style.backgroundColor = cardBg
+    return () => {
+      if (meta && prevMeta !== null) meta.setAttribute('content', prevMeta)
+      document.documentElement.style.backgroundColor = prevHtmlBg
+    }
+  }, [selectedRow, cardBg])
   const [rowExpenses, setRowExpenses] = useState<{
     items: DrilldownItem[];
     receivedBy?: string;
@@ -245,6 +261,7 @@ export default function DailyAuditReport() {
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'remarks', direction: 'desc' })
   const compactView = false
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [mobileKpiModalOpen, setMobileKpiModalOpen] = useState(false)
   const mobileDateRef = useRef<HTMLInputElement>(null)
 
   interface ConfirmModalState {
@@ -610,6 +627,27 @@ export default function DailyAuditReport() {
 
   const isCustomAuditDate = viewMode === 'single' && date !== '' && !weeklyDayTabs.some(t => t.key === date)
 
+  const isToday = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0]
+    return date === todayStr
+  }, [date])
+
+  const handlePrevDay = () => {
+    const d = new Date(date + 'T00:00:00')
+    d.setDate(d.getDate() - 1)
+    setDate(d.toISOString().split('T')[0])
+  }
+
+  const handleNextDay = () => {
+    const d = new Date(date + 'T00:00:00')
+    d.setDate(d.getDate() + 1)
+    setDate(d.toISOString().split('T')[0])
+  }
+
+  const handleToday = () => {
+    setDate(new Date().toISOString().split('T')[0])
+  }
+
   // Ground Arctic in the active Daily Transaction date, KPI totals, and branch breakdown table
   useEffect(() => {
     const branchName = formatBranchName(globalBranchId || user?.branchId || 'All Branches')
@@ -668,7 +706,7 @@ export default function DailyAuditReport() {
       {activeTab === 'summary' && <>
 
       {/* ── Mobile header "Command Card" ─────────────────────────────────────── */}
-      <div className="md:hidden bg-white dark:bg-[#0A1120] rounded-b-2xl border-b shadow-sm p-4 flex flex-col gap-4 no-print" style={{ borderColor: border }}>
+      <div className="md:hidden bg-white dark:bg-[#0A1120] rounded-2xl border shadow-sm p-4 flex flex-col gap-3.5 no-print" style={{ borderColor: border }}>
 
         {/* Row 1: Title & Actions */}
         <div className="flex items-start justify-between gap-3">
@@ -676,31 +714,33 @@ export default function DailyAuditReport() {
             <h2 className="text-base font-extrabold uppercase tracking-wider" style={{ color: textPrimary }}>
               DAILY TRANSACTION SUMMARY
             </h2>
-            <p className="text-xs mt-0.5 truncate" style={{ color: textMuted }}>{mobileDateLabel}</p>
+            <p className="text-xs mt-0.5 truncate font-medium" style={{ color: textMuted }}>{mobileDateLabel}</p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             <div className="relative shrink-0">
               <button type="button" onClick={() => setMobileMenuOpen(o => !o)}
-                className="w-8 h-8 flex items-center justify-center rounded-lg border transition-colors focus:outline-none"
-                style={{ borderColor: inputBorder, color: textMuted }}>
+                className="w-8 h-8 flex items-center justify-center rounded-xl border transition-colors focus:outline-none"
+                style={{ borderColor: inputBorder, color: textMuted }}
+                aria-label="More options"
+              >
                 <MoreVertical className="w-4 h-4" />
               </button>
               {mobileMenuOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setMobileMenuOpen(false)} />
-                  <div className="absolute right-0 top-10 z-50 w-40 rounded-lg overflow-hidden"
+                  <div className="absolute right-0 top-10 z-50 w-44 rounded-xl overflow-hidden shadow-xl"
                     style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
                     <div className="py-1">
                       {canSubmitForm && (
                         <button type="button" onClick={() => { setActiveTab('submit'); setMobileMenuOpen(false) }}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-semibold" style={{ color: textPrimary }}>
+                          className="w-full flex items-center gap-2 px-3.5 py-2 text-left text-xs font-semibold" style={{ color: textPrimary }}>
                           <FileEdit className="w-3.5 h-3.5 text-emerald-500" /> Submit Daily Report
                         </button>
                       )}
 
                     {hiddenBranches.length > 0 && (
                       <button type="button" onClick={() => { setHiddenBranches([]); setMobileMenuOpen(false) }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium" style={{ color: textPrimary }}>
+                        className="w-full flex items-center gap-2 px-3.5 py-2 text-left text-xs font-medium" style={{ color: textPrimary }}>
                         <Eye className="w-3.5 h-3.5" style={{ color: textMuted }} /> Show hidden ({hiddenBranches.length})
                       </button>
                     )}
@@ -712,92 +752,264 @@ export default function DailyAuditReport() {
         </div>
         </div>
 
-        {/* Row 2: View & Dates */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center rounded-lg text-xs font-medium overflow-hidden shrink-0"
-            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+        {/* Row 2: View Mode & Date Stepper/Picker (No horizontal scroll, clean icon buttons) */}
+        <div className="flex items-center justify-between gap-2 w-full">
+          {/* Daily / Range toggle */}
+          <div
+            className="flex items-center rounded-xl text-xs font-semibold overflow-hidden shrink-0 border"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+          >
             {(['single', 'range'] as const).map(m => (
-              <button key={m} type="button" onClick={() => setViewMode(m)} className="px-3 py-1.5"
-                style={{ backgroundColor: viewMode === m ? '#047857' : 'transparent', color: viewMode === m ? '#fff' : textMuted }}>
+              <button
+                key={m}
+                type="button"
+                onClick={() => setViewMode(m)}
+                className="px-2.5 py-1.5 text-[11px] font-bold transition-colors"
+                style={{
+                  backgroundColor: viewMode === m ? '#047857' : 'transparent',
+                  color: viewMode === m ? '#ffffff' : textMuted,
+                }}
+              >
                 {m === 'single' ? 'Daily' : 'Range'}
               </button>
             ))}
           </div>
-          {viewMode === 'single' ? (
-            <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar py-0.5">
-              {weeklyDayTabs.map(tab => {
-                const isActive = date === tab.key
-                return (
-                  <button key={tab.key} type="button"
-                    onClick={() => setDate(tab.key)}
-                    className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors"
-                    style={{
-                      backgroundColor: isActive ? '#047857' : 'transparent',
-                      borderColor: isActive ? '#047857' : inputBorder,
-                      color: isActive ? '#ffffff' : textMuted,
-                    }}
-                  >
-                    {tab.dayName} {tab.dateLabel}
-                  </button>
-                )
-              })}
 
-              {isCustomAuditDate && (
-                <button type="button"
-                  onClick={() => openDatePicker(mobileDateRef.current)}
-                  className="px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0"
-                  style={{ backgroundColor: '#047857', borderColor: '#047857', color: '#ffffff' }}
+          {viewMode === 'single' ? (
+            <div className="flex items-center gap-1 min-w-0 flex-1 justify-end">
+              {/* Prev Day */}
+              <button
+                type="button"
+                onClick={handlePrevDay}
+                aria-label="Previous day"
+                className="w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 transition-all hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95"
+                style={{ borderColor: inputBorder, color: textMuted }}
+                title="Previous day"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              {/* Date button / picker trigger */}
+              <button
+                type="button"
+                onClick={() => openDatePicker(mobileDateRef.current)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all shrink-0 max-w-[140px] truncate active:scale-95"
+                style={{
+                  backgroundColor: isToday ? 'rgba(4, 120, 87, 0.12)' : inputBg,
+                  borderColor: isToday ? '#047857' : inputBorder,
+                  color: isToday ? (isLight ? '#047857' : '#34D399') : textPrimary,
+                }}
+                title="Change date"
+              >
+                <CalendarDays className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                <span className="truncate">
+                  {isToday ? 'Today' : new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+                </span>
+              </button>
+
+              {/* Today shortcut (shown when navigating away from today) */}
+              {!isToday && (
+                <button
+                  type="button"
+                  onClick={handleToday}
+                  className="px-2 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 shrink-0 transition-all hover:bg-emerald-500/20 active:scale-95"
+                  title="Jump to today"
                 >
-                  {new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+                  Today
                 </button>
               )}
 
-              <button type="button"
-                onClick={() => openDatePicker(mobileDateRef.current)}
-                className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold border whitespace-nowrap shrink-0"
+              {/* Next Day */}
+              <button
+                type="button"
+                onClick={handleNextDay}
+                aria-label="Next day"
+                className="w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 transition-all hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95"
                 style={{ borderColor: inputBorder, color: textMuted }}
-                title="Pick a custom date"
+                title="Next day"
               >
-                <CalendarDays className="w-3.5 h-3.5" style={{ color: '#10B981' }} />
-                Custom
+                <ChevronRight className="w-4 h-4" />
               </button>
 
-              <input ref={mobileDateRef} type="date" value={date} onChange={e => setDate(e.target.value)}
+              <input
+                ref={mobileDateRef}
+                type="date"
+                value={date}
+                onChange={e => setDate(e.target.value)}
                 tabIndex={-1}
-                className="date-input-no-indicator absolute opacity-0 pointer-events-none w-0 h-0" aria-label="Audit date" />
+                className="date-input-no-indicator absolute opacity-0 pointer-events-none w-0 h-0"
+                aria-label="Audit date"
+              />
             </div>
           ) : (
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-              <input type="date" value={rangeFrom} onChange={e => setRangeFrom(e.target.value)}
-                className="date-input-no-indicator px-2 py-1.5 rounded-lg text-xs flex-1 min-w-0 cursor-pointer" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-              <input type="date" value={rangeTo} onChange={e => setRangeTo(e.target.value)}
-                className="date-input-no-indicator px-2 py-1.5 rounded-lg text-xs flex-1 min-w-0 cursor-pointer" style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
+            <div className="flex items-center gap-1.5 min-w-0 flex-1 justify-end">
+              <input
+                type="date"
+                value={rangeFrom}
+                onChange={e => setRangeFrom(e.target.value)}
+                className="date-input-no-indicator px-2 py-1 rounded-xl text-[11px] font-semibold flex-1 min-w-0 cursor-pointer border"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+              />
+              <span className="text-[10px] font-bold" style={{ color: textMuted }}>to</span>
+              <input
+                type="date"
+                value={rangeTo}
+                onChange={e => setRangeTo(e.target.value)}
+                className="date-input-no-indicator px-2 py-1 rounded-xl text-[11px] font-semibold flex-1 min-w-0 cursor-pointer border"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+              />
             </div>
           )}
         </div>
 
-        {/* Row 3: Mobile KPIs — horizontally scrolling, accent-colored borders */}
+        {/* Row 3: Mobile Counters Summary Bar + Full View Button */}
         {!loading && rows.length > 0 && (
-          <div className="flex overflow-x-auto gap-2 no-scrollbar pb-1">
-            {[
-              { label: 'Gross',     value: `₱${peso(totals.grossSales)}`,           color: isLight ? '#047857' : '#34D399' },
-              { label: 'Net',       value: `₱${peso(totals.netSales)}`,             color: totals.netSales >= 0 ? (isLight ? '#047857' : '#34D399') : (isLight ? '#DC2626' : '#F87171') },
-              { label: 'Cash',      value: `₱${peso(totals.totalCashCollection)}`,  color: isLight ? '#047857' : '#34D399' },
-              { label: 'Online',    value: `₱${peso(totals.totalOnlineCollection)}`,color: isLight ? '#047857' : '#34D399' },
-              { label: 'Expenses',  value: `₱${peso(totals.totalExpenses)}`,        color: isLight ? '#DC2626' : '#F87171' },
-              { label: 'Purchases', value: `₱${peso(totals.totalForPurchase)}`,     color: textPrimary },
-              { label: 'For Coll.', value: `₱${peso(totals.forCollection)}`,        color: textPrimary },
-              { label: 'Rebates',   value: `₱${peso(totals.rebatesForCollection)}`, color: isLight ? '#047857' : '#34D399' },
-            ].map(k => (
-              <div key={k.label} className="min-w-[110px] p-3 border rounded-xl shrink-0 flex flex-col gap-1 bg-white dark:bg-[#0A1120]" style={{ borderColor: border }}>
-                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{k.label}</span>
-                <span className="text-base font-extrabold tabular-nums" style={{ color: k.color }}>{k.value}</span>
+          <div
+            className="flex items-center justify-between p-2.5 sm:p-3 rounded-xl border transition-all"
+            style={{ backgroundColor: inputBg, borderColor: border }}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div>
+                <span className="text-[9px] font-bold uppercase tracking-wider block" style={{ color: textMuted }}>Gross</span>
+                <span className="text-xs sm:text-sm font-black tabular-nums leading-tight" style={{ color: isLight ? '#047857' : '#34D399' }}>
+                  ₱{peso(totals.grossSales)}
+                </span>
               </div>
-            ))}
+              <div className="w-px h-6 bg-slate-200 dark:bg-slate-700/60" />
+              <div>
+                <span className="text-[9px] font-bold uppercase tracking-wider block" style={{ color: textMuted }}>Net</span>
+                <span className="text-xs sm:text-sm font-black tabular-nums leading-tight" style={{ color: totals.netSales >= 0 ? (isLight ? '#047857' : '#34D399') : (isLight ? '#DC2626' : '#F87171') }}>
+                  ₱{peso(totals.netSales)}
+                </span>
+              </div>
+            </div>
+
+            {/* Fullscreen Summary View Button */}
+            <button
+              type="button"
+              onClick={() => setMobileKpiModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-all shadow-sm active:scale-95"
+              style={{
+                backgroundColor: cardBg,
+                borderColor: border,
+                color: textPrimary,
+              }}
+            >
+              <BarChart2 className="w-3.5 h-3.5 text-emerald-500" />
+              <span>Full Summary</span>
+            </button>
           </div>
         )}
 
       </div>
+
+      {/* ── Mobile Counters Full-View Popup Modal ─────────────────────────────── */}
+      {mobileKpiModalOpen && (
+        <div className="fixed inset-0 z-[99999] flex flex-col bg-white dark:bg-[#060B18] animate-in fade-in duration-200 md:hidden">
+          {/* Header */}
+          <div
+            className="flex items-center justify-between px-5 py-4 border-b shrink-0"
+            style={{
+              borderColor: border,
+              paddingTop: 'max(1rem, env(safe-area-inset-top, 0px))',
+              backgroundColor: cardBg
+            }}
+          >
+            <div>
+              <h3 className="text-base font-extrabold uppercase tracking-wider" style={{ color: textPrimary }}>
+                Transaction Summary
+              </h3>
+              <p className="text-xs font-medium" style={{ color: textMuted }}>
+                {mobileDateLabel} · {visibleRows.length} {visibleRows.length === 1 ? 'branch' : 'branches'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMobileKpiModalOpen(false)}
+              className="w-9 h-9 rounded-xl border flex items-center justify-center transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+              style={{ borderColor: border, color: textMuted }}
+              aria-label="Close summary modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Body */}
+          <div
+            className="flex-1 overflow-y-auto p-4 flex flex-col gap-3"
+            style={{
+              paddingBottom: 'max(1.5rem, calc(1.5rem + env(safe-area-inset-bottom, 0px)))'
+            }}
+          >
+            {/* Top 2 Primary Cards: Gross & Net */}
+            <div className="grid grid-cols-2 gap-3">
+              <div
+                className="p-4 rounded-2xl border shadow-sm flex flex-col gap-1"
+                style={{ backgroundColor: cardBg, borderColor: border }}
+              >
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Gross Sales</span>
+                <span className="text-lg sm:text-xl font-black tabular-nums tracking-tight" style={{ color: isLight ? '#047857' : '#34D399' }}>
+                  ₱{peso(totals.grossSales)}
+                </span>
+                <span className="text-[10px] text-slate-400 mt-0.5 leading-tight">Total revenue recorded</span>
+              </div>
+              <div
+                className="p-4 rounded-2xl border shadow-sm flex flex-col gap-1"
+                style={{ backgroundColor: cardBg, borderColor: border }}
+              >
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Net Sales</span>
+                <span
+                  className="text-lg sm:text-xl font-black tabular-nums tracking-tight"
+                  style={{ color: totals.netSales >= 0 ? (isLight ? '#047857' : '#34D399') : (isLight ? '#DC2626' : '#F87171') }}
+                >
+                  ₱{peso(totals.netSales)}
+                </span>
+                <span className="text-[10px] text-slate-400 mt-0.5 leading-tight">Gross minus expenses</span>
+              </div>
+            </div>
+
+            {/* Other 6 Metric Cards */}
+            <div className="grid grid-cols-2 gap-2.5">
+              {[
+                { label: 'Cash Collection', value: `₱${peso(totals.totalCashCollection)}`, color: isLight ? '#047857' : '#34D399', desc: 'Physical cash collected' },
+                { label: 'Online Collection', value: `₱${peso(totals.totalOnlineCollection)}`, color: isLight ? '#047857' : '#34D399', desc: 'Digital bank/GCash payments' },
+                { label: 'Total Expenses', value: `₱${peso(totals.totalExpenses)}`, color: isLight ? '#DC2626' : '#F87171', desc: 'Operational disbursements' },
+                { label: 'For Purchases', value: `₱${peso(totals.totalForPurchase)}`, color: textPrimary, desc: 'Allocated purchase budget' },
+                { label: 'For Collection', value: `₱${peso(totals.forCollection)}`, color: textPrimary, desc: 'Outstanding receivables' },
+                { label: 'Rebates Due', value: `₱${peso(totals.rebatesForCollection)}`, color: isLight ? '#047857' : '#34D399', desc: 'Rebates pending collection' },
+              ].map(item => (
+                <div
+                  key={item.label}
+                  className="p-3.5 rounded-xl border flex flex-col gap-1"
+                  style={{ backgroundColor: cardBg, borderColor: border }}
+                >
+                  <span className="text-[9.5px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
+                    {item.label}
+                  </span>
+                  <span className="text-base font-black tabular-nums" style={{ color: item.color }}>
+                    {item.value}
+                  </span>
+                  <span className="text-[9.5px] text-slate-400 leading-tight">
+                    {item.desc}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Done Button */}
+            <div className="pt-3 mt-auto">
+              <button
+                type="button"
+                onClick={() => setMobileKpiModalOpen(false)}
+                className="w-full py-3 rounded-xl font-bold text-xs uppercase tracking-wider text-white shadow-md active:scale-98 transition-all"
+                style={{ backgroundColor: '#047857' }}
+              >
+                Close Summary
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Desktop unified command bar ──────────────────────────────────────── */}
       <div className="hidden md:flex w-full px-4 py-3 border-b flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-[#0A1120] no-print"
@@ -1601,17 +1813,19 @@ export default function DailyAuditReport() {
       {/* ── Row Details Modal ───────────────────────────────────────── */}
       {selectedRow && ReactDOM.createPortal(
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4 safe-area-top safe-area-bottom"
+          className="fixed inset-0 z-[9999] flex items-stretch sm:items-center justify-center p-0 sm:p-4"
           style={{ backgroundColor: 'rgba(6,10,20,0.82)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}
           onClick={() => setSelectedRow(null)}
         >
+          {/* Phones: true full-screen sheet (dvh, no gaps); the sheet paints under the status bar and
+              pads its own header/footer for the notch + home indicator. */}
           <div
-            className="rounded-2xl overflow-hidden shadow-2xl w-full max-w-6xl xl:max-w-7xl h-[96vh] flex flex-col animate-in fade-in zoom-in-95 duration-150"
-            style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '96vh', boxShadow: '0 25px 70px -15px rgba(0,0,0,0.55)' }}
+            className="overflow-hidden shadow-2xl w-full max-w-6xl xl:max-w-7xl h-dvh max-h-dvh sm:h-[96vh] sm:max-h-[96vh] rounded-none sm:rounded-2xl flex flex-col animate-in fade-in zoom-in-95 duration-150 border-0 sm:border"
+            style={{ backgroundColor: cardBg, borderColor: border, boxShadow: '0 25px 70px -15px rgba(0,0,0,0.55)' }}
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex flex-col gap-3 px-4 sm:px-6 py-4 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
+            <div className="flex flex-col gap-3 px-4 sm:px-6 pb-4 pt-[max(1rem,env(safe-area-inset-top))] sm:pt-4 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <h4 className="font-black text-lg truncate" style={{ color: textPrimary }}>{formatBranchName(selectedRow.branchName)}</h4>
@@ -2124,8 +2338,8 @@ export default function DailyAuditReport() {
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-4 border-t flex items-center justify-between shrink-0"
-                style={{ borderColor: border, backgroundColor: isLight ? 'rgba(248,250,252,0.8)' : 'rgba(6,11,24,0.5)' }}>
+              <div className="px-4 sm:px-6 pt-3 sm:pt-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-4 border-t flex items-center justify-between shrink-0"
+                style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0a1120' }}>
                 <div className="flex items-center gap-3">
                   {isAdmin && selectedRow.id && showEditButton && (
                     <button

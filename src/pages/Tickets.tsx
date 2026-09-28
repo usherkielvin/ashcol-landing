@@ -8115,13 +8115,21 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
             </div>
 
             <div
-              className="flex-1 min-h-0 px-3 md:px-8 bg-transparent relative overflow-y-auto flex flex-col"
+              className={`flex-1 min-h-0 px-3 md:px-8 bg-transparent relative flex flex-col ${
+                overviewSearchInput || overviewResults.length > 0
+                  ? 'overflow-y-auto'
+                  : 'overflow-hidden justify-center py-2 sm:py-4 md:py-6'
+              }`}
+              style={{
+                overscrollBehavior: overviewSearchInput || overviewResults.length > 0 ? 'auto' : 'none',
+                touchAction: overviewSearchInput || overviewResults.length > 0 ? 'pan-y' : 'none',
+              }}
             >
               <div
                 className={
                   overviewSearchInput || overviewResults.length > 0
                     ? 'max-w-4xl w-full mx-auto flex flex-col'
-                    : 'w-full max-w-4xl mx-auto px-3 md:px-0 pt-6 pb-8 md:pt-14 flex flex-col items-center gap-5 md:gap-8'
+                    : 'w-full max-w-4xl mx-auto px-2 md:px-0 flex flex-col items-center justify-center gap-3 sm:gap-4 md:gap-6 my-auto'
                 }
               >
 
@@ -8129,13 +8137,13 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                 <div
                   className={overviewSearchInput || overviewResults.length > 0
                     ? 'sticky top-0 z-10 -mx-3 px-3 md:mx-0 md:px-0 pt-4 pb-3 md:pt-6 md:pb-4 flex flex-col gap-3 md:gap-4'
-                    : 'w-full flex flex-col items-center gap-6 md:gap-8'}
+                    : 'w-full flex flex-col items-center gap-3 sm:gap-4 md:gap-6'}
                   style={overviewSearchInput || overviewResults.length > 0 ? { backgroundColor: isLight ? '#f1f5f9' : '#060B18' } : undefined}
                 >
                   {/* Big Logo / Name (Google Style) */}
                   <div className="flex flex-col items-center justify-center text-center w-full">
                     <h1
-                      className={`font-black tracking-tighter font-['Poppins',sans-serif] ${overviewSearchInput || overviewResults.length > 0 ? 'text-2xl md:text-3xl mb-0 opacity-80' : 'text-5xl md:text-7xl mb-2 opacity-100'}`}
+                      className={`font-black tracking-tighter font-['Poppins',sans-serif] ${overviewSearchInput || overviewResults.length > 0 ? 'text-2xl md:text-3xl mb-0 opacity-80' : 'text-3xl sm:text-4xl md:text-6xl mb-0 sm:mb-1 opacity-100'}`}
                     >
                       <span style={{ color: green }}>ASHCOL</span>
                       <span style={{ color: textPrimary }} className="ml-2 md:ml-3">PORTAL</span>
@@ -8144,14 +8152,14 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
 
                   {/* Search Input Box */}
                   <div
-                    className="w-full max-w-2xl mx-auto flex items-center gap-3 px-5 py-4 md:px-8 md:py-5 rounded-2xl shadow-md border-2 transition-[border-color,box-shadow] duration-150"
+                    className="w-full max-w-2xl mx-auto flex items-center gap-2.5 sm:gap-3 px-4 py-3 sm:px-6 sm:py-3.5 md:px-8 md:py-4.5 rounded-2xl shadow-md border-2 transition-[border-color,box-shadow] duration-150"
                     style={{
                       backgroundColor: cardBg,
                       borderColor: overviewSearchFocused ? green : border,
                       boxShadow: overviewSearchFocused ? `0 0 0 4px ${green}15` : 'none'
                     }}
                   >
-                    <Search className="w-5 h-5 shrink-0" style={{ color: green }} />
+                    <Search className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" style={{ color: green }} />
                     <input
                       type="text"
                       placeholder="Search tickets, customers, or contacts..."
@@ -8161,7 +8169,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                       onBlur={() => setOverviewSearchFocused(false)}
                       enterKeyHint="search"
                       autoComplete="off"
-                      className="bg-transparent outline-none text-base flex-1 min-w-0 font-medium"
+                      className="bg-transparent outline-none text-sm sm:text-base flex-1 min-w-0 font-medium"
                       style={{ color: textPrimary }}
                     />
                     {overviewSearchInput && (
@@ -8180,30 +8188,30 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                       Tap-target icon tiles (mobile-home-screen style) so staff can jump
                       straight into any everyday section without opening the sidebar. */}
                   {!overviewSearchInput && overviewResults.length === 0 && overviewQuickLinks.length > 0 && (
-                    <div className="w-full max-w-4xl mx-auto flex flex-col gap-2.5 md:gap-3">
+                    <div className="w-full max-w-4xl mx-auto flex flex-col gap-2 sm:gap-2.5 md:gap-3">
                       <div className="flex items-center gap-2 px-1">
-                        <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>
+                        <span className="text-[9.5px] sm:text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>
                           Quick Actions
                         </span>
                         <span className="flex-1 h-px" style={{ backgroundColor: border }} />
                       </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2.5 md:gap-3">
-                        {overviewQuickLinks.map(link => (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2 sm:gap-2.5 md:gap-3">
+                        {overviewQuickLinks.map((link, idx) => (
                           <button
                             key={link.to}
                             type="button"
                             onClick={() => navigate(link.to)}
-                            className="group flex flex-col items-center justify-center gap-2 py-4 px-2 rounded-2xl border shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md active:scale-95 cursor-pointer"
+                            className={`group flex flex-col items-center justify-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 md:py-4 px-2 rounded-xl sm:rounded-2xl border shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md active:scale-95 cursor-pointer ${idx === 6 ? 'col-span-2 sm:col-span-1' : ''}`}
                             style={{ backgroundColor: cardBg, borderColor: border }}
                           >
                             <span
-                              className="flex items-center justify-center w-11 h-11 md:w-12 md:h-12 rounded-full shrink-0 transition-transform duration-200 group-hover:scale-110"
+                              className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-full shrink-0 transition-transform duration-200 group-hover:scale-110"
                               style={{ backgroundColor: `${green}15` }}
                             >
-                              <link.icon className="w-5 h-5 md:w-6 md:h-6 transition-colors" style={{ color: green }} />
+                              <link.icon className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 transition-colors" style={{ color: green }} />
                             </span>
                             <span
-                              className="text-[11px] md:text-xs font-bold text-center leading-tight line-clamp-2 transition-colors"
+                              className="text-[10.5px] sm:text-[11px] md:text-xs font-bold text-center leading-tight line-clamp-2 transition-colors"
                               style={{ color: textPrimary }}
                             >
                               {link.label}
