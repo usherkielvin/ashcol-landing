@@ -264,7 +264,7 @@ export default function WeekSummaryModal({
     if (upper.includes('DASMA') || upper.includes('DASMARIÑAS')) return 'DASMARIÑAS'
     if (upper.includes('CALAUAN')) return 'CALAUAN'
     if (upper.includes('CANDELARIA')) return 'CANDELARIA'
-    if (upper.includes('SAN PEDRO') || upper.includes('SANPEDRO')) return 'SAN PEDRO'
+    if (upper.includes('BINAN') || upper.includes('BIÑAN') || upper.includes('SAN PEDRO') || upper.includes('SANPEDRO')) return 'BINAN'
     return formatBranchName(nameOrId).toUpperCase()
   }
 

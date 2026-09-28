@@ -7,7 +7,7 @@
  * North branches (Taguig Sales, Taguig Services, Bulacan, Pampanga, Rizal):
  *   Friday to Thursday (week starts Friday, ends following Thursday)
  *
- * South branches (all others - Calauan, Candelaria, Dasmarinas, Silang, San Pedro, etc.):
+ * South branches (all others - Calauan, Candelaria, Dasmarinas, Silang, Binan, etc.):
  *   Monday to Sunday (week starts Monday, ends following Sunday)
  *
  * "Which month a week belongs to" rule: the month the week ENDS in.

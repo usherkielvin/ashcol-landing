@@ -2529,7 +2529,7 @@ export default function Payouts() {
     <div className="flex flex-col gap-4 pb-4 md:pb-4 h-full min-h-0 overflow-y-auto overflow-x-hidden [&>*]:shrink-0">
       {/* Toolbar — branch, date, range, and search filters plus a sync action. */}
       <div
-        className="relative z-30 -mx-1.5 md:mx-0 rounded-none md:rounded-2xl p-2.5 md:p-3.5 overflow-visible shadow-xs"
+        className={`relative z-30 -mx-1.5 md:mx-0 rounded-none md:rounded-2xl p-2.5 md:p-3.5 overflow-visible shadow-xs ${selectedInstaller ? 'hidden' : ''}`}
         style={{ backgroundColor: cardBg, borderTop: `1px solid ${border}`, borderBottom: `1px solid ${border}`, borderLeft: `1px solid ${border}`, borderRight: `1px solid ${border}` }}
       >
         {/* Desktop/tablet — full inline controls, unchanged */}
@@ -3220,11 +3220,40 @@ export default function Payouts() {
                   className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-6 py-4"
                   style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}
                 >
-                  <div />
+                  <div className="flex items-center gap-2 min-w-0" title="Branch">
+                    <Building2 className="w-4 h-4 shrink-0 text-emerald-500" />
+                    <span className="text-xs md:text-sm font-extrabold uppercase tracking-wider truncate" style={{ color: textMuted }}>
+                      {currentBranchDisplay || 'Branch'}
+                    </span>
+                  </div>
                   <span className="text-xl md:text-2xl font-black uppercase tracking-wide text-center whitespace-nowrap" style={{ color: textPrimary }}>
                     {displayInstallerName(installerName).toUpperCase()}
                   </span>
                   <div className="flex items-center gap-2 justify-end">
+                    {/* Kept on the installer view even though the filter bar is hidden here */}
+                    <button
+                      type="button"
+                      onClick={() => void loadAndSync(true)}
+                      disabled={syncing || initialLoading || isWeekClosed}
+                      title={isWeekClosed ? 'This payout week is closed and locked — syncing is disabled' : 'Sync latest completed job orders from Schedules'}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50 cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ color: '#10B981', backgroundColor: isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)', borderColor: '#10B98150' }}
+                    >
+                      {isWeekClosed ? <Lock className="w-3.5 h-3.5 text-amber-500" /> : <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />}
+                      <span className="hidden lg:inline">{isWeekClosed ? 'Week Locked' : syncing ? 'Syncing…' : 'Sync Latest'}</span>
+                    </button>
+                    {canManagePayroll && (
+                      <button
+                        type="button"
+                        onClick={openRatesModal}
+                        title="Set this branch's payout rates"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50 cursor-pointer shadow-xs"
+                        style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
+                      >
+                        <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-500" />
+                        <span className="hidden lg:inline">Payout Settings</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => hideEmptyColumnsFor(installerName)}

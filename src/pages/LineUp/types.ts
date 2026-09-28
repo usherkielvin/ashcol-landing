@@ -59,6 +59,18 @@ export const branchThemes: Record<string, BranchTheme> = {
     accent: "#EC4899",
     accentDark: "#BE185D",
     accentLight: "#FCE7F3"
+  },
+  "BINAN": {
+    name: "Teal Green",
+    accent: "#0D9488",
+    accentDark: "#0F766E",
+    accentLight: "#CCFBF1"
+  },
+  "SAN PEDRO": {
+    name: "Teal Green",
+    accent: "#0D9488",
+    accentDark: "#0F766E",
+    accentLight: "#CCFBF1"
   }
 }
 
@@ -66,6 +78,7 @@ export const getBranchThemeKey = (name: string): string => {
   const upper = name.toUpperCase().trim()
   if (upper === 'LAGUNA' || upper === 'CALAUAN') return 'CALAUAN'
   if (upper === 'DASMARIÑAS' || upper === 'DASMA') return 'DASMA'
+  if (upper === 'SAN PEDRO' || upper === 'BINAN' || upper === 'BIÑAN') return 'BINAN'
   if (branchThemes[upper]) return upper
   return 'TAGUIG - SALES' // fallback
 }

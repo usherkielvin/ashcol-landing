@@ -108,8 +108,8 @@ const getConciseLocationTag = (branch: Branch) => {
   if (name.includes('rizal') || name.includes('rodriguez')) {
     return 'SAN JOSE, RODRIGUEZ, RIZAL'
   }
-  if (name.includes('san pedro') || name.includes('sanpedro') || name.includes('pedro')) {
-    return 'LANDAYAN, SAN PEDRO, LAGUNA'
+  if (name.includes('binan') || name.includes('biñan') || name.includes('san pedro') || name.includes('sanpedro') || name.includes('pedro')) {
+    return 'BINAN, LAGUNA'
   }
   if (name.includes('calauan')) {
     return 'BANGYAS, CALAUAN, LAGUNA'
@@ -272,20 +272,8 @@ export default function Branches() {
       return selectedBranch.id === globalBranchId
     }
     
-    // Non-admin check
-    const userRole = (user?.role || '').toLowerCase()
-    const jobTitleLower = (user?.jobTitle || '').trim().toLowerCase()
-    const isSalesCoordinator = userRole === 'employee' && (
-      jobTitleLower === 'sales coordinator' ||
-      jobTitleLower === 'coordinator' ||
-      jobTitleLower.includes('coor')
-    )
-    const isManager = userRole === 'manager' || isSalesCoordinator || userRole === 'oic'
-    const today = new Date().toISOString().split('T')[0]
-    const mayEmployeeEdit = isEmployeePortalRole(userRole) && isMayDtrEditWindow(today)
-    if (!isManager && !mayEmployeeEdit) return false
-    
-    // A non-admin manager can only edit their own branch DTR
+    // Non-admin: every member (and any branch-specific role) may edit their OWN branch's details;
+    // the backend enforces the same own-branch rule (BranchController.assertCanEditBranch).
     if (!user?.branchId) return false
     
     if (!isSameBaseBranch(user.branchId, selectedBranch.id)) return false
@@ -505,9 +493,9 @@ export default function Branches() {
           const pubName = normalize(candidate.name)
           const pubTag = normalize(candidate.tag)
           if (pubName === apiName || pubTag === apiLocation) return true
-          // If candidate is Laguna (Calauan), do not match if apiName or apiLocation is San Pedro or other specific city
+          // If candidate is Laguna (Calauan), do not match if apiName or apiLocation is Binan / San Pedro or other specific city
           if (candidate.name.toLowerCase().includes('laguna') || candidate.tag.toLowerCase() === 'laguna') {
-            if (apiName.includes('san pedro') || apiLocation.includes('san pedro') || apiName.includes('pedro')) {
+            if (apiName.includes('binan') || apiName.includes('biñan') || apiName.includes('san pedro') || apiLocation.includes('san pedro') || apiName.includes('pedro')) {
               return false
             }
             if (apiName.includes('calauan') || apiLocation.includes('calauan')) {
@@ -560,32 +548,22 @@ export default function Branches() {
         }
         const salesCoordinator = branchStaff.find(isSalesCoordinator)
 
-        const branchKey = suffix ? `${api.id}-${suffix}` : (api.id || '')
-        const lineupRoster = api.id ? lineupByBranchId[api.id] : undefined
-        const employeeOptions = branchStaff.map((e: any) => ({
-          id: String(e.id || ''),
-          name: String(e.name || ''),
-          branchId: e.branchId,
-          email: e.email,
-          role: e.role,
-          jobTitle: e.jobTitle,
-        }))
-        const roster = buildBranchRoster(employeeOptions, branchKey, lineupRoster)
-
-        let localRoster: { drivers?: string[]; installers?: string[] } | null = null
-        try {
-          const raw = localStorage.getItem(`ashcol-branch-roster-${branchKey}`)
-            || localStorage.getItem(`ashcol-branch-roster-${api.id}`)
-            || (api.id ? localStorage.getItem(`ashcol-branch-roster-${resolveBranchApiId(api.id)}`) : null)
-          if (raw) localRoster = JSON.parse(raw)
-        } catch {}
-
-        const drivers = (localRoster && Array.isArray(localRoster.drivers) && localRoster.drivers.length > 0)
-          ? localRoster.drivers
-          : roster.drivers
-        const installers = (localRoster && Array.isArray(localRoster.installers) && localRoster.installers.length > 0)
-          ? localRoster.installers
-          : roster.installers
+        // Installers come ONLY from the member accounts created for this branch, shown by the
+        // account's full name — never from typed-in / lineup / cached names, so the same person
+        // can't appear twice under different spellings ("JUSTINE" vs "JUSTIN ROI BIEN").
+        // Drivers are intentionally not listed on this page (the LINEUP keeps its own driver list).
+        const installerByAccount = new Map<string, string>()
+        for (const e of branchStaff) {
+          if (e.isActive === false || e.active === false) continue
+          if (typeof e.status === 'string' && e.status.toUpperCase() === 'INACTIVE') continue
+          if (!isInstallerEmployee(e)) continue
+          const fullName = String(e.name || '').trim().replace(/\s+/g, ' ').toUpperCase()
+          if (!fullName) continue
+          installerByAccount.set(String(e.id || fullName), fullName)
+        }
+        const drivers: string[] = []
+        const installers = Array.from(new Set(installerByAccount.values()))
+          .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
 
         if (!oicName) oicName = 'Unassigned'
 
@@ -1187,23 +1165,6 @@ export default function Branches() {
               </div>
             )}
 
-            {/* Drivers */}
-            <div className="p-5 rounded-2xl border border-slate-100 dark:border-slate-800/40 bg-slate-50/30 dark:bg-slate-900/10 flex flex-col gap-3">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Assigned Drivers ({myBranch.drivers.length})</span>
-              <div className="flex flex-col gap-2">
-                {myBranch.drivers.length > 0 ? (
-                  myBranch.drivers.map((d: string) => (
-                    <div key={d} className="flex items-center gap-2.5 text-xs font-semibold" style={{ color: textPrimary }}>
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                      {d}
-                    </div>
-                  ))
-                ) : (
-                  <span className="text-xs italic text-slate-400">No drivers assigned</span>
-                )}
-              </div>
-            </div>
-
             {/* Installers & Technicians */}
             <div className="p-5 rounded-2xl border border-slate-100 dark:border-slate-800/40 bg-slate-50/30 dark:bg-slate-900/10 flex flex-col gap-3">
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Installers & Technicians ({myBranch.installers.length})</span>
@@ -1386,17 +1347,6 @@ export default function Branches() {
 
                       <div className="flex flex-col gap-1.5 text-xs py-0.5">
                         <span className="font-semibold text-slate-400">
-                          Drivers ({branch.drivers.length})
-                        </span>
-                        <PersonnelChipList
-                          names={branch.drivers}
-                          emptyLabel="None assigned"
-                          chipClass="bg-blue-500/10 text-blue-700 dark:text-blue-300"
-                        />
-                      </div>
-
-                      <div className="flex flex-col gap-1.5 text-xs py-0.5">
-                        <span className="font-semibold text-slate-400">
                           Installers ({branch.installers.length})
                         </span>
                         <PersonnelChipList
@@ -1418,7 +1368,7 @@ export default function Branches() {
                     >
                       View Full Details
                     </button>
-                    {(isRoleAdmin || ((user?.role === 'MANAGER' || user?.role === 'OIC') && user.branchId && isSameBaseBranch(user.branchId, branch.id))) && (
+                    {(isRoleAdmin || (user?.branchId && isSameBaseBranch(user.branchId, branch.id))) && (
                       <button 
                         onClick={() => handleEditClick(branch)}
                         className="px-3 py-2 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all hover:text-[#10B981] hover:border-[#10B981]"
@@ -1801,12 +1751,6 @@ export default function Branches() {
                     ))}
                     <div className="flex flex-col gap-2">
                       <span className="text-[11px] font-semibold" style={{ color: textMuted }}>
-                        Drivers ({selectedBranch.drivers.length})
-                      </span>
-                      <PersonnelChipList names={selectedBranch.drivers} emptyLabel="—" chipClass="bg-blue-500/10 text-blue-700 dark:text-blue-300" />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <span className="text-[11px] font-semibold" style={{ color: textMuted }}>
                         Installers ({selectedBranch.installers.length})
                       </span>
                       <PersonnelChipList names={selectedBranch.installers} emptyLabel="—" />
@@ -1879,7 +1823,7 @@ export default function Branches() {
                     style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
                     className="border rounded-xl px-3.5 py-2.5 text-sm font-semibold focus:outline-none focus:border-[#10B981] w-full transition-colors"
                     disabled={saving}
-                    placeholder="e.g. ASHCOL SAN PEDRO"
+                    placeholder="e.g. ASHCOL BINAN"
                   />
                 </div>
 
@@ -1896,7 +1840,7 @@ export default function Branches() {
                     style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
                     className="border rounded-xl px-3.5 py-2.5 text-sm font-semibold focus:outline-none focus:border-[#10B981] w-full transition-colors"
                     disabled={saving}
-                    placeholder="e.g. San Pedro, Laguna"
+                    placeholder="e.g. Binan, Laguna"
                   />
                 </div>
 
@@ -1913,7 +1857,7 @@ export default function Branches() {
                     style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
                     className="border rounded-xl px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:border-[#10B981] w-full transition-colors"
                     disabled={saving}
-                    placeholder="e.g. National Highway, Brgy. Landayan, San Pedro City, Laguna"
+                    placeholder="e.g. National Highway, Biñan City, Laguna"
                   />
                 </div>
 
@@ -1947,7 +1891,7 @@ export default function Branches() {
                     style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
                     className="border rounded-xl px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:border-[#10B981] w-full transition-colors"
                     disabled={saving}
-                    placeholder="e.g. ashcolsanpedro@gmail.com"
+                    placeholder="e.g. ashcolbinan@gmail.com"
                   />
                 </div>
               </div>
@@ -2489,7 +2433,7 @@ export default function Branches() {
                 <input
                   id="add-branch-name"
                   type="text"
-                  placeholder="e.g. ASHCOL SAN PEDRO"
+                  placeholder="e.g. ASHCOL BINAN"
                   value={addForm.name}
                   onChange={e => setAddForm(p => ({ ...p, name: e.target.value }))}
                   disabled={addSaving}
@@ -2504,7 +2448,7 @@ export default function Branches() {
                 <input
                   id="add-branch-location"
                   type="text"
-                  placeholder="e.g. San Pedro, Laguna"
+                  placeholder="e.g. Binan, Laguna"
                   value={addForm.location}
                   onChange={e => setAddForm(p => ({ ...p, location: e.target.value }))}
                   disabled={addSaving}

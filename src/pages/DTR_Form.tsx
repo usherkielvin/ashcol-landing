@@ -278,6 +278,7 @@ const getTrNoPrefix = (branchName: string, auditLine?: string | null) => {
     return 'TGL'
   }
   const branchCodes: Array<[string[], string]> = [
+    [['BINAN', 'BIÑAN', 'SAN PEDRO', 'SANPEDRO'], 'BIN'],
     [['DASMA', 'DASMARI', 'DASMARINAS'], 'DAS'],
     [['CALAUAN'], 'CAL'],
     [['CANDELARIA'], 'CAN'],

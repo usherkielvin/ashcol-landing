@@ -49,11 +49,14 @@ export function branchAliasKey(branchId?: string | null): string | null {
     'br-dasma': 'dasma',
     '2880c5fa-581c-11f1-bf8c-74d4dd6dfc0b': 'candelaria',
     'br-candelaria': 'candelaria',
-    'a7f3ba63-f5f0-4903-a037-9f72403e50dd': 'san pedro',
-    'br-san-pedro': 'san pedro',
-    'br-sanpedro': 'san pedro',
+    'a7f3ba63-f5f0-4903-a037-9f72403e50dd': 'binan',
+    'br-binan': 'binan',
+    'br-biñan': 'binan',
+    'br-san-pedro': 'binan',
+    'br-sanpedro': 'binan',
   }
   if (aliases[id]) return aliases[id]
+  if (id.includes('binan') || id.includes('biñan') || id.includes('san-pedro') || id.includes('sanpedro') || id.includes('san pedro')) return 'binan'
   if (id.startsWith('br-')) return id.slice(3)
   for (const kw of Object.values(aliases)) {
     if (id.includes(kw)) return kw
@@ -798,6 +801,7 @@ export function formatDisplayUserLabel(label?: string | null): string {
 /** Canonical short labels used in the admin branch switcher (prod UI). */
 const BRANCH_DISPLAY_BY_ID: Record<string, string> = {
   'BR-BATANGAS': 'BATANGAS',
+  'BR-BINAN': 'BINAN',
   'BR-BULACAN': 'BULACAN',
   'BR-CALAUAN': 'CALAUAN',
   'BR-CANDELARIA': 'CANDELARIA',
@@ -806,10 +810,13 @@ const BRANCH_DISPLAY_BY_ID: Record<string, string> = {
   'BR-LAGUNA': 'LAGUNA',
   'BR-PAMPANGA': 'PAMPANGA',
   'BR-RIZAL': 'RIZAL',
+  'BR-SAN-PEDRO': 'BINAN',
+  'BR-SANPEDRO': 'BINAN',
   'BR-SILANG': 'SILANG',
   'BR-TAGUIG-SALES': 'TAGUIG SALES',
   'BR-TAGUIG-SERVICES': 'TAGUIG SERVICES',
   'BR-VALENZUELA': 'VALENZUELA',
+  'A7F3BA63-F5F0-4903-A037-9F72403E50DD': 'BINAN',
 }
 
 /**
@@ -846,6 +853,9 @@ export function formatBranchName(name?: string | null, branchId?: string | null)
   if (upper.includes('BATANGAS')) return 'BATANGAS'
   if (upper.includes('GENTRI') || upper.includes('GENERAL TRIAS')) return 'GENTRI'
   if (upper.includes('VALENZUELA')) return 'VALENZUELA'
+  if (upper.includes('BINAN') || upper.includes('BIÑAN') || upper.includes('SAN PEDRO') || upper.includes('SANPEDRO')) {
+    return 'BINAN'
+  }
   if (upper.includes('LAGUNA') && !upper.includes('CALAUAN')) return 'LAGUNA'
 
   // Strip "ASHCOL", then leftover separators ("- CALAUAN…", "– …")
