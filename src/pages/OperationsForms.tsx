@@ -5,7 +5,7 @@ import {
   FileText, CreditCard, Clock, Plus, Search, Filter, Loader2,
   Check, X, AlertCircle, Trash2, Eye, Pencil, MousePointerClick, ChevronLeft,
   CircleCheck, CircleX, Hourglass, TrendingUp, ChevronDown, Building2,
-  MessageSquare, Archive, Calendar, Undo2,
+  MessageSquare, Archive, Calendar, Undo2, SlidersHorizontal,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -109,6 +109,23 @@ const TABS: { id: TabId; label: string; description: string; icon: typeof FileTe
 
 const inputCls = 'w-full px-3 py-2 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#10B981]/40 disabled:opacity-70 disabled:cursor-not-allowed'
 
+function currentMonthKey() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+/** Current month first, then the previous 23 — for the archive month dropdown. */
+function monthOptions(count = 24): { value: string; label: string }[] {
+  const now = new Date()
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    return {
+      value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+      label: d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+    }
+  })
+}
+
 function todayKey() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -181,6 +198,26 @@ export default function OperationsForms() {
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
+  const [archFiltersOpen, setArchFiltersOpen] = useState(false)
+  const archFiltersRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!archFiltersOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (archFiltersRef.current && !archFiltersRef.current.contains(e.target as Node)) setArchFiltersOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [archFiltersOpen])
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const filtersRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!filtersOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (filtersRef.current && !filtersRef.current.contains(e.target as Node)) setFiltersOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [filtersOpen])
   const [typeFilter, setTypeFilter] = useState<'ALL' | TabId>('ALL')
   const [branchFilter, setBranchFilter] = useState('ALL')
 
@@ -227,7 +264,7 @@ export default function OperationsForms() {
   const [archStatusFilter, setArchStatusFilter] = useState<'ALL' | 'DONE' | 'RELEASED' | 'CANCELLED'>('ALL')
   const [archBranchFilter, setArchBranchFilter] = useState('ALL')
   const [archStaffFilter, setArchStaffFilter] = useState('ALL')
-  const [archMonthFilter, setArchMonthFilter] = useState('')
+  const [archMonthFilter, setArchMonthFilter] = useState(currentMonthKey)
   const [archSelected, setArchSelected] = useState<ArchUnifiedRow | null>(null)
   const [archHistory, setArchHistory] = useState<ArchHistoryEntry[]>([])
   const [archHistLoading, setArchHistLoading] = useState(false)
@@ -1291,17 +1328,19 @@ export default function OperationsForms() {
 
   const disabled = modal?.mode === 'view'
 
-  const StatCard = ({ label, value, icon: Icon, color }: { label: string; value: number | string; icon: typeof FileText; color: string }) => (
+  const StatCard = ({ label, shortLabel, value, icon: Icon, color }: { label: string; shortLabel: string; value: number | string; icon: typeof FileText; color: string }) => (
     <div
-      className="flex items-center gap-3 rounded-xl p-3.5 flex-1 min-w-[140px]"
+      className="flex flex-col md:flex-row items-center gap-0 md:gap-3 rounded-lg md:rounded-xl px-1 py-2 md:p-3.5 flex-1 md:min-w-[140px]"
       style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
     >
-      <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${color}1A` }}>
+      <div className="hidden md:flex w-9 h-9 rounded-lg items-center justify-center shrink-0" style={{ backgroundColor: `${color}1A` }}>
         <Icon className="w-[18px] h-[18px]" style={{ color }} />
       </div>
-      <div className="min-w-0">
-        <div className="text-lg font-black leading-tight" style={{ color: textPrimary }}>{value}</div>
-        <div className="text-[10px] font-bold uppercase tracking-wide truncate" style={{ color: textMuted }}>{label}</div>
+      <div className="min-w-0 text-center md:text-left">
+        <div className="text-[15px] md:text-lg font-black leading-tight" style={{ color }}>{value}</div>
+        <div className="text-[9px] md:text-[10px] font-bold uppercase tracking-wide truncate" style={{ color: textMuted }}>
+          <span className="md:hidden">{shortLabel}</span><span className="hidden md:inline">{label}</span>
+        </div>
       </div>
     </div>
   )
@@ -1318,12 +1357,12 @@ export default function OperationsForms() {
   )
 
   return (
-    <div className="flex flex-col gap-5 min-h-full w-full" style={{ backgroundColor: pageBg, color: textPrimary }}>
+    <div className="flex flex-col gap-2.5 md:gap-5 min-h-full w-full" style={{ backgroundColor: pageBg, color: textPrimary }}>
       {!modal && (
       <>
       {/* Page header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
+      <div className="flex flex-row justify-between items-center gap-2 md:gap-4">
+        <div className="hidden md:block">
           <h2 className="text-2xl font-black tracking-tight mb-1 flex items-center gap-2.5">
             <FileText className="w-7 h-7" style={{ color: accent }} />
             Request Forms
@@ -1332,16 +1371,16 @@ export default function OperationsForms() {
             Cash advance, budget, and overtime requests in one place
           </p>
         </div>
-        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+        <div className="flex items-center justify-between md:justify-end gap-2 md:gap-2.5 w-full md:w-auto">
           {/* Active / Archives tab switcher */}
           <div
-            className="flex items-center rounded-xl p-1 gap-1"
+            className="flex items-center rounded-full md:rounded-xl p-0.5 md:p-1 gap-0.5 md:gap-1"
             style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F1A2E', border: `1px solid ${border}` }}
           >
             <button
               type="button"
               onClick={() => setActiveTab('active')}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all"
+              className="flex items-center gap-1.5 px-3 md:px-3.5 py-1 md:py-1.5 rounded-full md:rounded-lg text-[11px] md:text-xs font-bold transition-all"
               style={activeTab === 'active' ? { backgroundColor: accent, color: '#fff', boxShadow: '0 2px 8px rgba(16,185,129,0.3)' } : { color: textMuted }}
             >
               <FileText className="w-3.5 h-3.5" />
@@ -1350,7 +1389,7 @@ export default function OperationsForms() {
             <button
               type="button"
               onClick={() => setActiveTab('archives')}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all"
+              className="flex items-center gap-1.5 px-3 md:px-3.5 py-1 md:py-1.5 rounded-full md:rounded-lg text-[11px] md:text-xs font-bold transition-all"
               style={activeTab === 'archives' ? { backgroundColor: '#6366f1', color: '#fff', boxShadow: '0 2px 8px rgba(99,102,241,0.3)' } : { color: textMuted }}
             >
               <Archive className="w-3.5 h-3.5" />
@@ -1365,11 +1404,11 @@ export default function OperationsForms() {
           {activeTab === 'active' && (
             <button
               onClick={openNewForm}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-white shadow-md hover:opacity-90 transition-all"
+              className="flex items-center gap-1.5 h-8 md:h-auto px-3 md:px-4 md:py-2.5 rounded-full md:rounded-xl text-[11px] md:text-xs font-bold text-white shadow-sm md:shadow-md hover:opacity-90 transition-all"
               style={{ backgroundColor: accent }}
             >
-              <Plus className="w-4 h-4" />
-              New Request
+              <Plus className="w-3.5 h-3.5 md:w-4 md:h-4" />
+              New<span className="hidden md:inline"> Request</span>
             </button>
           )}
         </div>
@@ -1395,35 +1434,118 @@ export default function OperationsForms() {
       {!modal && activeTab === 'active' && (
       <>
       {/* Summary stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3">
-        <StatCard label="Total requests" value={stats.total} icon={TrendingUp} color="#6366f1" />
-        <StatCard label="Pending" value={stats.pending} icon={Hourglass} color="#d97706" />
-        <StatCard label="Approved" value={stats.approved} icon={CircleCheck} color="#16a34a" />
-        <StatCard label="Rejected" value={stats.rejected} icon={CircleX} color="#dc2626" />
+      <div className="grid grid-cols-4 gap-1.5 md:gap-3">
+        <StatCard label="Total requests" shortLabel="Total" value={stats.total} icon={TrendingUp} color="#6366f1" />
+        <StatCard label="Pending" shortLabel="Pending" value={stats.pending} icon={Hourglass} color="#d97706" />
+        <StatCard label="Approved" shortLabel="Approved" value={stats.approved} icon={CircleCheck} color="#16a34a" />
+        <StatCard label="Rejected" shortLabel="Rejected" value={stats.rejected} icon={CircleX} color="#dc2626" />
       </div>
 
       {/* List card */}
-      <div className="rounded-xl sm:rounded-2xl overflow-hidden shadow-xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-        <div className="p-3 sm:p-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 sm:gap-3" style={{ borderBottom: `1px solid ${border}` }}>
-          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-3 w-full md:w-auto">
-            <div className="col-span-2 relative w-full sm:w-56">
-              <Search className="absolute left-3 top-2.5 w-4 h-4" style={{ color: textMuted }} />
+      <div className="rounded-xl sm:rounded-2xl overflow-hidden shadow-none sm:shadow-xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+        <div className="p-2.5 sm:p-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2 sm:gap-3" style={{ borderBottom: `1px solid ${border}` }}>
+          {/* Phones: compact search + one filter button that opens a popover with the three filters */}
+          <div className="sm:hidden relative flex items-center gap-1.5 w-full" ref={filtersRef}>
+            <div className="relative w-44 max-w-[60%] shrink-0">
+              <Search className="absolute left-2.5 top-[9px] w-3.5 h-3.5" style={{ color: textMuted }} />
               <input
                 type="text"
                 placeholder="Search…"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className={`${inputCls} pl-9`}
+                className={`${inputCls} pl-8 !py-1.5 !text-[11px]`}
+                style={istyle}
+              />
+            </div>
+            {(() => {
+              const activeCount = (isAdmin && branchFilter !== 'ALL' ? 1 : 0) + (typeFilter !== 'ALL' ? 1 : 0) + (statusFilter !== 'ALL' ? 1 : 0)
+              return (
+                <button
+                  type="button"
+                  onClick={() => setFiltersOpen(o => !o)}
+                  aria-label="Filters"
+                  aria-expanded={filtersOpen}
+                  className="relative shrink-0 w-8 h-8 rounded-lg flex items-center justify-center border transition-all active:scale-95"
+                  style={{ backgroundColor: cardBg, borderColor: filtersOpen || activeCount ? '#10B981' : border, color: activeCount ? '#10B981' : textMuted }}
+                >
+                  <SlidersHorizontal className="w-4 h-4" />
+                  {activeCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full text-[9px] font-black text-white flex items-center justify-center" style={{ backgroundColor: '#10B981' }}>
+                      {activeCount}
+                    </span>
+                  )}
+                </button>
+              )
+            })()}
+            {filtersOpen && (
+              <div className="absolute right-0 top-full mt-1.5 z-40 w-64 rounded-xl border shadow-lg p-3 flex flex-col gap-2.5" style={{ backgroundColor: cardBg, borderColor: border }}>
+                {isAdmin && (
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Branch</span>
+                    <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)} className={`${inputCls} !py-1.5 appearance-none cursor-pointer`} style={istyle}>
+                      <option value="ALL">All branches</option>
+                      {branches.map(b => (
+                        <option key={b.id} value={b.id}>{formatBranchName(b.name, b.id)}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Type</span>
+                  <select value={typeFilter} onChange={e => setTypeFilter(e.target.value as 'ALL' | TabId)} className={`${inputCls} !py-1.5 appearance-none cursor-pointer`} style={istyle}>
+                    <option value="ALL">All types</option>
+                    {TABS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Status</span>
+                  <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className={`${inputCls} !py-1.5 appearance-none cursor-pointer`} style={istyle}>
+                    <option value="ALL">All statuses</option>
+                    <option value="PENDING">Pending</option>
+                    <option value="NOTED">Noted</option>
+                    <option value="APPROVED">Approved</option>
+                    <option value="REJECTED">Rejected</option>
+                    <option value="DISBURSED">Disbursed</option>
+                    <option value="FULLY_PAID">Fully Paid</option>
+                  </select>
+                </label>
+                <div className="flex items-center justify-between pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => { setBranchFilter('ALL'); setTypeFilter('ALL'); setStatusFilter('ALL') }}
+                    className="text-[11px] font-bold"
+                    style={{ color: textMuted }}
+                  >Reset</button>
+                  <button
+                    type="button"
+                    onClick={() => setFiltersOpen(false)}
+                    className="px-3.5 h-7 rounded-full text-[11px] font-bold text-white"
+                    style={{ backgroundColor: accent }}
+                  >Done</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="hidden sm:flex sm:flex-wrap items-center gap-3 w-full md:w-auto">
+            <div className="col-span-3 relative w-full sm:w-56">
+              <Search className="absolute left-2.5 sm:left-3 top-2 sm:top-2.5 w-3.5 sm:w-4 h-3.5 sm:h-4" style={{ color: textMuted }} />
+              <input
+                type="text"
+                placeholder="Search…"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className={`${inputCls} pl-8 sm:pl-9 !py-1.5 sm:!py-2`}
                 style={istyle}
               />
             </div>
             {isAdmin && (
               <div className="relative w-full sm:w-auto">
-                <Building2 className="absolute left-2.5 top-2.5 w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
+                <Building2 className="hidden sm:block absolute left-2.5 top-2.5 w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
                 <select
                   value={branchFilter}
                   onChange={e => setBranchFilter(e.target.value)}
-                  className={`${inputCls} pl-8 appearance-none cursor-pointer`}
+                  className={`${inputCls} sm:pl-8 !py-1.5 sm:!py-2 !px-2 sm:!px-3 !text-[11px] sm:!text-xs truncate appearance-none cursor-pointer`}
                   style={istyle}
                   aria-label="Filter by branch"
                 >
@@ -1435,22 +1557,22 @@ export default function OperationsForms() {
               </div>
             )}
             <div className="relative w-full sm:w-auto">
-              <Filter className="absolute left-2.5 top-2.5 w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
+              <Filter className="hidden sm:block absolute left-2.5 top-2.5 w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
               <select
                 value={typeFilter}
                 onChange={e => setTypeFilter(e.target.value as 'ALL' | TabId)}
-                className={`${inputCls} pl-8 appearance-none cursor-pointer`}
+                className={`${inputCls} sm:pl-8 !py-1.5 sm:!py-2 !px-2 sm:!px-3 !text-[11px] sm:!text-xs truncate appearance-none cursor-pointer`}
                 style={istyle}
               >
                 <option value="ALL">All types</option>
                 {TABS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
               </select>
             </div>
-            <div className="relative w-full sm:w-auto col-span-2 sm:col-span-1">
+            <div className="relative w-full sm:w-auto">
               <select
                 value={statusFilter}
                 onChange={e => setStatusFilter(e.target.value)}
-                className={`${inputCls} appearance-none cursor-pointer`}
+                className={`${inputCls} !py-1.5 sm:!py-2 !px-2 sm:!px-3 !text-[11px] sm:!text-xs truncate appearance-none cursor-pointer`}
                 style={istyle}
               >
                 <option value="ALL">All statuses</option>
@@ -1484,8 +1606,7 @@ export default function OperationsForms() {
                 <div
                   key={`card-${r.type}-${r.id}`}
                   onClick={() => openRecord('view', r.type, r.raw)}
-                  className="p-3.5 flex flex-col gap-2.5 transition-colors active:bg-black/[0.03] dark:active:bg-white/[0.04] cursor-pointer"
-                  style={{ borderLeft: `4px solid ${statusColors[r.status] || statusColors.PENDING}` }}
+                  className="px-3 py-2.5 flex flex-col gap-1 transition-colors active:bg-black/[0.03] dark:active:bg-white/[0.04] cursor-pointer"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -1520,6 +1641,7 @@ export default function OperationsForms() {
                       <span>{r.status === 'REJECTED' ? (r.rejectionReason || r.notesText) : r.notesText}</span>
                     </div>
                   )}
+                  {(canCancelAsOwner(r) || canEditRecord(r as any)) && (
                   <div className="flex items-center justify-end gap-2 pt-0.5" onClick={e => e.stopPropagation()}>
                     {canCancelAsOwner(r) && (
                       <button type="button" onClick={() => requestCancelRecord(r.type, r.id, r.detail)}
@@ -1531,11 +1653,8 @@ export default function OperationsForms() {
                         className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all text-blue-600 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800"
                       ><Pencil className="w-3 h-3" /> Edit</button>
                     )}
-                    <button type="button" onClick={() => openRecord('view', r.type, r.raw)}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all hover:opacity-80"
-                      style={{ backgroundColor: isLight ? '#f1f5f9' : '#172544', color: textPrimary, border: `1px solid ${border}` }}
-                    ><Eye className="w-3 h-3" /> View Form</button>
                   </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1619,8 +1738,97 @@ export default function OperationsForms() {
           )}
 
           {/* Archive Filters */}
-          <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
+          <div className="rounded-xl sm:rounded-2xl p-2.5 sm:p-4 flex flex-col gap-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <div className="sm:hidden relative flex items-center gap-1.5 w-full" ref={archFiltersRef}>
+              <div className="relative w-44 max-w-[60%] shrink-0">
+                <Search className="absolute left-2.5 top-[9px] w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
+                <input type="text" placeholder="Search…"
+                  value={archSearchQuery} onChange={e => setArchSearchQuery(e.target.value)}
+                  className={`${inputCls} pl-8 !py-1.5 !text-[11px]`} style={istyle}
+                />
+              </div>
+              {(() => {
+                const activeCount = (isAdmin && archBranchFilter !== 'ALL' ? 1 : 0) + (isAdmin && archStaffFilter !== 'ALL' ? 1 : 0) + (archTypeFilter !== 'ALL' ? 1 : 0) + (archStatusFilter !== 'ALL' ? 1 : 0) + (archMonthFilter !== currentMonthKey() ? 1 : 0)
+                return (
+                  <button
+                    type="button"
+                    onClick={() => setArchFiltersOpen(o => !o)}
+                    aria-label="Filters"
+                    aria-expanded={archFiltersOpen}
+                    className="relative shrink-0 w-8 h-8 rounded-lg flex items-center justify-center border transition-all active:scale-95"
+                    style={{ backgroundColor: cardBg, borderColor: archFiltersOpen || activeCount ? '#10B981' : border, color: activeCount ? '#10B981' : textMuted }}
+                  >
+                    <SlidersHorizontal className="w-4 h-4" />
+                    {activeCount > 0 && (
+                      <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full text-[9px] font-black text-white flex items-center justify-center" style={{ backgroundColor: '#10B981' }}>
+                        {activeCount}
+                      </span>
+                    )}
+                  </button>
+                )
+              })()}
+              {archFiltersOpen && (
+                <div className="absolute left-0 top-full mt-1.5 z-40 w-64 max-w-full rounded-xl border shadow-lg p-3 flex flex-col gap-2.5" style={{ backgroundColor: cardBg, borderColor: border }}>
+                  {isAdmin && (
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Branch</span>
+                      <select value={archBranchFilter} onChange={e => setArchBranchFilter(e.target.value)} className={`${inputCls} !py-1.5 appearance-none cursor-pointer`} style={istyle}>
+                        <option value="ALL">All branches</option>
+                        {branches.map(b => <option key={b.id} value={b.id}>{formatBranchName(b.name, b.id)}</option>)}
+                      </select>
+                    </label>
+                  )}
+                  {isAdmin && (
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Staff</span>
+                      <select value={archStaffFilter} onChange={e => setArchStaffFilter(e.target.value)} className={`${inputCls} !py-1.5 appearance-none cursor-pointer`} style={istyle}>
+                        <option value="ALL">All staff</option>
+                        {archStaffOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                      </select>
+                    </label>
+                  )}
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Type</span>
+                    <select value={archTypeFilter} onChange={e => setArchTypeFilter(e.target.value as 'ALL' | TabId)} className={`${inputCls} !py-1.5 appearance-none cursor-pointer`} style={istyle}>
+                      <option value="ALL">All types</option>
+                      {(Object.keys(TAB_LABELS) as TabId[]).map(t => <option key={t} value={t}>{TAB_LABELS[t]}</option>)}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Status</span>
+                    <select value={archStatusFilter} onChange={e => setArchStatusFilter(e.target.value as 'ALL' | 'DONE' | 'RELEASED' | 'CANCELLED')} className={`${inputCls} !py-1.5 appearance-none cursor-pointer`} style={istyle}>
+                      <option value="ALL">All statuses</option>
+                      <option value="DONE">Done</option>
+                      <option value="RELEASED">Released</option>
+                      <option value="CANCELLED">Cancelled</option>
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Month</span>
+                    <select value={archMonthFilter} onChange={e => setArchMonthFilter(e.target.value)} className={`${inputCls} !py-1.5 appearance-none cursor-pointer`} style={istyle}>
+                      <option value="">All months</option>
+                      {monthOptions().map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                    </select>
+                  </label>
+                  <div className="flex items-center justify-between pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => { setArchBranchFilter('ALL'); setArchStaffFilter('ALL'); setArchTypeFilter('ALL'); setArchStatusFilter('ALL'); setArchMonthFilter(currentMonthKey()) }}
+                      className="text-[11px] font-bold"
+                      style={{ color: textMuted }}
+                    >Reset</button>
+                    <button
+                      type="button"
+                      onClick={() => setArchFiltersOpen(false)}
+                      className="px-3.5 h-7 rounded-full text-[11px] font-bold text-white"
+                      style={{ backgroundColor: accent }}
+                    >Done</button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="hidden sm:flex sm:flex-wrap items-center gap-2">
               <div className="relative flex-1 min-w-[180px] col-span-2 sm:col-span-1">
                 <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
                 <input type="text" placeholder="Search ID, staff, branch, detail…"
@@ -1662,7 +1870,10 @@ export default function OperationsForms() {
               </div>
               <div className="relative w-full sm:w-auto">
                 <Calendar className="absolute left-2.5 top-2.5 w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
-                <input type="month" value={archMonthFilter} onChange={e => setArchMonthFilter(e.target.value)} className={`${inputCls} pl-8`} style={istyle} aria-label="Filter by month" />
+                <select value={archMonthFilter} onChange={e => setArchMonthFilter(e.target.value)} className={`${inputCls} pl-8 appearance-none cursor-pointer`} style={istyle} aria-label="Filter by month">
+                  <option value="">All months</option>
+                  {monthOptions().map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
               </div>
             </div>
           </div>
@@ -1680,7 +1891,33 @@ export default function OperationsForms() {
                 <p className="text-xs font-semibold" style={{ color: textMuted }}>No archived requests found.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              <div className="md:hidden divide-y" style={{ borderColor: border }}>
+                {archFilteredRows.map(r => (
+                  <div
+                    key={`arch-card-${r.type}-${r.id}`}
+                    onClick={() => openArchiveDetail(r)}
+                    className="px-3 py-2.5 flex flex-col gap-1 cursor-pointer active:bg-black/[0.03] dark:active:bg-white/[0.04]"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-[11px] font-black uppercase tracking-wide shrink-0" style={{ color: typeMeta(r.type).color }}>{TAB_LABELS[r.type]}</span>
+                        <span className="text-[11px] font-semibold truncate" style={{ color: textMuted }}>{archFormatDate(r.archivedAt)}</span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase shrink-0" style={{ color: archStatusColors[r.status] || textMuted, backgroundColor: `${archStatusColors[r.status] || textMuted}1a` }}>{r.status}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-black uppercase truncate" style={{ color: textPrimary }}>{r.requesterName}</span>
+                      {r.amount != null && <span className="text-xs font-black tabular-nums shrink-0" style={{ color: textPrimary }}>{formatPeso(r.amount)}</span>}
+                    </div>
+                    <div className="flex items-center justify-between gap-2 text-[11px] font-semibold" style={{ color: textMuted }}>
+                      <span className="truncate">{r.detail}</span>
+                      {r.branchLabel && r.branchLabel !== '—' && <span className="shrink-0 uppercase">{r.branchLabel}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-left border-collapse" style={{ fontSize: '12px', color: textPrimary }}>
                   <thead>
                     <tr style={{ borderBottom: `2px solid ${border}`, color: textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
@@ -1717,6 +1954,7 @@ export default function OperationsForms() {
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </div>
 
@@ -1998,9 +2236,186 @@ export default function OperationsForms() {
               </div>
             )}
 
+            {/* ── Phone summary (view mode only): just the request — status, amount, key details, and
+                a bottom action bar. The full letterhead form below stays for tablet/desktop. ── */}
+            {modal.mode === 'view' && modal.record && (() => {
+              const rec: any = modal.record
+              const row = unifiedRows.find(r => r.id === rec.id && r.type === modal.type)
+              const st: string = rec.status
+              const stColor = statusColors[st] || statusColors.PENDING
+              const meta = typeMeta(modal.type)
+              const parseList = (json?: string): any[] => { try { const v = JSON.parse(json || '[]'); return Array.isArray(v) ? v : [] } catch { return [] } }
+              const details: [string, string][] = []
+              if (modal.type === 'budget') {
+                if (rec.payeeName) details.push(['Payee', rec.payeeName])
+                if (rec.poNumber) details.push(['P.O. No.', rec.poNumber])
+                if (rec.paymentMethod) details.push(['Method', rec.paymentMethod])
+                if (rec.bankName) details.push(['Bank', rec.bankName])
+                if (rec.accountNo) details.push(['Account', rec.accountNo])
+                if (rec.dueDate) details.push(['Due', rec.dueDate])
+              } else if (modal.type === 'cash-advance') {
+                if (rec.purpose) details.push(['Purpose', rec.purpose])
+                if (rec.repaymentTermMonths) details.push(['Repayment', `${rec.repaymentTermMonths} mo.`])
+              } else {
+                if (rec.cutoffPeriod) details.push(['Cut-off', rec.cutoffPeriod])
+                if (rec.position) details.push(['Position', rec.position])
+                if (rec.department) details.push(['Dept.', rec.department])
+                const n = parseList(rec.entriesJson).length
+                if (n) details.push(['Entries', String(n)])
+              }
+              const items = modal.type === 'budget' ? parseList(rec.lineItemsJson) : []
+              const itemLabel = (it: any) => String(it?.description ?? it?.particulars ?? it?.item ?? it?.name ?? '').trim()
+              const itemAmount = (it: any) => { const v = Number(it?.amount ?? it?.total ?? it?.cost); return Number.isFinite(v) ? v : null }
+              const showActions = isAdmin || canCancelAsOwner(rec)
+              const btn = 'flex-1 h-10 rounded-xl text-xs font-black text-white flex items-center justify-center gap-1.5 active:scale-95 transition-transform disabled:opacity-60'
+              return (
+                <div className="md:hidden flex flex-col gap-3 pb-2">
+                  <div className="rounded-2xl p-4 flex flex-col gap-2" style={{ backgroundColor: paperBg, border: `1px solid ${border}` }}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-black uppercase tracking-wide" style={{ color: meta.color }}>{meta.label}</span>
+                      <span
+                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider"
+                        style={{ color: stColor, backgroundColor: `${stColor}18`, border: `1px solid ${stColor}40` }}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: stColor }} />
+                        {st.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                    {row?.amount != null && (
+                      <div className="text-3xl font-black tabular-nums leading-tight" style={{ color: textPrimary }}>{formatPeso(row.amount)}</div>
+                    )}
+                    <div className="text-[13px] font-extrabold uppercase" style={{ color: textPrimary }}>{row?.requesterName || '—'}</div>
+                    <div className="flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: textMuted }}>
+                      {row?.branchLabel && row.branchLabel !== '—' && <span>{row.branchLabel}</span>}
+                      {row?.branchLabel && row.branchLabel !== '—' && <span>&middot;</span>}
+                      <span>{row ? formatDateCaps(row.createdAt) : ''}</span>
+                    </div>
+                  </div>
+
+                  {details.length > 0 && (
+                    <div className="rounded-2xl px-4 py-1" style={{ backgroundColor: paperBg, border: `1px solid ${border}` }}>
+                      {details.map(([k, v], i) => (
+                        <div key={k} className="flex items-start justify-between gap-4 py-2.5" style={i > 0 ? { borderTop: `1px solid ${border}` } : undefined}>
+                          <span className="text-[10px] font-bold uppercase tracking-wide shrink-0 pt-0.5" style={{ color: textMuted }}>{k}</span>
+                          <span className="text-xs font-bold text-right break-words min-w-0" style={{ color: textPrimary }}>{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {items.length > 0 && (
+                    <div className="rounded-2xl px-4 py-1" style={{ backgroundColor: paperBg, border: `1px solid ${border}` }}>
+                      {items.map((it, i) => {
+                        const label = itemLabel(it)
+                        const amt = itemAmount(it)
+                        if (!label && amt == null) return null
+                        return (
+                          <div key={i} className="flex items-start justify-between gap-3 py-2" style={i > 0 ? { borderTop: `1px solid ${border}` } : undefined}>
+                            <span className="text-xs font-semibold min-w-0 break-words" style={{ color: textPrimary }}>{label || 'Item'}</span>
+                            {amt != null && <span className="text-xs font-black tabular-nums shrink-0" style={{ color: textPrimary }}>{formatPeso(amt)}</span>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {rec.rejectionReason && (
+                    <div className="rounded-2xl p-3 text-xs font-medium bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300">
+                      <span className="font-black uppercase tracking-wider text-[10px] block">Rejected</span>
+                      {rec.rejectionReason}
+                    </div>
+                  )}
+
+                  {isEditingModalNotes ? (
+                    <div className="rounded-2xl p-3 flex flex-col gap-2" style={{ backgroundColor: paperBg, border: `1px solid ${border}` }}>
+                      <textarea
+                        rows={3}
+                        value={modalNotesInput}
+                        onChange={e => setModalNotesInput(e.target.value)}
+                        placeholder="Add a note for the member…"
+                        className="w-full p-2.5 text-xs font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        style={istyle}
+                        autoFocus
+                      />
+                      <div className="flex items-center justify-end gap-2">
+                        <button type="button" disabled={savingNotes} onClick={() => { setIsEditingModalNotes(false); setModalNotesInput('') }} className="px-3 h-8 rounded-lg text-xs font-bold" style={{ color: textMuted }}>Cancel</button>
+                        <button
+                          type="button"
+                          disabled={savingNotes}
+                          onClick={async () => { await handleSaveNotes(modal.type, rec.id, modalNotesInput); setIsEditingModalNotes(false) }}
+                          className="px-4 h-8 rounded-lg text-xs font-bold text-white flex items-center gap-1.5"
+                          style={{ backgroundColor: accent }}
+                        >
+                          {savingNotes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Save
+                        </button>
+                      </div>
+                    </div>
+                  ) : rec.notes ? (
+                    <div className="rounded-2xl p-3 text-xs font-medium whitespace-pre-wrap" style={{ backgroundColor: paperBg, border: `1px solid ${border}`, color: textPrimary }}>
+                      <span className="font-black uppercase tracking-wider text-[10px] block mb-0.5" style={{ color: textMuted }}>Note</span>
+                      {rec.notes}
+                    </div>
+                  ) : null}
+
+                  {showActions && !isEditingModalNotes && (
+                    <div
+                      className="rounded-2xl p-3 flex flex-col gap-2"
+                      style={{ backgroundColor: paperBg, border: `1px solid ${border}` }}
+                    >
+                      {isAdmin && (
+                        <div className="flex items-center gap-2">
+                          {modal.type === 'budget' && st === 'PENDING' && (
+                            <button type="button" className={btn} style={{ backgroundColor: '#2563eb' }} onClick={() => handleStatusUpdate('budget', rec.id, 'NOTED')}>
+                              <Check className="w-3.5 h-3.5" /> Noted
+                            </button>
+                          )}
+                          {(st === 'PENDING' || (modal.type === 'budget' && st === 'NOTED')) && (
+                            <button type="button" className={btn} style={{ backgroundColor: '#16a34a' }} onClick={() => handleStatusUpdate(modal.type, rec.id, 'APPROVED')}>
+                              <Check className="w-3.5 h-3.5" /> Approve
+                            </button>
+                          )}
+                          {(st === 'APPROVED' || st === 'DISBURSED') && (
+                            <button type="button" className={btn} style={{ backgroundColor: '#8b5cf6' }} onClick={() => handleStatusUpdate(modal.type, rec.id, 'RELEASED')}>
+                              <Check className="w-3.5 h-3.5" /> Release
+                            </button>
+                          )}
+                          {st === 'PENDING' && (
+                            <button type="button" className={btn} style={{ backgroundColor: '#dc2626' }} onClick={() => setRejectDialog({ isOpen: true, type: modal.type, id: rec.id, currentReason: '' })}>
+                              <X className="w-3.5 h-3.5" /> Reject
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => { setIsEditingModalNotes(true); setModalNotesInput(rec.notes || '') }}
+                            className="flex-1 h-9 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border"
+                            style={{ color: textPrimary, borderColor: border }}
+                          >
+                            <Pencil className="w-3.5 h-3.5" /> {rec.notes ? 'Edit note' : 'Add note'}
+                          </button>
+                        )}
+                        {canCancelAsOwner(rec) && (
+                          <button
+                            type="button"
+                            onClick={() => requestCancelRecord(modal.type, rec.id, rec.payeeName || rec.purpose || rec.cutoffPeriod || modal.type)}
+                            className="flex-1 h-9 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 text-red-600 border border-red-200 dark:border-red-800/50"
+                          >
+                            <X className="w-3.5 h-3.5" /> Cancel request
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
             {/* ── Main Form Paper Container ── */}
             <div
-              className="max-w-6xl mx-auto rounded-xl sm:rounded-2xl shadow-lg p-4 sm:p-8 md:p-12 border"
+              className={`max-w-6xl mx-auto rounded-xl sm:rounded-2xl shadow-lg p-4 sm:p-8 md:p-12 border ${modal.mode === 'view' ? 'hidden md:block' : ''}`}
               style={{ backgroundColor: paperBg, borderColor: isLight ? '#e2e8f0' : border }}
             >
               {/* Status & Review banner for edit/view */}

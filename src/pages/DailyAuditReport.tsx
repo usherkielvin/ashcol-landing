@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ReactDOM from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
-  CalendarDays,
-  AlertTriangle, X, ChevronLeft, ChevronRight, Eye, Download,
+  Calendar,
+  AlertTriangle, X, ChevronLeft, ChevronRight, ChevronDown, Eye, Download,
   ArrowUp, ArrowDown,
   MoreVertical,
   Loader2,
@@ -136,10 +136,11 @@ const todayLocalKey = () => {
 const isNoTransactionRemarks = (remarks: string) =>
   remarks === 'NO SCHED' || remarks === 'NO TRANSACTION' || remarks === 'NO RECORD' || remarks === 'NO REPORT'
 
-const formatRemarksLabel = (remarks: string, compact: boolean) => {
-  if (isNoTransactionRemarks(remarks)) return compact ? 'No Trans' : 'No Transaction'
-  if (compact && remarks === 'ABOVE QUOTA') return 'ABOVE'
-  if (compact && remarks === 'BELOW QUOTA') return 'BELOW'
+const formatRemarksLabel = (remarks: string, compact: boolean = false) => {
+  if (isNoTransactionRemarks(remarks)) return 'No Trans'
+  if (remarks === 'ABOVE QUOTA') return compact ? 'Above' : 'Above Quota'
+  if (remarks === 'BELOW QUOTA') return compact ? 'Below' : 'Below Quota'
+  if (remarks === 'PENDING') return 'Pending'
   return remarks
 }
 
@@ -263,6 +264,8 @@ export default function DailyAuditReport() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [mobileKpiModalOpen, setMobileKpiModalOpen] = useState(false)
   const mobileDateRef = useRef<HTMLInputElement>(null)
+  const mobileRangeFromRef = useRef<HTMLInputElement>(null)
+  const mobileRangeToRef = useRef<HTMLInputElement>(null)
 
   interface ConfirmModalState {
     title: string
@@ -310,7 +313,17 @@ export default function DailyAuditReport() {
 
   const openDatePicker = (input: HTMLInputElement | null) => {
     if (!input) return
-    input.showPicker?.()
+    try {
+      if (typeof input.showPicker === 'function') {
+        input.showPicker()
+      } else {
+        input.focus()
+        input.click()
+      }
+    } catch {
+      input.focus()
+      input.click()
+    }
   }
 
   // ── Custom Date Picker State (desktop command bar — replaces native <input type="date">) ──
@@ -598,9 +611,9 @@ export default function DailyAuditReport() {
 
   const mobileSortOptions = [
     { key: 'remarks', label: 'Remarks' },
-    { key: 'difference', label: 'Difference' },
-    { key: 'grossSales', label: 'Gross Sales' },
-    { key: 'netSales', label: 'Net Sales' },
+    { key: 'difference', label: 'Diff' },
+    { key: 'grossSales', label: 'Gross' },
+    { key: 'netSales', label: 'Net' },
   ]
 
 
@@ -631,18 +644,6 @@ export default function DailyAuditReport() {
     const todayStr = new Date().toISOString().split('T')[0]
     return date === todayStr
   }, [date])
-
-  const handlePrevDay = () => {
-    const d = new Date(date + 'T00:00:00')
-    d.setDate(d.getDate() - 1)
-    setDate(d.toISOString().split('T')[0])
-  }
-
-  const handleNextDay = () => {
-    const d = new Date(date + 'T00:00:00')
-    d.setDate(d.getDate() + 1)
-    setDate(d.toISOString().split('T')[0])
-  }
 
   const handleToday = () => {
     setDate(new Date().toISOString().split('T')[0])
@@ -776,34 +777,22 @@ export default function DailyAuditReport() {
           </div>
 
           {viewMode === 'single' ? (
-            <div className="flex items-center gap-1 min-w-0 flex-1 justify-end">
-              {/* Prev Day */}
-              <button
-                type="button"
-                onClick={handlePrevDay}
-                aria-label="Previous day"
-                className="w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 transition-all hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95"
-                style={{ borderColor: inputBorder, color: textMuted }}
-                title="Previous day"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-
+            <div className="flex items-center gap-1.5 min-w-0 flex-1 justify-end">
               {/* Date button / picker trigger */}
               <button
                 type="button"
                 onClick={() => openDatePicker(mobileDateRef.current)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all shrink-0 max-w-[140px] truncate active:scale-95"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-all shrink-0 max-w-[170px] truncate active:scale-95 shadow-sm"
                 style={{
                   backgroundColor: isToday ? 'rgba(4, 120, 87, 0.12)' : inputBg,
                   borderColor: isToday ? '#047857' : inputBorder,
                   color: isToday ? (isLight ? '#047857' : '#34D399') : textPrimary,
                 }}
-                title="Change date"
+                title="Select date"
               >
-                <CalendarDays className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                <Calendar className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                 <span className="truncate">
-                  {isToday ? 'Today' : new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+                  {isToday ? 'Today' : new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
                 </span>
               </button>
 
@@ -812,24 +801,12 @@ export default function DailyAuditReport() {
                 <button
                   type="button"
                   onClick={handleToday}
-                  className="px-2 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 shrink-0 transition-all hover:bg-emerald-500/20 active:scale-95"
+                  className="px-2.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 shrink-0 transition-all hover:bg-emerald-500/20 active:scale-95"
                   title="Jump to today"
                 >
                   Today
                 </button>
               )}
-
-              {/* Next Day */}
-              <button
-                type="button"
-                onClick={handleNextDay}
-                aria-label="Next day"
-                className="w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 transition-all hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95"
-                style={{ borderColor: inputBorder, color: textMuted }}
-                title="Next day"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
 
               <input
                 ref={mobileDateRef}
@@ -843,20 +820,52 @@ export default function DailyAuditReport() {
             </div>
           ) : (
             <div className="flex items-center gap-1.5 min-w-0 flex-1 justify-end">
+              {/* Custom Range Picker */}
+              <button
+                type="button"
+                onClick={() => openDatePicker(mobileRangeFromRef.current)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all min-w-0 flex-1 justify-center active:scale-95 shadow-sm truncate"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                title="Range start date"
+              >
+                <Calendar className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                <span className="truncate">
+                  {new Date(rangeFrom + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+                </span>
+              </button>
+
+              <span className="text-[10px] font-bold px-0.5 shrink-0" style={{ color: textMuted }}>–</span>
+
+              <button
+                type="button"
+                onClick={() => openDatePicker(mobileRangeToRef.current)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all min-w-0 flex-1 justify-center active:scale-95 shadow-sm truncate"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                title="Range end date"
+              >
+                <Calendar className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                <span className="truncate">
+                  {new Date(rangeTo + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+                </span>
+              </button>
+
               <input
+                ref={mobileRangeFromRef}
                 type="date"
                 value={rangeFrom}
                 onChange={e => setRangeFrom(e.target.value)}
-                className="date-input-no-indicator px-2 py-1 rounded-xl text-[11px] font-semibold flex-1 min-w-0 cursor-pointer border"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                tabIndex={-1}
+                className="date-input-no-indicator absolute opacity-0 pointer-events-none w-0 h-0"
+                aria-label="Audit range start date"
               />
-              <span className="text-[10px] font-bold" style={{ color: textMuted }}>to</span>
               <input
+                ref={mobileRangeToRef}
                 type="date"
                 value={rangeTo}
                 onChange={e => setRangeTo(e.target.value)}
-                className="date-input-no-indicator px-2 py-1 rounded-xl text-[11px] font-semibold flex-1 min-w-0 cursor-pointer border"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                tabIndex={-1}
+                className="date-input-no-indicator absolute opacity-0 pointer-events-none w-0 h-0"
+                aria-label="Audit range end date"
               />
             </div>
           )}
@@ -1082,7 +1091,7 @@ export default function DailyAuditReport() {
                 style={{ borderColor: datePickerState.isOpen && datePickerState.target === 'single' ? '#10B981' : inputBorder, color: textMuted }}
                 title="Pick a custom date"
               >
-                <CalendarDays className="w-4 h-4" style={{ color: '#10B981' }} />
+                <Calendar className="w-4 h-4 text-emerald-500" />
                 Custom Date
               </button>
             </div>
@@ -1103,7 +1112,7 @@ export default function DailyAuditReport() {
                   }}
                   aria-label={p.label}
                 >
-                  <CalendarDays className="w-4 h-4" style={{ color: '#10B981' }} />
+                  <Calendar className="w-4 h-4 text-emerald-500" />
                   <span className="text-sm font-semibold select-none" style={{ color: textPrimary }}>
                     {formatDateTriggerLabel(p.val)}
                   </span>
@@ -1137,8 +1146,9 @@ export default function DailyAuditReport() {
                 })}
                 className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
                 style={{ color: textMuted }}
+                aria-label="Previous month"
               >
-                {'<'}
+                <ChevronLeft className="w-4 h-4" />
               </button>
               <span className="text-sm font-bold" style={{ color: textPrimary }}>
                 {new Date(datePickerState.calYear, datePickerState.calMonth, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
@@ -1151,8 +1161,9 @@ export default function DailyAuditReport() {
                 })}
                 className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
                 style={{ color: textMuted }}
+                aria-label="Next month"
               >
-                {'>'}
+                <ChevronRight className="w-4 h-4" />
               </button>
             </div>
 
@@ -1598,33 +1609,43 @@ export default function DailyAuditReport() {
       </div>
 
       {!loading && rows.length > 0 && (
-        <div className="md:hidden no-print rounded-xl p-2 flex items-center gap-2"
-          style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-          <select
-            value={sortConfig?.key || ''}
-            onChange={e => {
-              const key = e.target.value
-              setSortConfig(key ? { key, direction: 'desc' } : null)
-            }}
-            className="flex-1 min-w-0 rounded-lg px-3 py-2 text-xs font-medium outline-none"
-            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-            aria-label="Filter performance list"
-          >
-            <option value="">All</option>
-            {mobileSortOptions.map(option => (
-              <option key={option.key} value={option.key}>{option.label}</option>
-            ))}
-          </select>
-          <button
-            type="button"
-            disabled={!sortConfig}
-            onClick={() => setSortConfig(prev => prev ? { ...prev, direction: prev.direction === 'desc' ? 'asc' : 'desc' } : prev)}
-            className="h-9 w-9 rounded-lg flex items-center justify-center disabled:opacity-40"
-            style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textMuted }}
-            title={sortConfig?.direction === 'asc' ? 'Ascending' : 'Descending'}
-          >
-            {sortConfig?.direction === 'asc' ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
-          </button>
+        <div className="md:hidden no-print flex items-center justify-between px-3 py-1">
+          <span className="text-[11px] font-bold tracking-wider uppercase" style={{ color: textMuted }}>
+            {visibleRows.length} {visibleRows.length === 1 ? 'branch' : 'branches'}
+          </span>
+          <div className="flex items-center gap-1.5">
+            <div className="relative flex items-center">
+              <select
+                value={sortConfig?.key || ''}
+                onChange={e => {
+                  const key = e.target.value
+                  setSortConfig(key ? { key, direction: 'desc' } : null)
+                }}
+                className="appearance-none pl-2.5 pr-6 py-1 rounded-lg text-[11px] font-bold outline-none border cursor-pointer transition-all"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                aria-label="Sort performance list"
+              >
+                <option value="">Default</option>
+                {mobileSortOptions.map(option => (
+                  <option key={option.key} value={option.key}>{option.label}</option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute right-1.5 flex items-center" style={{ color: textMuted }}>
+                <ChevronDown className="w-3 h-3" />
+              </div>
+            </div>
+
+            <button
+              type="button"
+              disabled={!sortConfig}
+              onClick={() => setSortConfig(prev => prev ? { ...prev, direction: prev.direction === 'desc' ? 'asc' : 'desc' } : prev)}
+              className="h-7 w-7 rounded-lg border flex items-center justify-center transition-all disabled:opacity-30 active:scale-95"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}
+              title={sortConfig?.direction === 'asc' ? 'Ascending' : 'Descending'}
+            >
+              {sortConfig?.direction === 'asc' ? <ArrowUp className="w-3.5 h-3.5" /> : <ArrowDown className="w-3.5 h-3.5" />}
+            </button>
+          </div>
         </div>
       )}
 
@@ -1679,9 +1700,9 @@ export default function DailyAuditReport() {
                     {!noRecord && (row.createdAt || row.timeUploaded) && (
                       <span className="text-xs" style={{ color: textMuted }}>{formatLocalTime(row.createdAt, row.timeUploaded)}</span>
                     )}
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase"
+                    <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold"
                       style={remarksBadgeStyle(row.remarks, noRecord, isAbove, isLight)}>
-                      {formatRemarksLabel(row.remarks, false)}
+                      {formatRemarksLabel(row.remarks, true)}
                     </span>
                     {row.totalCohCfd >= CASH_DEPOSIT_THRESHOLD && (
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase"
