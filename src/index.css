@@ -18,7 +18,8 @@
     padding: 0;
   }
   html {
-    scroll-behavior: smooth;
+    /* Remove smooth scroll from root — JS uses behavior:'instant' for programmatic
+       scroll-to-top; having this on html causes perceived "auto-scroll" on mobile. */
     font-family: 'Inter', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -51,11 +52,15 @@
   body {
     background-color: var(--bg);
     color: var(--text-primary);
-    min-height: 100vh;
+    /* dvh = dynamic viewport height — shrinks/grows with mobile browser chrome.
+       Falls back to svh (smallest viewport), then 100vh for very old browsers. */
+    min-height: 100dvh;
+    /* Stop rubber-band / over-scroll bounce on iOS that looks like auto-scrolling */
+    overscroll-behavior: none;
   }
   #root {
     width: 100%;
-    min-height: 100vh;
+    min-height: 100dvh;
   }
 
   /* Login only — do not use on portal pages */

@@ -655,6 +655,23 @@ export default function DashboardLayout() {
     setOpenAccordion(prev => (prev === title ? null : title))
   }
 
+  // Phone status bar / overscroll area must be the exact shade of the page, so the header and
+  // status bar read as one seamless surface (like Facebook) instead of separately-tinted bands.
+  useEffect(() => {
+    const meta = document.querySelector('meta[name="theme-color"]')
+    const prevMeta = meta?.getAttribute('content') ?? null
+    const prevHtmlBg = document.documentElement.style.backgroundColor
+    const prevBodyBg = document.body.style.backgroundColor
+    meta?.setAttribute('content', bg)
+    document.documentElement.style.backgroundColor = bg
+    document.body.style.backgroundColor = bg
+    return () => {
+      if (meta && prevMeta !== null) meta.setAttribute('content', prevMeta)
+      document.documentElement.style.backgroundColor = prevHtmlBg
+      document.body.style.backgroundColor = prevBodyBg
+    }
+  }, [bg])
+
   const sidebarIconColor = 'rgba(255,255,255,0.88)'
   const sidebarHoverBg = 'rgba(255,255,255,0.1)'
   const sidebarActiveBg = 'rgba(16,185,129,0.18)'
@@ -665,7 +682,7 @@ export default function DashboardLayout() {
 
   return (
     <div
-      className={`flex w-full max-w-full h-screen max-h-screen overflow-hidden font-['Inter',sans-serif] ${sidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}`}
+      className={`flex w-full max-w-full h-dvh max-h-dvh overflow-hidden font-['Inter',sans-serif] ${sidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}`}
       style={{ backgroundColor: bg, color: textPrimary }}
     >
       {/* ── Mobile Backdrop ─────────────────────────────── */}
@@ -978,17 +995,14 @@ export default function DashboardLayout() {
 
         {/* ── Global Header (Mobile/Tablet/Desktop) ──────────────── */}
         <header 
-          className={`flex-none z-30 backdrop-blur-md w-full min-w-0 max-w-full relative ${location.pathname.startsWith('/messages') ? 'hidden md:block' : ''}`}
-          style={{ 
-            backgroundColor: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(10,17,32,0.8)'
-          }}
+          className={`flex-none z-30 md:backdrop-blur-md w-full min-w-0 max-w-full relative ${isLight ? 'bg-[#f1f5f9] md:bg-white/80' : 'bg-[#060B18] md:bg-[#0A1120]/80'} ${location.pathname.startsWith('/messages') ? 'hidden md:block' : ''}`}
         >
           {/* Top row: title + icons */}
           <div className="h-14 flex items-center justify-between px-4 md:px-6 lg:px-8 relative min-w-0">
             <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0 mr-2">
               <button
                 className="md:hidden p-2 rounded-xl transition-all shrink-0"
-                style={{ color: textMuted, backgroundColor: hoverBg }}
+                style={{ color: textMuted, backgroundColor: isLight ? '#e6ebf2' : hoverBg }}
                 onClick={() => setSidebarOpen(true)}
               >
                 <Menu className="w-4 h-4" />
@@ -1251,6 +1265,7 @@ export default function DashboardLayout() {
                   ? "flex-1 overflow-y-auto px-6 py-6 relative"
                   : "flex-1 overflow-y-auto p-5 md:p-8 relative"
           }
+          style={{ overscrollBehavior: 'none', touchAction: 'pan-y' }}
         >
           {/* Subtle ambient gradient */}
           {!isLight && (
