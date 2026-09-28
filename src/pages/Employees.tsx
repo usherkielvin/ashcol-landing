@@ -163,10 +163,15 @@ const adaptEditFormForRole = (
 ) => {
   const roleUpper = newRole.toUpperCase()
   if (roleUpper === 'MANAGEMENT') {
+    // Branch stays optional (requiresBranch: false) — most Management accounts have all-branch
+    // access and no single branch. But one assigned to a branch and tagged COORDINATOR runs
+    // that branch as its coordinator (see isManagementCoordinatorScopedToBranch in utils/api.ts)
+    // and needs the branch on file to show up in that branch's negotiator dropdown — so keep
+    // whatever branch was already set instead of wiping it on every switch to this role.
     return {
       role: newRole,
       jobTitle: prev.jobTitle ? normalizeJobTitle(prev.jobTitle) : 'REGISTRATION',
-      branchId: '',
+      branchId: prev.branchId,
     }
   }
   const meta = ROLE_META[roleUpper as AssignableRole]
@@ -1040,7 +1045,9 @@ export default function Employees() {
         role:     isPriv ? createForm.role : 'EMPLOYEE',
         jobTitle: (createForm.role === 'EMPLOYEE' || createForm.role === 'MANAGEMENT') ? createForm.jobTitle : '',
       }
-      if (isAdmin && createForm.role !== 'MANAGEMENT') body.branchId = createForm.branchId.trim()
+      // MANAGEMENT's branch is optional (all-branch access by default), but still sent when set —
+      // it's what scopes a COORDINATOR-tagged Management account to that one branch instead.
+      if (isAdmin) body.branchId = createForm.branchId.trim()
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
@@ -2493,14 +2500,26 @@ export default function Employees() {
                         {isAdmin && <option value="MANAGEMENT">{ROLE_META.MANAGEMENT.label.toUpperCase()}</option>}
                       </select>
                     </Field>
-                    {editForm.role !== 'MANAGEMENT' && (
-                      <Field label={ROLE_META[editForm.role as AssignableRole]?.requiresBranch ? 'BRANCH ASSIGNMENT *' : 'BRANCH ASSIGNMENT'} labelColor={textMuted}>
+                    <Field
+                      label={
+                        editForm.role === 'MANAGEMENT'
+                          ? 'MAIN BRANCH (COORDINATOR SCOPE — OPTIONAL)'
+                          : (ROLE_META[editForm.role as AssignableRole]?.requiresBranch ? 'BRANCH ASSIGNMENT *' : 'BRANCH ASSIGNMENT')
+                      }
+                      labelColor={textMuted}
+                    >
                         <select className={inputCls} style={inputStyle} value={editForm.branchId} onChange={e => setEditForm(p => ({ ...p, branchId: e.target.value }))}>
-                          <option value="">— UNASSIGNED —</option>
+                          <option value="">— UNASSIGNED (ALL-BRANCH ACCESS) —</option>
                           {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
                         </select>
+                        {editForm.role === 'MANAGEMENT' && (
+                          <p className="mt-1.5 text-[11px] leading-relaxed" style={{ color: textMuted }}>
+                            Leave unassigned for all-branch access. Assign a branch and add the COORDINATOR
+                            access tag below to have this account act as that branch's coordinator instead
+                            (shown as a negotiator option there, same as a branch-scoped coordinator).
+                          </p>
+                        )}
                       </Field>
-                    )}
                     {isAdmin && editForm.role === 'EMPLOYEE' && (
                       <div className="col-span-1 sm:col-span-2">
                         <Field label="SCHEDULE VIEW ACCESS (READ-ONLY BRANCHES)" labelColor={textMuted}>
@@ -2750,10 +2769,13 @@ export default function Employees() {
                       {isAdmin && <option value="MANAGEMENT">{ROLE_META.MANAGEMENT.label.toUpperCase()}</option>}
                     </select>
                   </Field>
-                  {isAdmin && createForm.role !== 'MANAGEMENT' && (
-                    <Field label="BRANCH" labelColor={textMuted}>
+                  {isAdmin && (
+                    <Field
+                      label={createForm.role === 'MANAGEMENT' ? 'MAIN BRANCH (COORDINATOR SCOPE — OPTIONAL)' : 'BRANCH'}
+                      labelColor={textMuted}
+                    >
                       <select className={inputCls} style={inputStyle} value={createForm.branchId} onChange={e => setCreateForm(p => ({ ...p, branchId: e.target.value }))}>
-                        <option value="">SELECT BRANCH</option>
+                        <option value="">{createForm.role === 'MANAGEMENT' ? '— UNASSIGNED (ALL-BRANCH ACCESS) —' : 'SELECT BRANCH'}</option>
                         {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
                       </select>
                     </Field>

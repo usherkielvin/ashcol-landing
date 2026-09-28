@@ -553,7 +553,10 @@ export default function DashboardLayout() {
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 
-  const navLinks = isPortalAdmin(role)
+  // A MANAGEMENT member assigned to one branch and tagged COORDINATOR (isSalesUser/isServiceUser
+  // true despite isPortalAdmin) gets that branch's scoped workspace nav, not the full admin one —
+  // see isManagementCoordinatorScopedToBranch in utils/api.ts.
+  const navLinks = isPortalAdmin(role) && !isSalesUser && !isServiceUser
       ? allLinks.filter(link => {
           if (!link.roles) return true
           return link.roles.includes(role)

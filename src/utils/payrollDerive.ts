@@ -570,7 +570,7 @@ export function mapSavedPayrollEntry(e: any): PayrollRow {
     sterneBracket: moneyStr(e.sterneBracket),
     breakerInstallationLabor: moneyStr(e.breakerInstallationLabor),
     chargingOfFreon: moneyStr(e.chargingOfFreon),
-    materialsReturn: moneyStr(e.materialsReturn),
+    materialsReturn: e.materialsReturn || '',
     installationChecklist: e.installationChecklist || '',
     videoUpload: e.videoUpload || '',
     remarks: e.remarks || '',
@@ -608,7 +608,7 @@ export const customFieldsForSave = (r: PayrollRow): Record<string, string> => {
 export const LATE_RATE_PER_MINUTE = 1.6
 export const UNIFORM_PRICE_PER_PC = 850
 export type DeductionKey =
-  | 'lateMinutes' | 'loan' | 'loanBalance' | 'incompleteUpload' | 'losses' | 'remitPenalty' | 'uniform' | 'uniformBalance'
+  | 'lateMinutes' | 'loan' | 'loanBalance' | 'incompleteUpload' | 'losses' | 'remitPenalty' | 'uniform' | 'uniformBalance' | 'grooming'
 export const DEDUCTION_PREFIX = 'ded:'
 // Balances are a snapshot (latest wins); every other key is an amount that adds up.
 export const BALANCE_DEDUCTION_KEYS = new Set<DeductionKey>(['loanBalance', 'uniformBalance'])
@@ -673,7 +673,7 @@ export const rowTotal = (r: PayrollRow): number => {
     + toNum(r.specialBracketCatwalk) + toNum(r.specialBracketWelding) + toNum(r.excessCopperTubeLaborOnly)
     + toNum(r.relocationAccuFcu) + toNum(r.systemReprocessLabor) + toNum(r.drainPumpInstallation)
     + toNum(r.scaffoldingInstallation) + toNum(r.flushingOldPipe) + toNum(r.sterneBracket)
-    + toNum(r.breakerInstallationLabor) + toNum(r.chargingOfFreon) + toNum(r.materialsReturn)
+    + toNum(r.breakerInstallationLabor) + toNum(r.chargingOfFreon)
     + customFieldsFeeTotal(r)
   const factor = payFactor(r)
   return factor === 1 ? raw : Math.round(raw * factor * 100) / 100
@@ -699,6 +699,7 @@ export const lateDeduction = (rowsIn: PayrollRow[]) => deductionValue(rowsIn, 'l
 export const deductionTotal = (rowsIn: PayrollRow[]) =>
   lateDeduction(rowsIn) + deductionValue(rowsIn, 'loan') + deductionValue(rowsIn, 'incompleteUpload')
   + deductionValue(rowsIn, 'losses') + deductionValue(rowsIn, 'remitPenalty') + deductionValue(rowsIn, 'uniform')
+  + deductionValue(rowsIn, 'grooming')
 export const installerNet = (installerRows: PayrollRow[]) => installerTotal(installerRows) - deductionTotal(installerRows)
 
 // Balance adjustments on a closed week's ticket: the closed row stays frozen; each correction is
