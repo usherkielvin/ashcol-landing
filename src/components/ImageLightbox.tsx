@@ -15,13 +15,15 @@ interface ImageLightboxProps {
   index: number
   onIndexChange: (index: number) => void
   onClose: () => void
+  /** Override the stacking level when opened from a modal that sits above the default (11000). */
+  zIndex?: number
 }
 
 /**
  * Fullscreen image viewer: ←/→ or swipe to navigate, Esc to close, click/double-tap to zoom.
  * Sits above ticket modals (z 9999) but below ConfirmDialog (z 12000).
  */
-export function ImageLightbox({ images, index, onIndexChange, onClose }: ImageLightboxProps) {
+export function ImageLightbox({ images, index, onIndexChange, onClose, zIndex }: ImageLightboxProps) {
   const [zoomed, setZoomed] = useState(false)
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
   const touchStart = useRef<{ x: number; y: number } | null>(null)
@@ -75,6 +77,7 @@ export function ImageLightbox({ images, index, onIndexChange, onClose }: ImageLi
       role="dialog"
       aria-modal="true"
       aria-label="Image viewer"
+      style={zIndex ? { zIndex } : undefined}
       onClick={onClose}
       onTouchStart={(e) => {
         if (zoomed || e.touches.length !== 1) return

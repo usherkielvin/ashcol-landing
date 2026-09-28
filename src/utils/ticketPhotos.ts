@@ -5,6 +5,25 @@ import { fetchTicketById } from './ticketDisplay'
 /** Server-side cap is enforced in TicketService.normalizePhotoAttachments — keep in sync. */
 export const MAX_TICKET_PHOTOS = 10
 
+/** Named upload zones shown as labeled drop boxes in the ticket attachment section. */
+export interface TicketUploadZone {
+  id: string
+  label: string
+  /** Pre-filled description text — user can edit it in the inline field. */
+  defaultDescription: string
+  group: 'primary' | 'documents' | 'optional'
+  required: boolean
+}
+
+export const TICKET_UPLOAD_ZONES: TicketUploadZone[] = [
+  { id: 'indoor-unit',   label: 'Indoor Unit',           defaultDescription: 'Indoor Unit',          group: 'primary',   required: true  },
+  { id: 'outdoor-unit',  label: 'Outdoor Unit',          defaultDescription: 'Outdoor Unit',         group: 'primary',   required: true  },
+  { id: 'nameplate',     label: 'Nameplate / Serial',    defaultDescription: 'Nameplate / Serial',   group: 'primary',   required: true  },
+  { id: 'receipt',       label: 'Receipt',               defaultDescription: 'Receipt',               group: 'documents', required: false },
+  { id: 'job-order',     label: 'Job Order / Document',  defaultDescription: 'Job Order / Document', group: 'documents', required: false },
+  { id: 'installation',  label: 'Installation Photo',    defaultDescription: 'Installation Photo',   group: 'optional',  required: false },
+]
+
 /** One entry of tickets.photo_attachments (JSON array). Files live in the `ticket-attachments` bucket. */
 export interface TicketPhoto {
   id: string
