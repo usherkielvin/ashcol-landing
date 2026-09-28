@@ -2,7 +2,10 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom'
 import { AlertTriangle, X, ClipboardList } from 'lucide-react'
 import { ConfirmationChecklistModal, isChecklistFilled } from '../tickets/ConfirmationChecklistModal'
-import { API_BASE_URL } from '../../utils/api'
+import { TicketPhotoGallery } from '../tickets/TicketPhotoGallery'
+import { useAuth } from '../../contexts/AuthContext'
+import type { Ticket } from '../../utils/ticketTypes'
+import { API_BASE_URL, isFranchiseBranch } from '../../utils/api'
 import { resolveScheduleStatusFields } from '../../constants/ticketCategories'
 import { buildRelayEditDraft, type RelayEditDraft } from './relayEditForm'
 import type { TicketEditSurface } from '../../utils/ticketEditBridge'
@@ -152,6 +155,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
     draftExtensions,
   } = props
 
+  const { user } = useAuth()
   const isFieldSurface = surface !== 'relay'
   const isOverview = surface === 'overview'
   const initialDraftRef = useRef('')
@@ -237,6 +241,10 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
       paymentBreakdown: summary.paymentBreakdown,
     })
   }
+
+  const allAvailableBranches = useMemo(() => {
+    return (branches || []).filter(b => !(b as any).isFranchise && !isFranchiseBranch(b.id) && !isFranchiseBranch(b.name))
+  }, [branches])
 
   return (
     <>
@@ -421,7 +429,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
                   : draft.updateStatus,
               })
             }}
-            branches={branches}
+            branches={allAvailableBranches}
             negotiatorId={draft.assignTechId}
             onNegotiatorChange={(val) => {
               const foundEmp = negotiatorsForBranch(undefined).find((emp) => emp.id === val)
@@ -483,11 +491,10 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
           {/* 7. Remarks */}
           <RemarksSection
             step={7}
-            remarks={isFieldSurface ? draft.remarks : undefined}
-            primaryLabel={isFieldSurface ? 'Add New Remark (appends to history)' : 'Add New Remark / Update'}
-            primaryPlaceholder="Type a new update (e.g. FOR CLEANING — send names for work permit). Saved remarks appear in Update History and this field clears."
-            primaryValue={draft.remarksUpdate}
-            onPrimaryChange={(v) => patch({ remarksUpdate: v })}
+            primaryLabel="Remarks / Update"
+            primaryPlaceholder="Type notes, updates, or special instructions..."
+            primaryValue={draft.remarksUpdate || draft.remarks || ''}
+            onPrimaryChange={(v) => patch({ remarks: v, remarksUpdate: v })}
             theme={relayFormTheme}
           />
 
@@ -500,6 +507,20 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
               theme={relayFormTheme}
             />
           )}
+
+          {/* 9. Photos — saves on its own (like the 15Q checklist), not through Save Changes */}
+          <TicketPhotoGallery
+            variant="form"
+            ticket={ticket as unknown as Ticket}
+            isLight={isLight}
+            canManage
+            user={user}
+            branchLabel={resolveBranch(draft.assignBranchId || undefined)?.name || undefined}
+            onPhotosChange={(photos) => {
+              const serialized = photos.length ? JSON.stringify(photos) : null
+              onTicketPatched?.({ ...ticket, photoAttachments: serialized, photo_attachments: serialized } as TicketLike)
+            }}
+          />
 
           {mergeCandidates.length > 0 && onMerge && onMergeTargetChange && (
             <div className="border rounded-xl p-3.5 flex flex-col gap-2.5" style={{ backgroundColor: isLight ? '#fffbeb' : 'rgba(251,191,36,0.06)', borderColor: isLight ? '#fde68a' : 'rgba(251,191,36,0.2)' }}>

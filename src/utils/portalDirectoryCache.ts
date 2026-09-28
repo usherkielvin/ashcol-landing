@@ -1,4 +1,4 @@
-import { API_BASE_URL, readApiError } from './api'
+import { API_BASE_URL, readApiError, isFranchiseBranch } from './api'
 import { isTabCacheFresh, readTabCache, readTabCacheEntry, writeTabCache } from './ticketTabCache'
 
 const VERSION = 2
@@ -80,7 +80,10 @@ export async function fetchCachedBranches(
   }
   const data = await res.json()
   const list = data?.data || data || []
-  const normalized = Array.isArray(list) ? list as Array<Record<string, unknown>> : []
+  const rawList = Array.isArray(list) ? [...list as Array<Record<string, unknown>>] : []
+  const normalized = rawList
+    .filter(b => !isFranchiseBranch(String(b.id || '')) && !isFranchiseBranch(String(b.name || '')) && !b.isFranchise)
+    .map(b => ({ ...b, isFranchise: false }))
   writeTabCache(key, normalized)
   return normalized
 }

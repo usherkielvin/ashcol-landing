@@ -6,12 +6,12 @@ import {
   Eye, Loader2, Pencil,
   ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Maximize2,
   UsersRound, ChevronDown, SlidersHorizontal, CalendarRange,
-  TrendingUp, Receipt, Radio, Download, MessageSquare,
+  Download, MessageSquare,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useArctic } from '../contexts/ArcticContext'
-import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, isNegotiatorCandidate, isAccountActive, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, isPortalAdmin, isCoordinatorOrOicUser, getActivePortalBranchId, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, DEALERS_UPDATED_EVENT, notifyDealersUpdated, getUserViewBranchIds, isBranchReadOnlyForUser, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
+import { API_BASE_URL, fetchTicketsPage, fetchTicketByNumber, formatFetchError, readApiError, parseCreatedTicketResponse, resolvePortalWriteBranchId, resolveTicketArchiveBranchId, resolveTicketScheduleBranchId, resolveScopedBranchId, branchScopesMatch, appendCurrentNegotiator, isNegotiatorCandidate, isAccountActive, isTaguigBranchRef, isTaguigServicesScope, isTaguigServiceTicket, isPortalAdmin, isCoordinatorOrOicUser, getActivePortalBranchId, EMPLOYEES_DIRECTORY_UPDATED_EVENT, PROFILE_UPDATED_EVENT, DEALERS_UPDATED_EVENT, notifyDealersUpdated, getUserViewBranchIds, isBranchReadOnlyForUser, canMemberAccessPayroll, type InstallerBranchIndexEntry, type BranchStaffOption } from '../utils/api'
 import {
   cacheTicketsByNumber,
   cacheTicketByNumber,
@@ -75,7 +75,7 @@ import {
   fetchTicketById, findTicketInListByRef, fmtPhone, formatAddress, formatDateKeyLabel, formatDateToKey,
   formatDisplayDate, formatGhostRemarks, formatMonthFilterLabel, formatNegotiatorLabel, formatInstallerLabel, formatPaymentAmount,
   formatPaymentBreakdownText, formatRelayTicketTypeShort, formatServiceDriver, formatSimpleDateShort,
-  getArchivedScheduleDate, getBranchDisplayName, getCellRawValue, getContinuationDates, getCustomerDisplayName,
+  buildRescheduleGhostAcUpdates, getArchivedScheduleDate, getBranchDisplayName, getCellRawValue, getContinuationDates, getCustomerDisplayName,
   getEmptyRequiredColumnsForClose, getF, getFinalDateKey, getInstalledDateKey,
   getInstallerDisplay, getNextContinuationDate, getOverviewStatusBadge, getPaymentBreakdown, getPaymentMode,
   getPreferredDateKey, getPreviousScheduleDates, getScheduleGhostKind, getScheduleOutcome, getSchedulePaymentDisplay, getScheduleRowColors,
@@ -94,7 +94,7 @@ import {
   sortOverviewSearchResults, statusShowsScheduleDetails, stripArchivedRemarkSuffix,
   ticketBelongsOnScheduleBranch, ticketBelongsOnScheduleDate, ticketHadScheduleDate,
   ticketHasRescheduleMeta, ticketMatchesDateKey, ticketMatchesNegotiatorFilter, ticketMatchesOverviewQuery,
-  todayDateKey, wantsTicketArchive,
+  todayDateKey, wantsTicketArchive, withRescheduleSnapshot,
   type Ticket,
   type TicketsSurface,
   type ImportUpdate,
@@ -125,6 +125,40 @@ export {
  * instead, which left AutoFitText with nothing well-defined to measure and made it a no-op.
  */
 const AUTOFIT_COLUMNS = new Set(['DESTINATION', 'DLR', 'COMMIT', 'BRAND'])
+
+const DEFAULT_COL_WIDTHS: Record<string, number> = {
+  'TICKET NO': 115,
+  'FINAL DATE': 130,
+  "CUSTOMER'S NAME": 210,
+  'DESTINATION': 135,
+  'BRAND': 120,
+  'DLR': 135,
+  'COMMIT': 105,
+  'INSTALLER': 125,
+  'NEGOTIATOR': 110,
+  'SERVICE': 120,
+  'VEHICLE': 110,
+  'STATUS': 130,
+  'UPDATE': 160,
+  'PAYMENT': 115,
+}
+
+const MIN_COL_WIDTHS: Record<string, number> = {
+  'TICKET NO': 65,
+  'FINAL DATE': 75,
+  "CUSTOMER'S NAME": 85,
+  'DESTINATION': 70,
+  'BRAND': 65,
+  'DLR': 70,
+  'COMMIT': 60,
+  'INSTALLER': 70,
+  'NEGOTIATOR': 65,
+  'SERVICE': 65,
+  'VEHICLE': 60,
+  'STATUS': 75,
+  'UPDATE': 80,
+  'PAYMENT': 65,
+}
 
 function AutoFitText({ text, style, title, minScale = 0.55, align = 'center' }: {
   text: string
@@ -371,13 +405,87 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const green = '#16A34A'
   const textGreen = isLight ? '#16A34A' : '#4ade80'
 
+// Clean, accurate, PH-tailored icons for the everyday quick actions launcher
+const QuickTicketIcon = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
+  <svg className={className} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
+    <path d="m9 12 2 2 4-4" strokeWidth="2.2" />
+  </svg>
+)
+
+const QuickScheduleIcon = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
+  <svg className={className} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect width="18" height="18" x="3" y="4" rx="2" />
+    <path d="M3 10h18" />
+    <path d="M8 2v4" />
+    <path d="M16 2v4" />
+    <circle cx="16" cy="16" r="3" />
+    <path d="M16 14.5v1.5l1 1" />
+  </svg>
+)
+
+const QuickDailyTxIcon = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
+  <svg className={className} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect width="18" height="18" x="3" y="3" rx="2" />
+    <path d="M3 9h18" />
+    <path d="M9 21V9" />
+    <path d="m13 13 2 2 4-4" strokeWidth="2" />
+  </svg>
+)
+
+const QuickExpensesIcon = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
+  <svg className={className} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
+    <path d="M8 7h8" />
+    <path d="M8 11h8" />
+    <path d="M8 15h5" />
+  </svg>
+)
+
+// Philippine Peso (₱) Banknote icon for installer and technician payouts
+const QuickPesoPayoutIcon = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
+  <svg className={className} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect width="20" height="14" x="2" y="5" rx="2.5" />
+    <circle cx="12" cy="12" r="3.8" strokeWidth="1.5" />
+    <path d="M10.8 9.5h2a1.25 1.25 0 0 1 0 2.5h-2v2.5" strokeWidth="1.8" />
+    <path d="M9.8 10.3h4.4" strokeWidth="1.4" />
+    <path d="M9.8 11.6h4.4" strokeWidth="1.4" />
+  </svg>
+)
+
+// Field technician crew lineup & dispatch (Hard hat installer roster)
+const QuickLineupIcon = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
+  <svg className={className} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M2 18a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v2H2v-2Z" />
+    <path d="M12 4a5 5 0 0 0-5 5v2h10V9a5 5 0 0 0-5-5Z" />
+    <path d="M4 11h16" />
+    <path d="M12 4V2" />
+  </svg>
+)
+
+const QuickRequestFormsIcon = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
+  <svg className={className} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <polyline points="14 2 14 8 20 8" />
+    <path d="M8 13h8" />
+    <path d="M8 17h5" />
+    <path d="m14.5 17.5 1.5-1.5 2.5 2.5" strokeWidth="1.8" />
+  </svg>
+)
+
   // Overview/search landing quick links — hidden once a search is in progress.
+  // Mirrors the everyday-action set staff reach from the sidebar, laid out as a
+  // tap-friendly icon grid so the mobile home screen doubles as a quick-launcher.
+  const canAccessPayoutsQuick = canMemberAccessPayroll(user) || isAdmin || isManager
   const overviewQuickLinks = [
-    { label: 'Schedules', to: '/schedules', icon: CalendarDays },
-    { label: 'Daily Transaction', to: '/audit-report', icon: TrendingUp },
-    { label: 'Expenses', to: '/audit-expenses', icon: Receipt },
-    { label: 'Relays', to: '/relays', icon: Radio, adminOnly: true },
-  ].filter(link => !link.adminOnly || isPortalAdmin(user?.role))
+    { label: 'My Tickets', to: '/my-tickets', icon: QuickTicketIcon },
+    { label: 'Schedules', to: '/schedules', icon: QuickScheduleIcon },
+    { label: 'Daily Transaction', to: '/audit-report', icon: QuickDailyTxIcon },
+    { label: 'Expenses', to: '/audit-expenses', icon: QuickExpensesIcon },
+    { label: 'Payouts', to: '/payouts', icon: QuickPesoPayoutIcon, hidden: !canAccessPayoutsQuick },
+    { label: 'LINEUP', to: '/lineup', icon: QuickLineupIcon },
+    { label: 'Request Forms', to: '/operations-forms', icon: QuickRequestFormsIcon },
+  ].filter(link => !link.hidden)
 
   // ─────────────────────────────────────────────────────────────
   const initialSchedulesRef = useRef<ReturnType<typeof getInitialSchedulesFromCache> | null>(null)
@@ -2185,6 +2293,12 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           }
         } else {
           acMetaExtras.reschedulePending = false
+          // Leave a RESCHED ghost on the old date with that day's crew frozen. The backend records
+          // this too, but the optimistic local row (applyTicketLocally) is built from THIS body —
+          // without it here, the old date's row is dropped from the board/cache until a refetch.
+          if (isDateMove && originalTicket) {
+            Object.assign(acMetaExtras, buildRescheduleGhostAcUpdates(originalTicket, oldDateKey, newDateKey))
+          }
         }
       } else if (isDateMove && !leavingResched) {
         body.status = 'SCHEDULED'
@@ -3072,6 +3186,51 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
   // ─────────────────────────────────────────────────────────────
   const [expandedCols, setExpandedCols] = useState<Record<string, boolean>>({})
+  const [customColWidths, setCustomColWidths] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem('ashcol_schedule_col_widths_v2')
+      if (saved) return JSON.parse(saved)
+    } catch { /* ignore */ }
+    return {}
+  })
+
+  const startColResize = useCallback((e: React.MouseEvent, colLabel: string, currentWidth: number) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const startX = e.clientX
+    const startWidth = currentWidth
+    const minW = MIN_COL_WIDTHS[colLabel] || 60
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    let latestWidth = startWidth
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = moveEvent.clientX - startX
+      const newWidth = Math.max(minW, Math.round(startWidth + delta))
+      latestWidth = newWidth
+      setCustomColWidths(prev => ({
+        ...prev,
+        [colLabel]: newWidth,
+      }))
+    }
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      setCustomColWidths(latest => {
+        try {
+          localStorage.setItem('ashcol_schedule_col_widths_v2', JSON.stringify({ ...latest, [colLabel]: latestWidth }))
+        } catch { /* ignore */ }
+        return latest
+      })
+    }
+
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }, [])
   const [editingCell, setEditingCell] = useState<{ ticketId: string; rowIndex: number; colLabel: string; value: string } | null>(null)
   const [statusPicker, setStatusPicker] = useState<{
     ticket: Ticket
@@ -3268,18 +3427,20 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       { label: 'FINAL DATE', display: 'FINAL DATE', weight: 10, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
     ]
     const raw = isMyTickets ? myTicketsCols : scheduleCols
-    const weights = raw.map(c => c.weight * (expandedCols[c.label] ? c.expMul : 1))
-    const totalWeight = weights.reduce((s, w) => s + w, 0)
-    let left = 0
-    return raw.map((c, idx) => {
+    let stickyLeft = 0
+    return raw.map((c) => {
       const isExpanded = !!expandedCols[c.label]
-      const pct = `${((weights[idx] / totalWeight) * 100).toFixed(2)}%`
-      const l = c.sticky ? left : 0
-      // sticky columns: accumulate by base weight share only
-      if (c.sticky) left += (c.weight / totalWeight) * 100
-      return { ...c, isExpanded, w: pct, left: l }
+      const baseW = customColWidths[c.label] || DEFAULT_COL_WIDTHS[c.label] || 120
+      const pixelWidth = isExpanded ? Math.round(baseW * 1.35) : baseW
+      const leftPx = c.sticky ? stickyLeft : 0
+      if (c.sticky) stickyLeft += pixelWidth
+      return { ...c, isExpanded, pixelWidth, w: `${pixelWidth}px`, left: leftPx }
     })
-  }, [expandedCols, isTaguigServices, isMyTickets, monthViewActive])
+  }, [expandedCols, isTaguigServices, isMyTickets, monthViewActive, customColWidths])
+
+  const totalTableWidth = useMemo(() => {
+    return columns.reduce((acc, c) => acc + (c as any).pixelWidth, 0)
+  }, [columns])
 
   // ─────────────────────────────────────────────────────────────
   const token = useCallback(() =>
@@ -3739,6 +3900,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       .catch(() => setDriverOnlyNames([]))
   }, [token])
 
+  // Display-only: a RESCHED ghost row shows the crew frozen for its old date (see
+  // withRescheduleSnapshot). Used for rendering/sorting/branch-scoping ONLY — rows, menus, and
+  // save paths keep the live ticket object so a snapshot can never be written back.
+  const displayTicket = useCallback((ticket: Ticket): Ticket => (
+    !isMyTickets && dateFilter ? withRescheduleSnapshot(ticket, dateFilter) : ticket
+  ), [isMyTickets, dateFilter])
+
   // ─────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     const effectiveBranch = activeBranchId
@@ -3779,7 +3947,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         if (!ticketBelongsOnScheduleDate(t, dateFilter)) return false
         if (effectiveBranch && effectiveBranch !== 'ALL_BRANCHES'
           && !ticketBelongsOnScheduleBranch(
-            t, effectiveBranch, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+            displayTicket(t), effectiveBranch, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
           )) return false
         return true
       })
@@ -3884,7 +4052,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         list = list.filter(t =>
           (dateFilter && isCancelledScheduleGhost(t, dateFilter))
           || ticketBelongsOnScheduleBranch(
-            t, effectiveBranch, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
+            displayTicket(t), effectiveBranch, user?.email, user?.jobTitle, installerLineupIndex, driverOnlyNames,
           ),
         )
       }
@@ -3909,12 +4077,12 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       )
     }
     return list
-  }, [tickets, isMyTickets, activeBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, user?.jobTitle, installerLineupIndex, driverOnlyNames, isAdmin, myTicketsNegotiatorFilter, myTicketsStatusFilter, myTicketsMonthFilter, branchEmployees, isBranchMatch, monthViewActive, monthFilterNegotiatorId, monthFilterStatus])
+  }, [tickets, isMyTickets, activeBranchId, dateFilter, searchQuery, user?.id, user?.email, user?.branchId, user?.jobTitle, installerLineupIndex, driverOnlyNames, isAdmin, myTicketsNegotiatorFilter, myTicketsStatusFilter, myTicketsMonthFilter, branchEmployees, isBranchMatch, monthViewActive, monthFilterNegotiatorId, monthFilterStatus, displayTicket])
 
   // Auto-numbered vehicle trip labels ("STRADA - 1", "STRADA - 2") for the current filtered set —
   // the vehicle is now the dispatch unit, so staff never type a manual "- N" suffix into the
   // Driver or Vehicle fields; the trip number is derived from assignment order instead.
-  const vehicleTripLabels = useMemo(() => buildVehicleTripLabels(filtered), [filtered])
+  const vehicleTripLabels = useMemo(() => buildVehicleTripLabels(filtered.map(displayTicket)), [filtered, displayTicket])
 
   const visible = useMemo(() => {
     let list = filtered
@@ -3928,7 +4096,9 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         return compareTicketsByColumn(a, b, 'TICKET NO', cmpOpts)
       })
     }
-    list = [...list].sort((a, b) => {
+    list = [...list].sort((rowA, rowB) => {
+      const a = displayTicket(rowA)
+      const b = displayTicket(rowB)
       // Schedules: always group rows by vehicle first — the vehicle (e.g. "STRADA - 1",
       // "STRADA - 2") is the actual dispatch unit and trip order, auto-numbered from assignment
       // order. Driver name is the secondary tiebreaker so rows stay readable within a vehicle group.
@@ -3955,7 +4125,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       return compareTicketsByColumn(a, b, 'TICKET NO', cmpOpts)
     })
     return list
-  }, [filtered, sortConfig, isMyTickets, branchEmployees, activeBranchId, vehicleTripLabels, monthViewActive])
+  }, [filtered, sortConfig, isMyTickets, branchEmployees, activeBranchId, vehicleTripLabels, monthViewActive, displayTicket])
 
   // Ground Arctic in the actual rows on screen and the active date/branch
   useEffect(() => {
@@ -4092,7 +4262,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     // INSTALLER / DRIVER (SERVICE column): name only — never trip "- N" suffixes.
     // VEHICLE (exported as service): use the same auto trip labels as the table.
     return visible.map((ticket, index) => {
-      const live = optimisticTicketsRef.current.get(ticket.id) || ticket
+      const live = displayTicket(optimisticTicketsRef.current.get(ticket.id) || ticket)
       const installerRaw = getInstallerDisplay(live, branchEmployees, activeBranchId)
       const driverRaw = getTicketDriverDisplay(live) || getTicketDriverName(live) || formatServiceDriver(live) || ''
       const vehicleTrip = vehicleTripLabels.get(live.id || '') || getTicketVehicleDisplay(live) || ''
@@ -4116,7 +4286,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         service: vehicleTrip,
       }
     })
-  }, [visible, isMyTickets, branchEmployees, activeBranchId, tickets, dateFilter, vehicleTripLabels])
+  }, [visible, isMyTickets, branchEmployees, activeBranchId, tickets, dateFilter, vehicleTripLabels, displayTicket])
 
   const showcasePaymentByRowId = useMemo(() => {
     const map: Record<string, string> = {}
@@ -4153,7 +4323,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
   }
 
   // ─────────────────────────────────────────────────────────────
-  function getCellDisplay(ticket: Ticket, colLabel: string): string {
+  function getCellDisplay(rowTicket: Ticket, colLabel: string): string {
+    const ticket = displayTicket(rowTicket)
     const raw = (() => {
       switch (colLabel) {
         case 'TICKET NO': return getTicketNumberDisplay(ticket)
@@ -5641,7 +5812,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     const showExpanded = cellExpanded
     const truncStyle: React.CSSProperties = showExpanded
       ? { wordBreak: 'break-word', whiteSpace: 'normal', lineHeight: 1.45, display: 'block', paddingRight: '4px', color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: label !== 'UPDATE' ? 'uppercase' : undefined }
-      : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', maxWidth: '100%', lineHeight: 1.3, color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: label !== 'UPDATE' ? 'uppercase' : undefined }
+      : { overflow: 'hidden', textOverflow: 'clip', whiteSpace: 'nowrap', display: 'block', maxWidth: '100%', lineHeight: 1.3, color: ghostMuted, opacity: rowGhost ? 0.72 : 1, textTransform: label !== 'UPDATE' ? 'uppercase' : undefined }
 
     if (label === 'DESTINATION') {
       const fullAddress = formatAddress(ticket.location)
@@ -5966,7 +6137,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
 
     if (label === 'VEHICLE' && !isMyTickets) {
       // Prefer auto trip label ("STRADA - 2") so the red number always matches table ordering.
-      const vehicleCode = vehicleTripLabels.get(ticket.id || '') || getTicketVehicleDisplay(ticket) || val
+      const vehicleCode = vehicleTripLabels.get(ticket.id || '') || getTicketVehicleDisplay(displayTicket(ticket)) || val
       const canDragVehicle = canEdit && !rowGhost && Boolean(vehicleCode)
       // "MIRAGE - 2" splits into a plain name and a red trip number that live-updates as the
       // ticket's position in its vehicle group changes (drag-and-drop) — never manually typed.
@@ -6095,7 +6266,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
           }}
           title={hasRemarks ? `Click to view history: ${remarksText}` : 'Click to view history'}
         >
-          <span className="block min-w-0 w-full truncate">
+          <span className="block min-w-0 w-full overflow-hidden whitespace-nowrap" style={{ textOverflow: 'clip' }}>
             {hasRemarks ? remarksText : 'View History'}
           </span>
         </button>
@@ -6283,11 +6454,11 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     }
 
     if (label === 'INSTALLER') {
-      const rawInstaller = getInstallerDisplay(ticket, branchEmployees, activeBranchId)
+      const rawInstaller = getInstallerDisplay(displayTicket(ticket), branchEmployees, activeBranchId)
       const isEmpty = !rawInstaller
 
       const prevInstaller = idx != null && idx > 0
-        ? getInstallerDisplay(visible[idx - 1], branchEmployees, activeBranchId)
+        ? getInstallerDisplay(displayTicket(visible[idx - 1]), branchEmployees, activeBranchId)
         : ''
       const curToken = parseNameSiteToken(rawInstaller)
       const prevToken = parseNameSiteToken(prevInstaller)
@@ -7099,8 +7270,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                   key={dateFilter || 'all'}
                   className="text-xs hidden md:table"
                   style={{
-                    width: '100%',
-                    minWidth: '1400px',
+                    width: `${Math.max(totalTableWidth, 1400)}px`,
+                    minWidth: '100%',
                     tableLayout: 'fixed',
                     borderCollapse: 'collapse',
                   }}
@@ -7138,6 +7309,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                             }}
                             title={canSort ? 'Click to widen column · Use arrow to sort' : 'Click to widen column'}
                             style={{
+                              position: col.sticky ? ('sticky' as const) : ('relative' as const),
                               padding: '13px 12px',
                               color: (col.isExpanded || isSorted)
                                 ? (isLight ? '#16A34A' : '#4ADE80')
@@ -7146,14 +7318,14 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                               borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`,
                               borderRight: isLastCol ? 'none' : (isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`),
                               fontSize: '11px', letterSpacing: '0.06em',
-                              width: col.w, minWidth: 0,
-                              overflow: 'hidden', textOverflow: 'ellipsis',
+                              width: col.w, minWidth: col.w, maxWidth: col.w,
+                              overflow: 'hidden', textOverflow: 'clip',
                               backgroundColor: isMyTickets ? myTicketsTheadBg : schedTheadBg,
                               cursor: 'pointer',
                               userSelect: 'none',
                               transition: 'color 0.15s ease',
                               textAlign: col.align || 'left',
-                              ...(col.sticky ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: 15, boxShadow: `2px 0 0 ${isMyTickets ? myTicketsTheadBorder : schedTheadBorder}` } : {}),
+                              ...(col.sticky ? { position: 'sticky' as const, left: `${col.left}px`, zIndex: 15, boxShadow: `2px 0 0 ${isMyTickets ? myTicketsTheadBorder : schedTheadBorder}` } : {}),
                             }}>
                             <div className={`flex items-center gap-1 w-full ${col.align === 'center' ? 'justify-center text-center' :
                               col.align === 'right' ? 'justify-end text-right' :
@@ -7177,6 +7349,26 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                   />
                                 </button>
                               )}
+                            </div>
+
+                            {/* Column resize drag handle */}
+                            <div
+                              className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize z-30 flex items-center justify-end select-none group"
+                              style={{ touchAction: 'none' }}
+                              onMouseDown={(e) => startColResize(e, col.label, col.pixelWidth)}
+                              onClick={(e) => e.stopPropagation()}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation()
+                                const defW = DEFAULT_COL_WIDTHS[col.label] || 120
+                                setCustomColWidths(prev => {
+                                  const next = { ...prev, [col.label]: defW }
+                                  try { localStorage.setItem('ashcol_schedule_col_widths_v2', JSON.stringify(next)) } catch {}
+                                  return next
+                                })
+                              }}
+                              title="Drag to resize column · Double-click to reset width"
+                            >
+                              <div className="w-[3px] h-full bg-transparent group-hover:bg-emerald-500/80 active:bg-emerald-500 transition-colors" />
                             </div>
                           </th>
                         )
@@ -7388,11 +7580,12 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                     borderBottom: `1px solid ${tableBorder}`,
                                     borderRight: isLastCol ? 'none' : `1px solid ${tableBorder}`,
                                     width: col.w,
-                                    minWidth: 0,
+                                    minWidth: col.w,
+                                    maxWidth: col.w,
                                     height: isEditingCell ? 'auto' : TABLE_ROW_HEIGHT,
                                     maxHeight: isEditingCell ? undefined : TABLE_ROW_HEIGHT,
-                                    overflow: 'visible',
-                                    textOverflow: 'ellipsis',
+                                    overflow: 'hidden',
+                                    textOverflow: 'clip',
                                     transition: isDropTargetRow ? 'background-color 1s ease' : 'background-color 0.1s ease',
                                     cursor: canEdit && (!isGhost || allowGhostCellEdit) && INLINE_EDIT_COLUMNS.has(col.label) ? 'text' : 'default',
                                     verticalAlign: 'middle',
@@ -7400,7 +7593,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                     userSelect: isEditingCell ? 'text' : (canEdit && (!isGhost || allowGhostCellEdit) ? 'none' : undefined),
                                     WebkitUserSelect: isEditingCell ? 'text' : (canEdit && (!isGhost || allowGhostCellEdit) ? 'none' : undefined),
                                     ...(col.sticky
-                                      ? { position: 'sticky' as const, left: `${col.left}%`, zIndex: (isEditingCell || isExpandedCell) ? 95 : 5 }
+                                      ? { position: 'sticky' as const, left: `${col.left}px`, zIndex: (isEditingCell || isExpandedCell) ? 95 : 5 }
                                       : { position: 'relative' as const, zIndex: (isEditingCell || isExpandedCell) ? (isEditingCell ? 90 : 85) : undefined }),
                                     boxShadow: isSelectedVehicleCell
                                       ? `inset 0 0 0 2px ${green}`
@@ -7416,7 +7609,7 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                                         }`}
                                       style={{ minHeight: TABLE_ROW_HEIGHT - 2 }}
                                     >
-                                      <div className={`min-w-0 overflow-hidden ${col.align === 'center' && col.label !== 'VEHICLE' && !AUTOFIT_COLUMNS.has(col.label) ? 'w-auto max-w-full' : 'w-full'}`}>
+                                      <div className={`min-w-0 overflow-hidden ${col.align === 'center' && col.label !== 'VEHICLE' && !AUTOFIT_COLUMNS.has(col.label) ? 'w-auto max-w-full' : 'w-full'}`} style={{ textOverflow: 'clip' }}>
                                         {renderCell(ticket, col, idx, isGhost, ghostKind, false)}
                                       </div>
                                     </div>
@@ -7900,12 +8093,14 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             <div className="flex items-center justify-center py-2.5 w-full shrink-0 z-20 relative marquee-viewport" style={{ borderBottom: `1px solid ${border}` }}>
               <div className="marquee-track" style={{ animationDuration: '32s' }}>
                 {[
-                  "BATANGAS", "BULACAN", "CANDELARIA", "DASMA, CAVITE",
-                  "GENTRI, CAVITE", "LAGUNA", "PAMPANGA", "RIZAL",
-                  "SILANG, CAVITE", "TAGUIG", "VALENZUELA",
-                ].concat(["BATANGAS", "BULACAN", "CANDELARIA", "DASMA, CAVITE",
-                  "GENTRI, CAVITE", "LAGUNA", "PAMPANGA", "RIZAL",
-                  "SILANG, CAVITE", "TAGUIG", "VALENZUELA"]).map((branch, idx) => (
+                  "BULACAN", "CANDELARIA", "DASMA, CAVITE",
+                  "LAGUNA", "PAMPANGA", "RIZAL",
+                  "SILANG, CAVITE", "TAGUIG",
+                ].concat([
+                  "BULACAN", "CANDELARIA", "DASMA, CAVITE",
+                  "LAGUNA", "PAMPANGA", "RIZAL",
+                  "SILANG, CAVITE", "TAGUIG",
+                ]).map((branch, idx) => (
                   <div key={`${branch}-${idx}`} className="flex items-center gap-4 shrink-0">
                     <span
                       className="text-[12px] md:text-[14px] font-black uppercase tracking-[0.15em] whitespace-nowrap"
@@ -7920,14 +8115,13 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
             </div>
 
             <div
-              className={`flex-1 min-h-0 px-3 md:px-8 bg-transparent relative ${overviewSearchInput || overviewResults.length > 0 ? 'overflow-y-auto flex flex-col' : 'overflow-hidden'
-                }`}
+              className="flex-1 min-h-0 px-3 md:px-8 bg-transparent relative overflow-y-auto flex flex-col"
             >
               <div
                 className={
                   overviewSearchInput || overviewResults.length > 0
                     ? 'max-w-4xl w-full mx-auto flex flex-col'
-                    : 'w-full max-w-4xl mx-auto px-3 md:px-0 pt-10 md:pt-16 flex flex-col items-center gap-6 md:gap-8'
+                    : 'w-full max-w-4xl mx-auto px-3 md:px-0 pt-6 pb-8 md:pt-14 flex flex-col items-center gap-5 md:gap-8'
                 }
               >
 
@@ -7982,21 +8176,41 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
                     )}
                   </div>
 
-                  {/* Quick Links — only shown before a search has been entered */}
+                  {/* Quick Actions launcher — only shown before a search has been entered.
+                      Tap-target icon tiles (mobile-home-screen style) so staff can jump
+                      straight into any everyday section without opening the sidebar. */}
                   {!overviewSearchInput && overviewResults.length === 0 && overviewQuickLinks.length > 0 && (
-                    <div className="flex flex-wrap items-center justify-center gap-2 md:gap-3">
-                      {overviewQuickLinks.map(link => (
-                        <button
-                          key={link.to}
-                          type="button"
-                          onClick={() => navigate(link.to)}
-                          className="flex items-center gap-1.5 px-3.5 py-2 md:px-4 md:py-2.5 rounded-full border text-xs md:text-sm font-semibold transition-[transform,box-shadow,background-color,border-color] duration-150 hover:-translate-y-0.5 hover:shadow-sm active:scale-95"
-                          style={{ backgroundColor: cardBg, borderColor: border, color: textPrimary }}
-                        >
-                          <link.icon className="w-3.5 h-3.5 md:w-4 md:h-4" style={{ color: green }} />
-                          {link.label}
-                        </button>
-                      ))}
+                    <div className="w-full max-w-4xl mx-auto flex flex-col gap-2.5 md:gap-3">
+                      <div className="flex items-center gap-2 px-1">
+                        <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>
+                          Quick Actions
+                        </span>
+                        <span className="flex-1 h-px" style={{ backgroundColor: border }} />
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2.5 md:gap-3">
+                        {overviewQuickLinks.map(link => (
+                          <button
+                            key={link.to}
+                            type="button"
+                            onClick={() => navigate(link.to)}
+                            className="group flex flex-col items-center justify-center gap-2 py-4 px-2 rounded-2xl border shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md active:scale-95 cursor-pointer"
+                            style={{ backgroundColor: cardBg, borderColor: border }}
+                          >
+                            <span
+                              className="flex items-center justify-center w-11 h-11 md:w-12 md:h-12 rounded-full shrink-0 transition-transform duration-200 group-hover:scale-110"
+                              style={{ backgroundColor: `${green}15` }}
+                            >
+                              <link.icon className="w-5 h-5 md:w-6 md:h-6 transition-colors" style={{ color: green }} />
+                            </span>
+                            <span
+                              className="text-[11px] md:text-xs font-bold text-center leading-tight line-clamp-2 transition-colors"
+                              style={{ color: textPrimary }}
+                            >
+                              {link.label}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>

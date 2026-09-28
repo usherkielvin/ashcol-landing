@@ -69,6 +69,13 @@ export function cleanInstallerName(name: string, currentBranchName?: string): st
       }
     }
   }
+
+  // Force aliases & spelling variations: in Taguig Services, Justin Roi Bien is frequently written as "JUSTINE"
+  const upper = cleaned.toUpperCase()
+  if (upper === 'JUSTINE' || upper === 'JUSTINE ROI' || upper === 'JUSTINE BIEN' || upper === 'JUSTINE ROI BIEN') {
+    return 'JUSTIN ROI BIEN'
+  }
+
   return cleaned
 }
 

@@ -4,7 +4,7 @@ import { Search, MapPin, Phone, Mail, Building2, ExternalLink, Edit3, X, Loader2
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { PUBLIC_BRANCHES } from '../data/branches'
-import { API_BASE_URL, isSameBaseBranch, resolveScopedBranchId, isMayDtrEditWindow, isEmployeePortalRole, isPortalAdmin, isTaguigServicesScope } from '../utils/api'
+import { API_BASE_URL, isSameBaseBranch, resolveScopedBranchId, isMayDtrEditWindow, isEmployeePortalRole, isPortalAdmin, isTaguigServicesScope, isFranchiseBranch } from '../utils/api'
 import {
   buildBranchRoster,
   isDriverEmployee,
@@ -82,6 +82,7 @@ interface Branch {
   mapUrl?: string
   region?: string
   isHQ?: boolean
+  isFranchise?: boolean
   oic: string
   salesCoordinator?: string
   drivers: string[]
@@ -606,6 +607,7 @@ export default function Branches() {
           mapUrl: api.mapUrl || pub?.mapUrl || '',
           region: api.region || pub?.region || 'Luzon',
           isHQ: pub?.isHQ || api.isHQ || false,
+          isFranchise: Boolean(pub?.isFranchise || (api as any).isFranchise || isFranchiseBranch(api.id) || isFranchiseBranch(api.name)),
           oic: oicName,
           managerId: api.managerId,
           salesCoordinator: salesCoordinator?.name,
@@ -648,7 +650,8 @@ export default function Branches() {
           merged.push(processBranch(api))
         }
       }
-      setBranches(merged)
+
+      setBranches(merged.filter(b => !b.isFranchise && !isFranchiseBranch(b.id) && !isFranchiseBranch(b.name)))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load branch directory')
     } finally {
@@ -1127,6 +1130,11 @@ export default function Branches() {
                     HQ
                   </span>
                 )}
+                {myBranch.isFranchise && (
+                  <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                    FRANCHISE
+                  </span>
+                )}
               </div>
               <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mt-1">
                 {getConciseLocationTag(myBranch)}
@@ -1277,6 +1285,11 @@ export default function Branches() {
                         {isHq && (
                           <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 text-[#10B981] border border-emerald-500/20">
                             HQ
+                          </span>
+                        )}
+                        {branch.isFranchise && (
+                          <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                            FRANCHISE
                           </span>
                         )}
                       </div>

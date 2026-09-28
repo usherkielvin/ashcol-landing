@@ -32,7 +32,8 @@ export const portalPagePreloaders = {
   schedules: () => import('../pages/Schedules'),
   bookings: () => import('../pages/Bookings'),
   cashAdvances: () => import('../pages/CashAdvances'),
-  payroll: () => import('../pages/Payroll'),
+  payouts: () => import('../pages/Payouts'),
+  payroll: () => import('../pages/Payouts'),
   lineUp: () => import('../pages/LineUp'),
   dailyAuditReport: () => import('../pages/DailyAuditReport'),
   employees: () => import('../pages/Employees'),
@@ -88,7 +89,8 @@ export function preloadPath(path: string) {
     switch (clean) {
       case '/relays': portalPagePreloaders.relays(); break
       case '/cash-advances': portalPagePreloaders.cashAdvances(); break
-      case '/payroll': portalPagePreloaders.payroll(); break
+      case '/payouts':
+      case '/payroll': portalPagePreloaders.payouts(); break
       case '/my-tickets': portalPagePreloaders.myTickets(); break
       case '/lineup': portalPagePreloaders.lineUp(); break
       case '/audit-report': portalPagePreloaders.dailyAuditReport(); break

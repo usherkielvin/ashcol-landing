@@ -1,7 +1,15 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Poppins:wght@700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=Poppins:wght@700;800;900&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+.font-number {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-variant-numeric: tabular-nums lining-nums;
+  -webkit-font-feature-settings: 'tnum' 1, 'lnum' 1;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+  letter-spacing: 0;
+}
 
 @layer base {
   * {
@@ -16,17 +24,7 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Smooth theme transition — only active during the toggle, not on load */
-  html.theme-transitioning *,
-  html.theme-transitioning *::before,
-  html.theme-transitioning *::after {
-    transition:
-      color 0.35s ease,
-      background-color 0.35s ease,
-      border-color 0.35s ease,
-      box-shadow 0.35s ease,
-      fill 0.35s ease !important;
-  }
+
   :root {
     /* Dark mode defaults (applied before JS runs) */
     --bg:           #0a0f1d;

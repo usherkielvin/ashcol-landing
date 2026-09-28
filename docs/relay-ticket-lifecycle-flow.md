@@ -162,7 +162,10 @@ Mirrors relay board logic in `Tickets.tsx` for consistent queue labels.
 | `finalDate` | Negotiator’s scheduled install date — **moves ticket to Schedules**. Single source of truth for "where this ticket is now"; editable at any time (including past dates), and moving it always relocates the ticket in place — no duplicate/ghost row is left on the old date. |
 | `relayedDate` | When store relayed the job |
 | `scheduleOutcome` | Installed / cleaning / survey result |
-| `previousScheduleDates` | **Completed-job** ghost history only (drives the muted row on the date a job was actually installed, if viewed from a different day). No longer written on a plain reschedule/date-move — the resched-ghost-row mechanism was removed because staleness in it caused rows to vanish or duplicate across Schedules dates. |
+| `previousScheduleDates` | **Completed-job** ghost history only (drives the muted row on the date a job was actually installed, if viewed from a different day). Never written on a reschedule — resched ghosts use their own keys below so a date can't mean both "completed here" and "rescheduled from here". |
+| `rescheduleHistoryDates` | Dates a ticket was **RESCHED away from** — each renders an italic RESCHED ghost row on that date while the active row lives on `finalDate`. Written by the portal (Edit Ticket / status picker) and by the backend on any RESCHED save that changes the date; the backend carries it over when a save replaces `acDetails`, so a stale client can't wipe it. A plain Final Date edit (not RESCHED) still moves the ticket in place with no ghost. |
+| `rescheduleSnapshots` | `{ "<old date>": { installerName, driverName, serviceVehicle, capturedAt } }` — the crew dispatched on each date in `rescheduleHistoryDates`, frozen at reschedule time (first capture wins). The ghost row displays this instead of the live fields, so reassigning the active row's installer/driver doesn't rewrite the old day. A ghost with a snapshot also survives the ticket later being completed/cancelled. |
+| `rescheduledTo` | Cosmetic "Moved to &lt;date&gt;" label on the ghost row only — not used for date matching. |
 
 ---
 

@@ -256,10 +256,12 @@ function classifyJobRateKey(ticket: Ticket): JobRateKind | null {
 }
 
 // Negotiation/Quotation close out a sales conversation, not a job order a crew performs.
-const NON_INSTALLER_CLOSINGS = new Set(['DONE_NEGOTIATION', 'DONE_QUOTATION'])
+// Survey is excluded too — it doesn't owe an installer fee, so it shouldn't show up as a
+// payroll job row at all.
+const NON_INSTALLER_CLOSINGS = new Set(['DONE_NEGOTIATION', 'DONE_QUOTATION', 'DONE_SURVEY'])
 
 /** Every job order an installer actually finished — install and cleaning, plus checkups,
- *  services, backjobs, surveys, mounting, dismantling, relocation, reprocess. Service branches
+ *  services, backjobs, mounting, dismantling, relocation, reprocess. Service branches
  *  run mostly non-install work, so limiting payroll to installs left their crews looking idle. */
 function isCompletedInstallerJob(ticket: Ticket): boolean {
   const rateKey = classifyJobRateKey(ticket)
@@ -367,15 +369,26 @@ export function mapTicketToPayrollRows(ticket: Ticket, branchName: string, rates
   }))
 }
 
-/** Stamps Daily Allowance once per (installer, workDate) — onto that day's first row only. */
+/** customFields flag marking a row's auto-stamped fee (Allowance / Earth Grounding) as hand-edited,
+ *  e.g. "manual:dailyAllowance" = "1". Flagged fields keep the user's value on every re-sync;
+ *  unflagged ones follow the branch's Payroll Settings rate. Not a fee — skip when summing. */
+export const MANUAL_FEE_PREFIX = 'manual:'
+export type AutoStampedFee = 'dailyAllowance' | 'earthGrounding'
+const isManualFee = (row: PayrollRow, field: AutoStampedFee) =>
+  row.customFields?.[MANUAL_FEE_PREFIX + field] === '1'
+
+/** Stamps Daily Allowance once per (installer, workDate) — onto that day's first row only.
+ *  A zero rate stamps blank rather than "0" so the column reads empty, not ₱0.00. */
 export function applyDailyAllowance(rows: PayrollRow[], rates: PayrollRates): PayrollRow[] {
   const seen = new Set<string>()
+  const allowance = rates.dailyAllowance > 0 ? String(rates.dailyAllowance) : ''
+  const grounding = rates.earthGrounding > 0 ? String(rates.earthGrounding) : ''
   return rows.map((row) => {
     if (!row.workDate) return row
     const key = `${row.installerName}|${row.workDate}`
     if (seen.has(key)) return row
     seen.add(key)
-    return { ...row, dailyAllowance: String(rates.dailyAllowance), earthGrounding: String(rates.earthGrounding) }
+    return { ...row, dailyAllowance: allowance, earthGrounding: grounding }
   })
 }
 
@@ -391,11 +404,15 @@ export async function fetchAndMapPayroll(
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
     if (!token) return { ok: false, error: 'auth_missing' }
 
+    // The month match is broad (any ticket with any date key in the month — including
+    // reschedule/ghost history), so a busy branch-month can exceed the default 5-page cap;
+    // pages come back newest-first, so hitting the cap would silently drop part of the month.
     const list = await fetchTicketsPage('/tickets/branch', token, {
       month: monthKey,
       branchId,
       paginate: true,
       size: 200,
+      maxPages: 20,
     })
 
     const tickets = (list as Ticket[]).filter((t) => (t.status || '').toUpperCase() !== 'CANCELLED')
@@ -420,6 +437,14 @@ export async function fetchAndMapPayroll(
   }
 }
 
+export function normalizeInstallerName(name: string): string {
+  const upper = (name || '').trim().toUpperCase()
+  if (upper === 'JUSTINE' || upper === 'JUSTINE ROI' || upper === 'JUSTINE BIEN' || upper === 'JUSTINE ROI BIEN') {
+    return 'JUSTIN ROI BIEN'
+  }
+  return (name || '').trim()
+}
+
 /** Dedupe by ticketId+installerName so re-syncing never duplicates rows or clobbers hand edits,
  *  while automatically backfilling missing ticket numbers on previously saved rows. */
 export function deduplicateAndMergePayroll(existing: PayrollRow[], incoming: PayrollRow[]): PayrollRow[] {
@@ -427,50 +452,194 @@ export function deduplicateAndMergePayroll(existing: PayrollRow[], incoming: Pay
     (row) => row.customerName.trim() || row.installerName.trim() || row.amountCollected.trim() || row.installationFee.trim(),
   )
 
-  const incomingMap = new Map<string, PayrollRow>()
-  for (const row of incoming) {
-    const key = row.ticketId
-      ? `tk:${row.ticketId}|${row.installerName.trim().toLowerCase()}`
-      : `manual:${row.id}`
-    incomingMap.set(key, row)
+  const makeRowKey = (row: PayrollRow) => {
+    const inst = normalizeInstallerName(row.installerName).toLowerCase()
+    return row.ticketId ? `tk:${row.ticketId}|${inst}` : `manual:${row.id}`
   }
 
-  // Update existing saved rows with fresh ticket metadata (like ticketNumber) if previously blank
+  const incomingMap = new Map<string, PayrollRow>()
+  for (const row of incoming) {
+    incomingMap.set(makeRowKey(row), row)
+  }
+
+  // Update existing saved rows with fresh ticket metadata and missing details/fees
   const updatedExisting = nonEmpty.map((row) => {
-    const key = row.ticketId
-      ? `tk:${row.ticketId}|${row.installerName.trim().toLowerCase()}`
-      : `manual:${row.id}`
+    const key = makeRowKey(row)
     const fresh = incomingMap.get(key)
     if (fresh) {
+      const isFreshDone = /^DONE\b/i.test(fresh.installationUpload?.trim() || '')
+      const isRowDone = /^DONE\b/i.test(row.installationUpload?.trim() || '')
+      const rowInstallFeeNum = parseFloat(String(row.installationFee || '').replace(/[^0-9.-]/g, '')) || 0
+      const freshInstallFeeNum = parseFloat(String(fresh.installationFee || '').replace(/[^0-9.-]/g, '')) || 0
       return {
         ...row,
+        installerName: normalizeInstallerName(row.installerName || fresh.installerName || ''),
         ticketNumber: row.ticketNumber?.trim() || fresh.ticketNumber || '',
         workDate: row.workDate || fresh.workDate || '',
         customerName: row.customerName || fresh.customerName || '',
         cityAddress: row.cityAddress || fresh.cityAddress || '',
         brandCapacity: row.brandCapacity || fresh.brandCapacity || '',
+        installationUpload: (!isRowDone && isFreshDone) ? fresh.installationUpload : (row.installationUpload || fresh.installationUpload || ''),
+        installationFee: rowInstallFeeNum > 0 ? row.installationFee : (freshInstallFeeNum > 0 ? fresh.installationFee : (row.installationFee || '')),
+        // Auto-stamped from the branch rate: follow the current rate (so a Payroll Settings change,
+        // including to zero, reaches existing rows) unless the user edited this row's value by hand.
+        dailyAllowance: isManualFee(row, 'dailyAllowance') ? row.dailyAllowance : fresh.dailyAllowance,
+        earthGrounding: isManualFee(row, 'earthGrounding') ? row.earthGrounding : fresh.earthGrounding,
+        actualCollected: row.actualCollected?.trim() ? row.actualCollected : (fresh.actualCollected || ''),
+        amountCollected: row.amountCollected?.trim() ? row.amountCollected : (fresh.amountCollected || ''),
+        sifQuotation: row.sifQuotation?.trim() ? row.sifQuotation : (fresh.sifQuotation || ''),
       }
     }
-    return row
+    return {
+      ...row,
+      installerName: normalizeInstallerName(row.installerName),
+    }
   })
 
   const existingKeys = new Set<string>()
   for (const row of updatedExisting) {
-    const key = row.ticketId
-      ? `tk:${row.ticketId}|${row.installerName.trim().toLowerCase()}`
-      : `manual:${row.id}`
-    existingKeys.add(key)
+    existingKeys.add(makeRowKey(row))
   }
 
   const deduped: PayrollRow[] = []
   for (const row of incoming) {
-    const key = row.ticketId
-      ? `tk:${row.ticketId}|${row.installerName.trim().toLowerCase()}`
-      : `manual:${row.id}`
+    const key = makeRowKey(row)
     if (existingKeys.has(key)) continue
     existingKeys.add(key)
-    deduped.push(row)
+    deduped.push({
+      ...row,
+      installerName: normalizeInstallerName(row.installerName),
+    })
   }
 
   return [...updatedExisting, ...deduped]
 }
+
+// ── Saved entries + totals ───────────────────────────────────────────────────
+// Shared by the Payroll page and the week summary so both compute an installer's pay the same way.
+
+const toNum = (v: number | string | null | undefined): number => {
+  if (v == null) return 0
+  if (typeof v === 'number') return isNaN(v) ? 0 : v
+  const cleaned = String(v).replace(/[^0-9.-]/g, '')
+  if (!cleaned) return 0
+  const parsed = parseFloat(cleaned)
+  return isNaN(parsed) ? 0 : parsed
+}
+const moneyStr = (v: unknown) => (v != null ? String(v) : '')
+
+/** Maps a raw /v1/payroll entry (fees as numbers, customFields as a JSON string) to a PayrollRow. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function mapSavedPayrollEntry(e: any): PayrollRow {
+  return {
+    id: e.id || uid(),
+    ticketId: e.ticketId || undefined,
+    ticketNumber: e.ticketNumber || '',
+    installerName: normalizeInstallerName(e.installerName || ''),
+    workDate: e.workDate || '',
+    customerName: e.customerName || '',
+    cityAddress: e.cityAddress || '',
+    brandCapacity: e.brandCapacity || '',
+    sifQuotation: e.sifQuotation || '',
+    totalPipeLength: e.totalPipeLength || '',
+    amountCollected: moneyStr(e.amountCollected),
+    actualCollected: e.actualCollected || '',
+    installationUpload: e.installationUpload || '',
+    installationFee: moneyStr(e.installationFee),
+    earthGrounding: moneyStr(e.earthGrounding),
+    dailyAllowance: moneyStr(e.dailyAllowance),
+    excessCopperTube: moneyStr(e.excessCopperTube),
+    hauling: moneyStr(e.hauling),
+    dismantling: moneyStr(e.dismantling),
+    electricalWorks: moneyStr(e.electricalWorks),
+    chippingWorks: moneyStr(e.chippingWorks),
+    breaker: moneyStr(e.breaker),
+    powerSupplyLaborOnly: moneyStr(e.powerSupplyLaborOnly),
+    powerSupplyLaborMaterials: moneyStr(e.powerSupplyLaborMaterials),
+    specialBracketCatwalk: moneyStr(e.specialBracketCatwalk),
+    specialBracketWelding: moneyStr(e.specialBracketWelding),
+    excessCopperTubeLaborOnly: moneyStr(e.excessCopperTubeLaborOnly),
+    relocationAccuFcu: moneyStr(e.relocationAccuFcu),
+    systemReprocessLabor: moneyStr(e.systemReprocessLabor),
+    drainPumpInstallation: moneyStr(e.drainPumpInstallation),
+    scaffoldingInstallation: moneyStr(e.scaffoldingInstallation),
+    flushingOldPipe: moneyStr(e.flushingOldPipe),
+    sterneBracket: moneyStr(e.sterneBracket),
+    breakerInstallationLabor: moneyStr(e.breakerInstallationLabor),
+    chargingOfFreon: moneyStr(e.chargingOfFreon),
+    materialsReturn: moneyStr(e.materialsReturn),
+    installationChecklist: e.installationChecklist || '',
+    videoUpload: e.videoUpload || '',
+    remarks: e.remarks || '',
+    audited: e.audited || '',
+    status: e.status || 'PENDING',
+    customFields: (() => {
+      if (e.customFields && typeof e.customFields === 'object') return e.customFields
+      try { return e.customFields ? JSON.parse(e.customFields) : {} } catch { return {} }
+    })(),
+  }
+}
+
+// Per-installer deductions ride along in each row's customFields under reserved "ded:" keys.
+export const LATE_RATE_PER_MINUTE = 1.6
+export const UNIFORM_PRICE_PER_PC = 850
+export type DeductionKey =
+  | 'lateMinutes' | 'loan' | 'loanBalance' | 'incompleteUpload' | 'losses' | 'remitPenalty' | 'uniform' | 'uniformBalance'
+export const DEDUCTION_PREFIX = 'ded:'
+// Balances are a snapshot (latest wins); every other key is an amount that adds up.
+export const BALANCE_DEDUCTION_KEYS = new Set<DeductionKey>(['loanBalance', 'uniformBalance'])
+
+// Hold & release (carry-over) state rides along in customFields under reserved "hold:" keys —
+// same pattern as "ded:" deductions and "manual:" fee flags. See docs/payroll-hold-release-plan.md.
+export const HOLD_PREFIX = 'hold:'
+/** On hold in its own week — excluded from that week's totals, shown in the branch's Held Tickets view. */
+export const isHeldRow = (r: PayrollRow): boolean => r.customFields?.['hold:state'] === 'held'
+/** The original row after its hold was released — the payout now lives on its carry-over copy instead. */
+export const isReleasedOrig = (r: PayrollRow): boolean => r.customFields?.['hold:state'] === 'released'
+/** A carry-over copy landed in a later (target) week's month by a release. */
+export const isCarryOver = (r: PayrollRow): boolean => r.customFields?.['hold:carryOver'] === '1'
+/** Counts toward its own week's totals: not held, not a released original (its copy counts instead). */
+export const isActivePayRow = (r: PayrollRow): boolean => !isHeldRow(r) && !isReleasedOrig(r)
+
+export const customFieldsFeeTotal = (r: PayrollRow): number => {
+  if (!r.customFields) return 0
+  let sum = 0
+  for (const [k, v] of Object.entries(r.customFields)) {
+    if (k.startsWith(DEDUCTION_PREFIX) || k.startsWith('xfer:') || k.startsWith(MANUAL_FEE_PREFIX) || k.startsWith(HOLD_PREFIX)) continue
+    sum += toNum(v)
+  }
+  return sum
+}
+
+/** Mirrors the sheet's "PAYROLL DUE" — every fee-type column (shown or hidden) plus custom columns. */
+export const rowTotal = (r: PayrollRow): number =>
+  toNum(r.installationFee) + toNum(r.earthGrounding) + toNum(r.dailyAllowance)
+  + toNum(r.excessCopperTube) + toNum(r.hauling) + toNum(r.dismantling) + toNum(r.electricalWorks)
+  + toNum(r.chippingWorks) + toNum(r.breaker) + toNum(r.powerSupplyLaborOnly) + toNum(r.powerSupplyLaborMaterials)
+  + toNum(r.specialBracketCatwalk) + toNum(r.specialBracketWelding) + toNum(r.excessCopperTubeLaborOnly)
+  + toNum(r.relocationAccuFcu) + toNum(r.systemReprocessLabor) + toNum(r.drainPumpInstallation)
+  + toNum(r.scaffoldingInstallation) + toNum(r.flushingOldPipe) + toNum(r.sterneBracket)
+  + toNum(r.breakerInstallationLabor) + toNum(r.chargingOfFreon) + toNum(r.materialsReturn)
+  + customFieldsFeeTotal(r)
+
+export const installerTotal = (installerRows: PayrollRow[]) =>
+  installerRows.reduce((sum, r) => sum + rowTotal(r), 0)
+
+export const rawDeduction = (r: PayrollRow, key: DeductionKey) => r.customFields?.[DEDUCTION_PREFIX + key] || ''
+/** Amounts sum across every row in range (each week's value sits on that week's first job);
+ *  balances take the latest row that has one. */
+export const deductionValue = (rowsIn: PayrollRow[], key: DeductionKey): number => {
+  if (BALANCE_DEDUCTION_KEYS.has(key)) {
+    for (let i = rowsIn.length - 1; i >= 0; i--) {
+      const v = rawDeduction(rowsIn[i], key)
+      if (v) return toNum(v)
+    }
+    return 0
+  }
+  return rowsIn.reduce((sum, r) => sum + toNum(rawDeduction(r, key)), 0)
+}
+export const lateDeduction = (rowsIn: PayrollRow[]) => deductionValue(rowsIn, 'lateMinutes') * LATE_RATE_PER_MINUTE
+export const deductionTotal = (rowsIn: PayrollRow[]) =>
+  lateDeduction(rowsIn) + deductionValue(rowsIn, 'loan') + deductionValue(rowsIn, 'incompleteUpload')
+  + deductionValue(rowsIn, 'losses') + deductionValue(rowsIn, 'remitPenalty') + deductionValue(rowsIn, 'uniform')
+export const installerNet = (installerRows: PayrollRow[]) => installerTotal(installerRows) - deductionTotal(installerRows)

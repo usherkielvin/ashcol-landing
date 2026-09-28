@@ -6,7 +6,7 @@ import {
   Check, Eye, EyeOff,
   Camera, Calendar, User,
   Loader2, ChevronDown, Filter, Edit3, Shield,
-  Clock, Briefcase, UserCheck
+  Clock, Briefcase, UserCheck, KeyRound
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -17,6 +17,15 @@ import WarrantyRegistrationHistoryTable from '../components/WarrantyRegistration
 import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName, notifyEmployeesDirectoryUpdated, isWarrantyRegistrar } from '../utils/api'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 import { uploadReceiptImage } from '../services/supabaseStorage'
+
+function format8DigitId(id?: string | null): string {
+  if (!id) return '—'
+  const clean = id.replace(/[^a-zA-Z0-9]/g, '')
+  if (clean.length >= 8) {
+    return clean.slice(0, 8)
+  }
+  return clean.padStart(8, '0')
+}
 
 function formatDisplayDate(dateStr?: string | null): string {
   if (!dateStr) return '—'
@@ -67,6 +76,9 @@ interface Employee {
   street?: string
   landmark?: string
   skills?: string
+  /** Salaried in-house crew tag — technicians/installers tagged this way are excluded from
+   *  the per-job installer payroll sheet (that's for pakyaw/contract pay only). */
+  inHouse?: boolean
   dateHired?: string
   birthDate?: string
   viewBranchIds?: string
@@ -226,9 +238,14 @@ interface JobTitleMultiSelectProps {
   inputCls: string
   inputStyle: React.CSSProperties
   border: string
+  /** In-house (salaried) crew tag — shown as one more chip alongside the job titles, but kept
+   *  as its own field rather than folded into the jobTitle string (it's an employment
+   *  classification, not a role). Omit both props to hide the chip entirely. */
+  inHouse?: boolean
+  onToggleInHouse?: () => void
 }
 
-const JobTitleMultiSelect = ({ value, onChange, options, onAddCustom, inputCls, inputStyle, border }: JobTitleMultiSelectProps) => {
+const JobTitleMultiSelect = ({ value, onChange, options, onAddCustom, inputCls, inputStyle, border, inHouse, onToggleInHouse }: JobTitleMultiSelectProps) => {
   const selected = parseJobTitles(value)
   const [newTitle, setNewTitle] = useState('')
 
@@ -284,6 +301,27 @@ const JobTitleMultiSelect = ({ value, onChange, options, onAddCustom, inputCls, 
             </button>
           )
         })}
+        {onToggleInHouse && (
+          <button
+            type="button"
+            onClick={onToggleInHouse}
+            title="Salaried in-house crew — excluded from the installer payroll list"
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-black tracking-wider uppercase transition-all select-none cursor-pointer border ${
+              inHouse
+                ? 'bg-violet-500/15 border-violet-500 text-violet-600 dark:text-violet-400 shadow-sm shadow-violet-500/15'
+                : 'bg-white/80 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/80 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-white dark:hover:bg-slate-800'
+            }`}
+          >
+            <span className={`w-4 h-4 rounded-md flex items-center justify-center border transition-all ${
+              inHouse
+                ? 'bg-violet-500 border-violet-500 text-white'
+                : 'border-slate-300 dark:border-slate-600 bg-transparent'
+            }`}>
+              {inHouse && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+            </span>
+            IN-HOUSE
+          </button>
+        )}
       </div>
 
       {/* Add Custom Role */}
@@ -425,6 +463,7 @@ export default function Employees() {
     birthDate: '',
     profileImage: '',
     viewBranchIds: '',
+    inHouse: false,
   })
   const [showPass, setShowPass] = useState(false)
   const [saving,   setSaving]   = useState(false)
@@ -438,6 +477,7 @@ export default function Employees() {
     dateHired: '',
     birthDate: '',
     profileImage: '',
+    inHouse: false,
   })
   const [createSaving, setCreateSaving] = useState(false)
   const [createStep, setCreateStep] = useState<1 | 2 | 3>(1)
@@ -450,7 +490,7 @@ export default function Employees() {
     setFormErr('')
     setCreateForm({
       name: '', nickname: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
-      phone: '', personalEmail: '', dateHired: '', birthDate: '', profileImage: '',
+      phone: '', personalEmail: '', dateHired: '', birthDate: '', profileImage: '', inHouse: false,
     })
   }
 
@@ -459,7 +499,7 @@ export default function Employees() {
     setFormErr('')
     setCreateForm({
       name: '', nickname: '', email: '', branchId: '', role: 'EMPLOYEE', jobTitle: 'TECHNICIAN',
-      phone: '', personalEmail: '', dateHired: '', birthDate: '', profileImage: '',
+      phone: '', personalEmail: '', dateHired: '', birthDate: '', profileImage: '', inHouse: false,
     })
     setShowCreate(true)
   }
@@ -561,7 +601,7 @@ export default function Employees() {
 
       setEmployees(combined.map((s: any) => {
         const isMgmtOrAdmin = s.role?.toUpperCase() === 'MANAGEMENT' || s.role?.toUpperCase() === 'ADMIN'
-        const cleanJobTitle = s.jobTitle ? parseJobTitles(s.jobTitle).join(', ') : (isMgmtOrAdmin ? 'REGISTRATION' : '')
+        const cleanJobTitle = s.jobTitle ? parseJobTitles(s.jobTitle).join(', ') : ''
         return {
           id:          s.id,
           name:        formatPersonName(s.name || 'Unknown'),
@@ -580,6 +620,7 @@ export default function Employees() {
           barangay:    s.barangay    || '',
           street:      s.street      || '',
           landmark:    s.landmark    || '',
+          inHouse:     !!s.inHouse,
           dateHired:   s.dateHired   || '',
           createdAt:   s.createdAt,
           updatedAt:   s.updatedAt,
@@ -735,7 +776,7 @@ export default function Employees() {
 
   const mapApiUserToEmployee = (s: any, branchMap: Record<string, string>): Employee => {
     const isMgmtOrAdmin = s.role?.toUpperCase() === 'MANAGEMENT' || s.role?.toUpperCase() === 'ADMIN'
-    const cleanJobTitle = s.jobTitle ? parseJobTitles(s.jobTitle).join(', ') : (isMgmtOrAdmin ? 'REGISTRATION' : '')
+    const cleanJobTitle = s.jobTitle ? parseJobTitles(s.jobTitle).join(', ') : ''
     return {
       id: s.id,
       name: formatPersonName(s.name || 'Unknown'),
@@ -754,6 +795,7 @@ export default function Employees() {
       barangay: s.barangay || '',
       street: s.street || '',
       landmark: s.landmark || '',
+      inHouse: !!s.inHouse,
       dateHired: s.dateHired || '',
       birthDate: s.birthDate || '',
       viewBranchIds: s.viewBranchIds || '',
@@ -788,6 +830,7 @@ export default function Employees() {
       birthDate: emp.birthDate || '',
       profileImage: emp.profileImage || '',
       viewBranchIds: emp.viewBranchIds || '',
+      inHouse: !!emp.inHouse,
     })
     setFormErr('')
     setShowPass(false)
@@ -817,6 +860,7 @@ export default function Employees() {
         birthDate: editForm.birthDate || null,
         profileImage: editForm.profileImage,
         viewBranchIds: editForm.viewBranchIds ? editForm.viewBranchIds.trim() : null,
+        inHouse: editForm.inHouse,
       }
       if (editForm.newPassword.trim()) payload.password = editForm.newPassword.trim()
 
@@ -1024,6 +1068,7 @@ export default function Employees() {
             dateHired: createForm.dateHired || null,
             birthDate: createForm.birthDate || null,
             profileImage: createForm.profileImage,
+            inHouse: createForm.inHouse,
           }),
         })
       }
@@ -1427,6 +1472,17 @@ export default function Employees() {
                       {resolveLabel(e.role, e.jobTitle).toUpperCase()}
                     </span>
 
+                    {/* In-House Chip */}
+                    {e.inHouse && (
+                      <span
+                        className="text-[11px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wide border inline-flex items-center"
+                        style={{ backgroundColor: 'rgba(139,92,246,0.1)', color: '#8B5CF6', borderColor: 'rgba(139,92,246,0.3)' }}
+                        title="Salaried in-house crew — excluded from the installer payroll list"
+                      >
+                        IN-HOUSE
+                      </span>
+                    )}
+
                     {/* Branch Chip */}
                     {e.branchName && (
                       <span
@@ -1563,9 +1619,20 @@ export default function Employees() {
 
                     {/* Role */}
                     <td className="px-6 py-5 border-r text-center" style={{ borderColor: border }}>
-                      <span className="text-sm font-semibold tracking-wider whitespace-nowrap" style={{ color: rc.text }}>
-                        {resolveLabel(e.role, e.jobTitle).toUpperCase()}
-                      </span>
+                      <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                        <span className="text-sm font-semibold tracking-wider whitespace-nowrap" style={{ color: rc.text }}>
+                          {resolveLabel(e.role, e.jobTitle).toUpperCase()}
+                        </span>
+                        {e.inHouse && (
+                          <span
+                            className="text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wide border whitespace-nowrap"
+                            style={{ backgroundColor: 'rgba(139,92,246,0.1)', color: '#8B5CF6', borderColor: 'rgba(139,92,246,0.3)' }}
+                            title="Salaried in-house crew — excluded from the installer payroll list"
+                          >
+                            IN-HOUSE
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Branch */}
@@ -1735,33 +1802,17 @@ export default function Employees() {
 
                 {/* Badges Flow */}
                 <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap pt-0.5">
-                  {/* Role / Job Title Pills */}
-                  {parseJobTitles(selectedEmployee.jobTitle).length > 0 ? (
-                    parseJobTitles(selectedEmployee.jobTitle).map(jt => (
-                      <span
-                        key={jt}
-                        className="text-[11px] font-bold px-2.5 py-0.5 rounded-lg uppercase tracking-wide border shadow-xs"
-                        style={{
-                          backgroundColor: roleColor(selectedEmployee.role).bg,
-                          color: roleColor(selectedEmployee.role).text,
-                          borderColor: roleColor(selectedEmployee.role).border,
-                        }}
-                      >
-                        {jt}
-                      </span>
-                    ))
-                  ) : (
-                    <span
-                      className="text-[11px] font-bold px-2.5 py-0.5 rounded-lg uppercase tracking-wide border shadow-xs"
-                      style={{
-                        backgroundColor: roleColor(selectedEmployee.role).bg,
-                        color: roleColor(selectedEmployee.role).text,
-                        borderColor: roleColor(selectedEmployee.role).border,
-                      }}
-                    >
-                      {resolveLabel(selectedEmployee.role, selectedEmployee.jobTitle)}
-                    </span>
-                  )}
+                  {/* Primary Role Badge (clean, not access tags badges) */}
+                  <span
+                    className="text-[11px] font-black px-2.5 py-0.5 rounded-lg uppercase tracking-wider border shadow-xs"
+                    style={{
+                      backgroundColor: roleColor(selectedEmployee.role).bg,
+                      color: roleColor(selectedEmployee.role).text,
+                      borderColor: roleColor(selectedEmployee.role).border,
+                    }}
+                  >
+                    {formatRoleLabel(selectedEmployee.role)}
+                  </span>
 
                   {/* Branch Badge */}
                   {selectedEmployee.branchName && (
@@ -1775,6 +1826,17 @@ export default function Employees() {
                     >
                       <Building2 className="w-3 h-3 text-emerald-500 shrink-0" />
                       <span>{selectedEmployee.branchName}</span>
+                    </span>
+                  )}
+
+                  {/* In-House Badge */}
+                  {selectedEmployee.inHouse && (
+                    <span
+                      className="text-[11px] font-bold px-2.5 py-0.5 rounded-lg uppercase tracking-wide border shadow-xs"
+                      style={{ backgroundColor: 'rgba(139,92,246,0.1)', color: '#8B5CF6', borderColor: 'rgba(139,92,246,0.3)' }}
+                      title="Salaried in-house crew — excluded from the installer payroll list"
+                    >
+                      IN-HOUSE
                     </span>
                   )}
 
@@ -1839,10 +1901,10 @@ export default function Employees() {
                 </a>
               )}
               <button
-                onClick={() => copyToClipboard(selectedEmployee.id, 'id')}
+                onClick={() => copyToClipboard(format8DigitId(selectedEmployee.id), 'id')}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all hover:border-emerald-500 hover:text-emerald-500 active:scale-95"
                 style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                title="Copy Member ID"
+                title="Copy 8-digit Member ID"
               >
                 {copiedKey === 'id' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 text-emerald-500" />}
                 <span>{copiedKey === 'id' ? 'Copied ID' : 'Copy ID'}</span>
@@ -1884,18 +1946,27 @@ export default function Employees() {
             {activeDrawerTab === 'overview' && (
               <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 flex flex-col gap-6">
 
-                {/* Section 1: Contact & Workplace */}
+                {/* Section 1: Contact & Location */}
                 <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-emerald-500">
-                    <Mail className="w-3.5 h-3.5" />
-                    <span>Contact & Location</span>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-6 h-6 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
+                      <Mail className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>
+                      Contact & Location
+                    </span>
+                    <div className="flex-1 h-px" style={{ backgroundColor: border }} />
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     {/* Work Email */}
                     <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-emerald-500/40"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
+                        borderColor: inputBorder,
+                        backdropFilter: 'blur(8px)',
+                      }}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
@@ -1907,7 +1978,7 @@ export default function Employees() {
                         {selectedEmployee.email && (
                           <button
                             onClick={() => copyToClipboard(selectedEmployee.email, 'workEmail')}
-                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors"
+                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors cursor-pointer"
                             title="Copy email"
                           >
                             {copiedKey === 'workEmail' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
@@ -1921,8 +1992,12 @@ export default function Employees() {
 
                     {/* Personal Email */}
                     <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-blue-500/40"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
+                        borderColor: inputBorder,
+                        backdropFilter: 'blur(8px)',
+                      }}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
@@ -1934,7 +2009,7 @@ export default function Employees() {
                         {selectedEmployee.personalEmail && (
                           <button
                             onClick={() => copyToClipboard(selectedEmployee.personalEmail, 'personalEmail')}
-                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors"
+                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors cursor-pointer"
                             title="Copy personal email"
                           >
                             {copiedKey === 'personalEmail' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
@@ -1948,8 +2023,12 @@ export default function Employees() {
 
                     {/* Phone Number */}
                     <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-emerald-500/40"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
+                        borderColor: inputBorder,
+                        backdropFilter: 'blur(8px)',
+                      }}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
@@ -1961,7 +2040,7 @@ export default function Employees() {
                         {selectedEmployee.phone && (
                           <button
                             onClick={() => copyToClipboard(selectedEmployee.phone, 'phone')}
-                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors"
+                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors cursor-pointer"
                             title="Copy phone number"
                           >
                             {copiedKey === 'phone' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
@@ -1975,8 +2054,12 @@ export default function Employees() {
 
                     {/* Assigned Branch */}
                     <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-amber-500/40"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
+                        borderColor: inputBorder,
+                        backdropFilter: 'blur(8px)',
+                      }}
                     >
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-lg flex items-center justify-center text-amber-500 bg-amber-500/10 shrink-0">
@@ -1991,52 +2074,62 @@ export default function Employees() {
                   </div>
                 </div>
 
-                {/* Section 2: Role & Employment Details */}
+                {/* Section 2: Employment & Access Information */}
                 <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-emerald-500">
-                    <Briefcase className="w-3.5 h-3.5" />
-                    <span>Role & Employment Information</span>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-6 h-6 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
+                      <Briefcase className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>
+                      Employment & Access Information
+                    </span>
+                    <div className="flex-1 h-px" style={{ backgroundColor: border }} />
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    {/* Job Title */}
+                    {/* Access Tags (formerly Job Title & Roles) */}
                     <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all sm:col-span-2"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all sm:col-span-2 group hover:border-violet-500/40"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
+                        borderColor: inputBorder,
+                        backdropFilter: 'blur(8px)',
+                      }}
                     >
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-lg flex items-center justify-center text-violet-500 bg-violet-500/10 shrink-0">
-                          <Wrench className="w-3.5 h-3.5" />
+                          <KeyRound className="w-3.5 h-3.5" />
                         </div>
-                        <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>JOB TITLE & ROLES</span>
+                        <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
+                          ACCESS TAGS
+                        </span>
                       </div>
-                      <div className="flex flex-wrap gap-1.5 pt-1">
+                      <div className="text-sm font-bold select-text" style={{ color: textPrimary }}>
                         {parseJobTitles(selectedEmployee.jobTitle).length > 0 ? (
-                          parseJobTitles(selectedEmployee.jobTitle).map(jt => (
-                            <span
-                              key={jt}
-                              className="text-xs font-bold px-3 py-1 rounded-lg uppercase tracking-wide border shadow-xs"
-                              style={{
-                                backgroundColor: roleColor(selectedEmployee.role).bg,
-                                color: roleColor(selectedEmployee.role).text,
-                                borderColor: roleColor(selectedEmployee.role).border,
-                              }}
-                            >
-                              {jt}
-                            </span>
-                          ))
+                          <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                            {parseJobTitles(selectedEmployee.jobTitle).map((tag, idx, arr) => (
+                              <span key={tag} className="inline-flex items-center text-xs font-bold tracking-wide" style={{ color: textPrimary }}>
+                                <span>{tag}</span>
+                                {idx < arr.length - 1 && (
+                                  <span className="mx-2 opacity-30 select-none">•</span>
+                                )}
+                              </span>
+                            ))}
+                          </div>
                         ) : (
-                          <span className="text-sm font-bold uppercase" style={{ color: textPrimary }}>
-                            {resolveLabel(selectedEmployee.role, selectedEmployee.jobTitle)}
-                          </span>
+                          <span className="text-xs italic opacity-50 font-normal">No access tags assigned</span>
                         )}
                       </div>
                     </div>
 
                     {/* Date Hired */}
                     <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-emerald-500/40"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
+                        borderColor: inputBorder,
+                        backdropFilter: 'blur(8px)',
+                      }}
                     >
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
@@ -2058,8 +2151,12 @@ export default function Employees() {
 
                     {/* Birthdate */}
                     <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-pink-500/40"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
+                        borderColor: inputBorder,
+                        backdropFilter: 'blur(8px)',
+                      }}
                     >
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-lg flex items-center justify-center text-pink-500 bg-pink-500/10 shrink-0">
@@ -2074,18 +2171,27 @@ export default function Employees() {
                   </div>
                 </div>
 
-                {/* Section 3: System & Security Metadata */}
+                {/* Section 3: Account & System Information */}
                 <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-emerald-500">
-                    <Shield className="w-3.5 h-3.5" />
-                    <span>System & Account Metadata</span>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-6 h-6 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
+                      <Shield className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>
+                      Account & System Details
+                    </span>
+                    <div className="flex-1 h-px" style={{ backgroundColor: border }} />
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     {/* Member ID */}
                     <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-indigo-500/40"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
+                        borderColor: inputBorder,
+                        backdropFilter: 'blur(8px)',
+                      }}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
@@ -2095,22 +2201,35 @@ export default function Employees() {
                           <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>MEMBER ID</span>
                         </div>
                         <button
-                          onClick={() => copyToClipboard(selectedEmployee.id, 'memberId')}
-                          className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors"
-                          title="Copy Full Member ID"
+                          onClick={() => copyToClipboard(format8DigitId(selectedEmployee.id), 'memberId')}
+                          className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors cursor-pointer"
+                          title="Copy 8-digit Member ID"
                         >
                           {copiedKey === 'memberId' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                         </button>
                       </div>
-                      <div className="text-xs font-mono font-semibold break-all select-text" style={{ color: textPrimary }}>
-                        {selectedEmployee.id}
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="font-mono text-base font-extrabold tracking-[0.2em] px-3 py-1.5 rounded-xl select-all border shadow-xs"
+                          style={{
+                            backgroundColor: isLight ? 'rgba(241, 245, 249, 0.9)' : 'rgba(30, 41, 59, 0.7)',
+                            borderColor: isLight ? '#cbd5e1' : '#334155',
+                            color: isLight ? '#0f172a' : '#f8fafc',
+                          }}
+                        >
+                          {format8DigitId(selectedEmployee.id)}
+                        </span>
                       </div>
                     </div>
 
                     {/* Registered Date */}
                     <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-cyan-500/40"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
+                        borderColor: inputBorder,
+                        backdropFilter: 'blur(8px)',
+                      }}
                     >
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-lg flex items-center justify-center text-cyan-500 bg-cyan-500/10 shrink-0">
@@ -2125,8 +2244,12 @@ export default function Employees() {
 
                     {/* Combined Active & Last Login */}
                     <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-emerald-500/40"
+                      style={{
+                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
+                        borderColor: inputBorder,
+                        backdropFilter: 'blur(8px)',
+                      }}
                     >
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
@@ -2136,7 +2259,7 @@ export default function Employees() {
                       </div>
                       <div className="flex flex-col gap-0.5">
                         <div className="flex items-center gap-1.5 text-sm font-bold" style={{ color: selectedEmployee.isActive ? '#10B981' : textMuted }}>
-                          <span className={`w-2 h-2 rounded-full ${selectedEmployee.isActive ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                          <span className={`w-2 h-2 rounded-full ${selectedEmployee.isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
                           <span>{selectedEmployee.isActive ? 'Active Member' : 'Deactivated'}</span>
                         </div>
                         <div className="text-xs mt-0.5 flex items-center gap-1" style={{ color: textMuted }}>
@@ -2353,7 +2476,7 @@ export default function Employees() {
 
                 {/* ── Section: Job Details ── */}
                 <div className="border-t pt-4" style={{ borderColor: border }}>
-                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">SYSTEM & JOB SETTINGS</h4>
+                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">ROLE & ACCESS</h4>
                   {editTarget && editForm.role !== editTarget.role && (
                     <div className="mb-3 text-xs rounded-xl px-3 py-2.5 border" style={{ borderColor: 'rgba(59,130,246,0.25)', backgroundColor: 'rgba(59,130,246,0.08)', color: '#3B82F6' }}>
                       Role will change: {describeRoleChange(editTarget.role, editForm.role)}
@@ -2431,7 +2554,7 @@ export default function Employees() {
                     )}
                     {(editForm.role === 'EMPLOYEE' || editForm.role === 'MANAGEMENT') && (
                       <div className="col-span-1 sm:col-span-2">
-                        <Field label="JOB TITLE (SELECT ANY THAT APPLY)" labelColor={textMuted}>
+                        <Field label="ACCESS TAGS" labelColor={textMuted}>
                           <JobTitleMultiSelect
                             value={editForm.jobTitle}
                             onChange={next => setEditForm(p => ({ ...p, jobTitle: next }))}
@@ -2440,6 +2563,8 @@ export default function Employees() {
                             inputCls={inputCls}
                             inputStyle={inputStyle}
                             border={border}
+                            inHouse={editForm.inHouse}
+                            onToggleInHouse={() => setEditForm(p => ({ ...p, inHouse: !p.inHouse }))}
                           />
                         </Field>
                       </div>
@@ -2635,7 +2760,7 @@ export default function Employees() {
                   )}
                   {(createForm.role === 'EMPLOYEE' || createForm.role === 'MANAGEMENT') && (
                     <div className="sm:col-span-2">
-                      <Field label="JOB TITLE (SELECT ANY THAT APPLY)" labelColor={textMuted}>
+                      <Field label="ACCESS TAGS" labelColor={textMuted}>
                         <JobTitleMultiSelect
                           value={createForm.jobTitle}
                           onChange={next => setCreateForm(p => ({ ...p, jobTitle: next }))}
@@ -2644,6 +2769,8 @@ export default function Employees() {
                           inputCls={inputCls}
                           inputStyle={inputStyle}
                           border={border}
+                          inHouse={createForm.inHouse}
+                          onToggleInHouse={() => setCreateForm(p => ({ ...p, inHouse: !p.inHouse }))}
                         />
                       </Field>
                     </div>

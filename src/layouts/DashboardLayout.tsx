@@ -28,22 +28,17 @@ import {
   MdOutlineAltRoute,
   MdOutlineChecklist,
   MdOutlineInsertChartOutlined,
-  MdOutlineReceipt,
-  MdOutlineMonetizationOn,
-  MdOutlineBarChart,
   MdOutlineAccountBalanceWallet,
   MdOutlinePhone,
   MdOutlinePhoneInTalk,
-  MdOutlinePercent,
-  MdOutlineAttachMoney,
-  MdOutlinePayments,
   MdMenuBook,
   MdOutlinePerson,
   MdOutlineStorefront,
 } from 'react-icons/md'
 import { FiMinus, FiPlus } from 'react-icons/fi'
+import { DailyTransactionsIcon, ExpensesIcon, CollectionsIcon, CommissionsIcon, CashAdvanceIcon, PayoutsIcon } from '../components/icons/FinanceIcons'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortalAdmin, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry, formatBranchName, canMemberAccessRelaysAndTicketCreation, canMemberAccessDdrm, canMemberAccessPayroll, isSystemAdmin, isPortalStaffUser, isWarrantyRegistrar, getUserViewBranchIds, isBranchReadOnlyForUser, branchScopesMatch } from '../utils/api'
+import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortalAdmin, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry, formatBranchName, canMemberAccessRelaysAndTicketCreation, canMemberAccessDdrm, canMemberAccessPayroll, isSystemAdmin, isPortalStaffUser, isWarrantyRegistrar, getUserViewBranchIds, isBranchReadOnlyForUser, branchScopesMatch, isFranchiseBranch } from '../utils/api'
 import UserAvatar from '../components/UserAvatar'
 import MessagesDropdown from '../components/MessagesDropdown'
 import NotificationsDropdown from '../components/NotificationsDropdown'
@@ -120,14 +115,14 @@ function buildNavGroups(navLinks: NavLinkDef[]) {
       title: 'Finance',
       Icon: MdOutlineInsertChartOutlined,
       subItems: [
-        { name: 'Daily Transactions', icon: <MdOutlineBarChart size={16} />, path: findPath('Daily Transaction') },
-        { name: 'Expenses', icon: <MdOutlineReceipt size={16} />, path: findPath('Expense Records') },
-        { name: 'Collections', icon: <MdOutlineMonetizationOn size={16} />, path: findPath('For Collections') },
-        { name: 'Commissions', icon: <MdOutlinePercent size={16} />, path: findPath('Commissions') },
-        { name: 'Cash Advance', icon: <MdOutlineAttachMoney size={16} />, path: findPath('Cash Advance') },
-        { name: 'Payroll', icon: <MdOutlinePayments size={16} />, path: findPath('Payroll') },
-        { name: 'Bills', icon: <MdOutlineAccountBalanceWallet size={16} />, path: findPath('Bills') },
-        { name: 'Telecoms', icon: <MdOutlinePhone size={16} />, path: findPath('Telecoms') },
+        { name: 'Daily Transactions', icon: <DailyTransactionsIcon size={16} />, path: findPath('Daily Transaction') },
+        { name: 'Expenses', icon: <ExpensesIcon size={16} />, path: findPath('Expense Records') },
+        { name: 'Collections', icon: <CollectionsIcon size={16} />, path: findPath('For Collections') },
+        { name: 'Commissions', icon: <CommissionsIcon size={16} />, path: findPath('Commissions') },
+        { name: 'Cash Advance', icon: <CashAdvanceIcon size={16} />, path: findPath('Cash Advance') },
+        { name: 'Payouts', icon: <PayoutsIcon size={16} />, path: findPath('Payouts') },
+        // { name: 'Bills', icon: <MdOutlineAccountBalanceWallet size={16} />, path: findPath('Bills') },
+        // { name: 'Telecoms', icon: <MdOutlinePhone size={16} />, path: findPath('Telecoms') },
       ].filter(s => navLinks.some(l => l.path === s.path)),
     },
     {
@@ -221,11 +216,8 @@ export default function DashboardLayout() {
   const isLight = theme === 'light'
   const [branchLabel, setBranchLabel] = useState<string | null>(null)
 
-  const ignoreHoverUntilLeave = useRef(false)
-
   const collapseSidebar = () => {
     if (window.innerWidth < 768) return
-    ignoreHoverUntilLeave.current = true
     if (hoverDebounce.current) clearTimeout(hoverDebounce.current)
     if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
     if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
@@ -235,31 +227,30 @@ export default function DashboardLayout() {
     setSidebarCollapsed(true)
     navVisibleTimeout.current = setTimeout(() => {
       setShowCollapsedIcons(true)
-    }, 140)
+    }, 120)
   }
 
   const handleMouseEnter = () => {
-    if (ignoreHoverUntilLeave.current) return
     if (window.innerWidth < 768) return
-    // Debounce: cancel any pending leave, schedule enter with small delay to ignore rapid oscillations
     if (hoverDebounce.current) clearTimeout(hoverDebounce.current)
+    if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
+    if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
+
     hoverDebounce.current = setTimeout(() => {
-      if (ignoreHoverUntilLeave.current) return
-      if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
-      if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
-      if (sidebarCollapsed || (isHoverExpanded && !navVisible)) {
+      if (sidebarCollapsed || !navVisible) {
         setShowCollapsedIcons(false)
         setSidebarCollapsed(false)
         setIsHoverExpanded(true)
         setNavVisible(true)
       }
-    }, 60)
+    }, 40)
   }
 
   const handleMouseLeave = () => {
-    ignoreHoverUntilLeave.current = false
-    // Debounce: cancel any pending enter, schedule leave after debounce window
+    if (window.innerWidth < 768) return
     if (hoverDebounce.current) clearTimeout(hoverDebounce.current)
+    if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
+
     hoverDebounce.current = setTimeout(() => {
       if (isHoverExpanded) {
         setNavVisible(false)
@@ -268,9 +259,9 @@ export default function DashboardLayout() {
           setSidebarCollapsed(true)
           setIsHoverExpanded(false)
           setShowCollapsedIcons(true)
-        }, 160)
+        }, 120)
       }
-    }, 60)
+    }, 100)
   }
 
   const isPortalAdminUser = isPortalAdmin(user?.role)
@@ -388,6 +379,9 @@ export default function DashboardLayout() {
             || cleanName.includes('TAGUIG')
           // Taguig (Sales/Services) is always available; other inactive branches are hidden.
           if (b.isActive === false && !isTaguigRow) continue
+          // Franchise branches (Valenzuela, Batangas, Gen. Trias) don't show in this
+          // portal-wide switcher — they're only selectable from the ticket edit form.
+          if (Boolean((b as any).isFranchise) || isFranchiseBranch(b.id) || isFranchiseBranch(b.name)) continue
           if (b.id === 'BR-TAGUIG-SALES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') {
             if (!allList.some(item => item.id === 'BR-TAGUIG-SALES')) {
               allList.push({ id: 'BR-TAGUIG-SALES', name: 'TAGUIG - SALES' })
@@ -541,21 +535,21 @@ export default function DashboardLayout() {
     { name: 'For Collections',  path: '/collections',     icon: CircleDollarSign, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Commissions',      path: '/commissions',     icon: Percent,          roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Cash Advance',     path: '/cash-advances',   icon: Wallet,           roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
-    { name: 'Payroll',          path: '/payroll',          icon: Banknote,        roles: canAccessPayroll ? ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] : ['admin', 'management'] },
+    { name: 'Payouts',          path: '/payouts',          icon: Banknote,        roles: canAccessPayroll ? ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] : ['admin', 'management'] },
     { name: 'Daily Transaction', path: '/audit-report',   icon: TrendingUp,      roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic', 'technician', 'driver'] },
     { name: 'HRIS',              path: '/admin-hris',       icon: Calendar,        roles: ['admin', 'management', 'manager'] },
     { name: 'DDRM',              path: '/ddrm',             icon: Route,           roles: canAccessDdrm ? ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] : ['admin', 'management', 'manager'] },
     { name: 'Request Forms',     path: '/operations-forms', icon: ClipboardList, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
-    { name: 'Bills',             path: '/admin-bills',      icon: Landmark,        roles: ['admin', 'management', 'manager'] },
-    { name: 'Telecoms',          path: '/admin-telecom',    icon: Wifi,            roles: ['admin', 'management', 'manager'] },
+    // { name: 'Bills',             path: '/admin-bills',      icon: Landmark,        roles: ['admin', 'management', 'manager'] },
+    // { name: 'Telecoms',          path: '/admin-telecom',    icon: Wifi,            roles: ['admin', 'management', 'manager'] },
   ]
 
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'management' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic' || role === 'technician' || role === 'driver'
 
-  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'LINEUP', 'Request Forms', 'Members', 'Vehicles', 'Directory', ...(canAccessPayroll ? ['Payroll'] : []), ...(canAccessRelays ? ['Relays', 'Bookings'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
-  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'LINEUP', 'Request Forms', 'Members', 'Vehicles', 'Directory', ...(canAccessPayroll ? ['Payroll'] : []), ...(canAccessRelays ? ['Relays', 'Bookings'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
+  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'LINEUP', 'Request Forms', 'Members', 'Vehicles', 'Directory', ...(canAccessPayroll ? ['Payouts'] : []), ...(canAccessRelays ? ['Relays', 'Bookings'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
+  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'LINEUP', 'Request Forms', 'Members', 'Vehicles', 'Directory', ...(canAccessPayroll ? ['Payouts'] : []), ...(canAccessRelays ? ['Relays', 'Bookings'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 
@@ -579,7 +573,7 @@ export default function DashboardLayout() {
   useEffect(() => {
     if (!user) return
     const currentPath = location.pathname
-    const alwaysAllowed = ['/profile', '/tickets/create', '/create-ticket']
+    const alwaysAllowed = ['/profile', '/tickets/create', '/create-ticket', '/request-forms-archive']
     if (alwaysAllowed.includes(currentPath) || currentPath.startsWith('/messages')) return
 
 
@@ -638,7 +632,9 @@ export default function DashboardLayout() {
     if (mainContentRef.current) {
       mainContentRef.current.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior })
     }
-    if (window.innerWidth >= 768) {
+    if (window.innerWidth < 768) {
+      setSidebarOpen(false)
+    } else if (isHoverExpanded) {
       collapseSidebar()
     }
   }, [location.pathname, location.search])
@@ -706,8 +702,10 @@ export default function DashboardLayout() {
             src={logoImg}
             alt="ASHCOL"
             onClick={() => {
-              if (sidebarCollapsed) {
-                ignoreHoverUntilLeave.current = false
+              if (sidebarCollapsed || isHoverExpanded) {
+                if (hoverDebounce.current) clearTimeout(hoverDebounce.current)
+                if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
+                if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
                 setShowCollapsedIcons(false)
                 setSidebarCollapsed(false)
                 setIsHoverExpanded(false)
@@ -751,7 +749,7 @@ export default function DashboardLayout() {
               opacity: navVisible ? 1 : 0,
               transition: 'opacity 120ms ease',
               pointerEvents: navVisible ? 'auto' : 'none',
-              display: !navVisible && !sidebarCollapsed ? 'none' : undefined,
+              display: !navVisible && sidebarCollapsed ? 'none' : undefined,
             }}
           >
             {navVisible && (<>
@@ -771,7 +769,7 @@ export default function DashboardLayout() {
                     onMouseEnter={() => preloadPath(link.path)}
                     onClick={() => {
                       setSidebarOpen(false)
-                      collapseSidebar()
+                      if (isHoverExpanded) collapseSidebar()
                     }}
                     className="group flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150 relative"
                     style={isActive
@@ -865,7 +863,7 @@ export default function DashboardLayout() {
                                 e.stopPropagation()
                                 setActiveSubItem(sub.name)
                                 setSidebarOpen(false)
-                                collapseSidebar()
+                                if (isHoverExpanded) collapseSidebar()
                               }}
                               className={`relative flex items-center gap-2 text-[13.5px] font-semibold transition-colors py-1 ${
                                 isSubActive ? 'text-white' : 'text-white/50 hover:text-white'
@@ -904,17 +902,44 @@ export default function DashboardLayout() {
                   ? item.groupPaths.some(p => location.pathname === p || location.pathname.startsWith(p + '/'))
                   : (location.pathname === item.path || location.pathname.startsWith(item.path + '/'))
                 return (
-                  <Link
+                  <div
                     key={item.key}
-                    to={item.path}
-                    onMouseEnter={() => preloadPath(item.path)}
+                    role="button"
+                    tabIndex={0}
+                    onMouseEnter={() => {
+                      preloadPath(item.path)
+                      handleMouseEnter()
+                    }}
                     onClick={() => {
-                      setSidebarOpen(false)
-                      collapseSidebar()
-                      if (item.groupPaths) setOpenAccordion(item.name)
+                      if (item.groupPaths) {
+                        if (hoverDebounce.current) clearTimeout(hoverDebounce.current)
+                        if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
+                        if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
+                        setShowCollapsedIcons(false)
+                        setSidebarCollapsed(false)
+                        setIsHoverExpanded(true)
+                        setNavVisible(true)
+                        setOpenAccordion(item.name)
+                      } else {
+                        navigate(item.path)
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        if (item.groupPaths) {
+                          setShowCollapsedIcons(false)
+                          setSidebarCollapsed(false)
+                          setIsHoverExpanded(true)
+                          setNavVisible(true)
+                          setOpenAccordion(item.name)
+                        } else {
+                          navigate(item.path)
+                        }
+                      }
                     }}
                     title={item.name}
-                    className="flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-150 relative"
+                    className="flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-150 relative cursor-pointer"
                     style={isActive
                       ? { color: '#10B981', backgroundColor: sidebarActiveBg }
                       : { color: sidebarIconColor }}
@@ -935,7 +960,7 @@ export default function DashboardLayout() {
                     {isValidElement(item.icon)
                       ? cloneElement(item.icon, { color: isActive ? '#10B981' : '#ffffff', className: 'shrink-0' })
                       : item.icon}
-                  </Link>
+                  </div>
                 )
               })}
             </div>
@@ -953,7 +978,7 @@ export default function DashboardLayout() {
 
         {/* ── Global Header (Mobile/Tablet/Desktop) ──────────────── */}
         <header 
-          className="flex-none z-30 backdrop-blur-md w-full min-w-0 max-w-full relative"
+          className={`flex-none z-30 backdrop-blur-md w-full min-w-0 max-w-full relative ${location.pathname.startsWith('/messages') ? 'hidden md:block' : ''}`}
           style={{ 
             backgroundColor: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(10,17,32,0.8)'
           }}
@@ -982,7 +1007,7 @@ export default function DashboardLayout() {
                   <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
                     Search
                   </h1>
-                ) : currentPage === 'Relays' || currentPage === 'Employees' || currentPage === 'Members' || currentPage === 'Registration' || currentPage === 'Request Forms' || currentPage === 'Payroll' || currentPage === 'For Collections' || currentPage === 'Cash Advance' || location.pathname === '/payroll' || location.pathname === '/operations-forms' || location.pathname === '/collections' || location.pathname === '/cash-advances' ? (
+                ) : currentPage === 'Relays' || currentPage === 'Employees' || currentPage === 'Members' || currentPage === 'Registration' || currentPage === 'Request Forms' || currentPage === 'Request Forms Archive' || currentPage === 'Payouts' || currentPage === 'Payroll' || currentPage === 'For Collections' || currentPage === 'Cash Advance' || location.pathname.startsWith('/payouts') || location.pathname.startsWith('/payroll') || location.pathname === '/operations-forms' || location.pathname === '/request-forms-archive' || location.pathname === '/collections' || location.pathname === '/cash-advances' ? (
                   <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
                     {currentPage}
                   </h1>
@@ -1091,10 +1116,9 @@ export default function DashboardLayout() {
                     setProfileOpen(next)
                   }}
                   title={user?.name}
-                  className="flex items-center gap-1.5 p-1 pr-1.5 rounded-xl transition-all"
-                  style={{ backgroundColor: profileOpen ? hoverBg : 'transparent' }}
-                  onMouseEnter={e => { if (!profileOpen) (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg }}
-                  onMouseLeave={e => { if (!profileOpen) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent' }}
+                  className={`flex items-center gap-1.5 p-1 pr-1.5 rounded-xl transition-colors ${
+                    profileOpen ? 'bg-slate-200/70 dark:bg-slate-800' : 'hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                  }`}
                 >
                   <UserAvatar name={user?.name} imageUrl={user?.picture} size="xs" ring className="shrink-0" />
                   <ChevronDown
@@ -1120,10 +1144,8 @@ export default function DashboardLayout() {
                       <Link
                         to="/profile"
                         onClick={() => setProfileOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60"
                         style={{ color: textPrimary }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
                       >
                         <UserCircle className="w-4 h-4 text-green-500" />
                         My Profile
@@ -1132,10 +1154,8 @@ export default function DashboardLayout() {
                         <Link
                           to="/profile?tab=history"
                           onClick={() => setProfileOpen(false)}
-                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60"
                           style={{ color: textPrimary }}
-                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
-                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
                         >
                           <History className="w-4 h-4 text-green-500" />
                           Ticket History
@@ -1145,10 +1165,8 @@ export default function DashboardLayout() {
                         <Link
                           to="/profile?tab=registrations"
                           onClick={() => setProfileOpen(false)}
-                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60"
                           style={{ color: textPrimary }}
-                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
-                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
                         >
                           <ClipboardCheck className="w-4 h-4 text-green-500" />
                           Registered Tickets
@@ -1158,10 +1176,8 @@ export default function DashboardLayout() {
                         <Link
                           to="/profile?tab=users"
                           onClick={() => setProfileOpen(false)}
-                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60"
                           style={{ color: textPrimary }}
-                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
-                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
                         >
                           <Shield className="w-4 h-4 text-green-500" />
                           User Management
@@ -1170,10 +1186,8 @@ export default function DashboardLayout() {
                       <Link
                         to="/profile?tab=privacy"
                         onClick={() => setProfileOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors"
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60"
                         style={{ color: textPrimary }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
                       >
                         <Settings className="w-4 h-4 text-green-500" />
                         Settings &amp; Privacy
@@ -1182,11 +1196,10 @@ export default function DashboardLayout() {
                       <div className="mx-3 my-1.5" style={{ borderTop: `1px solid ${inputBorder}` }} />
 
                       <button
+                        type="button"
                         onClick={toggleTheme}
-                        className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-left transition-colors"
+                        className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60"
                         style={{ color: textPrimary }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
                       >
                         <span className="flex items-center gap-3">
                           {isLight ? <Moon className="w-4 h-4 text-green-500" /> : <Sun className="w-4 h-4" style={{ color: '#F59E0B' }} />}
@@ -1197,7 +1210,7 @@ export default function DashboardLayout() {
                           style={{ backgroundColor: isLight ? inputBorder : '#10B981' }}
                         >
                           <span
-                            className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all"
+                            className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all duration-150"
                             style={{ left: isLight ? '2px' : 'calc(100% - 18px)' }}
                           />
                         </span>
@@ -1206,11 +1219,10 @@ export default function DashboardLayout() {
                       <div className="mx-3 my-1.5" style={{ borderTop: `1px solid ${inputBorder}` }} />
 
                       <button
+                        type="button"
                         onClick={() => { setProfileOpen(false); logout() }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-left transition-colors hover:text-red-500"
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-red-500"
                         style={{ color: textMuted }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = hoverBg}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
                       >
                         <LogOut className="w-4 h-4" />
                         Logout
@@ -1231,9 +1243,9 @@ export default function DashboardLayout() {
           className={
             currentPage === 'DDRM'
               ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-2 md:p-3"
-              : currentPage === 'Payroll'
+              : (currentPage === 'Payouts' || currentPage === 'Payroll')
                 ? "flex-1 flex flex-col min-h-0 overflow-hidden relative px-1.5 py-2 md:px-2 md:py-2.5"
-              : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search')
+              : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'Messages' || location.pathname.startsWith('/messages'))
                 ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
                 : (currentPage === 'Request Forms' || currentPage === 'Operations Forms')
                   ? "flex-1 overflow-y-auto px-6 py-6 relative"
@@ -1249,7 +1261,7 @@ export default function DashboardLayout() {
                    zIndex: 0,
                  }} />
           )}
-          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'DDRM' || currentPage === 'Payroll') ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
+          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'DDRM' || currentPage === 'Payouts' || currentPage === 'Payroll' || currentPage === 'Messages' || location.pathname.startsWith('/messages')) ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
             {/* Do not key Outlet by pathname — that remounts Schedules on every nav and forces a reload spinner. */}
             <Suspense fallback={
               <div className="flex items-center justify-center min-h-[50vh] w-full transition-opacity duration-200">

@@ -41,7 +41,12 @@ export function DispatchSection({
     <section>
       <FormSectionHead step={step} icon={<Truck className="w-3.5 h-3.5" />} title="Dispatch" subtitle={subtitle} />
       <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
-        <FormField label={isTaguigServices ? 'Technician' : 'Installer / Technician'} className="md:col-span-4">
+        <div className="md:col-span-4">
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="font-bold uppercase tracking-wide block text-slate-500 dark:text-slate-400 text-[10.5px]">
+              {isTaguigServices ? 'Technician' : 'Installer / Technician'}
+            </label>
+          </div>
           <select
             value={installerName || ''}
             onChange={e => onInstallerChange(e.target.value)}
@@ -53,7 +58,7 @@ export function DispatchSection({
               <option key={opt.id} value={opt.name}>{opt.label || opt.name}</option>
             ))}
           </select>
-        </FormField>
+        </div>
         <FormField label="Driver" className="md:col-span-4">
           <input
             type="text"
