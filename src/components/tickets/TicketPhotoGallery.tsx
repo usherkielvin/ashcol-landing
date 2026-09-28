@@ -432,9 +432,6 @@ export function TicketPhotoGallery({
                 canManage={canManage}
                 deletingId={deletingId}
                 tileStyle={tileStyle}
-                textMuted={textMuted}
-                textPrimary={textPrimary}
-                border={border}
                 onView={() => setLightboxIndex(i)}
                 onEdit={() => startEditDescription(photo)}
                 onDelete={() => askDelete(photo)}
@@ -450,7 +447,6 @@ export function TicketPhotoGallery({
                 border={border}
                 cardBg={cardBg}
                 textPrimary={textPrimary}
-                textMuted={textMuted}
                 onDescChange={(val) =>
                   setStaged(prev => prev.map(s => s.key === slot.key ? { ...s, description: val, validationError: undefined } : s))
                 }
@@ -637,7 +633,7 @@ export function TicketPhotoGallery({
 /** Already-uploaded photo tile with hover overlay + edit/delete buttons. */
 function UploadedPhotoCell({
   photo, index, canManage, deletingId,
-  tileStyle, textMuted, textPrimary, border,
+  tileStyle,
   onView, onEdit, onDelete,
 }: {
   photo: TicketPhoto
@@ -645,9 +641,6 @@ function UploadedPhotoCell({
   canManage: boolean
   deletingId: string | null
   tileStyle: React.CSSProperties
-  textMuted: string
-  textPrimary: string
-  border: string
   onView: () => void
   onEdit: () => void
   onDelete: () => void
@@ -725,7 +718,7 @@ function UploadedPhotoCell({
 
 /** Staged slot: image dropped but not yet uploaded. Has inline text field + Upload button. */
 function StagedSlotCell({
-  slot, tileStyle, border, cardBg, textPrimary, textMuted,
+  slot, tileStyle, border, cardBg, textPrimary,
   onDescChange, onUpload, onClear,
 }: {
   slot: { key: string; previewUrl: string; description: string; validationError?: string }
@@ -733,7 +726,6 @@ function StagedSlotCell({
   border: string
   cardBg: string
   textPrimary: string
-  textMuted: string
   onDescChange: (val: string) => void
   onUpload: () => void
   onClear: () => void
