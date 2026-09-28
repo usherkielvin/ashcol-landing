@@ -1586,7 +1586,26 @@ export default function Payouts() {
       setReleaseFor(null)
       setReleaseTargetWeek(null)
       setReleaseApprovalNote('')
-      await loadAndSync(true)
+      // Both writes already landed on the server (mutateSavedMonth above) — patch local state
+      // with the same change instead of a full loadAndSync, which re-runs the schedule sync for
+      // every visible month and made this feel stuck. Only splice in the copy if its month is
+      // actually in view; otherwise it wouldn't render here anyway.
+      setRows(prev => {
+        const updated = prev.map(r => rowMatchKey(r) === origKey ? {
+          ...r,
+          customFields: {
+            ...(r.customFields || {}),
+            'hold:state': 'released',
+            'hold:releasedAt': releasedAt,
+            'hold:releasedBy': releasedBy,
+            'hold:approvalNote': approvalNote,
+            'hold:targetWeekFrom': targetWeek.from,
+            'hold:targetWeekTo': targetWeek.to,
+            'hold:copyId': copyMarker,
+          },
+        } : r)
+        return monthsToFetch.includes(copyMonth) ? [...updated, copyRow] : updated
+      })
       void refreshHeldTickets()
     } finally {
       setReleaseSubmitting(false)
@@ -1642,7 +1661,22 @@ export default function Payouts() {
         return
       }
 
-      await loadAndSync(true)
+      // Both writes already landed (mutateSavedMonth above) — patch local state instead of a
+      // full loadAndSync, which re-runs the schedule sync for every visible month.
+      setRows(prev => prev
+        .filter(r => r.customFields?.['hold:copyMarker'] !== marker)
+        .map(r => {
+          if (rowMatchKey(r) !== origKey) return r
+          const cf = { ...(r.customFields || {}) }
+          cf['hold:state'] = 'held'
+          delete cf['hold:releasedAt']
+          delete cf['hold:releasedBy']
+          delete cf['hold:approvalNote']
+          delete cf['hold:targetWeekFrom']
+          delete cf['hold:targetWeekTo']
+          delete cf['hold:copyId']
+          return { ...r, customFields: cf }
+        }))
       void refreshHeldTickets()
     } finally {
       setUndoingRowKey(null)
@@ -4954,6 +4988,7 @@ export default function Payouts() {
             { label: 'Incomplete Upload', amount: moneyField('incompleteUpload', deductionValue(installerRows, 'incompleteUpload')), remarks: remark('Missing photos, video or checklist') },
             { label: 'Losses / Material Checklist', amount: moneyField('losses', deductionValue(installerRows, 'losses')), remarks: remark('Lost tools or unreturned materials') },
             { label: 'Remit', amount: moneyField('remitPenalty', deductionValue(installerRows, 'remitPenalty')), remarks: remark('No remit — ×3 charges') },
+            { label: 'Grooming', amount: moneyField('grooming', deductionValue(installerRows, 'grooming')), remarks: remark('Haircut, uniform cleanliness, etc.') },
             {
               label: 'Uniform',
               sub: `₱${peso(UNIFORM_PRICE_PER_PC)} / pc`,

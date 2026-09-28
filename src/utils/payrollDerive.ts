@@ -584,7 +584,7 @@ export function mapSavedPayrollEntry(e: any): PayrollRow {
 export const LATE_RATE_PER_MINUTE = 1.6
 export const UNIFORM_PRICE_PER_PC = 850
 export type DeductionKey =
-  | 'lateMinutes' | 'loan' | 'loanBalance' | 'incompleteUpload' | 'losses' | 'remitPenalty' | 'uniform' | 'uniformBalance'
+  | 'lateMinutes' | 'loan' | 'loanBalance' | 'incompleteUpload' | 'losses' | 'remitPenalty' | 'uniform' | 'uniformBalance' | 'grooming'
 export const DEDUCTION_PREFIX = 'ded:'
 // Balances are a snapshot (latest wins); every other key is an amount that adds up.
 export const BALANCE_DEDUCTION_KEYS = new Set<DeductionKey>(['loanBalance', 'uniformBalance'])
@@ -642,4 +642,5 @@ export const lateDeduction = (rowsIn: PayrollRow[]) => deductionValue(rowsIn, 'l
 export const deductionTotal = (rowsIn: PayrollRow[]) =>
   lateDeduction(rowsIn) + deductionValue(rowsIn, 'loan') + deductionValue(rowsIn, 'incompleteUpload')
   + deductionValue(rowsIn, 'losses') + deductionValue(rowsIn, 'remitPenalty') + deductionValue(rowsIn, 'uniform')
+  + deductionValue(rowsIn, 'grooming')
 export const installerNet = (installerRows: PayrollRow[]) => installerTotal(installerRows) - deductionTotal(installerRows)
