@@ -356,7 +356,7 @@ export default function DailyAuditReport() {
     if (!row.id) return
     setConfirmModal({
       title: 'Clear DTR Record',
-      message: `Are you sure you want to clear all data for ${row.branchName} on this date?\n\nThis will permanently delete the report.`,
+      message: `Are you sure you want to clear all data for ${formatBranchName(row.branchName)} on this date?\n\nThis will permanently delete the report.`,
       confirmText: 'Clear',
       cancelText: 'Cancel',
       type: 'danger',
@@ -636,7 +636,7 @@ export default function DailyAuditReport() {
       `\nBranch Breakdown (${visibleRows.length} branches):`,
       ...visibleRows.map(r => {
         const net = computeNetSales(r)
-        return `- ${r.branchName}: Gross Sales: ₱${peso(r.grossSales)}, Net Sales: ₱${peso(net)}, Cash: ₱${peso(r.totalCashCollection)}, Online: ₱${peso(r.totalOnlineCollection)}, Expenses: ₱${peso(r.totalExpenses)}, Target: ₱${peso(r.targetDailyQuota)}, Diff: ₱${peso(r.difference)}, Remarks: ${r.remarks || r.status}`
+        return `- ${formatBranchName(r.branchName)}: Gross Sales: ₱${peso(r.grossSales)}, Net Sales: ₱${peso(net)}, Cash: ₱${peso(r.totalCashCollection)}, Online: ₱${peso(r.totalOnlineCollection)}, Expenses: ₱${peso(r.totalExpenses)}, Target: ₱${peso(r.targetDailyQuota)}, Diff: ₱${peso(r.difference)}, Remarks: ${r.remarks || r.status}`
       })
     ].join('\n')
 

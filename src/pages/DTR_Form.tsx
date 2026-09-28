@@ -14,6 +14,7 @@ import {
   findBranchListEntry,
   branchEntryMatchesGlobal,
   parseGlobalBranchScope,
+  formatBranchName,
   isPortalAdmin,
   type BranchListEntry,
 } from '../utils/api'
@@ -182,6 +183,11 @@ const cleanInstallerName = (name: string, currentBranchName?: string) => {
         prefixes.push(firstWord)
       }
 
+      // Branch may be spelled with or without the ñ (BIÑAN / BINAN) in installer text.
+      const plain = cleanBranch.normalize('NFD').replace(/[̀-ͯ]/g, '')
+      if (plain !== cleanBranch) prefixes.push(plain)
+      if (/BINAN/.test(cleanBranch)) prefixes.push(cleanBranch.replace(/BINAN/g, 'BIÑAN'))
+
       // Sort by length descending to match longest first
       prefixes.sort((a, b) => b.length - a.length)
 
@@ -267,6 +273,7 @@ const INCENTIVES_ENABLED = false
 
 const getTrNoPrefix = (branchName: string, auditLine?: string | null) => {
   const clean = branchName.toUpperCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '') // BIÑAN → BINAN so the ñ isn't stripped to "BIAN"
     .replace(/^(ASHCOL|ASHCOL\s*-)\s*/i, '')
     .replace(/[^A-Z0-9\s]/g, '')
     .trim()
@@ -3795,7 +3802,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                 </tbody>
               </table>
               <div className="mt-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 px-3 py-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                {(branchName || 'No branch selected').toUpperCase()} - {formatReviewDateTime(reviewStartedAt || new Date())}
+                {(formatBranchName(branchName) || 'No branch selected').toUpperCase()} - {formatReviewDateTime(reviewStartedAt || new Date())}
               </div>
             </div>
           </div>

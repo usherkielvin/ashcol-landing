@@ -51,6 +51,11 @@ export function cleanInstallerName(name: string, currentBranchName?: string): st
         prefixes.push(firstWord)
       }
 
+      // Branch may be spelled with or without the ñ (BIÑAN / BINAN) in installer text.
+      const plain = cleanBranch.normalize('NFD').replace(/[̀-ͯ]/g, '')
+      if (plain !== cleanBranch) prefixes.push(plain)
+      if (/BINAN/.test(cleanBranch)) prefixes.push(cleanBranch.replace(/BINAN/g, 'BIÑAN'))
+
       prefixes.sort((a, b) => b.length - a.length)
 
       for (const prefix of prefixes) {

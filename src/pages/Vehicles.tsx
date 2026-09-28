@@ -161,7 +161,6 @@ export default function Vehicles() {
         <VehicleDiaryModal
           vehicle={diaryVehicle}
           branchName={branchName(diaryVehicle.branchId)}
-          canManage={canEdit}
           onEdit={canEdit ? () => { setForm({ vehicle: diaryVehicle }); setDiaryVehicle(null) } : undefined}
           onClose={() => setDiaryVehicle(null)}
         />
@@ -189,7 +188,7 @@ export default function Vehicles() {
         <div>
           <h1 className="text-2xl font-black tracking-tight" style={{ color: textPrimary }}>Vehicles</h1>
           <p className="text-sm mt-1" style={{ color: textMuted }}>
-            {isAdmin ? 'Fleet across all branches' : 'Your branch fleet'} · driver assignment, coding days and per-vehicle expense diary.
+            {isAdmin ? 'Fleet across all branches' : 'Your branch fleet'} · driver assignment, coding days and automated vehicle records.
           </p>
         </div>
         {canAdd && (

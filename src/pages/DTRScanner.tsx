@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL } from '../utils/api'
+import { API_BASE_URL, formatBranchName } from '../utils/api'
 
 interface BranchOption { id: string; name: string }
 
@@ -462,7 +462,7 @@ export default function DTRScanner() {
         <h2 className="text-2xl font-black" style={{ color: textPrimary }}>Branch Audit Saved!</h2>
         <p className="text-sm" style={{ color: textMuted }}>The scanned DTR data has been added to the audit summary table.</p>
         <p className="text-xs font-semibold px-3 py-1.5 rounded-full" style={{ backgroundColor: 'rgba(16,185,129,0.1)', color: accent }}>
-          {form.branchName || 'Branch'} · {form.date}
+          {formatBranchName(form.branchName) || 'Branch'} · {form.date}
         </p>
         <div className="flex gap-3 mt-2">
           <button
@@ -736,7 +736,7 @@ export default function DTRScanner() {
             <div className="mt-6 pt-5 flex items-center justify-between" style={{ borderTop: `1px solid ${border}` }}>
               {form.branchName && (
                 <span className="text-xs font-semibold px-3 py-1.5 rounded-full" style={{ backgroundColor: 'rgba(16,185,129,0.1)', color: accent }}>
-                  {form.branchName}
+                  {formatBranchName(form.branchName)}
                 </span>
               )}
               <button

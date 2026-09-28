@@ -9,6 +9,7 @@ export interface Vehicle {
   driverName: string | null
   codingDay: string | null
   photoUrl: string | null
+  odometer: number | null
   active: boolean
   createdAt: string | null
   updatedAt: string | null
@@ -69,6 +70,7 @@ export async function createVehicle(payload: {
   branchId?: string
   driverName?: string
   codingDay?: string
+  odometer?: number
 }): Promise<Vehicle> {
   const res = await fetch(`${API_BASE_URL}/vehicles`, {
     method: 'POST',
@@ -87,6 +89,7 @@ export async function updateVehicle(
     branchId: string
     driverName: string
     codingDay: string
+    odometer: number
     active: boolean
   }>,
 ): Promise<Vehicle> {

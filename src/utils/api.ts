@@ -801,7 +801,7 @@ export function formatDisplayUserLabel(label?: string | null): string {
 /** Canonical short labels used in the admin branch switcher (prod UI). */
 const BRANCH_DISPLAY_BY_ID: Record<string, string> = {
   'BR-BATANGAS': 'BATANGAS',
-  'BR-BINAN': 'BINAN',
+  'BR-BINAN': 'BIÑAN',
   'BR-BULACAN': 'BULACAN',
   'BR-CALAUAN': 'CALAUAN',
   'BR-CANDELARIA': 'CANDELARIA',
@@ -810,13 +810,13 @@ const BRANCH_DISPLAY_BY_ID: Record<string, string> = {
   'BR-LAGUNA': 'LAGUNA',
   'BR-PAMPANGA': 'PAMPANGA',
   'BR-RIZAL': 'RIZAL',
-  'BR-SAN-PEDRO': 'BINAN',
-  'BR-SANPEDRO': 'BINAN',
+  'BR-SAN-PEDRO': 'BIÑAN',
+  'BR-SANPEDRO': 'BIÑAN',
   'BR-SILANG': 'SILANG',
   'BR-TAGUIG-SALES': 'TAGUIG SALES',
   'BR-TAGUIG-SERVICES': 'TAGUIG SERVICES',
   'BR-VALENZUELA': 'VALENZUELA',
-  'A7F3BA63-F5F0-4903-A037-9F72403E50DD': 'BINAN',
+  'A7F3BA63-F5F0-4903-A037-9F72403E50DD': 'BIÑAN',
 }
 
 /**
@@ -854,7 +854,7 @@ export function formatBranchName(name?: string | null, branchId?: string | null)
   if (upper.includes('GENTRI') || upper.includes('GENERAL TRIAS')) return 'GENTRI'
   if (upper.includes('VALENZUELA')) return 'VALENZUELA'
   if (upper.includes('BINAN') || upper.includes('BIÑAN') || upper.includes('SAN PEDRO') || upper.includes('SANPEDRO')) {
-    return 'BINAN'
+    return 'BIÑAN'
   }
   if (upper.includes('LAGUNA') && !upper.includes('CALAUAN')) return 'LAGUNA'
 

@@ -36,6 +36,7 @@ export default function VehicleFormModal({ theme, vehicle, branches, defaultBran
   const [brandModel, setBrandModel] = useState(vehicle?.brandModel || '')
   const [branchId, setBranchId] = useState(vehicle ? (vehicle.branchId || '') : defaultBranchId)
   const [driverName, setDriverName] = useState(vehicle?.driverName || '')
+  const [odometer, setOdometer] = useState(vehicle?.odometer != null ? String(vehicle.odometer) : '')
   const [photo, setPhoto] = useState<PickedPhoto | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -59,6 +60,7 @@ export default function VehicleFormModal({ theme, vehicle, branches, defaultBran
         branchId,
         driverName: driverName.trim(),
         codingDay,
+        odometer: odometer.trim() ? Number(odometer) : undefined,
       }
       saved = vehicle ? await updateVehicle(vehicle.id, payload) : await createVehicle(payload)
       if (photo) await uploadVehiclePhoto(saved.id, photo.blob, photo.filename)
@@ -134,6 +136,18 @@ export default function VehicleFormModal({ theme, vehicle, branches, defaultBran
             <div className="flex flex-col gap-1">
               <label className={label} style={{ color: theme.textMuted }}>Assigned driver</label>
               <input value={driverName} onChange={e => setDriverName(e.target.value)} placeholder="Driver name" className={field} style={fieldStyle} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className={label} style={{ color: theme.textMuted }}>Odometer (km)</label>
+              <input
+                type="number"
+                min="0"
+                value={odometer}
+                onChange={e => setOdometer(e.target.value)}
+                placeholder="e.g. 45000"
+                className={field}
+                style={fieldStyle}
+              />
             </div>
             <div className="flex flex-col gap-1.5">
               <label className={label} style={{ color: theme.textMuted }}>Coding day · automatic from plate</label>
