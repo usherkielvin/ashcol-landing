@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatBranchName, isPortalAdmin, isPayrollMember, isFranchiseBranch, formatPersonName } from '../utils/api'
+import { API_BASE_URL, formatBranchName, isPortalAdmin, isPayrollMember, isFranchiseBranch, formatPersonName, fetchTicketByNumber } from '../utils/api'
 import {
   branchWeekCycle,
   weeksOfMonth,
@@ -24,6 +24,8 @@ import {
 } from '../utils/payrollWeeks'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 import WeekSummaryModal from '../components/WeekSummaryModal'
+import { TicketDetailsModal } from '../components/tickets/TicketDetailsModal'
+import type { Ticket } from '../utils/ticketTypes'
 import {
   fetchAndMapPayroll,
   deduplicateAndMergePayroll,
@@ -43,6 +45,16 @@ import {
   DEDUCTION_PREFIX,
   BALANCE_DEDUCTION_KEYS,
   HOLD_PREFIX,
+  TEXT_FIELD_PREFIX,
+  PAY_PREFIX,
+  PAYMENT_STATUS_OPTIONS,
+  payFactor,
+  paymentStatusOf,
+  paymentStatusLabel,
+  hasPendingBalance,
+  parseAdjustmentLog,
+  type AdjustmentLogEntry,
+  customFieldsForSave,
   isHeldRow,
   isCarryOver,
   isActivePayRow,
@@ -65,6 +77,7 @@ const peso = (v: number | string | null | undefined) => {
   const n = num(v)
   return n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
+const pesoSigned = (n: number) => `${n < 0 ? '−' : ''}₱${peso(Math.abs(n))}`
 const shortDate = (ymd: string) => {
   if (!ymd) return ''
   const [y, m, d] = ymd.split('-').map(Number)
@@ -98,7 +111,7 @@ const avatarColor = (name: string) => {
 
 // Legacy date helpers removed — week logic now lives in payrollWeeks.ts
 
-const rowAddOns = (r: PayrollRow): number => Math.max(0, rowTotal(r) - num(r.installationFee))
+const rowAddOns = (r: PayrollRow): number => Math.max(0, rowTotal(r) - num(r.installationFee) * payFactor(r))
 
 // A job counts once its schedule status is a DONE outcome — install, cleaning, checkup, service,
 // etc. — so service branches (mostly cleanings) don't read as zero work. installerRows is already
@@ -123,13 +136,13 @@ const completedJobsBreakdown = (installerRows: PayrollRow[]) => {
 const parseMoneyText = (s: string | number | null | undefined) => num(s)
 const remittanceTotal = (rowsIn: PayrollRow[]) => rowsIn.reduce((sum, r) => sum + parseMoneyText(r.actualCollected), 0)
 // A carry-over's full payout counts as Add-ons (Add-ons = gross − base), never Base Install.
-const baseInstallTotal = (rowsIn: PayrollRow[]) => rowsIn.reduce((sum, r) => sum + (isCarryOver(r) ? 0 : num(r.installationFee)), 0)
+const baseInstallTotal = (rowsIn: PayrollRow[]) => rowsIn.reduce((sum, r) => sum + (isCarryOver(r) ? 0 : num(r.installationFee) * payFactor(r)), 0)
 
 
 
 type ColumnKey =
   | 'date' | 'ticketNumber' | 'customerName' | 'brandCapacity' | 'remit'
-  | 'installationUpload' | 'installationFee' | 'totalPipeLength' | 'earthGrounding' | 'dailyAllowance'
+  | 'installationUpload' | 'paymentStatus' | 'installationFee' | 'totalPipeLength' | 'earthGrounding' | 'dailyAllowance'
   | 'excessCopperTube' | 'hauling' | 'dismantling' | 'electricalWorks' | 'chippingWorks' | 'breaker'
   | 'powerSupplyLaborOnly' | 'powerSupplyLaborMaterials' | 'specialBracketCatwalk' | 'specialBracketWelding'
   | 'excessCopperTubeLaborOnly' | 'relocationAccuFcu' | 'systemReprocessLabor' | 'drainPumpInstallation'
@@ -178,7 +191,8 @@ const COLUMN_DEFS: ColumnDef[] = [
   { key: 'customerName', label: 'Customer', width: 220, align: 'left', pinned: true, readOnlyWhenSynced: true },
   { key: 'brandCapacity', label: 'Brand', width: 150, align: 'left', pinned: true },
   { key: 'remit', label: 'Remit', width: 120, align: 'right', pinned: true },
-  { key: 'installationUpload', label: 'Status', width: 130, align: 'left', pinned: true },
+  { key: 'installationUpload', label: 'Status', width: 130, align: 'left', pinned: true, readOnlyWhenSynced: true },
+  { key: 'paymentStatus', label: 'Payment', width: 130, align: 'left', pinned: true },
   { key: 'installationFee', label: 'Install Fee', width: 100, align: 'right', pinned: true, isMoney: true },
   { key: 'totalPipeLength', label: 'Pipe Length', width: 90, align: 'right', category: 'standard' },
   { key: 'earthGrounding', label: 'Earth Grounding', width: 100, align: 'right', category: 'standard', isMoney: true },
@@ -409,7 +423,10 @@ export default function Payouts() {
     if (installerSlug) {
       const clean = normalizeSlug(installerSlug)
       const compact = compactSlug(installerSlug)
-      const allNames = Array.from(new Set(rows.map(r => resolveGroupKey(r.installerName)).filter(Boolean)))
+      // Only installers who actually have rows in the viewed week can be re-selected from the URL —
+      // otherwise this fights the "fall back to the roster" effect below (e.g. right after an
+      // adjustment/hold is undone and the installer has nothing left in the week) and the page blinks.
+      const allNames = Array.from(new Set(rows.filter(r => rowInActiveWindow(r)).map(r => resolveGroupKey(r.installerName)).filter(Boolean)))
       // 1. Exact slug match (e.g. "allan-bellen" or "allanbellen")
       let matched = allNames.find(n => normalizeSlug(n) === clean || compactSlug(n) === compact)
       // 2. Prefix / first name match (e.g. "allan" matches "ALLAN BELLEN")
@@ -440,6 +457,7 @@ export default function Payouts() {
     } else if (!installerSlug && !urlInstaller && selectedInstaller) {
       setSelectedInstaller(null)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [installerSlug, searchParams, rows, selectedInstaller])
 
   const handleSelectInstaller = useCallback((name: string | null) => {
@@ -471,11 +489,78 @@ export default function Payouts() {
   const [heldTickets, setHeldTickets] = useState<{ row: PayrollRow; month: string }[]>([])
   const [heldInstallerFilter, setHeldInstallerFilter] = useState('')
   const [heldSearch, setHeldSearch] = useState('')
-  const [releaseFor, setReleaseFor] = useState<{ row: PayrollRow; month: string } | null>(null)
+  const [releaseFor, setReleaseFor] = useState<{ row: PayrollRow; month: string; kind?: 'balance' } | null>(null)
+  // Unpaid-ticket 50% balances still owed (see payFactor) — shown in the Held Tickets modal.
+  const [balanceTickets, setBalanceTickets] = useState<{ row: PayrollRow; month: string }[]>([])
   const [releaseTargetWeek, setReleaseTargetWeek] = useState<PayrollWeek | null>(null)
   const [releaseApprovalNote, setReleaseApprovalNote] = useState('')
   const [releaseSubmitting, setReleaseSubmitting] = useState(false)
   const [undoingRowKey, setUndoingRowKey] = useState<string | null>(null)
+  // Balance adjustment on a closed week's ticket + its correction history.
+  const [adjustRow, setAdjustRow] = useState<{ row: PayrollRow; month: string } | null>(null)
+  const [adjustEdits, setAdjustEdits] = useState<Record<string, string>>({})
+  const [adjustReason, setAdjustReason] = useState('')
+  const [adjustTargetWeek, setAdjustTargetWeek] = useState<PayrollWeek | null>(null)
+  const [adjustSubmitting, setAdjustSubmitting] = useState(false)
+  const [correctionsOpen, setCorrectionsOpen] = useState(false)
+  const [correctionsSearch, setCorrectionsSearch] = useState('')
+  const [corrections, setCorrections] = useState<{ row: PayrollRow; month: string }[]>([])
+  const [selectedTicketForModal, setSelectedTicketForModal] = useState<Ticket | null>(null)
+  const [loadingTicketModal, setLoadingTicketModal] = useState(false)
+
+  const handleOpenTicketModal = async (row: PayrollRow) => {
+    const tn = (row.ticketNumber || row.ticketId || '').trim()
+    if (!tn) return
+
+    setLoadingTicketModal(true)
+    try {
+      const token = getToken()
+      let ticketData: Ticket | null = null
+      if (row.ticketNumber) {
+        ticketData = await fetchTicketByNumber(token, row.ticketNumber) as Ticket | null
+      }
+      if (!ticketData && row.ticketId) {
+        const res = await fetch(`${API_BASE_URL}/tickets/${encodeURIComponent(row.ticketId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (res.ok) {
+          const json = await res.json()
+          ticketData = json?.data?.ticket || json?.data || json?.ticket || json
+        }
+      }
+
+      if (ticketData) {
+        setSelectedTicketForModal(ticketData)
+      } else {
+        setSelectedTicketForModal({
+          id: row.ticketId || tn,
+          ticketNumber: tn,
+          customerName: row.customerName || 'Customer',
+          location: { address: row.cityAddress || '' },
+          installerName: row.installerName || '',
+          unitType: row.brandCapacity || '',
+          status: row.installationUpload || 'DONE',
+          branchId: branchFilter,
+          remarks: row.remarks || '',
+        } as unknown as Ticket)
+      }
+    } catch (err) {
+      console.warn('Failed to load ticket details:', err)
+      setSelectedTicketForModal({
+        id: row.ticketId || tn,
+        ticketNumber: tn,
+        customerName: row.customerName || 'Customer',
+        location: { address: row.cityAddress || '' },
+        installerName: row.installerName || '',
+        unitType: row.brandCapacity || '',
+        status: row.installationUpload || 'DONE',
+        branchId: branchFilter,
+        remarks: row.remarks || '',
+      } as unknown as Ticket)
+    } finally {
+      setLoadingTicketModal(false)
+    }
+  }
   // Installer job list's horizontal scroll — which edges still hide columns (drives the fade +
   // arrow cues) and whether it's scrolled at all (drives the pinned-column shadow).
   const listScrollRef = useRef<HTMLDivElement | null>(null)
@@ -653,7 +738,8 @@ export default function Payouts() {
   const [customColumnDefs, setCustomColumnDefs] = useState<CustomColumnDef[]>(() => {
     try {
       const raw = localStorage.getItem(CUSTOM_COLUMNS_KEY)
-      return raw ? JSON.parse(raw) : []
+      const saved: CustomColumnDef[] = raw ? JSON.parse(raw) : []
+      return saved.filter(c => !/^(ded:|xfer:|manual:|hold:|txt:|pay:)/.test(c.key))
     } catch {
       return []
     }
@@ -1159,7 +1245,10 @@ export default function Payouts() {
     remarks: r.remarks || null,
     audited: r.audited || null,
     status: r.status || 'PENDING',
-    customFields: r.customFields && Object.keys(r.customFields).length > 0 ? JSON.stringify(r.customFields) : null,
+    customFields: (() => {
+      const cf = customFieldsForSave(r)
+      return Object.keys(cf).length > 0 ? JSON.stringify(cf) : null
+    })(),
   }))
 
   // Core background save routine
@@ -1197,6 +1286,9 @@ export default function Payouts() {
     bId: string,
     monthKey: string,
     mutate: (rowsIn: PayrollRow[]) => PayrollRow[],
+    // The backend answers a save that touched a locked (closed-week) row with 200 but silently
+    // drops it. When given, this must find proof of the write in the saved entries the PUT returns.
+    expect?: string,
   ): Promise<boolean> => {
     if (!bId || !monthKey) return false
     try {
@@ -1215,7 +1307,12 @@ export default function Payouts() {
         headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ branchId: bId, periodMonth: monthKey, entries: buildPayrollEntries(mutated) }),
       })
-      return putRes.ok
+      if (!putRes.ok) return false
+      if (expect) {
+        const saved = await putRes.json().catch(() => null)
+        return JSON.stringify(saved ?? '').includes(expect)
+      }
+      return true
     } catch (e) {
       console.error('Failed to mutate saved payroll month:', e)
       return false
@@ -1315,7 +1412,7 @@ export default function Payouts() {
         for (const r of combinedSavedRows) {
           if (r.customFields) {
             for (const k of Object.keys(r.customFields)) {
-              if (k.startsWith('ded:') || k.startsWith('xfer:') || k.startsWith(MANUAL_FEE_PREFIX) || k.startsWith(HOLD_PREFIX)) continue
+              if (k.startsWith('ded:') || k.startsWith('xfer:') || k.startsWith(MANUAL_FEE_PREFIX) || k.startsWith(HOLD_PREFIX) || k.startsWith(TEXT_FIELD_PREFIX) || k.startsWith(PAY_PREFIX)) continue
               if (!known.has(k)) {
                 known.add(k)
                 const label = k.replace(/^custom_/, '').replace(/_/g, ' ')
@@ -1497,9 +1594,191 @@ export default function Payouts() {
     }
   }
 
-  const openReleaseModal = (row: PayrollRow, month: string) => {
+  // Same 3-month scan as refreshHeldTickets, for tickets whose withheld 50% is still unreleased.
+  const refreshBalances = useCallback(async () => {
+    if (!branchFilter) { setBalanceTickets([]); return }
+    try {
+      const months = [activeMonth, prevMonth(activeMonth), prevMonth(prevMonth(activeMonth))]
+      const collected: { row: PayrollRow; month: string }[] = []
+      const seen = new Set<string>()
+      for (const m of months) {
+        const params = new URLSearchParams({ branchId: branchFilter, month: m })
+        const res = await fetch(`${API_BASE_URL}/v1/payroll?${params.toString()}`, { headers: { Authorization: `Bearer ${getToken()}` } })
+        if (!res.ok) continue
+        const list = await res.json()
+        for (const r of (Array.isArray(list) ? list : []).map(mapSavedPayrollEntry)) {
+          if (!hasPendingBalance(r)) continue
+          const k = rowMatchKey(r)
+          if (seen.has(k)) continue
+          seen.add(k)
+          collected.push({ row: r, month: m })
+        }
+      }
+      setBalanceTickets(collected)
+    } catch (e) {
+      console.error('Failed to load pending payout balances:', e)
+    }
+  }, [branchFilter, activeMonth])
+
+  useEffect(() => { void refreshBalances() }, [refreshBalances])
+  // A status change autosaves after a short debounce; re-scan a moment later so the count catches up.
+  useEffect(() => {
+    const t = setTimeout(() => { void refreshBalances() }, 1800)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows])
+
+  // Change a split ticket's payment status from the balances list. Works in a closed week too
+  // (backend allows pay: tag changes there) and always keeps the split so the payout can't jump.
+  const setBalancePaymentStatus = async (row: PayrollRow, month: string, status: string) => {
+    if (!branchFilter) return
+    const key = rowMatchKey(row)
+    const ok = await mutateSavedMonth(branchFilter, month, rowsIn => rowsIn.map(r => rowMatchKey(r) === key ? {
+      ...r,
+      customFields: { ...(r.customFields || {}), 'pay:status': status, 'pay:split': '1' },
+    } : r))
+    if (!ok) {
+      setConfirmDialog({ title: 'Update Failed', message: 'Could not update the payment status. Please try again.', confirmText: 'OK', variant: 'info', onConfirm: () => {} })
+      return
+    }
+    await loadAndSync(true)
+    void refreshBalances()
+  }
+
+  // Every ticket with at least one logged correction (same 3-month scan as the held/balance lists).
+  const refreshCorrections = useCallback(async () => {
+    if (!branchFilter) { setCorrections([]); return }
+    try {
+      const months = [activeMonth, prevMonth(activeMonth), prevMonth(prevMonth(activeMonth))]
+      const collected: { row: PayrollRow; month: string }[] = []
+      const seen = new Set<string>()
+      for (const m of months) {
+        const params = new URLSearchParams({ branchId: branchFilter, month: m })
+        const res = await fetch(`${API_BASE_URL}/v1/payroll?${params.toString()}`, { headers: { Authorization: `Bearer ${getToken()}` } })
+        if (!res.ok) continue
+        const list = await res.json()
+        for (const r of (Array.isArray(list) ? list : []).map(mapSavedPayrollEntry)) {
+          if (isCarryOver(r) || parseAdjustmentLog(r).length === 0) continue
+          const k = rowMatchKey(r)
+          if (seen.has(k)) continue
+          seen.add(k)
+          collected.push({ row: r, month: m })
+        }
+      }
+      setCorrections(collected)
+    } catch (e) {
+      console.error('Failed to load correction history:', e)
+    }
+  }, [branchFilter, activeMonth])
+
+  useEffect(() => { void refreshCorrections() }, [refreshCorrections])
+
+  // Money columns a correction can touch (Materials Return is free text, so it's excluded).
+  const getAdjustableCols = (): { key: string; label: string }[] => [
+    ...COLUMN_DEFS.filter(c => c.isMoney && c.key !== 'materialsReturn').map(c => ({ key: c.key, label: c.label })),
+    ...customColumnDefs.map(c => ({ key: c.key, label: c.label })),
+  ]
+
+  const openAdjustModal = (row: PayrollRow) => {
+    const today = todayYMD()
+    const firstOpen = [...weeksOfMonth(activeMonth, cycle), ...weeksOfMonth(nextMonth(activeMonth), cycle)]
+      .find(w => w.to >= today && !closures.some(c => c.branchId === branchFilter && c.weekFrom === w.from && c.weekTo === w.to))
+    setAdjustRow({ row, month: saveMonthOf(row) })
+    setAdjustEdits({})
+    setAdjustReason('')
+    setAdjustTargetWeek(firstOpen ?? null)
+  }
+
+  // Post a balance correction for a closed-week ticket: the closed row stays frozen, the difference
+  // (per fee column, add OR deduct) lands as an adjustment row in the chosen open week, and the
+  // change is logged on the original ticket. Inserted first; rolled back if logging fails.
+  const submitAdjust = async () => {
+    if (!adjustRow || !branchFilter || !adjustTargetWeek || !adjustReason.trim()) return
+    const { row: origin, month: originMonth } = adjustRow
+    const changes = getAdjustableCols().flatMap(col => {
+      const raw = adjustEdits[col.key]
+      if (raw === undefined || raw === '') return []
+      const from = num(getColAccessor(col.key).get(origin))
+      const to = num(raw)
+      const delta = Math.round((to - from) * 100) / 100
+      return delta === 0 ? [] : [{ key: col.key, label: col.label, from, to, delta }]
+    })
+    if (changes.length === 0) return
+    setAdjustSubmitting(true)
+    try {
+      const targetWeek = adjustTargetWeek
+      const copyMonth = targetWeek.from.slice(0, 7)
+      const marker = `adj-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+      const at = new Date().toISOString()
+      const by = userDisplayName
+      const reason = adjustReason.trim()
+      const net = Math.round(changes.reduce((sum, c) => sum + c.delta, 0) * 100) / 100
+      const summary = changes.map(c => `${c.label} ${c.delta > 0 ? '+' : '−'}₱${peso(Math.abs(c.delta))}`).join(' · ')
+      const fixedMoney = new Set(COLUMN_DEFS.filter(c => c.isMoney).map(c => c.key))
+      const originWeek = origin.workDate ? weekContaining(origin.workDate, cycle) : null
+
+      const adj: Record<string, unknown> = { ...origin, id: marker, ticketId: undefined, installationUpload: 'ADJUSTMENT', amountCollected: '', actualCollected: '', remarks: '', audited: '' }
+      fixedMoney.forEach(k => { adj[k] = '' })
+      const cf: Record<string, string> = {}
+      for (const c of changes) {
+        if (fixedMoney.has(c.key)) adj[c.key] = String(c.delta)
+        else cf[c.key] = String(c.delta)
+      }
+      cf['hold:carryOver'] = '1'
+      cf['hold:originMonth'] = originMonth
+      cf['hold:originWeekFrom'] = originWeek?.from || ''
+      cf['hold:originWeekTo'] = originWeek?.to || ''
+      cf['hold:originTicketId'] = origin.ticketId || ''
+      cf['hold:targetWeekFrom'] = targetWeek.from
+      cf['hold:targetWeekTo'] = targetWeek.to
+      cf['hold:saveMonth'] = copyMonth
+      cf['hold:approvalNote'] = reason
+      cf['hold:releasedBy'] = by
+      cf['hold:releasedAt'] = at
+      cf['hold:copyMarker'] = marker
+      cf['pay:adjust'] = '1'
+      cf['pay:factor'] = '1'
+      cf['pay:adjSummary'] = summary
+      adj.customFields = cf
+
+      const insertOk = await mutateSavedMonth(branchFilter, copyMonth, rowsIn => [...rowsIn, adj as unknown as PayrollRow], marker)
+      if (!insertOk) {
+        setConfirmDialog({ title: 'Adjustment Failed', message: 'Could not post the adjustment into the target week. No changes were made.', confirmText: 'OK', variant: 'info', onConfirm: () => {} })
+        return
+      }
+      const entry: AdjustmentLogEntry = { id: marker, at, by, reason, targetWeekFrom: targetWeek.from, targetWeekTo: targetWeek.to, net, changes }
+      const origKey = rowMatchKey(origin)
+      const logOk = await mutateSavedMonth(branchFilter, originMonth, rowsIn => rowsIn.map(r => rowMatchKey(r) === origKey ? {
+        ...r,
+        customFields: { ...(r.customFields || {}), 'pay:adjLog': JSON.stringify([...parseAdjustmentLog(r), entry]) },
+      } : r), marker)
+      if (!logOk) {
+        await mutateSavedMonth(branchFilter, copyMonth, rowsIn => rowsIn.filter(r => r.customFields?.['hold:copyMarker'] !== marker))
+        setConfirmDialog({ title: 'Adjustment Failed', message: 'Could not record the correction on the original ticket, so it was rolled back. No changes were made.', confirmText: 'OK', variant: 'info', onConfirm: () => {} })
+        return
+      }
+      setAdjustRow(null)
+      void refreshCorrections()
+      // Jump to the week the adjustment landed in so the new row (and the updated payout) is visible
+      // right away — the closed week you came from intentionally still shows the original paid amounts.
+      setActiveMonth(targetWeek.owningMonth)
+      setActiveWeek(targetWeek)
+      setConfirmDialog({
+        title: 'Adjustment Posted',
+        message: `${net < 0 ? 'Deducted' : 'Added'} ${pesoSigned(net)} on ${origin.ticketNumber || 'this ticket'} in Week ${targetWeek.weekNumber} (${targetWeek.label}).`,
+        detail: summary,
+        confirmText: 'OK',
+        variant: 'info',
+        onConfirm: () => {},
+      })
+    } finally {
+      setAdjustSubmitting(false)
+    }
+  }
+
+  const openReleaseModal = (row: PayrollRow, month: string, kind?: 'balance') => {
     const defaultOpen = activeWeek && !closures.some(c => c.branchId === branchFilter && c.weekFrom === activeWeek.from && c.weekTo === activeWeek.to)
-    setReleaseFor({ row, month })
+    setReleaseFor({ row, month, kind })
     setReleaseTargetWeek(defaultOpen ? activeWeek : null)
     setReleaseApprovalNote('')
     setHeldTicketsOpen(false)
@@ -1512,11 +1791,13 @@ export default function Payouts() {
     if (!releaseFor || !branchFilter || !releaseTargetWeek) return
     setReleaseSubmitting(true)
     try {
-      const { row: heldRow, month: originMonth } = releaseFor
+      const { row: heldRow, month: originMonth, kind } = releaseFor
+      const isBalance = kind === 'balance'
       const targetWeek = releaseTargetWeek
       const releasedAt = new Date().toISOString()
       const releasedBy = userDisplayName
-      const approvalNote = releaseApprovalNote.trim()
+      const approvalNote = releaseApprovalNote.trim() || (isBalance ? 'Remaining 50% balance' : '')
+      const originWeek = isBalance && heldRow.workDate ? weekContaining(heldRow.workDate, cycle) : null
       const copyMarker = `cp-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
       const copyMonth = targetWeek.from.slice(0, 7)
 
@@ -1524,14 +1805,18 @@ export default function Payouts() {
       // installer's week (see setDeduction) — never carry them into the copy's own new period.
       const copyFields: Record<string, string> = {}
       for (const [k, v] of Object.entries(heldRow.customFields || {})) {
-        if (k.startsWith(HOLD_PREFIX) || k.startsWith(DEDUCTION_PREFIX)) continue
+        if (k.startsWith(HOLD_PREFIX) || k.startsWith(DEDUCTION_PREFIX) || k.startsWith(PAY_PREFIX)) continue
         copyFields[k] = v
+      }
+      if (isBalance) {
+        copyFields['pay:factor'] = '0.5'
+        copyFields['pay:balance'] = '1'
       }
       copyFields['hold:carryOver'] = '1'
       copyFields['hold:originRowId'] = heldRow.id
       copyFields['hold:originMonth'] = originMonth
-      copyFields['hold:originWeekFrom'] = heldRow.customFields?.['hold:heldWeekFrom'] || ''
-      copyFields['hold:originWeekTo'] = heldRow.customFields?.['hold:heldWeekTo'] || ''
+      copyFields['hold:originWeekFrom'] = originWeek?.from || heldRow.customFields?.['hold:heldWeekFrom'] || ''
+      copyFields['hold:originWeekTo'] = originWeek?.to || heldRow.customFields?.['hold:heldWeekTo'] || ''
       copyFields['hold:originTicketId'] = heldRow.ticketId || ''
       copyFields['hold:targetWeekFrom'] = targetWeek.from
       copyFields['hold:targetWeekTo'] = targetWeek.to
@@ -1543,7 +1828,7 @@ export default function Payouts() {
 
       const copyRow: PayrollRow = { ...heldRow, id: copyMarker, ticketId: undefined, customFields: copyFields }
 
-      const insertOk = await mutateSavedMonth(branchFilter, copyMonth, rowsIn => [...rowsIn, copyRow])
+      const insertOk = await mutateSavedMonth(branchFilter, copyMonth, rowsIn => [...rowsIn, copyRow], copyMarker)
       if (!insertOk) {
         setConfirmDialog({
           title: 'Release Failed',
@@ -1556,7 +1841,15 @@ export default function Payouts() {
       }
 
       const origKey = rowMatchKey(heldRow)
-      const markOk = await mutateSavedMonth(branchFilter, originMonth, rowsIn => rowsIn.map(r => rowMatchKey(r) === origKey ? {
+      const markOk = await mutateSavedMonth(branchFilter, originMonth, rowsIn => rowsIn.map(r => rowMatchKey(r) === origKey ? (isBalance ? {
+        ...r,
+        customFields: {
+          ...(r.customFields || {}),
+          'pay:split': '1',
+          'pay:balanceReleased': '1',
+          'pay:copyId': copyMarker,
+        },
+      } : {
         ...r,
         customFields: {
           ...(r.customFields || {}),
@@ -1568,7 +1861,7 @@ export default function Payouts() {
           'hold:targetWeekTo': targetWeek.to,
           'hold:copyId': copyMarker,
         },
-      } : r))
+      }) : r), copyMarker)
 
       if (!markOk) {
         // Roll back the copy so the payout is never counted both as held AND released.
@@ -1588,6 +1881,7 @@ export default function Payouts() {
       setReleaseApprovalNote('')
       await loadAndSync(true)
       void refreshHeldTickets()
+      void refreshBalances()
     } finally {
       setReleaseSubmitting(false)
     }
@@ -1619,6 +1913,19 @@ export default function Payouts() {
       const restoreOk = await mutateSavedMonth(branchFilter, originMonth, rowsIn => rowsIn.map(r => {
         if (rowMatchKey(r) !== origKey) return r
         const cf = { ...(r.customFields || {}) }
+        if (copy.customFields?.['pay:adjust'] === '1') {
+          // Adjustment: the original was never held — just drop this correction from its history.
+          const left = parseAdjustmentLog(r).filter(e => e.id !== marker)
+          if (left.length > 0) cf['pay:adjLog'] = JSON.stringify(left)
+          else delete cf['pay:adjLog']
+          return { ...r, customFields: cf }
+        }
+        if (copy.customFields?.['pay:balance'] === '1') {
+          // Balance release: the original was never held — just make its withheld half pending again.
+          delete cf['pay:balanceReleased']
+          delete cf['pay:copyId']
+          return { ...r, customFields: cf }
+        }
         cf['hold:state'] = 'held'
         delete cf['hold:releasedAt']
         delete cf['hold:releasedBy']
@@ -1644,6 +1951,8 @@ export default function Payouts() {
 
       await loadAndSync(true)
       void refreshHeldTickets()
+      void refreshBalances()
+      void refreshCorrections()
     } finally {
       setUndoingRowKey(null)
     }
@@ -1734,6 +2043,20 @@ export default function Payouts() {
     })
   }
 
+  // Ticket payment status. Anything short of Fully Paid pays the tech 50% (see payFactor). Marking
+  // a row Fully Paid while its week is still open just makes it a full payout again; the split is
+  // only kept for a row whose week already closed (handled from the Held Tickets balances list).
+  const setPaymentStatus = (id: string, status: string) => {
+    if (isWeekClosed) return
+    updateRow(id, prevRow => {
+      const cf = { ...(prevRow.customFields || {}) }
+      cf['pay:status'] = status
+      if (status === 'PAID') delete cf['pay:split']
+      else cf['pay:split'] = '1'
+      return { customFields: cf }
+    })
+  }
+
   // Allowance / Earth Grounding are auto-stamped from the branch rate on every sync; a hand edit
   // (including clearing to zero) flags the row so re-syncs keep the user's value instead.
   const setAutoStampedFee = (id: string, field: AutoStampedFee, v: string) => {
@@ -1754,6 +2077,7 @@ export default function Payouts() {
     brandCapacity: { get: r => r.brandCapacity, set: (id, v) => updateRow(id, { brandCapacity: v }) },
     remit: { get: r => r.actualCollected, set: (id, v) => updateRow(id, { actualCollected: v }) },
     installationUpload: { get: r => r.installationUpload, set: (id, v) => updateRow(id, { installationUpload: v }) },
+    paymentStatus: { get: r => paymentStatusOf(r), set: (id, v) => setPaymentStatus(id, v) },
     installationFee: { get: r => r.installationFee, set: (id, v) => updateRow(id, { installationFee: v }) },
     totalPipeLength: { get: r => r.totalPipeLength, set: (id, v) => updateRow(id, { totalPipeLength: v }) },
     earthGrounding: { get: r => r.earthGrounding, set: (id, v) => setAutoStampedFee(id, 'earthGrounding', v) },
@@ -2059,12 +2383,16 @@ export default function Payouts() {
    *  columns that actually carry a fee. Custom columns resolve through the same accessors. */
   const listCellText = (col: ColumnDef, row: PayrollRow): string => {
     const raw = getColAccessor(col.key).get(row)
+    if (col.key === 'materialsReturn' && String(raw).trim() && !/^-?[\d,]*\.?\d*$/.test(String(raw).trim())) {
+      return String(raw).trim()
+    }
     if (col.isMoney) {
       const n = num(String(raw))
-      return n === 0 ? '—' : `₱${peso(n)}`
+      return n === 0 ? '' : `₱${peso(n)}`
     }
-    if (col.key === 'date') return row.workDate ? shortDate(row.workDate) : '—'
-    return String(raw).trim() || '—'
+    if (col.key === 'date') return row.workDate ? shortDate(row.workDate) : ''
+    if (col.key === 'paymentStatus') return paymentStatusLabel(row)
+    return String(raw).trim()
   }
 
   // Mobile card value cell — same accessors as the desktop grid, just without the
@@ -2073,6 +2401,45 @@ export default function Payouts() {
   const renderMobileCellValue = (col: ColumnDef, row: PayrollRow) => {
     const smallInputCls = "w-full text-right px-2.5 py-2.5 rounded-lg text-base font-semibold uppercase bg-transparent border-0 outline-none focus:ring-1 focus:ring-emerald-500/40"
     const acc = getColAccessor(col.key)
+
+    // Fields that come from the ticketing system (Status, and Date/Ticket/Customer) aren't editable
+    // on a synced row — they're corrected on the ticket itself. Hand-added rows stay editable.
+    if (col.readOnlyWhenSynced && row.ticketId) {
+      return (
+        <div
+          className="w-full text-right px-2.5 py-2.5 text-base font-semibold uppercase select-text"
+          style={{ color: /^DONE\b/i.test(String(acc.get(row)).trim()) ? '#059669' : textPrimary }}
+        >
+          {String(acc.get(row)).trim() || '—'}
+        </div>
+      )
+    }
+
+    // A closed week (or a carried-over row) is read-only: show the value as text, not an input —
+    // otherwise the field still accepts typing even though nothing gets saved.
+    if ((isWeekClosed || isCarryOver(row)) && col.key !== 'paymentStatus') {
+      const shown = listCellText(col, row)
+      return (
+        <div className="w-full text-right px-2.5 py-2.5 text-base font-semibold select-text" style={{ color: shown ? textPrimary : textMuted, opacity: shown ? 1 : 0.5 }}>
+          {shown || '—'}
+        </div>
+      )
+    }
+
+    if (col.key === 'paymentStatus') {
+      const unpaid = paymentStatusOf(row) !== 'PAID'
+      return (
+        <select
+          value={paymentStatusOf(row)}
+          disabled={isWeekClosed || isCarryOver(row)}
+          onChange={e => acc.set(row.id, e.target.value)}
+          className="w-full text-right px-2.5 py-2.5 rounded-lg text-sm font-bold bg-transparent border-0 outline-none cursor-pointer disabled:cursor-not-allowed"
+          style={{ color: unpaid ? '#D97706' : '#10B981' }}
+        >
+          {PAYMENT_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      )
+    }
 
     if (col.key === 'remit') {
       return (
@@ -2614,8 +2981,15 @@ export default function Payouts() {
                     key={w.from}
                     type="button"
                     onClick={() => setActiveWeek(w)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all active:scale-95 whitespace-nowrap border"
-                    style={{
+                    className={`flex items-center gap-2 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all active:scale-95 whitespace-nowrap border ${isClosed ? 'pl-1.5 pr-3' : 'px-3'}`}
+                    style={isClosed ? {
+                      // Sealed look: diagonal hatch over a cool slate tint, amber edge when selected.
+                      backgroundColor: isActive ? (isLight ? '#fffbeb' : 'rgba(245,158,11,0.14)') : (isLight ? '#eef2f7' : '#0f1a2e'),
+                      backgroundImage: `repeating-linear-gradient(135deg, ${isLight ? 'rgba(100,116,139,0.09)' : 'rgba(148,163,184,0.07)'} 0 6px, transparent 6px 12px)`,
+                      borderColor: isActive ? '#F59E0B' : (isLight ? '#cbd5e1' : '#2a3a58'),
+                      color: isActive ? '#B45309' : textMuted,
+                      boxShadow: isActive ? '0 0 0 1px #F59E0B40' : 'none',
+                    } : {
                       backgroundColor: isActive ? (isLight ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.2)') : inputBg,
                       borderColor: isActive ? '#10B981' : inputBorder,
                       color: isActive ? '#10B981' : textMuted,
@@ -2623,14 +2997,26 @@ export default function Payouts() {
                     }}
                   >
                     {isClosed && (
-                      <span title="Week closed & locked" className="inline-flex items-center shrink-0">
-                        <Lock className="w-3 h-3 text-amber-500" />
+                      <span
+                        title="Week closed & locked"
+                        className="inline-flex items-center justify-center shrink-0 w-5 h-5 rounded-full"
+                        style={{ backgroundColor: isActive ? '#F59E0B' : (isLight ? '#94a3b8' : '#475569') }}
+                      >
+                        <Lock className="w-3 h-3 text-white" strokeWidth={2.5} />
                       </span>
                     )}
-                    <span className="font-black" style={{ color: isActive ? '#10B981' : textPrimary }}>
+                    <span className="font-black" style={{ color: isClosed ? (isActive ? '#B45309' : textPrimary) : (isActive ? '#10B981' : textPrimary) }}>
                       Week {w.weekNumber}
                     </span>
                     <span className="opacity-70">{w.label}</span>
+                    {isClosed && (
+                      <span
+                        className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded"
+                        style={{ backgroundColor: isActive ? 'rgba(245,158,11,0.2)' : (isLight ? 'rgba(100,116,139,0.14)' : 'rgba(148,163,184,0.14)'), color: isActive ? '#B45309' : textMuted }}
+                      >
+                        Closed
+                      </span>
+                    )}
                     {isCurrent && (
                       <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#10B981' }} title="Current week" />
                     )}
@@ -2904,7 +3290,7 @@ export default function Payouts() {
                           >
                             {groupVisibleColumns.map((col, i) => {
                               const text = listCellText(col, row)
-                              const empty = text === '—'
+                              const empty = !text || text === '—'
                               const isStatus = col.key === 'installationUpload'
                               const isDone = isStatus && /^DONE\b/i.test(text)
                               const isReadOnly = isWeekClosed || Boolean(col.readOnlyWhenSynced && row.ticketId)
@@ -2960,6 +3346,37 @@ export default function Payouts() {
                                 borderColor: '#10B981',
                                 color: col.key === 'remit' ? remitAccent : textPrimary,
                                 boxShadow: '0 0 0 2px rgba(16, 185, 129, 0.25)',
+                              }
+
+                              // Payment status is always a live dropdown in the list — no double-click needed.
+                              if (col.key === 'paymentStatus') {
+                                const unpaid = paymentStatusOf(row) !== 'PAID'
+                                return (
+                                  <div
+                                    key={col.key}
+                                    className={`px-2 py-1 flex items-center min-w-0 overflow-hidden text-left ${col.key === lastListPinKey ? 'pl-pin-edge' : ''}`}
+                                    style={listCellStyle(col, i, 'var(--pl-bg)')}
+                                    onClick={e => e.stopPropagation()}
+                                    onDoubleClick={e => e.stopPropagation()}
+                                    onContextMenu={e => e.stopPropagation()}
+                                  >
+                                    <select
+                                      value={paymentStatusOf(row)}
+                                      disabled={isWeekClosed}
+                                      onChange={e => acc.set(row.id, e.target.value)}
+                                      title={unpaid ? 'Not fully paid — the tech is paid 50% until the ticket is paid' : 'Fully paid'}
+                                      className="w-full text-[13px] font-bold bg-transparent border-0 outline-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-70"
+                                      style={{ color: unpaid ? '#D97706' : '#10B981' }}
+                                    >
+                                      {PAYMENT_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                    </select>
+                                    {hasPendingBalance(row) && (
+                                      <span className="ml-1 shrink-0 text-[10px] font-semibold whitespace-nowrap" style={{ color: '#D97706' }}>
+                                        ₱{peso(rowTotal(row))} awaiting
+                                      </span>
+                                    )}
+                                  </div>
+                                )
                               }
 
                               if (isEditing) {
@@ -3079,8 +3496,6 @@ export default function Payouts() {
                                 >
                                   {i === 0 ? null : total ? (
                                     <span className="whitespace-nowrap" style={{ color: col.key === 'remit' ? remitAccent : textPrimary }}>₱{peso(total)}</span>
-                                  ) : total === 0 ? (
-                                    <span style={{ color: textMuted, opacity: 0.45 }}>—</span>
                                   ) : null}
                                 </div>
                               )
@@ -3244,16 +3659,19 @@ export default function Payouts() {
                                   <td className="px-3 py-2.5 font-semibold">{row.customerName || '—'}</td>
                                   <td className="px-3 py-2.5">
                                     <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.14)', color: '#8B5CF6' }}>
-                                      Week of {fromLabel}
+                                      {row.customFields?.['pay:adjust'] === '1' ? 'Adjustment' : `Week of ${fromLabel}`}
                                     </span>
                                   </td>
                                   <td className="px-3 py-2.5 max-w-[220px] truncate" style={{ color: textMuted }} title={row.customFields?.['hold:approvalNote'] || ''}>
                                     {row.customFields?.['hold:approvalNote'] || '—'}
+                                    {row.customFields?.['pay:adjSummary'] && (
+                                      <span className="block text-[10px] font-semibold" style={{ color: '#8B5CF6' }}>{row.customFields['pay:adjSummary']}</span>
+                                    )}
                                     {row.customFields?.['hold:releasedBy'] && (
                                       <span className="block text-[10px] font-semibold opacity-70">by {formatPersonName(row.customFields['hold:releasedBy'])}</span>
                                     )}
                                   </td>
-                                  <td className="px-3 py-2.5 text-right font-bold tabular-nums">₱{peso(rowTotal(row))}</td>
+                                  <td className="px-3 py-2.5 text-right font-bold tabular-nums">{pesoSigned(rowTotal(row))}</td>
                                   <td className="px-6 py-2.5 text-right">
                                     {canManagePayroll && !isWeekClosed && (
                                       <button
@@ -3264,7 +3682,7 @@ export default function Payouts() {
                                         style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}
                                       >
                                         <Undo2 className="w-3 h-3" />
-                                        {undoingRowKey === undoKey ? 'Undoing…' : 'Undo release'}
+                                        {undoingRowKey === undoKey ? 'Undoing…' : row.customFields?.['pay:adjust'] === '1' ? 'Undo adjustment' : 'Undo release'}
                                       </button>
                                     )}
                                   </td>
@@ -3286,13 +3704,13 @@ export default function Payouts() {
                             <div key={row.id} className="rounded-xl border p-3 flex flex-col gap-1.5" style={{ backgroundColor: cardBg, borderColor: border }}>
                               <div className="flex items-center justify-between gap-2">
                                 <span className="text-sm font-extrabold truncate" style={{ color: textPrimary }}>{row.customerName || 'No customer'}</span>
-                                <span className="font-bold tabular-nums shrink-0" style={{ color: textPrimary }}>₱{peso(rowTotal(row))}</span>
+                                <span className="font-bold tabular-nums shrink-0" style={{ color: textPrimary }}>{pesoSigned(rowTotal(row))}</span>
                               </div>
                               <div className="text-[11px] font-semibold" style={{ color: textMuted }}>
                                 {row.workDate ? shortDate(row.workDate) : 'No date'} &middot; {row.ticketNumber || 'No ticket'}
                               </div>
                               <span className="self-start px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.14)', color: '#8B5CF6' }}>
-                                Released from week of {fromLabel}
+                                {row.customFields?.['pay:adjust'] === '1' ? `Adjustment · ${row.customFields['pay:adjSummary'] || ''}` : `Released from week of ${fromLabel}`}
                               </span>
                               {row.customFields?.['hold:approvalNote'] && (
                                 <span className="text-[11px]" style={{ color: textMuted }}>{row.customFields['hold:approvalNote']}</span>
@@ -3320,6 +3738,7 @@ export default function Payouts() {
                   {(() => {
                     const gross = installerTotal(installerRows)
                     const base = baseInstallTotal(installerRows)
+                    const awaitingPayment = installerRows.filter(hasPendingBalance).reduce((sum, r) => sum + rowTotal(r), 0)
                     const totalDeduction = deductionTotal(installerRows)
                     const net = gross - totalDeduction
                     const dedRed = isLight ? '#DC2626' : '#F87171'
@@ -3379,6 +3798,12 @@ export default function Payouts() {
                             <div className="flex items-center justify-between gap-3 text-[11px]" style={{ color: textMuted }}>
                               <span>Base install ₱{peso(base)} · Add-ons ₱{peso(gross - base)}</span>
                             </div>
+                            {awaitingPayment > 0 && (
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="font-semibold uppercase tracking-wide text-[11px]" style={{ color: '#D97706' }}>Awaiting Payment (50% held)</span>
+                                <span className="font-bold tabular-nums" style={{ color: '#D97706' }}>₱{peso(awaitingPayment)}</span>
+                              </div>
+                            )}
                             <div className="flex items-center justify-between gap-3">
                               <span className="font-semibold uppercase tracking-wide text-[11px]" style={{ color: textMuted }}>Total Deduction</span>
                               <span className="font-bold tabular-nums" style={{ color: totalDeduction > 0 ? dedRed : textMuted }}>
@@ -3570,13 +3995,25 @@ export default function Payouts() {
                   }}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
                   style={{
-                    backgroundColor: heldTickets.length > 0 ? (isLight ? '#EA580C' : '#C2410C') : (isLight ? '#F1F5F9' : '#1E293B'),
-                    color: heldTickets.length > 0 ? '#FFFFFF' : (isLight ? '#475569' : '#94A3B8'),
-                    border: heldTickets.length > 0 ? '1px solid #C2410C' : (isLight ? '1px solid #CBD5E1' : '1px solid #334155'),
+                    backgroundColor: (heldTickets.length + balanceTickets.length) > 0 ? (isLight ? '#EA580C' : '#C2410C') : (isLight ? '#F1F5F9' : '#1E293B'),
+                    color: (heldTickets.length + balanceTickets.length) > 0 ? '#FFFFFF' : (isLight ? '#475569' : '#94A3B8'),
+                    border: (heldTickets.length + balanceTickets.length) > 0 ? '1px solid #C2410C' : (isLight ? '1px solid #CBD5E1' : '1px solid #334155'),
                   }}
                   title="View every job currently on hold across this branch"
                 >
-                  <span>Held Tickets ({heldTickets.length})</span>
+                  <span>Held Tickets ({heldTickets.length + balanceTickets.length})</span>
+                </button>
+              )}
+
+              {canManagePayroll && (
+                <button
+                  type="button"
+                  onClick={() => { setCorrectionsSearch(''); setCorrectionsOpen(true); void refreshCorrections() }}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border transition-all shadow-xs active:scale-95 cursor-pointer"
+                  style={{ color: isLight ? '#475569' : '#94A3B8', borderColor: isLight ? '#CBD5E1' : '#334155', backgroundColor: isLight ? '#F1F5F9' : '#1E293B' }}
+                  title="Who corrected which ticket amounts after a week closed"
+                >
+                  <span>Corrections ({corrections.reduce((n, c) => n + parseAdjustmentLog(c.row).length, 0)})</span>
                 </button>
               )}
 
@@ -4153,7 +4590,7 @@ export default function Payouts() {
 
           // All candidate fee & detail columns for this ticket (including all categories & custom columns)
           const allDetailCols: ColumnDef[] = [
-            ...COLUMN_DEFS.filter(c => !['date', 'ticketNumber', 'customerName', 'brandCapacity'].includes(c.key)),
+            ...COLUMN_DEFS.filter(c => !['date', 'ticketNumber', 'customerName', 'brandCapacity', 'paymentStatus'].includes(c.key)),
             ...customColumnDefs.map(cc => ({
               key: cc.key, label: cc.label, width: 120, align: 'right' as const, isMoney: true, category: 'admin' as const,
             })),
@@ -4203,35 +4640,53 @@ export default function Payouts() {
             return true
           })
 
+          const unpaid = payFactor(liveRow) !== 1 && !isCarryOver(liveRow)
+          const payAcc = getColAccessor('paymentStatus')
+          const jobStatus = (liveRow.installationUpload || '').trim()
+          const addOnItems = activeFeeItems.filter(i => !i.isBase)
+          const closePopup = () => { setDetailRow(null); setPopupCategory('all'); setPopupSearch('') }
+          const actionBtn = 'w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold border transition-all active:scale-95 cursor-pointer'
+
           return (
-            <div
-              className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-150"
-            >
+            <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-150">
               <div
-                className="w-full max-w-3xl max-h-[92vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden"
+                className="w-full max-w-5xl max-h-[92vh] md:h-[82vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden"
                 style={{ backgroundColor: cardBg, borderColor: border }}
               >
-                {/* Header */}
-                <div
-                  className="flex items-start justify-between gap-3 px-6 py-4 shrink-0"
-                  style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}
-                >
+                {/* Header — who / what, at a glance */}
+                <div className="flex items-start justify-between gap-4 px-6 py-4 shrink-0" style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}>
                   {liveRow.ticketId ? (
                     <div className="min-w-0">
-                      <div className="text-lg font-extrabold truncate" style={{ color: textPrimary }}>
-                        {liveRow.customerName || 'No customer'}
+                      <div className="flex items-baseline gap-x-3 gap-y-0.5 flex-wrap">
+                        <span className="text-3xl font-black tracking-tight tabular-nums text-emerald-500 leading-none">
+                          {liveRow.ticketNumber || 'No ticket'}
+                        </span>
+                        <span className="text-2xl font-extrabold leading-tight break-words" style={{ color: textPrimary }}>
+                          {liveRow.customerName || 'No customer'}
+                        </span>
                       </div>
-                      <div className="text-sm font-semibold mt-0.5 truncate" style={{ color: textMuted }}>
-                        {liveRow.workDate ? shortDate(liveRow.workDate) : 'No date'}
-                        {' · '}{liveRow.ticketNumber || 'No ticket'}
-                        {liveRow.brandCapacity ? ` · ${liveRow.brandCapacity}` : ''}
-                        {' · '}<span className="text-emerald-500 font-bold">{displayInstallerName(liveRow.installerName)}</span>
+                      <div className="mt-2 text-sm font-semibold flex flex-wrap items-center gap-x-2 gap-y-0.5" style={{ color: textMuted }}>
+                        {[
+                          liveRow.workDate ? shortDate(liveRow.workDate) : 'No date',
+                          liveRow.brandCapacity,
+                          jobStatus,
+                        ].filter(Boolean).map((part, idx) => (
+                          <span key={idx} className="flex items-center gap-2">
+                            {idx > 0 && <span className="opacity-40">•</span>}
+                            <span>{part}</span>
+                          </span>
+                        ))}
+                        <span className="opacity-40">•</span>
+                        <span className="font-bold text-emerald-500">{displayInstallerName(liveRow.installerName)}</span>
                       </div>
                       {liveRow.customFields?.['xfer:fromBranch'] && (
-                        <div className="flex items-center gap-1.5 mt-1">
+                        <div className="flex items-center gap-1.5 mt-1.5">
                           <ArrowRightLeft className="w-3 h-3" style={{ color: '#8B5CF6' }} />
                           <span className="text-[11px] font-bold" style={{ color: '#8B5CF6' }}>
                             Transferred from {liveRow.customFields['xfer:fromBranch']}
+                            {liveRow.customFields['xfer:transferredAt']
+                              ? ` · ${new Date(liveRow.customFields['xfer:transferredAt']).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                              : ''}
                           </span>
                         </div>
                       )}
@@ -4242,24 +4697,27 @@ export default function Payouts() {
                         type="text"
                         placeholder="Customer name"
                         value={liveRow.customerName}
+                        disabled={isWeekClosed}
                         onChange={e => updateRow(liveRow.id, { customerName: e.target.value })}
-                        className="text-lg font-extrabold bg-transparent border-0 outline-none w-full"
+                        className="text-xl font-extrabold bg-transparent border-0 outline-none w-full disabled:cursor-not-allowed"
                         style={{ color: textPrimary }}
                       />
                       <div className="flex items-center gap-2">
                         <input
                           type="date"
                           value={liveRow.workDate || ''}
+                          disabled={isWeekClosed}
                           onChange={e => updateRow(liveRow.id, { workDate: e.target.value })}
-                          className="text-sm font-semibold bg-transparent border-0 outline-none"
+                          className="text-sm font-semibold bg-transparent border-0 outline-none disabled:cursor-not-allowed"
                           style={{ color: textMuted }}
                         />
                         <input
                           type="text"
                           placeholder="Ticket"
                           value={liveRow.ticketNumber}
+                          disabled={isWeekClosed}
                           onChange={e => updateRow(liveRow.id, { ticketNumber: e.target.value })}
-                          className="text-sm font-semibold bg-transparent border-0 outline-none w-28"
+                          className="text-sm font-semibold bg-transparent border-0 outline-none w-28 disabled:cursor-not-allowed"
                           style={{ color: textMuted }}
                         />
                       </div>
@@ -4267,7 +4725,7 @@ export default function Payouts() {
                   )}
                   <button
                     type="button"
-                    onClick={() => { setDetailRow(null); setPopupCategory('all'); setPopupSearch('') }}
+                    onClick={closePopup}
                     className="p-2.5 rounded-full shrink-0 transition-all border cursor-pointer hover:bg-red-500 hover:border-red-500 hover:text-white active:scale-90"
                     style={{ color: textMuted, backgroundColor: inputBg, borderColor: inputBorder }}
                     aria-label="Close"
@@ -4276,214 +4734,204 @@ export default function Payouts() {
                   </button>
                 </div>
 
-                {/* Category navigation & fast search toolbar */}
-                <div
-                  className="px-6 py-2.5 flex flex-wrap items-center justify-between gap-2 border-b shrink-0 text-xs"
-                  style={{ backgroundColor: cardBg, borderColor: border }}
-                >
-                  <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 max-w-full">
-                    {[
-                      { id: 'all', label: `All (${allDetailCols.length})` },
-                      { id: 'active', label: `Active (${activeFeeItems.length})`, badgeColor: activeFeeItems.length > 0 ? '#10B981' : undefined },
-                      { id: 'standard', label: 'Standard' },
-                      { id: 'piping', label: 'Piping' },
-                      { id: 'electrical', label: 'Electrical' },
-                      { id: 'structural', label: 'Structural & Masonry' },
-                      { id: 'admin', label: 'Admin & Custom' },
-                    ].map(tab => (
-                      <button
-                        key={tab.id}
-                        type="button"
-                        onClick={() => setPopupCategory(tab.id)}
-                        className="px-2.5 py-1 rounded-lg font-bold transition-all text-[11px] whitespace-nowrap cursor-pointer flex items-center gap-1"
-                        style={{
-                          backgroundColor: popupCategory === tab.id
-                            ? (isLight ? '#10B981' : '#059669')
-                            : (isLight ? '#f1f5f9' : '#111d33'),
-                          color: popupCategory === tab.id ? '#ffffff' : (tab.badgeColor || textMuted),
-                        }}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="relative w-40 shrink-0">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="Filter fields..."
-                      value={popupSearch}
-                      onChange={e => setPopupSearch(e.target.value)}
-                      className="w-full pl-8 pr-2 py-1 rounded-lg text-xs border outline-none bg-transparent"
-                      style={{ borderColor: inputBorder, color: textPrimary }}
-                    />
-                  </div>
-                </div>
-
-                {/* Column rows */}
-                <div className="flex-1 overflow-y-auto px-6 py-1">
-                  {filteredCols.length === 0 ? (
-                    <div className="py-12 text-center text-xs font-semibold" style={{ color: textMuted }}>
-                      No fields match the selected filter.
-                    </div>
-                  ) : (
-                    filteredCols.map(col => {
-                      const curVal = getColAccessor(col.key).get(liveRow)
-                      const isMoneyVal = col.isMoney && num(curVal) > 0
-                      return (
-                        <div
-                          key={col.key}
-                          className="flex items-center justify-between gap-4 py-2.5 transition-colors"
-                          style={{
-                            borderBottom: `1px solid ${border}`,
-                            backgroundColor: isMoneyVal ? (isLight ? 'rgba(16,185,129,0.04)' : 'rgba(16,185,129,0.06)') : undefined,
-                          }}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span
-                              className="text-xs font-bold uppercase tracking-wide truncate"
-                              style={{ color: col.key === 'remit' ? remitAccent : textPrimary }}
-                            >
-                              {col.label}
-                            </span>
-                            {col.category && (
-                              <span
-                                className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider hidden sm:inline"
-                                style={{ backgroundColor: isLight ? '#f1f5f9' : '#111d33', color: textMuted }}
-                              >
-                                {col.category}
-                              </span>
-                            )}
-                            {isMoneyVal && (
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 tabular-nums">
-                                ₱{peso(curVal)}
-                              </span>
-                            )}
-                          </div>
-                          <div className="max-w-[55%] flex-1">
-                            {renderMobileCellValue(col, liveRow)}
-                          </div>
+                {/* Body: fields on the left, payout summary + actions on the right */}
+                <div className="flex-1 min-h-0 overflow-y-auto md:overflow-hidden grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_340px]">
+                  {/* Payout summary + actions */}
+                  <aside
+                    className="order-first md:order-2 md:overflow-y-auto flex flex-col gap-4 p-5 border-b md:border-b-0 md:border-l"
+                    style={{ backgroundColor: headerBg, borderColor: border }}
+                  >
+                    <div
+                      className="rounded-2xl border p-4"
+                      style={{
+                        backgroundColor: unpaid ? (isLight ? 'rgba(245,158,11,0.08)' : 'rgba(245,158,11,0.12)') : (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.12)'),
+                        borderColor: unpaid ? 'rgba(245,158,11,0.35)' : 'rgba(16,185,129,0.35)',
+                      }}
+                    >
+                      <div className="text-[10px] font-black uppercase tracking-widest" style={{ color: unpaid ? '#D97706' : '#059669' }}>
+                        {unpaid ? 'Payout this week (50%)' : 'Total payout'}
+                      </div>
+                      <div className="text-3xl font-black tabular-nums leading-tight mt-0.5" style={{ color: unpaid ? '#D97706' : '#10B981' }}>
+                        ₱{peso(rowGrandTotal)}
+                      </div>
+                      {unpaid && (
+                        <div className="mt-2 pt-2 flex items-center justify-between text-xs font-semibold" style={{ borderTop: '1px dashed rgba(245,158,11,0.4)', color: '#D97706' }}>
+                          <span>Awaiting collection</span>
+                          <span className="tabular-nums font-bold">₱{peso(rowGrandTotal)}</span>
                         </div>
-                      )
-                    })
-                  )}
-                </div>
-
-                {/* Itemized active fees breakdown (if any add-on is present) */}
-                {activeFeeItems.length > 0 && (
-                  <div
-                    className="px-6 py-2.5 border-t shrink-0 flex flex-col gap-1.5"
-                    style={{ backgroundColor: isLight ? '#f8fafc' : '#0b1322', borderColor: border }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                        Added Ticket Details &amp; Fee Breakdown ({activeFeeItems.length})
-                      </span>
-                      <span className="text-[11px] font-bold tabular-nums" style={{ color: textPrimary }}>
-                        Total: ₱{peso(rowGrandTotal)}
-                      </span>
+                      )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-1.5 max-h-20 overflow-y-auto">
-                      {activeFeeItems.map(item => (
-                        <span
-                          key={item.key}
-                          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-semibold border tabular-nums"
-                          style={{
-                            backgroundColor: item.isBase ? (isLight ? '#e0f2fe' : 'rgba(56,189,248,0.15)') : (isLight ? '#ecfdf5' : 'rgba(16,185,129,0.15)'),
-                            borderColor: item.isBase ? (isLight ? '#bae6fd' : 'rgba(56,189,248,0.3)') : (isLight ? '#a7f3d0' : 'rgba(16,185,129,0.3)'),
-                            color: item.isBase ? (isLight ? '#0284c7' : '#38bdf8') : (isLight ? '#059669' : '#34d399'),
-                          }}
-                        >
-                          <span>{item.label}:</span>
-                          <strong className="font-extrabold">₱{peso(item.amount)}</strong>
+
+                    {/* Payment status */}
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>Customer payment</span>
+                      <select
+                        value={paymentStatusOf(liveRow)}
+                        disabled={isWeekClosed || isCarryOver(liveRow)}
+                        onChange={e => payAcc.set(liveRow.id, e.target.value)}
+                        className="w-full px-3 py-2.5 rounded-xl border text-sm font-bold outline-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-70"
+                        style={{ backgroundColor: cardBg, borderColor: unpaid ? 'rgba(245,158,11,0.5)' : inputBorder, color: unpaid ? '#D97706' : '#10B981' }}
+                      >
+                        {PAYMENT_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                      {unpaid && (
+                        <span className="text-[11px] leading-relaxed" style={{ color: textMuted }}>
+                          50% payout credited now. The remaining 50% balance will be released once fully collected.
                         </span>
-                      ))}
+                      )}
                     </div>
-                  </div>
-                )}
 
-                {/* Per-Ticket Total Summary bar */}
-                <div className="grid grid-cols-3 shrink-0" style={{ backgroundColor: headerBg, borderTop: `1px solid ${border}` }}>
-                  <div className="px-5 py-3.5 min-w-0">
-                    <div className="text-[11px] font-semibold uppercase tracking-wider truncate opacity-70" style={{ color: textMuted }}>Install Fee</div>
-                    <div className="text-base sm:text-lg font-bold tabular-nums" style={{ color: textPrimary }}>₱{peso(baseFee)}</div>
-                  </div>
-                  <div className="px-5 py-3.5 min-w-0">
-                    <div className="text-[11px] font-semibold uppercase tracking-wider truncate opacity-70" style={{ color: textMuted }}>
-                      Add-on Pay ({activeFeeItems.filter(i => !i.isBase).length})
+                    {/* Fee breakdown */}
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>Breakdown</span>
+                      <div className="rounded-xl border overflow-hidden text-xs" style={{ borderColor: border, backgroundColor: cardBg }}>
+                        <div className="flex items-center justify-between px-3 py-2 font-bold" style={{ color: textPrimary }}>
+                          <span>Base install</span>
+                          <span className="tabular-nums">₱{peso(baseFee)}</span>
+                        </div>
+                        {addOnItems.map(item => (
+                          <div key={item.key} className="flex items-center justify-between px-3 py-1.5" style={{ borderTop: `1px solid ${border}`, color: textMuted }}>
+                            <span className="truncate pr-2">{item.label}</span>
+                            <span className="tabular-nums font-semibold" style={{ color: textPrimary }}>₱{peso(item.amount)}</span>
+                          </div>
+                        ))}
+                        <div className="flex items-center justify-between px-3 py-2 font-bold" style={{ borderTop: `1px solid ${border}`, backgroundColor: headerBg, color: textPrimary }}>
+                          <span>Add-ons ({addOnItems.length})</span>
+                          <span className="tabular-nums" style={{ color: addOns > 0 ? '#059669' : textPrimary }}>₱{peso(addOns)}</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-base sm:text-lg font-bold tabular-nums" style={{ color: addOns > 0 ? (isLight ? '#047857' : '#34d399') : textPrimary }}>
-                      ₱{peso(addOns)}
+
+                    {/* Actions */}
+                    <div className="flex flex-col gap-2 mt-auto">
+                      {canManagePayroll && !isWeekClosed && !isCarryOver(liveRow) && (
+                        <button
+                          type="button"
+                          onClick={() => { setDetailRow(null); setHoldModalRow(liveRow); setHoldReason('') }}
+                          className={`${actionBtn} hover:bg-amber-500/10 hover:border-amber-500/50`}
+                          style={{ color: '#D97706', borderColor: isLight ? '#fde68a' : 'rgba(217,119,6,0.35)', backgroundColor: isLight ? '#fffbeb' : 'rgba(217,119,6,0.08)' }}
+                          title="Carry this payout to a later week"
+                        >
+                          <PauseCircle className="w-4 h-4" />
+                          <span>Hold Payout</span>
+                        </button>
+                      )}
+                      {canManagePayroll && isWeekClosed && !isCarryOver(liveRow) && (
+                        <button
+                          type="button"
+                          onClick={() => { setDetailRow(null); openAdjustModal(liveRow) }}
+                          className={`${actionBtn} hover:bg-violet-500/10 hover:border-violet-500/50`}
+                          style={{ color: '#8B5CF6', borderColor: isLight ? '#ddd6fe' : 'rgba(139,92,246,0.35)', backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.08)' }}
+                          title="Correct this ticket's amounts — the difference is added or deducted in an open week"
+                        >
+                          <SlidersHorizontal className="w-4 h-4" />
+                          <span>Adjust Balance</span>
+                        </button>
+                      )}
+                      {parseAdjustmentLog(liveRow).length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => { setDetailRow(null); setCorrectionsSearch(liveRow.ticketNumber || ''); setCorrectionsOpen(true) }}
+                          className={`${actionBtn} hover:bg-violet-500/10`}
+                          style={{ color: '#8B5CF6', borderColor: isLight ? '#ddd6fe' : 'rgba(139,92,246,0.35)', backgroundColor: 'transparent' }}
+                        >
+                          <span>Correction history ({parseAdjustmentLog(liveRow).length})</span>
+                        </button>
+                      )}
+                      {(liveRow.ticketId || liveRow.ticketNumber) && (
+                        <button
+                          type="button"
+                          disabled={loadingTicketModal}
+                          onClick={() => void handleOpenTicketModal(liveRow)}
+                          className={`${actionBtn} hover:bg-emerald-500/10 hover:border-emerald-500/50 disabled:opacity-50`}
+                          style={{ color: '#10B981', borderColor: isLight ? '#a7f3d0' : 'rgba(16,185,129,0.35)', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.08)' }}
+                        >
+                          {loadingTicketModal ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
+                          <span>{loadingTicketModal ? 'Loading Ticket…' : 'View Ticket'}</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={closePopup}
+                        className="w-full px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer text-white"
+                        style={{ backgroundColor: isLight ? '#0f172a' : '#334155' }}
+                      >
+                        Done
+                      </button>
                     </div>
-                  </div>
-                  <div className="px-5 py-3.5 min-w-0">
-                    <div className="text-[11px] font-semibold uppercase tracking-wider truncate opacity-70 text-emerald-600 dark:text-emerald-400">
-                      Per Ticket Total
+                  </aside>
+
+                  {/* Fields */}
+                  <section className="order-last md:order-1 min-w-0 flex flex-col md:min-h-0">
+                    <div className="px-6 py-3 flex flex-wrap items-center justify-between gap-2 border-b shrink-0 text-xs" style={{ borderColor: border }}>
+                      <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 max-w-full">
+                        {[
+                          { id: 'all', label: `All (${allDetailCols.length})` },
+                          { id: 'active', label: `Active (${activeFeeItems.length})`, badgeColor: activeFeeItems.length > 0 ? '#10B981' : undefined },
+                          { id: 'standard', label: 'Standard' },
+                          { id: 'piping', label: 'Piping' },
+                          { id: 'electrical', label: 'Electrical' },
+                          { id: 'structural', label: 'Structural & Masonry' },
+                          { id: 'admin', label: 'Admin & Custom' },
+                        ].map(tab => (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setPopupCategory(tab.id)}
+                            className="px-2.5 py-1 rounded-lg font-bold transition-all text-[11px] whitespace-nowrap cursor-pointer"
+                            style={{
+                              backgroundColor: popupCategory === tab.id ? (isLight ? '#10B981' : '#059669') : (isLight ? '#f1f5f9' : '#111d33'),
+                              color: popupCategory === tab.id ? '#ffffff' : (tab.badgeColor || textMuted),
+                            }}
+                          >
+                            {tab.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="relative w-44 shrink-0">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Filter fields..."
+                          value={popupSearch}
+                          onChange={e => setPopupSearch(e.target.value)}
+                          className="w-full pl-8 pr-2 py-1 rounded-lg text-xs border outline-none bg-transparent"
+                          style={{ borderColor: inputBorder, color: textPrimary }}
+                        />
+                      </div>
                     </div>
-                    <div className="text-lg sm:text-xl font-extrabold tabular-nums" style={{ color: '#10B981' }}>
-                      ₱{peso(rowGrandTotal)}
+
+                    <div className="md:flex-1 md:overflow-y-auto px-6 py-1">
+                      {filteredCols.length === 0 ? (
+                        <div className="py-12 text-center text-xs font-semibold" style={{ color: textMuted }}>No fields match the selected filter.</div>
+                      ) : (
+                        filteredCols.map(col => {
+                          const curVal = getColAccessor(col.key).get(liveRow)
+                          const isMoneyVal = col.isMoney && num(curVal) > 0
+                          return (
+                            <div
+                              key={col.key}
+                              className="flex items-center justify-between gap-4 py-2.5"
+                              style={{ borderBottom: `1px solid ${border}`, backgroundColor: isMoneyVal ? (isLight ? 'rgba(16,185,129,0.04)' : 'rgba(16,185,129,0.06)') : undefined }}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-xs font-bold uppercase tracking-wide truncate" style={{ color: col.key === 'remit' ? remitAccent : textPrimary }}>
+                                  {col.label}
+                                </span>
+                                {col.category && (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider hidden lg:inline" style={{ backgroundColor: isLight ? '#f1f5f9' : '#111d33', color: textMuted }}>
+                                    {col.category}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="max-w-[55%] flex-1">{renderMobileCellValue(col, liveRow)}</div>
+                            </div>
+                          )
+                        })
+                      )}
                     </div>
-                  </div>
+                  </section>
                 </div>
-
-                {/* Put on Hold — carries this job's payout to a later week's Held Tickets list
-                    instead of this week's totals; see docs/payroll-hold-release-plan.md. */}
-                {canManagePayroll && !isWeekClosed && !isCarryOver(liveRow) && (
-                  <div
-                    className="flex items-center justify-between gap-3 px-6 py-2.5 shrink-0"
-                    style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#fafafa' : '#080f1c' }}
-                  >
-                    <span className="text-[11px] font-medium opacity-60" style={{ color: textMuted }}>
-                      Carry this job's payout to a later payout week
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => { setDetailRow(null); setHoldModalRow(liveRow); setHoldReason('') }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all hover:border-amber-500/60 hover:bg-amber-500/10 shrink-0 cursor-pointer"
-                      style={{ color: '#D97706', borderColor: isLight ? '#fde68a' : 'rgba(217,119,6,0.35)', backgroundColor: isLight ? '#fffbeb' : 'rgba(217,119,6,0.08)' }}
-                    >
-                      <PauseCircle className="w-3.5 h-3.5" />
-                      Put on Hold
-                    </button>
-                  </div>
-                )}
-
-                {/* View Ticket action — jumps to the actual ticket behind this payroll row */}
-                {(liveRow.ticketId || liveRow.ticketNumber) && (
-                  <div
-                    className="flex items-center justify-between gap-3 px-6 py-2.5 shrink-0"
-                    style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#fafafa' : '#080f1c' }}
-                  >
-                    <span className="text-[11px] font-medium opacity-60" style={{ color: textMuted }}>
-                      Ticket #{liveRow.ticketNumber || liveRow.ticketId}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/search?ticket=${encodeURIComponent(liveRow.ticketId || liveRow.ticketNumber)}`)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all hover:border-emerald-500/60 hover:bg-emerald-500/10 shrink-0 cursor-pointer"
-                      style={{ color: '#10B981', borderColor: isLight ? '#a7f3d0' : 'rgba(16,185,129,0.35)', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.08)' }}
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      View Ticket
-                    </button>
-                  </div>
-                )}
-
-                {/* Already-transferred badge */}
-                {liveRow.customFields?.['xfer:fromBranch'] && (
-                  <div
-                    className="flex items-center gap-2 px-6 py-3 shrink-0"
-                    style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.08)' }}
-                  >
-                    <ArrowRightLeft className="w-4 h-4" style={{ color: '#8B5CF6' }} />
-                    <span className="text-xs font-semibold" style={{ color: '#8B5CF6' }}>
-                      Transferred from <strong>{liveRow.customFields['xfer:fromBranch']}</strong>
-                      {liveRow.customFields['xfer:transferredAt']
-                        ? ` · ${new Date(liveRow.customFields['xfer:transferredAt']).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}`
-                        : ''}
-                    </span>
-                  </div>
-                )}
               </div>
             </div>
           )
@@ -5412,6 +5860,288 @@ export default function Payouts() {
                       </tbody>
                     </table>
                   )}
+
+                  {/* Pending 50% balances — tickets not fully paid pay the tech half now; the other
+                      half waits here until the ticket is paid and closed, then releases to any open week. */}
+                  {(() => {
+                    const bTerm = heldSearch.trim().toLowerCase()
+                    const visibleBalances = balanceTickets.filter(({ row }) => {
+                      if (heldInstallerFilter && resolveGroupKey(row.installerName) !== heldInstallerFilter) return false
+                      if (bTerm && !(row.customerName.toLowerCase().includes(bTerm) || (row.ticketNumber || '').toLowerCase().includes(bTerm) || row.installerName.toLowerCase().includes(bTerm))) return false
+                      return true
+                    })
+                    if (visibleBalances.length === 0) return null
+                    return (
+                      <div style={{ borderTop: `2px solid ${border}` }}>
+                        <div className="px-6 py-3 flex items-center gap-2" style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}>
+                          <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>Pending Balances (50% of unpaid tickets)</span>
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: isLight ? '#fff7ed' : 'rgba(234,88,12,0.16)', color: '#EA580C' }}>{visibleBalances.length}</span>
+                        </div>
+                        <table className="w-full text-[13px]" style={{ color: textPrimary }}>
+                          <thead>
+                            <tr className="text-[11px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>
+                              <th className="px-6 py-2.5 text-left">Date</th>
+                              <th className="px-3 py-2.5 text-left">Ticket</th>
+                              <th className="px-3 py-2.5 text-left">Customer</th>
+                              <th className="px-3 py-2.5 text-left">Installer</th>
+                              <th className="px-3 py-2.5 text-left">Payment Status</th>
+                              <th className="px-3 py-2.5 text-right">Balance Owed</th>
+                              <th className="px-6 py-2.5 text-right"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {visibleBalances.map(({ row, month }, idx) => {
+                              const paid = paymentStatusOf(row) === 'PAID'
+                              return (
+                                <tr key={`bal-${month}-${row.id}`} style={{ backgroundColor: idx % 2 === 1 ? zebraBg : cardBg }}>
+                                  <td className="px-6 py-2.5 whitespace-nowrap">{row.workDate ? shortDate(row.workDate) : '—'}</td>
+                                  <td className="px-3 py-2.5 whitespace-nowrap">{row.ticketNumber || '—'}</td>
+                                  <td className="px-3 py-2.5 font-semibold max-w-[180px] truncate">{row.customerName || '—'}</td>
+                                  <td className="px-3 py-2.5 whitespace-nowrap text-emerald-600 dark:text-emerald-400 font-bold">{displayInstallerName(row.installerName)}</td>
+                                  <td className="px-3 py-2.5">
+                                    <select
+                                      value={paymentStatusOf(row)}
+                                      disabled={!canManagePayroll}
+                                      onChange={e => void setBalancePaymentStatus(row, month, e.target.value)}
+                                      className="text-xs font-bold bg-transparent border-0 outline-none cursor-pointer"
+                                      style={{ color: paid ? '#10B981' : '#D97706' }}
+                                    >
+                                      {PAYMENT_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                    </select>
+                                  </td>
+                                  <td className="px-3 py-2.5 text-right font-bold tabular-nums whitespace-nowrap">₱{peso(rowTotal(row))}</td>
+                                  <td className="px-6 py-2.5 text-right whitespace-nowrap">
+                                    {canManagePayroll && (
+                                      <button
+                                        type="button"
+                                        disabled={!paid}
+                                        onClick={() => openReleaseModal(row, month, 'balance')}
+                                        title={paid ? 'Release the remaining 50% into an open week' : 'Mark the ticket Fully Paid first'}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-all hover:border-emerald-500/60 hover:bg-emerald-500/10 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                        style={{ color: '#10B981', borderColor: isLight ? '#a7f3d0' : 'rgba(16,185,129,0.35)', backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.08)' }}
+                                      >
+                                        <Send className="w-3 h-3" />
+                                        {paid ? 'Release Balance' : 'Awaiting payment'}
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
+                  })()}
+                </div>
+              </div>
+            </div>
+          )
+        })(),
+        document.body
+      )}
+
+      {/* Balance adjustment modal */}
+      {adjustRow && createPortal(
+        (() => {
+          const cols = getAdjustableCols()
+          const targetWeekOptions = [...weeksOfMonth(activeMonth, cycle), ...weeksOfMonth(nextMonth(activeMonth), cycle)]
+            .filter(w => !closures.some(c => c.branchId === branchFilter && c.weekFrom === w.from && c.weekTo === w.to))
+          const rowsView = cols.map(col => {
+            const from = num(getColAccessor(col.key).get(adjustRow.row))
+            const raw = adjustEdits[col.key]
+            const to = raw === undefined || raw === '' ? from : num(raw)
+            return { ...col, from, to, delta: Math.round((to - from) * 100) / 100 }
+          })
+          const net = Math.round(rowsView.reduce((sum, r) => sum + r.delta, 0) * 100) / 100
+          const canSubmit = net !== 0 || rowsView.some(r => r.delta !== 0)
+          return (
+            <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-150">
+              <div className="w-full max-w-2xl max-h-[92vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden" style={{ backgroundColor: cardBg, borderColor: border }}>
+                <div className="flex items-start justify-between gap-3 px-6 py-4 shrink-0" style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}>
+                  <div className="min-w-0">
+                    <div className="text-sm font-extrabold uppercase tracking-wide" style={{ color: textPrimary }}>Adjust Balance</div>
+                    <div className="text-xs font-semibold mt-1 truncate" style={{ color: textMuted }}>
+                      {adjustRow.row.customerName || 'No customer'} · {adjustRow.row.ticketNumber || 'No ticket'} · <span className="text-emerald-500">{displayInstallerName(adjustRow.row.installerName)}</span>
+                    </div>
+                    <div className="text-[11px] mt-1" style={{ color: textMuted }}>This week is closed and stays as paid. Enter the corrected amount per column — the difference is added or deducted in the open week you pick.</div>
+                  </div>
+                  <button type="button" onClick={() => setAdjustRow(null)} className="p-2 rounded-full shrink-0 border cursor-pointer hover:bg-red-500 hover:border-red-500 hover:text-white transition-all" style={{ color: textMuted, backgroundColor: inputBg, borderColor: inputBorder }} aria-label="Close">
+                    <X className="w-4 h-4" strokeWidth={2.5} />
+                  </button>
+                </div>
+                <div className="flex-1 min-h-0 overflow-y-auto px-6 py-3">
+                  <div className="grid grid-cols-[minmax(0,1fr)_110px_120px_100px] gap-x-3 pb-2 text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>
+                    <span>Column</span><span className="text-right">Paid</span><span className="text-right">Corrected</span><span className="text-right">Difference</span>
+                  </div>
+                  {rowsView.map(r => (
+                    <div key={r.key} className="grid grid-cols-[minmax(0,1fr)_110px_120px_100px] gap-x-3 items-center py-1.5" style={{ borderBottom: `1px solid ${border}` }}>
+                      <span className="text-xs font-bold truncate" style={{ color: textPrimary }}>{r.label}</span>
+                      <span className="text-xs tabular-nums text-right" style={{ color: textMuted }}>{r.from ? `₱${peso(r.from)}` : '—'}</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder={String(r.from || 0)}
+                        value={adjustEdits[r.key] ?? ''}
+                        onChange={e => setAdjustEdits(prev => ({ ...prev, [r.key]: e.target.value }))}
+                        className="w-full px-2 py-1 rounded-lg border text-xs font-semibold text-right tabular-nums outline-none focus:ring-2 focus:ring-violet-500/40"
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                      />
+                      <span className="text-xs font-bold tabular-nums text-right" style={{ color: r.delta === 0 ? textMuted : r.delta > 0 ? '#10B981' : (isLight ? '#DC2626' : '#F87171') }}>
+                        {r.delta === 0 ? '—' : (r.delta > 0 ? '+' : '−') + '₱' + peso(Math.abs(r.delta))}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="px-6 py-3 flex flex-col gap-3 shrink-0" style={{ borderTop: `1px solid ${border}`, backgroundColor: headerBg }}>
+                  <div className="flex items-center justify-between rounded-xl px-4 py-2.5" style={{ backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.10)', border: `1px solid ${isLight ? '#ddd6fe' : 'rgba(139,92,246,0.3)'}` }}>
+                    <span className="text-xs font-bold uppercase tracking-wide" style={{ color: '#8B5CF6' }}>Net adjustment ({net < 0 ? 'deduct' : 'add'})</span>
+                    <span className="text-lg font-extrabold tabular-nums" style={{ color: net < 0 ? (isLight ? '#DC2626' : '#F87171') : '#8B5CF6' }}>{net === 0 ? '₱0.00' : pesoSigned(net)}</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Apply in week (open only)</span>
+                      <select
+                        value={adjustTargetWeek ? `${adjustTargetWeek.from}|${adjustTargetWeek.to}` : ''}
+                        onChange={e => { const [f, t] = e.target.value.split('|'); setAdjustTargetWeek(targetWeekOptions.find(w => w.from === f && w.to === t) || null) }}
+                        className="w-full px-3 py-2 rounded-xl border text-xs font-bold outline-none"
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                      >
+                        <option value="">Select a week…</option>
+                        {targetWeekOptions.map(w => <option key={`${w.from}|${w.to}`} value={`${w.from}|${w.to}`}>{formatMonth(w.owningMonth)} — Week {w.weekNumber} ({w.label})</option>)}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Reason (required)</span>
+                      <input
+                        type="text"
+                        value={adjustReason}
+                        onChange={e => setAdjustReason(e.target.value)}
+                        placeholder="e.g. Computation error on grounding"
+                        className="w-full px-3 py-2 rounded-xl border text-xs font-semibold outline-none"
+                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                      />
+                    </label>
+                  </div>
+                  <div className="flex items-center justify-end gap-3">
+                    {!(!canSubmit || !adjustTargetWeek || !adjustReason.trim()) ? null : (
+                      <span className="mr-auto text-[11px] font-semibold" style={{ color: '#D97706' }}>
+                        {!canSubmit ? 'Change at least one amount' : !adjustTargetWeek ? 'Pick an open week' : 'Type a reason to continue'}
+                      </span>
+                    )}
+                    <button type="button" onClick={() => setAdjustRow(null)} className="px-5 py-2.5 rounded-xl text-xs font-bold border hover:opacity-80 cursor-pointer" style={{ borderColor: border, color: textMuted, backgroundColor: inputBg }}>Cancel</button>
+                    <button
+                      type="button"
+                      onClick={() => void submitAdjust()}
+                      disabled={!canSubmit || !adjustTargetWeek || !adjustReason.trim() || adjustSubmitting}
+                      className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black text-white shadow-md disabled:opacity-50 cursor-pointer"
+                      style={{ background: '#8B5CF6' }}
+                    >
+                      {adjustSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      <span>{adjustSubmitting ? 'Posting…' : 'Post Adjustment'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        })(),
+        document.body
+      )}
+
+      {/* Correction history — every logged balance adjustment, with who / when / which columns */}
+      {correctionsOpen && createPortal(
+        (() => {
+          const term = correctionsSearch.trim().toLowerCase()
+          const entries = corrections.flatMap(({ row }) => parseAdjustmentLog(row).map(entry => ({ row, entry })))
+            .filter(({ row }) => !term || (row.ticketNumber || '').toLowerCase().includes(term) || row.customerName.toLowerCase().includes(term) || row.installerName.toLowerCase().includes(term))
+            .sort((a, b) => b.entry.at.localeCompare(a.entry.at))
+          return (
+            <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-150">
+              <div className="w-full max-w-2xl rounded-2xl border shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: '90vh', backgroundColor: cardBg, borderColor: border }}>
+                <div className="flex items-start justify-between gap-3 px-6 pt-5 pb-4 shrink-0" style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}>
+                  <div className="min-w-0">
+                    <div className="text-lg font-extrabold tracking-tight" style={{ color: textPrimary }}>Correction History</div>
+                    <div className="text-xs font-semibold mt-0.5" style={{ color: textMuted }}>
+                      {currentBranchDisplay || 'Branch'} · {entries.length} correction{entries.length === 1 ? '' : 's'} · last 3 months
+                      {entries.length > 0 && <> · net <span className="font-bold" style={{ color: entries.reduce((sum, e) => sum + e.entry.net, 0) < 0 ? (isLight ? '#DC2626' : '#F87171') : '#10B981' }}>{pesoSigned(entries.reduce((sum, e) => sum + e.entry.net, 0))}</span></>}
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => setCorrectionsOpen(false)} className="p-2.5 rounded-full shrink-0 border cursor-pointer hover:bg-red-500 hover:border-red-500 hover:text-white transition-all" style={{ color: textMuted, backgroundColor: inputBg, borderColor: inputBorder }} aria-label="Close">
+                    <X className="w-5 h-5" strokeWidth={2.5} />
+                  </button>
+                </div>
+                <div className="px-6 py-3 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: textMuted }} />
+                    <input
+                      type="text"
+                      value={correctionsSearch}
+                      onChange={e => setCorrectionsSearch(e.target.value)}
+                      placeholder="Search ticket, customer or installer…"
+                      className="w-full pl-9 pr-3 py-2 rounded-xl text-sm font-semibold border outline-none focus:ring-2 focus:ring-violet-500/30"
+                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                    />
+                  </div>
+                </div>
+                <div className="flex-1 min-h-0 overflow-y-auto p-5 flex flex-col gap-3" style={{ backgroundColor: headerBg }}>
+                  {entries.length === 0 ? (
+                    <div className="py-16 text-center text-sm font-semibold" style={{ color: textMuted }}>No corrections logged.</div>
+                  ) : (
+                    entries.map(({ row, entry }) => {
+                      const red = isLight ? '#DC2626' : '#F87171'
+                      return (
+                        <div key={entry.id} className="rounded-2xl border overflow-hidden" style={{ backgroundColor: cardBg, borderColor: border }}>
+                          <div className="flex items-start justify-between gap-4 px-4 pt-4 pb-3">
+                            <div className="min-w-0">
+                              <div className="flex items-baseline gap-2 flex-wrap">
+                                <span className="text-lg font-black tracking-tight text-emerald-500">{row.ticketNumber || 'No ticket'}</span>
+                                <span className="text-sm font-bold break-words" style={{ color: textPrimary }}>{row.customerName}</span>
+                              </div>
+                              <div className="text-xs font-bold mt-0.5" style={{ color: textMuted }}>{displayInstallerName(row.installerName)}</div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <div className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>{entry.net < 0 ? 'Deducted' : 'Added'}</div>
+                              <div className="text-xl font-black tabular-nums leading-tight" style={{ color: entry.net < 0 ? red : '#10B981' }}>{pesoSigned(entry.net)}</div>
+                            </div>
+                          </div>
+
+                          <div className="mx-4 mb-3 rounded-xl border overflow-hidden" style={{ borderColor: border }}>
+                            {entry.changes.map((c, i) => (
+                              <div key={c.key} className="flex items-center justify-between gap-3 px-3 py-2 text-xs" style={{ borderTop: i > 0 ? `1px solid ${border}` : 'none' }}>
+                                <span className="font-bold" style={{ color: textPrimary }}>{c.label}</span>
+                                <span className="flex items-center gap-2 tabular-nums">
+                                  <span style={{ color: textMuted }}>₱{peso(c.from)}</span>
+                                  <span style={{ color: textMuted }}>→</span>
+                                  <span className="font-bold" style={{ color: textPrimary }}>₱{peso(c.to)}</span>
+                                  <span
+                                    className="font-black px-1.5 py-0.5 rounded"
+                                    style={{ color: c.delta < 0 ? red : '#10B981', backgroundColor: c.delta < 0 ? (isLight ? '#fef2f2' : 'rgba(248,113,113,0.12)') : (isLight ? '#ecfdf5' : 'rgba(16,185,129,0.12)') }}
+                                  >
+                                    {c.delta > 0 ? '+' : '−'}₱{peso(Math.abs(c.delta))}
+                                  </span>
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="px-4 py-3 flex flex-col gap-1.5 text-xs" style={{ borderTop: `1px solid ${border}`, backgroundColor: headerBg }}>
+                            <div style={{ color: textPrimary }}><span className="font-bold">Reason:</span> <span style={{ color: textMuted }}>{entry.reason || '—'}</span></div>
+                            <div className="flex items-center justify-between gap-3 flex-wrap" style={{ color: textMuted }}>
+                              <span>
+                                By <span className="font-bold" style={{ color: textPrimary }}>{formatPersonName(entry.by)}</span>
+                                {' · '}{new Date(entry.at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                {' '}{new Date(entry.at).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })}
+                              </span>
+                              <span className="font-semibold px-2 py-0.5 rounded-md" style={{ color: '#8B5CF6', backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.14)' }}>
+                                Applied in {shortDate(entry.targetWeekFrom)} – {shortDate(entry.targetWeekTo)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
                 </div>
               </div>
             </div>
@@ -5456,7 +6186,7 @@ export default function Payouts() {
                     className="flex items-center justify-between rounded-xl px-4 py-3"
                     style={{ backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.08)', border: `1px solid ${isLight ? '#a7f3d0' : 'rgba(16,185,129,0.3)'}` }}
                   >
-                    <span className="text-xs font-bold uppercase tracking-wide" style={{ color: '#059669' }}>Full Payout (counts as Add-ons)</span>
+                    <span className="text-xs font-bold uppercase tracking-wide" style={{ color: '#059669' }}>{releaseFor.kind === 'balance' ? 'Remaining 50% Balance (counts as Add-ons)' : 'Full Payout (counts as Add-ons)'}</span>
                     <span className="text-lg font-extrabold tabular-nums" style={{ color: '#059669' }}>₱{peso(rowTotal(releaseFor.row))}</span>
                   </div>
                   <label className="flex flex-col gap-1.5">
@@ -5530,6 +6260,17 @@ export default function Payouts() {
         activeWeek={activeWeek}
         activeMonth={activeMonth}
       />
+
+      {selectedTicketForModal && (
+        <TicketDetailsModal
+          ticket={selectedTicketForModal}
+          isLight={isLight}
+          activeBranchId={branchFilter}
+          user={user}
+          onClose={() => setSelectedTicketForModal(null)}
+          onUpdateTicket={(updated) => setSelectedTicketForModal(updated)}
+        />
+      )}
     </div>
   )
 }

@@ -1,34 +1,16 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Search, X, Loader2, MapPin, Moon, Sun, Menu, AlertTriangle, SlidersHorizontal, Building2, CalendarDays } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
+import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL } from '../utils/api'
 import { useOutletContext } from 'react-router-dom'
-import SearchResultDetailModal from '../components/SearchResultDetailModal'
+import { TicketDetailsModal } from '../components/tickets/TicketDetailsModal'
 import { getInstallerDisplay, formatSpecificDoneStatus, getScheduleStatusBadgeStyle } from '../utils/ticketHelpers'
-
-interface Ticket {
-  id: string
-  ticketNumber?: string
-  ticket_number?: string
-  customerName?: string
-  customer_name?: string
-  location?: any
-  contactPhone?: string
-  assignedEmployeeName?: string
-  installerName?: string
-  installer_name?: string
-  preferredDate?: string
-  preferred_date?: string
-  status: string
-  branchId?: string
-  branch_id?: string
-  unitType?: string
-  acDetails?: string
-  serviceType?: string
-}
+import type { Ticket } from '../utils/ticketTypes'
 
 export default function SearchTab() {
   const { theme, toggleTheme } = useTheme()
+  const { user } = useAuth()
   const isLight = theme === 'light'
   const { setSidebarOpen } = useOutletContext<{ setSidebarOpen: (v: boolean) => void }>() || {}
 
@@ -36,7 +18,7 @@ export default function SearchTab() {
   const [overviewSearchFocused, setOverviewSearchFocused] = useState(false)
   const [overviewResults, setOverviewResults] = useState<Ticket[]>([])
   const [overviewLoading, setOverviewLoading] = useState(false)
-  const [selectedResult, setSelectedResult] = useState<any | null>(null)
+  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null)
 
   // Filter state
   const [filterBranchId, setFilterBranchId] = useState<string>('')
@@ -466,7 +448,7 @@ export default function SearchTab() {
                         </span>
                         <button
                           type="button"
-                          onClick={() => setSelectedResult({ type: 'ticket', id: ticket.id, customerName: customer, rawData: ticket })}
+                          onClick={() => setSelectedTicket(ticket as any)}
                           className="flex-1 sm:w-auto px-3 py-2 sm:py-1 rounded-lg text-[11px] sm:text-[10px] font-bold text-white transition-opacity hover:opacity-90 active:opacity-80"
                           style={{ backgroundColor: green }}
                         >
@@ -528,10 +510,16 @@ export default function SearchTab() {
       </div>
 
       {/* Detail Modal */}
-      {selectedResult && (
-        <SearchResultDetailModal
-          result={selectedResult}
-          onClose={() => setSelectedResult(null)}
+      {selectedTicket && (
+        <TicketDetailsModal
+          ticket={selectedTicket}
+          isLight={isLight}
+          user={user}
+          onClose={() => setSelectedTicket(null)}
+          onUpdateTicket={(updated) => {
+            setSelectedTicket(updated)
+            setOverviewResults(prev => prev.map(t => t.id === updated.id ? { ...t, ...updated } : t))
+          }}
         />
       )}
     </div>

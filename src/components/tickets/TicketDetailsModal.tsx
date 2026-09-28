@@ -69,20 +69,20 @@ function SHead({ title, isLight }: { title: string; isLight: boolean }) {
 export function TicketDetailsModal({
   ticket,
   isLight,
-  isMyTickets,
-  isTaguigServices,
-  canEdit,
-  branchEmployees,
-  activeBranchId,
-  user,
-  duplicateNameKeys,
-  formatAssignedBranchLabel,
-  history,
-  loadingHistory,
-  showHistoryPanel,
+  isMyTickets = false,
+  isTaguigServices = false,
+  canEdit = false,
+  branchEmployees = [],
+  activeBranchId = '',
+  user = null,
+  duplicateNameKeys = new Set(),
+  formatAssignedBranchLabel = (branchId?: string | null) => branchId || '',
+  history = [],
+  loadingHistory = false,
+  showHistoryPanel = false,
   onClose,
-  onToggleHistory,
-  onHideHistory,
+  onToggleHistory = () => {},
+  onHideHistory = () => {},
   onEdit,
   onDelete,
   onUpdateTicket,
@@ -90,21 +90,21 @@ export function TicketDetailsModal({
 }: {
   ticket: Ticket
   isLight: boolean
-  isMyTickets: boolean
-  isTaguigServices: boolean
-  canEdit: boolean
-  branchEmployees: BranchStaffOption[]
-  activeBranchId: string
-  user: AuthUser | null
-  duplicateNameKeys: Set<string>
-  formatAssignedBranchLabel: (branchId?: string | null) => string
+  isMyTickets?: boolean
+  isTaguigServices?: boolean
+  canEdit?: boolean
+  branchEmployees?: BranchStaffOption[]
+  activeBranchId?: string
+  user?: AuthUser | null
+  duplicateNameKeys?: Set<string>
+  formatAssignedBranchLabel?: (branchId?: string | null) => string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  history: any[]
-  loadingHistory: boolean
-  showHistoryPanel: boolean
+  history?: any[]
+  loadingHistory?: boolean
+  showHistoryPanel?: boolean
   onClose: () => void
-  onToggleHistory: () => void
-  onHideHistory: () => void
+  onToggleHistory?: () => void
+  onHideHistory?: () => void
   onEdit?: () => void
   onDelete?: () => void
   onUpdateTicket?: (updatedTicket: Ticket) => void
@@ -182,7 +182,7 @@ export function TicketDetailsModal({
   const branchName = formatAssignedBranchLabel(t.branchId || t.branch_id)
 
   return ReactDOM.createPortal((
-    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-3"
+    <div className="fixed inset-0 z-[2147483647] flex items-end sm:items-center justify-center p-0 sm:p-3"
       style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}>
       <div className="w-full rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
         style={{

@@ -322,6 +322,9 @@ export function mapTicketToPayrollRows(ticket: Ticket, branchName: string, rates
 
   const { label, rateKey } = classifyJob(ticket)
   const installationFee = rateKey ? computeInstallationFee(ticket, rateKey, rates) : 0
+  // Only an explicit collection/downpayment mode on the ticket pre-marks the row unpaid; staff set the rest.
+  const payMode = payment.mode.toUpperCase()
+  const payStatus: PaymentStatus | '' = payMode.includes('COLLECTION') ? 'FOR_COLLECTION' : payMode.includes('DOWN') ? 'DOWNPAYMENT' : ''
 
   return names.map((installerName) => ({
     id: uid(),
@@ -365,7 +368,7 @@ export function mapTicketToPayrollRows(ticket: Ticket, branchName: string, rates
     remarks: '',
     audited: '',
     status: 'PENDING',
-    customFields: {},
+    customFields: (payStatus ? { 'pay:status': payStatus } : {}) as Record<string, string>,
   }))
 }
 
@@ -531,7 +534,7 @@ const moneyStr = (v: unknown) => (v != null ? String(v) : '')
 /** Maps a raw /v1/payroll entry (fees as numbers, customFields as a JSON string) to a PayrollRow. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function mapSavedPayrollEntry(e: any): PayrollRow {
-  return {
+  const row: PayrollRow = {
     id: e.id || uid(),
     ticketId: e.ticketId || undefined,
     ticketNumber: e.ticketNumber || '',
@@ -578,6 +581,27 @@ export function mapSavedPayrollEntry(e: any): PayrollRow {
       try { return e.customFields ? JSON.parse(e.customFields) : {} } catch { return {} }
     })(),
   }
+  return restoreTextFields(row)
+}
+
+/** materialsReturn is a numeric column server-side, but staff type notes into it ("2pcs wire").
+ *  The typed text rides in customFields under this key and wins over the numeric value on load. */
+export const TEXT_FIELD_PREFIX = 'txt:'
+export const MATERIALS_RETURN_TEXT_KEY = TEXT_FIELD_PREFIX + 'materialsReturn'
+const restoreTextFields = (row: PayrollRow): PayrollRow => {
+  const text = row.customFields?.[MATERIALS_RETURN_TEXT_KEY]
+  if (text == null) return row
+  const { [MATERIALS_RETURN_TEXT_KEY]: _omit, ...rest } = row.customFields
+  void _omit
+  return { ...row, materialsReturn: text, customFields: rest }
+}
+/** customFields to persist for a row: re-adds the materialsReturn note only when it isn't a plain number. */
+export const customFieldsForSave = (r: PayrollRow): Record<string, string> => {
+  const { [MATERIALS_RETURN_TEXT_KEY]: _omit, ...rest } = r.customFields || {}
+  void _omit
+  const mr = String(r.materialsReturn ?? '').trim()
+  if (mr && !/^-?[\d,]*\.?\d*$/.test(mr)) rest[MATERIALS_RETURN_TEXT_KEY] = mr
+  return rest
 }
 
 // Per-installer deductions ride along in each row's customFields under reserved "ded:" keys.
@@ -605,22 +629,55 @@ export const customFieldsFeeTotal = (r: PayrollRow): number => {
   if (!r.customFields) return 0
   let sum = 0
   for (const [k, v] of Object.entries(r.customFields)) {
-    if (k.startsWith(DEDUCTION_PREFIX) || k.startsWith('xfer:') || k.startsWith(MANUAL_FEE_PREFIX) || k.startsWith(HOLD_PREFIX)) continue
+    if (k.startsWith(DEDUCTION_PREFIX) || k.startsWith('xfer:') || k.startsWith(MANUAL_FEE_PREFIX) || k.startsWith(HOLD_PREFIX) || k.startsWith(TEXT_FIELD_PREFIX) || k.startsWith(PAY_PREFIX)) continue
     sum += toNum(v)
   }
   return sum
 }
 
-/** Mirrors the sheet's "PAYROLL DUE" — every fee-type column (shown or hidden) plus custom columns. */
-export const rowTotal = (r: PayrollRow): number =>
-  toNum(r.installationFee) + toNum(r.earthGrounding) + toNum(r.dailyAllowance)
-  + toNum(r.excessCopperTube) + toNum(r.hauling) + toNum(r.dismantling) + toNum(r.electricalWorks)
-  + toNum(r.chippingWorks) + toNum(r.breaker) + toNum(r.powerSupplyLaborOnly) + toNum(r.powerSupplyLaborMaterials)
-  + toNum(r.specialBracketCatwalk) + toNum(r.specialBracketWelding) + toNum(r.excessCopperTubeLaborOnly)
-  + toNum(r.relocationAccuFcu) + toNum(r.systemReprocessLabor) + toNum(r.drainPumpInstallation)
-  + toNum(r.scaffoldingInstallation) + toNum(r.flushingOldPipe) + toNum(r.sterneBracket)
-  + toNum(r.breakerInstallationLabor) + toNum(r.chargingOfFreon) + toNum(r.materialsReturn)
-  + customFieldsFeeTotal(r)
+// Ticket payment status — a ticket the customer hasn't fully paid yet pays the tech only 50%; the
+// other 50% is a pending balance released into an open week once the ticket is paid and closed.
+// A row with no status is treated as fully paid, so every pre-existing payout is unchanged.
+export const PAY_PREFIX = 'pay:'
+export type PaymentStatus = 'PAID' | 'DOWNPAYMENT' | 'FOR_COLLECTION' | 'PENDING'
+export const PAYMENT_STATUS_OPTIONS: { value: PaymentStatus; label: string }[] = [
+  { value: 'PAID', label: 'Fully Paid' },
+  { value: 'DOWNPAYMENT', label: 'Downpayment' },
+  { value: 'FOR_COLLECTION', label: 'For Collection' },
+  { value: 'PENDING', label: 'Pending' },
+]
+export const paymentStatusOf = (r: PayrollRow): PaymentStatus => {
+  const v = r.customFields?.['pay:status']
+  return v === 'DOWNPAYMENT' || v === 'FOR_COLLECTION' || v === 'PENDING' ? v : 'PAID'
+}
+export const paymentStatusLabel = (r: PayrollRow): string =>
+  PAYMENT_STATUS_OPTIONS.find(o => o.value === paymentStatusOf(r))?.label ?? 'Fully Paid'
+/** Share of the row's fees this week owes the tech: a carry-over balance copy carries its own
+ *  factor; an unpaid ticket (or one already split when its week closed) pays 50%. */
+export const payFactor = (r: PayrollRow): number => {
+  const explicit = parseFloat(r.customFields?.['pay:factor'] || '')
+  if (!isNaN(explicit)) return explicit
+  if (paymentStatusOf(r) !== 'PAID' || r.customFields?.['pay:split'] === '1') return 0.5
+  return 1
+}
+/** The withheld half of a split ticket is still owed and hasn't been released to any week yet. */
+export const hasPendingBalance = (r: PayrollRow): boolean =>
+  !isCarryOver(r) && isActivePayRow(r) && r.customFields?.['pay:balanceReleased'] !== '1' && payFactor(r) === 0.5
+
+/** Mirrors the sheet's "PAYROLL DUE" — every fee-type column (shown or hidden) plus custom columns,
+ *  scaled by payFactor (50% while the ticket isn't fully paid). */
+export const rowTotal = (r: PayrollRow): number => {
+  const raw = toNum(r.installationFee) + toNum(r.earthGrounding) + toNum(r.dailyAllowance)
+    + toNum(r.excessCopperTube) + toNum(r.hauling) + toNum(r.dismantling) + toNum(r.electricalWorks)
+    + toNum(r.chippingWorks) + toNum(r.breaker) + toNum(r.powerSupplyLaborOnly) + toNum(r.powerSupplyLaborMaterials)
+    + toNum(r.specialBracketCatwalk) + toNum(r.specialBracketWelding) + toNum(r.excessCopperTubeLaborOnly)
+    + toNum(r.relocationAccuFcu) + toNum(r.systemReprocessLabor) + toNum(r.drainPumpInstallation)
+    + toNum(r.scaffoldingInstallation) + toNum(r.flushingOldPipe) + toNum(r.sterneBracket)
+    + toNum(r.breakerInstallationLabor) + toNum(r.chargingOfFreon) + toNum(r.materialsReturn)
+    + customFieldsFeeTotal(r)
+  const factor = payFactor(r)
+  return factor === 1 ? raw : Math.round(raw * factor * 100) / 100
+}
 
 export const installerTotal = (installerRows: PayrollRow[]) =>
   installerRows.reduce((sum, r) => sum + rowTotal(r), 0)
@@ -643,3 +700,24 @@ export const deductionTotal = (rowsIn: PayrollRow[]) =>
   lateDeduction(rowsIn) + deductionValue(rowsIn, 'loan') + deductionValue(rowsIn, 'incompleteUpload')
   + deductionValue(rowsIn, 'losses') + deductionValue(rowsIn, 'remitPenalty') + deductionValue(rowsIn, 'uniform')
 export const installerNet = (installerRows: PayrollRow[]) => installerTotal(installerRows) - deductionTotal(installerRows)
+
+// Balance adjustments on a closed week's ticket: the closed row stays frozen; each correction is
+// posted as a separate adjustment row in an open week and logged here (JSON in customFields
+// "pay:adjLog") so the ticket carries its own correction history — who, when, which columns.
+export interface AdjustmentChange { key: string; label: string; from: number; to: number; delta: number }
+export interface AdjustmentLogEntry {
+  id: string
+  at: string
+  by: string
+  reason: string
+  targetWeekFrom: string
+  targetWeekTo: string
+  net: number
+  changes: AdjustmentChange[]
+}
+export const parseAdjustmentLog = (r: PayrollRow): AdjustmentLogEntry[] => {
+  try {
+    const parsed = JSON.parse(r.customFields?.['pay:adjLog'] || '[]')
+    return Array.isArray(parsed) ? parsed : []
+  } catch { return [] }
+}
