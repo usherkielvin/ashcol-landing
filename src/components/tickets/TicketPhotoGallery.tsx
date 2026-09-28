@@ -33,7 +33,38 @@ import {
 import { ImageLightbox } from '../ImageLightbox'
 import ConfirmDialog, { type ConfirmDialogState } from '../ConfirmDialog'
 
-// ─── types ────────────────────────────────────────────────────────────────────
+// ─── types & constants ────────────────────────────────────────────────────────
+
+export const INSTALL_PHOTO_PRESETS = [
+  'SCHEMATIC',
+  'QUOTATION FORM',
+  'COCA',
+  'NOA',
+  'PR/SALES INVOICE',
+  'START UP',
+  'STICKER',
+  'INDOOR UNIT',
+  'OUTDOOR UNIT',
+  'SERVICE REPORT',
+] as const
+
+export function isInstallTicket(ticket?: Partial<Ticket> | null): boolean {
+  if (!ticket) return false
+  const cat = (ticket.ticketCategory || ticket.ticket_category || '').toUpperCase().trim()
+  const st = (ticket.serviceType || ticket.service_type || '').toUpperCase().trim()
+  const phase = ((ticket as any).schedulePhase || '').toUpperCase().trim()
+
+  // Explicit non-install categories / service types
+  if (['SERVICES', 'SURVEY', 'CLAIMS', 'HR_TASKS', 'ADMIN_TASK', 'PAYROLL_TASKS', 'REQUEST_FOR_FUND'].includes(cat)) return false
+  if (st.includes('CLEANING') || st.includes('CHECKUP') || st.includes('REPAIR') || st.includes('SURVEY ONLY')) return false
+
+  if (cat === 'INSTALLATION' || cat.includes('INSTALL') || cat === 'S/I' || cat === 'SI' || cat === 'SURVEY_AND_INSTALL' || cat === 'SURVEY_&_INSTALL') return true
+  if (st.includes('INSTALL') || st.includes('S/I') || st.includes('SURVEY & INSTALL') || st.includes('SURVEY AND INSTALL')) return true
+  if (phase.includes('INSTALL')) return true
+
+  // Default for field tickets if category and service type are unassigned
+  return !cat && !st
+}
 
 type PendingStatus = 'uploading' | 'saving' | 'error'
 
@@ -52,6 +83,7 @@ interface StagedSlot {
   file: File
   previewUrl: string
   description: string
+  slotIndex?: number
   validationError?: string
 }
 
@@ -76,9 +108,9 @@ function formatUploadedAt(iso?: string): string {
 
 /**
  * Unified 10-slot photo grid for ticket attachments.
- * Drop / paste / click any empty slot to stage an image.
- * Each staged slot shows a preview + required text field + Upload button.
- * Already-uploaded photos appear first with edit/delete controls.
+ * For INSTALL tickets, slots are preset with standard required documentation:
+ * 1. SCHEMATIC, 2. QUOTATION FORM, 3. COCA, 4. NOA, 5. PR/SALES INVOICE,
+ * 6. START UP, 7. STICKER, 8. INDOOR UNIT, 9. OUTDOOR UNIT, 10. SERVICE REPORT.
  */
 export function TicketPhotoGallery({
   ticket,
@@ -89,6 +121,7 @@ export function TicketPhotoGallery({
   onPhotosChange,
   variant = 'details',
   subtitle,
+  isInstall: isInstallProp,
 }: {
   ticket: Ticket
   isLight: boolean
@@ -98,7 +131,9 @@ export function TicketPhotoGallery({
   onPhotosChange?: (photos: TicketPhoto[]) => void
   variant?: 'details' | 'form'
   subtitle?: string
+  isInstall?: boolean
 }) {
+  const isInstall = isInstallProp !== undefined ? isInstallProp : isInstallTicket(ticket)
   const rawPhotos = getTicketPhotosRaw(ticket)
 
   const [photos, setPhotos] = useState<TicketPhoto[]>(() => parseTicketPhotos(rawPhotos))
@@ -248,7 +283,7 @@ export function TicketPhotoGallery({
   }
 
   // ── staging helpers ───────────────────────────────────────────────────────
-  const addFiles = (fileList: FileList | File[] | null) => {
+  const addFiles = (fileList: FileList | File[] | null, targetSlotIndex?: number) => {
     const files = Array.from(fileList || []).filter(isImageFile)
     if (!files.length || !canUpload) return
     const take = Math.max(0, slotsLeft)
@@ -257,12 +292,18 @@ export function TicketPhotoGallery({
       return
     }
     const accepted = files.slice(0, take)
-    const newSlots: StagedSlot[] = accepted.map((file, i) => ({
-      key: `${Date.now()}-${i}-${file.name}`,
-      file,
-      previewUrl: URL.createObjectURL(file),
-      description: '',
-    }))
+    const baseIndex = targetSlotIndex != null ? targetSlotIndex : (photos.length + staged.length)
+    const newSlots: StagedSlot[] = accepted.map((file, i) => {
+      const slotIndex = targetSlotIndex != null && accepted.length === 1 ? targetSlotIndex : (baseIndex + i)
+      const defaultDesc = (isInstall && INSTALL_PHOTO_PRESETS[slotIndex]) ? INSTALL_PHOTO_PRESETS[slotIndex] : ''
+      return {
+        key: `${Date.now()}-${i}-${file.name}`,
+        file,
+        previewUrl: URL.createObjectURL(file),
+        description: defaultDesc,
+        slotIndex,
+      }
+    })
     setStaged(prev => [...prev, ...newSlots])
     if (files.length > accepted.length) {
       setMessage({ kind: 'error', text: `Only ${accepted.length} slot${accepted.length === 1 ? '' : 's'} left (max ${MAX_TICKET_PHOTOS}). Extra files were skipped.` })
@@ -291,7 +332,7 @@ export function TicketPhotoGallery({
       file: slot.file,
       previewUrl: slot.previewUrl,
       status: 'uploading',
-      description: slot.description.trim(),
+      description: slot.description.trim().toUpperCase(),
     }
     setStaged(prev => prev.filter(s => s.key !== key))
     setPending(prev => [...prev, entry])
@@ -334,7 +375,7 @@ export function TicketPhotoGallery({
     if (!editingPhoto) return
     setSavingDesc(true)
     const targetId = editingPhoto.id
-    const nextDesc = editDescDraft.trim() || undefined
+    const nextDesc = editDescDraft.trim().toUpperCase() || undefined
     try {
       const saved = await updateTicketPhotos(ticketId, photosRef.current, current =>
         current.map(p => (p.id === targetId || p.url === editingPhoto.url ? { ...p, description: nextDesc } : p)))
@@ -375,7 +416,14 @@ export function TicketPhotoGallery({
               <Camera className="w-3.5 h-3.5" />
             </div>
             <div className="min-w-0">
-              <p className="text-[11.5px] font-black uppercase tracking-wider text-emerald-600 leading-tight">Photos</p>
+              <div className="flex items-center gap-2">
+                <p className="text-[11.5px] font-black uppercase tracking-wider text-emerald-600 leading-tight">Photos</p>
+                {isInstall && (
+                  <span className="text-[8.5px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-600 border border-emerald-500/25">
+                    Installation Checklist Preset
+                  </span>
+                )}
+              </div>
               {subtitle && (
                 <p className="text-[10px] font-semibold text-slate-400 leading-tight mt-0.5">{subtitle}</p>
               )}
@@ -388,9 +436,16 @@ export function TicketPhotoGallery({
         </div>
       ) : (
         <div className="pt-2 border-b pb-2 mb-3 flex items-center justify-between gap-2" style={{ borderColor: border }}>
-          <p className="text-[10px] font-black uppercase tracking-wider text-[#10B981]">
-            Photos <span style={{ color: textMuted }}>{photos.length}/{MAX_TICKET_PHOTOS}</span>
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-[10px] font-black uppercase tracking-wider text-[#10B981]">
+              Photos <span style={{ color: textMuted }}>{photos.length}/{MAX_TICKET_PHOTOS}</span>
+            </p>
+            {isInstall && (
+              <span className="text-[8px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-600 border border-emerald-500/25">
+                Install Preset
+              </span>
+            )}
+          </div>
         </div>
       )}
 
@@ -416,7 +471,9 @@ export function TicketPhotoGallery({
           {/* drag-hint strip when grid has something */}
           {canUpload && usedSlots > 0 && (
             <p className="text-[10px] mb-2" style={{ color: textMuted }}>
-              Drag images anywhere, paste with Ctrl+V, or click an empty slot to add.
+              {isInstall
+                ? 'Attach images to the corresponding preset slots below or drag and drop anywhere.'
+                : 'Drag images anywhere, paste with Ctrl+V, or click an empty slot to add.'}
             </p>
           )}
 
@@ -439,21 +496,27 @@ export function TicketPhotoGallery({
             ))}
 
             {/* 2. Staged slots (dropped, not yet uploaded) */}
-            {staged.map(slot => (
-              <StagedSlotCell
-                key={slot.key}
-                slot={slot}
-                tileStyle={tileStyle}
-                border={border}
-                cardBg={cardBg}
-                textPrimary={textPrimary}
-                onDescChange={(val) =>
-                  setStaged(prev => prev.map(s => s.key === slot.key ? { ...s, description: val, validationError: undefined } : s))
-                }
-                onUpload={() => void uploadSlot(slot.key)}
-                onClear={() => clearSlot(slot.key)}
-              />
-            ))}
+            {staged.map((slot, i) => {
+              const slotIdx = slot.slotIndex ?? (photos.length + i)
+              const preset = isInstall ? INSTALL_PHOTO_PRESETS[slotIdx] : undefined
+              return (
+                <StagedSlotCell
+                  key={slot.key}
+                  slot={slot}
+                  slotIndex={slotIdx}
+                  presetLabel={preset}
+                  tileStyle={tileStyle}
+                  border={border}
+                  cardBg={cardBg}
+                  textPrimary={textPrimary}
+                  onDescChange={(val) =>
+                    setStaged(prev => prev.map(s => s.key === slot.key ? { ...s, description: val, validationError: undefined } : s))
+                  }
+                  onUpload={() => void uploadSlot(slot.key)}
+                  onClear={() => clearSlot(slot.key)}
+                />
+              )
+            })}
 
             {/* 3. Currently uploading */}
             {pending.map(p => (
@@ -494,17 +557,22 @@ export function TicketPhotoGallery({
               </div>
             ))}
 
-            {/* 4. Empty slots — each is a drop / click target */}
-            {canUpload && Array.from({ length: emptyCount }).map((_, i) => (
-              <EmptySlotCell
-                key={`empty-${i}`}
-                border={border}
-                textMuted={textMuted}
-                textPrimary={textPrimary}
-                onClick={() => inputRef.current?.click()}
-                onFiles={addFiles}
-              />
-            ))}
+            {/* 4. Empty slots — each is a drop / click target with its preset label */}
+            {canUpload && Array.from({ length: emptyCount }).map((_, i) => {
+              const slotIdx = usedSlots + i
+              const preset = isInstall ? INSTALL_PHOTO_PRESETS[slotIdx] : undefined
+              return (
+                <EmptySlotCell
+                  key={`empty-${slotIdx}`}
+                  slotIndex={slotIdx}
+                  presetLabel={preset}
+                  border={border}
+                  textMuted={textMuted}
+                  textPrimary={textPrimary}
+                  onFiles={(files) => addFiles(files, slotIdx)}
+                />
+              )
+            })}
           </div>
 
           {/* ── global empty call-to-action (no photos at all yet) ─────────── */}
@@ -534,10 +602,10 @@ export function TicketPhotoGallery({
           >
             <div className="flex items-center justify-between border-b pb-2.5" style={{ borderColor: border }}>
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
-                  <Pencil className="w-3.5 h-3.5" />
-                </div>
-                <h3 className="text-sm font-extrabold" style={{ color: textPrimary }}>Edit Description</h3>
+                <FileText className="w-4 h-4 text-emerald-500" />
+                <h4 className="text-xs font-black tracking-tight" style={{ color: textPrimary }}>
+                  Edit Photo Description
+                </h4>
               </div>
               <button
                 type="button"
@@ -564,17 +632,41 @@ export function TicketPhotoGallery({
               </div>
             </div>
 
+            {isInstall && (
+              <div className="flex flex-col gap-1.5">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-emerald-600">
+                  Quick Install Presets
+                </label>
+                <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+                  {INSTALL_PHOTO_PRESETS.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setEditDescDraft(p)}
+                      className={`px-2 py-1 rounded text-[9.5px] font-bold border transition-colors ${
+                        editDescDraft === p
+                          ? 'bg-emerald-600 text-white border-emerald-600'
+                          : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 hover:bg-emerald-500/20'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>
                 Description / Note
               </label>
               <textarea
                 autoFocus
-                rows={3}
-                placeholder="e.g. Serial number plate, Indoor unit, Before repair…"
+                rows={2}
+                placeholder="e.g. SCHEMATIC, INDOOR UNIT…"
                 value={editDescDraft}
                 onChange={(e) => setEditDescDraft(e.target.value)}
-                className="w-full text-xs font-semibold p-2.5 rounded-xl border outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 resize-none"
+                className="w-full text-xs font-semibold p-2.5 rounded-xl border outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 resize-none uppercase"
                 style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
               />
             </div>
@@ -662,11 +754,11 @@ function UploadedPhotoCell({
         />
         {photo.description && (
           <div
-            className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-md bg-black/75 backdrop-blur-sm text-emerald-400 flex items-center gap-1 border border-emerald-500/30 group-hover:opacity-0 transition-opacity"
+            className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-md bg-black/75 backdrop-blur-sm text-emerald-400 flex items-center gap-1 border border-emerald-500/30 group-hover:opacity-0 transition-opacity max-w-[90%]"
             title={photo.description}
           >
-            <MessageSquare className="w-2.5 h-2.5" />
-            <span className="text-[8.5px] font-bold truncate max-w-[55px] sm:max-w-[70px]">{photo.description}</span>
+            <MessageSquare className="w-2.5 h-2.5 shrink-0" />
+            <span className="text-[8.5px] font-black uppercase truncate">{photo.description}</span>
           </div>
         )}
       </button>
@@ -679,7 +771,7 @@ function UploadedPhotoCell({
         {photo.description ? (
           <div className="flex items-start gap-1">
             <FileText className="w-3 h-3 text-emerald-400 shrink-0 mt-0.5" />
-            <p className="text-[10px] font-bold leading-tight text-emerald-300 line-clamp-3 select-none">{photo.description}</p>
+            <p className="text-[10px] font-black leading-tight text-emerald-300 line-clamp-3 select-none uppercase">{photo.description}</p>
           </div>
         ) : (
           <p className="text-[9.5px] font-medium text-slate-300/80 italic select-none">No description</p>
@@ -718,10 +810,12 @@ function UploadedPhotoCell({
 
 /** Staged slot: image dropped but not yet uploaded. Has inline text field + Upload button. */
 function StagedSlotCell({
-  slot, tileStyle, border, cardBg, textPrimary,
+  slot, slotIndex, presetLabel, tileStyle, border, cardBg, textPrimary,
   onDescChange, onUpload, onClear,
 }: {
-  slot: { key: string; previewUrl: string; description: string; validationError?: string }
+  slot: StagedSlot
+  slotIndex?: number
+  presetLabel?: string
   tileStyle: React.CSSProperties
   border: string
   cardBg: string
@@ -743,14 +837,14 @@ function StagedSlotCell({
         <button
           type="button"
           onClick={onClear}
-          className="absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center bg-black/70 text-white hover:bg-red-600 transition-colors"
+          className="absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center bg-black/70 text-white hover:bg-red-600 transition-colors z-10"
           title="Remove"
         >
           <X className="w-3 h-3" />
         </button>
-        {/* "New" badge */}
-        <span className="absolute top-1 left-1 text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-600 text-white">
-          New
+        {/* Badge */}
+        <span className="absolute top-1 left-1 text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-600 text-white truncate max-w-[85%]">
+          {presetLabel ? `${slotIndex != null ? `#${slotIndex + 1} ` : ''}${presetLabel}` : 'New'}
         </span>
       </div>
 
@@ -758,10 +852,10 @@ function StagedSlotCell({
       <div className="flex flex-col gap-1 p-1.5">
         <input
           type="text"
-          placeholder="Add a description…"
+          placeholder={presetLabel || "Add a description…"}
           value={slot.description}
           onChange={(e) => onDescChange(e.target.value)}
-          className="w-full text-[10.5px] font-semibold px-2 py-1 rounded-lg border outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
+          className="w-full text-[10.5px] font-semibold px-2 py-1 rounded-lg border outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all uppercase"
           style={{
             backgroundColor: cardBg,
             borderColor: hasError ? '#ef4444' : border,
@@ -789,17 +883,19 @@ function StagedSlotCell({
   )
 }
 
-/** Empty slot — acts as a drop target and click-to-browse button. */
+/** Empty slot — acts as a drop target and click-to-browse button with preset label for install tickets. */
 function EmptySlotCell({
-  border, textMuted, textPrimary, onClick, onFiles,
+  slotIndex, presetLabel, border, textMuted, textPrimary, onFiles,
 }: {
+  slotIndex?: number
+  presetLabel?: string
   border: string
   textMuted: string
   textPrimary: string
-  onClick: () => void
   onFiles: (files: FileList | File[]) => void
 }) {
   const [over, setOver] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setOver(true) }
   const handleDragLeave = () => setOver(false)
@@ -818,25 +914,55 @@ function EmptySlotCell({
   }
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <div
+      onClick={() => fileInputRef.current?.click()}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       onPaste={handlePaste}
-      className="aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-all duration-150"
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click() }}
+      className="aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center transition-all duration-150 relative cursor-pointer group hover:border-emerald-500"
       style={{
         borderColor: over ? '#10B981' : border,
-        backgroundColor: over ? 'rgba(16,185,129,0.07)' : 'transparent',
-        color: textMuted,
+        backgroundColor: over ? 'rgba(16,185,129,0.08)' : 'transparent',
       }}
-      aria-label="Add photo"
+      aria-label={presetLabel ? `Attach photo: ${presetLabel}` : "Add photo"}
     >
-      <ImagePlus className="w-5 h-5" style={{ color: over ? '#10B981' : textMuted }} />
-      <span className="text-[9px] font-bold" style={{ color: over ? '#10B981' : textPrimary }}>
-        {over ? 'Drop here' : 'Add photo'}
-      </span>
-    </button>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files?.length) {
+            onFiles(e.target.files)
+            e.target.value = ''
+          }
+        }}
+      />
+      {presetLabel ? (
+        <div className="flex flex-col items-center justify-center p-1.5 text-center h-full w-full gap-0.5 select-none">
+          <span className="text-[8.5px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 leading-none">
+            {slotIndex != null ? `#${slotIndex + 1}` : ''}
+          </span>
+          <ImagePlus className="w-4 h-4 mt-0.5 transition-transform group-hover:scale-110" style={{ color: over ? '#10B981' : textMuted }} />
+          <span className="text-[9.5px] font-black uppercase tracking-tight leading-tight px-1 text-center line-clamp-2" style={{ color: over ? '#10B981' : textPrimary }}>
+            {presetLabel}
+          </span>
+          <span className="text-[8px] font-bold opacity-60 uppercase tracking-wider" style={{ color: textMuted }}>
+            {over ? 'Drop here' : 'Attach'}
+          </span>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center gap-1 select-none">
+          <ImagePlus className="w-5 h-5 transition-transform group-hover:scale-110" style={{ color: over ? '#10B981' : textMuted }} />
+          <span className="text-[9px] font-bold" style={{ color: over ? '#10B981' : textPrimary }}>
+            {over ? 'Drop here' : 'Add photo'}
+          </span>
+        </div>
+      )}
+    </div>
   )
 }

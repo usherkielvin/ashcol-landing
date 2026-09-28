@@ -1077,12 +1077,12 @@ export default function Branches() {
         {/* Search */}
         <div
           style={{ backgroundColor: inputBg, borderColor: border }}
-          className="flex items-center border rounded-xl px-3 py-2 w-full md:w-96 focus-within:border-[#10B981] focus-within:ring-1 focus-within:ring-[#10B981] transition-all"
+          className="flex items-center border rounded-full px-3.5 h-9 w-full md:w-96 focus-within:border-[#10B981] transition-all"
         >
-          <Search className="w-4 h-4 mr-2 shrink-0" style={{ color: textMuted }} />
+          <Search className="w-3.5 h-3.5 mr-2 shrink-0" style={{ color: textMuted }} />
           <input
             type="text"
-            placeholder="Search branch, OIC, driver, installer, technician..."
+            placeholder="Search branches…"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             style={{ color: textPrimary }}
@@ -1106,7 +1106,7 @@ export default function Branches() {
           <p className="text-sm" style={{ color: textMuted }}>Try adjusting your search query or filters.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-8">
           {filteredBranches.map(branch => {
             const isHq = branch.isHQ
             
@@ -1120,9 +1120,9 @@ export default function Branches() {
                   borderWidth: isHq ? '2px' : '1px'
                 }}
               >
-                <div className="p-6 md:p-8 flex flex-col gap-6 flex-1">
+                <div className="p-4 sm:p-6 md:p-8 flex flex-col gap-4 sm:gap-6 flex-1">
                   {/* Branch name & status */}
-                  <div className="flex flex-col sm:flex-row justify-between items-start gap-4 pb-4 border-b border-slate-100 dark:border-slate-800/60">
+                  <div className="flex flex-col sm:flex-row justify-between items-start gap-2.5 sm:gap-4 pb-3 sm:pb-4 border-b border-slate-100 dark:border-slate-800/60">
                     <div>
                       <div className="flex items-center gap-2.5">
                         <h4 className="text-lg md:text-xl font-extrabold tracking-tight" style={{ color: textPrimary }}>

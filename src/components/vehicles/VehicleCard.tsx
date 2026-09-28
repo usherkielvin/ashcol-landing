@@ -70,8 +70,8 @@ function VehicleCard({ vehicle: v, branchName, theme, canEdit, onOpen, onEdit }:
           <VehiclePlate plate={v.plateNumber} />
         </div>
 
-        <div className="mt-auto pt-2 flex items-center justify-between gap-2 border-t" style={{ borderColor: theme.border }}>
-          <span className="flex items-center gap-1.5 min-w-0 text-[11px] font-semibold" style={{ color: theme.textMuted }} title={branchName}>
+        <div className="mt-auto pt-2 flex items-center justify-start sm:justify-between gap-2 border-t" style={{ borderColor: theme.border }}>
+          <span className="hidden sm:flex items-center gap-1.5 min-w-0 text-[11px] font-semibold" style={{ color: theme.textMuted }} title={branchName}>
             <Building2 className="w-3.5 h-3.5 shrink-0" />
             <span className="truncate">{branchName.replace(/^ashcol\s+/i, '') || 'Unassigned'}</span>
           </span>
@@ -82,7 +82,7 @@ function VehicleCard({ vehicle: v, branchName, theme, canEdit, onOpen, onEdit }:
             >
               {v.driverName ? initials(v.driverName) : '?'}
             </span>
-            <span className="truncate max-w-[72px]">{v.driverName || 'No driver'}</span>
+            <span className="truncate max-w-[96px] sm:max-w-[72px]">{v.driverName || 'No driver'}</span>
           </span>
         </div>
       </div>

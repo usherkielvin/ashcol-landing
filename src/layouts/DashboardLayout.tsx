@@ -996,24 +996,24 @@ export default function DashboardLayout() {
 
               <div className="flex flex-col justify-center min-w-0 shrink-0">
                 {location.pathname === '/profile' ? (
-                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
+                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-snug py-0.5 uppercase truncate" style={{ color: textPrimary }}>
                     Profile
                   </h1>
                 ) : location.pathname.startsWith('/messages') || currentPage === 'Messages' ? (
-                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
+                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-snug py-0.5 uppercase truncate" style={{ color: textPrimary }}>
                     Messages
                   </h1>
                 ) : currentPage === 'Search' || location.pathname === '/search' ? (
-                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
+                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-snug py-0.5 uppercase truncate" style={{ color: textPrimary }}>
                     Search
                   </h1>
                 ) : currentPage === 'Relays' || currentPage === 'Employees' || currentPage === 'Members' || currentPage === 'Registration' || currentPage === 'Request Forms' || currentPage === 'Request Forms Archive' || currentPage === 'Payouts' || currentPage === 'Payroll' || currentPage === 'For Collections' || currentPage === 'Cash Advance' || location.pathname.startsWith('/payouts') || location.pathname.startsWith('/payroll') || location.pathname === '/operations-forms' || location.pathname === '/request-forms-archive' || location.pathname === '/collections' || location.pathname === '/cash-advances' ? (
-                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }}>
+                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-snug py-0.5 uppercase truncate" style={{ color: textPrimary }}>
                     {currentPage}
                   </h1>
                 ) : (
                   <>
-                    <span className="text-[10px] font-extrabold uppercase tracking-widest leading-none mb-1" style={{ color: textMuted }}>
+                    <span className="text-[10px] font-extrabold uppercase tracking-widest leading-normal mb-0.5" style={{ color: textMuted }}>
                       {currentPage}
                     </span>
                     {branchLabel ? (
@@ -1021,11 +1021,11 @@ export default function DashboardLayout() {
                         <div ref={headerBranchRef} className="relative">
                           <button
                             onClick={() => setHeaderBranchDropdownOpen(prev => !prev)}
-                            className="flex items-center gap-1 text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate transition-opacity hover:opacity-80"
+                            className="flex items-center gap-1 text-[15px] md:text-[17px] font-black tracking-tight leading-snug py-0.5 uppercase truncate transition-opacity hover:opacity-80"
                             style={{ color: textPrimary }}
                             title={`Active Branch: ${branchLabel}`}
                           >
-                            <span className="truncate">{branchLabel}</span>
+                            <span className="truncate py-0.5">{branchLabel}</span>
                             <ChevronDown className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
                           </button>
                           {headerBranchDropdownOpen && (
@@ -1048,7 +1048,7 @@ export default function DashboardLayout() {
                                         }`}
                                       >
                                         <div className="flex items-center gap-2 truncate mr-2">
-                                          <span className="truncate">{formatBranchName(b.name)}</span>
+                                          <span className="truncate py-0.5">{formatBranchName(b.name)}</span>
                                           {b.isReadOnly && (
                                             <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-800 shrink-0">
                                               READ ONLY
@@ -1064,7 +1064,7 @@ export default function DashboardLayout() {
                           )}
                         </div>
                       ) : (
-                        <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-none uppercase truncate" style={{ color: textPrimary }} title={branchLabel}>
+                        <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-snug py-0.5 uppercase truncate" style={{ color: textPrimary }} title={branchLabel}>
                           {branchLabel}
                         </h1>
                       )

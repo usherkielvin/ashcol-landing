@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Search, X, Plus, Truck, Building2 } from 'lucide-react'
+import { X, Plus, Truck, Building2 } from 'lucide-react'
+import FilterChipMenu from '../components/directory/FilterChipMenu'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -18,8 +19,8 @@ function authToken(): string {
 }
 
 const UNASSIGNED = 'Unassigned'
-// Compact cards that wrap as many per row as fit (~5–7 on a wide desktop, 1 on a phone).
-const CARD_GRID = 'repeat(auto-fill, minmax(min(100%, 232px), 1fr))'
+// Compact cards: 2 per row on a phone, then as many as fit (~5–7 on a wide desktop).
+const CARD_GRID_CLS = 'grid grid-cols-2 gap-2.5 sm:gap-3 sm:[grid-template-columns:repeat(auto-fill,minmax(min(100%,232px),1fr))]'
 
 export default function Vehicles() {
   const { theme: mode } = useTheme()
@@ -39,7 +40,6 @@ export default function Vehicles() {
   const [branches, setBranches] = useState<BranchListEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [search, setSearch] = useState('')
   const [branchFilter, setBranchFilter] = useState('')
   const [diaryVehicle, setDiaryVehicle] = useState<Vehicle | null>(null)
   const [confirmModal, setConfirmModal] = useState<ConfirmDialogState | null>(null)
@@ -81,20 +81,10 @@ export default function Vehicles() {
     return vehicles.filter(v => isSameBaseBranch(v.branchId, user?.branchId))
   }, [vehicles, isAdmin, user?.branchId])
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return visibleVehicles.filter(v => {
-      if (branchFilter && v.branchId !== branchFilter) return false
-      if (!q) return true
-      return (
-        v.name.toLowerCase().includes(q) ||
-        (v.plateNumber || '').toLowerCase().includes(q) ||
-        (v.brandModel || '').toLowerCase().includes(q) ||
-        (v.driverName || '').toLowerCase().includes(q) ||
-        branchName(v.branchId).toLowerCase().includes(q)
-      )
-    })
-  }, [visibleVehicles, search, branchFilter, branchName])
+  const filtered = useMemo(
+    () => visibleVehicles.filter(v => !branchFilter || v.branchId === branchFilter),
+    [visibleVehicles, branchFilter],
+  )
 
   // Admins looking at several branches get one labelled section per branch, all using the same card grid.
   const groups = useMemo(() => {
@@ -138,7 +128,7 @@ export default function Vehicles() {
   const editVehicle = useCallback((v: Vehicle) => setForm({ vehicle: v }), [])
 
   const grid = (list: Vehicle[]) => (
-    <div className="grid gap-3 items-stretch" style={{ gridTemplateColumns: CARD_GRID }}>
+    <div className={`${CARD_GRID_CLS} items-stretch`}>
       {list.map(v => (
         <VehicleCard
           key={v.id}
@@ -154,7 +144,7 @@ export default function Vehicles() {
   )
 
   return (
-    <div className="p-4 sm:p-6 flex flex-col gap-5 max-w-[1800px] mx-auto w-full">
+    <div className="p-3 sm:p-6 flex flex-col gap-3 sm:gap-5 max-w-[1800px] mx-auto w-full">
       <ConfirmDialog dialog={confirmModal} onClose={() => setConfirmModal(null)} />
 
       {diaryVehicle && (
@@ -183,52 +173,32 @@ export default function Vehicles() {
         />
       )}
 
-      {/* Header */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black tracking-tight" style={{ color: textPrimary }}>Vehicles</h1>
-          <p className="text-sm mt-1" style={{ color: textMuted }}>
-            {isAdmin ? 'Fleet across all branches' : 'Your branch fleet'} · driver assignment, coding days and automated vehicle records.
-          </p>
+      {/* Toolbar — branch chip and Add button share one aligned row */}
+      {(isAdmin || canAdd) && (
+        <div className="flex items-center justify-between gap-3">
+          {isAdmin ? (
+            <FilterChipMenu
+              icon={Building2}
+              title="Filter by branch"
+              value={branchFilter}
+              onChange={setBranchFilter}
+              tokens={{ cardBg, border, textPrimary, textMuted, inputBg, inputBorder }}
+              options={[{ value: '', label: 'All Branches' }, ...branches.map(b => ({ value: b.id, label: b.name }))]}
+            />
+          ) : <span />}
+          {canAdd && (
+            <button
+              onClick={() => setForm({ vehicle: null })}
+              className="flex items-center gap-1.5 h-9 px-3.5 rounded-full text-xs font-bold text-white transition-all active:scale-95 hover:opacity-90 shadow-sm shrink-0"
+              style={{ background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)' }}
+              aria-label="Add vehicle"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add<span className="hidden sm:inline"> Vehicle</span></span>
+            </button>
+          )}
         </div>
-        {canAdd && (
-          <button
-            onClick={() => setForm({ vehicle: null })}
-            className="flex items-center gap-2 px-5 h-11 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-md"
-            style={{ background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)' }}
-          >
-            <Plus className="w-4 h-4" /> ADD VEHICLE
-          </button>
-        )}
-      </div>
-
-      {/* Search / branch filter */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2.5 flex-1 min-w-[240px] max-w-xl rounded-xl px-3.5 h-11 border transition-all focus-within:border-emerald-500" style={{ backgroundColor: cardBg, borderColor: inputBorder }}>
-          <Search className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
-          <input
-            type="text"
-            placeholder="Search name, plate, driver, branch…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="bg-transparent text-sm outline-none w-full"
-            style={{ color: textPrimary }}
-          />
-          {search && <button onClick={() => setSearch('')} style={{ color: textMuted }} aria-label="Clear search"><X className="w-4 h-4" /></button>}
-        </div>
-
-        {isAdmin && (
-          <select
-            value={branchFilter}
-            onChange={e => setBranchFilter(e.target.value)}
-            className="rounded-xl px-4 h-11 text-xs font-semibold uppercase tracking-wider border outline-none"
-            style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
-          >
-            <option value="">All Branches</option>
-            {branches.map(b => <option key={b.id} value={b.id}>{b.name.toUpperCase()}</option>)}
-          </select>
-        )}
-      </div>
+      )}
 
       {error && (
         <div className="flex items-start gap-3 px-4 py-3 rounded-xl text-sm font-medium" style={{ backgroundColor: 'rgba(239,68,68,0.08)', color: '#EF4444' }}>
@@ -238,7 +208,7 @@ export default function Vehicles() {
       )}
 
       {loading ? (
-        <div className="grid gap-3" style={{ gridTemplateColumns: CARD_GRID }}>
+        <div className={CARD_GRID_CLS}>
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="rounded-2xl border overflow-hidden animate-pulse" style={{ backgroundColor: cardBg, borderColor: border }}>
               <div className="aspect-video" style={{ backgroundColor: inputBg }} />
@@ -255,18 +225,19 @@ export default function Vehicles() {
           <Truck className="w-9 h-9 mx-auto mb-2" style={{ color: textMuted }} />
           <p className="text-sm font-semibold" style={{ color: textMuted }}>No vehicles found</p>
           <p className="text-xs mt-1" style={{ color: textMuted }}>
-            {visibleVehicles.length === 0 && canAdd ? 'Add your first vehicle to get started.' : 'Try adjusting your search or filters.'}
+            {visibleVehicles.length === 0 && canAdd ? 'Add your first vehicle to get started.' : 'Try a different branch filter.'}
           </p>
         </div>
       ) : grouped ? (
-        <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-5 sm:gap-8">
           {groups.map(g => (
-            <section key={g.name} className="flex flex-col gap-3">
-              <div className="flex items-center gap-3">
-                <span className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(16,185,129,0.12)', color: accent }}>
-                  <Building2 className="w-4 h-4" />
+            <section key={g.name} className="flex flex-col gap-2.5 sm:gap-3">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <span className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(16,185,129,0.12)', color: accent }}>
+                  <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </span>
-                <h2 className="text-sm font-black uppercase tracking-wide" style={{ color: textPrimary }}>{g.name}</h2>
+                <h2 className="text-xs sm:text-sm font-black uppercase tracking-wide" style={{ color: textPrimary }}>{g.name}</h2>
+                <span className="text-[10px] font-bold" style={{ color: textMuted }}>{g.list.length}</span>
                 <div className="flex-1 h-px" style={{ backgroundColor: border }} />
               </div>
               {grid(g.list)}

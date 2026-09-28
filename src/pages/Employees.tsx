@@ -5,7 +5,7 @@ import {
   CheckCircle, XCircle, Trash2, X, Plus, Copy,
   Check, Eye, EyeOff,
   Camera, Calendar, User,
-  Loader2, ChevronDown, Filter, Edit3, Shield,
+  Loader2, Filter, Edit3, Shield,
   Clock, Briefcase, UserCheck, KeyRound
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -15,6 +15,7 @@ import TicketHistoryTable from '../components/TicketHistoryTable'
 import PresenceStatus from '../components/PresenceStatus'
 import WarrantyRegistrationHistoryTable from '../components/WarrantyRegistrationHistoryTable'
 import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName, notifyEmployeesDirectoryUpdated, isWarrantyRegistrar } from '../utils/api'
+import FilterChipMenu from '../components/directory/FilterChipMenu'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 import { uploadReceiptImage } from '../services/supabaseStorage'
 
@@ -414,23 +415,6 @@ export default function Employees() {
   const [tabFilter] = useState<'all' | 'active' | 'inactive'>('all')
   const [roleFilter, setRoleFilter] = useState<string>('all')
   const [selectedBranchId, setSelectedBranchId] = useState<string>('')
-  const [branchDropdownOpen, setBranchDropdownOpen] = useState(false)
-  const [roleDropdownOpen, setRoleDropdownOpen] = useState(false)
-  const branchDropdownRef = useRef<HTMLDivElement>(null)
-  const roleDropdownRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (branchDropdownRef.current && !branchDropdownRef.current.contains(e.target as Node)) {
-        setBranchDropdownOpen(false)
-      }
-      if (roleDropdownRef.current && !roleDropdownRef.current.contains(e.target as Node)) {
-        setRoleDropdownOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
 
   // Feedback
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -1211,149 +1195,75 @@ export default function Employees() {
       <div className="rounded-2xl flex flex-col shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
 
         {/* Search, Filter, & Action Bar */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 sm:px-6 sm:py-4 border-b" style={{ borderColor: border }}>
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3 flex-1">
-            {/* Search Input */}
-            <div className="flex items-center gap-2.5 w-full sm:w-auto sm:min-w-[260px] sm:max-w-sm rounded-xl px-3.5 py-2.5 sm:py-2 border transition-all focus-within:border-emerald-500" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-              <Search className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
+        <div className="flex flex-col gap-2 p-3 sm:px-6 sm:py-4 border-b" style={{ borderColor: border }}>
+          {/* Row 1: search + compact add */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-1 sm:flex-initial sm:w-72 rounded-full px-3.5 h-9 border transition-all focus-within:border-emerald-500" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+              <Search className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
               <input
                 type="text"
-                placeholder="Search name, email, branch…"
+                placeholder="Search members…"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="bg-transparent text-sm outline-none w-full"
+                className="bg-transparent text-xs outline-none w-full"
                 style={{ color: textPrimary }}
               />
-              {search && <button onClick={() => setSearch('')} style={{ color: textMuted }}><X className="w-4 h-4" /></button>}
+              {search && <button onClick={() => setSearch('')} style={{ color: textMuted }} aria-label="Clear search"><X className="w-3.5 h-3.5" /></button>}
             </div>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              {/* Custom Branch Filter Dropdown */}
-              <div className="relative flex-1 sm:flex-initial" ref={branchDropdownRef}>
-                <button
-                  onClick={() => setBranchDropdownOpen(prev => !prev)}
-                  className="w-full sm:w-auto flex items-center justify-between sm:justify-start gap-2 rounded-xl px-3.5 sm:px-4 py-2 text-xs font-semibold uppercase tracking-wider border transition-all hover:bg-slate-500/5 focus:outline-none"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Building2 className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
-                    <span className="truncate">
-                      {selectedBranchId
-                        ? branches.find(b => b.id === selectedBranchId)?.name.toUpperCase() || 'ALL BRANCHES'
-                        : 'ALL BRANCHES'}
-                    </span>
-                  </div>
-                  <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${branchDropdownOpen ? 'rotate-180' : ''}`} style={{ color: textMuted }} />
-                </button>
-
-                {branchDropdownOpen && (
-                  <div
-                    className="absolute left-0 mt-2 w-[calc(100vw-2.5rem)] sm:w-[480px] max-w-lg rounded-2xl shadow-2xl overflow-hidden z-40 border p-4 animate-[fadeIn_0.15s_ease-out]"
-                    style={{ backgroundColor: cardBg, borderColor: border }}
-                  >
-                    <div className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-3 pb-2 border-b" style={{ borderColor: border }}>
-                      Select Branch
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto">
-                      <button
-                        onClick={() => { setSelectedBranchId(''); setBranchDropdownOpen(false) }}
-                        className="flex items-center justify-between px-4 py-3 rounded-xl text-xs font-semibold transition-all text-left uppercase border hover:bg-slate-500/5"
-                        style={{
-                          backgroundColor: selectedBranchId === '' ? 'rgba(16,185,129,0.06)' : 'transparent',
-                          borderColor: selectedBranchId === '' ? '#10B981' : border,
-                          color: selectedBranchId === '' ? '#10B981' : textPrimary
-                        }}
-                      >
-                        <span>ALL BRANCHES</span>
-                        {selectedBranchId === '' && <Check className="w-3.5 h-3.5 shrink-0 text-emerald-500" />}
-                      </button>
-
-                      {branches.map(b => {
-                        const isSelected = selectedBranchId === b.id
-                        return (
-                          <button
-                            key={b.id}
-                            onClick={() => { setSelectedBranchId(b.id); setBranchDropdownOpen(false) }}
-                            className="flex items-center justify-between px-4 py-3 rounded-xl text-xs font-semibold transition-all text-left uppercase border hover:bg-slate-500/5"
-                            style={{
-                              backgroundColor: isSelected ? 'rgba(16,185,129,0.06)' : 'transparent',
-                              borderColor: isSelected ? '#10B981' : border,
-                              color: isSelected ? '#10B981' : textPrimary
-                            }}
-                          >
-                            <span className="truncate pr-2">{b.name.toUpperCase()}</span>
-                            {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-emerald-500" />}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Custom Role Filter Dropdown */}
-              <div className="relative flex-1 sm:flex-initial" ref={roleDropdownRef}>
-                <button
-                  onClick={() => setRoleDropdownOpen(prev => !prev)}
-                  className="w-full sm:w-auto flex items-center justify-between sm:justify-start gap-2 rounded-xl px-3.5 sm:px-4 py-2 text-xs font-semibold uppercase tracking-wider border transition-all hover:bg-slate-500/5 focus:outline-none"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Filter className="w-3.5 h-3.5 shrink-0" style={{ color: '#10B981' }} />
-                    <span className="truncate">
-                      {roleFilter === 'all'
-                        ? 'ALL ROLES'
-                        : roleFilter}
-                    </span>
-                  </div>
-                  <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${roleDropdownOpen ? 'rotate-180' : ''}`} style={{ color: textMuted }} />
-                </button>
-
-                {roleDropdownOpen && (
-                  <div
-                    className="absolute right-0 sm:left-0 mt-2 w-[calc(100vw-2.5rem)] sm:w-[240px] max-w-xs rounded-2xl shadow-2xl overflow-hidden z-40 border p-4 animate-[fadeIn_0.15s_ease-out]"
-                    style={{ backgroundColor: cardBg, borderColor: border }}
-                  >
-                    <div className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-3 pb-2 border-b" style={{ borderColor: border }}>
-                      Select Role
-                    </div>
-                    <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto">
-                      {availableJobRoles.map((rKey: string) => {
-                        const isSelected = roleFilter === rKey
-                        const label = rKey === 'all' ? 'ALL ROLES' : rKey
-                        return (
-                          <button
-                            key={rKey}
-                            onClick={() => { setRoleFilter(rKey); setRoleDropdownOpen(false) }}
-                            className="flex items-center justify-between px-4 py-2.5 rounded-xl text-xs font-semibold transition-all text-left uppercase border hover:bg-slate-500/5"
-                            style={{
-                              backgroundColor: isSelected ? 'rgba(16,185,129,0.06)' : 'transparent',
-                              borderColor: isSelected ? '#10B981' : border,
-                              color: isSelected ? '#10B981' : textPrimary
-                            }}
-                          >
-                            <span>{label}</span>
-                            {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-emerald-500" />}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
+            {/* Filters sit inline on larger screens */}
+            <div className="hidden sm:flex items-center gap-2">
+              <FilterChipMenu
+                icon={Building2}
+                title="Filter by branch"
+                value={selectedBranchId}
+                onChange={setSelectedBranchId}
+                tokens={{ cardBg, border, textPrimary, textMuted, inputBg, inputBorder }}
+                options={[{ value: '', label: 'All Branches' }, ...branches.map(b => ({ value: b.id, label: b.name }))]}
+              />
+              <FilterChipMenu
+                icon={Filter}
+                title="Filter by role"
+                value={roleFilter}
+                onChange={setRoleFilter}
+                tokens={{ cardBg, border, textPrimary, textMuted, inputBg, inputBorder }}
+                options={availableJobRoles.map((rKey: string) => ({ value: rKey, label: rKey === 'all' ? 'All Roles' : rKey }))}
+              />
             </div>
+
+            {isAdmin && (
+              <button
+                onClick={openCreateFlow}
+                className="ml-auto flex items-center gap-1.5 h-9 px-3.5 rounded-full text-xs font-bold text-white transition-all active:scale-95 hover:opacity-90 shadow-sm shrink-0"
+                style={{ backgroundColor: '#10B981' }}
+                aria-label="Add member"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add<span className="hidden sm:inline"> Member</span></span>
+              </button>
+            )}
           </div>
 
-          {/* Add Member Button */}
-          {isAdmin && (
-            <button
-              onClick={openCreateFlow}
-              className="w-full md:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-sm shrink-0"
-              style={{ backgroundColor: '#10B981' }}
-            >
-              <Plus className="w-4 h-4" /> ADD MEMBER
-            </button>
-          )}
+          {/* Row 2 (phones): filter chips */}
+          <div className="flex sm:hidden items-center gap-2">
+            <FilterChipMenu
+              icon={Building2}
+              title="Filter by branch"
+              value={selectedBranchId}
+              onChange={setSelectedBranchId}
+              tokens={{ cardBg, border, textPrimary, textMuted, inputBg, inputBorder }}
+              options={[{ value: '', label: 'All Branches' }, ...branches.map(b => ({ value: b.id, label: b.name }))]}
+            />
+            <FilterChipMenu
+              icon={Filter}
+              title="Filter by role"
+              value={roleFilter}
+              onChange={setRoleFilter}
+              tokens={{ cardBg, border, textPrimary, textMuted, inputBg, inputBorder }}
+              options={availableJobRoles.map((rKey: string) => ({ value: rKey, label: rKey === 'all' ? 'All Roles' : rKey }))}
+              align="right"
+            />
+          </div>
         </div>
 
         {/* Dynamic Card View — Mobile & Small Screens (<md) */}
