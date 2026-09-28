@@ -567,7 +567,7 @@ export function mapSavedPayrollEntry(e: any): PayrollRow {
     sterneBracket: moneyStr(e.sterneBracket),
     breakerInstallationLabor: moneyStr(e.breakerInstallationLabor),
     chargingOfFreon: moneyStr(e.chargingOfFreon),
-    materialsReturn: moneyStr(e.materialsReturn),
+    materialsReturn: e.materialsReturn || '',
     installationChecklist: e.installationChecklist || '',
     videoUpload: e.videoUpload || '',
     remarks: e.remarks || '',
@@ -619,7 +619,7 @@ export const rowTotal = (r: PayrollRow): number =>
   + toNum(r.specialBracketCatwalk) + toNum(r.specialBracketWelding) + toNum(r.excessCopperTubeLaborOnly)
   + toNum(r.relocationAccuFcu) + toNum(r.systemReprocessLabor) + toNum(r.drainPumpInstallation)
   + toNum(r.scaffoldingInstallation) + toNum(r.flushingOldPipe) + toNum(r.sterneBracket)
-  + toNum(r.breakerInstallationLabor) + toNum(r.chargingOfFreon) + toNum(r.materialsReturn)
+  + toNum(r.breakerInstallationLabor) + toNum(r.chargingOfFreon)
   + customFieldsFeeTotal(r)
 
 export const installerTotal = (installerRows: PayrollRow[]) =>

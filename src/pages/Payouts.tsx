@@ -202,7 +202,8 @@ const COLUMN_DEFS: ColumnDef[] = [
   { key: 'drainPumpInstallation', label: 'Drain Pump', width: 100, align: 'right', category: 'structural', isMoney: true },
   { key: 'relocationAccuFcu', label: 'Relocation ACCU/FCU', width: 130, align: 'right', category: 'structural', isMoney: true },
   { key: 'systemReprocessLabor', label: 'System Reprocess', width: 120, align: 'right', category: 'structural', isMoney: true },
-  { key: 'materialsReturn', label: 'Materials Return', width: 110, align: 'right', category: 'admin', isMoney: true },
+  // Free-text note of what was returned (e.g. "2pcs wire"), not a peso amount.
+  { key: 'materialsReturn', label: 'Materials Return', width: 130, align: 'left', category: 'admin' },
   { key: 'installationChecklist', label: 'Install Checklist', width: 110, align: 'left', category: 'admin' },
   { key: 'videoUpload', label: 'Video Upload', width: 110, align: 'left', category: 'admin' },
   // Always trail the table, not part of the hide/show system — any unhidden column lands
@@ -1153,7 +1154,7 @@ export default function Payouts() {
     sterneBracket: r.sterneBracket ? num(r.sterneBracket) : null,
     breakerInstallationLabor: r.breakerInstallationLabor ? num(r.breakerInstallationLabor) : null,
     chargingOfFreon: r.chargingOfFreon ? num(r.chargingOfFreon) : null,
-    materialsReturn: r.materialsReturn ? num(r.materialsReturn) : null,
+    materialsReturn: r.materialsReturn || null,
     installationChecklist: r.installationChecklist || null,
     videoUpload: r.videoUpload || null,
     remarks: r.remarks || null,
