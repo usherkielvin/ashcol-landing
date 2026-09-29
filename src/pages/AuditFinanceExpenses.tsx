@@ -12,6 +12,7 @@ import { bulkImportAuditExpenses, createExpenseId, deleteAuditExpense, loadAudit
 import { loadAuditExpenseCategories, saveAuditExpenseCategory, deleteAuditExpenseCategory, reorderAuditExpenseCategories, type AuditExpenseCategoryDetail } from '../utils/auditExpenseCategoryStorage'
 import { parseAuditExpenseExcelFile } from '../utils/parseAuditExpenseExcel'
 import { parseSmartDate, dateToTime } from '../utils/smartDate'
+import { fetchCachedBranches } from '../utils/portalDirectoryCache'
 import AutoSuggestInput from '../components/AutoSuggestInput'
 import AshcolLoader from '../components/AshcolLoader'
 import * as XLSX from 'xlsx'
@@ -354,10 +355,8 @@ export default function AuditFinanceExpenses() {
   const loadBranches = useCallback(async () => {
     try {
       const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const res = await fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
-      if (!res.ok) return
-      const data = await res.json()
-      const list: BranchOption[] = (data?.data || data || []).map((b: { id: string; name: string }) => ({ id: b.id, name: b.name }))
+      const data = await fetchCachedBranches(token)
+      const list: BranchOption[] = data.map((b: any) => ({ id: b.id, name: b.name }))
       const hasExplicitTaguigSales = list.some(b => {
         const id = b.id.toUpperCase()
         const name = b.name.toUpperCase()

@@ -12,7 +12,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, isPortalAdmin, findBranchListEntry, formatBranchName, type BranchListEntry } from '../utils/api'
 import { AshcolFormHeader } from '../components/operations/AshcolFormHeader'
 import { FormField, formInputStyle } from '../components/operations/FormField'
-import { fetchCachedEmployees } from '../utils/portalDirectoryCache'
+import { fetchCachedEmployees, fetchCachedBranches } from '../utils/portalDirectoryCache'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 
 type TabId = 'cash-advance' | 'budget' | 'overtime'
@@ -171,7 +171,7 @@ export default function OperationsForms() {
   const isLight = theme === 'light'
 
   const cardBg = isLight ? '#ffffff' : '#0A1120'
-  const pageBg = isLight ? '#f8fafc' : '#060B18'
+  const pageBg = isLight ? '#f1f5f9' : '#060B18'
   const border = isLight ? '#e2e8f0' : '#1E2D48'
   const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
   const textMuted = isLight ? '#64748b' : '#7A95B8'
@@ -425,10 +425,7 @@ export default function OperationsForms() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${getToken()}` } })
-        if (!res.ok) return
-        const data = await res.json()
-        const branchList: BranchListEntry[] = data?.data || []
+        const branchList = (await fetchCachedBranches(getToken())) as BranchListEntry[]
         setBranches(branchList)
         if (user?.branchId) {
           const raw = user.branchId.trim()
@@ -1330,15 +1327,15 @@ export default function OperationsForms() {
 
   const StatCard = ({ label, shortLabel, value, icon: Icon, color }: { label: string; shortLabel: string; value: number | string; icon: typeof FileText; color: string }) => (
     <div
-      className="flex flex-col md:flex-row items-center gap-0 md:gap-3 rounded-lg md:rounded-xl px-1 py-2 md:p-3.5 flex-1 md:min-w-[140px]"
-      style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
+      className="flex flex-col md:flex-row items-center gap-1 md:gap-2.5 rounded-xl px-2 py-2 md:p-3 flex-1 shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 cursor-default"
+      style={{ backgroundColor: cardBg, border: 'none' }}
     >
-      <div className="hidden md:flex w-9 h-9 rounded-lg items-center justify-center shrink-0" style={{ backgroundColor: `${color}1A` }}>
-        <Icon className="w-[18px] h-[18px]" style={{ color }} />
+      <div className="hidden md:flex w-7 h-7 md:w-8 md:h-8 rounded-lg items-center justify-center shrink-0" style={{ backgroundColor: `${color}15` }}>
+        <Icon className="w-3.5 h-3.5 md:w-4 md:h-4" style={{ color }} />
       </div>
-      <div className="min-w-0 text-center md:text-left">
-        <div className="text-[15px] md:text-lg font-black leading-tight" style={{ color }}>{value}</div>
-        <div className="text-[9px] md:text-[10px] font-bold uppercase tracking-wide truncate" style={{ color: textMuted }}>
+      <div className="min-w-0 text-center md:text-left flex-1">
+        <div className="text-sm md:text-lg font-black leading-tight" style={{ color }}>{value}</div>
+        <div className="text-[8px] md:text-[10px] font-bold uppercase tracking-wide truncate mt-0.5" style={{ color: textMuted }}>
           <span className="md:hidden">{shortLabel}</span><span className="hidden md:inline">{label}</span>
         </div>
       </div>
@@ -1361,27 +1358,18 @@ export default function OperationsForms() {
       {!modal && (
       <>
       {/* Page header */}
-      <div className="flex flex-row justify-between items-center gap-2 md:gap-4">
-        <div className="hidden md:block">
-          <h2 className="text-2xl font-black tracking-tight mb-1 flex items-center gap-2.5">
-            <FileText className="w-7 h-7" style={{ color: accent }} />
-            Request Forms
-          </h2>
-          <p className="text-xs" style={{ color: textMuted }}>
-            Cash advance, budget, and overtime requests in one place
-          </p>
-        </div>
+      <div className="flex flex-row justify-end items-center gap-2 md:gap-4">
         <div className="flex items-center justify-between md:justify-end gap-2 md:gap-2.5 w-full md:w-auto">
           {/* Active / Archives tab switcher */}
           <div
-            className="flex items-center rounded-full md:rounded-xl p-0.5 md:p-1 gap-0.5 md:gap-1"
-            style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F1A2E', border: `1px solid ${border}` }}
+            className="flex items-center rounded-full p-1 gap-1 shadow-sm"
+            style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F1A2E' }}
           >
             <button
               type="button"
               onClick={() => setActiveTab('active')}
-              className="flex items-center gap-1.5 px-3 md:px-3.5 py-1 md:py-1.5 rounded-full md:rounded-lg text-[11px] md:text-xs font-bold transition-all"
-              style={activeTab === 'active' ? { backgroundColor: accent, color: '#fff', boxShadow: '0 2px 8px rgba(16,185,129,0.3)' } : { color: textMuted }}
+              className="flex items-center gap-1.5 px-3 md:px-4 py-1.5 rounded-full text-[10px] md:text-xs font-bold transition-all"
+              style={activeTab === 'active' ? { backgroundColor: accent, color: '#fff', boxShadow: '0 4px 12px rgba(16,185,129,0.3)' } : { color: textMuted }}
             >
               <FileText className="w-3.5 h-3.5" />
               Active
@@ -1389,13 +1377,13 @@ export default function OperationsForms() {
             <button
               type="button"
               onClick={() => setActiveTab('archives')}
-              className="flex items-center gap-1.5 px-3 md:px-3.5 py-1 md:py-1.5 rounded-full md:rounded-lg text-[11px] md:text-xs font-bold transition-all"
-              style={activeTab === 'archives' ? { backgroundColor: '#6366f1', color: '#fff', boxShadow: '0 2px 8px rgba(99,102,241,0.3)' } : { color: textMuted }}
+              className="flex items-center gap-1.5 px-3 md:px-4 py-1.5 rounded-full text-[10px] md:text-xs font-bold transition-all"
+              style={activeTab === 'archives' ? { backgroundColor: '#6366f1', color: '#fff', boxShadow: '0 4px 12px rgba(99,102,241,0.3)' } : { color: textMuted }}
             >
               <Archive className="w-3.5 h-3.5" />
               Archives
               {archUnifiedRows.length > 0 && (
-                <span className="ml-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-black" style={{ backgroundColor: activeTab === 'archives' ? 'rgba(255,255,255,0.2)' : 'rgba(99,102,241,0.12)', color: activeTab === 'archives' ? '#fff' : '#6366f1' }}>
+                <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-black" style={{ backgroundColor: activeTab === 'archives' ? 'rgba(255,255,255,0.2)' : 'rgba(99,102,241,0.12)', color: activeTab === 'archives' ? '#fff' : '#6366f1' }}>
                   {archUnifiedRows.length}
                 </span>
               )}
@@ -1404,11 +1392,11 @@ export default function OperationsForms() {
           {activeTab === 'active' && (
             <button
               onClick={openNewForm}
-              className="flex items-center gap-1.5 h-8 md:h-auto px-3 md:px-4 md:py-2.5 rounded-full md:rounded-xl text-[11px] md:text-xs font-bold text-white shadow-sm md:shadow-md hover:opacity-90 transition-all"
-              style={{ backgroundColor: accent }}
+              className="flex items-center gap-1.5 h-8 md:h-auto px-5 md:px-6 md:py-2.5 rounded-full text-[11px] md:text-xs font-bold text-white transition-all hover:-translate-y-0.5 hover:shadow-lg"
+              style={{ backgroundColor: accent, boxShadow: '0 4px 12px rgba(16,185,129,0.35)' }}
             >
               <Plus className="w-3.5 h-3.5 md:w-4 md:h-4" />
-              New<span className="hidden md:inline"> Request</span>
+              New Request
             </button>
           )}
         </div>
@@ -1453,8 +1441,8 @@ export default function OperationsForms() {
                 placeholder="Search…"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className={`${inputCls} pl-8 !py-1.5 !text-[11px]`}
-                style={istyle}
+                className={`${inputCls} pl-8 !py-1.5 !text-[11px] !rounded-xl !border-0 shadow-sm`}
+                style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F1A2E', color: textPrimary }}
               />
             </div>
             {(() => {
@@ -1465,8 +1453,8 @@ export default function OperationsForms() {
                   onClick={() => setFiltersOpen(o => !o)}
                   aria-label="Filters"
                   aria-expanded={filtersOpen}
-                  className="relative shrink-0 w-8 h-8 rounded-lg flex items-center justify-center border transition-all active:scale-95"
-                  style={{ backgroundColor: cardBg, borderColor: filtersOpen || activeCount ? '#10B981' : border, color: activeCount ? '#10B981' : textMuted }}
+                  className="relative shrink-0 w-8 h-8 rounded-xl flex items-center justify-center border-0 shadow-sm transition-all active:scale-95 hover:shadow-md"
+                  style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F1A2E', color: activeCount ? '#10B981' : textMuted }}
                 >
                   <SlidersHorizontal className="w-4 h-4" />
                   {activeCount > 0 && (
@@ -1529,24 +1517,23 @@ export default function OperationsForms() {
 
           <div className="hidden sm:flex sm:flex-wrap items-center gap-3 w-full md:w-auto">
             <div className="col-span-3 relative w-full sm:w-56">
-              <Search className="absolute left-2.5 sm:left-3 top-2 sm:top-2.5 w-3.5 sm:w-4 h-3.5 sm:h-4" style={{ color: textMuted }} />
+              <Search className="absolute left-3 top-2 sm:top-2.5 w-3.5 sm:w-4 h-3.5 sm:h-4" style={{ color: textMuted }} />
               <input
                 type="text"
                 placeholder="Search…"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className={`${inputCls} pl-8 sm:pl-9 !py-1.5 sm:!py-2`}
-                style={istyle}
+                className={`${inputCls} pl-9 !py-1.5 sm:!py-2 !rounded-xl !border-0 shadow-sm transition-shadow focus:shadow-md`}
+                style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F1A2E', color: textPrimary }}
               />
             </div>
             {isAdmin && (
               <div className="relative w-full sm:w-auto">
-                <Building2 className="hidden sm:block absolute left-2.5 top-2.5 w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
                 <select
                   value={branchFilter}
                   onChange={e => setBranchFilter(e.target.value)}
-                  className={`${inputCls} sm:pl-8 !py-1.5 sm:!py-2 !px-2 sm:!px-3 !text-[11px] sm:!text-xs truncate appearance-none cursor-pointer`}
-                  style={istyle}
+                  className={`${inputCls} !py-1.5 sm:!py-2 !px-3 sm:!px-4 !text-[11px] sm:!text-xs truncate appearance-none cursor-pointer !rounded-xl !border-0 shadow-sm hover:shadow transition-shadow`}
+                  style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F1A2E', color: textPrimary }}
                   aria-label="Filter by branch"
                 >
                   <option value="ALL">All branches</option>
@@ -1557,12 +1544,11 @@ export default function OperationsForms() {
               </div>
             )}
             <div className="relative w-full sm:w-auto">
-              <Filter className="hidden sm:block absolute left-2.5 top-2.5 w-3.5 h-3.5 pointer-events-none" style={{ color: textMuted }} />
               <select
                 value={typeFilter}
                 onChange={e => setTypeFilter(e.target.value as 'ALL' | TabId)}
-                className={`${inputCls} sm:pl-8 !py-1.5 sm:!py-2 !px-2 sm:!px-3 !text-[11px] sm:!text-xs truncate appearance-none cursor-pointer`}
-                style={istyle}
+                className={`${inputCls} !py-1.5 sm:!py-2 !px-3 sm:!px-4 !text-[11px] sm:!text-xs truncate appearance-none cursor-pointer !rounded-xl !border-0 shadow-sm hover:shadow transition-shadow`}
+                style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F1A2E', color: textPrimary }}
               >
                 <option value="ALL">All types</option>
                 {TABS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
@@ -1572,8 +1558,8 @@ export default function OperationsForms() {
               <select
                 value={statusFilter}
                 onChange={e => setStatusFilter(e.target.value)}
-                className={`${inputCls} !py-1.5 sm:!py-2 !px-2 sm:!px-3 !text-[11px] sm:!text-xs truncate appearance-none cursor-pointer`}
-                style={istyle}
+                className={`${inputCls} !py-1.5 sm:!py-2 !px-3 sm:!px-4 !text-[11px] sm:!text-xs truncate appearance-none cursor-pointer !rounded-xl !border-0 shadow-sm hover:shadow transition-shadow`}
+                style={{ backgroundColor: isLight ? '#f1f5f9' : '#0F1A2E', color: textPrimary }}
               >
                 <option value="ALL">All statuses</option>
                 <option value="PENDING">Pending</option>
@@ -1673,7 +1659,7 @@ export default function OperationsForms() {
                   {filteredRows.map(r => (
                     <tr key={`${r.type}-${r.id}`} onContextMenu={e => openContextMenu(e, r)}
                       className="transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.03]"
-                      style={{ borderBottom: `1px solid ${border}`, borderLeft: `3px solid ${statusColors[r.status] || statusColors.PENDING}`, cursor: 'context-menu' }}
+                      style={{ borderBottom: `1px solid ${border}`, cursor: 'context-menu' }}
                     >
                       <td className={`${cellCls} whitespace-nowrap`} style={{ color: textPrimary }}>{formatDateCaps(r.createdAt)}</td>
                       <td className={cellCls}>{typeText(r.type)}</td>

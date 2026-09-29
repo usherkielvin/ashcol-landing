@@ -105,10 +105,10 @@ function buildNavGroups(navLinks: NavLinkDef[]) {
       Icon: MdOutlinePeopleAlt,
       subItems: [
         { name: 'LINEUP', icon: <MdOutlinePlaylistAdd size={16} />, path: findPath('LINEUP') },
-        { name: 'HRIS', icon: <MdOutlineDescription size={16} />, path: findPath('HRIS') },
+        // { name: 'HRIS', icon: <MdOutlineDescription size={16} />, path: findPath('HRIS') },
         { name: 'DDRM', icon: <MdOutlineAltRoute size={16} />, path: findPath('DDRM') },
         { name: 'Request Forms', icon: <MdOutlineDescription size={16} />, path: findPath('Request Forms') },
-        { name: 'Office tasks', icon: <MdOutlineChecklist size={16} />, path: findPath('Office tasks') },
+        // { name: 'Office tasks', icon: <MdOutlineChecklist size={16} />, path: findPath('Office tasks') },
       ].filter(s => navLinks.some(l => l.path === s.path)),
     },
     {
@@ -527,9 +527,9 @@ export default function DashboardLayout() {
     { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Registration',   path: '/registration',    icon: ClipboardCheck, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Happy Calls',    path: '/happy-calls',     icon: PhoneCall,      roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
-    { name: 'Office tasks',    path: '/office-tasks',     icon: Building2,       roles: ['admin', 'management'] },
+    // { name: 'Office tasks',    path: '/office-tasks',     icon: Building2,       roles: ['admin', 'management'] },
     { name: 'LINEUP',          path: '/lineup',           icon: ListOrdered,     roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
-    { name: 'Members',         path: '/employees',        icon: UserCog,         roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic', 'technician', 'driver'] },
+    { name: 'Members',         path: '/members',          icon: UserCog,         roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic', 'technician', 'driver'] },
     { name: 'Vehicles',        path: '/vehicles',         icon: Truck,           roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic', 'technician', 'driver'] },
     { name: 'Expense Records', path: '/audit-expenses',  icon: ClipboardList,  roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'For Collections',  path: '/collections',     icon: CircleDollarSign, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
@@ -538,7 +538,7 @@ export default function DashboardLayout() {
     { name: 'Payouts',          path: '/payouts',          icon: Banknote,        roles: canAccessPayroll ? ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] : ['admin', 'management'] },
     { name: 'Daily Transaction', path: '/audit-report',   icon: TrendingUp,      roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic', 'technician', 'driver'] },
-    { name: 'HRIS',              path: '/admin-hris',       icon: Calendar,        roles: ['admin', 'management', 'manager'] },
+    // { name: 'HRIS',              path: '/admin-hris',       icon: Calendar,        roles: ['admin', 'management', 'manager'] },
     { name: 'DDRM',              path: '/ddrm',             icon: Route,           roles: canAccessDdrm ? ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] : ['admin', 'management', 'manager'] },
     { name: 'Request Forms',     path: '/operations-forms', icon: ClipboardList, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     // { name: 'Bills',             path: '/admin-bills',      icon: Landmark,        roles: ['admin', 'management', 'manager'] },
@@ -597,7 +597,7 @@ export default function DashboardLayout() {
   const inputBorder = isLight ? '#cbd5e1'              : '#1e3254'
 
   const currentPage = navLinks.find(l => location.pathname === l.path || (l.path !== '/' && location.pathname.startsWith(l.path + '/')))?.name
-    ?? (location.pathname.startsWith('/employees') ? 'Members'
+    ?? (location.pathname.startsWith('/members') ? 'Members'
       : location.pathname === '/my-tickets' ? 'My Tickets'
       : location.pathname.startsWith('/messages') ? 'Messages'
       : 'Dashboard')
@@ -1102,7 +1102,7 @@ export default function DashboardLayout() {
 
             {/* Right: Actions */}
             <div className="flex items-center gap-1.5 shrink-0">
-              {currentCoh && currentCoh.totalCohCfd > 0 && (
+              {currentCoh && currentCoh.overThreshold && (
                 <span
                   className="inline-flex items-center px-2 sm:px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border w-fit max-w-[110px] sm:max-w-none truncate transition-colors"
                   style={{

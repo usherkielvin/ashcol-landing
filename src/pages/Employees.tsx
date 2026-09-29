@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  Search, Wrench, Mail, Phone, Building2,
+  Search, Mail, Phone, Building2,
   CheckCircle, XCircle, Trash2, X, Plus, Copy,
   Check, Eye, EyeOff,
-  Camera, Calendar, User,
+  Camera, User,
   Loader2, Filter, Edit3, Shield,
-  Clock, Briefcase, UserCheck, KeyRound
+  Briefcase
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -15,6 +16,7 @@ import TicketHistoryTable from '../components/TicketHistoryTable'
 import PresenceStatus from '../components/PresenceStatus'
 import WarrantyRegistrationHistoryTable from '../components/WarrantyRegistrationHistoryTable'
 import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName, notifyEmployeesDirectoryUpdated, isWarrantyRegistrar } from '../utils/api'
+import { fetchCachedBranches } from '../utils/portalDirectoryCache'
 import FilterChipMenu from '../components/directory/FilterChipMenu'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 import { uploadReceiptImage } from '../services/supabaseStorage'
@@ -355,6 +357,61 @@ const JobTitleMultiSelect = ({ value, onChange, options, onAddCustom, inputCls, 
   )
 }
 
+// ── Member Detail drawer — small, consistent building blocks ───────────────────
+// One compact chip style, a card with a header + a list of label/value rows: replaces
+// the old grid-of-big-padded-boxes overview with a dense, scannable layout.
+
+const Tag = ({ label, color, textMuted, border, title }: {
+  label: string; color?: string; textMuted?: string; border?: string; title?: string
+}) => (
+  <span
+    className="inline-flex items-center text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md border max-w-[220px] truncate"
+    style={{
+      color: color || textMuted,
+      borderColor: color ? `${color}40` : border,
+      backgroundColor: color ? `${color}1A` : 'transparent',
+    }}
+    title={title}
+  >
+    {label}
+  </span>
+)
+
+const InfoCard = ({ icon, title, border, textMuted, cardBg, isLight, children }: {
+  icon: React.ReactNode; title: string; border: string; textMuted: string; cardBg: string; isLight: boolean
+  children: React.ReactNode
+}) => (
+  <div className="rounded-xl border overflow-hidden shrink-0" style={{ borderColor: border, backgroundColor: cardBg }}>
+    <div className="px-4 py-2 flex items-center gap-2 border-b" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
+      <span style={{ color: '#10B981' }}>{icon}</span>
+      <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{title}</span>
+    </div>
+    <div>{children}</div>
+  </div>
+)
+
+const InfoRow = ({ label, textMuted, last, children }: {
+  label: string; textMuted: string; textPrimary?: string; last?: boolean; children: React.ReactNode
+}) => (
+  <div className={`flex items-center justify-between gap-3 px-4 py-2.5 ${last ? '' : 'border-b'}`} style={{ borderColor: 'rgba(148,163,184,0.15)' }}>
+    <span className="text-xs font-medium shrink-0" style={{ color: textMuted }}>{label}</span>
+    <div className="min-w-0 flex items-center justify-end">{children}</div>
+  </div>
+)
+
+const CopyableValue = ({ value, placeholder, copied, onCopy, textPrimary }: {
+  value?: string | null; placeholder: string; copied: boolean; onCopy: () => void; textPrimary: string
+}) => (
+  value
+    ? (
+      <button onClick={onCopy} className="inline-flex items-center gap-1.5 group/copy max-w-full">
+        <span className="text-sm font-semibold truncate" style={{ color: textPrimary }}>{value}</span>
+        {copied ? <Check className="w-3 h-3 text-emerald-500 shrink-0" /> : <Copy className="w-3 h-3 opacity-0 group-hover/copy:opacity-60 transition-opacity shrink-0" />}
+      </button>
+    )
+    : <span className="text-xs italic opacity-60 font-normal">{placeholder}</span>
+)
+
 
 const CREATE_STEPS = [
   { id: 1 as const, label: 'ACCOUNT', hint: 'Name and login details' },
@@ -403,10 +460,10 @@ export default function Employees() {
 
   // Custom Job Titles / Role Levels (localStorage)
   const [customJobTitles, setCustomJobTitles] = useState<string[]>([])
-  // Detail panel state — now a full tab (routed at /employees/:id) rather than a modal overlay
+  // Detail panel state — now a full tab (routed at /members/:id) rather than a modal overlay
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const isDrawerOpen = Boolean(routeEmployeeId)
-  const [activeDrawerTab, setActiveDrawerTab] = useState<'overview' | 'history' | 'registrations'>('overview')
+  const [activeDrawerTab, setActiveDrawerTab] = useState<'overview' | 'history' | 'registrations' | 'edit'>('overview')
   const [imageUploading, setImageUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -524,10 +581,7 @@ export default function Employees() {
   // ── Data Loaders ────────────────────────────────────────────────────────────
   const fetchBranches = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token()}` } })
-      if (!res.ok) return
-      const data = await res.json()
-      const list: { id: string; name: string }[] = data?.data || []
+      const list: any[] = await fetchCachedBranches(token())
       const result: BranchOption[] = []
       for (const b of list) {
         const clean = formatBranchLabel(b.name)
@@ -688,23 +742,25 @@ export default function Employees() {
   const handleRowClick = (emp: Employee) => {
     setSelectedEmployee(emp)
     setActiveDrawerTab('overview')
-    navigate(`/employees/${emp.id}`)
+    navigate(`/members/${format8DigitId(emp.id)}`)
     scrollToTop()
   }
 
   const closeDetailTab = () => {
-    navigate('/employees')
+    setEditTarget(null)
+    navigate('/members')
     scrollToTop()
   }
 
   // Keep the detail tab's employee in sync with the URL (deep link / refresh / back button).
+  // The URL carries the 8-digit display id (format8DigitId), not the raw backend id.
   useEffect(() => {
     scrollToTop()
     if (!routeEmployeeId) {
       setSelectedEmployee(null)
       return
     }
-    const found = employees.find(e => e.id === routeEmployeeId)
+    const found = employees.find(e => format8DigitId(e.id) === routeEmployeeId)
     if (found) setSelectedEmployee(found)
   }, [routeEmployeeId, employees])
 
@@ -824,6 +880,13 @@ export default function Employees() {
     setFormErr('')
     setShowPass(false)
     setEditTarget(emp)
+    setActiveDrawerTab('edit')
+  }
+
+  const cancelEdit = () => {
+    setEditTarget(null)
+    setFormErr('')
+    setActiveDrawerTab('overview')
   }
 
   const executeSaveEdit = async () => {
@@ -901,6 +964,7 @@ export default function Employees() {
 
       const roleChanged = editForm.role !== editTarget.role
       setEditTarget(null)
+      setActiveDrawerTab('overview')
       notifyEmployeesDirectoryUpdated()
       showToast('success', roleChanged
         ? `${refreshed.name} updated — role changed to ${formatRoleLabel(editForm.role)}.`
@@ -1002,7 +1066,7 @@ export default function Employees() {
       }
       if (selectedEmployee?.id === deleteTarget.id) {
         setSelectedEmployee(null)
-        navigate('/employees')
+        navigate('/members')
       }
       setEmployees(prev => prev.filter(e => e.id !== deleteTarget.id))
       showToast('success', `${deleteTarget.name} removed.`)
@@ -1604,7 +1668,7 @@ export default function Employees() {
       </div>
       )}
 
-      {/* Deep link / refresh directly on /employees/:id lands here before `employees` has loaded */}
+      {/* Deep link / refresh directly on /members/:id lands here before `employees` has loaded */}
       {isDrawerOpen && !selectedEmployee && loading && (
         <div className="flex items-center justify-center py-24">
           <Loader2 className="w-6 h-6 animate-spin" style={{ color: '#10B981' }} />
@@ -1630,16 +1694,12 @@ export default function Employees() {
             }}
           >
             <div className="flex items-center gap-2 min-w-0">
-              <span className="text-xs font-black uppercase tracking-wider text-emerald-500">
-                Member Details
-              </span>
-              <span className="text-xs text-slate-400">•</span>
-              <span className="text-xs font-bold truncate" style={{ color: textPrimary }}>{selectedEmployee.name}</span>
+              <span className="text-xs font-bold truncate" style={{ color: textPrimary }}>{editTarget ? 'Edit Account' : 'Account Details'}</span>
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
               <button
-                onClick={closeDetailTab}
+                onClick={editTarget ? cancelEdit : closeDetailTab}
                 className="p-2 rounded-xl transition-all hover:bg-slate-500/10 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 active:scale-95"
                 aria-label="Close"
                 title="Close"
@@ -1649,193 +1709,91 @@ export default function Employees() {
             </div>
           </div>
 
-          {/* Hero Profile Banner */}
-          <div
-            className="p-5 sm:p-7 border-b flex flex-col md:flex-row md:items-center justify-between gap-5 shrink-0"
-            style={{
-              borderColor: border,
-              background: isLight
-                ? 'linear-gradient(135deg, rgba(241,245,249,0.8) 0%, rgba(255,255,255,1) 100%)'
-                : 'linear-gradient(135deg, rgba(15,26,46,0.7) 0%, rgba(10,17,32,1) 100%)',
-            }}
-          >
-            {/* Left: Avatar + Details */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5 min-w-0 flex-1">
+          {!editTarget && (<>
+          {/* Hero Profile Banner — compact, one row */}
+          <div className="px-4 sm:px-6 py-4 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0" style={{ borderColor: border, backgroundColor: cardBg }}>
+            <div className="flex items-center gap-3.5 min-w-0">
               {/* Avatar with Camera Upload Overlay */}
-              <div className="relative group shrink-0 self-center sm:self-auto">
-                <div className="w-20 h-20 sm:w-22 sm:h-22 rounded-2xl overflow-hidden shadow-md ring-2 ring-emerald-500/30">
+              <div className="relative group shrink-0">
+                <div className="w-12 h-12 rounded-xl overflow-hidden border-2" style={{ borderColor: 'rgba(16,185,129,0.3)' }}>
                   <UserAvatar
                     name={selectedEmployee.name}
                     imageUrl={selectedEmployee.profileImage}
                     size="lg"
-                    className="!w-full !h-full !rounded-2xl"
+                    className="!w-full !h-full !rounded-xl"
                   />
                 </div>
                 <div
                   onClick={triggerImageUpload}
-                  className="absolute inset-0 rounded-2xl bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-1 cursor-pointer transition-opacity text-white"
+                  className="absolute inset-0 rounded-xl bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition-opacity"
                   title="Change profile picture"
                 >
-                  <Camera className="w-5 h-5 text-white" />
-                  <span className="text-[9px] font-black uppercase tracking-wider">CHANGE</span>
+                  <Camera className="w-4 h-4 text-white" />
                 </div>
                 {imageUploading && (
-                  <div className="absolute inset-0 rounded-2xl bg-black/50 backdrop-blur-xs flex items-center justify-center">
-                    <Loader2 className="w-6 h-6 animate-spin text-emerald-400" />
+                  <div className="absolute inset-0 rounded-xl bg-black/50 backdrop-blur-xs flex items-center justify-center">
+                    <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
                   </div>
                 )}
                 <div
-                  className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 shadow-sm"
-                  style={{
-                    backgroundColor: selectedEmployee.isActive ? '#10B981' : '#94a3b8',
-                    borderColor: cardBg,
-                  }}
+                  className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2"
+                  style={{ backgroundColor: selectedEmployee.isActive ? '#10B981' : '#94a3b8', borderColor: cardBg }}
                   title={selectedEmployee.isActive ? 'Active Member' : 'Deactivated'}
                 />
               </div>
 
-              {/* Profile Meta & Badges */}
-              <div className="flex flex-col gap-1.5 min-w-0 w-full sm:w-auto text-center sm:text-left">
-                <div className="flex items-center justify-center sm:justify-start gap-3 flex-wrap">
-                  <h2 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2 flex-wrap" style={{ color: textPrimary }}>
-                    <span>{selectedEmployee.name}</span>
-                    {selectedEmployee.nickname && (
-                      <span className="text-sm font-black px-2.5 py-0.5 rounded-lg border tracking-wide uppercase" style={{ backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.3)', color: '#10B981' }}>
-                        "{selectedEmployee.nickname}"
-                      </span>
-                    )}
-                  </h2>
-                  {isAdmin && !isProtectedFromEdit(selectedEmployee.role) && (
-                    <button
-                      onClick={() => openEdit(selectedEmployee)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm active:scale-95 text-white hover:opacity-90 shrink-0"
-                      style={{ backgroundColor: '#10B981' }}
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      <span>EDIT PROFILE</span>
-                    </button>
+              {/* Name + one row of tags */}
+              <div className="flex flex-col gap-1 min-w-0">
+                <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                  <h2 className="text-base font-bold truncate" style={{ color: textPrimary }}>{selectedEmployee.name}</h2>
+                  {selectedEmployee.nickname && (
+                    <span className="text-xs font-semibold" style={{ color: textMuted }}>"{selectedEmployee.nickname}"</span>
                   )}
                 </div>
-
-                {/* Badges Flow */}
-                <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap pt-0.5">
-                  {/* Primary Role Badge (clean, not access tags badges) */}
-                  <span
-                    className="text-[11px] font-black px-2.5 py-0.5 rounded-lg uppercase tracking-wider border shadow-xs"
-                    style={{
-                      backgroundColor: roleColor(selectedEmployee.role).bg,
-                      color: roleColor(selectedEmployee.role).text,
-                      borderColor: roleColor(selectedEmployee.role).border,
-                    }}
-                  >
-                    {formatRoleLabel(selectedEmployee.role)}
-                  </span>
-
-                  {/* Branch Badge */}
-                  {selectedEmployee.branchName && (
-                    <span
-                      className="text-[11px] font-semibold px-2.5 py-0.5 rounded-lg flex items-center gap-1.5 border"
-                      style={{
-                        backgroundColor: isLight ? 'rgba(241,245,249,0.8)' : 'rgba(15,26,46,0.8)',
-                        borderColor: border,
-                        color: textPrimary,
-                      }}
-                    >
-                      <Building2 className="w-3 h-3 text-emerald-500 shrink-0" />
-                      <span>{selectedEmployee.branchName}</span>
-                    </span>
-                  )}
-
-                  {/* In-House Badge */}
-                  {selectedEmployee.inHouse && (
-                    <span
-                      className="text-[11px] font-bold px-2.5 py-0.5 rounded-lg uppercase tracking-wide border shadow-xs"
-                      style={{ backgroundColor: 'rgba(139,92,246,0.1)', color: '#8B5CF6', borderColor: 'rgba(139,92,246,0.3)' }}
-                      title="Salaried in-house crew — excluded from the installer payroll list"
-                    >
-                      IN-HOUSE
-                    </span>
-                  )}
-
-                  {/* View-Only Branches Badge */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <Tag label={formatRoleLabel(selectedEmployee.role)} color={roleColor(selectedEmployee.role).text} />
+                  {selectedEmployee.branchName && <Tag label={selectedEmployee.branchName} textMuted={textMuted} border={border} />}
+                  {selectedEmployee.inHouse && <Tag label="In-House" color="#8B5CF6" title="Salaried in-house crew — excluded from the installer payroll list" />}
                   {selectedEmployee.viewBranchIds && (
-                    <span
-                      className="text-[11px] font-semibold px-2.5 py-0.5 rounded-lg flex items-center gap-1.5 border"
-                      style={{
-                        backgroundColor: 'rgba(245,158,11,0.1)',
-                        borderColor: 'rgba(245,158,11,0.3)',
-                        color: '#D97706',
-                      }}
+                    <Tag
+                      label={`View: ${selectedEmployee.viewBranchIds.split(',').map(id => branches.find(b => b.id === id.trim())?.name || id.trim()).join(', ')}`}
+                      color="#D97706"
                       title="Read-only schedule view branches"
-                    >
-                      <Eye className="w-3 h-3 text-amber-500 shrink-0" />
-                      <span>
-                        View: {selectedEmployee.viewBranchIds.split(',').map(id => branches.find(b => b.id === id.trim())?.name || id.trim()).join(', ')}
-                      </span>
-                    </span>
+                    />
                   )}
-
-                  {/* Combined Active Status & Live Login / Presence */}
-                  <div
-                    className="text-[11px] font-semibold px-2.5 py-0.5 rounded-lg flex items-center gap-1.5 border shadow-xs"
-                    style={{
-                      backgroundColor: selectedEmployee.isActive ? 'rgba(16,185,129,0.1)' : 'rgba(148,163,184,0.1)',
-                      borderColor: selectedEmployee.isActive ? 'rgba(16,185,129,0.3)' : 'rgba(148,163,184,0.3)',
-                      color: selectedEmployee.isActive ? '#10B981' : textMuted,
-                    }}
-                  >
-                    <span className={`w-2 h-2 rounded-full ${selectedEmployee.isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-                    <span className="font-bold">{selectedEmployee.isActive ? 'Active' : 'Inactive'}</span>
-                    <span className="opacity-40">•</span>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: selectedEmployee.isActive ? '#10B981' : textMuted }}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${selectedEmployee.isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                    {selectedEmployee.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                  <span className="text-[11px]" style={{ color: textMuted }}>
                     <PresenceStatus lastActiveAt={selectedEmployee.lastActiveAt} lastLoginAt={selectedEmployee.lastLoginAt} textMuted={textMuted} />
-                  </div>
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* Right: Quick Action Buttons */}
-            <div className="flex items-center justify-center sm:justify-end gap-2 flex-wrap pt-3 sm:pt-0 border-t sm:border-t-0" style={{ borderColor: border }}>
-              {selectedEmployee.phone && (
-                <a
-                  href={`tel:${selectedEmployee.phone}`}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all hover:border-emerald-500 hover:text-emerald-500 active:scale-95"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  title="Call Phone Number"
+            {/* Quick Actions */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {isAdmin && !editTarget && !isProtectedFromEdit(selectedEmployee.role) && (
+                <button
+                  onClick={() => openEdit(selectedEmployee)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold text-white hover:opacity-90 active:scale-95 transition-all"
+                  style={{ backgroundColor: '#10B981' }}
                 >
-                  <Phone className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>Call</span>
-                </a>
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Edit</span>
+                </button>
               )}
-              {selectedEmployee.email && (
-                <a
-                  href={`mailto:${selectedEmployee.email}`}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all hover:border-emerald-500 hover:text-emerald-500 active:scale-95"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  title="Send Email"
-                >
-                  <Mail className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>Email</span>
-                </a>
-              )}
-              <button
-                onClick={() => copyToClipboard(format8DigitId(selectedEmployee.id), 'id')}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all hover:border-emerald-500 hover:text-emerald-500 active:scale-95"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                title="Copy 8-digit Member ID"
-              >
-                {copiedKey === 'id' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 text-emerald-500" />}
-                <span>{copiedKey === 'id' ? 'Copied ID' : 'Copy ID'}</span>
-              </button>
             </div>
           </div>
 
           {/* Tab Navigation */}
           <div className="flex border-b shrink-0 overflow-x-auto px-4 sm:px-6" style={{ borderColor: border }}>
             {([
-              { id: 'overview' as const, label: 'OVERVIEW', icon: <User className="w-3.5 h-3.5" /> },
-              { id: 'history' as const, label: 'TICKET HISTORY', icon: <Calendar className="w-3.5 h-3.5" /> },
+              { id: 'overview' as const, label: 'Overview' },
+              { id: 'history' as const, label: 'Ticket History' },
               ...(isWarrantyRegistrar(selectedEmployee.jobTitle)
-                ? [{ id: 'registrations' as const, label: 'REGISTERED TICKETS', icon: <Wrench className="w-3.5 h-3.5" /> }]
+                ? [{ id: 'registrations' as const, label: 'Registered Tickets' }]
                 : []),
             ]).map(tab => {
               const isActive = activeDrawerTab === tab.id
@@ -1843,559 +1801,215 @@ export default function Employees() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveDrawerTab(tab.id)}
-                  className="flex items-center gap-2 px-4 sm:px-6 py-3.5 text-xs font-black uppercase tracking-wider border-b-2 transition-all whitespace-nowrap"
+                  className="px-3.5 sm:px-4 py-2.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap"
                   style={{
                     borderColor: isActive ? '#10B981' : 'transparent',
                     color: isActive ? '#10B981' : textMuted,
                   }}
                 >
-                  {tab.icon}
-                  <span>{tab.label}</span>
+                  {tab.label}
                 </button>
               )
             })}
           </div>
 
+          </>)}
+
           {/* Tab Body */}
           <div className="flex-1 min-h-0 flex flex-col" style={detailTokens}>
 
             {/* ── Overview Tab ── */}
-            {activeDrawerTab === 'overview' && (
-              <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 flex flex-col gap-6">
+            {!editTarget && activeDrawerTab === 'overview' && (
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col gap-4">
 
-                {/* Section 1: Contact & Location */}
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-6 h-6 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
-                      <Mail className="w-3.5 h-3.5" />
-                    </div>
-                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>
-                      Contact & Location
-                    </span>
-                    <div className="flex-1 h-px" style={{ backgroundColor: border }} />
-                  </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+                  <InfoCard icon={<Mail className="w-3.5 h-3.5" />} title="Contact & Location" border={border} textMuted={textMuted} cardBg={cardBg} isLight={isLight}>
+                    <InfoRow label="Work Email" textMuted={textMuted} textPrimary={textPrimary}>
+                      <CopyableValue value={selectedEmployee.email} placeholder="—" copied={copiedKey === 'workEmail'} onCopy={() => copyToClipboard(selectedEmployee.email, 'workEmail')} textPrimary={textPrimary} />
+                    </InfoRow>
+                    <InfoRow label="Personal Email" textMuted={textMuted} textPrimary={textPrimary}>
+                      <CopyableValue value={selectedEmployee.personalEmail} placeholder="Not provided" copied={copiedKey === 'personalEmail'} onCopy={() => copyToClipboard(selectedEmployee.personalEmail, 'personalEmail')} textPrimary={textPrimary} />
+                    </InfoRow>
+                    <InfoRow label="Phone" textMuted={textMuted} textPrimary={textPrimary}>
+                      <CopyableValue value={formatPhoneNumber(selectedEmployee.phone)} placeholder="—" copied={copiedKey === 'phone'} onCopy={() => copyToClipboard(selectedEmployee.phone, 'phone')} textPrimary={textPrimary} />
+                    </InfoRow>
+                    <InfoRow label="Assigned Branch" textMuted={textMuted} textPrimary={textPrimary} last>
+                      <span className="text-sm font-semibold" style={{ color: textPrimary }}>{selectedEmployee.branchName || 'All Branches'}</span>
+                    </InfoRow>
+                  </InfoCard>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    {/* Work Email */}
-                    <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-emerald-500/40"
-                      style={{
-                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
-                        borderColor: inputBorder,
-                        backdropFilter: 'blur(8px)',
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
-                            <Mail className="w-3.5 h-3.5" />
-                          </div>
-                          <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>WORK EMAIL</span>
-                        </div>
-                        {selectedEmployee.email && (
-                          <button
-                            onClick={() => copyToClipboard(selectedEmployee.email, 'workEmail')}
-                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors cursor-pointer"
-                            title="Copy email"
-                          >
-                            {copiedKey === 'workEmail' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                          </button>
-                        )}
-                      </div>
-                      <div className="text-sm font-bold break-all select-text" style={{ color: textPrimary }}>
-                        {selectedEmployee.email || '—'}
-                      </div>
-                    </div>
-
-                    {/* Personal Email */}
-                    <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-blue-500/40"
-                      style={{
-                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
-                        borderColor: inputBorder,
-                        backdropFilter: 'blur(8px)',
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg flex items-center justify-center text-blue-500 bg-blue-500/10 shrink-0">
-                            <Mail className="w-3.5 h-3.5" />
-                          </div>
-                          <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>PERSONAL EMAIL</span>
-                        </div>
-                        {selectedEmployee.personalEmail && (
-                          <button
-                            onClick={() => copyToClipboard(selectedEmployee.personalEmail, 'personalEmail')}
-                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors cursor-pointer"
-                            title="Copy personal email"
-                          >
-                            {copiedKey === 'personalEmail' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                          </button>
-                        )}
-                      </div>
-                      <div className={`text-sm font-bold break-all select-text ${selectedEmployee.personalEmail ? '' : 'italic opacity-60'}`} style={{ color: selectedEmployee.personalEmail ? textPrimary : textMuted }}>
-                        {selectedEmployee.personalEmail || 'Not provided'}
-                      </div>
-                    </div>
-
-                    {/* Phone Number */}
-                    <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-emerald-500/40"
-                      style={{
-                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
-                        borderColor: inputBorder,
-                        backdropFilter: 'blur(8px)',
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
-                            <Phone className="w-3.5 h-3.5" />
-                          </div>
-                          <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>PHONE NUMBER</span>
-                        </div>
-                        {selectedEmployee.phone && (
-                          <button
-                            onClick={() => copyToClipboard(selectedEmployee.phone, 'phone')}
-                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors cursor-pointer"
-                            title="Copy phone number"
-                          >
-                            {copiedKey === 'phone' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                          </button>
-                        )}
-                      </div>
-                      <div className="text-sm font-bold" style={{ color: textPrimary }}>
-                        {formatPhoneNumber(selectedEmployee.phone)}
-                      </div>
-                    </div>
-
-                    {/* Assigned Branch */}
-                    <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-amber-500/40"
-                      style={{
-                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
-                        borderColor: inputBorder,
-                        backdropFilter: 'blur(8px)',
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-amber-500 bg-amber-500/10 shrink-0">
-                          <Building2 className="w-3.5 h-3.5" />
-                        </div>
-                        <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>ASSIGNED BRANCH</span>
-                      </div>
-                      <div className="text-sm font-bold uppercase truncate" style={{ color: textPrimary }}>
-                        {selectedEmployee.branchName || 'All Branches'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Section 2: Employment & Access Information */}
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-6 h-6 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
-                      <Briefcase className="w-3.5 h-3.5" />
-                    </div>
-                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>
-                      Employment & Access Information
-                    </span>
-                    <div className="flex-1 h-px" style={{ backgroundColor: border }} />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    {/* Access Tags (formerly Job Title & Roles) */}
-                    <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all sm:col-span-2 group hover:border-violet-500/40"
-                      style={{
-                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
-                        borderColor: inputBorder,
-                        backdropFilter: 'blur(8px)',
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-violet-500 bg-violet-500/10 shrink-0">
-                          <KeyRound className="w-3.5 h-3.5" />
-                        </div>
-                        <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
-                          ACCESS TAGS
-                        </span>
-                      </div>
-                      <div className="text-sm font-bold select-text" style={{ color: textPrimary }}>
-                        {parseJobTitles(selectedEmployee.jobTitle).length > 0 ? (
-                          <div className="flex flex-wrap items-center gap-1 pt-0.5">
-                            {parseJobTitles(selectedEmployee.jobTitle).map((tag, idx, arr) => (
-                              <span key={tag} className="inline-flex items-center text-xs font-bold tracking-wide" style={{ color: textPrimary }}>
-                                <span>{tag}</span>
-                                {idx < arr.length - 1 && (
-                                  <span className="mx-2 opacity-30 select-none">•</span>
-                                )}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-xs italic opacity-50 font-normal">No access tags assigned</span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Date Hired */}
-                    <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-emerald-500/40"
-                      style={{
-                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
-                        borderColor: inputBorder,
-                        backdropFilter: 'blur(8px)',
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
-                          <Calendar className="w-3.5 h-3.5" />
-                        </div>
-                        <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>DATE HIRED</span>
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold" style={{ color: textPrimary }}>
-                          {formatDisplayDate(selectedEmployee.dateHired)}
-                        </div>
+                  <InfoCard icon={<Briefcase className="w-3.5 h-3.5" />} title="Employment & Access" border={border} textMuted={textMuted} cardBg={cardBg} isLight={isLight}>
+                    <InfoRow label="Access Tags" textMuted={textMuted} textPrimary={textPrimary}>
+                      <span className="text-sm font-semibold text-right" style={{ color: textPrimary }}>
+                        {parseJobTitles(selectedEmployee.jobTitle).length > 0
+                          ? parseJobTitles(selectedEmployee.jobTitle).join(', ')
+                          : <span className="text-xs italic opacity-60 font-normal">None assigned</span>}
+                      </span>
+                    </InfoRow>
+                    <InfoRow label="Date Hired" textMuted={textMuted} textPrimary={textPrimary}>
+                      <span className="text-sm font-semibold text-right" style={{ color: textPrimary }}>
+                        {formatDisplayDate(selectedEmployee.dateHired)}
                         {selectedEmployee.dateHired && calculateTenure(selectedEmployee.dateHired) && (
-                          <div className="text-[11px] font-semibold text-emerald-500 mt-0.5">
-                            Tenure: {calculateTenure(selectedEmployee.dateHired)}
+                          <span className="text-[11px] font-semibold text-emerald-500 ml-1.5">({calculateTenure(selectedEmployee.dateHired)})</span>
+                        )}
+                      </span>
+                    </InfoRow>
+                    <InfoRow label="Birthdate" textMuted={textMuted} textPrimary={textPrimary} last>
+                      <span className="text-sm font-semibold" style={{ color: selectedEmployee.birthDate ? textPrimary : textMuted }}>
+                        {formatDisplayDate(selectedEmployee.birthDate)}
+                      </span>
+                    </InfoRow>
+                  </InfoCard>
+
+                  <InfoCard icon={<Shield className="w-3.5 h-3.5" />} title="Account & System" border={border} textMuted={textMuted} cardBg={cardBg} isLight={isLight}>
+                    <InfoRow label="Member ID" textMuted={textMuted} textPrimary={textPrimary}>
+                      <button onClick={() => copyToClipboard(format8DigitId(selectedEmployee.id), 'memberId')} className="inline-flex items-center gap-1.5 group/copy">
+                        <span className="text-sm font-semibold" style={{ color: textPrimary }}>{format8DigitId(selectedEmployee.id)}</span>
+                        {copiedKey === 'memberId' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3 opacity-0 group-hover/copy:opacity-60 transition-opacity" style={{ color: textMuted }} />}
+                      </button>
+                    </InfoRow>
+                    <InfoRow label="Registered" textMuted={textMuted} textPrimary={textPrimary}>
+                      <span className="text-sm font-semibold" style={{ color: textPrimary }}>
+                        {selectedEmployee.createdAt ? new Date(selectedEmployee.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' }) : 'Unknown'}
+                      </span>
+                    </InfoRow>
+                    <InfoRow label="Last Login" textMuted={textMuted} textPrimary={textPrimary} last>
+                      <span className="text-sm font-semibold text-right" style={{ color: textPrimary }}>
+                        {selectedEmployee.lastLoginAt ? new Date(selectedEmployee.lastLoginAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Not yet activated'}
+                      </span>
+                    </InfoRow>
+                  </InfoCard>
+
+                  {/* Section: Account Status — toggle and delete live in one row, delete kept
+                      small/icon-only so it doesn't read as the loudest thing on the page. */}
+                  {isAdmin && (
+                    <InfoCard icon={<Shield className="w-3.5 h-3.5" />} title="Account Status" border={border} textMuted={textMuted} cardBg={cardBg} isLight={isLight}>
+                      <div className="flex items-center justify-between gap-3 px-4 py-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => requestToggleActive(selectedEmployee)}
+                            className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0 focus:outline-none"
+                            style={{ backgroundColor: selectedEmployee.isActive ? '#10B981' : '#94a3b8' }}
+                            title={selectedEmployee.isActive ? 'Click to deactivate' : 'Click to reactivate'}
+                          >
+                            <span
+                              className="inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform"
+                              style={{ transform: selectedEmployee.isActive ? 'translateX(18px)' : 'translateX(3px)' }}
+                            />
+                          </button>
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-xs font-bold" style={{ color: selectedEmployee.isActive ? '#10B981' : textMuted }}>
+                              {selectedEmployee.isActive ? 'Active member' : 'Deactivated account'}
+                            </span>
+                            <span className="text-[11px] truncate" style={{ color: textMuted }}>
+                              {selectedEmployee.isActive ? 'Can access assigned branch operations' : 'Cannot log into the portal'}
+                            </span>
                           </div>
+                        </div>
+
+                        {!isProtectedFromDelete(selectedEmployee.role) && (
+                          <button
+                            onClick={() => requestDelete(selectedEmployee)}
+                            className="p-2 rounded-lg shrink-0 transition-colors text-slate-400 hover:text-red-500 hover:bg-red-500/10"
+                            title="Delete member"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         )}
                       </div>
-                    </div>
-
-                    {/* Birthdate */}
-                    <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-pink-500/40"
-                      style={{
-                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
-                        borderColor: inputBorder,
-                        backdropFilter: 'blur(8px)',
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-pink-500 bg-pink-500/10 shrink-0">
-                          <Calendar className="w-3.5 h-3.5" />
-                        </div>
-                        <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>BIRTHDATE</span>
-                      </div>
-                      <div className={`text-sm font-bold ${selectedEmployee.birthDate ? '' : 'italic opacity-60'}`} style={{ color: selectedEmployee.birthDate ? textPrimary : textMuted }}>
-                        {formatDisplayDate(selectedEmployee.birthDate)}
-                      </div>
-                    </div>
-                  </div>
+                    </InfoCard>
+                  )}
                 </div>
-
-                {/* Section 3: Account & System Information */}
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-6 h-6 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
-                      <Shield className="w-3.5 h-3.5" />
-                    </div>
-                    <span className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>
-                      Account & System Details
-                    </span>
-                    <div className="flex-1 h-px" style={{ backgroundColor: border }} />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {/* Member ID */}
-                    <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-indigo-500/40"
-                      style={{
-                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
-                        borderColor: inputBorder,
-                        backdropFilter: 'blur(8px)',
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg flex items-center justify-center text-indigo-500 bg-indigo-500/10 shrink-0">
-                            <User className="w-3.5 h-3.5" />
-                          </div>
-                          <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>MEMBER ID</span>
-                        </div>
-                        <button
-                          onClick={() => copyToClipboard(format8DigitId(selectedEmployee.id), 'memberId')}
-                          className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 transition-colors cursor-pointer"
-                          title="Copy 8-digit Member ID"
-                        >
-                          {copiedKey === 'memberId' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                        </button>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="font-mono text-base font-extrabold tracking-[0.2em] px-3 py-1.5 rounded-xl select-all border shadow-xs"
-                          style={{
-                            backgroundColor: isLight ? 'rgba(241, 245, 249, 0.9)' : 'rgba(30, 41, 59, 0.7)',
-                            borderColor: isLight ? '#cbd5e1' : '#334155',
-                            color: isLight ? '#0f172a' : '#f8fafc',
-                          }}
-                        >
-                          {format8DigitId(selectedEmployee.id)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Registered Date */}
-                    <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-cyan-500/40"
-                      style={{
-                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
-                        borderColor: inputBorder,
-                        backdropFilter: 'blur(8px)',
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-cyan-500 bg-cyan-500/10 shrink-0">
-                          <Clock className="w-3.5 h-3.5" />
-                        </div>
-                        <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>REGISTERED</span>
-                      </div>
-                      <div className="text-sm font-bold" style={{ color: textPrimary }}>
-                        {selectedEmployee.createdAt ? new Date(selectedEmployee.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' }) : 'Unknown'}
-                      </div>
-                    </div>
-
-                    {/* Combined Active & Last Login */}
-                    <div
-                      className="p-4 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all group hover:border-emerald-500/40"
-                      style={{
-                        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(15, 26, 46, 0.65)',
-                        borderColor: inputBorder,
-                        backdropFilter: 'blur(8px)',
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-500 bg-emerald-500/10 shrink-0">
-                          <UserCheck className="w-3.5 h-3.5" />
-                        </div>
-                        <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>STATUS & LOGIN ACTIVITY</span>
-                      </div>
-                      <div className="flex flex-col gap-0.5">
-                        <div className="flex items-center gap-1.5 text-sm font-bold" style={{ color: selectedEmployee.isActive ? '#10B981' : textMuted }}>
-                          <span className={`w-2 h-2 rounded-full ${selectedEmployee.isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-                          <span>{selectedEmployee.isActive ? 'Active Member' : 'Deactivated'}</span>
-                        </div>
-                        <div className="text-xs mt-0.5 flex items-center gap-1" style={{ color: textMuted }}>
-                          <span>Last login:</span>
-                          <span className="font-semibold truncate" style={{ color: textPrimary }}>
-                            {selectedEmployee.lastLoginAt ? new Date(selectedEmployee.lastLoginAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Account not yet activated'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Section 4: Account Actions & Danger Zone */}
-                {isAdmin && (
-                  <div className="flex flex-col gap-3 pt-2">
-                    <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-emerald-500">
-                      <Shield className="w-3.5 h-3.5" />
-                      <span>Account Status & Actions</span>
-                    </div>
-
-                    <div
-                      className="p-5 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder }}
-                    >
-                      <div className="flex items-center gap-4">
-                        {/* Interactive switch */}
-                        <button
-                          type="button"
-                          onClick={() => requestToggleActive(selectedEmployee)}
-                          className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 focus:outline-none"
-                          style={{ backgroundColor: selectedEmployee.isActive ? '#10B981' : '#94a3b8' }}
-                          title={selectedEmployee.isActive ? 'Click to deactivate' : 'Click to reactivate'}
-                        >
-                          <span
-                            className="inline-block h-4 w-4 rounded-full bg-white shadow-md transition-transform"
-                            style={{ transform: selectedEmployee.isActive ? 'translateX(24px)' : 'translateX(4px)' }}
-                          />
-                        </button>
-
-                        <div className="flex flex-col">
-                          <div className="text-xs font-black uppercase tracking-wider" style={{ color: selectedEmployee.isActive ? '#10B981' : textMuted }}>
-                            {selectedEmployee.isActive ? 'ACTIVE MEMBER' : 'DEACTIVATED ACCOUNT'}
-                          </div>
-                          <div className="text-xs" style={{ color: textMuted }}>
-                            {selectedEmployee.isActive
-                              ? 'Member is active and has access to assigned branch operations.'
-                              : 'Member is deactivated and cannot log into the portal.'}
-                          </div>
-                        </div>
-                      </div>
-
-                      {!isProtectedFromDelete(selectedEmployee.role) && (
-                        <button
-                          onClick={() => requestDelete(selectedEmployee)}
-                          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all border border-red-500/30 text-red-500 hover:bg-red-500/10 active:scale-95"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                          <span>DELETE MEMBER</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
 
               </div>
             )}
 
-            {/* ── History Tab ── */}
-            {activeDrawerTab === 'history' && (
-              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                <TicketHistoryTable
-                  person={{
-                    id: selectedEmployee.id,
-                    name: selectedEmployee.name,
-                    email: selectedEmployee.email,
-                    personalEmail: selectedEmployee.personalEmail,
-                  }}
-                />
-              </div>
-            )}
+            {/* ── Edit mode: replaces the whole detail view (no tabs) ── */}
+            {editTarget && (
+              <div className="flex-1 min-h-0 flex flex-col">
+            <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6 flex flex-col gap-4">
+              {formErr && <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 font-semibold">{formErr}</div>}
 
-            {/* ── Registered Tickets Tab (warranty registrars only) ── */}
-            {activeDrawerTab === 'registrations' && isWarrantyRegistrar(selectedEmployee.jobTitle) && (
-              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                <WarrantyRegistrationHistoryTable
-                  person={{
-                    id: selectedEmployee.id,
-                    name: selectedEmployee.name,
-                    email: selectedEmployee.email,
-                    personalEmail: selectedEmployee.personalEmail,
-                  }}
-                />
-              </div>
-            )}
-
-          </div>
-        </div>
-      )}
-
-      {/* ── Edit Modal ── */}
-      {editTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: isLight ? 'rgba(241,245,249,0.96)' : 'rgba(6,11,24,0.96)', backdropFilter: 'blur(12px)' }}>
-          <div className="w-full max-w-6xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b shrink-0" style={{ borderColor: border }}>
-              <div className="flex items-center gap-3">
-                <UserAvatar name={editTarget.name} imageUrl={editForm.profileImage} size="sm" className="shrink-0" />
-                <div>
-                  <h3 className="font-black text-base uppercase tracking-tight" style={{ color: textPrimary }}>EDIT ACCOUNT</h3>
-                  <p className="text-xs" style={{ color: textMuted }}>{editTarget.email}</p>
-                </div>
-              </div>
-              <button onClick={() => setEditTarget(null)} className="p-2 rounded-xl transition-all hover:bg-slate-500/10" style={{ color: textMuted }}>
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Body */}
-            <div className="flex-1 overflow-y-auto p-8 flex flex-col md:flex-row gap-8">
-              {/* Left Column: Profile Pic Holder */}
-              <div className="w-full md:w-72 flex flex-col items-center gap-5 text-center shrink-0 border-b md:border-b-0 md:border-r pb-8 md:pb-0 pr-0 md:pr-8" style={{ borderColor: border }}>
-                <div className="text-[10px] font-black uppercase tracking-widest self-start" style={{ color: textMuted }}>PROFILE PHOTO</div>
-                
-                <div 
+              {/* Photo — compact, no dedicated column. Uses UserAvatar (same as the header
+                  avatar above) so a stale/broken stored image URL falls back to initials
+                  instead of a raw browser broken-image icon with overflowing alt text. */}
+              <div className="flex items-center gap-3 shrink-0">
+                <div
                   onClick={() => document.getElementById('edit-modal-photo')?.click()}
-                  className="w-48 h-48 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center overflow-hidden relative group cursor-pointer transition-all hover:bg-slate-500/5 hover:border-emerald-500" 
-                  style={{ borderColor: border, backgroundColor: inputBg }}
+                  className="relative group cursor-pointer shrink-0 rounded-full overflow-hidden"
                 >
-                  {editForm.profileImage ? (
-                    <>
-                      <img src={resolveImageUrl(editForm.profileImage)} alt="Profile Preview" className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-1.5 transition-opacity duration-200 text-white">
-                        <Camera className="w-6 h-6 text-white" />
-                        <span className="text-[10px] font-black uppercase tracking-wider text-white">CHANGE PHOTO</span>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex flex-col items-center gap-2 text-slate-400 p-4">
-                      <div className="w-12 h-12 rounded-full bg-slate-500/10 flex items-center justify-center">
-                        <Plus className="w-6 h-6 text-slate-400" />
-                      </div>
-                      <span className="text-xs font-bold uppercase tracking-wider" style={{ color: textMuted }}>CLICK TO UPLOAD</span>
-                      <span className="text-[9px] uppercase tracking-wider" style={{ color: textMuted }}>PNG, JPG OR WEBP</span>
-                    </div>
-                  )}
+                  <UserAvatar name={editTarget.name} imageUrl={editForm.profileImage} size="lg" />
+                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                    <Camera className="w-5 h-5 text-white" />
+                  </div>
                 </div>
-
-                <div className="flex flex-col gap-2.5 w-full">
-                  <input
-                    type="file"
-                    id="edit-modal-photo"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={e => {
-                      const file = e.target.files?.[0]
-                      if (!file) return
-                      if (file.size > 2 * 1024 * 1024) {
-                        alert("Image must be smaller than 2MB")
-                        return
-                      }
-                      const reader = new FileReader()
-                      reader.onloadend = () => {
-                        setEditForm(p => ({ ...p, profileImage: reader.result as string }))
-                      }
-                      reader.readAsDataURL(file)
-                    }}
-                  />
-                  <button 
-                    type="button"
-                    onClick={() => document.getElementById('edit-modal-photo')?.click()}
-                    className="px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider border transition-all hover:bg-slate-500/10 w-full text-center"
-                    style={{ borderColor: border, color: textPrimary }}
-                  >
-                    UPLOAD PHOTO
-                  </button>
-                  {editForm.profileImage && (
-                    <button
-                      type="button"
-                      onClick={() => setEditForm(p => ({ ...p, profileImage: '' }))}
-                      className="text-xs text-red-500 font-black uppercase tracking-wider hover:underline"
-                    >
-                      REMOVE PHOTO
+                <input
+                  type="file"
+                  id="edit-modal-photo"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    if (file.size > 2 * 1024 * 1024) {
+                      alert("Image must be smaller than 2MB")
+                      return
+                    }
+                    const reader = new FileReader()
+                    reader.onloadend = () => {
+                      setEditForm(p => ({ ...p, profileImage: reader.result as string }))
+                    }
+                    reader.readAsDataURL(file)
+                  }}
+                />
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs font-bold" style={{ color: textPrimary }}>Profile photo</span>
+                  <div className="flex items-center gap-3">
+                    <button type="button" onClick={() => document.getElementById('edit-modal-photo')?.click()} className="text-xs font-semibold hover:underline" style={{ color: '#10B981' }}>
+                      Upload
                     </button>
-                  )}
+                    {editForm.profileImage && (
+                      <button type="button" onClick={() => setEditForm(p => ({ ...p, profileImage: '' }))} className="text-xs font-semibold hover:underline text-red-500">
+                        Remove
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {/* Right Column: Input Fields Form */}
-              <div className="flex-1 flex flex-col gap-5">
-                {formErr && <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 font-semibold uppercase">{formErr}</div>}
-
-                {/* ── Section: General Info ── */}
-                <div>
-                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">GENERAL INFORMATION</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Field label="FULL NAME" labelColor={textMuted}>
-                      <input className={inputCls} style={inputStyle} value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} onBlur={e => setEditForm(p => ({ ...p, name: formatPersonName(e.target.value) }))} />
-                    </Field>
-                    <Field label="NICKNAME (DROPDOWN SHORT NAME)" labelColor={textMuted}>
-                      <input className={inputCls} style={inputStyle} value={editForm.nickname} onChange={e => setEditForm(p => ({ ...p, nickname: e.target.value }))} placeholder="e.g. ALLAN, CRIS, TROY" />
-                    </Field>
-                    <Field label="LOGIN EMAIL" labelColor={textMuted}>
-                      <input className={inputCls} style={inputStyle} type="email" value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} />
-                    </Field>
-                    <Field label="PHONE CONTACT" labelColor={textMuted}>
-                      <input className={inputCls} style={inputStyle} value={editForm.phone} onChange={e => setEditForm(p => ({ ...p, phone: e.target.value }))} placeholder="09XX XXX XXXX" />
-                    </Field>
-                    <Field label="PERSONAL EMAIL" labelColor={textMuted}>
-                      <input className={inputCls} style={inputStyle} type="email" value={editForm.personalEmail} onChange={e => setEditForm(p => ({ ...p, personalEmail: e.target.value }))} placeholder="personal@email.com" />
-                    </Field>
-                  </div>
+              {/* General Information */}
+              <InfoCard icon={<User className="w-3.5 h-3.5" />} title="General Information" border={border} textMuted={textMuted} cardBg={cardBg} isLight={isLight}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4">
+                  <Field label="FULL NAME" labelColor={textMuted}>
+                    <input className={inputCls} style={inputStyle} value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} onBlur={e => setEditForm(p => ({ ...p, name: formatPersonName(e.target.value) }))} />
+                  </Field>
+                  <Field label="NICKNAME" labelColor={textMuted}>
+                    <input className={inputCls} style={inputStyle} value={editForm.nickname} onChange={e => setEditForm(p => ({ ...p, nickname: e.target.value }))} placeholder="e.g. ALLAN, CRIS, TROY" />
+                  </Field>
+                  <Field label="LOGIN EMAIL" labelColor={textMuted}>
+                    <input className={inputCls} style={inputStyle} type="email" value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} />
+                  </Field>
+                  <Field label="PHONE CONTACT" labelColor={textMuted}>
+                    <input className={inputCls} style={inputStyle} value={editForm.phone} onChange={e => setEditForm(p => ({ ...p, phone: e.target.value }))} placeholder="09XX XXX XXXX" />
+                  </Field>
+                  <Field label="PERSONAL EMAIL" labelColor={textMuted}>
+                    <input className={inputCls} style={inputStyle} type="email" value={editForm.personalEmail} onChange={e => setEditForm(p => ({ ...p, personalEmail: e.target.value }))} placeholder="personal@email.com" />
+                  </Field>
+                  <Field label="BIRTHDATE" labelColor={textMuted}>
+                    <input type="date" className={inputCls} style={inputStyle} value={editForm.birthDate} onChange={e => setEditForm(p => ({ ...p, birthDate: e.target.value }))} />
+                  </Field>
+                  <Field label="DATE HIRED" labelColor={textMuted}>
+                    <input type="date" className={inputCls} style={inputStyle} value={editForm.dateHired} onChange={e => setEditForm(p => ({ ...p, dateHired: e.target.value }))} />
+                  </Field>
                 </div>
+              </InfoCard>
 
-                {/* ── Section: Job Details ── */}
-                <div className="border-t pt-4" style={{ borderColor: border }}>
-                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">ROLE & ACCESS</h4>
+              {/* Role & Access */}
+              <InfoCard icon={<Briefcase className="w-3.5 h-3.5" />} title="Role & Access" border={border} textMuted={textMuted} cardBg={cardBg} isLight={isLight}>
+                <div className="flex flex-col gap-3 p-4">
                   {editTarget && editForm.role !== editTarget.role && (
-                    <div className="mb-3 text-xs rounded-xl px-3 py-2.5 border" style={{ borderColor: 'rgba(59,130,246,0.25)', backgroundColor: 'rgba(59,130,246,0.08)', color: '#3B82F6' }}>
+                    <div className="text-xs rounded-xl px-3 py-2.5 border" style={{ borderColor: 'rgba(59,130,246,0.25)', backgroundColor: 'rgba(59,130,246,0.08)', color: '#3B82F6' }}>
                       Role will change: {describeRoleChange(editTarget.role, editForm.role)}
                     </div>
                   )}
@@ -2500,95 +2114,99 @@ export default function Employees() {
                     )}
                   </div>
                 </div>
+              </InfoCard>
 
-                {/* ── Section: Birthdate ── */}
-                <div className="border-t pt-4" style={{ borderColor: border }}>
-                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-500 mb-3">BIRTHDATE</h4>
-                  <Field label="MEMBER BIRTHDATE" labelColor={textMuted}>
-                    <input
-                      type="date"
-                      className={inputCls}
-                      style={inputStyle}
-                      value={editForm.birthDate}
-                      onChange={e => setEditForm(p => ({ ...p, birthDate: e.target.value }))}
-                    />
-                  </Field>
-                </div>
-
-                {/* ── Section: Date Hired ── */}
-                <div className="border-t pt-4" style={{ borderColor: border }}>
-                  <h4 className="text-[10px] font-black uppercase tracking-wider text-blue-500 mb-3">DATE HIRED</h4>
-                  <Field label="MEMBER DATE HIRED" labelColor={textMuted}>
-                    <input
-                      type="date"
-                      className={inputCls}
-                      style={inputStyle}
-                      value={editForm.dateHired}
-                      onChange={e => setEditForm(p => ({ ...p, dateHired: e.target.value }))}
-                    />
-                  </Field>
-                </div>
-
-                {/* Active Status */}
-                <div className="flex items-center gap-3 p-3 rounded-xl border mt-2" style={{ borderColor: border }}>
-                  <div className="flex-1">
-                    <div className="text-sm font-black uppercase tracking-wide" style={{ color: textPrimary }}>ACCOUNT STATUS</div>
-                    <div className="text-xs uppercase font-medium" style={{ color: textMuted }}>TOGGLE TO ENABLE OR DISABLE LOGIN ACCESS</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setEditForm(p => ({ ...p, isActive: !p.isActive }))}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider border transition-all"
-                    style={editForm.isActive
-                      ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.3)' }
-                      : { color: '#94a3b8', backgroundColor: 'rgba(148,163,184,0.08)', borderColor: 'rgba(148,163,184,0.2)' }}
-                  >
-                    {editForm.isActive ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
-                    {editForm.isActive ? 'ACTIVE' : 'INACTIVE'}
-                  </button>
-                </div>
-
-                {/* New Password */}
-                <div className="border-t pt-4" style={{ borderColor: border }}>
-                  <Field label="NEW PASSWORD (LEAVE BLANK TO KEEP CURRENT)" labelColor={textMuted}>
-                    <div className="relative">
-                      <input
-                        className={inputCls}
-                        style={{ ...inputStyle, paddingRight: '2.75rem' }}
-                        type={showPass ? 'text' : 'password'}
-                        value={editForm.newPassword}
-                        onChange={e => setEditForm(p => ({ ...p, newPassword: e.target.value }))}
-                        placeholder="ENTER NEW PASSWORD TO CHANGE…"
-                      />
-                      <button type="button" onClick={() => setShowPass(p => !p)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: textMuted }}>
-                        {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
+              {/* Account Security */}
+              <InfoCard icon={<Shield className="w-3.5 h-3.5" />} title="Account Security" border={border} textMuted={textMuted} cardBg={cardBg} isLight={isLight}>
+                <div className="flex flex-col gap-3 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold" style={{ color: textPrimary }}>Account status</span>
+                      <span className="text-[11px]" style={{ color: textMuted }}>Toggle to enable or disable login access</span>
                     </div>
-                  </Field>
+                    <button
+                      type="button"
+                      onClick={() => setEditForm(p => ({ ...p, isActive: !p.isActive }))}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all shrink-0"
+                      style={editForm.isActive
+                        ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.3)' }
+                        : { color: '#94a3b8', backgroundColor: 'rgba(148,163,184,0.08)', borderColor: 'rgba(148,163,184,0.2)' }}
+                    >
+                      {editForm.isActive ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                      {editForm.isActive ? 'Active' : 'Inactive'}
+                    </button>
+                  </div>
+
+                  <div className="border-t pt-3" style={{ borderColor: border }}>
+                    <Field label="NEW PASSWORD (LEAVE BLANK TO KEEP CURRENT)" labelColor={textMuted}>
+                      <div className="relative">
+                        <input
+                          className={inputCls}
+                          style={{ ...inputStyle, paddingRight: '2.75rem' }}
+                          type={showPass ? 'text' : 'password'}
+                          value={editForm.newPassword}
+                          onChange={e => setEditForm(p => ({ ...p, newPassword: e.target.value }))}
+                          placeholder="Enter new password to change…"
+                        />
+                        <button type="button" onClick={() => setShowPass(p => !p)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: textMuted }}>
+                          {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </Field>
+                  </div>
                 </div>
+              </InfoCard>
+            </div>
+
+            <div className="px-4 sm:px-6 py-3 border-t flex items-center justify-end gap-2 shrink-0" style={{ borderColor: border, backgroundColor: cardBg }}>
+              <button onClick={cancelEdit} className="px-4 py-2 rounded-lg text-xs font-bold border transition-all hover:bg-slate-500/10" style={{ borderColor: border, color: textMuted }}>
+                Cancel
+              </button>
+              <button onClick={handleSaveEdit} disabled={saving} className="px-5 py-2 rounded-lg text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-50" style={{ backgroundColor: '#10B981' }}>
+                {saving ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
               </div>
+            )}
 
-            </div>
+            {/* ── History Tab ── */}
+            {!editTarget && activeDrawerTab === 'history' && (
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                <TicketHistoryTable
+                  person={{
+                    id: selectedEmployee.id,
+                    name: selectedEmployee.name,
+                    email: selectedEmployee.email,
+                    personalEmail: selectedEmployee.personalEmail,
+                  }}
+                />
+              </div>
+            )}
 
-            {/* Footer */}
-            <div className="px-6 py-4 border-t flex items-center gap-3 shrink-0" style={{ borderColor: border }}>
-              <button onClick={() => setEditTarget(null)} className="flex-1 py-2.5 rounded-xl text-sm font-black uppercase tracking-wider border transition-all hover:opacity-85" style={{ borderColor: border, color: textMuted, backgroundColor: 'transparent' }}>
-                CANCEL
-              </button>
-              <button onClick={handleSaveEdit} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-black uppercase tracking-wider text-white transition-all hover:opacity-90 disabled:opacity-50" style={{ backgroundColor: '#10B981' }}>
-                {saving ? 'SAVING…' : 'SAVE CHANGES'}
-              </button>
-            </div>
+            {/* ── Registered Tickets Tab (warranty registrars only) ── */}
+            {!editTarget && activeDrawerTab === 'registrations' && isWarrantyRegistrar(selectedEmployee.jobTitle) && (
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                <WarrantyRegistrationHistoryTable
+                  person={{
+                    id: selectedEmployee.id,
+                    name: selectedEmployee.name,
+                    email: selectedEmployee.email,
+                    personalEmail: selectedEmployee.personalEmail,
+                  }}
+                />
+              </div>
+            )}
+
           </div>
         </div>
       )}
 
       {/* ── Create Modal ── */}
-      {showCreate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: isLight ? 'rgba(241,245,249,0.96)' : 'rgba(6,11,24,0.96)', backdropFilter: 'blur(12px)' }}>
+      {showCreate && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ backgroundColor: isLight ? 'rgba(241,245,249,0.96)' : 'rgba(6,11,24,0.96)', backdropFilter: 'blur(12px)' }}>
          <div
-           className="w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+           className="w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden flex flex-col min-h-0 max-h-[90vh]"
            style={{ backgroundColor: cardBg, border: `1px solid ${border}`, animation: 'modalFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
          >
              <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: border }}>
@@ -2628,7 +2246,7 @@ export default function Employees() {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-6 py-5">
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5">
               {formErr && (
                 <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 mb-4 font-semibold uppercase">{formErr}</div>
               )}
@@ -2765,12 +2383,13 @@ export default function Employees() {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── New Credentials Modal ── */}
-      {newTechCreds && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}>
+      {newTechCreds && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}>
           <div
             className="w-full max-w-md rounded-2xl shadow-2xl p-6 flex flex-col gap-5"
             style={{ backgroundColor: cardBg, border: `1px solid ${border}`, animation: 'modalFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
@@ -2804,12 +2423,13 @@ export default function Employees() {
 
             <button onClick={() => setNewTechCreds(null)} className="w-full py-3 rounded-xl text-sm font-black uppercase tracking-wider text-white transition-all hover:opacity-90" style={{ backgroundColor: '#10B981' }}>DONE</button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Delete Confirm ── */}
-      {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}>
+      {deleteTarget && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}>
           <div className="w-full max-w-sm rounded-2xl shadow-2xl p-6 flex flex-col gap-4" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 bg-red-500/10"><Trash2 className="w-5 h-5 text-red-500" /></div>
@@ -2833,7 +2453,8 @@ export default function Employees() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />

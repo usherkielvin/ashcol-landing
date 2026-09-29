@@ -133,8 +133,8 @@ export default function App() {
             <Route path="/office-tasks" element={<OfficeTasks />} />
             <Route path="/branches" element={<Branches />} />
             <Route path="/assigned-tickets" element={<Navigate to="/search" replace />} />
-            <Route path="/employees" element={<Employees />} />
-            <Route path="/employees/:id" element={<Employees />} />
+            <Route path="/members" element={<Employees />} />
+            <Route path="/members/:id" element={<Employees />} />
             <Route path="/vehicles" element={<Vehicles />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/messages" element={<Messages />} />

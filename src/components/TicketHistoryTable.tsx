@@ -440,101 +440,39 @@ export default function TicketHistoryTable({
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-transparent font-sans antialiased text-slate-800 dark:text-slate-100">
-      {/* ── KPI Summary Cards (Clean Modern Typography) ───────────────────── */}
-      <div className="p-4 sm:p-5 border-b grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0" style={{ borderColor: border, backgroundColor: cardBg }}>
-        {/* Total Tickets */}
-        <div className="p-3.5 sm:p-4 rounded-xl border flex flex-col justify-between transition-all" style={{ backgroundColor: inputBg, borderColor: border }}>
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Assigned</span>
-            <Tag className="w-4 h-4 text-slate-400" />
-          </div>
-          <div className="mt-2.5 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-extrabold tracking-tight font-number text-slate-900 dark:text-slate-50">{metrics.total}</span>
-            <span className="text-xs font-semibold text-slate-500">tickets</span>
-          </div>
-        </div>
-
-        {/* Completed */}
-        <div className="p-3.5 sm:p-4 rounded-xl border border-emerald-500/25 bg-emerald-500/5 flex flex-col justify-between transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Completed</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-          </div>
-          <div className="mt-2.5 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-extrabold tracking-tight font-number text-emerald-600 dark:text-emerald-400">{metrics.completed}</span>
-            <span className="text-xs font-bold text-emerald-600/80 dark:text-emerald-400/80 font-number">
-              ({metrics.completionRate}%)
-            </span>
-          </div>
-        </div>
-
-        {/* Pending / Scheduled */}
-        <div className="p-3.5 sm:p-4 rounded-xl border border-amber-500/25 bg-amber-500/5 flex flex-col justify-between transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">Pending / Sched</span>
-            <Clock className="w-4 h-4 text-amber-500" />
-          </div>
-          <div className="mt-2.5 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-extrabold tracking-tight font-number text-amber-600 dark:text-amber-400">{metrics.pending}</span>
-            <span className="text-xs font-semibold text-amber-600/80 dark:text-amber-400/80">upcoming</span>
-          </div>
-        </div>
-
-        {/* In Progress */}
-        <div className="p-3.5 sm:p-4 rounded-xl border border-blue-500/25 bg-blue-500/5 flex flex-col justify-between transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">In Progress</span>
-            <Wrench className="w-4 h-4 text-blue-500" />
-          </div>
-          <div className="mt-2.5 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-extrabold tracking-tight font-number text-blue-600 dark:text-blue-400">{metrics.inProgress}</span>
-            <span className="text-xs font-semibold text-blue-600/80 dark:text-blue-400/80">dispatched</span>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Status Tabs & Action Toolbar ───────────────────────────────────── */}
+      {/* ── Status Filter Chips & Action Toolbar ────────────────────────────
+          One row does double duty as the stat summary and the filter control — no more
+          showing the same counts twice (KPI cards + tabs), and no giant numerals. */}
       <div className="px-4 sm:px-6 py-3 border-b flex flex-wrap items-center justify-between gap-3 shrink-0" style={{ borderColor: border, backgroundColor: cardBg }}>
-        {/* Status Filter Tabs — an embedding caller (e.g. a modal's own close/back control)
-            can prepend something here via headerLeft, otherwise this row starts with the tabs. */}
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           {headerLeft}
-          <div className="flex items-center gap-1.5 flex-wrap">
           {(
             [
-              { id: 'ALL', label: 'All', count: metrics.total },
-              { id: 'COMPLETED', label: 'Completed', count: metrics.completed },
-              { id: 'PENDING', label: 'Pending / Scheduled', count: metrics.pending },
-              { id: 'IN_PROGRESS', label: 'In Progress', count: metrics.inProgress },
-              { id: 'CANCELLED', label: 'Cancelled', count: metrics.cancelled },
+              { id: 'ALL', label: 'All', count: metrics.total, icon: Tag, color: '#64748B' },
+              { id: 'COMPLETED', label: 'Completed', count: metrics.completed, icon: CheckCircle2, color: '#10B981' },
+              { id: 'PENDING', label: 'Pending', count: metrics.pending, icon: Clock, color: '#F59E0B' },
+              { id: 'IN_PROGRESS', label: 'In Progress', count: metrics.inProgress, icon: Wrench, color: '#3B82F6' },
+              { id: 'CANCELLED', label: 'Cancelled', count: metrics.cancelled, icon: XCircle, color: '#EF4444' },
             ] as const
           ).map(tab => {
             const isActive = statusFilter === tab.id
+            const Icon = tab.icon
             return (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setStatusFilter(tab.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold tracking-normal transition-all cursor-pointer flex items-center gap-1.5 ${
-                  isActive
-                    ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm font-bold'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80'
-                }`}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer"
+                style={isActive
+                  ? { backgroundColor: `${tab.color}1A`, borderColor: `${tab.color}66`, color: tab.color }
+                  : { backgroundColor: 'transparent', borderColor: 'transparent', color: textMuted }}
               >
+                <Icon className="w-3.5 h-3.5" style={{ color: isActive ? tab.color : undefined }} />
                 <span>{tab.label}</span>
-                <span
-                  className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold font-number ${
-                    isActive
-                      ? 'bg-white/20 dark:bg-black/20 text-white dark:text-slate-900'
-                      : 'bg-slate-200/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                  }`}
-                >
-                  {tab.count}
-                </span>
+                <span className="font-bold font-number">{tab.count}</span>
               </button>
             )
           })}
-          </div>
         </div>
 
         {/* Quick Export Tools */}

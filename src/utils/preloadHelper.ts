@@ -95,7 +95,7 @@ export function preloadPath(path: string) {
       case '/lineup': portalPagePreloaders.lineUp(); break
       case '/audit-report': portalPagePreloaders.dailyAuditReport(); break
       case '/audit-expenses': portalPagePreloaders.dailyAuditReport(); break
-      case '/employees': portalPagePreloaders.employees(); break
+      case '/members': portalPagePreloaders.employees(); break
       case '/admin-hris': portalPagePreloaders.hris(); break
       case '/ddrm': portalPagePreloaders.ddrm(); break
       case '/collections': portalPagePreloaders.forCollections(); break
