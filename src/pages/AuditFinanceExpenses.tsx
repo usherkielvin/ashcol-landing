@@ -98,7 +98,7 @@ export default function AuditFinanceExpenses() {
   const [dateRaw, setDateRaw] = useState(formatTodayReceiptDate())
   const [dateError, setDateError] = useState('')
   const [search, setSearch] = useState('')
-  const [filterMonth, setFilterMonth] = useState('All')
+  const [filterMonth, setFilterMonth] = useState(() => new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).toUpperCase())
   const [sortConfig] = useState<{ key: keyof AuditExpense; direction: 'asc' | 'desc' } | null>({ key: 'date', direction: 'desc' })
   const [scanning, setScanning] = useState(false)
   const [scanPreview, setScanPreview] = useState<string | null>(null)
@@ -604,6 +604,66 @@ export default function AuditFinanceExpenses() {
   }, [branchExpenses, search, sortConfig, filterMonth])
 
   const totalFiltered = filtered.reduce((s, e) => s + e.amount, 0)
+
+  // ── Expense Records vs. DTR summary reconciliation ──
+  // Period = selected month, or the span of this branch's records when "All Months".
+  // DEPOSIT records are excluded: the DTR tracks deposits separately from Total Expenses.
+  const dtrPeriod = useMemo(() => {
+    const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    if (filterMonth !== 'All') {
+      const start = new Date(`1 ${filterMonth}`)
+      if (isNaN(start.getTime())) return null
+      return { from: iso(start), to: iso(new Date(start.getFullYear(), start.getMonth() + 1, 0)) }
+    }
+    const times = branchExpenses.map(e => dateToTime(e.date)).filter(t => t > 0)
+    if (times.length === 0) return null
+    return { from: iso(new Date(Math.min(...times))), to: iso(new Date(Math.max(...times))) }
+  }, [filterMonth, branchExpenses])
+
+  type DtrSummary = { loading: boolean; total: number | null; payroll: number; purchases: number; deposits: number; matched: boolean }
+  const [dtrExpenses, setDtrExpenses] = useState<DtrSummary>({ loading: false, total: null, payroll: 0, purchases: 0, deposits: 0, matched: false })
+  useEffect(() => {
+    const empty = { loading: false, total: null, payroll: 0, purchases: 0, deposits: 0, matched: false }
+    if (!branchId || !dtrPeriod) { setDtrExpenses(empty); return }
+    let cancelled = false
+    setDtrExpenses({ ...empty, loading: true })
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    // Range summary rows carry no branchId, only display names ("CANDELARIA", "TAGUIG - SALES"), so match on names.
+    const norm = (n?: string | null) => (n || '').replace(/^ashcol\s+/i, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z]+/g, ' ').trim()
+    const target = norm(branchName)
+    fetch(`${API_BASE_URL}/v1/reports/audit-summary-range?from=${dtrPeriod.from}&to=${dtrPeriod.to}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((rows: Array<{ branchName?: string; logicalBranchName?: string; totalExpenses?: number; payrollExpenses?: number; totalForPurchase?: number; totalDeposits?: number }>) => {
+        if (cancelled) return
+        const matched = rows.filter(r => norm(r.branchName) === target)
+        setDtrExpenses({
+          loading: false,
+          matched: matched.length > 0,
+          total: matched.reduce((sum, r) => sum + (r.totalExpenses || 0), 0),
+          payroll: matched.reduce((sum, r) => sum + (r.payrollExpenses || 0), 0),
+          purchases: matched.reduce((sum, r) => sum + (r.totalForPurchase || 0), 0),
+          deposits: matched.reduce((sum, r) => sum + (r.totalDeposits || 0), 0),
+        })
+      })
+      .catch(err => {
+        console.error('[Expense Records] DTR summary fetch failed:', err)
+        if (!cancelled) setDtrExpenses(empty)
+      })
+    return () => { cancelled = true }
+  }, [branchId, branchName, dtrPeriod])
+
+  const periodRecords = useMemo(() => {
+    if (!dtrPeriod) return []
+    const from = new Date(`${dtrPeriod.from}T00:00:00`).getTime()
+    const to = new Date(`${dtrPeriod.to}T23:59:59`).getTime()
+    return branchExpenses.filter(e => {
+      const t = dateToTime(e.date)
+      return t >= from && t <= to
+    })
+  }, [branchExpenses, dtrPeriod])
+  const recordsForDtr = useMemo(() => periodRecords.filter(e => e.expenseCategory !== 'DEPOSIT'), [periodRecords])
+  const recordsTotalForDtr = recordsForDtr.reduce((sum, e) => sum + e.amount, 0)
+  const depositsForDtr = periodRecords.filter(e => e.expenseCategory === 'DEPOSIT').reduce((sum, e) => sum + e.amount, 0)
 
   const handleDateBlur = (raw: string) => {
     const parsed = parseSmartDate(raw)
@@ -1731,6 +1791,91 @@ export default function AuditFinanceExpenses() {
         </div>,
         document.body
       )}
+
+      {/* ── Expense Records vs DTR summary ── */}
+      {activeTab === 'expenses' && branchId && dtrPeriod && (() => {
+        const dtr = dtrExpenses.total
+        const diff = dtr == null ? null : recordsTotalForDtr - dtr
+        const fmt = (n: number) => `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        const balanced = diff != null && Math.abs(diff) < 0.005
+        const diffColor = diff == null ? textMuted : balanced ? accent : danger
+        const periodRows = recordsForDtr
+        const hasDtr = dtrExpenses.matched && !dtrExpenses.loading
+        const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '-' : ''}${fmt(Math.abs(n))}`
+        // Deposits leave the branch's cash just like expenses do, so compare total outflow too.
+        const dtrOutflow = (dtr || 0) + dtrExpenses.deposits
+        const outflowDiff = recordsTotalForDtr + depositsForDtr - dtrOutflow
+        const depositRows = periodRecords.filter(e => e.expenseCategory === 'DEPOSIT')
+        const byBank = Object.entries(depositRows.reduce<Record<string, number>>((acc, e) => {
+          const k = (e.company || '').trim().toUpperCase() || 'UNSPECIFIED BANK'
+          acc[k] = (acc[k] || 0) + e.amount
+          return acc
+        }, {})).sort((a, b) => b[1] - a[1])
+        const depositDiff = depositsForDtr - dtrExpenses.deposits
+        const outflowColor = !hasDtr ? textPrimary : Math.abs(outflowDiff) < 0.005 ? accent : danger
+        const byCategory = Object.entries(periodRows.reduce<Record<string, number>>((acc, e) => {
+          const k = e.expenseCategory || 'OTHER'
+          acc[k] = (acc[k] || 0) + e.amount
+          return acc
+        }, {})).sort((a, b) => b[1] - a[1])
+        const stat = (label: string, value: string, color: string, sub?: string) => (
+          <div className="flex flex-col gap-0.5 rounded-lg px-3 py-2.5" style={{ border: `1px solid ${border}` }}>
+            <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{label}</span>
+            <span className="text-lg font-black tabular-nums" style={{ color }}>{value}</span>
+            {sub && <span className="text-[10px]" style={{ color: textMuted }}>{sub}</span>}
+          </div>
+        )
+        return (
+          <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
+              <div className="flex flex-col">
+                <span className="text-xs font-black" style={{ color: textPrimary }}>{branchName} — Expense Summary</span>
+                <span className="text-[11px]" style={{ color: textMuted }}>{filterMonth === 'All' ? `${dtrPeriod.from} to ${dtrPeriod.to}` : filterMonth} · Records vs monthly DTR</span>
+              </div>
+              {diff != null && !dtrExpenses.loading && (
+                <span className="text-[11px] font-bold px-2.5 py-1 rounded-full" style={{ color: diffColor, backgroundColor: `${diffColor}18`, border: `1px solid ${diffColor}44` }}>
+                  {balanced ? 'Balanced' : diff > 0 ? 'Records exceed DTR' : 'DTR exceeds records'}
+                </span>
+              )}
+            </div>
+            <div className="p-3 grid grid-cols-2 lg:grid-cols-4 gap-2">
+              {stat('Expense Records', fmt(recordsTotalForDtr), textPrimary, `${periodRows.length} record${periodRows.length === 1 ? '' : 's'} · excl. deposits`)}
+              {stat('DTR Total Expenses', dtrExpenses.loading ? 'Loading…' : dtr == null ? 'Unavailable' : fmt(dtr), textPrimary,
+                dtrExpenses.loading || dtr == null ? undefined : !dtrExpenses.matched ? 'No DTR found for this branch' : `Payroll ${fmt(dtrExpenses.payroll)} · Purchases ${fmt(dtrExpenses.purchases)}`)}
+              {stat('Difference', dtrExpenses.loading || diff == null ? '—' : `${diff > 0 ? '+' : diff < 0 ? '-' : ''}${fmt(Math.abs(diff))}`, diffColor, 'Records − DTR')}
+              {stat('Total Cash Outflow', fmt(recordsTotalForDtr + depositsForDtr), outflowColor, hasDtr ? `DTR ${fmt(dtrOutflow)} · diff ${signed(outflowDiff)}` : 'Expenses + deposits')}
+            </div>
+            <div className="mx-3 mb-3 rounded-lg px-3 py-2.5 flex flex-wrap items-center gap-x-6 gap-y-2" style={{ border: `1px solid ${accent}44`, backgroundColor: `${accent}0d` }}>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: accent }}>Deposited to Company Bank</span>
+                <span className="text-lg font-black tabular-nums" style={{ color: textPrimary }}>{fmt(depositsForDtr)}</span>
+                <span className="text-[10px]" style={{ color: textMuted }}>
+                  {depositRows.length} deposit{depositRows.length === 1 ? '' : 's'}
+                  {hasDtr && <> · DTR {fmt(dtrExpenses.deposits)} · diff <span style={{ color: Math.abs(depositDiff) < 0.005 ? accent : danger }}>{signed(depositDiff)}</span></>}
+                </span>
+              </div>
+              {byBank.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {byBank.map(([bank, amt]) => (
+                    <span key={bank} className="text-[10px] font-semibold px-2 py-1 rounded-md tabular-nums" style={{ color: textMuted, border: `1px solid ${border}`, backgroundColor: cardBg }}>
+                      {bank} <span style={{ color: textPrimary }}>{fmt(amt)}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            {byCategory.length > 0 && (
+              <div className="px-3 pb-3 flex flex-wrap gap-1.5">
+                {byCategory.map(([cat, amt]) => (
+                  <span key={cat} className="text-[10px] font-semibold px-2 py-1 rounded-md tabular-nums" style={{ color: textMuted, border: `1px solid ${border}` }}>
+                    {cat} <span style={{ color: textPrimary }}>{fmt(amt)}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* ── RECEIPT TABLE / DAILY LOG / PURCHASES ── */}
       {activeTab === 'expenses' && branchId && (

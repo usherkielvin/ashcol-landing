@@ -4,8 +4,8 @@ import { NumericFormat } from 'react-number-format'
 import {
   FileText, CreditCard, Clock, Plus, Search, Filter, Loader2,
   Check, X, AlertCircle, Trash2, Eye, Pencil, MousePointerClick, ChevronLeft,
-  CircleCheck, CircleX, Hourglass, TrendingUp, ChevronDown, Building2,
-  MessageSquare, Archive, Calendar, Undo2, SlidersHorizontal,
+  Hourglass, TrendingUp, ChevronDown, Building2,
+  Archive, Calendar, Undo2, SlidersHorizontal,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -102,7 +102,7 @@ interface UnifiedRow {
 }
 
 const TABS: { id: TabId; label: string; description: string; icon: typeof FileText; color: string }[] = [
-  { id: 'cash-advance', label: 'Cash Advance', description: 'Employee salary advance requests', icon: CreditCard, color: '#6366f1' },
+  { id: 'cash-advance', label: 'Cash Advance', description: 'Request a salary advance from the company', icon: CreditCard, color: '#6366f1' },
   { id: 'budget', label: 'Request for Budget', description: 'Payment & operational expenses', icon: FileText, color: '#2563eb' },
   { id: 'overtime', label: 'Overtime Authorization', description: 'OT hours & duty authorization', icon: Clock, color: '#d97706' },
 ]
@@ -228,6 +228,7 @@ export default function OperationsForms() {
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null)
   const [isEditingModalNotes, setIsEditingModalNotes] = useState(false)
   const [modalNotesInput, setModalNotesInput] = useState('')
+  const [actionDialog, setActionDialog] = useState<{ action: 'RELEASED' | 'CANCELLED'; type: TabId; id: string; label: string; note: string; busy: boolean } | null>(null)
   const [rejectDialog, setRejectDialog] = useState<{ isOpen: boolean; type: TabId; id: string; currentReason: string } | null>(null)
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
 
@@ -252,6 +253,33 @@ export default function OperationsForms() {
     budget: '/operations/budget-requests',
     overtime: '/operations/overtime-requests',
   }
+  // Status timeline for the request open in the view/edit modal (what happened, who, when).
+  const [modalHistory, setModalHistory] = useState<ArchHistoryEntry[]>([])
+  const [, setModalHistLoading] = useState(false)
+  // Creation timestamp shown on the form: the saved time for existing requests, the moment the form was opened for new ones.
+  const formOpenedAt = useMemo(() => new Date(), [modal?.mode, modal?.record?.id])
+  const formatDateTime = (value?: string | Date | null) => {
+    if (!value) return '—'
+    const d = value instanceof Date ? value : new Date(value)
+    if (isNaN(d.getTime())) return '—'
+    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+  }
+  const modalRecordId = modal?.record?.id
+  const modalRecordType = modal?.type
+  const modalRecordStatus = modal?.record?.status
+  useEffect(() => {
+    if (!modalRecordId || !modalRecordType || modal?.mode === 'add') { setModalHistory([]); return }
+    let cancelled = false
+    setModalHistLoading(true)
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    fetch(`${API_BASE_URL}${ARCH_BASE_PATHS[modalRecordType]}/${modalRecordId}/history`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => (r.ok ? r.json() : []))
+      .then(list => { if (!cancelled) setModalHistory(Array.isArray(list) ? list : []) })
+      .catch(() => { if (!cancelled) setModalHistory([]) })
+      .finally(() => { if (!cancelled) setModalHistLoading(false) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalRecordId, modalRecordType, modalRecordStatus, modal?.mode])
   const archStatusColors: Record<string, string> = { DONE: '#0ea5e9', RELEASED: '#8b5cf6', CANCELLED: '#64748b' }
   const TAB_LABELS: Record<TabId, string> = { 'cash-advance': 'Cash Advance', budget: 'Budget Request', overtime: 'Overtime Authorization' }
 
@@ -328,7 +356,7 @@ export default function OperationsForms() {
   const [budgetBranch, setBudgetBranch] = useState('')
   const [budgetDept, setBudgetDept] = useState('')
   const [budgetPo, setBudgetPo] = useState('')
-  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CHECK' | 'PDC'>('CHECK')
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CHECK' | 'PDC'>('CASH')
   const [payeeName, setPayeeName] = useState('')
   const [bankName, setBankName] = useState('')
   const [accountNo, setAccountNo] = useState('')
@@ -564,8 +592,6 @@ export default function OperationsForms() {
   const stats = {
     total: statsBase.length,
     pending: statsBase.filter(r => r.status === 'PENDING').length,
-    approved: statsBase.filter(r => ['APPROVED', 'DISBURSED', 'NOTED', 'FULLY_PAID'].includes(r.status)).length,
-    rejected: statsBase.filter(r => r.status === 'REJECTED').length,
   }
 
     // ── Archive computed data ───────────────────────────────────────────────
@@ -688,98 +714,49 @@ export default function OperationsForms() {
     : '—'
     // ── end archive computed data ──────────────────────────────────────────
 
-  const requestDeleteRecord = (type: TabId, id: string, label: string) => {
-    const endpoints: Record<TabId, string> = {
-      'cash-advance': `${API_BASE_URL}/hris/cash-advances/${id}`,
-      budget: `${API_BASE_URL}/operations/budget-requests/${id}`,
-      overtime: `${API_BASE_URL}/operations/overtime-requests/${id}`,
-    }
-    setConfirmDialog({
-      title: 'Delete request?',
-      message: `This will permanently delete "${label}". This cannot be undone.`,
-      variant: 'danger',
-      confirmText: 'Delete',
-      onConfirm: async () => {
-        try {
-          const res = await fetch(endpoints[type], {
-            method: 'DELETE',
-            headers: { Authorization: `Bearer ${getToken()}` },
-          })
-          if (res.ok) {
-            if (type === 'cash-advance') {
-              setCashAdvances(prev => prev.filter(c => c.id !== id))
-            } else if (type === 'budget') {
-              setBudgetRequests(prev => prev.filter(b => b.id !== id))
-            } else {
-              setOvertimeRequests(prev => prev.filter(o => o.id !== id))
-            }
-            fetchAll()
-          } else {
-            const errText = await res.text().catch(() => '')
-            let message = 'Failed to delete request.'
-            try {
-              const json = JSON.parse(errText)
-              message = json.message || json.error || errText
-            } catch {
-              if (errText) message = errText
-            }
-            setError(message)
-          }
-        } catch (err: any) {
-          setError(err?.message || 'Failed to delete request.')
-        }
-      },
-    })
-  }
-
   // Owner self-service cancel — soft CANCELLED status (record kept, visible in Archives),
   // as opposed to admin's hard DELETE above. Available any time before the request is
   // archived (DONE/RELEASED/CANCELLED), not just while PENDING.
   const requestCancelRecord = (type: TabId, id: string, label: string) => {
+    setActionDialog({ action: 'CANCELLED', type, id, label: label && label !== '—' ? label : TAB_LABELS[type], note: '', busy: false })
+  }
+
+  const performCancel = async (type: TabId, id: string, note: string) => {
     const endpoints: Record<TabId, string> = {
       'cash-advance': `${API_BASE_URL}/hris/cash-advances/${id}/cancel`,
       budget: `${API_BASE_URL}/operations/budget-requests/${id}/cancel`,
       overtime: `${API_BASE_URL}/operations/overtime-requests/${id}/cancel`,
     }
-    setConfirmDialog({
-      title: 'Cancel request?',
-      message: `This will cancel "${label}". It will move to Archives and can be restored later if needed.`,
-      variant: 'discard',
-      confirmText: 'Cancel Request',
-      cancelText: 'Never mind',
-      onConfirm: async () => {
-        try {
-          const res = await fetch(endpoints[type], {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({}),
-          })
-          if (res.ok) {
-            if (type === 'cash-advance') {
-              setCashAdvances(prev => prev.filter(c => c.id !== id))
-            } else if (type === 'budget') {
-              setBudgetRequests(prev => prev.filter(b => b.id !== id))
-            } else {
-              setOvertimeRequests(prev => prev.filter(o => o.id !== id))
-            }
-            if (modal?.record && modal.record.id === id) closeModal()
-            fetchAll()
-          } else {
-            const errText = await res.text().catch(() => '')
-            let message = 'Failed to cancel request.'
-            try {
-              const json = JSON.parse(errText)
-              message = json.message || json.error || errText
-            } catch {
-              if (errText) message = errText
-            }
-            setError(message)
-          }
-        } catch (err: any) {
-          setError(err?.message || 'Failed to cancel request.')
+    try {
+      const res = await fetch(endpoints[type], {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: note.trim() }),
+      })
+      if (res.ok) {
+        if (type === 'cash-advance') {
+          setCashAdvances(prev => prev.filter(c => c.id !== id))
+        } else if (type === 'budget') {
+          setBudgetRequests(prev => prev.filter(b => b.id !== id))
+        } else {
+          setOvertimeRequests(prev => prev.filter(o => o.id !== id))
         }
-      },
-    })
+        if (modal?.record && modal.record.id === id) closeModal()
+        fetchAll()
+      } else {
+        const errText = await res.text().catch(() => '')
+        let message = 'Failed to cancel request.'
+        try {
+          const json = JSON.parse(errText)
+          message = json.message || json.error || errText
+        } catch {
+          if (errText) message = errText
+        }
+        setError(message)
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Failed to cancel request.')
+    }
   }
 
   const resetForms = useCallback(() => {
@@ -814,8 +791,8 @@ export default function OperationsForms() {
 
   // The creator of a request can cancel it any time before it's archived
   // (DONE/RELEASED/CANCELLED) — not just while PENDING.
-  const canCancelAsOwner = (r: { status: string; employeeId: string }) =>
-    r.employeeId === user?.id && !['DONE', 'RELEASED', 'CANCELLED'].includes(r.status)
+  const canCancelRequest = (r: { status: string; employeeId: string }) =>
+    (isAdmin || r.employeeId === user?.id) && !['DONE', 'RELEASED', 'CANCELLED'].includes(r.status)
 
   const openNewForm = () => {
     resetForms()
@@ -847,7 +824,7 @@ export default function OperationsForms() {
       setBudgetBranch(r.fromBranch || userAssignedBranchName || getBranchLabel(user?.branchId))
       setBudgetDept(r.fromDept || '')
       setBudgetPo(r.poNumber || '')
-      setPaymentMethod(r.paymentMethod || 'CHECK')
+      setPaymentMethod(r.paymentMethod || 'CASH')
       setPayeeName(r.payeeName || '')
       setBankName(r.bankName || '')
       setAccountNo(r.accountNo || '')
@@ -1004,12 +981,6 @@ export default function OperationsForms() {
     if (!branch || !branch.trim()) errs.branch = 'Branch is required.'
     if (!budgetPo.trim()) errs.po = 'P.O. Number is required.'
     if (!payeeName.trim()) errs.payee = 'Payee Name is required.'
-    if ((paymentMethod === 'CHECK' || paymentMethod === 'PDC') && !bankName.trim()) {
-      errs.bank = 'Bank name is required for Check/PDC payment.'
-    }
-    if ((paymentMethod === 'CHECK' || paymentMethod === 'PDC') && !accountNo.trim()) {
-      errs.account = 'Account number is required for Check/PDC payment.'
-    }
     if (!dueDate) errs.dueDate = 'Due Date is required.'
 
     const validItems = lineItems.filter(li => li.particulars.trim() && li.amount > 0)
@@ -1165,62 +1136,47 @@ export default function OperationsForms() {
 
   const closeStatusMenu = () => setStatusMenu(null)
 
-  const ARCHIVE_STATUS_OPTIONS = [
-    { value: 'DONE', label: 'Done', color: '#0ea5e9' },
+  // Only three statuses: Pending (default), Released and Cancelled. The last two move the request to Archives.
+  const getStatusOptions = (_type: TabId) => [
+    { value: 'PENDING', label: 'Pending', color: '#d97706' },
     { value: 'RELEASED', label: 'Released', color: '#8b5cf6' },
+    { value: 'CANCELLED', label: 'Cancelled', color: '#64748b' },
   ]
 
-  const getStatusOptions = (type: TabId) => {
-    if (type === 'cash-advance') {
-      return [
-        { value: 'PENDING', label: 'Pending', color: '#d97706' },
-        { value: 'APPROVED', label: 'Approved', color: '#16a34a' },
-        { value: 'DISBURSED', label: 'Disbursed', color: '#4f46e5' },
-        { value: 'FULLY_PAID', label: 'Fully Paid', color: '#0d9488' },
-        { value: 'REJECTED', label: 'Rejected', color: '#dc2626' },
-        ...ARCHIVE_STATUS_OPTIONS,
-      ]
-    }
-    if (type === 'budget') {
-      return [
-        { value: 'PENDING', label: 'Pending', color: '#d97706' },
-        { value: 'NOTED', label: 'Noted', color: '#2563eb' },
-        { value: 'APPROVED', label: 'Approved', color: '#16a34a' },
-        { value: 'REJECTED', label: 'Rejected', color: '#dc2626' },
-        ...ARCHIVE_STATUS_OPTIONS,
-      ]
-    }
-    return [
-      { value: 'PENDING', label: 'Pending', color: '#d97706' },
-      { value: 'APPROVED', label: 'Approved', color: '#16a34a' },
-      { value: 'REJECTED', label: 'Rejected', color: '#dc2626' },
-      ...ARCHIVE_STATUS_OPTIONS,
-    ]
+  const requestRelease = (type: TabId, id: string) => {
+    const row = unifiedRows.find(r => r.id === id && r.type === type)
+    setActionDialog({ action: 'RELEASED', type, id, label: row?.detail && row.detail !== '—' ? row.detail : TAB_LABELS[type], note: '', busy: false })
   }
 
-  const handleStatusUpdate = async (type: TabId, id: string, status: string, rejectionReason?: string) => {
+  const handleStatusUpdate = async (type: TabId, id: string, status: string, rejectionReason?: string, notes?: string) => {
     const endpoints: Record<string, string> = {
       budget: `${API_BASE_URL}/operations/budget-requests/${id}/status`,
       overtime: `${API_BASE_URL}/operations/overtime-requests/${id}/status`,
       'cash-advance': `${API_BASE_URL}/hris/cash-advances/${id}/approve`,
     }
 
-    // Optimistic UI updates
-    if (type === 'cash-advance') {
-      setCashAdvances(prev => prev.map(c => c.id === id ? { ...c, status } : c))
-    } else if (type === 'budget') {
-      setBudgetRequests(prev => prev.map(b => b.id === id ? { ...b, status, rejectionReason } : b))
+    // Optimistic UI updates. Released/Done/Cancelled go straight to Archives, so drop them from the active list.
+    if (['RELEASED', 'DONE', 'CANCELLED'].includes(status)) {
+      if (type === 'cash-advance') setCashAdvances(prev => prev.filter(c => c.id !== id))
+      else if (type === 'budget') setBudgetRequests(prev => prev.filter(b => b.id !== id))
+      else setOvertimeRequests(prev => prev.filter(o => o.id !== id))
+      if (modal?.record && modal.record.id === id) closeModal()
     } else {
-      setOvertimeRequests(prev => prev.map(o => o.id === id ? { ...o, status, rejectionReason } : o))
-    }
-
-    if (modal?.record && modal.record.id === id) {
-      setModal(m => m ? { ...m, record: { ...m.record!, status, rejectionReason } as any } : null)
+      if (type === 'cash-advance') {
+        setCashAdvances(prev => prev.map(c => c.id === id ? { ...c, status } : c))
+      } else if (type === 'budget') {
+        setBudgetRequests(prev => prev.map(b => b.id === id ? { ...b, status, rejectionReason } : b))
+      } else {
+        setOvertimeRequests(prev => prev.map(o => o.id === id ? { ...o, status, rejectionReason } : o))
+      }
+      if (modal?.record && modal.record.id === id) {
+        setModal(m => m ? { ...m, record: { ...m.record!, status, rejectionReason } as any } : null)
+      }
     }
 
     const body: Record<string, any> = { status }
     if (rejectionReason) body.rejectionReason = rejectionReason
-    if (type === 'cash-advance' && !body.notes) body.notes = ''
+    if (notes && notes.trim()) body.notes = notes.trim()
 
     try {
       const res = await fetch(endpoints[type], {
@@ -1236,13 +1192,13 @@ export default function OperationsForms() {
 
   const onSelectStatus = async (type: TabId, id: string, newStatus: string) => {
     closeStatusMenu()
-    if (newStatus === 'REJECTED') {
-      setRejectDialog({
-        isOpen: true,
-        type,
-        id,
-        currentReason: '',
-      })
+    if (newStatus === 'RELEASED') {
+      requestRelease(type, id)
+      return
+    }
+    if (newStatus === 'CANCELLED') {
+      const row = unifiedRows.find(r => r.id === id && r.type === type)
+      requestCancelRecord(type, id, row?.detail || TAB_LABELS[type])
       return
     }
     await handleStatusUpdate(type, id, newStatus)
@@ -1422,11 +1378,9 @@ export default function OperationsForms() {
       {!modal && activeTab === 'active' && (
       <>
       {/* Summary stat cards */}
-      <div className="grid grid-cols-4 gap-1.5 md:gap-3">
+      <div className="grid grid-cols-2 gap-1.5 md:gap-3">
         <StatCard label="Total requests" shortLabel="Total" value={stats.total} icon={TrendingUp} color="#6366f1" />
         <StatCard label="Pending" shortLabel="Pending" value={stats.pending} icon={Hourglass} color="#d97706" />
-        <StatCard label="Approved" shortLabel="Approved" value={stats.approved} icon={CircleCheck} color="#16a34a" />
-        <StatCard label="Rejected" shortLabel="Rejected" value={stats.rejected} icon={CircleX} color="#dc2626" />
       </div>
 
       {/* List card */}
@@ -1490,12 +1444,7 @@ export default function OperationsForms() {
                   <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className={`${inputCls} !py-1.5 appearance-none cursor-pointer`} style={istyle}>
                     <option value="ALL">All statuses</option>
                     <option value="PENDING">Pending</option>
-                    <option value="NOTED">Noted</option>
-                    <option value="APPROVED">Approved</option>
-                    <option value="REJECTED">Rejected</option>
-                    <option value="DISBURSED">Disbursed</option>
-                    <option value="FULLY_PAID">Fully Paid</option>
-                  </select>
+                                      </select>
                 </label>
                 <div className="flex items-center justify-between pt-0.5">
                   <button
@@ -1563,12 +1512,7 @@ export default function OperationsForms() {
               >
                 <option value="ALL">All statuses</option>
                 <option value="PENDING">Pending</option>
-                <option value="NOTED">Noted</option>
-                <option value="APPROVED">Approved</option>
-                <option value="REJECTED">Rejected</option>
-                <option value="DISBURSED">Disbursed</option>
-                <option value="FULLY_PAID">Fully Paid</option>
-              </select>
+                              </select>
             </div>
           </div>
           <div className="hidden md:flex items-center gap-1.5 text-[10px] font-semibold" style={{ color: textMuted }}>
@@ -1627,9 +1571,9 @@ export default function OperationsForms() {
                       <span>{r.status === 'REJECTED' ? (r.rejectionReason || r.notesText) : r.notesText}</span>
                     </div>
                   )}
-                  {(canCancelAsOwner(r) || canEditRecord(r as any)) && (
+                  {(canCancelRequest(r) || canEditRecord(r as any)) && (
                   <div className="flex items-center justify-end gap-2 pt-0.5" onClick={e => e.stopPropagation()}>
-                    {canCancelAsOwner(r) && (
+                    {canCancelRequest(r) && (
                       <button type="button" onClick={() => requestCancelRecord(r.type, r.id, r.detail)}
                         className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all text-red-600 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800"
                       ><X className="w-3 h-3" /> Cancel</button>
@@ -1657,7 +1601,7 @@ export default function OperationsForms() {
                 </thead>
                 <tbody>
                   {filteredRows.map(r => (
-                    <tr key={`${r.type}-${r.id}`} onContextMenu={e => openContextMenu(e, r)}
+                    <tr key={`${r.type}-${r.id}`} onContextMenu={e => openContextMenu(e, r)} onDoubleClick={() => openRecord('view', r.type, r.raw)}
                       className="transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.03]"
                       style={{ borderBottom: `1px solid ${border}`, cursor: 'context-menu' }}
                     >
@@ -2058,37 +2002,8 @@ export default function OperationsForms() {
             {canEditRecord(contextMenu.row) && (
               <MenuItem icon={Pencil} label="Edit" onClick={() => { openRecord('edit', contextMenu.row.type, contextMenu.row.raw); closeContextMenu() }} />
             )}
-            {isAdmin && (
-              <MenuItem
-                icon={Pencil}
-                label="Add / Edit Note"
-                color="#10B981"
-                onClick={() => {
-                  startEditingNotes(contextMenu.row)
-                  closeContextMenu()
-                }}
-              />
-            )}
-            {isAdmin && contextMenu.row.status === 'PENDING' && (
-              <>
-                <div style={{ borderTop: `1px solid ${border}` }} className="my-1" />
-                {contextMenu.row.type === 'budget' && (
-                  <MenuItem icon={FileText} label="Mark as Noted" color="#2563eb" onClick={() => { handleStatusUpdate('budget', contextMenu.row.id, 'NOTED'); closeContextMenu() }} />
-                )}
-                <MenuItem icon={Check} label="Approve" color="#16a34a" onClick={() => { handleStatusUpdate(contextMenu.row.type, contextMenu.row.id, 'APPROVED'); closeContextMenu() }} />
-                <MenuItem icon={X} label="Reject" color="#dc2626" onClick={() => { handleStatusUpdate(contextMenu.row.type, contextMenu.row.id, 'REJECTED'); closeContextMenu() }} />
-              </>
-            )}
-            {isAdmin && contextMenu.row.status === 'NOTED' && contextMenu.row.type === 'budget' && (
-              <MenuItem icon={Check} label="Approve" color="#16a34a" onClick={() => { handleStatusUpdate('budget', contextMenu.row.id, 'APPROVED'); closeContextMenu() }} />
-            )}
-            {isAdmin && (
-              <>
-                <div style={{ borderTop: `1px solid ${border}` }} className="my-1" />
-                <MenuItem icon={Trash2} label="Delete" color="#dc2626" onClick={() => { closeContextMenu(); requestDeleteRecord(contextMenu.row.type, contextMenu.row.id, contextMenu.row.detail) }} />
-              </>
-            )}
-            {!isAdmin && canCancelAsOwner(contextMenu.row) && (
+            {/* Admins change status (incl. Cancelled) from the Status column; members have no status column, so they cancel here. */}
+            {!isAdmin && canCancelRequest(contextMenu.row) && (
               <>
                 <div style={{ borderTop: `1px solid ${border}` }} className="my-1" />
                 <MenuItem icon={X} label="Cancel Request" color="#dc2626" onClick={() => { closeContextMenu(); requestCancelRecord(contextMenu.row.type, contextMenu.row.id, contextMenu.row.detail) }} />
@@ -2101,10 +2016,22 @@ export default function OperationsForms() {
       {/* Add / Edit / View — full page */}
       {modal && (
         <div
-          className="rounded-xl sm:rounded-2xl overflow-hidden shadow-xl"
+          className="relative rounded-xl sm:rounded-2xl overflow-hidden shadow-xl"
           style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
         >
-          <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6" style={{ borderBottom: `1px solid ${border}` }}>
+          {modal.mode === 'view' && (
+            <button
+              type="button"
+              onClick={closeModal}
+              className="hidden md:flex absolute top-4 right-4 z-10 w-9 h-9 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+              style={{ color: textMuted, border: `1px solid ${border}`, backgroundColor: cardBg }}
+              title="Close"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+          <div className={`flex items-center justify-between gap-3 px-4 py-3 sm:px-6 ${modal.mode === 'view' ? 'md:hidden' : ''}`} style={{ borderBottom: `1px solid ${border}` }}>
             <div className="flex items-center gap-3">
               <button
                 onClick={closeModal}
@@ -2141,83 +2068,22 @@ export default function OperationsForms() {
             {/* ── Request Type Selector: Prominent Interactive Cards (Create Mode Only) ── */}
             {modal.mode === 'add' && (
               <div className="max-w-6xl mx-auto mb-8 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                  <div>
-                    <h3 className="text-xs font-black uppercase tracking-wider" style={{ color: textPrimary }}>
-                      Step 1: Select Request Type
-                    </h3>
-                    <p className="text-[11px] font-medium" style={{ color: textMuted }}>
-                      Choose the operational form you want to submit
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                  {TABS.map(t => {
-                    const active = modal.type === t.id
-                    const Icon = t.icon
-                    return (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => switchCreateType(t.id)}
-                        className="group relative flex items-start gap-3.5 p-4 rounded-xl sm:rounded-2xl border text-left transition-all duration-200 cursor-pointer overflow-hidden shadow-xs hover:shadow-md"
-                        style={{
-                          backgroundColor: active
-                            ? (isLight ? '#ffffff' : '#111D36')
-                            : (isLight ? '#f8fafc' : '#0B132B'),
-                          borderColor: active
-                            ? t.color
-                            : (isLight ? '#e2e8f0' : border),
-                          boxShadow: active ? `0 4px 20px -2px ${t.color}25` : 'none',
-                          transform: active ? 'translateY(-2px)' : 'none',
-                        }}
-                      >
-                        {/* Active top accent indicator bar */}
-                        {active && (
-                          <div
-                            className="absolute top-0 left-0 right-0 h-1"
-                            style={{ backgroundColor: t.color }}
-                          />
-                        )}
-
-                        <div
-                          className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105"
-                          style={{
-                            backgroundColor: active ? `${t.color}20` : (isLight ? '#e2e8f0' : '#172544'),
-                            color: active ? t.color : textMuted,
-                          }}
-                        >
-                          <Icon className="w-5 h-5" />
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-1.5">
-                            <span
-                              className="text-sm font-black tracking-tight"
-                              style={{ color: active ? textPrimary : textMuted }}
-                            >
-                              {t.label}
-                            </span>
-                            {active && (
-                              <span
-                                className="flex items-center justify-center w-5 h-5 rounded-full text-white shrink-0 shadow-xs"
-                                style={{ backgroundColor: t.color }}
-                              >
-                                <Check className="w-3 h-3 stroke-[3]" />
-                              </span>
-                            )}
-                          </div>
-                          <p
-                            className="text-[11px] font-medium leading-relaxed mt-0.5"
-                            style={{ color: textMuted }}
-                          >
-                            {t.description}
-                          </p>
-                        </div>
-                      </button>
-                    )
-                  })}
+                <div className="w-full sm:max-w-xs">
+                  <FormField label="TYPE OF REQUEST" required>
+                    <select
+                      id="request-type"
+                      value={modal.type}
+                      onChange={(e) => switchCreateType(e.target.value as TabId)}
+                      className={inputCls}
+                      style={istyle}
+                    >
+                      {TABS.map(t => (
+                        <option key={t.id} value={t.id}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
                 </div>
               </div>
             )}
@@ -2235,7 +2101,6 @@ export default function OperationsForms() {
               if (modal.type === 'budget') {
                 if (rec.payeeName) details.push(['Payee', rec.payeeName])
                 if (rec.poNumber) details.push(['P.O. No.', rec.poNumber])
-                if (rec.paymentMethod) details.push(['Method', rec.paymentMethod])
                 if (rec.bankName) details.push(['Bank', rec.bankName])
                 if (rec.accountNo) details.push(['Account', rec.accountNo])
                 if (rec.dueDate) details.push(['Due', rec.dueDate])
@@ -2252,7 +2117,7 @@ export default function OperationsForms() {
               const items = modal.type === 'budget' ? parseList(rec.lineItemsJson) : []
               const itemLabel = (it: any) => String(it?.description ?? it?.particulars ?? it?.item ?? it?.name ?? '').trim()
               const itemAmount = (it: any) => { const v = Number(it?.amount ?? it?.total ?? it?.cost); return Number.isFinite(v) ? v : null }
-              const showActions = isAdmin || canCancelAsOwner(rec)
+              const showActions = isAdmin || canCancelRequest(rec)
               const btn = 'flex-1 h-10 rounded-xl text-xs font-black text-white flex items-center justify-center gap-1.5 active:scale-95 transition-transform disabled:opacity-60'
               return (
                 <div className="md:hidden flex flex-col gap-3 pb-2">
@@ -2348,28 +2213,11 @@ export default function OperationsForms() {
                       className="rounded-2xl p-3 flex flex-col gap-2"
                       style={{ backgroundColor: paperBg, border: `1px solid ${border}` }}
                     >
-                      {isAdmin && (
+                      {isAdmin && canCancelRequest(rec) && (
                         <div className="flex items-center gap-2">
-                          {modal.type === 'budget' && st === 'PENDING' && (
-                            <button type="button" className={btn} style={{ backgroundColor: '#2563eb' }} onClick={() => handleStatusUpdate('budget', rec.id, 'NOTED')}>
-                              <Check className="w-3.5 h-3.5" /> Noted
-                            </button>
-                          )}
-                          {(st === 'PENDING' || (modal.type === 'budget' && st === 'NOTED')) && (
-                            <button type="button" className={btn} style={{ backgroundColor: '#16a34a' }} onClick={() => handleStatusUpdate(modal.type, rec.id, 'APPROVED')}>
-                              <Check className="w-3.5 h-3.5" /> Approve
-                            </button>
-                          )}
-                          {(st === 'APPROVED' || st === 'DISBURSED') && (
-                            <button type="button" className={btn} style={{ backgroundColor: '#8b5cf6' }} onClick={() => handleStatusUpdate(modal.type, rec.id, 'RELEASED')}>
-                              <Check className="w-3.5 h-3.5" /> Release
-                            </button>
-                          )}
-                          {st === 'PENDING' && (
-                            <button type="button" className={btn} style={{ backgroundColor: '#dc2626' }} onClick={() => setRejectDialog({ isOpen: true, type: modal.type, id: rec.id, currentReason: '' })}>
-                              <X className="w-3.5 h-3.5" /> Reject
-                            </button>
-                          )}
+                          <button type="button" className={btn} style={{ backgroundColor: '#8b5cf6' }} onClick={() => requestRelease(modal.type, rec.id)}>
+                            <Check className="w-3.5 h-3.5" /> Release
+                          </button>
                         </div>
                       )}
                       <div className="flex items-center gap-2">
@@ -2383,7 +2231,7 @@ export default function OperationsForms() {
                             <Pencil className="w-3.5 h-3.5" /> {rec.notes ? 'Edit note' : 'Add note'}
                           </button>
                         )}
-                        {canCancelAsOwner(rec) && (
+                        {canCancelRequest(rec) && (
                           <button
                             type="button"
                             onClick={() => requestCancelRecord(modal.type, rec.id, rec.payeeName || rec.purpose || rec.cutoffPeriod || modal.type)}
@@ -2401,246 +2249,32 @@ export default function OperationsForms() {
 
             {/* ── Main Form Paper Container ── */}
             <div
-              className={`max-w-6xl mx-auto rounded-xl sm:rounded-2xl shadow-lg p-4 sm:p-8 md:p-12 border ${modal.mode === 'view' ? 'hidden md:block' : ''}`}
-              style={{ backgroundColor: paperBg, borderColor: isLight ? '#e2e8f0' : border }}
+              className={`mx-auto ${modal.mode === 'view' ? 'hidden md:block w-full max-w-none px-2 md:px-6 pt-8' : 'rounded-xl sm:rounded-2xl shadow-lg p-4 sm:p-8 md:p-12 border max-w-6xl'}`}
+              style={modal.mode === 'view' ? undefined : { backgroundColor: paperBg, borderColor: isLight ? '#e2e8f0' : border }}
             >
-              {/* Status & Review banner for edit/view */}
-              {modal.record && (
-                <div
-                  className="flex flex-col gap-3.5 mb-6 p-4 sm:p-5 rounded-xl transition-all shadow-sm"
-                  style={{
-                    backgroundColor: isLight ? '#f8fafc' : '#0B132B',
-                    border: `1px solid ${border}`,
-                  }}
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5" style={{ borderBottom: `1px solid ${border}` }}>
-                    <div className="flex items-center gap-2.5 flex-wrap">
-                      <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md" style={{ backgroundColor: isLight ? '#e2e8f0' : '#172544', color: textMuted }}>
-                        STATUS
-                      </span>
-
-                      {isAdmin ? (
-                        <div className="relative inline-block">
-                          <button
-                            type="button"
-                            onClick={(e) => openStatusMenu(e, {
-                              id: modal.record!.id,
-                              type: modal.type,
-                              status: modal.record!.status,
-                            } as any)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wider shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer"
-                            style={{
-                              color: statusColors[modal.record.status] || statusColors.PENDING,
-                              backgroundColor: `${statusColors[modal.record.status] || statusColors.PENDING}18`,
-                              border: `1px solid ${statusColors[modal.record.status] || statusColors.PENDING}40`,
-                            }}
-                            title="Click to change status"
-                          >
-                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColors[modal.record.status] || statusColors.PENDING }} />
-                            {modal.record.status.replace(/_/g, ' ')}
-                            <ChevronDown className="w-3.5 h-3.5 opacity-70" />
-                          </button>
-                        </div>
-                      ) : (
-                        <span
-                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wider"
-                          style={{
-                            color: statusColors[modal.record.status] || statusColors.PENDING,
-                            backgroundColor: `${statusColors[modal.record.status] || statusColors.PENDING}18`,
-                            border: `1px solid ${statusColors[modal.record.status] || statusColors.PENDING}40`,
-                          }}
-                        >
-                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColors[modal.record.status] || statusColors.PENDING }} />
-                          {modal.record.status.replace(/_/g, ' ')}
+              {/* Status (top-left, view only) and the date & time the request was created */}
+              {modal && (() => {
+                const rec: any = modal.record
+                const stColor = rec ? (statusColors[rec.status] || statusColors.PENDING) : textMuted
+                return (
+                  <div className="flex items-center justify-between gap-3 mb-4">
+                    {rec && modal.mode === 'view' ? (
+                      <div className="hidden md:flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Status</span>
+                        <span className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wider" style={{ color: stColor }}>
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: stColor }} />
+                          {String(rec.status).replace(/_/g, ' ')}
                         </span>
-                      )}
-
-                      {isAdmin && (
-                        <div className="flex items-center gap-1.5 ml-0 sm:ml-2 flex-wrap">
-                          {modal.type === 'budget' && modal.record.status === 'PENDING' && (
-                            <button
-                              type="button"
-                              onClick={() => handleStatusUpdate('budget', modal.record!.id, 'NOTED')}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white shadow-sm transition-transform active:scale-95 hover:opacity-90 cursor-pointer"
-                              style={{ backgroundColor: '#2563eb' }}
-                              title="Mark this budget request as Noted"
-                            >
-                              <Check className="w-3 h-3" /> Mark as Noted
-                            </button>
-                          )}
-                          {(modal.record.status === 'PENDING' || (modal.type === 'budget' && modal.record.status === 'NOTED')) && (
-                            <button
-                              type="button"
-                              onClick={() => handleStatusUpdate(modal.type, modal.record!.id, 'APPROVED')}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white shadow-sm transition-transform active:scale-95 hover:opacity-90 cursor-pointer"
-                              style={{ backgroundColor: '#16a34a' }}
-                              title="Approve this request"
-                            >
-                              <Check className="w-3 h-3" /> Approve
-                            </button>
-                          )}
-                          {modal.record.status === 'PENDING' && (
-                            <button
-                              type="button"
-                              onClick={() => setRejectDialog({
-                                isOpen: true,
-                                type: modal.type,
-                                id: modal.record!.id,
-                                currentReason: '',
-                              })}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white shadow-sm transition-transform active:scale-95 hover:opacity-90 cursor-pointer"
-                              style={{ backgroundColor: '#dc2626' }}
-                              title="Reject this request with reason"
-                            >
-                              <X className="w-3 h-3" /> Reject
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {canCancelAsOwner(modal.record) && (
-                        <button
-                          type="button"
-                          onClick={() => requestCancelRecord(
-                            modal.type,
-                            modal.record!.id,
-                            (modal.record as any).payeeName || (modal.record as any).purpose || (modal.record as any).cutoffPeriod || modal.type
-                          )}
-                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-200 dark:border-red-800/40 transition-colors cursor-pointer"
-                          title="Cancel this request"
-                        >
-                          <X className="w-3.5 h-3.5" /> Cancel Request
-                        </button>
-                      )}
+                      </div>
+                    ) : <span />}
+                    <div className="flex items-center gap-2 text-right">
+                      <Clock className="w-3.5 h-3.5" style={{ color: textMuted }} />
+                      <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>{rec ? 'Submitted' : 'Created'}</span>
+                      <span className="text-xs font-bold" style={{ color: textPrimary }}>{formatDateTime(rec ? rec.createdAt : formOpenedAt)}</span>
                     </div>
                   </div>
-
-                  {modal.record.rejectionReason && (
-                    <div className="flex items-start gap-2.5 p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 text-xs">
-                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                      <div>
-                        <span className="font-bold uppercase tracking-wider block text-[10px]">Rejection Reason:</span>
-                        <p className="mt-0.5 font-medium">{modal.record.rejectionReason}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Notes / remarks section */}
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5" style={{ color: textMuted }}>
-                        <MessageSquare className="w-3 h-3" /> Review Remarks & Disbursement Notes
-                      </span>
-                      {isAdmin && !isEditingModalNotes && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsEditingModalNotes(true)
-                            setModalNotesInput((modal.record as any).notes || '')
-                          }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white shadow-sm hover:opacity-90 transition-all cursor-pointer"
-                          style={{ backgroundColor: accent }}
-                        >
-                          <Pencil className="w-3 h-3" />
-                          {(modal.record as any).notes ? 'Edit Note' : 'Add Custom Note'}
-                        </button>
-                      )}
-                    </div>
-
-                    {isEditingModalNotes ? (
-                      <div className="flex flex-col gap-2.5 p-3.5 rounded-xl border animate-fadeIn" style={{ backgroundColor: isLight ? '#ffffff' : '#080E1E', borderColor: border }}>
-                        <textarea
-                          rows={3}
-                          value={modalNotesInput}
-                          onChange={e => setModalNotesInput(e.target.value)}
-                          placeholder="Type custom note, instructions, or disbursement details for the member..."
-                          className="w-full p-2.5 text-xs font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                          style={istyle}
-                          autoFocus
-                        />
-
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[10px] font-bold" style={{ color: textMuted }}>Quick suggestions:</span>
-                          {[
-                            'Approved and forwarded to accounting for check issuance.',
-                            'Please submit the original physical receipts to admin.',
-                            'Cash available for pickup at branch cashier.',
-                            'Please coordinate with HR for verification.',
-                          ].map(preset => (
-                            <button
-                              key={preset}
-                              type="button"
-                              onClick={() => setModalNotesInput(prev => prev ? `${prev} ${preset}` : preset)}
-                              className="text-[10px] px-2 py-0.5 rounded-md font-semibold border transition-colors hover:bg-black/5 dark:hover:bg-white/5 text-left cursor-pointer"
-                              style={{ borderColor: border, color: textMuted }}
-                            >
-                              + {preset}
-                            </button>
-                          ))}
-                        </div>
-
-                        <div className="flex items-center justify-end gap-2 pt-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsEditingModalNotes(false)
-                              setModalNotesInput('')
-                            }}
-                            disabled={savingNotes}
-                            className="px-3 py-1.5 rounded-lg text-xs font-bold transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
-                            style={{ color: textMuted }}
-                          >
-                            Cancel
-                          </button>
-                          {(modal.record as any).notes && (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                await handleSaveNotes(modal.type, modal.record!.id, '')
-                                setIsEditingModalNotes(false)
-                              }}
-                              disabled={savingNotes}
-                              className="px-3 py-1.5 rounded-lg text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer"
-                            >
-                              Clear Note
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              await handleSaveNotes(modal.type, modal.record!.id, modalNotesInput)
-                              setIsEditingModalNotes(false)
-                            }}
-                            disabled={savingNotes}
-                            className="px-4 py-1.5 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 shadow-sm hover:opacity-90 transition-opacity cursor-pointer"
-                            style={{ backgroundColor: accent }}
-                          >
-                            {savingNotes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                            Save Note
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div
-                        className="p-3 rounded-lg text-xs font-medium flex items-start justify-between gap-3"
-                        style={{
-                          backgroundColor: (modal.record as any).notes
-                            ? (isLight ? '#ffffff' : '#0F1A2E')
-                            : (isLight ? '#f1f5f9' : '#0e172a'),
-                          border: `1px solid ${border}`,
-                          color: (modal.record as any).notes ? textPrimary : textMuted,
-                        }}
-                      >
-                        <div className="flex-1 whitespace-pre-wrap">
-                          {(modal.record as any).notes || 'No remarks or notes added yet.'}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+                )
+              })()}
 
               {/* Form Level Error Alert */}
               {error && (
@@ -2655,12 +2289,16 @@ export default function OperationsForms() {
                 <form onSubmit={handleSubmitCashAdvance}>
                   <AshcolFormHeader
                     title="Cash Advance Request Form"
-                    subtitle="For employee salary advance requests"
+                    subtitle="For requesting a cash advance from the company"
                     isLight={isLight}
                     textPrimary={textPrimary}
                     textMuted={textMuted}
                     border={border}
                   />
+
+                  <div className="mb-4 rounded-lg px-3 py-2.5 text-xs" style={{ border: `1px solid ${border}`, backgroundColor: isLight ? '#eff6ff' : 'rgba(59,130,246,0.08)', color: textMuted }}>
+                    Use this form only to <strong style={{ color: textPrimary }}>request</strong> a cash advance from the company. If you already gave an advance to a branch member from branch cash, record it in the DTR under <strong style={{ color: textPrimary }}>Cash Advance</strong> instead — do not file it here.
+                  </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                     <FormField label="Member Name" required error={formErrors.name}>
@@ -2706,17 +2344,7 @@ export default function OperationsForms() {
                       </select>
                     </FormField>
 
-                    <FormField label="Date of Request" required>
-                      <input
-                        className={inputCls}
-                        style={istyle}
-                        type="text"
-                        value={formatDateCaps(modal.record ? modal.record.createdAt : new Date().toISOString())}
-                        readOnly
-                      />
-                    </FormField>
-
-                    <FormField label="Amount (₱)" required error={formErrors.amount}>
+                    <FormField label="Amount (₱)" required error={formErrors.amount} colSpan={2}>
                       <NumericFormat
                         className={inputCls}
                         style={{
@@ -2759,14 +2387,16 @@ export default function OperationsForms() {
                   </div>
 
                   <div className="flex justify-end gap-3 mt-8 pt-4 border-t" style={{ borderColor: border }}>
-                    <button
-                      type="button"
-                      onClick={closeModal}
-                      className="px-6 py-2.5 rounded-xl text-xs font-bold transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
-                      style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textPrimary }}
-                    >
-                      {disabled ? 'Close' : 'Cancel'}
-                    </button>
+                    {!disabled && (
+                      <button
+                        type="button"
+                        onClick={closeModal}
+                        className="px-6 py-2.5 rounded-xl text-xs font-bold transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+                        style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textPrimary }}
+                      >
+                        Cancel
+                      </button>
+                    )}
                     {disabled && modal.record && canEditRecord(modal.record as any) && (
                       <button
                         type="button"
@@ -2805,7 +2435,7 @@ export default function OperationsForms() {
                   />
 
                   {/* Header Meta Grid */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4 mb-6">
+                  <div className={`grid grid-cols-1 sm:grid-cols-2 ${modal.record ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-3 sm:gap-4 mb-6`}>
                     <FormField label="Date" required error={formErrors.date}>
                       <input
                         className={inputCls}
@@ -2866,6 +2496,18 @@ export default function OperationsForms() {
                         required
                       />
                     </FormField>
+
+                    {modal.record && (
+                      <FormField label="Submitted by">
+                        <input
+                          className={`${inputCls} uppercase`}
+                          style={istyle}
+                          value={(((modal.record as any).employeeName || '').trim()) || getRequesterName((modal.record as any).employeeId)}
+                          readOnly
+                          disabled
+                        />
+                      </FormField>
+                    )}
                   </div>
 
                   {/* Payment / Disbursement details card */}
@@ -2873,40 +2515,12 @@ export default function OperationsForms() {
                     className="p-4 sm:p-5 rounded-xl border mb-6"
                     style={{ backgroundColor: isLight ? '#f8fafc' : '#0A1224', borderColor: border }}
                   >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b" style={{ borderColor: border }}>
+                    <div className="flex items-center gap-3 mb-4 pb-3 border-b" style={{ borderColor: border }}>
                       <h4 className="text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5" style={{ color: textPrimary }}>
                         <Building2 className="w-4 h-4" style={{ color: accent }} />
                         Disbursement & Payee Information
                       </h4>
 
-                      {/* Payment Method Switcher */}
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
-                          Payment Method:
-                        </span>
-                        <div className="inline-flex p-0.5 rounded-lg border gap-1" style={{ backgroundColor: isLight ? '#ffffff' : '#0F1A2E', borderColor: border }}>
-                          {(['CASH', 'CHECK', 'PDC'] as const).map(m => {
-                            const active = paymentMethod === m
-                            return (
-                              <button
-                                key={m}
-                                type="button"
-                                disabled={disabled}
-                                onClick={() => setPaymentMethod(m)}
-                                className="px-3 py-1 rounded-md text-xs font-black transition-all flex items-center gap-1 cursor-pointer"
-                                style={{
-                                  backgroundColor: active ? accent : 'transparent',
-                                  color: active ? '#ffffff' : textMuted,
-                                  boxShadow: active ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
-                                }}
-                              >
-                                {active && <Check className="w-3 h-3 stroke-[3]" />}
-                                {m}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5">
@@ -2930,8 +2544,7 @@ export default function OperationsForms() {
 
                       <FormField
                         label="Bank Name"
-                        required={paymentMethod === 'CHECK' || paymentMethod === 'PDC'}
-                        error={formErrors.bank}
+                                        error={formErrors.bank}
                       >
                         <input
                           className={inputCls}
@@ -2944,15 +2557,14 @@ export default function OperationsForms() {
                             setBankName(e.target.value)
                             setFormErrors(prev => ({ ...prev, bank: '' }))
                           }}
-                          placeholder={paymentMethod === 'CASH' ? 'Optional (N/A)' : 'e.g. BDO / BPI / MBTC'}
+                          placeholder="Optional — e.g. BDO / BPI / MBTC"
                           readOnly={disabled}
                         />
                       </FormField>
 
                       <FormField
                         label="Account No."
-                        required={paymentMethod === 'CHECK' || paymentMethod === 'PDC'}
-                        error={formErrors.account}
+                                        error={formErrors.account}
                       >
                         <input
                           className={inputCls}
@@ -2965,7 +2577,7 @@ export default function OperationsForms() {
                             setAccountNo(e.target.value)
                             setFormErrors(prev => ({ ...prev, account: '' }))
                           }}
-                          placeholder={paymentMethod === 'CASH' ? 'Optional (N/A)' : 'Bank account #'}
+                          placeholder="Optional — bank account #"
                           readOnly={disabled}
                         />
                       </FormField>
@@ -3100,14 +2712,16 @@ export default function OperationsForms() {
                   </div>
 
                   <div className="flex justify-end gap-3 mt-8 pt-4 border-t" style={{ borderColor: border }}>
-                    <button
-                      type="button"
-                      onClick={closeModal}
-                      className="px-6 py-2.5 rounded-xl text-xs font-bold transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
-                      style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textPrimary }}
-                    >
-                      {disabled ? 'Close' : 'Cancel'}
-                    </button>
+                    {!disabled && (
+                      <button
+                        type="button"
+                        onClick={closeModal}
+                        className="px-6 py-2.5 rounded-xl text-xs font-bold transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+                        style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textPrimary }}
+                      >
+                        Cancel
+                      </button>
+                    )}
                     {disabled && modal.record && canEditRecord(modal.record as any) && (
                       <button
                         type="button"
@@ -3306,14 +2920,16 @@ export default function OperationsForms() {
                   </p>
 
                   <div className="flex justify-end gap-3 mt-8 pt-4 border-t" style={{ borderColor: border }}>
-                    <button
-                      type="button"
-                      onClick={closeModal}
-                      className="px-6 py-2.5 rounded-xl text-xs font-bold transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
-                      style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textPrimary }}
-                    >
-                      {disabled ? 'Close' : 'Cancel'}
-                    </button>
+                    {!disabled && (
+                      <button
+                        type="button"
+                        onClick={closeModal}
+                        className="px-6 py-2.5 rounded-xl text-xs font-bold transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+                        style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textPrimary }}
+                      >
+                        Cancel
+                      </button>
+                    )}
                     {disabled && modal.record && canEditRecord(modal.record as any) && (
                       <button
                         type="button"
@@ -3339,9 +2955,195 @@ export default function OperationsForms() {
                 </form>
               )}
             </div>
+
+              {/* Bottom bar: note, and Cancel / Release together */}
+              {modal.record && (() => {
+                const rec: any = modal.record
+                const canAct = canCancelRequest(rec)
+                return (
+                  <div className={`${modal.mode === 'view' ? 'hidden md:flex mx-2 md:mx-6 pb-6' : 'flex max-w-6xl mx-auto'} flex-col gap-4 mt-6 pt-5`} style={{ borderTop: `1px solid ${border}` }}>
+                    {rec.rejectionReason && (
+                      <div className="flex items-start gap-2.5 p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 text-xs">
+                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                        <p className="font-medium">{rec.rejectionReason}</p>
+                      </div>
+                    )}
+
+                    {isEditingModalNotes ? (
+                      <div className="flex flex-col gap-2.5">
+                        <textarea
+                          rows={3}
+                          value={modalNotesInput}
+                          onChange={e => setModalNotesInput(e.target.value)}
+                          placeholder="Write a note for the member…"
+                          className="w-full p-3 text-xs font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          style={istyle}
+                          autoFocus
+                        />
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => { setIsEditingModalNotes(false); setModalNotesInput('') }}
+                            disabled={savingNotes}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+                            style={{ color: textMuted }}
+                          >
+                            Discard
+                          </button>
+                          {rec.notes && (
+                            <button
+                              type="button"
+                              onClick={async () => { await handleSaveNotes(modal.type, rec.id, ''); setIsEditingModalNotes(false) }}
+                              disabled={savingNotes}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer"
+                            >
+                              Clear
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={async () => { await handleSaveNotes(modal.type, rec.id, modalNotesInput); setIsEditingModalNotes(false) }}
+                            disabled={savingNotes}
+                            className="px-4 py-1.5 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 hover:opacity-90 transition-opacity cursor-pointer"
+                            style={{ backgroundColor: accent }}
+                          >
+                            {savingNotes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    ) : rec.notes ? (
+                      <div
+                        className="p-3 rounded-lg text-xs font-medium whitespace-pre-wrap"
+                        style={{ backgroundColor: isLight ? '#f8fafc' : '#0e172a', border: `1px solid ${border}`, color: textPrimary }}
+                      >
+                        {rec.notes}
+                      </div>
+                    ) : null}
+
+                    {modalHistory.length > 0 && (
+                      <ul className="space-y-1.5">
+                        {modalHistory.map(h => (
+                          <li key={h.id} className="text-[11px] pl-3" style={{ borderLeft: `2px solid ${statusColors[h.newStatus] || border}`, color: textMuted }}>
+                            <span className="font-bold" style={{ color: statusColors[h.newStatus] || textPrimary }}>{h.newStatus}</span>
+                            {' '}· {h.changedByName || 'system'} · {archFormatDate(h.createdAt)}
+                            {h.note && <span className="italic"> — {h.note}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-4">
+                        {isAdmin && !isEditingModalNotes && (
+                          <button
+                            type="button"
+                            onClick={() => { setIsEditingModalNotes(true); setModalNotesInput(rec.notes || '') }}
+                            className="inline-flex items-center gap-2 px-5 h-10 rounded-xl text-sm font-bold text-white shadow-sm hover:opacity-90 transition-opacity cursor-pointer"
+                            style={{ backgroundColor: accent }}
+                          >
+                            <Pencil className="w-4 h-4" /> {rec.notes ? 'Edit note' : 'Add a note'}
+                          </button>
+                        )}
+                      </div>
+
+                      {canAct && !isEditingModalNotes && (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => requestCancelRecord(modal.type, rec.id, rec.payeeName || rec.purpose || rec.cutoffPeriod || modal.type)}
+                            className="inline-flex items-center gap-1.5 px-4 h-9 rounded-xl text-xs font-bold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/50 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" /> Cancel
+                          </button>
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => requestRelease(modal.type, rec.id)}
+                              className="inline-flex items-center gap-1.5 px-5 h-10 rounded-xl text-xs font-bold text-white hover:opacity-90 transition-opacity cursor-pointer"
+                              style={{ backgroundColor: accent }}
+                            >
+                              <Check className="w-3.5 h-3.5" /> Release
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
           </div>
         </div>
       )}
+
+      {/* Release / Cancel confirmation: a note is required, the request moves to Archives, the requester is notified */}
+      {actionDialog && (() => {
+        const isRelease = actionDialog.action === 'RELEASED'
+        const color = isRelease ? accent : '#dc2626'
+        const noteOk = actionDialog.note.trim().length > 0
+        return (
+          <div className="fixed inset-0 z-[16000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+            <div
+              className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border p-5 flex flex-col gap-4 animate-fadeIn"
+              style={{ backgroundColor: cardBg, borderColor: border, color: textPrimary }}
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: `${color}18`, color }}>
+                  {isRelease ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                </div>
+                <h3 className="text-sm font-black">{isRelease ? 'Release this request?' : 'Cancel this request?'}</h3>
+              </div>
+
+              <p className="text-xs" style={{ color: textMuted }}>
+                <span className="font-bold" style={{ color: textPrimary }}>{actionDialog.label}</span> will be marked as {isRelease ? 'Released' : 'Cancelled'} and moved to Archives. The requester will be notified.
+              </p>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
+                  Note <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={actionDialog.note}
+                  onChange={e => setActionDialog({ ...actionDialog, note: e.target.value })}
+                  placeholder={isRelease ? 'e.g. Cash available for pickup at the branch cashier' : 'Reason for cancelling this request'}
+                  className="w-full p-3 text-xs font-medium rounded-xl focus:outline-none focus:ring-2"
+                  style={{ ...istyle, ['--tw-ring-color' as any]: color }}
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={actionDialog.busy}
+                  onClick={() => setActionDialog(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+                  style={{ color: textMuted }}
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  disabled={!noteOk || actionDialog.busy}
+                  onClick={async () => {
+                    const { action, type, id, note } = actionDialog
+                    setActionDialog({ ...actionDialog, busy: true })
+                    if (action === 'RELEASED') await handleStatusUpdate(type, id, 'RELEASED', undefined, note)
+                    else await performCancel(type, id, note)
+                    setActionDialog(null)
+                  }}
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-white flex items-center gap-1.5 shadow-sm hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: color }}
+                >
+                  {actionDialog.busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isRelease ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                  {isRelease ? 'Confirm Release' : 'Confirm Cancel'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Custom Rejection Dialog Modal */}
       {rejectDialog && rejectDialog.isOpen && (

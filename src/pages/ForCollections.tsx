@@ -10,6 +10,7 @@ import { API_BASE_URL, formatDisplayUserLabel, formatBranchName, isPortalAdmin }
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import CollectionMarkPaidModal from '../components/collections/CollectionMarkPaidModal'
 import { exportDtrReportToPdf } from '../utils/pdfExport'
+import { UnitSummaryGrid } from '../components/UnitSummaryGrid'
 
 interface CollectionItem {
   id: string
@@ -934,7 +935,8 @@ export default function ForCollections() {
                         { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
                       ], undefined, true)}
                       {renderItemTable('Cash Returns', cashRetItems, [
-                        { label: 'Returned By (Installer/Technician/Driver)', render: (item) => <span style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description.replace('RETURN|', ''))}</span> },
+                        { label: 'Name', render: (item) => <span style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description.replace('RETURN|', '').split('|')[0])}</span> },
+                                { label: 'Description', render: (item) => <span style={{ color: textPrimary }}>{item.description.replace('RETURN|', '').split('|').slice(1).join('|') || '—'}</span> },
                         { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
                       ], undefined, true)}
                     </div>
@@ -1002,29 +1004,7 @@ export default function ForCollections() {
                   { label: 'Rate', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
                 ])}
 
-                {/* Unit Summary stats grid */}
-                <div className="px-6 py-5 flex flex-col gap-3" style={{ borderBottom: `1px solid ${border}` }}>
-                  <div className="flex items-center justify-between gap-3 pb-2 border-b" style={{ borderColor: border }}>
-                    <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: textMuted }}>Unit Summary</span>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
-                    {[
-                      { label: 'Scheduled', value: String(rowExpenses?.totalUnitsScheduled || 0) },
-                      { label: 'Rescheduled', value: String(rowExpenses?.totalRescheduled || 0) },
-                      { label: 'Installed', value: String(rowExpenses?.totalUnitsInstalled || 0) },
-                      { label: 'Serviced', value: String(rowExpenses?.totalUnitsServiced || 0) },
-                      { label: 'Cancelled', value: String(rowExpenses?.totalUnitsCancelled || 0) },
-                      { label: 'Free Install', value: String(rowExpenses?.totalUnitsFreeInstall || 0) },
-                      { label: 'Survey Only', value: String(rowExpenses?.totalUnitsSurveyOnly || 0) },
-                    ].map((item) => (
-                      <div key={item.label} className="rounded-lg px-3 py-2.5 flex flex-col justify-between" style={{ border: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
-                        <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{item.label}</div>
-                        <div className="mt-1 text-sm font-normal tabular-nums" style={{ color: textPrimary }}>{item.value}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                <UnitSummaryGrid stats={rowExpenses || {}} />
 
                 {renderItemTable('Incentives Breakdown', incentiveItems, [
                   { label: 'Customer', render: (item) => <span style={{ color: textPrimary }}>{item.customer || '—'}</span> },

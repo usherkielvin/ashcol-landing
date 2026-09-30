@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import { NumericFormat } from 'react-number-format'
-import { Plus, Trash2, Check, Receipt, Send, Edit, CalendarDays, ChevronDown, History as HistoryIcon } from 'lucide-react'
+import { Plus, Trash2, Check, Receipt, Send, Edit, CalendarDays, ChevronDown, History as HistoryIcon, Lock } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -32,7 +32,7 @@ import type { AuditExpense, AuditExpenseCategory } from '../types/auditExpense'
 
 // DTR-specific row types
 interface CashTxRow    { id: string; ticketNumber?: string; customer: string; installer: string; amount: string }
-interface CashRetRow   { id: string; name: string; amount: string }
+interface CashRetRow   { id: string; name: string; description: string; amount: string }
 interface OnlineTxRow  { id: string; ticketNumber?: string; installer: string; customer: string; bank: string; amount: string }
 interface CheckRow     { id: string; ticketNumber?: string; installer: string; customer: string; bank: string; amount: string }
 interface PartsSaleRow { id: string; customer: string; description: string; amount: string; paymentMethod: 'CASH' | 'ONLINE' }
@@ -250,7 +250,7 @@ const syncAdminBranchFromGlobal = (
 }
 
 const mkCash = (): CashTxRow   => ({ id: uid(), ticketNumber: '', customer: '', installer: '', amount: '' })
-const mkRet  = (): CashRetRow  => ({ id: uid(), name: '', amount: '' })
+const mkRet  = (): CashRetRow  => ({ id: uid(), name: '', description: '', amount: '' })
 const mkOnl  = (): OnlineTxRow => ({ id: uid(), ticketNumber: '', installer: '', customer: '', bank: '', amount: '' })
 const mkChk  = (): CheckRow    => ({ id: uid(), ticketNumber: '', installer: '', customer: '', bank: '', amount: '' })
 const mkPart = (): PartsSaleRow => ({ id: uid(), customer: '', description: '', amount: '', paymentMethod: 'CASH' })
@@ -959,7 +959,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     })
 
     return () => { controller.abort(); clearTimeout(timeout) }
-  }, [reportDate, selectedBranchId, reportId])
+  }, [reportDate, selectedBranchId, selectedAuditLine, reportId])
 
   const fetchReportDetails = async (id: string, options?: { enterEditMode?: boolean }) => {
     console.log('[fetchReportDetails] Requested ID:', id)
@@ -1117,7 +1117,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       setScheduledUnits(data.totalUnitsScheduled != null ? String(data.totalUnitsScheduled) : '0')
       setSurveyOnlyUnits(data.totalUnitsSurveyOnly != null ? String(data.totalUnitsSurveyOnly) : '0')
       setRescheduledUnits(data.totalRescheduled != null ? String(data.totalRescheduled) : '0')
-      setInstalledUnits(data.totalUnitsInstalled != null ? String(data.totalUnitsInstalled) : '0')
+      const loadedInstalled = data.totalUnitsInstalled ?? data.totalUnitsInstalledServiced
+      setInstalledUnits(loadedInstalled != null ? String(loadedInstalled) : '0')
       setServicedUnits(data.totalUnitsServiced != null ? String(data.totalUnitsServiced) : '0')
       setCancelledUnits(data.totalUnitsCancelled != null ? String(data.totalUnitsCancelled) : '0')
       setFreeInstallUnits(data.totalUnitsFreeInstall != null ? String(data.totalUnitsFreeInstall) : '0')
@@ -1153,9 +1154,11 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                 paymentMethod: 'CASH'
               })
             } else if (desc.startsWith('RETURN|')) {
+              const [retName = '', ...retDesc] = desc.replace('RETURN|', '').split('|')
               cashReturnsList.push({
                 id: uid(),
-                name: formatDisplayUserLabel(desc.replace('RETURN|', '')),
+                name: formatDisplayUserLabel(retName),
+                description: retDesc.join('|'),
                 amount: amt
               })
             } else {
@@ -1308,6 +1311,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         cashReturnsList.push({
           id: uid(),
           name: 'Imported Returns',
+          description: '',
           amount: String(data.cashReturns)
         })
       }
@@ -2006,8 +2010,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         ...cashTx.filter(r => r.customer || r.installer || r.amount).map(r => ({
           type: 'CASH_SALE', description: r.installer, customer: r.customer, amount: parseFloat(r.amount) || 0
         })),
-        ...cashRet.filter(r => r.name || r.amount).map(r => ({
-          type: 'CASH_SALE', description: `RETURN|${r.name}`, amount: parseFloat(r.amount) || 0
+        ...cashRet.filter(r => r.name || r.description || r.amount).map(r => ({
+          type: 'CASH_SALE', description: `RETURN|${r.name}|${(r.description || '').replace(/\|/g, '/')}`, amount: parseFloat(r.amount) || 0
         })),
         ...onlineTx.filter(r => r.installer || r.amount).map(r => ({
           type: 'ONLINE_SALE', description: r.installer, customer: r.customer, bank: r.bank, amount: parseFloat(r.amount) || 0
@@ -2396,11 +2400,24 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     <div className="flex flex-col gap-5 pb-10 w-full max-w-[1600px] mx-auto px-2 md:px-4">
 
       {reportId && !isEditingExisting && canEditExistingReport && (
-        <div className="rounded-xl p-4 flex items-center gap-3 bg-blue-500/5 border border-blue-500/20">
-          <Receipt className="w-5 h-5 shrink-0 text-blue-500" />
-          <p className="text-sm text-blue-600 dark:text-blue-400">
-            <strong>Note:</strong> This report is currently in view-only mode. Click the <strong>Edit Report</strong> button at the bottom of the page to unlock and edit this daily report.
-          </p>
+        <div className="rounded-xl p-4 flex flex-wrap items-center gap-3 bg-blue-500/5 border border-blue-500/20">
+          <div className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center bg-blue-500/10">
+            <Lock className="w-4 h-4 text-blue-500" />
+          </div>
+          <div className="flex-1 min-w-[220px]">
+            <p className="text-sm font-bold text-blue-700 dark:text-blue-300">View-only mode</p>
+            <p className="text-xs text-blue-600/80 dark:text-blue-400/80">
+              This report is locked. Click <strong>Edit Report</strong> to make changes to this daily report.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsEditingExisting(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs text-white transition-all hover:brightness-110"
+            style={{ backgroundColor: '#10B981', border: '1px solid #059669', boxShadow: '0 2px 8px rgba(16,185,129,0.25)' }}
+          >
+            <Edit className="w-3.5 h-3.5" /> Edit Report
+          </button>
         </div>
       )}
 
@@ -2631,7 +2648,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
               <table className="w-full text-left border-collapse table-fixed">
                 <thead>
                   <tr>
-                    <th className={tableTh + ' w-24'}>Ticket No.</th>
+                    <th className={tableTh + ' w-36 whitespace-nowrap'}>Ticket No.</th>
                     <th className={tableTh}>Customer Name</th>
                     <th className={tableTh + ' w-28'}>Installer</th>
                     <th className={tableTh + ' text-right w-28'}>Amount</th>
@@ -2688,7 +2705,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr>
-                    <th className={tableTh}>Name (Installer/Technician/Driver)</th>
+                    <th className={tableTh}>Name</th>
+                    <th className={tableTh}>Description</th>
                     <th className={tableTh + ' text-right w-32'}>Amount</th>
                     {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
                   </tr>
@@ -2717,6 +2735,11 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                             list="cash-return-suggestions"
                             className={flushInput} />
                         )}
+                      </td>
+                      <td className={tableTd}>
+                        <input type="text" placeholder="Description" value={row.description || ''}
+                          onChange={e => setCashRet(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
+                          className={flushInput} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
@@ -3105,6 +3128,9 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           {/* Cash Advance */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Cash Advance" total={totalCashAdvance} variant="expense" />
+            <p className="px-3 pt-2 text-[11px] text-slate-500 dark:text-slate-400">
+              Record advances <strong>already given</strong> to branch members from branch cash. To request an advance from the company, use Operations → Request Forms.
+            </p>
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>

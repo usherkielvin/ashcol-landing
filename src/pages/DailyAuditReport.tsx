@@ -19,7 +19,7 @@ import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import { exportDtrReportToPdf } from '../utils/pdfExport'
 import { DtrHistoryModal } from '../components/DtrHistoryModal'
 import { useArctic } from '../contexts/ArcticContext'
-
+import { UnitSummaryGrid } from '../components/UnitSummaryGrid'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface AuditRow {
@@ -517,6 +517,20 @@ export default function DailyAuditReport() {
           updatedAt = data.updatedAt || null
           updatedBy = data.updatedBy || null
           totalDeposits = data.totalDeposits ?? 0
+          if (data.totalUnitsInstalled != null || data.totalUnitsInstalledServiced != null) {
+            const installedVal = data.totalUnitsInstalled ?? data.totalUnitsInstalledServiced
+            setSelectedRow(prev => prev ? {
+              ...prev,
+              totalUnitsInstalled: installedVal,
+              totalUnitsInstalledServiced: installedVal,
+              totalUnitsScheduled: data.totalUnitsScheduled ?? prev.totalUnitsScheduled,
+              totalUnitsSurveyOnly: data.totalUnitsSurveyOnly ?? prev.totalUnitsSurveyOnly,
+              totalRescheduled: data.totalRescheduled ?? prev.totalRescheduled,
+              totalUnitsServiced: data.totalUnitsServiced ?? prev.totalUnitsServiced,
+              totalUnitsCancelled: data.totalUnitsCancelled ?? prev.totalUnitsCancelled,
+              totalUnitsFreeInstall: data.totalUnitsFreeInstall ?? prev.totalUnitsFreeInstall,
+            } : prev)
+          }
         }
       } else {
         const params = new URLSearchParams({
@@ -2167,7 +2181,8 @@ export default function DailyAuditReport() {
                                 { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
                               ], undefined, true)}
                               {renderItemTable('Cash Returns', cashRetItems, [
-                                { label: 'Returned By (Installer/Technician/Driver)', render: (item) => <span style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description.replace('RETURN|', ''))}</span> },
+                                { label: 'Name', render: (item) => <span style={{ color: textPrimary }}>{formatDisplayUserLabel(item.description.replace('RETURN|', '').split('|')[0])}</span> },
+                                { label: 'Description', render: (item) => <span style={{ color: textPrimary }}>{item.description.replace('RETURN|', '').split('|').slice(1).join('|') || '—'}</span> },
                                 { label: 'Amount', align: 'right', render: (item) => <span className="tabular-nums" style={{ color: textPrimary }}>₱{peso(item.amount)}</span> }
                               ], undefined, true)}
                             </div>
@@ -2303,29 +2318,7 @@ export default function DailyAuditReport() {
                           }
                         ])}
 
-                        {/* Unit Summary stats grid */}
-                        <div className="px-6 py-5 flex flex-col gap-3" style={{ borderBottom: `1px solid ${border}` }}>
-                          <div className="flex items-center justify-between gap-3 pb-2 border-b" style={{ borderColor: border }}>
-                            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: textMuted }}>Unit Summary</span>
-                          </div>
-                          
-                          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
-                            {[
-                              { label: 'Scheduled', value: String(selectedRow.totalUnitsScheduled || 0) },
-                              { label: 'Rescheduled', value: String(selectedRow.totalRescheduled || 0) },
-                              { label: 'Installed', value: String(selectedRow.totalUnitsInstalled || 0) },
-                              { label: 'Serviced', value: String(selectedRow.totalUnitsServiced || 0) },
-                              { label: 'Cancelled', value: String(selectedRow.totalUnitsCancelled || 0) },
-                              { label: 'Free Install', value: String(selectedRow.totalUnitsFreeInstall || 0) },
-                              { label: 'Survey Only', value: String(selectedRow.totalUnitsSurveyOnly || 0) },
-                            ].map((item) => (
-                              <div key={item.label} className="rounded-lg px-3 py-2.5 flex flex-col justify-between" style={{ border: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
-                                <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{item.label}</div>
-                                <div className="mt-1 text-sm font-normal tabular-nums" style={{ color: textPrimary }}>{item.value}</div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
+                        <UnitSummaryGrid stats={selectedRow} />
 
                         {/* Incentives Breakdown */}
                         {renderItemTable('Incentives Breakdown', incentiveItems, [
