@@ -962,6 +962,9 @@ export function computeUnitSummaryFromTickets(tickets: Ticket[]): UnitSummaryCou
     const commitText = getTicketCommitDisplay(t).toUpperCase()
     const serviceType = (t.serviceType || t.service_type || '').toUpperCase()
 
+    const payment = resolveTicketPayment(t)
+    const paymentMode = (payment?.mode || '').toUpperCase()
+
     scheduled++
 
     if (statusVal === 'RESCHED' || rawStatus === 'RESCHED' || rawStatus === 'RESCHEDULED') {
@@ -970,31 +973,44 @@ export function computeUnitSummaryFromTickets(tickets: Ticket[]): UnitSummaryCou
       cancelled++
     } else if (statusVal === 'DONE_SURVEY' || rawStatus === 'SURVEY' || serviceType === 'SURVEY') {
       surveyOnly++
-    } else if (commitText.includes('FREE')) {
-      // Free installs/services are their own exclusive bucket — don't also count them under
-      // Installed or Serviced, or every free job gets double-counted into the Unit Summary.
-      freeInstall++
-    } else if (
-      statusVal === 'DONE_INSTALLED' ||
-      statusVal === 'DONE_INSTALLATION' ||
-      rawStatus === 'INSTALLED' ||
-      rawStatus === 'DONE_INSTALLED' ||
-      serviceType.includes('INSTALL') ||
-      statusVal === 'S/I'
-    ) {
-      installed++
-    } else if (
-      statusVal === 'DONE_CLEANING' ||
-      statusVal === 'DONE_CHECKUP' ||
-      statusVal === 'DONE_SERVICES' ||
-      statusVal === 'DONE_SERVICE' ||
-      statusVal === 'DONE_MOUNTING' ||
-      statusVal === 'DONE_REPAIR' ||
-      serviceType.includes('SERVICE') ||
-      serviceType.includes('CLEAN') ||
-      serviceType.includes('REPAIR')
-    ) {
-      serviced++
+    } else {
+      const isFreeInstall =
+        commitText.includes('FREE') ||
+        paymentMode === 'FREE INSTALL' ||
+        paymentMode === 'FREE' ||
+        paymentMode === 'FREE_INSTALL' ||
+        serviceType.includes('FREE')
+
+      const isInstall =
+        isFreeInstall ||
+        statusVal === 'DONE_INSTALLED' ||
+        statusVal === 'DONE_INSTALLATION' ||
+        rawStatus === 'INSTALLED' ||
+        rawStatus === 'DONE_INSTALLED' ||
+        serviceType.includes('INSTALL') ||
+        statusVal === 'S/I'
+
+      const isService =
+        statusVal === 'DONE_CLEANING' ||
+        statusVal === 'DONE_CHECKUP' ||
+        statusVal === 'DONE_SERVICES' ||
+        statusVal === 'DONE_SERVICE' ||
+        statusVal === 'DONE_MOUNTING' ||
+        statusVal === 'DONE_REPAIR' ||
+        serviceType.includes('SERVICE') ||
+        serviceType.includes('CLEAN') ||
+        serviceType.includes('REPAIR')
+
+      if (isFreeInstall) {
+        // Free installs count toward Free Install Units and are also counted under Installed Units
+        freeInstall++
+      }
+
+      if (isInstall) {
+        installed++
+      } else if (isService) {
+        serviced++
+      }
     }
   }
 
