@@ -120,6 +120,10 @@ export default function AuditFinanceExpenses() {
   const [uploadedReceiptUrl, setUploadedReceiptUrl] = useState<string | null>(null)
   const [uploadingReceipt, setUploadingReceipt] = useState(false)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
+  // Attach a missing receipt photo to an existing record without opening the edit form.
+  const photoInputRef = useRef<HTMLInputElement>(null)
+  const photoTargetRef = useRef<AuditExpense | null>(null)
+  const [attachingPhotoId, setAttachingPhotoId] = useState<string | null>(null)
   const scanRef = useRef<HTMLInputElement>(null)
   const cameraRef = useRef<HTMLInputElement>(null)
   const modalFileInputRef = useRef<HTMLInputElement>(null)
@@ -963,6 +967,37 @@ export default function AuditFinanceExpenses() {
     const safeBranch = (branchName || 'BRANCH').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
     const periodKey = filterMonth === 'All' ? `${dtrPeriod.from}_to_${dtrPeriod.to}` : dtrPeriod.from.slice(0, 7)
     XLSX.writeFile(wb, `${safeBranch}_${periodKey}_expense_reconciliation.xlsx`)
+  }
+
+  const pickPhotoFor = (row: AuditExpense) => {
+    photoTargetRef.current = row
+    photoInputRef.current?.click()
+  }
+
+  const handleAttachPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    const row = photoTargetRef.current
+    e.target.value = ''
+    photoTargetRef.current = null
+    if (!file || !row) return
+    setAttachingPhotoId(row.id)
+    try {
+      const result = await uploadReceiptImage(file, { folder: 'finance', branch: row.branchName || branchName, description: row.description || row.company, filename: 'expense' })
+      const now = new Date().toISOString()
+      await upsertAuditExpense({
+        ...row,
+        receiptImageUri: result.url,
+        updatedBy: currentUserLabel,
+        updatedAt: now,
+        updateHistory: [...(row.updateHistory || []), { action: 'updated', by: currentUserLabel, at: now }],
+      })
+      await reload()
+    } catch (err) {
+      console.error('[Expense Records] Attach receipt photo failed:', err)
+      alert('Could not attach the photo. Please try again.')
+    } finally {
+      setAttachingPhotoId(null)
+    }
   }
 
   const saveExpense = async (expense: AuditExpense) => {
@@ -2045,6 +2080,8 @@ export default function AuditFinanceExpenses() {
         document.body
       )}
 
+      <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={e => void handleAttachPhoto(e)} />
+
       {/* ── Expense Records vs DTR summary ── */}
       {activeTab === 'expenses' && branchId && dtrPeriod && (() => {
         const fmt = (n: number) => `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -2426,8 +2463,19 @@ export default function AuditFinanceExpenses() {
                                 className="w-8 h-8 object-cover rounded border border-slate-300 dark:border-slate-700 group-hover:scale-110 group-hover:border-emerald-500 transition-all shadow-xs"
                               />
                             </button>
+                          ) : /^CASH ADVANCE/i.test(row.expenseCategory || '') ? (
+                            <span className="text-slate-300 dark:text-slate-600 text-xs" title="Cash advances have no receipt">—</span>
                           ) : (
-                            <span className="text-slate-300 dark:text-slate-600 text-xs">—</span>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); pickPhotoFor(row) }}
+                              disabled={attachingPhotoId === row.id}
+                              title="No receipt photo — click to attach one"
+                              className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-1 rounded-md cursor-pointer disabled:opacity-60"
+                              style={{ color: danger, border: `1px solid ${danger}55` }}
+                            >
+                              {attachingPhotoId === row.id ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />} Add photo
+                            </button>
                           )}
                         </td>
                         <td className="px-3 py-2.5">
@@ -3360,6 +3408,9 @@ export default function AuditFinanceExpenses() {
           <div className="sm:hidden fixed inset-x-0 bottom-0 z-[100] p-4 flex flex-col gap-2 pb-8" style={{ animation: 'slideUp 0.2s ease-out' }}>
             <div className="rounded-2xl overflow-hidden shadow-2xl flex flex-col" style={{ backgroundColor: cardBg }}>
               <button type="button" onClick={() => { openDetails(actionMenuRow); setActionMenuRow(null) }} className="w-full px-5 py-4 text-center text-sm font-bold border-b transition-colors active:bg-black/5" style={{ color: textPrimary, borderColor: border }}>View Details</button>
+              {!actionMenuRow.receiptImageUri && !/^CASH ADVANCE/i.test(actionMenuRow.expenseCategory || '') && (
+                <button type="button" onClick={() => { pickPhotoFor(actionMenuRow); setActionMenuRow(null) }} className="w-full px-5 py-4 text-center text-sm font-bold border-b transition-colors active:bg-black/5" style={{ color: danger, borderColor: border }}>Add Receipt Photo</button>
+              )}
               {canModifyRecord(actionMenuRow) ? (
                 <>
                   <button type="button" onClick={() => { startEdit(actionMenuRow); setActionMenuRow(null) }} className="w-full px-5 py-4 text-center text-sm font-bold border-b transition-colors active:bg-black/5" style={{ color: textPrimary, borderColor: border }}>Edit Record</button>

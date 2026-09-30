@@ -286,6 +286,28 @@ uses `<BRANCH>_<from>_to_<to>_expense_reconciliation.xlsx`; with a month selecte
 
 ---
 
+## Task 8 — Records with no receipt photo (added 2026-09-30, uncommitted)
+
+**Why records lack a photo:** (1) the photo rule only starts 2026-10-01, so everything earlier is exempt;
+(2) records created by **resolving a purchase** never get one — `ResolvePurchaseRequest` has no image field and
+`ReportService.resolvePurchase` builds the `AuditExpense` without `receiptImageUri` (**open, needs backend + the
+screen that resolves purchases, probably the mobile app**); (3) cash advances have no receipt (excluded from the
+count); (4) admin-added records and Excel imports skip the check; (5) old DTR rows entered without Scan.
+
+**Done (portal):**
+- DTR re-save no longer wipes a photo attached elsewhere: hydration and both push sites fall back to the linked
+  record's `receiptImageUri` (same class of bug as Task 1).
+- Expense Records: rows with no photo (except cash advances) show a red **Add photo** button (desktop table) /
+  **Add Receipt Photo** (mobile menu). It uploads via `uploadReceiptImage` and upserts the record with only the
+  photo changed. It is available to members even for DTR-linked records, because Task 4 otherwise leaves them no way
+  to fix a missing photo. The DTR row itself picks the photo up on next open (hydration) and saves it on re-save.
+- Caveat: `uploadReceiptImage` falls back to a Base64 data URL if Supabase is unavailable, so a record can hold a
+  very large string in that case.
+
+**Open:** purchase-resolve photo (above); Excel import check; manual test of the Add photo button.
+
+---
+
 ## Deferred (need a decision or a schema change — ask the user before starting)
 
 - **Month close / lock** (recommended right after Task 4 — it is the only control that makes "must match from October" stick). Admin marks a branch-month "Closed" once Balanced; DTRs and records for that month become

@@ -1390,6 +1390,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
               expenseCategory: r.expenseCategory || rec.expenseCategory || '',
               sourceOfFunds: r.sourceOfFunds || rec.sourceOfFunds || '',
               receiptDate: r.receiptDate || rec.date || '',
+              receiptImage: r.receiptImage || rec.receiptImageUri || '',
             }
           }))
         }).catch(err => {
@@ -1655,7 +1656,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         amount: numAmt,
         expenseCategory: (row.expenseCategory || linkedExpenseCache.current.get(row.resolvedExpenseId)?.expenseCategory || 'OTHER') as AuditExpenseCategory,
         sourceOfFunds: (row.sourceOfFunds || linkedExpenseCache.current.get(row.resolvedExpenseId)?.sourceOfFunds || 'CASH').trim().toUpperCase(),
-        receiptImageUri: row.receiptImage || '',
+        receiptImageUri: row.receiptImage || linkedExpenseCache.current.get(row.resolvedExpenseId)?.receiptImageUri || '',
         createdAt: '',
         updatedAt: '',
         updateHistory: []
@@ -2256,7 +2257,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
               amount: numAmt,
               expenseCategory: (row.expenseCategory || linkedExpenseCache.current.get(expenseId)?.expenseCategory || 'OTHER') as AuditExpenseCategory,
               sourceOfFunds: (row.sourceOfFunds || linkedExpenseCache.current.get(expenseId)?.sourceOfFunds || 'CASH').trim().toUpperCase(),
-              receiptImageUri: row.receiptImage || '',
+              receiptImageUri: row.receiptImage || linkedExpenseCache.current.get(expenseId)?.receiptImageUri || '',
               createdAt: '',
               updatedAt: '',
               updateHistory: []
