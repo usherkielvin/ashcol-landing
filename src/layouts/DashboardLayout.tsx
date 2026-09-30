@@ -11,7 +11,7 @@ import {
   User, Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
   Building2, Calendar, Landmark, Wifi, CircleDollarSign, ListOrdered,
   LayoutDashboard, Route, Truck, ClipboardCheck, PhoneCall, Percent, Wallet, CalendarPlus,
-  History, Shield, Settings, Banknote
+  History, Shield, Settings, Banknote, Megaphone
 } from 'lucide-react'
 import {
   MdOutlineConfirmationNumber,
@@ -42,6 +42,7 @@ import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortal
 import UserAvatar from '../components/UserAvatar'
 import MessagesDropdown from '../components/MessagesDropdown'
 import NotificationsDropdown from '../components/NotificationsDropdown'
+import AdminBroadcastModal from '../components/AdminBroadcastModal'
 import NotificationDetailModal from '../components/NotificationDetailModal'
 import { useNotifications } from '../contexts/NotificationContext'
 import FloatingChatWindow from '../components/FloatingChatWindow'
@@ -176,6 +177,7 @@ export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen]         = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [isHoverExpanded, setIsHoverExpanded] = useState(false)
+  const [broadcastOpen, setBroadcastOpen] = useState(false)
   // navVisible lags behind sidebarCollapsed so text never renders mid-transition
   // collapse → hide text immediately; expand → show text only after width finishes
   const [navVisible, setNavVisible] = useState(true)
@@ -195,6 +197,7 @@ export default function DashboardLayout() {
   const { theme, toggleTheme } = useTheme()
   const { user, logout } = useAuth()
   const { openNotificationDetail } = useNotifications()
+  const getToken = () => localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
 
   // Deep-link from a push notification click with nowhere else to go — see sw.js/WebPushService.
   useEffect(() => {
@@ -1127,8 +1130,26 @@ export default function DashboardLayout() {
                   {cohError}
                 </span>
               )}
+              {isPortalAdminUser && (
+                <button
+                  onClick={() => setBroadcastOpen(true)}
+                  title="Broadcast Message to All Members"
+                  className="flex items-center justify-center w-9 h-9 rounded-xl transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                  style={{ color: textMuted }}
+                >
+                  <Megaphone className="w-[18px] h-[18px]" />
+                </button>
+              )}
               <MessagesDropdown />
               <NotificationsDropdown />
+
+              {broadcastOpen && (
+                <AdminBroadcastModal
+                  onClose={() => setBroadcastOpen(false)}
+                  isLight={isLight}
+                  getToken={getToken}
+                />
+              )}
 
               {/* Profile */}
               <div ref={profileRef} className="relative">

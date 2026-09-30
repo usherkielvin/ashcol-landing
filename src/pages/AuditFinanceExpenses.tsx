@@ -46,6 +46,12 @@ const formatDetailsName = (raw?: string | null): string => {
   const withoutRole = raw.split(/\s*[-–—]\s*/)[0]?.trim() || raw.trim()
   return withoutRole.toUpperCase()
 }
+/** A record that moves cash to Head Office / the company bank rather than being a real expense —
+ *  category DEPOSIT or FUND TRANSFER, or a description like "DEPOSIT TO HO". */
+const isDepositRecord = (e: { expenseCategory?: string; description?: string }) => {
+  const cat = (e.expenseCategory || '').trim().toUpperCase()
+  return cat === 'DEPOSIT' || cat === 'FUND TRANSFER' || /deposit(ed)?s*(to|for)?s*(ho|heads*office|companys*bank)/i.test(e.description || '')
+}
 const emptyForm = (defaultBranchId = '') => ({ date: formatTodayReceiptDate(), company: '', description: '', receiptNo: '', amount: '', expenseCategory: 'OTHER' as AuditExpenseCategory, sourceOfFunds: '', incurredBy: '', branchId: defaultBranchId })
 
 export default function AuditFinanceExpenses() {
@@ -661,9 +667,9 @@ export default function AuditFinanceExpenses() {
       return t >= from && t <= to
     })
   }, [branchExpenses, dtrPeriod])
-  const recordsForDtr = useMemo(() => periodRecords.filter(e => e.expenseCategory !== 'DEPOSIT'), [periodRecords])
+  const recordsForDtr = useMemo(() => periodRecords.filter(e => !isDepositRecord(e)), [periodRecords])
   const recordsTotalForDtr = recordsForDtr.reduce((sum, e) => sum + e.amount, 0)
-  const depositsForDtr = periodRecords.filter(e => e.expenseCategory === 'DEPOSIT').reduce((sum, e) => sum + e.amount, 0)
+  const depositsForDtr = periodRecords.filter(isDepositRecord).reduce((sum, e) => sum + e.amount, 0)
 
   const handleDateBlur = (raw: string) => {
     const parsed = parseSmartDate(raw)
@@ -1228,156 +1234,125 @@ export default function AuditFinanceExpenses() {
   return (
     <div style={{ minHeight: '100vh', backgroundColor: bg }} className="flex flex-col gap-3 px-2 py-3 md:p-6 pb-12">
 
-      {/* ── HEADER & FILTERS COMBINED ── */}
-      <div className="rounded-xl px-4 py-3 flex flex-col gap-3"
+      {/* ── HEADER ── */}
+      <div className="rounded-2xl px-4 py-3.5 flex flex-col gap-3"
         style={{ backgroundColor: cardBg, border: `1px solid ${border}`, boxShadow: isLight ? '0 1px 2px rgba(0,0,0,0.05)' : '0 1px 2px rgba(0,0,0,0.2)' }}>
-        
-        {/* Header Row */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <ClipboardList size={18} style={{ color: accent }} className="shrink-0" />
-            <h1 className="text-sm md:text-base font-black tracking-tight" style={{ color: textPrimary }}>Expense Records</h1>
-          </div>
-          {activeTab === 'expenses' && (
-            <>
-              {/* ── Mobile: 3-column action grid ── */}
-              <div className="grid grid-cols-3 gap-2 sm:hidden w-full">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (showForm) {
-                      setShowForm(false); setEditing(null)
-                    } else {
-                      setEditing(null); setForm({ ...emptyForm(resolveFormBranchId(branchId)), date: '' }); setDateRaw(''); setDateError(''); setShowForm(true)
-                    }
-                  }}
-                  className="flex flex-col items-center justify-center gap-1.5 py-3.5 rounded-xl text-xs font-bold text-white transition-all active:scale-95 shadow-sm"
-                  style={{ backgroundColor: showForm ? '#EF4444' : accent }}
-                >
-                  {showForm ? <X size={20} /> : <Plus size={20} />}
-                  <span>{showForm ? 'Close' : 'Add Record'}</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={scanning}
-                  onClick={handleCameraClick}
-                  className="flex flex-col items-center justify-center gap-1.5 py-3.5 rounded-xl text-xs font-bold text-white transition-all active:scale-95 shadow-sm"
-                  style={{ backgroundColor: '#6366F1', opacity: scanning ? 0.6 : 1 }}
-                  title="Open camera to scan receipt"
-                >
-                  <Camera size={20} />
-                  <span>Scan</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={!branchId || importing}
-                  onClick={() => fileRef.current?.click()}
-                  className="flex flex-col items-center justify-center gap-1.5 py-3.5 rounded-xl text-xs font-bold transition-all active:scale-95 shadow-sm"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                >
-                  <Upload size={20} />
-                  <span>{importing ? 'Importing…' : 'Import'}</span>
-                </button>
-              </div>
 
-              {/* ── Desktop: original inline buttons ── */}
-              <div className="hidden sm:flex items-center gap-1.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (showForm) {
-                      setShowForm(false); setEditing(null)
-                    } else {
-                      setEditing(null); setForm({ ...emptyForm(resolveFormBranchId(branchId)), date: '' }); setDateRaw(''); setDateError(''); setShowForm(true)
-                    }
-                  }}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition-all duration-200"
-                  style={{ backgroundColor: showForm ? '#EF4444' : accent }}
-                >
-                  {showForm
-                    ? <><X size={13} /> Close</>
-                    : <><Plus size={13} /> Add Record</>
-                  }
-                </button>
-                <button type="button" disabled={!branchId || importing} onClick={() => fileRef.current?.click()}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
-                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                  <Upload size={13} />{importing ? 'Importing…' : 'Import'}
-                </button>
-              </div>
-
-              {/* Hidden inputs */}
-              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImport} />
-              <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleScanImage} />
-            </>
-          )}
-        </div>
-
-        {/* Divider line */}
-        <div style={{ height: '1px', backgroundColor: border }} className="w-full opacity-60" />
-
-        {/* Filters Row */}
-        <div className="flex flex-nowrap items-center gap-2">
-          {/* Branch selector — hidden on mobile */}
-          <div style={{ position: 'relative' }} className="hidden sm:block w-64 shrink-0">
-            <Building2 size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
-            <select
-              value={branchId}
-              onChange={(e) => {
-                const val = e.target.value
-                setBranchId(val)
-                if (isAdmin) {
-                  localStorage.setItem('ashcol-global-branch-id', val)
-                  window.dispatchEvent(new Event('ashcol-global-branch-change'))
-                }
-              }}
-              disabled={true}
-              className="w-full rounded-lg pl-7 pr-7 py-2 text-xs appearance-none outline-none cursor-not-allowed font-medium"
-              style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', border: `1px solid ${inputBorder}`, color: textMuted, colorScheme: isLight ? 'light' : 'dark' }}
-            >
-              {branches.length === 0
-                ? <option value="">Loading…</option>
-                : <option value="" disabled>Select branch…</option>
-              }
-              {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-            <ChevronDown size={11} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
-          </div>
-
-          {/* Month picker — compact on mobile */}
-          {activeTab === 'expenses' && branchId && (
-            <div style={{ position: 'relative' }} className="shrink-0">
-              <CalendarDays size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
-              <select
-                value={filterMonth}
-                onChange={(e) => setFilterMonth(e.target.value)}
-                className="rounded-lg pl-6 pr-5 py-2 text-xs appearance-none outline-none cursor-pointer font-bold"
-                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, colorScheme: isLight ? 'light' : 'dark', maxWidth: 130 }}
-              >
-                <option value="All">All Months</option>
-                {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
-              <ChevronDown size={10} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
+        {/* Title + controls — one row on desktop */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${accent}1A`, color: accent }}>
+              <ClipboardList size={18} />
             </div>
-          )}
+            <div className="flex flex-col min-w-0">
+              <h1 className="text-base font-extrabold tracking-tight leading-tight" style={{ color: textPrimary }}>Expense Records</h1>
+              <div className="flex items-center gap-1.5 text-[11px] font-medium min-w-0" style={{ color: textMuted }}>
+                <Building2 size={11} className="shrink-0" />
+                <span className="truncate">{branchName || 'Select branch'}</span>
+                {activeTab === 'expenses' && branchId && (
+                  <>
+                    <span className="opacity-40">•</span>
+                    <span className="truncate">{filterMonth === 'All' ? 'All months' : filterMonth}</span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
 
-          {/* Search — compact */}
-          <div style={{ position: 'relative' }} className="flex-1 min-w-0">
-            <Search size={12} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search…"
-              className="w-full rounded-lg pl-7 pr-7 py-2 text-sm sm:text-xs outline-none"
-              style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-            />
-            {search && (
-              <button type="button" onClick={() => setSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: textMuted }}>
-                <X size={12} />
-              </button>
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            {/* Month picker */}
+            {activeTab === 'expenses' && branchId && (
+              <div style={{ position: 'relative' }} className="shrink-0 w-full lg:w-auto">
+                <CalendarDays size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none', zIndex: 1 }} />
+                <select
+                  value={filterMonth}
+                  onChange={(e) => setFilterMonth(e.target.value)}
+                  className="w-full lg:w-auto rounded-lg pl-8 pr-7 py-2 text-xs appearance-none outline-none cursor-pointer font-bold uppercase tracking-wider"
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, colorScheme: isLight ? 'light' : 'dark', minWidth: 155 }}
+                >
+                  <option value="All">All months</option>
+                  {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+                <ChevronDown size={11} style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
+              </div>
+            )}
+
+            {/* Search — capped width, grows on focus */}
+            <div style={{ position: 'relative' }} className="flex-1 lg:flex-none min-w-[140px] lg:w-52 lg:focus-within:w-64 transition-all">
+              <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search records"
+                className="w-full rounded-lg pl-8 pr-7 py-2 text-sm sm:text-xs outline-none focus:border-emerald-500"
+                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+              />
+              {search && (
+                <button type="button" onClick={() => setSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: textMuted }}>
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+
+            {activeTab === 'expenses' && (
+              <>
+                {/* Desktop actions */}
+                <div className="hidden sm:flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (showForm) {
+                        setShowForm(false); setEditing(null)
+                      } else {
+                        setEditing(null); setForm({ ...emptyForm(resolveFormBranchId(branchId)), date: '' }); setDateRaw(''); setDateError(''); setShowForm(true)
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold text-white shadow-sm transition-all hover:opacity-90"
+                    style={{ backgroundColor: showForm ? '#EF4444' : accent }}
+                  >
+                    {showForm ? <><X size={13} /> Close</> : <><Plus size={13} /> Add Record</>}
+                  </button>
+                </div>
+
+                {/* Hidden inputs */}
+                <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImport} />
+                <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleScanImage} />
+              </>
             )}
           </div>
         </div>
+
+        {/* Mobile: 3-column action grid */}
+        {activeTab === 'expenses' && (
+          <div className="grid grid-cols-2 gap-2 sm:hidden w-full">
+            <button
+              type="button"
+              onClick={() => {
+                      if (showForm) {
+                        setShowForm(false); setEditing(null)
+                      } else {
+                        setEditing(null); setForm({ ...emptyForm(resolveFormBranchId(branchId)), date: '' }); setDateRaw(''); setDateError(''); setShowForm(true)
+                      }
+                    }}
+              className="flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-bold text-white transition-all active:scale-95 shadow-sm"
+              style={{ backgroundColor: showForm ? '#EF4444' : accent }}
+            >
+              {showForm ? <X size={20} /> : <Plus size={20} />}
+              <span>{showForm ? 'Close' : 'Add Record'}</span>
+            </button>
+            <button
+              type="button"
+              disabled={scanning}
+              onClick={handleCameraClick}
+              className="flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-bold text-white transition-all active:scale-95 shadow-sm"
+              style={{ backgroundColor: '#6366F1', opacity: scanning ? 0.6 : 1 }}
+              title="Open camera to scan receipt"
+            >
+              <Camera size={20} />
+              <span>Scan</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── ENTRY FORM (PORTALED) ── */}
@@ -1804,14 +1779,13 @@ export default function AuditFinanceExpenses() {
         const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '-' : ''}${fmt(Math.abs(n))}`
         // Deposits leave the branch's cash just like expenses do, so compare total outflow too.
         const dtrOutflow = (dtr || 0) + dtrExpenses.deposits
-        const outflowDiff = recordsTotalForDtr + depositsForDtr - dtrOutflow
-        const depositRows = periodRecords.filter(e => e.expenseCategory === 'DEPOSIT')
-        const byBank = Object.entries(depositRows.reduce<Record<string, number>>((acc, e) => {
-          const k = (e.company || '').trim().toUpperCase() || 'UNSPECIFIED BANK'
-          acc[k] = (acc[k] || 0) + e.amount
-          return acc
-        }, {})).sort((a, b) => b[1] - a[1])
-        const depositDiff = depositsForDtr - dtrExpenses.deposits
+        // Deposits come from the DTR's COH Deposit section (source of truth); fall back to deposit-type
+        // expense records only when no DTR was found for the period.
+        const cohFromDtr = hasDtr && dtrExpenses.deposits > 0
+        const cohDeposits = cohFromDtr ? dtrExpenses.deposits : depositsForDtr
+        const outflowDiff = recordsTotalForDtr + cohDeposits - dtrOutflow
+        const depositRows = periodRecords.filter(isDepositRecord)
+        const depositDiff = depositsForDtr - dtrExpenses.deposits // recorded expense rows vs COH Deposit
         const outflowColor = !hasDtr ? textPrimary : Math.abs(outflowDiff) < 0.005 ? accent : danger
         const byCategory = Object.entries(periodRows.reduce<Record<string, number>>((acc, e) => {
           const k = e.expenseCategory || 'OTHER'
@@ -1829,8 +1803,8 @@ export default function AuditFinanceExpenses() {
           <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
             <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
               <div className="flex flex-col">
-                <span className="text-xs font-black" style={{ color: textPrimary }}>{branchName} — Expense Summary</span>
-                <span className="text-[11px]" style={{ color: textMuted }}>{filterMonth === 'All' ? `${dtrPeriod.from} to ${dtrPeriod.to}` : filterMonth} · Records vs monthly DTR</span>
+                <span className="text-xs font-black" style={{ color: textPrimary }}>Summary</span>
+                <span className="text-[11px]" style={{ color: textMuted }}>{filterMonth === 'All' ? `${dtrPeriod.from} to ${dtrPeriod.to}` : filterMonth} · Records vs DTR</span>
               </div>
               {diff != null && !dtrExpenses.loading && (
                 <span className="text-[11px] font-bold px-2.5 py-1 rounded-full" style={{ color: diffColor, backgroundColor: `${diffColor}18`, border: `1px solid ${diffColor}44` }}>
@@ -1843,26 +1817,17 @@ export default function AuditFinanceExpenses() {
               {stat('DTR Total Expenses', dtrExpenses.loading ? 'Loading…' : dtr == null ? 'Unavailable' : fmt(dtr), textPrimary,
                 dtrExpenses.loading || dtr == null ? undefined : !dtrExpenses.matched ? 'No DTR found for this branch' : `Payroll ${fmt(dtrExpenses.payroll)} · Purchases ${fmt(dtrExpenses.purchases)}`)}
               {stat('Difference', dtrExpenses.loading || diff == null ? '—' : `${diff > 0 ? '+' : diff < 0 ? '-' : ''}${fmt(Math.abs(diff))}`, diffColor, 'Records − DTR')}
-              {stat('Total Cash Outflow', fmt(recordsTotalForDtr + depositsForDtr), outflowColor, hasDtr ? `DTR ${fmt(dtrOutflow)} · diff ${signed(outflowDiff)}` : 'Expenses + deposits')}
+              {stat('Total Cash Outflow', fmt(recordsTotalForDtr + cohDeposits), outflowColor, hasDtr ? `DTR ${fmt(dtrOutflow)} · diff ${signed(outflowDiff)}` : 'Expenses + deposits')}
             </div>
-            <div className="mx-3 mb-3 rounded-lg px-3 py-2.5 flex flex-wrap items-center gap-x-6 gap-y-2" style={{ border: `1px solid ${accent}44`, backgroundColor: `${accent}0d` }}>
+            <div className="mx-3 mb-3 w-fit max-w-full rounded-lg px-3 py-1.5 flex items-center gap-3" style={{ border: `1px solid ${accent}44`, backgroundColor: `${accent}0d` }}>
               <div className="flex flex-col">
-                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: accent }}>Deposited to Company Bank</span>
-                <span className="text-lg font-black tabular-nums" style={{ color: textPrimary }}>{fmt(depositsForDtr)}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: accent }}>Deposited to Bank</span>
                 <span className="text-[10px]" style={{ color: textMuted }}>
-                  {depositRows.length} deposit{depositRows.length === 1 ? '' : 's'}
-                  {hasDtr && <> · DTR {fmt(dtrExpenses.deposits)} · diff <span style={{ color: Math.abs(depositDiff) < 0.005 ? accent : danger }}>{signed(depositDiff)}</span></>}
+                  {cohFromDtr ? 'Per DTR' : `${depositRows.length} deposit${depositRows.length === 1 ? '' : 's'}`}
+                  {cohFromDtr && <> · rec. {fmt(depositsForDtr)} · <span style={{ color: Math.abs(depositDiff) < 0.005 ? accent : danger }}>{signed(depositDiff)}</span></>}
                 </span>
               </div>
-              {byBank.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {byBank.map(([bank, amt]) => (
-                    <span key={bank} className="text-[10px] font-semibold px-2 py-1 rounded-md tabular-nums" style={{ color: textMuted, border: `1px solid ${border}`, backgroundColor: cardBg }}>
-                      {bank} <span style={{ color: textPrimary }}>{fmt(amt)}</span>
-                    </span>
-                  ))}
-                </div>
-              )}
+              <span className="text-base font-black tabular-nums" style={{ color: textPrimary }}>{fmt(cohDeposits)}</span>
             </div>
             {byCategory.length > 0 && (
               <div className="px-3 pb-3 flex flex-wrap gap-1.5">
@@ -1968,6 +1933,7 @@ export default function AuditFinanceExpenses() {
                         >
                           {row.expenseCategory}
                         </span>
+{isDepositRecord(row) && <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ backgroundColor: `${accent}1A`, color: accent }}>Deposit</span>}
                       </div>
                     </div>
 
@@ -2019,6 +1985,7 @@ export default function AuditFinanceExpenses() {
                           <span className="uppercase font-semibold" style={{ color: textPrimary }}>
                             {row.expenseCategory}
                           </span>
+{isDepositRecord(row) && <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ backgroundColor: `${accent}1A`, color: accent }}>Deposit</span>}
                           {row.sourceOfFunds && (
                             <div className="text-[10px] mt-0.5" style={{ color: textMuted }}>Source: {row.sourceOfFunds}</div>
                           )}
