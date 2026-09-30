@@ -41,9 +41,27 @@ export interface AuditExpenseExcelImportResult {
   errors: string[]
 }
 
+/** General, company-wide categories — keep this short so members can always find the right one. */
+/** General, company-wide categories — keep this short so members can always find the right one. */
 export const AUDIT_EXPENSE_CATEGORIES: AuditExpenseCategory[] = [
+  'CASH ADVANCE',
+  'DELIVERY & FREIGHT',
+  'DEPOSIT',
+  'FUND TRANSFER',
+  'INCENTIVES',
+  'INSTALLATION MATERIALS',
+  'LOAN PAYMENT',
   'MISCELLANEOUS FEES',
-  'SERVICE MATERIALS',
   'MOBILIZATION',
+  'OFFICE SUPPLIES & EQUIPMENT',
   'OTHER',
+  'PARTS',
+  'REFUND / REIMBURSEMENT',
+  'RENT',
+  'REPAIR & MAINTENANCE',
+  'SALARY & WAGES',
+  'SERVICE MATERIALS',
+  'TAXES & GOVERNMENT FEES',
+  'TELECOMMUNICATION',
+  'UTILITIES',
 ]

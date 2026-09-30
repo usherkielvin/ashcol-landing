@@ -22,10 +22,10 @@ import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 import { fetchAndMapTickets, fetchAndMapOnlineTickets, fetchAndMapCheckTickets, fetchAndMapForCollTickets, fetchAndMapRebateTickets, fetchAndMapCommissionTickets, fetchAndCountUnitSummary, lookupRebateRate, type CommissionRow } from '../utils/schedulePrefill'
 import { DtrHistoryModal } from '../components/DtrHistoryModal'
-import { uploadReceiptImage } from '../services/supabaseStorage'
+import ReceiptScanDialog, { type ReceiptDialogResult } from '../components/ReceiptScanDialog'
 import { upsertAuditExpense, deleteAuditExpense } from '../utils/auditExpenseStorage'
 import { parseSmartDate } from '../utils/smartDate'
-import type { AuditExpense, AuditExpenseCategory } from '../types/auditExpense'
+import type { AuditExpenseCategory } from '../types/auditExpense'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -735,12 +735,11 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const [payables, setPayables]         = useState<OrderRow[]>([mkPay()])
   // Expenses with Receipts
   const [expReceipt, setExpReceipt]     = useState<ExpenseRow[]>([mkExp()])
-  const [scanningExpenseId, setScanningExpenseId] = useState<string | null>(null)
+  const [receiptDialog, setReceiptDialog] = useState<{ mode: 'expense' | 'deposit'; rowId: string } | null>(null)
   // Cash Advance
   const [cashAdvances, setCashAdvances] = useState<CashAdvanceRow[]>([mkCashAdv()])
   // Bank Deposits (cash physically dropped off at the company bank)
   const [deposits, setDeposits] = useState<DepositRow[]>([])
-  const [scanningDepositId, setScanningDepositId] = useState<string | null>(null)
   // Purchases (separate cash-out category, never counted in or synced to Expenses)
   const [expPurch, setExpPurch]         = useState<ExpenseRow[]>([mkExp()])
   // Incentives
@@ -1465,41 +1464,6 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     return row
   }
 
-  // OCR the deposit slip photo (same Gemini Vision endpoint used for expense receipts) and
-  // prefill the row's description/reference/amount from whatever it can read off the slip.
-  const scanDepositReceipt = async (rowId: string, file: File) => {
-    setScanningDepositId(rowId)
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const formData = new FormData()
-      formData.append('image', file)
-      const res = await fetch(`${API_BASE_URL}/v1/receipts/scan`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      })
-      if (!res.ok) throw new Error(`Server error ${res.status}`)
-      const data = await res.json() as Record<string, unknown>
-      if (data.error) {
-        console.error('[scanDepositReceipt] scan error:', data.error)
-        return
-      }
-      setDeposits(p => p.map(r => {
-        if (r.id !== rowId) return r
-        const next = { ...r }
-        if (data.amount != null && !next.amount) next.amount = String(data.amount)
-        if (data.receiptNo && !next.referenceNo) next.referenceNo = String(data.receiptNo)
-        const scannedDesc = data.description || data.company
-        if (scannedDesc && !next.description) next.description = String(scannedDesc)
-        return next
-      }))
-    } catch (err) {
-      console.error('[scanDepositReceipt] Failed to scan deposit receipt:', err)
-    } finally {
-      setScanningDepositId(null)
-    }
-  }
-
   const formatExpenseDate = (dateStr?: string) => {
     if (dateStr) {
       const parsed = parseSmartDate(dateStr)
@@ -1508,91 +1472,59 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     return parseSmartDate(reportDate) || reportDate
   }
 
-  // OCR the expense receipt photo and prefill the row's name/description/amount/receiptNo from whatever it can read off the receipt.
-  const scanExpenseReceipt = async (rowId: string, file: File, imageUrl?: string) => {
-    setScanningExpenseId(rowId)
+  // The scan dialog hands back reviewed details: write them to the row and push the expense to Expense Records.
+  const commitExpenseReceipt = async (rowId: string, result: ReceiptDialogResult) => {
+    const branchIdToUse = selectedBranchId || user?.branchId || ''
+    const current = expReceipt.find(r => r.id === rowId)
+    const resolvedId = current?.resolvedExpenseId || `dtr-${branchIdToUse || 'branch'}-${reportDate}-exp-${rowId}`
+    setExpReceipt(p => p.map(r => r.id !== rowId ? r : {
+      ...r,
+      name: result.incurredBy,
+      description: result.description,
+      amount: result.amount,
+      receiptNo: result.receiptNo,
+      receiptDate: result.receiptDate,
+      company: result.company,
+      expenseCategory: result.expenseCategory,
+      sourceOfFunds: result.sourceOfFunds,
+      receiptImage: result.receiptImage,
+      resolvedExpenseId: resolvedId,
+    }))
+    setReceiptDialog(null)
     try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const formData = new FormData()
-      formData.append('image', file)
-      const res = await fetch(`${API_BASE_URL}/v1/receipts/scan`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
+      await upsertAuditExpense({
+        id: resolvedId,
+        branchId: branchIdToUse,
+        branchName: branchName || '',
+        date: formatExpenseDate(result.receiptDate),
+        incurredBy: result.incurredBy || (user?.name || 'STAFF').trim().toUpperCase(),
+        description: result.description || 'Expense with Receipt',
+        company: result.company,
+        receiptNo: result.receiptNo,
+        amount: parseFloat(result.amount) || 0,
+        expenseCategory: (result.expenseCategory as AuditExpenseCategory) || 'OTHER',
+        sourceOfFunds: result.sourceOfFunds || 'CASH',
+        receiptImageUri: result.receiptImage,
+        createdAt: '',
+        updatedAt: '',
+        updateHistory: []
       })
-      if (!res.ok) throw new Error(`Server error ${res.status}`)
-      const data = await res.json() as Record<string, unknown>
-      if (data.error) {
-        console.error('[scanExpenseReceipt] scan error:', data.error)
-        return
-      }
-
-      const scannedAmount = data.amount != null ? String(data.amount) : ''
-      const scannedReceiptNo = data.receiptNo ? String(data.receiptNo) : ''
-      const scannedDesc = String(data.description || data.company || '')
-      const scannedIncurredBy = String(data.incurredBy || data.name || '')
-      const scannedDate = data.date ? String(data.date) : ''
-      const scannedCompany = data.company ? String(data.company).toUpperCase() : ''
-      const scannedCategory = data.expenseCategory ? String(data.expenseCategory).toUpperCase() : 'OTHER'
-      const scannedFunds = data.sourceOfFunds ? String(data.sourceOfFunds).toUpperCase() : 'CASH'
-
-      let expenseToUpsert: AuditExpense | null = null
-
-      setExpReceipt(p => p.map(r => {
-        if (r.id !== rowId) return r
-        const next = { ...r }
-        if (imageUrl) next.receiptImage = imageUrl
-        if (scannedAmount && !next.amount) next.amount = scannedAmount
-        if (scannedReceiptNo) next.receiptNo = scannedReceiptNo
-        if (scannedDesc && !next.description) next.description = scannedDesc
-        if (scannedIncurredBy && !next.name) next.name = scannedIncurredBy
-        if (scannedDate) next.receiptDate = scannedDate
-        if (scannedCompany) next.company = scannedCompany
-        if (scannedCategory) next.expenseCategory = scannedCategory
-        if (scannedFunds) next.sourceOfFunds = scannedFunds
-
-        const branchIdToUse = selectedBranchId || user?.branchId || ''
-        const resolvedId = next.resolvedExpenseId || `dtr-${branchIdToUse || 'branch'}-${reportDate}-exp-${rowId}`
-        next.resolvedExpenseId = resolvedId
-
-        const rawAmt = next.amount || scannedAmount
-        const numAmt = typeof rawAmt === 'string'
-          ? (parseFloat(rawAmt.replace(/,/g, '')) || 0)
-          : (Number(rawAmt) || 0)
-
-        expenseToUpsert = {
-          id: resolvedId,
-          branchId: branchIdToUse,
-          branchName: branchName || '',
-          date: formatExpenseDate(next.receiptDate || scannedDate),
-          incurredBy: (next.name || scannedIncurredBy || user?.name || 'STAFF').trim().toUpperCase(),
-          description: (next.description || scannedDesc || 'Expense with Receipt').trim(),
-          company: next.company || scannedCompany || '',
-          receiptNo: next.receiptNo || scannedReceiptNo || '',
-          amount: numAmt,
-          expenseCategory: (next.expenseCategory as AuditExpenseCategory) || (scannedCategory as AuditExpenseCategory) || 'OTHER',
-          sourceOfFunds: next.sourceOfFunds || scannedFunds || 'CASH',
-          receiptImageUri: next.receiptImage || imageUrl || '',
-          createdAt: '',
-          updatedAt: '',
-          updateHistory: []
-        }
-
-        return next
-      }))
-
-      if (expenseToUpsert) {
-        try {
-          await upsertAuditExpense(expenseToUpsert)
-        } catch (err) {
-          console.error('[scanExpenseReceipt] Failed to auto-push expense to audit expenses:', err)
-        }
-      }
     } catch (err) {
-      console.error('[scanExpenseReceipt] Failed to scan expense receipt:', err)
-    } finally {
-      setScanningExpenseId(null)
+      console.error('[commitExpenseReceipt] Failed to push expense to Expense Records:', err)
+      setError('Saved on the DTR, but could not add it to Expense Records. Save the DTR to retry.')
+      setTimeout(() => setError(null), 5000)
     }
+  }
+
+  const commitDepositReceipt = (rowId: string, result: ReceiptDialogResult) => {
+    setDeposits(p => p.map(r => r.id !== rowId ? r : {
+      ...r,
+      description: result.description,
+      referenceNo: result.receiptNo,
+      amount: result.amount,
+      receiptImage: result.receiptImage,
+    }))
+    setReceiptDialog(null)
   }
 
   // Only used by "Expenses with Receipts" rows — Purchases are never synced into the Expenses list.
@@ -3058,33 +2990,12 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                           className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd + ' text-center'}>
-                        <input type="file" accept="image/*" id={`expense-receipt-${row.id}`} className="hidden"
-                          disabled={isFormDisabled}
-                          onChange={async e => {
-                            const file = e.target.files?.[0]
-                            if (!file) return
-                            try {
-                              const uploadResult = await uploadReceiptImage(file, {
-                                folder: 'expenses',
-                                branch: branchName,
-                                description: row.description,
-                                filename: `expense_${row.id}`
-                              })
-                              setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, receiptImage: uploadResult.url } : r))
-                              void scanExpenseReceipt(row.id, file, uploadResult.url)
-                            } catch (err) {
-                              console.error('Failed to process receipt image:', err)
-                              setError('Failed to process receipt image')
-                            }
-                          }} />
                         {row.receiptImage ? (
                           <div className="flex items-center justify-center gap-1.5">
-                            <a href={row.receiptImage} target="_blank" rel="noopener noreferrer" title="View receipt">
+                            <button type="button" onClick={() => setReceiptDialog({ mode: 'expense', rowId: row.id })} title={isFormDisabled ? 'View receipt details' : 'Review / edit receipt details'}>
                               <img src={row.receiptImage} alt="Receipt" className="h-8 w-8 object-cover rounded border border-slate-300 dark:border-slate-700 hover:opacity-80 transition cursor-pointer" />
-                            </a>
-                            {scanningExpenseId === row.id ? (
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 animate-pulse">Scanning…</span>
-                            ) : !isFormDisabled && (
+                            </button>
+                            {!isFormDisabled && (
                               <button type="button" onClick={() => {
                                 setExpReceipt(p => p.map(r => r.id === row.id ? { ...r, receiptImage: '' } : r))
                                 if (row.resolvedExpenseId) {
@@ -3098,9 +3009,9 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                           </div>
                         ) : (
                           !isFormDisabled ? (
-                            <button type="button" onClick={() => document.getElementById(`expense-receipt-${row.id}`)?.click()}
+                            <button type="button" onClick={() => setReceiptDialog({ mode: 'expense', rowId: row.id })}
                               className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 hover:underline">
-                              Upload &amp; Scan
+                              Scan
                             </button>
                           ) : (
                             <span className="text-xs text-slate-400">—</span>
@@ -3352,31 +3263,12 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                           className={flushInputNumber} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd + ' text-center'}>
-                        <input type="file" accept="image/*" id={`deposit-receipt-${row.id}`} className="hidden"
-                          disabled={isFormDisabled}
-                          onChange={async e => {
-                            const file = e.target.files?.[0]
-                            if (!file) return
-                            try {
-                              const uploadResult = await uploadReceiptImage(file, {
-                                folder: 'deposits',
-                                branch: branchName,
-                                description: row.description,
-                                filename: `deposit_${row.id}`
-                              })
-                              setDeposits(p => p.map(r => r.id === row.id ? { ...r, receiptImage: uploadResult.url } : r))
-                              void scanDepositReceipt(row.id, file)
-                            } catch (err) {
-                              console.error('Failed to process receipt image:', err)
-                              setError('Failed to process receipt image')
-                            }
-                          }} />
                         {row.receiptImage ? (
                           <div className="flex items-center justify-center gap-1.5">
-                            <img src={row.receiptImage} alt="Deposit slip" className="h-8 w-8 object-cover rounded border border-slate-300 dark:border-slate-700" />
-                            {scanningDepositId === row.id ? (
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">Scanning…</span>
-                            ) : !isFormDisabled && (
+                            <button type="button" onClick={() => setReceiptDialog({ mode: 'deposit', rowId: row.id })} title={isFormDisabled ? 'View deposit details' : 'Review / edit deposit details'}>
+                              <img src={row.receiptImage} alt="Deposit slip" className="h-8 w-8 object-cover rounded border border-slate-300 dark:border-slate-700 hover:opacity-80 transition cursor-pointer" />
+                            </button>
+                            {!isFormDisabled && (
                               <button type="button" onClick={() => setDeposits(p => p.map(r => r.id === row.id ? { ...r, receiptImage: '' } : r))}
                                 className="text-[10px] text-red-500 font-bold uppercase hover:underline">
                                 Remove
@@ -3385,9 +3277,9 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                           </div>
                         ) : (
                           !isFormDisabled && (
-                            <button type="button" onClick={() => document.getElementById(`deposit-receipt-${row.id}`)?.click()}
+                            <button type="button" onClick={() => setReceiptDialog({ mode: 'deposit', rowId: row.id })}
                               className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 hover:underline">
-                              Upload &amp; Scan
+                              Scan
                             </button>
                           )
                         )}
@@ -3878,6 +3770,34 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       </datalist>
 
       {/* Cash Return Autocomplete Datalist */}
+      {receiptDialog && (() => {
+        const isExp = receiptDialog.mode === 'expense'
+        const expRow = isExp ? expReceipt.find(r => r.id === receiptDialog.rowId) : undefined
+        const depRow = !isExp ? deposits.find(r => r.id === receiptDialog.rowId) : undefined
+        const otherNos = isExp
+          ? expReceipt.filter(r => r.id !== receiptDialog.rowId).map(r => r.receiptNo || '').filter(Boolean)
+          : deposits.filter(r => r.id !== receiptDialog.rowId).map(r => r.referenceNo || '').filter(Boolean)
+        return (
+          <ReceiptScanDialog
+            key={`${receiptDialog.mode}-${receiptDialog.rowId}`}
+            mode={receiptDialog.mode}
+            branchName={branchName}
+            reportDate={reportDate}
+            nameSuggestions={techSuggestions}
+            otherReceiptNos={otherNos}
+            initial={isExp && expRow ? {
+              receiptImage: expRow.receiptImage, receiptDate: expRow.receiptDate, company: expRow.company, receiptNo: expRow.receiptNo,
+              amount: expRow.amount, description: expRow.description, incurredBy: expRow.name,
+              expenseCategory: expRow.expenseCategory, sourceOfFunds: expRow.sourceOfFunds,
+            } : depRow ? {
+              receiptImage: depRow.receiptImage, receiptNo: depRow.referenceNo, amount: depRow.amount, description: depRow.description,
+            } : undefined}
+            onClose={() => setReceiptDialog(null)}
+            onConfirm={result => isExp ? commitExpenseReceipt(receiptDialog.rowId, result) : commitDepositReceipt(receiptDialog.rowId, result)}
+          />
+        )
+      })()}
+
       <datalist id="cash-return-suggestions">
         {techSuggestions.map(name => (
           <option key={name} value={name} />

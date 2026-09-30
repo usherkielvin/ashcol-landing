@@ -8,9 +8,8 @@ import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import type { AuditExpense, AuditExpenseCategory } from '../types/auditExpense'
 import { AUDIT_EXPENSE_CATEGORIES } from '../types/auditExpense'
 import { formatTodayReceiptDate } from '../utils/auditExpenseDates'
-import { bulkImportAuditExpenses, createExpenseId, deleteAuditExpense, loadAuditExpenses, upsertAuditExpense, clearAuditExpensesByBranch } from '../utils/auditExpenseStorage'
+import { createExpenseId, deleteAuditExpense, loadAuditExpenses, upsertAuditExpense, clearAuditExpensesByBranch } from '../utils/auditExpenseStorage'
 import { loadAuditExpenseCategories, saveAuditExpenseCategory, deleteAuditExpenseCategory, reorderAuditExpenseCategories, type AuditExpenseCategoryDetail } from '../utils/auditExpenseCategoryStorage'
-import { parseAuditExpenseExcelFile } from '../utils/parseAuditExpenseExcel'
 import { parseSmartDate, dateToTime } from '../utils/smartDate'
 import { fetchCachedBranches } from '../utils/portalDirectoryCache'
 import AutoSuggestInput from '../components/AutoSuggestInput'
@@ -57,7 +56,6 @@ const emptyForm = (defaultBranchId = '') => ({ date: formatTodayReceiptDate(), c
 export default function AuditFinanceExpenses() {
   const { theme } = useTheme()
   const { user } = useAuth()
-  const fileRef = useRef<HTMLInputElement>(null)
   const isLight = theme === 'light'
   const bg = isLight ? '#f0f4f8' : '#060D1A'
   const cardBg = isLight ? '#ffffff' : '#0A1120'
@@ -87,7 +85,6 @@ export default function AuditFinanceExpenses() {
   const [branchId, setBranchId] = useState('')
   const [expenses, setExpenses] = useState<AuditExpense[]>([])
   const [initialLoading, setInitialLoading] = useState(true)
-  const [importing, setImporting] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<AuditExpense | null>(null)
   const [showAddAnotherPrompt, setShowAddAnotherPrompt] = useState(false)
@@ -175,12 +172,17 @@ export default function AuditFinanceExpenses() {
     void reloadCategories()
   }, [reloadCategories])
 
+  // Always alphabetical, so a category is easy to find.
   const allCategories = useMemo(() => {
-    if (categories.length > 0) {
-      return categories.map(c => c.name)
-    }
-    return AUDIT_EXPENSE_CATEGORIES
+    const names = categories.length > 0 ? categories.map(c => c.name) : AUDIT_EXPENSE_CATEGORIES
+    return [...names].sort((a, b) => a.localeCompare(b))
   }, [categories])
+  const sortedCategoryDetails = useMemo(() => [...categories].sort((a, b) => a.name.localeCompare(b.name)), [categories])
+  const [categoryQuery, setCategoryQuery] = useState('')
+  const visibleCategories = useMemo(() => {
+    const q = categoryQuery.trim().toLowerCase()
+    return q ? allCategories.filter(c => c.toLowerCase().includes(q)) : allCategories
+  }, [allCategories, categoryQuery])
 
   const saveCustomCategory = async () => {
     const val = newCategoryInput.trim().toUpperCase()
@@ -693,34 +695,6 @@ export default function AuditFinanceExpenses() {
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Expense Records')
     XLSX.writeFile(wb, `ASHCOL_Expense_Records_${branchName}_${new Date().toISOString().split('T')[0]}.xlsx`)
-  }
-
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file || !branchId) { e.target.value = ''; return }
-    if (!window.confirm(`Import "${file.name}" for ${branchName}?\n\nNew rows will be added.`)) { e.target.value = ''; return }
-    setImporting(true)
-    try {
-      const result = await parseAuditExpenseExcelFile(file, { branchId, branchName, monthKey: '', filterToMonth: false })
-      if (result.imported.length === 0) {
-        alert(result.errors.length > 0 ? `No rows imported.\n${result.errors.slice(0, 5).join('\n')}` : `No rows imported (${result.skipped} skipped).`)
-        return
-      }
-      await bulkImportAuditExpenses(result.imported)
-      await reload()
-      let msg = `Imported ${result.imported.length} expense record(s).`
-      if (result.skipped > 0) {
-        msg += ` Skipped ${result.skipped} row(s).`
-        if (result.errors.length > 0) {
-          msg += `\n\nReasons for skipped rows:\n` + result.errors.slice(0, 15).map(err => `• ${err}`).join('\n')
-          if (result.errors.length > 15) {
-            msg += `\n• ...and ${result.errors.length - 15} more rows.`
-          }
-        }
-      }
-      alert(msg)
-    } catch { alert('Failed to read Excel file.') }
-    finally { setImporting(false); e.target.value = '' }
   }
 
   const saveExpense = async (expense: AuditExpense) => {
@@ -1315,7 +1289,6 @@ export default function AuditFinanceExpenses() {
                 </div>
 
                 {/* Hidden inputs */}
-                <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImport} />
                 <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleScanImage} />
               </>
             )}
@@ -1596,6 +1569,7 @@ export default function AuditFinanceExpenses() {
           <div className="pt-1 border-t" style={{ borderColor: inputBorder }}>
             <div className="flex items-center justify-between pt-4">
               <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: textMuted }}>Expense Category</label>
+              {isAdmin && (
               <button
                 type="button"
                 onClick={() => setIsEditingCategories(!isEditingCategories)}
@@ -1609,21 +1583,38 @@ export default function AuditFinanceExpenses() {
                 <Settings size={12} />
                 {isEditingCategories ? 'Done Managing' : 'Manage Categories'}
               </button>
+              )}
             </div>
             
-            <div className="flex flex-wrap gap-2 mt-3">
+            {!isEditingCategories && (
+              <div className="relative mt-3">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: textMuted }} />
+                <input
+                  value={categoryQuery}
+                  onChange={(e) => setCategoryQuery(e.target.value)}
+                  placeholder="Search category…"
+                  className="w-full pl-8 pr-8 py-2 rounded-lg text-xs font-semibold outline-none"
+                  style={{ border: `1px solid ${inputBorder}`, backgroundColor: inputBg, color: textPrimary }}
+                />
+                {categoryQuery && (
+                  <button type="button" onClick={() => setCategoryQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2" style={{ color: textMuted }}><X size={13} /></button>
+                )}
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-2 mt-3 max-h-56 overflow-y-auto pr-1">
               {isEditingCategories ? (
                 // --- Edit Mode / Reorder Mode ---
-                categories.map((cat, idx) => {
+                sortedCategoryDetails.map((cat, idx) => {
                   const isEditingThis = editingCategoryDetail?.id === cat.id
                   return (
                     <div
                       key={cat.id}
-                      draggable
+                      draggable={false}
                       onDragStart={(e) => handleDragStart(e, idx)}
                       onDragOver={(e) => handleDragOver(e, idx)}
                       onDragEnd={handleDragEnd}
-                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-move select-none shadow-sm"
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all select-none shadow-sm"
                       style={{
                         border: `1.5px dashed ${draggedIndex === idx ? accent : inputBorder}`,
                         backgroundColor: inputBg,
@@ -1681,7 +1672,7 @@ export default function AuditFinanceExpenses() {
                 })
               ) : (
                 // --- Normal Mode ---
-                allCategories.map((cat) => (
+                visibleCategories.map((cat) => (
                   <button key={cat} type="button" onClick={() => setForm((f) => ({ ...f, expenseCategory: cat as AuditExpenseCategory }))}
                     className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-102"
                     style={{ border: `1px solid ${form.expenseCategory === cat ? accent : inputBorder}`, backgroundColor: form.expenseCategory === cat ? `${accent}22` : inputBg, color: form.expenseCategory === cat ? accent : textMuted }}>
@@ -1690,8 +1681,12 @@ export default function AuditFinanceExpenses() {
                 ))
               )}
 
-              {/* Add custom category */}
-              {addingCategory ? (
+              {!isEditingCategories && visibleCategories.length === 0 && (
+                <span className="text-xs" style={{ color: textMuted }}>No category matches "{categoryQuery}".{isAdmin ? ' Use New to add one.' : ' Pick the closest one, or Other.'}</span>
+              )}
+
+              {/* Add custom category (admins only — members pick from the general list) */}
+              {isAdmin && (addingCategory ? (
                 <div className="flex items-center gap-1">
                   <input
                     ref={newCategoryRef}
@@ -1711,7 +1706,7 @@ export default function AuditFinanceExpenses() {
                   style={{ border: `1px dashed ${inputBorder}`, backgroundColor: inputBg, color: textMuted }}>
                   <Plus size={11} /> New
                 </button>
-              )}
+              ))}
             </div>
           </div>
 
@@ -2454,8 +2449,18 @@ export default function AuditFinanceExpenses() {
                 {/* Category Selection */}
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-wide block mb-2" style={{ color: textMuted }}>Expense Category</label>
-                  <div className="flex flex-wrap gap-2">
-                    {allCategories.map((cat) => (
+                  <div className="relative mb-2">
+                    <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: textMuted }} />
+                    <input
+                      value={categoryQuery}
+                      onChange={(e) => setCategoryQuery(e.target.value)}
+                      placeholder="Search category…"
+                      className="w-full pl-8 pr-3 py-2 rounded-lg text-xs font-semibold outline-none"
+                      style={{ border: `1px solid ${inputBorder}`, backgroundColor: inputBg, color: textPrimary }}
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto pr-1">
+                    {visibleCategories.map((cat) => (
                       <button
                         key={cat}
                         type="button"
