@@ -1,10 +1,10 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, MapPin, Phone, Mail, Building2, ExternalLink, Edit3, X, Loader2, FileText, CheckCircle2, XCircle, Gift, Receipt, HelpCircle, Plus, Check, MoreVertical } from 'lucide-react'
+import { Search, MapPin, Phone, Mail, Building2, ExternalLink, Edit3, X, Loader2, XCircle, Plus, Check, MoreVertical } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { PUBLIC_BRANCHES } from '../data/branches'
-import { API_BASE_URL, isSameBaseBranch, resolveScopedBranchId, isPortalAdmin, isTaguigServicesScope, isFranchiseBranch } from '../utils/api'
+import { API_BASE_URL, isSameBaseBranch, isPortalAdmin, isTaguigServicesScope, isFranchiseBranch } from '../utils/api'
 import {
   isInstallerEmployee,
   isSalesCoordinatorEmployee,
@@ -44,9 +44,6 @@ interface AuditRow {
 
 const peso = (v: number | null | undefined) =>
   (v ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-
-const isNoTransaction = (r: string) =>
-  r === 'NO SCHED' || r === 'NO TRANSACTION' || r === 'NO RECORD' || r === 'NO REPORT'
 
 /** Cash-on-hand level at which a branch is due to deposit to the company bank. */
 const CASH_DEPOSIT_THRESHOLD = 5000
@@ -230,83 +227,7 @@ export default function Branches() {
   const [addError, setAddError] = useState<string | null>(null)
   const [addSaving, setAddSaving] = useState(false)
 
-  // Performance data for the selected branch
-  const [branchPerfData, setBranchPerfData] = useState<AuditRow | null>(null)
-  const [branchPerfLoading, setBranchPerfLoading] = useState(false)
-  const [branchPerfItems, setBranchPerfItems] = useState<{ items: any[]; receivedBy?: string } | null>(null)
-  const [branchPerfItemsLoading, setBranchPerfItemsLoading] = useState(false)
-
   const isRoleAdmin = isPortalAdmin(user?.role)
-
-  const [globalBranchId, setGlobalBranchId] = useState<string | null>(
-    () => localStorage.getItem('ashcol-global-branch-id')
-  )
-
-  useEffect(() => {
-    const syncGlobal = () => {
-      setGlobalBranchId(localStorage.getItem('ashcol-global-branch-id'))
-    }
-    window.addEventListener('ashcol-global-branch-change', syncGlobal)
-    return () => window.removeEventListener('ashcol-global-branch-change', syncGlobal)
-  }, [])
-
-  const showEditButton = useMemo(() => {
-    if (!selectedBranch) return false
-    
-    // Admin check
-    if (isRoleAdmin) {
-      if (!globalBranchId) return false
-      
-      // Special taguig mapping
-      if (globalBranchId === 'BR-TAGUIG-SALES-sales') {
-        return selectedBranch.id === 'BR-TAGUIG-SALES-sales' || selectedBranch.id === 'BR-TAGUIG-SALES'
-      }
-      if (globalBranchId === 'BR-TAGUIG-SALES-services') {
-        return selectedBranch.id === 'BR-TAGUIG-SALES-services' || (selectedBranch.id === 'BR-TAGUIG-SALES' && branchPerfData?.auditLine === 'TAGUIG_SERVICE')
-      }
-      return selectedBranch.id === globalBranchId
-    }
-    
-    // Non-admin: every member (and any branch-specific role) may edit their OWN branch's details;
-    // the backend enforces the same own-branch rule (BranchController.assertCanEditBranch).
-    if (!user?.branchId) return false
-    
-    if (!isSameBaseBranch(user.branchId, selectedBranch.id)) return false
-    
-    // For Taguig, match the audit line / sub-branch
-    const resolvedUserBranch = resolveScopedBranchId(user.branchId)
-    if (resolvedUserBranch.toUpperCase().includes('TAGUIG')) {
-      const isServiceUser = isTaguigServicesScope(user.branchId, user.email, user.jobTitle)
-      const isServiceBranch = (selectedBranch.id || '').toLowerCase().includes('service') || selectedBranch.name.toUpperCase().includes('SERVICE')
-      return isServiceUser === isServiceBranch
-    }
-    
-    return true
-  }, [selectedBranch, isRoleAdmin, user, branchPerfData, globalBranchId])
-
-  const editReportUrl = useMemo(() => {
-    if (!selectedBranch) return ''
-    if (branchPerfData?.id) {
-      return `/audit-report?tab=submit&id=${branchPerfData.id}`
-    }
-    
-    // We are creating a new report
-    const baseBranchId = selectedBranch.id?.replace(/-(sales|services)$/i, '') || ''
-    const today = new Date().toISOString().split('T')[0]
-    
-    let auditLine = ''
-    if (selectedBranch.id?.toLowerCase().includes('taguig')) {
-      const nameUpper = selectedBranch.name.toUpperCase()
-      const idLower = selectedBranch.id.toLowerCase()
-      if (idLower.includes('services') || idLower.includes('service') || nameUpper.includes('SERVICES') || nameUpper.includes('SERVICE')) {
-        auditLine = 'TAGUIG_SERVICE'
-      } else {
-        auditLine = 'TAGUIG_SALES'
-      }
-    }
-    
-    return `/audit-report?tab=submit&branchId=${baseBranchId}&date=${today}&auditLine=${auditLine}`
-  }, [selectedBranch, branchPerfData])
 
   // ── Colour tokens ──────────────────────────────────────────────
   const cardBg      = isLight ? '#ffffff' : '#0A1120'
@@ -314,91 +235,6 @@ export default function Branches() {
   const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
   const textMuted   = isLight ? '#64748b' : '#7A95B8'
   const inputBg     = isLight ? '#ffffff' : '#0F1A2E'
-
-  const fetchBranchPerformance = useCallback(async (branch: Branch) => {
-    setBranchPerfData(null)
-    setBranchPerfLoading(true)
-    setBranchPerfItems(null)
-    setBranchPerfItemsLoading(false)
-    try {
-      const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-      const today = new Date().toISOString().split('T')[0]
-      const res = await fetch(`${API_BASE_URL}/v1/reports/audit-summary?date=${today}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const rows: AuditRow[] = await res.json()
-        // Find matching row for this branch
-        const branchIdLower = (branch.id || '').toLowerCase()
-        const branchNameLower = branch.name.toLowerCase()
-        // Try exact branchId match first
-        let match = rows.find(r => r.branchId?.toLowerCase() === branchIdLower)
-        // Fallback: match on name
-        if (!match) {
-          match = rows.find(r => {
-            const rn = r.branchName.toLowerCase()
-            return rn === branchNameLower ||
-              rn.includes(branchNameLower.replace('ashcol ', '').trim()) ||
-              branchNameLower.includes(rn.replace('ashcol ', '').trim())
-          })
-        }
-        // Special Taguig: match by audit line / name substring
-        if (!match && branchIdLower.includes('taguig')) {
-          const isServices = branchIdLower.endsWith('-services') || branchNameLower.includes('service')
-          match = rows.find(r => {
-            const rn = r.branchName.toLowerCase()
-            if (isServices) return rn.includes('taguig') && (rn.includes('service') || r.auditLine?.includes('SERVICE'))
-            return rn.includes('taguig') && !rn.includes('service')
-          })
-        }
-        setBranchPerfData(match || null)
-
-        // Fetch detailed DTR items if matching report is found
-        if (match) {
-          setBranchPerfItemsLoading(true)
-          const bName = match.branchName.trim()
-          try {
-            let items = []
-            let receivedBy = ''
-            if (match.id) {
-              const resItems = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/${match.id}`, {
-                headers: { Authorization: `Bearer ${token}` },
-              })
-              if (resItems.ok) {
-                const data = await resItems.json()
-                items = data.items || []
-                receivedBy = data.receivedBy || ''
-              }
-            } else {
-              const params = new URLSearchParams({
-                branchId: match.branchId,
-                branchName: bName,
-                date: today,
-              })
-              if (match.auditLine) params.set('auditLine', match.auditLine)
-              const resItems = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/items?${params.toString()}`, {
-                headers: { Authorization: `Bearer ${token}` },
-              })
-              if (resItems.ok) {
-                items = await resItems.json()
-              }
-            }
-            setBranchPerfItems({ items, receivedBy })
-          } catch (e) {
-            console.error('Failed to fetch detailed performance items', e)
-            setBranchPerfItems({ items: [], receivedBy: '' })
-          } finally {
-            setBranchPerfItemsLoading(false)
-          }
-        }
-      }
-    } catch (e) {
-      console.error('Failed to fetch branch performance', e)
-      setBranchPerfData(null)
-    } finally {
-      setBranchPerfLoading(false)
-    }
-  }, [])
 
   const fetchAllData = async () => {
     setLoading(true)
@@ -1115,7 +951,7 @@ export default function Branches() {
                 <div className="px-4 sm:px-5 py-3 border-t border-slate-100 dark:border-slate-800/60 bg-slate-50/40 dark:bg-slate-900/10 flex justify-between items-center gap-3 shrink-0">
                   <div className="flex items-center gap-2">
                     <button 
-                      onClick={() => { setSelectedBranch(branch); fetchBranchPerformance(branch) }}
+                      onClick={() => setSelectedBranch(branch)}
                       className="px-3.5 py-1.5 rounded-xl border text-[10.5px] font-bold uppercase tracking-wider transition-all hover:bg-slate-100 dark:hover:bg-slate-800"
                       style={{ color: textPrimary, borderColor: border }}
                     >
@@ -1149,386 +985,179 @@ export default function Branches() {
         </div>
       )}
 
-      {/* ── View Details Modal (Enhanced with Performance Data) ── */}
-      {selectedBranch && (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-md animate-fade-in">
-          <div
-            className="w-full max-w-4xl rounded-3xl border overflow-hidden shadow-2xl flex flex-col"
-            style={{ backgroundColor: cardBg, borderColor: selectedBranch.color || border, borderWidth: '1.5px', maxHeight: '94vh' }}
-          >
-            {/* ─── MODAL HEADER ──────────────────────────── */}
-            <div className="px-8 py-5 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
-              <div className="flex items-center gap-4">
-                <div
-                  className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 font-black text-sm text-white"
-                  style={{ backgroundColor: selectedBranch.color || '#10B981' }}
-                >
-                  {initialsFor(selectedBranch.name)}
-                </div>
-                <div>
-                  <h3 className="text-lg font-black tracking-tight" style={{ color: textPrimary }}>{selectedBranch.name}</h3>
-                  <div className="flex items-center gap-2.5 mt-0.5">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{getConciseLocationTag(selectedBranch)}</span>
-                    <span
-                      className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border"
-                      style={{
-                        backgroundColor: selectedBranch.isActive ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
-                        color: selectedBranch.isActive ? '#10B981' : '#EF4444',
-                        borderColor: selectedBranch.isActive ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'
-                      }}
-                    >
-                      {selectedBranch.isActive ? 'ACTIVE' : 'INACTIVE'}
-                    </span>
-                    <span className="text-[11px]" style={{ color: textMuted }}>
-                      {new Date().toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 shrink-0">
-                {showEditButton && (
-                  <a
-                    href={editReportUrl}
-                    className="px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all hover:opacity-90 shrink-0 text-center"
-                    style={{ backgroundColor: '#10B981', border: 'none' }}
-                  >
-                    {branchPerfData?.id ? 'Edit DTR' : 'Create DTR'}
-                  </a>
-                )}
-                <button
-                  onClick={() => setSelectedBranch(null)}
-                  className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
-                  style={{ color: textMuted }}
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+      {/* ── Branch Details Modal (portaled above the app header) ── */}
+      {selectedBranch && createPortal(
+        (() => {
+          const accent = selectedBranch.color || '#10B981'
+          const phoneList = (selectedBranch.phones && selectedBranch.phones.length > 0
+            ? selectedBranch.phones
+            : selectedBranch.phone ? [selectedBranch.phone] : [])
+          const canEditBranch = isRoleAdmin || (user?.branchId && isSameBaseBranch(user.branchId, selectedBranch.id))
+          const specRow = (label: string, value: React.ReactNode) => (
+            <div className="flex items-start justify-between gap-4 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
+              <span className="text-xs font-medium shrink-0" style={{ color: textMuted }}>{label}</span>
+              <span className="text-sm font-semibold text-right break-words min-w-0" style={{ color: textPrimary }}>{value}</span>
             </div>
-
-            {/* ─── SCROLLABLE BODY ─────────────────────────── */}
-            <div className="flex-1 overflow-y-auto">
-
-              {/* ── PERFORMANCE SECTION ── */}
-              <div className="px-8 py-6">
-                <div className="flex items-center justify-between mb-5">
-                  <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>Daily Performance Report</span>
-                  <div className="flex items-center gap-3">
-                    {selectedBranch?.targetDailyQuota != null && selectedBranch.targetDailyQuota > 0 && (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black border" style={{ backgroundColor: 'rgba(139,92,246,0.08)', color: '#8B5CF6', borderColor: 'rgba(139,92,246,0.2)' }}>
-                        Target Quota: ₱{(selectedBranch.targetDailyQuota).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / day
-                      </span>
+          )
+          const section = (title: string, children: React.ReactNode) => (
+            <div className="rounded-2xl border overflow-hidden" style={{ borderColor: border, backgroundColor: cardBg }}>
+              <div className="px-5 py-3 border-b" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1520' }}>
+                <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{title}</span>
+              </div>
+              <div className="px-5 py-2">{children}</div>
+            </div>
+          )
+          return (
+            <div
+              className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-sm animate-fade-in"
+              onMouseDown={e => { if (e.target === e.currentTarget) setSelectedBranch(null) }}
+            >
+              <div
+                className="w-full max-w-5xl max-h-[92vh] rounded-3xl overflow-hidden shadow-2xl flex flex-col min-h-0"
+                style={{ backgroundColor: isLight ? '#f8fafc' : '#080f1d', border: `1px solid ${border}` }}
+              >
+                {/* Header */}
+                <div
+                  className="px-6 sm:px-8 py-6 flex items-start justify-between gap-4 shrink-0"
+                  style={{ background: `linear-gradient(135deg, ${accent}26 0%, transparent 70%)`, borderBottom: `1px solid ${border}` }}
+                >
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div
+                      className="w-16 h-16 rounded-2xl flex items-center justify-center shrink-0 font-black text-xl text-white shadow-lg"
+                      style={{ backgroundColor: accent }}
+                    >
+                      {initialsFor(selectedBranch.name)}
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-2xl font-black tracking-tight truncate" style={{ color: textPrimary }}>{selectedBranch.name}</h3>
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: textMuted }}>
+                          <MapPin className="w-3.5 h-3.5" /> {getConciseLocationTag(selectedBranch)}
+                        </span>
+                        <span
+                          className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border"
+                          style={{
+                            backgroundColor: selectedBranch.isActive ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                            color: selectedBranch.isActive ? '#10B981' : '#EF4444',
+                            borderColor: selectedBranch.isActive ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)',
+                          }}
+                        >
+                          {selectedBranch.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                        {selectedBranch.isHQ && (
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border" style={{ color: '#8B5CF6', borderColor: 'rgba(139,92,246,0.3)', backgroundColor: 'rgba(139,92,246,0.1)' }}>Head Office</span>
+                        )}
+                        {selectedBranch.isFranchise && (
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border" style={{ color: '#F59E0B', borderColor: 'rgba(245,158,11,0.3)', backgroundColor: 'rgba(245,158,11,0.1)' }}>Franchise</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {canEditBranch && (
+                      <button
+                        onClick={() => { const b = selectedBranch; setSelectedBranch(null); handleEditClick(b) }}
+                        className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-slate-500/10"
+                        style={{ borderColor: border, color: textPrimary }}
+                      >
+                        <Edit3 className="w-3.5 h-3.5" /> Edit
+                      </button>
                     )}
-                    {branchPerfData && (
-                      <span className="text-[10px]" style={{ color: textMuted }}>
-                        {branchPerfData.timeUploaded
-                          ? `Uploaded at ${new Date(branchPerfData.timeUploaded).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}`
-                          : 'Upload time not recorded'}
-                      </span>
-                    )}
+                    <button
+                      onClick={() => setSelectedBranch(null)}
+                      className="p-2 rounded-xl hover:bg-slate-500/10 transition-colors"
+                      style={{ color: textMuted }}
+                      aria-label="Close"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
                   </div>
                 </div>
 
-                {branchPerfLoading ? (
-                  <div className="rounded-xl border py-10 flex items-center justify-center gap-2.5" style={{ backgroundColor: inputBg, borderColor: border }}>
-                    <Loader2 className="w-4 h-4 animate-spin" style={{ color: textMuted }} />
-                    <span className="text-xs font-semibold" style={{ color: textMuted }}>Fetching today's performance data...</span>
-                  </div>
-                ) : !branchPerfData ? (
-                  <div className="rounded-xl border py-10 text-center" style={{ backgroundColor: inputBg, borderColor: border }}>
-                    <p className="text-sm font-bold" style={{ color: textMuted }}>No report submitted for today</p>
-                    <p className="text-xs mt-1" style={{ color: textMuted }}>Data will appear once the daily report is uploaded.</p>
-                  </div>
-                ) : (() => {
-                  const isAbove = branchPerfData.remarks === 'ABOVE QUOTA' || branchPerfData.difference > 0
-                  const isPending = branchPerfData.remarks === 'PENDING'
-                  const isNoTrans = isNoTransaction(branchPerfData.remarks)
-                  const statusColor = isPending ? '#F59E0B' : isAbove ? '#10B981' : isNoTrans ? '#94A3B8' : '#EF4444'
-                  const statusLabel = isPending ? 'PENDING' : isAbove ? 'ABOVE QUOTA' : isNoTrans ? 'NO TRANSACTION' : 'BELOW QUOTA'
-                  return (
-                    <div className="flex flex-col gap-4">
+                {/* Body */}
+                <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-7">
+                  <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 items-start">
+                    {/* Details & specs */}
+                    <div className="lg:col-span-3 flex flex-col gap-5">
+                      {section('Contact & Location', (
+                        <>
+                          {specRow('Address', selectedBranch.address || 'Not registered')}
+                          {specRow('Phone', phoneList.length > 0 ? phoneList.join(' · ') : '—')}
+                          {selectedBranch.landline && specRow('Landline', selectedBranch.landline)}
+                          {specRow('Email', selectedBranch.email || '—')}
+                          <div className="py-2.5 flex items-start justify-between gap-4">
+                            <span className="text-xs font-medium shrink-0" style={{ color: textMuted }}>Map</span>
+                            {selectedBranch.mapUrl ? (
+                              <a href={selectedBranch.mapUrl} target="_blank" rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-sm font-bold hover:underline" style={{ color: accent }}>
+                                Open in Google Maps <ExternalLink className="w-3.5 h-3.5" />
+                              </a>
+                            ) : (
+                              <span className="text-sm font-semibold" style={{ color: textMuted }}>—</span>
+                            )}
+                          </div>
+                        </>
+                      ))}
 
-                      {/* Status bar */}
-                      <div className="rounded-xl px-6 py-4 flex items-center justify-between gap-6"
-                        style={{ backgroundColor: `${statusColor}0D`, border: `1px solid ${statusColor}28` }}>
-                        <div className="flex items-center gap-5">
-                          <div>
-                            <div className="text-[9px] font-black uppercase tracking-widest mb-1" style={{ color: textMuted }}>STATUS</div>
-                            <span className="px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider"
-                              style={{ backgroundColor: `${statusColor}18`, color: statusColor, border: `1px solid ${statusColor}35` }}>
-                              {statusLabel}
+                      {section('Branch Specs', (
+                        <>
+                          {specRow('Region', selectedBranch.region || '—')}
+                          {specRow('Type', selectedBranch.isHQ ? 'Head Office' : selectedBranch.isFranchise ? 'Franchise' : 'Company branch')}
+                          {specRow('Daily target quota', selectedBranch.targetDailyQuota ? `₱${peso(selectedBranch.targetDailyQuota)}` : '—')}
+                          <div className="py-2.5 flex items-start justify-between gap-4">
+                            <span className="text-xs font-medium shrink-0" style={{ color: textMuted }}>Status</span>
+                            <span className="text-sm font-semibold" style={{ color: selectedBranch.isActive ? '#10B981' : '#EF4444' }}>
+                              {selectedBranch.isActive ? 'Operating' : 'Inactive'}
                             </span>
                           </div>
-                          <div className="border-l pl-5" style={{ borderColor: `${statusColor}25` }}>
-                            <div className="text-[9px] font-black uppercase tracking-widest mb-0.5" style={{ color: textMuted }}>DIFFERENCE</div>
-                            <div className="text-lg font-black" style={{ color: statusColor }}>
-                              {isAbove ? '+' : ''}₱{peso(branchPerfData.difference)}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="text-right border-l pl-6" style={{ borderColor: border }}>
-                          <div className="text-[9px] font-black uppercase tracking-widest mb-0.5" style={{ color: textMuted }}>SUBMITTED BY</div>
-                          <div className="text-sm font-black" style={{ color: textPrimary }}>{user?.name || '—'}</div>
-                          <div className="text-[10px]" style={{ color: textMuted }}>{selectedBranch.oic || 'Branch Staff'}</div>
-                        </div>
-                      </div>
+                        </>
+                      ))}
+                    </div>
 
-                      {/* 3-column metrics table */}
-                      <div className="grid grid-cols-3 rounded-xl overflow-hidden border" style={{ borderColor: border }}>
+                    {/* Team */}
+                    <div className="lg:col-span-2 flex flex-col gap-5">
+                      {section('Leadership', (
+                        <>
+                          {specRow('OIC', selectedBranch.oic || 'Unassigned')}
+                          <div className="py-2.5 flex items-start justify-between gap-4">
+                            <span className="text-xs font-medium shrink-0" style={{ color: textMuted }}>Coordinator</span>
+                            <span className="text-sm font-semibold text-right" style={{ color: textPrimary }}>{selectedBranch.salesCoordinator || '—'}</span>
+                          </div>
+                        </>
+                      ))}
+
+                      <div className="grid grid-cols-2 gap-3">
                         {[
-                          {
-                            title: 'Sales',
-                            rows: [
-                              { label: 'Gross Sales', value: `₱${peso(branchPerfData.grossSales)}`, color: textPrimary, bold: true },
-                              { label: 'Target Quota', value: `₱${peso(branchPerfData.targetDailyQuota)}`, color: '#8B5CF6', bold: true },
-                              { label: 'Total Expenses', value: `₱${peso(branchPerfData.totalExpenses)}`, color: '#EF4444', bold: false },
-                              { label: 'Total Purchases', value: `₱${peso(branchPerfData.totalForPurchase)}`, color: '#F59E0B', bold: false },
-                            ]
-                          },
-                          {
-                            title: 'Cash Flow',
-                            rows: [
-                              { label: 'COH Prev Day', value: `₱${peso(branchPerfData.cohPreviousDay)}`, color: textPrimary, bold: false },
-                              { label: 'Fund from HO', value: `₱${peso(branchPerfData.fundFromHo)}`, color: textPrimary, bold: false },
-                              { label: 'Total COH / CFD', value: `₱${peso(branchPerfData.totalCohCfd)}`, color: textPrimary, bold: true },
-                            ]
-                          },
-                          {
-                            title: 'Collections',
-                            rows: [
-                              { label: 'Cash Collection', value: `₱${peso(branchPerfData.totalCashCollection)}`, color: '#10B981', bold: true },
-                              { label: 'Online Collection', value: `₱${peso(branchPerfData.totalOnlineCollection)}`, color: '#3B82F6', bold: true },
-                              { label: 'For Collection', value: `₱${peso(branchPerfData.forCollection)}`, color: '#F59E0B', bold: false },
-                            ]
-                          }
-                        ].map((col, ci) => (
-                          <div key={col.title} style={{ borderRight: ci < 2 ? `1px solid ${border}` : 'none' }}>
-                            <div className="px-5 py-2.5 border-b" style={{ borderColor: border, backgroundColor: `${selectedBranch.color || '#10B981'}0A` }}>
-                              <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: selectedBranch.color || '#10B981' }}>{col.title}</span>
-                            </div>
-                            {col.rows.map((row, ri) => (
-                              <div key={row.label} className="flex items-center justify-between px-5 py-2.5"
-                                style={{ borderBottom: ri < col.rows.length - 1 ? `1px solid ${border}` : 'none' }}>
-                                <span className="text-[11px]" style={{ color: textMuted }}>{row.label}</span>
-                                <span className={`text-[11px] tabular-nums ${row.bold ? 'font-bold' : 'font-medium'}`} style={{ color: row.color }}>{row.value}</span>
-                              </div>
-                            ))}
+                          { label: 'Installers', count: selectedBranch.installers.length },
+                          { label: 'Drivers', count: selectedBranch.drivers.length },
+                        ].map(t => (
+                          <div key={t.label} className="rounded-2xl border px-4 py-3" style={{ borderColor: border, backgroundColor: cardBg }}>
+                            <div className="text-2xl font-black tabular-nums leading-none" style={{ color: accent }}>{t.count}</div>
+                            <div className="text-[11px] font-semibold mt-1" style={{ color: textMuted }}>{t.label}</div>
                           </div>
                         ))}
                       </div>
 
-                      {/* Redesigned Rebate Summary */}
-                      <div className="flex flex-col gap-3 rounded-xl border p-4" style={{ borderColor: border, backgroundColor: cardBg }}>
-                        <div className="flex items-center gap-1.5 pb-1 border-b" style={{ borderColor: border }}>
-                          <FileText className="w-4 h-4 text-emerald-500" />
-                          <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: textPrimary }}>Rebate Summary</span>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-7 gap-3">
-                          {[
-                            { label: 'Rebates Total', value: `₱${peso(branchPerfData.rebatesForCollection)}`, icon: <Receipt className="w-4 h-4 text-emerald-500" />, bg: 'rgba(16,185,129,0.04)', border: 'rgba(16,185,129,0.12)', text: '#10B981' },
-                            { label: 'Scheduled', value: String(branchPerfData.totalUnitsScheduled || 0), icon: <HelpCircle className="w-4 h-4 text-slate-500" />, bg: 'rgba(148,163,184,0.04)', border: 'rgba(148,163,184,0.12)', text: '#64748B' },
-                            { label: 'Rescheduled', value: String(branchPerfData.totalRescheduled || 0), icon: <HelpCircle className="w-4 h-4 text-slate-500" />, bg: 'rgba(148,163,184,0.04)', border: 'rgba(148,163,184,0.12)', text: '#64748B' },
-                            { label: 'Installed', value: String(branchPerfData.totalUnitsInstalledServiced), icon: <CheckCircle2 className="w-4 h-4 text-blue-500" />, bg: 'rgba(59,130,246,0.04)', border: 'rgba(59,130,246,0.12)', text: '#3B82F6' },
-                            { label: 'Cancelled', value: String(branchPerfData.totalCancelled), icon: <XCircle className="w-4 h-4 text-red-500" />, bg: 'rgba(239,68,68,0.04)', border: 'rgba(239,68,68,0.12)', text: '#EF4444' },
-                            { label: 'Free Install', value: String(branchPerfData.totalUnitsFreeInstall), icon: <Gift className="w-4 h-4 text-amber-500" />, bg: 'rgba(245,158,11,0.04)', border: 'rgba(245,158,11,0.12)', text: '#F59E0B' },
-                            { label: 'Survey Only', value: String(branchPerfData.totalUnitsSurveyOnly || 0), icon: <HelpCircle className="w-4 h-4 text-indigo-500" />, bg: 'rgba(99,102,241,0.04)', border: 'rgba(99,102,241,0.12)', text: '#6366F1' },
-                          ].map((item) => (
-                            <div key={item.label} className="rounded-xl border p-3 flex items-center justify-between transition-all duration-300 hover:scale-[1.02] hover:shadow-sm" style={{ borderColor: item.border, backgroundColor: item.bg }}>
-                              <div className="flex flex-col gap-0.5">
-                                <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{item.label}</span>
-                                <span className="text-sm font-black tracking-tight" style={{ color: item.text }}>{item.value}</span>
-                              </div>
-                              <div className="p-1.5 rounded-lg bg-white dark:bg-slate-900 shadow-xs border border-slate-100 dark:border-slate-800">
-                                {item.icon}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-
-                        {branchPerfItemsLoading ? (
-                          <div className="mt-1">
-                            <div className="flex items-center gap-2 mb-3">
-                              <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
-                              <span className="text-[9px] font-bold tracking-wide uppercase" style={{ color: textMuted }}>Loading detailed breakdown...</span>
-                            </div>
-                            <div className="flex flex-col gap-2">
-                              {[1, 2].map(i => (
-                                <div key={i} className="flex gap-4 animate-pulse">
-                                  <div className="h-5 flex-1 rounded bg-slate-200 dark:bg-slate-800" />
-                                  <div className="h-5 w-20 rounded bg-slate-200 dark:bg-slate-800" />
-                                  <div className="h-5 w-12 rounded bg-slate-200 dark:bg-slate-800" />
-                                  <div className="h-5 w-20 rounded bg-slate-200 dark:bg-slate-800" />
-                                </div>
-                              ))}
-                            </div>
+                      {section('Crew', (
+                        <div className="py-2 flex flex-col gap-4">
+                          <div className="flex flex-col gap-2">
+                            <span className="text-xs font-medium" style={{ color: textMuted }}>Installers</span>
+                            <PersonnelChipList names={selectedBranch.installers} emptyLabel="None assigned" />
                           </div>
-                        ) : (() => {
-                          const rebateItems = (branchPerfItems?.items || []).filter(
-                            (item: any) => item.type === 'REBATE'
-                          )
-                          if (rebateItems.length > 0) {
-                            return (
-                              <div className="mt-1">
-                                <span className="text-[9px] font-bold uppercase tracking-wider mb-2 block" style={{ color: textMuted }}>Detailed Rebates Breakdown</span>
-                                <div className="overflow-x-auto rounded-xl border" style={{ borderColor: border }}>
-                                  <table className="w-full text-xs text-left border-collapse">
-                                    <thead>
-                                      <tr className="bg-slate-50/50 dark:bg-slate-900/30 font-bold uppercase tracking-wider" style={{ borderBottom: `1px solid ${border}`, color: textMuted, fontSize: '9px' }}>
-                                        <th className="px-3 py-2">Customer</th>
-                                        <th className="px-3 py-2">Brand / Company</th>
-                                        <th className="px-3 py-2">RA Number</th>
-                                        <th className="px-3 py-2">HP</th>
-                                        <th className="px-3 py-2 text-right">Amount Each</th>
-                                        <th className="px-3 py-2 text-center">Units</th>
-                                        <th className="px-3 py-2 text-right">Total</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {rebateItems.map((item: any, i: number) => {
-                                        const desc = item.description || ''
-                                        const parts = desc.startsWith('REBATE|') ? desc.split('|') : ['', '', '']
-                                        const raNumber = parts[1] || '—'
-                                        const hp = parts[2] || '—'
-                                        const amt = item.amount || 0
-                                        const qty = item.units || 0
-                                        return (
-                                          <tr key={i} className="hover:bg-slate-50/20 dark:hover:bg-slate-900/20 transition-colors" style={{ borderBottom: i < rebateItems.length - 1 ? `1px solid ${border}` : 'none' }}>
-                                            <td className="px-3 py-2" style={{ color: textPrimary }}>{item.customer || '—'}</td>
-                                            <td className="px-3 py-2 font-bold" style={{ color: textPrimary }}>{item.company || '—'}</td>
-                                            <td className="px-3 py-2">
-                                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                                                {raNumber}
-                                              </span>
-                                            </td>
-                                            <td className="px-3 py-2">
-                                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-50/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">
-                                                {hp}
-                                              </span>
-                                            </td>
-                                            <td className="px-3 py-2 text-right font-semibold tabular-nums" style={{ color: textPrimary }}>₱{peso(amt)}</td>
-                                            <td className="px-3 py-2 text-center font-bold tabular-nums" style={{ color: textPrimary }}>{qty}</td>
-                                            <td className="px-3 py-2 text-right font-black tabular-nums text-emerald-600 dark:text-emerald-400">₱{peso(amt * qty)}</td>
-                                          </tr>
-                                        )
-                                      })}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            )
-                          }
-                          if (branchPerfData.rebatesForCollection > 0) {
-                            return (
-                              <div className="mt-1">
-                                <span className="text-[9px] font-bold uppercase tracking-wider mb-2 block" style={{ color: textMuted }}>Detailed Rebates Breakdown</span>
-                                <div className="overflow-x-auto rounded-xl border" style={{ borderColor: border }}>
-                                  <table className="w-full text-xs text-left border-collapse">
-                                    <thead>
-                                      <tr className="bg-slate-50/50 dark:bg-slate-900/30 font-bold uppercase tracking-wider" style={{ borderBottom: `1px solid ${border}`, color: textMuted, fontSize: '9px' }}>
-                                        <th className="px-3 py-2">Customer</th>
-                                        <th className="px-3 py-2">Brand / Company</th>
-                                        <th className="px-3 py-2">RA Number</th>
-                                        <th className="px-3 py-2">HP</th>
-                                        <th className="px-3 py-2 text-right">Amount Each</th>
-                                        <th className="px-3 py-2 text-center">Units</th>
-                                        <th className="px-3 py-2 text-right">Total</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      <tr className="hover:bg-slate-50/20 dark:hover:bg-slate-900/20 transition-colors">
-                                        <td className="px-3 py-2"><span className="text-slate-400">—</span></td>
-                                        <td className="px-3 py-2 font-bold" style={{ color: textPrimary }}>Rebates (Total)</td>
-                                        <td className="px-3 py-2"><span className="text-slate-400">—</span></td>
-                                        <td className="px-3 py-2"><span className="text-slate-400">—</span></td>
-                                        <td className="px-3 py-2 text-right font-semibold tabular-nums" style={{ color: textPrimary }}>₱{peso(branchPerfData.rebatesForCollection)}</td>
-                                        <td className="px-3 py-2 text-center font-bold tabular-nums" style={{ color: textPrimary }}>1</td>
-                                        <td className="px-3 py-2 text-right font-black tabular-nums text-emerald-600 dark:text-emerald-400">₱{peso(branchPerfData.rebatesForCollection)}</td>
-                                      </tr>
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            )
-                          }
-                          return (
-                            <div className="mt-1 text-center py-4 flex flex-col items-center justify-center gap-1">
-                              <div className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
-                                <HelpCircle className="w-3.5 h-3.5" />
-                              </div>
-                              <p className="text-[11px] font-bold" style={{ color: textMuted }}>No detailed rebates recorded today.</p>
-                            </div>
-                          )
-                        })()}
-                      </div>
-
-                    </div>
-                  )
-                })()}
-              </div>
-
-              {/* ── BRANCH INFO + PERSONNEL — 2-col ── */}
-              <div className="grid grid-cols-2 border-t" style={{ borderColor: border }}>
-                <div className="px-8 py-5 border-r" style={{ borderColor: border }}>
-                  <div className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: textMuted }}>Branch Contact</div>
-                  <div className="flex flex-col gap-2.5">
-                    {[
-                      { label: 'Address', value: selectedBranch.address || 'Not registered' },
-                      { label: 'Phone', value: selectedBranch.phone || '—' },
-                      { label: 'Email', value: selectedBranch.email || '—' },
-                    ].map(row => (
-                      <div key={row.label} className="flex gap-4">
-                        <span className="text-[11px] font-semibold w-14 shrink-0 pt-px" style={{ color: textMuted }}>{row.label}</span>
-                        <span className="text-[11px] break-all" style={{ color: textPrimary }}>{row.value}</span>
-                      </div>
-                    ))}
-                    {selectedBranch.mapUrl && (
-                      <a href={selectedBranch.mapUrl} target="_blank" rel="noopener noreferrer"
-                        className="text-[11px] font-bold hover:underline mt-1"
-                        style={{ color: selectedBranch.color || '#10B981' }}>
-                        View on Google Maps →
-                      </a>
-                    )}
-                  </div>
-                </div>
-                <div className="px-8 py-5">
-                  <div className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: textMuted }}>Assigned Personnel</div>
-                  <div className="flex flex-col gap-4">
-                    {[
-                      { label: 'OIC', value: selectedBranch.oic || 'Unassigned' },
-                      { label: 'Coordinator', value: selectedBranch.salesCoordinator || '—' },
-                    ].map(row => (
-                      <div key={row.label} className="flex gap-4">
-                        <span className="text-[11px] font-semibold w-20 shrink-0 pt-px" style={{ color: textMuted }}>{row.label}</span>
-                        <span className="text-[11px]" style={{ color: textPrimary }}>{row.value}</span>
-                      </div>
-                    ))}
-                    <div className="flex flex-col gap-2">
-                      <span className="text-[11px] font-semibold" style={{ color: textMuted }}>
-                        Installers ({selectedBranch.installers.length})
-                      </span>
-                      <PersonnelChipList names={selectedBranch.installers} emptyLabel="—" />
+                          <div className="flex flex-col gap-2">
+                            <span className="text-xs font-medium" style={{ color: textMuted }}>Drivers</span>
+                            <PersonnelChipList names={selectedBranch.drivers} emptyLabel="None assigned" />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-
-            {/* ─── FOOTER ──────────────────────────────────── */}
-            <div className="px-8 py-4 border-t flex items-center justify-between shrink-0"
-              style={{ borderColor: border, backgroundColor: isLight ? 'rgba(248,250,252,0.8)' : 'rgba(6,11,24,0.5)' }}>
-              <span className="text-[11px]" style={{ color: textMuted }}>
-                {user?.name && <>Viewing as <strong style={{ color: textPrimary }}>{user.name}</strong></>}
-              </span>
-              <button
-                onClick={() => setSelectedBranch(null)}
-                className="px-6 py-2 rounded-xl text-xs font-black uppercase tracking-wider text-white hover:opacity-90 transition-all"
-                style={{ backgroundColor: selectedBranch.color || '#10B981' }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+          )
+        })(),
+        document.body
       )}
 
       {/* ── Edit Branch Details Modal (Portal to document.body) ── */}
