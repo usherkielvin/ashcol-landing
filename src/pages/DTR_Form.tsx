@@ -41,7 +41,7 @@ interface RebateRow    { id: string; ticketNumber: string; customer: string; com
 interface OrderRow     { id: string; customer: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
 interface ExpenseRow   { id: string; name: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string; receiptImage?: string; company?: string; expenseCategory?: string; sourceOfFunds?: string }
 interface IncentiveRow { id: string; customer: string; company: string; hp: string; promodiser: string; amount: string; collectionResolved?: boolean }
-interface CashAdvanceRow { id: string; memberName: string; details: string; amount: string }
+interface CashAdvanceRow { id: string; memberName: string; details: string; amount: string; resolvedExpenseId?: string }
 interface DepositRow   { id: string; description: string; referenceNo: string; amount: string; receiptImage?: string; bank?: string; resolvedExpenseId?: string }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -263,6 +263,9 @@ const mkExp  = (): ExpenseRow  => ({ id: uid(), name: '', description: '', amoun
 const mkInc  = (): IncentiveRow => ({ id: uid(), customer: '', company: '', hp: '', promodiser: '', amount: '', collectionResolved: false })
 const mkComm = (): CommissionRow => ({ id: uid(), ticketNumber: '', store: '', diser: '', customer: '', brand: '', hp: '', dateInstalled: '', amount: '' })
 const mkCashAdv = (): CashAdvanceRow => ({ id: uid(), memberName: '', details: '', amount: '' })
+/** DTRs dated on/after this must have complete receipt documentation (see handleDtrSubmit). */
+const DOCUMENTATION_REQUIRED_FROM = '2026-10-01'
+
 const mkDeposit = (): DepositRow => ({ id: uid(), description: '', referenceNo: '', amount: '', receiptImage: '' })
 
 // Temporarily hidden: saving a report with INCENTIVE items crashes the production backend
@@ -1217,7 +1220,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
               id: uid(),
               memberName: parts[0] ? formatDisplayUserLabel(parts[0]) : '',
               details: parts[1] || '',
-              amount: amt
+              amount: amt,
+              resolvedExpenseId: item.resolvedExpenseId || ''
             })
           } else if (type === 'DEPOSIT') {
             depositsList.push({
@@ -1980,6 +1984,12 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           : r
       )
       setDeposits(depositsForSave)
+      const cashAdvForSave = cashAdvances.map(r =>
+        (r.memberName || r.amount) && !r.resolvedExpenseId
+          ? { ...r, resolvedExpenseId: `dtr-${expenseBranchKey}-${reportDate}-ca-${r.id}` }
+          : r
+      )
+      setCashAdvances(cashAdvForSave)
 
       // Build unified items array from all DTR sections
       const dtrItems: object[] = [
@@ -2011,10 +2021,11 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           resolvedExpenseId: r.resolvedExpenseId || null,
           receiptImage: r.receiptImage || null
         })),
-        ...cashAdvances.filter(r => r.memberName || r.amount).map(r => ({
+        ...cashAdvForSave.filter(r => r.memberName || r.amount).map(r => ({
           type: 'CASH_ADVANCE',
           description: `${r.memberName}|${r.details}`,
           amount: parseFloat(r.amount) || 0,
+          resolvedExpenseId: r.resolvedExpenseId || null,
         })),
         ...depositsForSave.filter(r => r.description || r.referenceNo || r.amount).map(r => ({
           type: 'DEPOSIT',
@@ -2185,6 +2196,30 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           }
         }
 
+        for (const row of cashAdvForSave.filter(r => (r.memberName || r.amount) && r.resolvedExpenseId)) {
+          try {
+            await upsertAuditExpense({
+              id: row.resolvedExpenseId!,
+              branchId: selectedBranchId || user?.branchId || '',
+              branchName: branchName || '',
+              date: formatExpenseDate(),
+              incurredBy: (row.memberName || user?.name || 'STAFF').trim().toUpperCase(),
+              description: `CASH ADVANCE${row.details ? `: ${row.details.trim()}` : ''}`,
+              company: '',
+              receiptNo: '',
+              amount: parseFloat(String(row.amount).replace(/,/g, '')) || 0,
+              expenseCategory: 'CASH ADVANCED' as AuditExpenseCategory,
+              sourceOfFunds: 'CASH',
+              receiptImageUri: '',
+              createdAt: '',
+              updatedAt: '',
+              updateHistory: []
+            })
+          } catch (err) {
+            console.error('[DTR→AuditExpenses] Failed to push cash advance:', err)
+          }
+        }
+
         for (const row of depositsForSave.filter(r => r.description || r.referenceNo || r.amount)) {
           try {
             await pushDepositToExpenses(row)
@@ -2224,6 +2259,27 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       return
     }
     setError(null)
+
+    // From October 2026 every DTR must reconcile with Expense Records: each expense and deposit
+    // needs its photo, and deposits to HO belong in COH Deposit, not in Expenses.
+    if (reportDate >= DOCUMENTATION_REQUIRED_FROM) {
+      const issues: string[] = []
+      const looksLikeDeposit = (t: string) => /deposit|\bcoh\b|\bho\b|head\s*office/i.test(t)
+      const expRows = expReceipt.filter(r => num(r.amount) > 0)
+      const noPhoto = expRows.filter(r => !r.receiptImage).length
+      if (noPhoto) issues.push(`${noPhoto} expense${noPhoto === 1 ? '' : 's'} with no receipt photo — use Scan on each row`)
+      const depositAsExpense = expRows.filter(r => looksLikeDeposit(`${r.name} ${r.description}`)).length
+      if (depositAsExpense) issues.push(`${depositAsExpense} deposit${depositAsExpense === 1 ? '' : 's'} entered under Expenses — move ${depositAsExpense === 1 ? 'it' : 'them'} to COH Deposit`)
+      const depNoSlip = deposits.filter(r => num(r.amount) > 0 && !r.receiptImage).length
+      if (depNoSlip) issues.push(`${depNoSlip} COH deposit${depNoSlip === 1 ? '' : 's'} with no deposit slip photo`)
+      const expNoName = expRows.filter(r => !r.name.trim() || !r.description.trim()).length
+      if (expNoName) issues.push(`${expNoName} expense${expNoName === 1 ? '' : 's'} missing a name or description`)
+      if (issues.length > 0) {
+        setError(`Before submitting: ${issues.join('; ')}.`)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+        return
+      }
+    }
 
     if (!reviewMode && !reportId) {
       setReviewStartedAt(new Date())
@@ -3132,7 +3188,12 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                       </td>
                       {canSubmit && !reviewMode && (
                         <td className={tableTd + ' text-center'}>
-                          <DelBtn onClick={() => setCashAdvances(p => p.filter(r => r.id !== row.id))} />
+                          <DelBtn onClick={() => {
+                            if (row.resolvedExpenseId) {
+                              deleteAuditExpense(row.resolvedExpenseId).catch(err => console.error('[DTR] Failed to delete cash advance record:', err))
+                            }
+                            setCashAdvances(p => p.filter(r => r.id !== row.id))
+                          }} />
                         </td>
                       )}
                     </tr>

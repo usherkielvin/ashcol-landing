@@ -44,7 +44,7 @@ export interface AuditExpenseExcelImportResult {
 /** General, company-wide categories — keep this short so members can always find the right one. */
 /** General, company-wide categories — keep this short so members can always find the right one. */
 export const AUDIT_EXPENSE_CATEGORIES: AuditExpenseCategory[] = [
-  'CASH ADVANCE',
+  'CASH ADVANCED',
   'DELIVERY & FREIGHT',
   'DEPOSIT',
   'FUND TRANSFER',

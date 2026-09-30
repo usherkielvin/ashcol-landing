@@ -76,6 +76,9 @@ export default function AuditFinanceExpenses() {
     ? `${user?.name || user?.email} - ${user.jobTitle}`
     : `${user?.name || user?.email || 'STAFF'} - ${formatRole(user?.role || 'USER')}`
   const isAdmin = isPortalAdmin(role)
+  // Branch members enter expenses on the DTR (which creates the record), so Expense Records and the
+  // DTR always match. Only admins/management/managers add records here directly.
+  const canAddRecord = isAdmin || role === 'manager'
   const isManager = role === 'manager'
   const isBranchScopedUser = !isAdmin && !!user?.branchId
   const canAccess = isAdmin || isManager || role === 'staff' || role === 'employee' || role === 'oic'
@@ -582,11 +585,13 @@ export default function AuditFinanceExpenses() {
     return { ids, groups }
   }, [branchExpenses])
   const [showDupesOnly, setShowDupesOnly] = useState(false)
+  const [showNoPhotoOnly, setShowNoPhotoOnly] = useState(false)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     let rows = [...branchExpenses]
     if (showDupesOnly) rows = rows.filter(e => duplicateInfo.ids.has(e.id))
+    if (showNoPhotoOnly) rows = rows.filter(e => !e.receiptImageUri && !/^CASH ADVANCE/i.test(e.expenseCategory || ''))
 
     if (filterMonth !== 'All') {
       rows = rows.filter(e => {
@@ -631,7 +636,7 @@ export default function AuditFinanceExpenses() {
     }
 
     return rows
-  }, [branchExpenses, search, sortConfig, filterMonth, showDupesOnly, duplicateInfo])
+  }, [branchExpenses, search, sortConfig, filterMonth, showDupesOnly, showNoPhotoOnly, duplicateInfo])
 
   const totalFiltered = filtered.reduce((s, e) => s + e.amount, 0)
 
@@ -694,6 +699,93 @@ export default function AuditFinanceExpenses() {
   const recordsForDtr = useMemo(() => periodRecords.filter(e => !isDepositRecord(e)), [periodRecords])
   const recordsTotalForDtr = recordsForDtr.reduce((sum, e) => sum + e.amount, 0)
   const depositsForDtr = periodRecords.filter(isDepositRecord).reduce((sum, e) => sum + e.amount, 0)
+  // DTR expense + purchase lines for the period, used to explain Records vs DTR line by line.
+  type DtrLine = { id: string; type?: string; description: string; amount: number; actualAmount?: number; receiptReturned?: boolean; resolvedExpenseId?: string; reportDate?: string }
+  const [dtrLines, setDtrLines] = useState<{ loading: boolean; rows: DtrLine[]; failed: boolean }>({ loading: false, rows: [], failed: false })
+  useEffect(() => {
+    if (!branchId || !dtrPeriod) { setDtrLines({ loading: false, rows: [], failed: false }); return }
+    let cancelled = false
+    setDtrLines(prev => ({ ...prev, loading: true, failed: false }))
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    const params = new URLSearchParams({ branchId: branchId.replace(/-(sales|services?)$/i, '') })
+    if (/-services?$/i.test(branchId)) params.set('auditLine', 'TAGUIG_SERVICE')
+    else if (/-sales$/i.test(branchId)) params.set('auditLine', 'TAGUIG_SALES')
+    fetch(`${API_BASE_URL}/v1/reports/purchases?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((rows: any[]) => {
+        if (cancelled) return
+        const inPeriod = (rows || []).filter(r => r.reportDate && r.reportDate >= dtrPeriod.from && r.reportDate <= dtrPeriod.to)
+          // ORDER| purchases are customer orders, not counted in the DTR's Purchases total.
+          .filter(r => !String(r.description || '').startsWith('ORDER|'))
+          .map(r => ({ ...r, amount: Number(r.amount) || 0, actualAmount: Number(r.actualAmount) || 0 })) as DtrLine[]
+        setDtrLines({ loading: false, rows: inPeriod, failed: false })
+      })
+      .catch(err => {
+        console.error('[Expense Records] DTR lines fetch failed:', err)
+        if (!cancelled) setDtrLines({ loading: false, rows: [], failed: true })
+      })
+    return () => { cancelled = true }
+  }, [branchId, dtrPeriod])
+
+  const reconciliation = useMemo(() => {
+    if (!dtrPeriod) return null
+    const byId = new Map(branchExpenses.map(e => [e.id, e]))
+    const from = new Date(`${dtrPeriod.from}T00:00:00`).getTime()
+    const to = new Date(`${dtrPeriod.to}T23:59:59`).getTime()
+    type Item = { key: string; date: string; label: string; amount: number; note?: string }
+    const buckets = {
+      depositAsExpense: [] as Item[],
+      pendingPurchase: [] as Item[],
+      neverPushed: [] as Item[],
+      deleted: [] as Item[],
+      otherMonth: [] as Item[],
+      amountDiff: [] as Item[],
+      manual: [] as Item[],
+    }
+    const linked = new Set<string>()
+    const lineLabel = (d: string) => d.split('|').filter(Boolean).join(' — ') || 'DTR entry'
+    let expenseLinesTotal = 0
+    for (const l of dtrLines.rows) {
+      if (l.type === 'EXPENSE') expenseLinesTotal += l.amount
+      const label = `${l.type === 'PURCHASE' ? 'Purchase' : l.type === 'EXPENSE' ? 'Expense' : 'DTR'}: ${lineLabel(l.description)}`
+      const item: Item = { key: l.id, date: l.reportDate || '', label, amount: l.amount }
+      const rid = l.resolvedExpenseId || ''
+      // Before the DTR had a COH Deposit section, deposits to HO were logged as expense rows. They count in
+      // DTR Expenses, while the matching record is a DEPOSIT (left out of the records total).
+      const linkedRec = rid ? byId.get(rid) : undefined
+      const looksLikeDeposit = /deposit|\bcoh\b|\bho\b|head\s*office|fund\s*transfer/i.test(l.description) || (!!linkedRec && isDepositRecord(linkedRec))
+      if (l.type !== 'PURCHASE' && looksLikeDeposit) {
+        if (rid) linked.add(rid)
+        buckets.depositAsExpense.push({ ...item, note: linkedRec ? `record: ${linkedRec.expenseCategory}` : 'no record' })
+        continue
+      }
+      if (!rid) {
+        if (l.type === 'PURCHASE' && !l.receiptReturned) buckets.pendingPurchase.push(item)
+        else buckets.neverPushed.push(item)
+        continue
+      }
+      linked.add(rid)
+      const rec = byId.get(rid)
+      if (!rec) { buckets.deleted.push(item); continue }
+      const t = dateToTime(rec.date)
+      if (t && (t < from || t > to)) { buckets.otherMonth.push({ ...item, note: `recorded as ${rec.date}` }); continue }
+      const expected = l.type === 'PURCHASE' && l.receiptReturned && l.actualAmount ? l.actualAmount : l.amount
+      if (Math.abs(rec.amount - expected) >= 0.01) {
+        buckets.amountDiff.push({ ...item, amount: expected - rec.amount, note: `DTR ${expected.toFixed(2)} · record ${rec.amount.toFixed(2)}` })
+      }
+    }
+    for (const e of recordsForDtr) {
+      if (/^CASH ADVANCE/i.test(e.expenseCategory || '') && e.id.includes('-ca-')) continue
+      if (!linked.has(e.id)) buckets.manual.push({ key: e.id, date: e.date, label: `${e.expenseCategory}: ${e.description || e.company || 'Record'}`, amount: e.amount })
+    }
+    const hasTypes = dtrLines.rows.some(l => !!l.type)
+    const recordedAdvances = recordsForDtr.filter(e => /^CASH ADVANCE/i.test(e.expenseCategory || '')).reduce((acc, e) => acc + e.amount, 0)
+    const cashAdvance = hasTypes && dtrExpenses.total != null ? Math.max(0, dtrExpenses.total - expenseLinesTotal - recordedAdvances) : 0
+    const sum = (list: Item[]) => list.reduce((acc, i) => acc + i.amount, 0)
+    return { buckets, cashAdvance, sum }
+  }, [dtrPeriod, branchExpenses, dtrLines.rows, recordsForDtr, dtrExpenses.total])
+  const [openBucket, setOpenBucket] = useState<string | null>(null)
+
   // Duplicates inside the period: every copy after the first is the amount possibly counted twice.
   const periodDupes = useMemo(() => {
     const inPeriod = new Set(periodRecords.map(e => e.id))
@@ -798,10 +890,19 @@ export default function AuditFinanceExpenses() {
 
   const submitReceipt = async () => {
     if (!branchId) return
+    if (!editing && !canAddRecord) { alert('Add branch expenses through the DTR — it creates the Expense Record for you.'); return }
     const amount = parseFloat(form.amount.replace(/,/g, ''))
     if (!form.company.trim() && !form.description.trim()) { alert('Enter company or description.'); return }
     if (!amount || amount <= 0) { alert('Enter a valid amount.'); return }
     if (!form.date.trim()) { alert('Enter a valid date.'); return }
+    {
+      const d = new Date(parseSmartDate(form.date.trim()) || form.date.trim())
+      const needsPhoto = !isNaN(d.getTime()) && d >= new Date('2026-10-01T00:00:00')
+      if (needsPhoto && !uploadedReceiptUrl && !editing?.receiptImageUri) {
+        alert('Attach a photo of the receipt. From October 2026 every expense record needs its receipt.')
+        return
+      }
+    }
 
     // Check future date
     const parsedDate = parseSmartDate(form.date.trim())
@@ -1293,6 +1394,12 @@ export default function AuditFinanceExpenses() {
               <>
                 {/* Desktop actions */}
                 <div className="hidden sm:flex items-center gap-2 shrink-0">
+                  {!canAddRecord && (
+                    <span className="text-[11px] font-semibold px-3 py-2 rounded-lg" style={{ color: textMuted, border: `1px solid ${border}` }}>
+                      Add expenses through the DTR
+                    </span>
+                  )}
+                  {canAddRecord && (
                   <button
                     type="button"
                     onClick={() => {
@@ -1307,6 +1414,7 @@ export default function AuditFinanceExpenses() {
                   >
                     {showForm ? <><X size={13} /> Close</> : <><Plus size={13} /> Add Record</>}
                   </button>
+                  )}
                 </div>
 
                 {/* Hidden inputs */}
@@ -1317,7 +1425,12 @@ export default function AuditFinanceExpenses() {
         </div>
 
         {/* Mobile: 3-column action grid */}
-        {activeTab === 'expenses' && (
+        {activeTab === 'expenses' && !canAddRecord && (
+          <div className="sm:hidden w-full text-center text-[11px] font-semibold px-3 py-2 rounded-lg" style={{ color: textMuted, border: `1px solid ${border}` }}>
+            Add expenses through the DTR
+          </div>
+        )}
+        {activeTab === 'expenses' && canAddRecord && (
           <div className="grid grid-cols-2 gap-2 sm:hidden w-full">
             <button
               type="button"
@@ -1790,7 +1903,11 @@ export default function AuditFinanceExpenses() {
         const hasDtr = dtrExpenses.matched && !dtrExpenses.loading && dtrExpenses.total != null
         // Expense Records hold both expenses and resolved purchases (materials), so compare them with
         // the DTR's Expenses + Purchases, not Expenses alone.
-        const dtrSpend = (dtrExpenses.total || 0) + dtrExpenses.purchases
+        const purchaseLines = dtrLines.rows.filter(l => l.type === 'PURCHASE')
+        const linesTyped = dtrLines.rows.some(l => !!l.type)
+        const resolvedPurchases = purchaseLines.filter(l => l.receiptReturned).reduce((acc, l) => acc + (l.actualAmount || l.amount), 0)
+        const pendingPurchases = purchaseLines.filter(l => !l.receiptReturned).reduce((acc, l) => acc + l.amount, 0)
+        const dtrSpend = (dtrExpenses.total || 0) + (linesTyped ? resolvedPurchases : dtrExpenses.purchases)
         const diff = hasDtr ? recordsTotalForDtr - dtrSpend : null
         const balanced = diff != null && Math.abs(diff) < 0.005
         const diffColor = diff == null ? textMuted : balanced ? accent : danger
@@ -1823,7 +1940,10 @@ export default function AuditFinanceExpenses() {
             <div className="p-3 grid grid-cols-2 lg:grid-cols-4 gap-2">
               {stat('Expense Records', fmt(recordsTotalForDtr), textPrimary, `${recordsForDtr.length} record${recordsForDtr.length === 1 ? '' : 's'} · excl. deposits`)}
               {stat('DTR Expenses + Purchases', dtrExpenses.loading ? 'Loading…' : !hasDtr ? 'Unavailable' : fmt(dtrSpend), textPrimary,
-                dtrExpenses.loading ? undefined : !dtrExpenses.matched ? 'No DTR found for this branch' : `Expenses ${fmt(dtrExpenses.total || 0)} · Purchases ${fmt(dtrExpenses.purchases)}`)}
+                dtrExpenses.loading ? undefined : !dtrExpenses.matched ? 'No DTR found for this branch'
+                  : linesTyped
+                    ? `Expenses ${fmt(dtrExpenses.total || 0)} · Purchases w/ receipt ${fmt(resolvedPurchases)}${pendingPurchases > 0 ? ` · ${fmt(pendingPurchases)} awaiting receipt (not counted)` : ''}`
+                    : `Expenses ${fmt(dtrExpenses.total || 0)} · Purchases ${fmt(dtrExpenses.purchases)}`)}
               {stat('Difference', diff == null ? '—' : signed(diff), diffColor, 'Records − DTR')}
               {stat('Possible Duplicates', periodDupes.rows === 0 ? 'None' : `${periodDupes.rows} rows`, periodDupes.rows === 0 ? accent : danger,
                 periodDupes.rows === 0 ? 'No repeated receipts found' : (
@@ -1832,7 +1952,8 @@ export default function AuditFinanceExpenses() {
                   </button>
                 ))}
             </div>
-            <div className="mx-3 mb-3 w-fit max-w-full rounded-lg px-3 py-1.5 flex items-center gap-3" style={{ border: `1px solid ${accent}44`, backgroundColor: `${accent}0d` }}>
+            <div className="mx-3 mb-3 flex flex-wrap items-stretch gap-2">
+            <div className="w-fit max-w-full rounded-lg px-3 py-1.5 flex items-center gap-3" style={{ border: `1px solid ${accent}44`, backgroundColor: `${accent}0d` }}>
               <div className="flex flex-col">
                 <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: accent }}>Deposit to HO</span>
                 <span className="text-[10px]" style={{ color: textMuted }}>
@@ -1843,6 +1964,28 @@ export default function AuditFinanceExpenses() {
               </div>
               <span className="text-base font-black tabular-nums" style={{ color: textPrimary }}>{fmt(hasDtr ? dtrExpenses.deposits : depositsForDtr)}</span>
             </div>
+            {(() => {
+              // Cash advances have no receipt, so they are not expected to carry a photo.
+              const noPhoto = periodRecords.filter(e => !e.receiptImageUri && !/^CASH ADVANCE/i.test(e.expenseCategory || ''))
+              const ok = noPhoto.length === 0
+              const c = ok ? accent : '#d97706'
+              return (
+                <div className="w-fit max-w-full rounded-lg px-3 py-1.5 flex items-center gap-3" style={{ border: `1px solid ${c}44`, backgroundColor: `${c}0d` }}>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: c }}>Receipt photos</span>
+                    <span className="text-[10px]" style={{ color: textMuted }}>
+                      {ok ? 'Every record has its receipt' : (
+                        <button type="button" onClick={() => setShowNoPhotoOnly(v => !v)} className="font-bold underline cursor-pointer" style={{ color: c }}>
+                          {showNoPhotoOnly ? 'show all records' : 'show records without a photo'}
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                  <span className="text-base font-black tabular-nums" style={{ color: textPrimary }}>{ok ? '✓' : `${noPhoto.length} missing`}</span>
+                </div>
+              )
+            })()}
+            </div>
             {byCategory.length > 0 && (
               <div className="px-3 pb-3 flex flex-wrap gap-1.5">
                 {byCategory.map(([cat, amt]) => (
@@ -1852,6 +1995,71 @@ export default function AuditFinanceExpenses() {
                 ))}
               </div>
             )}
+
+            {/* Why the difference? — each DTR line matched to its Expense Record */}
+            {hasDtr && reconciliation && (() => {
+              const { buckets, cashAdvance, sum } = reconciliation
+              const rows: { id: string; title: string; hint: string; list: typeof buckets.manual; amount: number; side: 'dtr' | 'records' }[] = [
+                { id: 'depositAsExpense', title: 'Deposits to HO entered as expenses', hint: 'Logged as DTR expense rows before the COH Deposit section existed. They inflate DTR Expenses; move them to COH Deposit on those DTRs.', list: buckets.depositAsExpense, amount: sum(buckets.depositAsExpense), side: 'dtr' },
+                { id: 'pendingPurchase', title: 'Purchases waiting for receipt', hint: 'Not counted in the comparison until the receipt is returned — resolve them in Purchases so they become records.', list: buckets.pendingPurchase, amount: sum(buckets.pendingPurchase), side: 'dtr' },
+                { id: 'neverPushed', title: 'DTR entries with no record', hint: 'Saved on the DTR but never sent to Expense Records (older DTRs or imported totals). Re-save the DTR to push them.', list: buckets.neverPushed, amount: sum(buckets.neverPushed), side: 'dtr' },
+                { id: 'deleted', title: 'Records deleted', hint: 'The DTR entry was linked to a record that has since been deleted.', list: buckets.deleted, amount: sum(buckets.deleted), side: 'dtr' },
+                { id: 'otherMonth', title: 'Recorded in a different month', hint: 'The record’s receipt date falls outside this month, so it is counted elsewhere.', list: buckets.otherMonth, amount: sum(buckets.otherMonth), side: 'dtr' },
+                { id: 'amountDiff', title: 'Amount differs', hint: 'The DTR amount and the record amount do not match (positive = DTR higher).', list: buckets.amountDiff, amount: sum(buckets.amountDiff), side: 'dtr' },
+                { id: 'manual', title: 'Records not on any DTR', hint: 'Added directly in Expense Records — they raise the records total.', list: buckets.manual, amount: sum(buckets.manual), side: 'records' },
+              ]
+              const visible = rows.filter(r => r.list.length > 0)
+              return (
+                <div className="mx-3 mb-3 rounded-lg overflow-hidden" style={{ border: `1px solid ${border}` }}>
+                  <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
+                    <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: textPrimary }}>Why the difference?</span>
+                    {dtrLines.loading && <span className="text-[10px]" style={{ color: textMuted }}>Checking DTR entries…</span>}
+                    {dtrLines.failed && <span className="text-[10px]" style={{ color: danger }}>Could not load DTR entries</span>}
+                  </div>
+                  {cashAdvance > 0.005 && (
+                    <div className="px-3 py-2 flex items-center justify-between gap-3 text-xs" style={{ borderBottom: `1px solid ${border}` }}>
+                      <div className="flex flex-col">
+                        <span className="font-bold" style={{ color: textPrimary }}>Cash advances on the DTR</span>
+                        <span className="text-[10px]" style={{ color: textMuted }}>Counted in DTR Expenses, but not kept in Expense Records.</span>
+                      </div>
+                      <span className="font-black tabular-nums" style={{ color: danger }}>-{fmt(cashAdvance)}</span>
+                    </div>
+                  )}
+                  {!dtrLines.loading && visible.length === 0 && cashAdvance <= 0.005 && (
+                    <div className="px-3 py-2 text-xs" style={{ color: textMuted }}>Every DTR entry matches a record.</div>
+                  )}
+                  {visible.map(r => {
+                    const open = openBucket === r.id
+                    const color = r.side === 'records' ? accent : danger
+                    return (
+                      <div key={r.id} style={{ borderBottom: `1px solid ${border}` }}>
+                        <button type="button" onClick={() => setOpenBucket(open ? null : r.id)} className="w-full px-3 py-2 flex items-center justify-between gap-3 text-left text-xs cursor-pointer hover:bg-black/5 dark:hover:bg-white/5">
+                          <div className="flex flex-col min-w-0">
+                            <span className="font-bold" style={{ color: textPrimary }}>{r.title} <span style={{ color: textMuted }}>· {r.list.length}</span></span>
+                            <span className="text-[10px]" style={{ color: textMuted }}>{r.hint}</span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="font-black tabular-nums" style={{ color }}>{r.side === 'records' ? '+' : '-'}{fmt(Math.abs(r.amount))}</span>
+                            <ChevronDown size={13} style={{ color: textMuted, transform: open ? 'rotate(180deg)' : undefined }} />
+                          </div>
+                        </button>
+                        {open && (
+                          <div className="px-3 pb-2 max-h-56 overflow-y-auto">
+                            {r.list.map(i => (
+                              <div key={i.key} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
+                                <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{i.date}</span>
+                                <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={i.label}>{i.label}{i.note && <span style={{ color: textMuted }}> · {i.note}</span>}</span>
+                                <span className="shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{fmt(i.amount)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
           </div>
         )
       })()}
