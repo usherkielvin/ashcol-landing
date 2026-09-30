@@ -721,11 +721,12 @@ export default function OperationsForms() {
     setActionDialog({ action: 'CANCELLED', type, id, label: label && label !== '—' ? label : TAB_LABELS[type], note: '', busy: false })
   }
 
-  const performCancel = async (type: TabId, id: string, note: string) => {
+  const performArchiveAction = async (action: 'RELEASED' | 'CANCELLED', type: TabId, id: string, note: string) => {
+    const verb = action === 'RELEASED' ? 'release' : 'cancel'
     const endpoints: Record<TabId, string> = {
-      'cash-advance': `${API_BASE_URL}/hris/cash-advances/${id}/cancel`,
-      budget: `${API_BASE_URL}/operations/budget-requests/${id}/cancel`,
-      overtime: `${API_BASE_URL}/operations/overtime-requests/${id}/cancel`,
+      'cash-advance': `${API_BASE_URL}/hris/cash-advances/${id}/${verb}`,
+      budget: `${API_BASE_URL}/operations/budget-requests/${id}/${verb}`,
+      overtime: `${API_BASE_URL}/operations/overtime-requests/${id}/${verb}`,
     }
     try {
       const res = await fetch(endpoints[type], {
@@ -745,7 +746,7 @@ export default function OperationsForms() {
         fetchAll()
       } else {
         const errText = await res.text().catch(() => '')
-        let message = 'Failed to cancel request.'
+        let message = `Failed to ${verb} request.`
         try {
           const json = JSON.parse(errText)
           message = json.message || json.error || errText
@@ -755,7 +756,7 @@ export default function OperationsForms() {
         setError(message)
       }
     } catch (err: any) {
-      setError(err?.message || 'Failed to cancel request.')
+      setError(err?.message || `Failed to ${verb} request.`)
     }
   }
 
@@ -2006,6 +2007,7 @@ export default function OperationsForms() {
             {!isAdmin && canCancelRequest(contextMenu.row) && (
               <>
                 <div style={{ borderTop: `1px solid ${border}` }} className="my-1" />
+                <MenuItem icon={Check} label="Release" color="#10B981" onClick={() => { closeContextMenu(); requestRelease(contextMenu.row.type, contextMenu.row.id) }} />
                 <MenuItem icon={X} label="Cancel Request" color="#dc2626" onClick={() => { closeContextMenu(); requestCancelRecord(contextMenu.row.type, contextMenu.row.id, contextMenu.row.detail) }} />
               </>
             )}
@@ -2213,9 +2215,9 @@ export default function OperationsForms() {
                       className="rounded-2xl p-3 flex flex-col gap-2"
                       style={{ backgroundColor: paperBg, border: `1px solid ${border}` }}
                     >
-                      {isAdmin && canCancelRequest(rec) && (
+                      {canCancelRequest(rec) && (
                         <div className="flex items-center gap-2">
-                          <button type="button" className={btn} style={{ backgroundColor: '#8b5cf6' }} onClick={() => requestRelease(modal.type, rec.id)}>
+                          <button type="button" className={btn} style={{ backgroundColor: accent }} onClick={() => requestRelease(modal.type, rec.id)}>
                             <Check className="w-3.5 h-3.5" /> Release
                           </button>
                         </div>
@@ -3056,16 +3058,14 @@ export default function OperationsForms() {
                           >
                             <X className="w-3.5 h-3.5" /> Cancel
                           </button>
-                          {isAdmin && (
-                            <button
-                              type="button"
-                              onClick={() => requestRelease(modal.type, rec.id)}
-                              className="inline-flex items-center gap-1.5 px-5 h-10 rounded-xl text-xs font-bold text-white hover:opacity-90 transition-opacity cursor-pointer"
-                              style={{ backgroundColor: accent }}
-                            >
-                              <Check className="w-3.5 h-3.5" /> Release
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => requestRelease(modal.type, rec.id)}
+                            className="inline-flex items-center gap-1.5 px-5 h-10 rounded-xl text-xs font-bold text-white hover:opacity-90 transition-opacity cursor-pointer"
+                            style={{ backgroundColor: accent }}
+                          >
+                            <Check className="w-3.5 h-3.5" /> Release
+                          </button>
                         </div>
                       )}
                     </div>
@@ -3145,8 +3145,7 @@ export default function OperationsForms() {
                   onClick={async () => {
                     const { action, type, id, note } = actionDialog
                     setActionDialog({ ...actionDialog, busy: true })
-                    if (action === 'RELEASED') await handleStatusUpdate(type, id, 'RELEASED', undefined, note)
-                    else await performCancel(type, id, note)
+                    await performArchiveAction(action, type, id, note)
                     setActionDialog(null)
                   }}
                   className="px-5 py-2 rounded-xl text-xs font-bold text-white flex items-center gap-1.5 shadow-sm hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
