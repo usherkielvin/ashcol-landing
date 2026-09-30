@@ -23,9 +23,9 @@ import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDia
 import { fetchAndMapTickets, fetchAndMapOnlineTickets, fetchAndMapCheckTickets, fetchAndMapForCollTickets, fetchAndMapRebateTickets, fetchAndMapCommissionTickets, fetchAndCountUnitSummary, lookupRebateRate, type CommissionRow } from '../utils/schedulePrefill'
 import { DtrHistoryModal } from '../components/DtrHistoryModal'
 import ReceiptScanDialog, { type ReceiptDialogResult } from '../components/ReceiptScanDialog'
-import { upsertAuditExpense, deleteAuditExpense } from '../utils/auditExpenseStorage'
+import { upsertAuditExpense, deleteAuditExpense, loadAuditExpenses } from '../utils/auditExpenseStorage'
 import { parseSmartDate } from '../utils/smartDate'
-import type { AuditExpenseCategory } from '../types/auditExpense'
+import type { AuditExpense, AuditExpenseCategory } from '../types/auditExpense'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -497,6 +497,10 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const userInitiatedDateChange = useRef(false)
   const branchEmployeeNamesRef = useRef<string[]>([])
   const existingReportLookupCache = useRef<Map<string, any | null>>(new Map())
+  // Expense Records linked to the loaded DTR's rows — the source of category/company/source when a row
+  // (saved without them) is reopened, so a re-save never overwrites real values with defaults.
+  const linkedExpenseCache = useRef<Map<string, AuditExpense>>(new Map())
+  const linkedExpenseLoad = useRef<Promise<void>>(Promise.resolve())
 
   const lookupCacheKey = (date: string, branchId = selectedBranchId, auditLine = selectedAuditLine) =>
     `${branchId}|${auditLine || ''}|${date}`
@@ -719,6 +723,10 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const [cashRet, setCashRet]   = useState<CashRetRow[]>([mkRet()])
   // Fund Transfer from HO
   const [cashOnHand, setCashOnHand]     = useState('')
+  // Ending balance of the most recent earlier DTR — cash on hand must chain from it.
+  const [prevDayCoh, setPrevDayCoh]     = useState<{ amount: number; date: string } | null>(null)
+  // Admin acknowledgement that a cash-on-hand mismatch with the previous DTR is intentional.
+  const [cohOverrideAck, setCohOverrideAck] = useState(false)
   const [fundFromHo, setFundFromHo]     = useState('')
   // Online Transactions
   const [onlineTx, setOnlineTx]         = useState<OnlineTxRow[]>([mkOnl()])
@@ -823,6 +831,24 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     invalidateLookupCache()
   }, [selectedBranchId, selectedAuditLine])
 
+  // Reference balance for the cash-on-hand chain check (new and reopened reports alike).
+  useEffect(() => {
+    setCohOverrideAck(false)
+    if (!selectedBranchId || !/^\d{4}-\d{2}-\d{2}$/.test(reportDate) || reportDate < DOCUMENTATION_REQUIRED_FROM) {
+      setPrevDayCoh(null)
+      return
+    }
+    let cancelled = false
+    findPreviousDayCoh(selectedBranchId, selectedAuditLine, reportDate)
+      .then(prev => { if (!cancelled) setPrevDayCoh(prev) })
+      .catch(err => {
+        console.error('[prevDayCoh] Failed to load previous DTR balance:', err)
+        if (!cancelled) setPrevDayCoh(null)
+      })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBranchId, selectedAuditLine, reportDate])
+
   useEffect(() => {
     if (!selectedBranchId) return
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -842,13 +868,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           // No report yet for this date — prefill COH from yesterday's ending balance (already net
           // of any bank deposit recorded that day) instead of leaving staff to retype it from memory.
           try {
-            const { year, month, day } = getIsoDateParts(reportDate)
-            const prevDateObj = new Date(year, month - 1, day - 1)
-            const prevDateStr = `${prevDateObj.getFullYear()}-${String(prevDateObj.getMonth() + 1).padStart(2, '0')}-${String(prevDateObj.getDate()).padStart(2, '0')}`
-            const prevReport = await lookupExistingReport(prevDateStr, { skipCache: true })
-            if (prevReport?.totalCohCfd != null) {
-              setCashOnHand(String(prevReport.totalCohCfd))
-            }
+            const prev = await findPreviousDayCoh(selectedBranchId, selectedAuditLine, reportDate)
+            if (prev) setCashOnHand(String(prev.amount))
           } catch (err) {
             console.error('[loadDateData] Failed to prefill COH from previous day:', err)
           }
@@ -1353,6 +1374,28 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         })
       }
       setExpReceipt(expReceiptList.length > 0 ? expReceiptList : [mkExp()])
+      linkedExpenseCache.current = new Map()
+      linkedExpenseLoad.current = Promise.resolve()
+      const linkedIds = new Set(expReceiptList.map(r => r.resolvedExpenseId).filter(Boolean) as string[])
+      if (linkedIds.size > 0) {
+        linkedExpenseLoad.current = loadAuditExpenses().then(all => {
+          const byId = new Map(all.filter(e => linkedIds.has(e.id)).map(e => [e.id, e] as const))
+          linkedExpenseCache.current = byId
+          setExpReceipt(prev => prev.map(r => {
+            const rec = r.resolvedExpenseId ? byId.get(r.resolvedExpenseId) : undefined
+            if (!rec) return r
+            return {
+              ...r,
+              company: r.company || rec.company || '',
+              expenseCategory: r.expenseCategory || rec.expenseCategory || '',
+              sourceOfFunds: r.sourceOfFunds || rec.sourceOfFunds || '',
+              receiptDate: r.receiptDate || rec.date || '',
+            }
+          }))
+        }).catch(err => {
+          console.error('[fetchReportDetails] Failed to load linked expense records:', err)
+        })
+      }
       setCashAdvances(cashAdvancesList.length > 0 ? cashAdvancesList : [mkCashAdv()])
       setDeposits(depositsList)
 
@@ -1440,6 +1483,29 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     setServicedUnits('0')
     setCancelledUnits('0')
     setFreeInstallUnits('0')
+  }
+
+  // Walks back from `date` (up to 7 days, so Mondays see Saturday's DTR) to the latest earlier DTR.
+  // Plain fetch on purpose: it must not touch existingReportLookupCache, which is keyed by the selected branch.
+  const findPreviousDayCoh = async (branchId: string, auditLine: string | null, date: string) => {
+    if (!branchId || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    const { year, month, day } = getIsoDateParts(date)
+    for (let back = 1; back <= 7; back++) {
+      const d = new Date(year, month - 1, day - back)
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      const params = new URLSearchParams({ branchId, date: dateStr })
+      if (auditLine) params.set('auditLine', auditLine)
+      const res = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/lookup?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) continue
+      const data = await res.json()
+      if (data?.found && data?.id && data.totalCohCfd != null) {
+        return { amount: Number(data.totalCohCfd), date: dateStr }
+      }
+    }
+    return null
   }
 
   const lookupExistingReport = async (date: string, options?: { skipCache?: boolean }) => {
@@ -1584,11 +1650,11 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         date: formatExpenseDate(row.receiptDate),
         incurredBy: (row.name || user?.name || 'STAFF').trim().toUpperCase(),
         description: (row.description || 'Expense with Receipt').trim(),
-        company: (row.company || '').trim().toUpperCase(),
+        company: (row.company || linkedExpenseCache.current.get(row.resolvedExpenseId)?.company || '').trim().toUpperCase(),
         receiptNo: (row.receiptNo || '').trim(),
         amount: numAmt,
-        expenseCategory: (row.expenseCategory as AuditExpenseCategory) || 'OTHER',
-        sourceOfFunds: (row.sourceOfFunds || 'CASH').trim().toUpperCase(),
+        expenseCategory: (row.expenseCategory || linkedExpenseCache.current.get(row.resolvedExpenseId)?.expenseCategory || 'OTHER') as AuditExpenseCategory,
+        sourceOfFunds: (row.sourceOfFunds || linkedExpenseCache.current.get(row.resolvedExpenseId)?.sourceOfFunds || 'CASH').trim().toUpperCase(),
         receiptImageUri: row.receiptImage || '',
         createdAt: '',
         updatedAt: '',
@@ -1955,6 +2021,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   // Parts sales paid in cash are real cash the branch is holding, same as any other cash
   // transaction — they must add to Cash on Hand. Parts sold online settle to the bank, not
   // the branch's physical cash, so only the CASH-tagged rows belong here.
+  const cohMismatch = prevDayCoh != null && Math.abs(num(cashOnHand) - prevDayCoh.amount) >= 0.01
   const totalFundReceived    = num(cashOnHand) + num(fundFromHo) + totalCashCollection + totalCashReturns + totalPartsCash
   const totalCashOnHand      = totalFundReceived - grandTotalExpenses - totalDeposits
 
@@ -2013,6 +2080,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         ...expReceiptForSave.filter(r => r.name || r.amount).map(r => ({
           type: 'EXPENSE',
           description: `${r.name}|${r.description}`,
+          company: r.company || null,
           amount: parseFloat(r.amount) || 0,
           receiptReturned: r.receiptReturned || false,
           actualAmount: (r.actualAmount && !isNaN(parseFloat(r.actualAmount))) ? parseFloat(r.actualAmount) : null,
@@ -2167,6 +2235,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         // report item), so re-saving an existing DTR updates its expense rows instead of
         // inserting duplicates.
         const expensesToPush = expReceiptForSave.filter(r => r.name || r.amount || r.receiptImage || r.receiptNo)
+        // A save right after reopening must not race the record lookup and fall back to defaults.
+        await linkedExpenseLoad.current
         for (const row of expensesToPush) {
           try {
             const rawAmt = row.amount
@@ -2181,11 +2251,11 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
               date: formatExpenseDate(row.receiptDate),
               incurredBy: (row.name || user?.name || 'STAFF').trim().toUpperCase(),
               description: (row.description || 'Expense with Receipt').trim(),
-              company: (row.company || '').trim().toUpperCase(),
+              company: (row.company || linkedExpenseCache.current.get(expenseId)?.company || '').trim().toUpperCase(),
               receiptNo: (row.receiptNo || '').trim(),
               amount: numAmt,
-              expenseCategory: (row.expenseCategory as AuditExpenseCategory) || 'OTHER',
-              sourceOfFunds: (row.sourceOfFunds || 'CASH').trim().toUpperCase(),
+              expenseCategory: (row.expenseCategory || linkedExpenseCache.current.get(expenseId)?.expenseCategory || 'OTHER') as AuditExpenseCategory,
+              sourceOfFunds: (row.sourceOfFunds || linkedExpenseCache.current.get(expenseId)?.sourceOfFunds || 'CASH').trim().toUpperCase(),
               receiptImageUri: row.receiptImage || '',
               createdAt: '',
               updatedAt: '',
@@ -2272,6 +2342,11 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       if (depositAsExpense) issues.push(`${depositAsExpense} deposit${depositAsExpense === 1 ? '' : 's'} entered under Expenses — move ${depositAsExpense === 1 ? 'it' : 'them'} to COH Deposit`)
       const depNoSlip = deposits.filter(r => num(r.amount) > 0 && !r.receiptImage).length
       if (depNoSlip) issues.push(`${depNoSlip} COH deposit${depNoSlip === 1 ? '' : 's'} with no deposit slip photo`)
+      if (cohMismatch && prevDayCoh && !(isAdmin && cohOverrideAck)) {
+        issues.push(`Cash on hand does not match the ending balance of the ${prevDayCoh.date} DTR (${php(prevDayCoh.amount)})${isAdmin ? ' — confirm the admin override under Cash on Hand' : ''}`)
+      }
+      const expNoCategory = expRows.filter(r => !r.expenseCategory).length
+      if (expNoCategory) issues.push(`${expNoCategory} expense${expNoCategory === 1 ? '' : 's'} with no category — open Scan on each to pick one`)
       const expNoName = expRows.filter(r => !r.name.trim() || !r.description.trim()).length
       if (expNoName) issues.push(`${expNoName} expense${expNoName === 1 ? '' : 's'} missing a name or description`)
       if (issues.length > 0) {
@@ -2841,6 +2916,39 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                       />
                     </td>
                   </tr>
+                  {cohMismatch && prevDayCoh && (
+                    <tr className="border-b border-slate-100 dark:border-slate-800/40">
+                      <td colSpan={2} className="px-3 py-2">
+                        <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300">
+                          <p>
+                            The DTR for {prevDayCoh.date} ended with {php(prevDayCoh.amount)}. If cash left the branch, record it
+                            (COH Deposit / expense) on that DTR instead of changing this amount.
+                          </p>
+                          {!isFormDisabled && (
+                            <button
+                              type="button"
+                              onClick={() => setCashOnHand(String(prevDayCoh.amount))}
+                              className="mt-1.5 rounded-md bg-amber-600 px-2 py-1 font-bold text-white hover:bg-amber-700"
+                            >
+                              Use {php(prevDayCoh.amount)}
+                            </button>
+                          )}
+                          {isAdmin && (
+                            <label className="mt-2 flex items-start gap-2 font-semibold">
+                              <input
+                                type="checkbox"
+                                checked={cohOverrideAck}
+                                onChange={e => setCohOverrideAck(e.target.checked)}
+                                disabled={isFormDisabled}
+                                className="mt-0.5"
+                              />
+                              <span>Admin override: I verified this amount differs from the previous DTR on purpose.</span>
+                            </label>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                   <tr className="bg-slate-50 dark:bg-slate-900/40 font-bold">
                     <td className="px-3 py-2 text-slate-800 dark:text-slate-200">Total Fund</td>
                     <td className="px-3 py-2 text-right text-emerald-600 dark:text-emerald-400 font-semibold">

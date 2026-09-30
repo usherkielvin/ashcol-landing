@@ -47,6 +47,9 @@ const formatDetailsName = (raw?: string | null): string => {
 }
 /** A record that moves cash to Head Office / the company bank rather than being a real expense —
  *  category DEPOSIT or FUND TRANSFER, or a description like "DEPOSIT TO HO". */
+// Records created from a DTR row (ids `dtr-<branch>-<date>-...`) are edited on the DTR, not here.
+const isDtrLinked = (e: { id: string }) => e.id.startsWith('dtr-')
+
 const isDepositRecord = (e: { expenseCategory?: string; description?: string }) => {
   const cat = (e.expenseCategory || '').trim().toUpperCase()
   return cat === 'DEPOSIT' || cat === 'FUND TRANSFER' || /deposit(ed)?\s*(to|for)?\s*(ho|head\s*office|company\s*bank)/i.test(e.description || '')
@@ -79,6 +82,9 @@ export default function AuditFinanceExpenses() {
   // Branch members enter expenses on the DTR (which creates the record), so Expense Records and the
   // DTR always match. Only admins/management/managers add records here directly.
   const canAddRecord = isAdmin || role === 'manager'
+  // DTR-linked records stay in sync with their DTR, so only admins may change them here.
+  const canModifyRecord = (row: { id: string }) => isAdmin || !isDtrLinked(row)
+  const dtrLinkedHint = (row: { date?: string }) => `Edit this on the DTR for ${row.date || 'that date'}`
   const isManager = role === 'manager'
   const isBranchScopedUser = !isAdmin && !!user?.branchId
   const canAccess = isAdmin || isManager || role === 'staff' || role === 'employee' || role === 'oic'
@@ -727,6 +733,46 @@ export default function AuditFinanceExpenses() {
     return () => { cancelled = true }
   }, [branchId, dtrPeriod])
 
+  // Every purchase still waiting for its receipt (all dates, not just the period) with its age in days —
+  // these are the main reason the DTR and Expense Records drift apart.
+  type PendingPurchase = { id: string; date: string; label: string; amount: number; ageDays: number }
+  const [agingPurchases, setAgingPurchases] = useState<PendingPurchase[]>([])
+  useEffect(() => {
+    if (!branchId) { setAgingPurchases([]); return }
+    let cancelled = false
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    const params = new URLSearchParams({ branchId: branchId.replace(/-(sales|services?)$/i, ''), pendingOnly: 'true' })
+    if (/-services?$/i.test(branchId)) params.set('auditLine', 'TAGUIG_SERVICE')
+    else if (/-sales$/i.test(branchId)) params.set('auditLine', 'TAGUIG_SALES')
+    fetch(`${API_BASE_URL}/v1/reports/purchases?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((rows: any[]) => {
+        if (cancelled) return
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        const list = (rows || [])
+          // pendingOnly also returns EXPENSE rows; ORDER| purchases are customer orders, not DTR purchases.
+          .filter(r => (!r.type || r.type === 'PURCHASE') && r.reportDate && !String(r.description || '').startsWith('ORDER|'))
+          .map(r => {
+            const d = new Date(`${r.reportDate}T00:00:00`)
+            return {
+              id: String(r.id),
+              date: String(r.reportDate),
+              label: String(r.description || '').split('|').map((p: string) => p.trim()).filter(Boolean).join(' · ') || 'Purchase',
+              amount: Number(r.amount) || 0,
+              ageDays: Math.max(0, Math.round((today.getTime() - d.getTime()) / 86400000)),
+            }
+          })
+          .sort((a, b) => b.ageDays - a.ageDays)
+        setAgingPurchases(list)
+      })
+      .catch(err => {
+        console.error('[Expense Records] Pending purchases fetch failed:', err)
+        if (!cancelled) setAgingPurchases([])
+      })
+    return () => { cancelled = true }
+  }, [branchId])
+
   const reconciliation = useMemo(() => {
     if (!dtrPeriod) return null
     const byId = new Map(branchExpenses.map(e => [e.id, e]))
@@ -825,6 +871,100 @@ export default function AuditFinanceExpenses() {
     XLSX.writeFile(wb, `ASHCOL_Expense_Records_${branchName}_${new Date().toISOString().split('T')[0]}.xlsx`)
   }
 
+  // Month-end branch report: Summary + Differences ("Why the difference?") + the period's records.
+  const handleExportMonthReport = () => {
+    if (!dtrPeriod || !reconciliation) return
+    const hasDtr = dtrExpenses.matched && !dtrExpenses.loading && dtrExpenses.total != null
+    const r2 = (n: number) => Math.round(n * 100) / 100
+    const purchaseLines = dtrLines.rows.filter(l => l.type === 'PURCHASE')
+    const linesTyped = dtrLines.rows.some(l => !!l.type)
+    const resolvedPurchases = purchaseLines.filter(l => l.receiptReturned).reduce((acc, l) => acc + (l.actualAmount || l.amount), 0)
+    const pendingTotal = purchaseLines.filter(l => !l.receiptReturned).reduce((acc, l) => acc + l.amount, 0)
+    const dtrSpend = (dtrExpenses.total || 0) + (linesTyped ? resolvedPurchases : dtrExpenses.purchases)
+    const diff = hasDtr ? recordsTotalForDtr - dtrSpend : null
+    const noPhotoCount = periodRecords.filter(e => !e.receiptImageUri && !/^CASH ADVANCE/i.test(e.expenseCategory || '')).length
+    const na = 'N/A (no DTR found)'
+    const periodLabel = filterMonth === 'All' ? `${dtrPeriod.from} to ${dtrPeriod.to}` : filterMonth
+
+    const summaryRows: (string | number)[][] = [
+      ['Branch', branchName],
+      ['Period', periodLabel],
+      ['Generated', `${new Date().toLocaleString('en-PH')} by ${user?.name || user?.email || 'user'}`],
+      [],
+      ['Expense Records total (excl. deposits)', r2(recordsTotalForDtr)],
+      ['Expense Records count', recordsForDtr.length],
+      ['DTR Expenses', hasDtr ? r2(dtrExpenses.total || 0) : na],
+      ['DTR purchases with receipt', hasDtr ? r2(linesTyped ? resolvedPurchases : dtrExpenses.purchases) : na],
+      ['DTR Expenses + purchases with receipt', hasDtr ? r2(dtrSpend) : na],
+      ['Purchases awaiting receipt (this period, not counted)', r2(pendingTotal)],
+      ['Difference (Records - DTR)', diff == null ? na : r2(diff)],
+      ['Status', diff == null ? na : Math.abs(diff) < 0.005 ? 'Balanced' : diff > 0 ? 'Records exceed DTR' : 'DTR exceeds records'],
+      [],
+      ['Deposit to HO - per DTR', hasDtr ? r2(dtrExpenses.deposits) : na],
+      ['Deposit to HO - in records', r2(depositsForDtr)],
+      ['Deposit to HO - difference (records - DTR)', hasDtr ? r2(depositsForDtr - dtrExpenses.deposits) : na],
+      [],
+      ['Possible duplicate rows', periodDupes.rows],
+      ['Possible duplicate amount (extra copies)', r2(periodDupes.extra)],
+      ['Records without receipt photo', noPhotoCount],
+      ['Purchases awaiting receipt - all dates (count)', agingPurchases.length],
+      ['Purchases awaiting receipt - all dates (amount)', r2(agingPurchases.reduce((acc, p) => acc + p.amount, 0))],
+      ['Purchases awaiting receipt - 8+ days old (count)', agingPurchases.filter(p => p.ageDays >= 8).length],
+    ]
+
+    const bucketMeta: { id: keyof typeof reconciliation.buckets; title: string; side: string }[] = [
+      { id: 'depositAsExpense', title: 'Deposits to HO entered as expenses', side: 'DTR' },
+      { id: 'pendingPurchase', title: 'Purchases waiting for receipt', side: 'DTR' },
+      { id: 'neverPushed', title: 'DTR entries with no record', side: 'DTR' },
+      { id: 'deleted', title: 'Records deleted', side: 'DTR' },
+      { id: 'otherMonth', title: 'Recorded in a different month', side: 'DTR' },
+      { id: 'amountDiff', title: 'Amount differs', side: 'DTR' },
+      { id: 'manual', title: 'Records not on any DTR', side: 'Records' },
+    ]
+    const differenceRows: Record<string, string | number>[] = []
+    for (const b of bucketMeta) {
+      for (const i of reconciliation.buckets[b.id]) {
+        differenceRows.push({ Bucket: b.title, Affects: b.side, Date: i.date, Description: i.label, Amount: r2(i.amount), Note: i.note || '' })
+      }
+    }
+    if (reconciliation.cashAdvance > 0.005) {
+      differenceRows.push({ Bucket: 'Cash advances on the DTR', Affects: 'DTR', Date: '', Description: 'Counted in DTR Expenses, not kept in Expense Records', Amount: r2(reconciliation.cashAdvance), Note: '' })
+    }
+    if (differenceRows.length === 0) {
+      differenceRows.push({ Bucket: hasDtr ? 'Every DTR entry matches a record' : 'No DTR found for comparison', Affects: '', Date: '', Description: '', Amount: 0, Note: '' })
+    }
+
+    const recordRows = [...periodRecords]
+      .sort((a, b) => dateToTime(a.date) - dateToTime(b.date))
+      .map(e => ({
+        Date: e.date,
+        'Incurred By': e.incurredBy,
+        Company: e.company,
+        Description: e.description,
+        'Receipt No': e.receiptNo || '',
+        Category: e.expenseCategory,
+        'Source of Funds': e.sourceOfFunds || '',
+        Amount: r2(e.amount),
+        'Has Photo': e.receiptImageUri ? 'Y' : 'N',
+        'From DTR': e.id.startsWith('dtr-') ? 'Y' : 'N',
+      }))
+
+    const wb = XLSX.utils.book_new()
+    const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows)
+    wsSummary['!cols'] = [{ wch: 52 }, { wch: 34 }]
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary')
+    const wsDiff = XLSX.utils.json_to_sheet(differenceRows)
+    wsDiff['!cols'] = [{ wch: 36 }, { wch: 9 }, { wch: 12 }, { wch: 60 }, { wch: 14 }, { wch: 40 }]
+    XLSX.utils.book_append_sheet(wb, wsDiff, 'Differences')
+    const wsRecords = recordRows.length > 0 ? XLSX.utils.json_to_sheet(recordRows) : XLSX.utils.aoa_to_sheet([['No records in this period']])
+    wsRecords['!cols'] = [{ wch: 12 }, { wch: 22 }, { wch: 20 }, { wch: 50 }, { wch: 16 }, { wch: 24 }, { wch: 18 }, { wch: 14 }, { wch: 10 }, { wch: 10 }]
+    XLSX.utils.book_append_sheet(wb, wsRecords, 'Records')
+
+    const safeBranch = (branchName || 'BRANCH').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+    const periodKey = filterMonth === 'All' ? `${dtrPeriod.from}_to_${dtrPeriod.to}` : dtrPeriod.from.slice(0, 7)
+    XLSX.writeFile(wb, `${safeBranch}_${periodKey}_expense_reconciliation.xlsx`)
+  }
+
   const saveExpense = async (expense: AuditExpense) => {
     setSavingReceipt(true)
     try {
@@ -872,6 +1012,8 @@ export default function AuditFinanceExpenses() {
   const confirmUpdateDuplicate = async () => {
     if (!duplicateModal) return
     const { existingExpense, newExpense } = duplicateModal
+    if (!canModifyRecord(existingExpense)) { alert(`That record comes from a DTR. ${dtrLinkedHint(existingExpense)}.`); return }
+    if (isDtrLinked(existingExpense) && !window.confirm('This record comes from a DTR. Changing it here will not update the DTR. Continue?')) return
     const updatedExpense: AuditExpense = {
       ...newExpense,
       id: existingExpense.id,
@@ -895,6 +1037,7 @@ export default function AuditFinanceExpenses() {
     if (!form.company.trim() && !form.description.trim()) { alert('Enter company or description.'); return }
     if (!amount || amount <= 0) { alert('Enter a valid amount.'); return }
     if (!form.date.trim()) { alert('Enter a valid date.'); return }
+    if (form.expenseCategory === 'OTHER' && form.description.trim().length < 10) { alert('Category "Other" needs a clear description (what and why) — at least 10 characters.'); return }
     {
       const d = new Date(parseSmartDate(form.date.trim()) || form.date.trim())
       const needsPhoto = !isNaN(d.getTime()) && d >= new Date('2026-10-01T00:00:00')
@@ -916,6 +1059,8 @@ export default function AuditFinanceExpenses() {
         }
       }
     }
+
+    if (editing && isDtrLinked(editing) && !window.confirm('This record comes from a DTR. Changing it here will not update the DTR. Continue?')) return
 
     const now = new Date().toISOString()
     const targetBranchId = form.branchId || branchId
@@ -1016,6 +1161,7 @@ export default function AuditFinanceExpenses() {
   }
 
   const startEdit = (row: AuditExpense) => {
+    if (!canModifyRecord(row)) return
     setDetailRow(null)
     setEditing(row); setDateRaw(row.date); setDateError(''); setScanPreview(row.receiptImageUri || null)
     setUploadedReceiptUrl(row.receiptImageUri || null)
@@ -1025,6 +1171,7 @@ export default function AuditFinanceExpenses() {
   }
 
   const startEditInModal = (row: AuditExpense) => {
+    if (!canModifyRecord(row)) return
     setEditing(row)
     setDateRaw(row.date)
     setDateError('')
@@ -1041,6 +1188,8 @@ export default function AuditFinanceExpenses() {
   }
 
   const handleDeleteRecord = async (row: AuditExpense) => {
+    if (!canModifyRecord(row)) return
+    if (isDtrLinked(row) && !window.confirm('This record comes from a DTR. Deleting it here will not remove the DTR line. Continue?')) return
     if (!window.confirm('Delete this expense record?')) return
     await deleteAuditExpense(row.id)
     setDetailRow(null)
@@ -1931,11 +2080,19 @@ export default function AuditFinanceExpenses() {
                 <span className="text-xs font-black" style={{ color: textPrimary }}>Summary</span>
                 <span className="text-[11px]" style={{ color: textMuted }}>{filterMonth === 'All' ? `${dtrPeriod.from} to ${dtrPeriod.to}` : filterMonth} · Records vs DTR</span>
               </div>
-              {diff != null && (
-                <span className="text-[11px] font-bold px-2.5 py-1 rounded-full" style={{ color: diffColor, backgroundColor: `${diffColor}18`, border: `1px solid ${diffColor}44` }}>
-                  {balanced ? 'Balanced' : diff > 0 ? 'Records exceed DTR' : 'DTR exceeds records'}
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {diff != null && (
+                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-full" style={{ color: diffColor, backgroundColor: `${diffColor}18`, border: `1px solid ${diffColor}44` }}>
+                    {balanced ? 'Balanced' : diff > 0 ? 'Records exceed DTR' : 'DTR exceeds records'}
+                  </span>
+                )}
+                <button type="button" onClick={handleExportMonthReport} disabled={dtrLines.loading || dtrExpenses.loading || !reconciliation}
+                  className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
+                  style={{ backgroundColor: `${accent}18`, border: `1px solid ${accent}44`, color: accent }}
+                  title="Download Summary, Differences and Records for this period as an Excel file">
+                  <Download size={12} /> Export month report
+                </button>
+              </div>
             </div>
             <div className="p-3 grid grid-cols-2 lg:grid-cols-4 gap-2">
               {stat('Expense Records', fmt(recordsTotalForDtr), textPrimary, `${recordsForDtr.length} record${recordsForDtr.length === 1 ? '' : 's'} · excl. deposits`)}
@@ -1995,6 +2152,43 @@ export default function AuditFinanceExpenses() {
                 ))}
               </div>
             )}
+
+            {/* Purchases awaiting receipt — all dates, oldest first */}
+            {agingPurchases.length > 0 && (() => {
+              const total = agingPurchases.reduce((acc, p) => acc + p.amount, 0)
+              const old = agingPurchases.filter(p => p.ageDays >= 8)
+              const open = openBucket === 'pendingAging'
+              const ageColor = (d: number) => (d >= 8 ? danger : d >= 3 ? '#D97706' : textMuted)
+              const ageLabel = (d: number) => (d === 0 ? 'today' : `${d} day${d === 1 ? '' : 's'}`)
+              return (
+                <div className="mx-3 mb-3 rounded-lg overflow-hidden" style={{ border: `1px solid ${border}` }}>
+                  <button type="button" onClick={() => setOpenBucket(open ? null : 'pendingAging')} className="w-full px-3 py-2 flex items-center justify-between gap-3 text-left text-xs cursor-pointer hover:bg-black/5 dark:hover:bg-white/5">
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-bold" style={{ color: textPrimary }}>
+                        Purchases awaiting receipt: {agingPurchases.length} ({fmt(total)})
+                        {old.length > 0 && <span style={{ color: danger }}> · 8+ days: {old.length}</span>}
+                      </span>
+                      <span className="text-[10px]" style={{ color: textMuted }}>
+                        0–2 days: {agingPurchases.filter(p => p.ageDays <= 2).length} · 3–7 days: {agingPurchases.filter(p => p.ageDays >= 3 && p.ageDays <= 7).length} · 8+ days: {old.length} — resolve them in Purchases once the receipt is returned.
+                      </span>
+                    </div>
+                    <ChevronDown size={13} style={{ color: textMuted, transform: open ? 'rotate(180deg)' : undefined }} className="shrink-0" />
+                  </button>
+                  {open && (
+                    <div className="px-3 pb-2 max-h-56 overflow-y-auto">
+                      {agingPurchases.map(p => (
+                        <div key={p.id} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
+                          <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{p.date}</span>
+                          <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={p.label}>{p.label}</span>
+                          <span className="shrink-0 font-bold tabular-nums" style={{ color: ageColor(p.ageDays) }}>{ageLabel(p.ageDays)}</span>
+                          <span className="shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{fmt(p.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
 
             {/* Why the difference? — each DTR line matched to its Expense Record */}
             {hasDtr && reconciliation && (() => {
@@ -2238,8 +2432,14 @@ export default function AuditFinanceExpenses() {
                         </td>
                         <td className="px-3 py-2.5">
                           <div className="flex gap-2 justify-end" onClick={e => e.stopPropagation()}>
-                            <button type="button" onClick={() => startEdit(row)} className="p-1 rounded hover:bg-slate-500/10"><Pencil size={13} style={{ color: textMuted }} /></button>
-                            <button type="button" onClick={() => void handleDeleteRecord(row)} className="p-1 rounded hover:bg-rose-500/10"><Trash2 size={13} style={{ color: danger }} /></button>
+                            {canModifyRecord(row) ? (
+                              <>
+                                <button type="button" onClick={() => startEdit(row)} className="p-1 rounded hover:bg-slate-500/10"><Pencil size={13} style={{ color: textMuted }} /></button>
+                                <button type="button" onClick={() => void handleDeleteRecord(row)} className="p-1 rounded hover:bg-rose-500/10"><Trash2 size={13} style={{ color: danger }} /></button>
+                              </>
+                            ) : (
+                              <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }} title={dtrLinkedHint(row)}>From DTR</span>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -2922,6 +3122,10 @@ export default function AuditFinanceExpenses() {
                     Close
                   </button>
                   <div className="flex items-center gap-3">
+                    {!canModifyRecord(detailRow) && (
+                      <span className="text-xs font-bold uppercase tracking-wider" style={{ color: textMuted }} title={dtrLinkedHint(detailRow)}>From DTR</span>
+                    )}
+                    {canModifyRecord(detailRow) && <>
                     <button
                       type="button"
                       onClick={() => startEditInModal(detailRow)}
@@ -2938,6 +3142,7 @@ export default function AuditFinanceExpenses() {
                     >
                       Delete
                     </button>
+                    </>}
                   </div>
                 </>
               )}
@@ -3155,8 +3360,14 @@ export default function AuditFinanceExpenses() {
           <div className="sm:hidden fixed inset-x-0 bottom-0 z-[100] p-4 flex flex-col gap-2 pb-8" style={{ animation: 'slideUp 0.2s ease-out' }}>
             <div className="rounded-2xl overflow-hidden shadow-2xl flex flex-col" style={{ backgroundColor: cardBg }}>
               <button type="button" onClick={() => { openDetails(actionMenuRow); setActionMenuRow(null) }} className="w-full px-5 py-4 text-center text-sm font-bold border-b transition-colors active:bg-black/5" style={{ color: textPrimary, borderColor: border }}>View Details</button>
-              <button type="button" onClick={() => { startEdit(actionMenuRow); setActionMenuRow(null) }} className="w-full px-5 py-4 text-center text-sm font-bold border-b transition-colors active:bg-black/5" style={{ color: textPrimary, borderColor: border }}>Edit Record</button>
-              <button type="button" onClick={() => { void handleDeleteRecord(actionMenuRow); setActionMenuRow(null) }} className="w-full px-5 py-4 text-center text-sm font-bold transition-colors active:bg-black/5" style={{ color: danger }}>Delete Record</button>
+              {canModifyRecord(actionMenuRow) ? (
+                <>
+                  <button type="button" onClick={() => { startEdit(actionMenuRow); setActionMenuRow(null) }} className="w-full px-5 py-4 text-center text-sm font-bold border-b transition-colors active:bg-black/5" style={{ color: textPrimary, borderColor: border }}>Edit Record</button>
+                  <button type="button" onClick={() => { void handleDeleteRecord(actionMenuRow); setActionMenuRow(null) }} className="w-full px-5 py-4 text-center text-sm font-bold transition-colors active:bg-black/5" style={{ color: danger }}>Delete Record</button>
+                </>
+              ) : (
+                <div className="w-full px-5 py-4 text-center text-xs font-bold" style={{ color: textMuted }}>From DTR — {dtrLinkedHint(actionMenuRow)}</div>
+              )}
             </div>
             <button type="button" onClick={() => setActionMenuRow(null)} className="w-full px-5 py-4 text-center text-sm font-bold rounded-2xl shadow-2xl transition-colors active:bg-black/5 mt-1" style={{ backgroundColor: cardBg, color: textMuted }}>Cancel</button>
           </div>

@@ -218,7 +218,7 @@ export default function ReceiptScanDialog({
   const missing = useMemo(() => {
     const m: (keyof Fields)[] = []
     if (!(parseFloat(f.amount) > 0)) m.push('amount')
-    if (!f.description.trim()) m.push('description')
+    if (!f.description.trim() || (isExpense && f.expenseCategory === 'OTHER' && f.description.trim().length < 10)) m.push('description')
     if (!f.date) m.push('date')
     if (isExpense && !f.incurredBy.trim()) m.push('incurredBy')
     return m
@@ -403,6 +403,11 @@ export default function ReceiptScanDialog({
                           <span className="text-[11px] text-slate-500">No match — pick the closest one, or Other.</span>
                         )}
                       </div>
+                      {f.expenseCategory === 'OTHER' && (
+                        <span className={`text-[11px] font-semibold ${tried && missing.includes('description') ? 'text-red-600' : 'text-amber-600 dark:text-amber-400'}`}>
+                          Other needs a clear description (what and why).
+                        </span>
+                      )}
                     </div>
                     <div className="flex flex-col gap-1">
                       <div className="flex items-center justify-between"><span className={label}>Source of funds</span>{badge('sourceOfFunds')}</div>
