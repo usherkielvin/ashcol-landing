@@ -1851,32 +1851,6 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     }
   }
 
-  const handleSyncFromSchedule = () => {
-    if (!selectedBranchId || !reportDate || syncLoading) return
-    const hasExistingTxData =
-      cashTx.some(r => r.customer.trim() || r.installer.trim() || r.amount.trim() || r.ticketNumber?.trim()) ||
-      onlineTx.some(r => r.customer.trim() || r.installer.trim() || r.bank.trim() || r.amount.trim() || r.ticketNumber?.trim()) ||
-      checkRem.some(r => r.customer.trim() || r.installer.trim() || r.bank.trim() || r.amount.trim() || r.ticketNumber?.trim()) ||
-      forColl.some(r => r.customer.trim() || r.installer.trim() || r.amount.trim() || r.ticketNumber?.trim())
-
-    if (hasExistingTxData) {
-      setConfirmDialog({
-        title: 'Overwrite Current Transactions?',
-        message: 'You have existing entries in transaction tables. Syncing from schedule will clear current entries and replace them with fetched schedule data.',
-        detail: 'Click OK to clear and overwrite with schedule data, or Cancel to keep current entries.',
-        confirmText: 'OK',
-        cancelText: 'Cancel',
-        variant: 'discard',
-        onConfirm: () => {
-          setConfirmDialog(null)
-          void executeSyncFromSchedule()
-        },
-      })
-    } else {
-      void executeSyncFromSchedule()
-    }
-  }
-
   const executeSyncRebatesFromSchedule = async () => {
     if (!selectedBranchId || !reportDate || rebateSyncLoading) return
     const scheduleBranchId = selectedAuditLine
@@ -1909,30 +1883,6 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       setTimeout(() => setError(null), 4000)
     } finally {
       setRebateSyncLoading(false)
-    }
-  }
-
-  const handleSyncRebatesFromSchedule = () => {
-    if (!selectedBranchId || !reportDate || rebateSyncLoading) return
-    const hasExistingRebateData = rebates.some(
-      r => r.ticketNumber.trim() || r.customer.trim() || r.company.trim() || r.amount.trim() || r.raNumber.trim()
-    )
-
-    if (hasExistingRebateData) {
-      setConfirmDialog({
-        title: 'Overwrite Current Rebates?',
-        message: 'You have existing entries in Rebates for Collection. Syncing from schedule will clear current entries and replace them with fetched schedule data.',
-        detail: 'Click OK to clear and overwrite with schedule data, or Cancel to keep current entries.',
-        confirmText: 'OK',
-        cancelText: 'Cancel',
-        variant: 'discard',
-        onConfirm: () => {
-          setConfirmDialog(null)
-          void executeSyncRebatesFromSchedule()
-        },
-      })
-    } else {
-      void executeSyncRebatesFromSchedule()
     }
   }
 
@@ -1969,27 +1919,34 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     }
   }
 
-  const handleSyncCommissionsFromSchedule = () => {
-    if (!selectedBranchId || !reportDate || commissionSyncLoading) return
-    const hasExistingCommissionData = commissions.some(
-      r => r.ticketNumber.trim() || r.customer.trim() || r.store.trim() || r.diser.trim() || r.amount.trim()
-    )
-
-    if (hasExistingCommissionData) {
+  const handleSyncAllFromSchedule = () => {
+    if (!selectedBranchId || !reportDate || syncLoading || rebateSyncLoading || commissionSyncLoading) return
+    const hasExistingData =
+      cashTx.some(r => r.customer.trim() || r.installer.trim() || r.amount.trim() || r.ticketNumber?.trim()) ||
+      onlineTx.some(r => r.customer.trim() || r.installer.trim() || r.bank.trim() || r.amount.trim() || r.ticketNumber?.trim()) ||
+      checkRem.some(r => r.customer.trim() || r.installer.trim() || r.bank.trim() || r.amount.trim() || r.ticketNumber?.trim()) ||
+      forColl.some(r => r.customer.trim() || r.installer.trim() || r.amount.trim() || r.ticketNumber?.trim()) ||
+      rebates.some(r => r.ticketNumber.trim() || r.customer.trim() || r.company.trim() || r.amount.trim() || r.raNumber.trim()) ||
+      commissions.some(r => r.ticketNumber.trim() || r.customer.trim() || r.store.trim() || r.diser.trim() || r.amount.trim())
+    const run = () => {
+      void Promise.all([
+        executeSyncFromSchedule(),
+        executeSyncRebatesFromSchedule(),
+        executeSyncCommissionsFromSchedule(),
+      ])
+    }
+    if (hasExistingData) {
       setConfirmDialog({
-        title: 'Overwrite Current Commission Expenses?',
-        message: 'You have existing entries in Commission Expenses. Syncing from schedule will clear current entries and replace them with fetched schedule data.',
+        title: 'Overwrite Current Entries?',
+        message: 'You have existing entries in Transactions, Rebates or Commission Expenses. Syncing from schedule will clear them and replace them with fetched schedule data.',
         detail: 'Click OK to clear and overwrite with schedule data, or Cancel to keep current entries.',
         confirmText: 'OK',
         cancelText: 'Cancel',
         variant: 'discard',
-        onConfirm: () => {
-          setConfirmDialog(null)
-          void executeSyncCommissionsFromSchedule()
-        },
+        onConfirm: () => { setConfirmDialog(null); run() },
       })
     } else {
-      void executeSyncCommissionsFromSchedule()
+      run()
     }
   }
 
@@ -2578,45 +2535,17 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
               <>
                 <button
                   type="button"
-                  onClick={handleSyncFromSchedule}
-                  disabled={syncLoading || isFormDisabled}
+                  onClick={handleSyncAllFromSchedule}
+                  disabled={syncLoading || rebateSyncLoading || commissionSyncLoading || isFormDisabled}
                   className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 shrink-0"
                   style={{ backgroundColor: '#10B981', border: '1px solid #059669', color: '#FFFFFF', boxShadow: '0 4px 14px rgba(16, 185, 129, 0.25)' }}
                 >
-                  {syncLoading ? (
+                  {(syncLoading || rebateSyncLoading || commissionSyncLoading) ? (
                     <span className="animate-spin inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full" />
                   ) : (
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9 9 0 0 0-7.5 4"/><path d="M3 12a9 9 0 0 0 9 9 9 9 0 0 0 7.5-4"/><polyline points="3 4 3 8 7 8"/><polyline points="21 20 21 16 17 16"/></svg>
                   )}
-                  Sync Transactions from Sched
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSyncRebatesFromSchedule}
-                  disabled={rebateSyncLoading || isFormDisabled}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 shrink-0"
-                  style={{ backgroundColor: '#10B981', border: '1px solid #059669', color: '#FFFFFF', boxShadow: '0 4px 14px rgba(16, 185, 129, 0.25)' }}
-                >
-                  {rebateSyncLoading ? (
-                    <span className="animate-spin inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full" />
-                  ) : (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9 9 0 0 0-7.5 4"/><path d="M3 12a9 9 0 0 0 9 9 9 9 0 0 0 7.5-4"/><polyline points="3 4 3 8 7 8"/><polyline points="21 20 21 16 17 16"/></svg>
-                  )}
-                  Sync Rebates from Sched
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSyncCommissionsFromSchedule}
-                  disabled={commissionSyncLoading || isFormDisabled}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 shrink-0"
-                  style={{ backgroundColor: '#10B981', border: '1px solid #059669', color: '#FFFFFF', boxShadow: '0 4px 14px rgba(16, 185, 129, 0.25)' }}
-                >
-                  {commissionSyncLoading ? (
-                    <span className="animate-spin inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full" />
-                  ) : (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9 9 0 0 0-7.5 4"/><path d="M3 12a9 9 0 0 0 9 9 9 9 0 0 0 7.5-4"/><polyline points="3 4 3 8 7 8"/><polyline points="21 20 21 16 17 16"/></svg>
-                  )}
-                  Sync Commissions from Sched
+                  Sync from Sched
                 </button>
               </>
             )}
@@ -2699,14 +2628,14 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Cash Transactions" total={totalCashCollection} variant="income" />
             <div className="p-2">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left border-collapse table-fixed">
                 <thead>
                   <tr>
-                    <th className={tableTh}>Ticket No.</th>
+                    <th className={tableTh + ' w-24'}>Ticket No.</th>
                     <th className={tableTh}>Customer Name</th>
-                    <th className={tableTh}>Installer</th>
-                    <th className={tableTh + ' text-right w-32'}>Amount</th>
-                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                    <th className={tableTh + ' w-28'}>Installer</th>
+                    <th className={tableTh + ' text-right w-28'}>Amount</th>
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-9'}></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -3061,14 +2990,14 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Expenses with Receipts" total={totalExpReceipt} variant="expense" />
             <div className="p-2">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left border-collapse table-fixed">
                 <thead>
                   <tr>
-                    <th className={tableTh}>Name</th>
+                    <th className={tableTh + ' w-28'}>Name</th>
                     <th className={tableTh}>Description</th>
                     <th className={tableTh + ' text-right w-28'}>Amount</th>
-                    <th className={tableTh + ' text-center w-28'}>Receipt</th>
-                    {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
+                    <th className={tableTh + ' text-center w-24'}>Receipt</th>
+                    {canSubmit && !reviewMode && <th className={tableTh + ' w-9'}></th>}
                   </tr>
                 </thead>
                 <tbody>
