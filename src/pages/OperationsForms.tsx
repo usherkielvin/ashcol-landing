@@ -3106,11 +3106,27 @@ export default function OperationsForms() {
                   rows={3}
                   value={actionDialog.note}
                   onChange={e => setActionDialog({ ...actionDialog, note: e.target.value })}
-                  placeholder={isRelease ? 'e.g. Cash available for pickup at the branch cashier' : 'Reason for cancelling this request'}
+                  placeholder={isRelease ? 'e.g. Sent to your branch company bank' : 'Reason for cancelling this request'}
                   className="w-full p-3 text-xs font-medium rounded-xl focus:outline-none focus:ring-2"
                   style={{ ...istyle, ['--tw-ring-color' as any]: color }}
                   autoFocus
                 />
+                <div className="flex flex-wrap gap-1.5">
+                  {(isRelease
+                    ? ['Sent to your branch company bank.']
+                    : ['No longer needed.', 'Duplicate request.']
+                  ).map(preset => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setActionDialog({ ...actionDialog, note: preset })}
+                      className="text-[10px] px-2 py-1 rounded-md font-semibold border transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+                      style={{ borderColor: border, color: textMuted }}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-1">
