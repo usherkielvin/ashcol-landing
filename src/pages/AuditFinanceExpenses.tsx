@@ -8,7 +8,7 @@ import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import type { AuditExpense, AuditExpenseCategory } from '../types/auditExpense'
 import { AUDIT_EXPENSE_CATEGORIES } from '../types/auditExpense'
 import { formatTodayReceiptDate } from '../utils/auditExpenseDates'
-import { createExpenseId, deleteAuditExpense, loadAuditExpenses, upsertAuditExpense, clearAuditExpensesByBranch } from '../utils/auditExpenseStorage'
+import { createExpenseId, deleteAuditExpense, loadAuditExpenses, upsertAuditExpense } from '../utils/auditExpenseStorage'
 import { loadAuditExpenseCategories, saveAuditExpenseCategory, deleteAuditExpenseCategory, reorderAuditExpenseCategories, type AuditExpenseCategoryDetail } from '../utils/auditExpenseCategoryStorage'
 import { parseSmartDate, dateToTime } from '../utils/smartDate'
 import { fetchCachedBranches } from '../utils/portalDirectoryCache'
@@ -878,21 +878,6 @@ export default function AuditFinanceExpenses() {
     }
 
     await saveExpense(expense)
-  }
-
-  const handleClearBranchReceipts = async () => {
-    if (!branchId) return
-    const count = branchExpenses.length
-    if (count === 0) { alert('No expense records to clear for this branch.'); return }
-    if (!window.confirm(`Are you sure you want to delete ALL ${count} expense record(s) for ${branchName}?\n\nThis action cannot be undone and is usually done before re-adding or re-importing.`)) { return }
-    try {
-      await clearAuditExpensesByBranch(branchId)
-      await reload()
-      alert(`Cleared all expense records for ${branchName}.`)
-    } catch (err) {
-      console.error(err)
-      alert('Failed to clear expense records for this branch.')
-    }
   }
 
   const handleFormKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -2063,24 +2048,6 @@ export default function AuditFinanceExpenses() {
                 </table>
               </div>
             </>
-          )}
-
-          {/* ── Danger zone footer ── */}
-          {branchExpenses.length > 0 && (
-            <div className="flex items-center justify-between px-5 py-3 mt-0"
-              style={{ borderTop: `1px solid ${danger}33`, backgroundColor: `${danger}08` }}>
-              <div className="flex flex-col">
-                <span className="text-xs font-bold uppercase tracking-wider" style={{ color: danger }}>Danger Zone</span>
-                <span className="text-xs" style={{ color: textMuted }}>Permanently deletes all {branchExpenses.length} expense record{branchExpenses.length !== 1 ? 's' : ''} for <strong style={{ color: textPrimary }}>{branchName}</strong>. This cannot be undone.</span>
-              </div>
-              <button type="button" onClick={handleClearBranchReceipts}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 shrink-0 ml-4"
-                style={{ backgroundColor: 'transparent', border: `1.5px solid ${danger}`, color: danger }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = danger; (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = danger }}>
-                <Trash2 size={14} /> Clear All Records
-              </button>
-            </div>
           )}
         </div>
       )}
