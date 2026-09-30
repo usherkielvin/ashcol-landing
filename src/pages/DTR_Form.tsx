@@ -42,7 +42,7 @@ interface OrderRow     { id: string; customer: string; description: string; amou
 interface ExpenseRow   { id: string; name: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string; receiptImage?: string; company?: string; expenseCategory?: string; sourceOfFunds?: string }
 interface IncentiveRow { id: string; customer: string; company: string; hp: string; promodiser: string; amount: string; collectionResolved?: boolean }
 interface CashAdvanceRow { id: string; memberName: string; details: string; amount: string }
-interface DepositRow   { id: string; description: string; referenceNo: string; amount: string; receiptImage?: string }
+interface DepositRow   { id: string; description: string; referenceNo: string; amount: string; receiptImage?: string; bank?: string; resolvedExpenseId?: string }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1225,7 +1225,9 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
               description: desc || '',
               referenceNo: item.receiptNo || '',
               amount: amt,
-              receiptImage: item.receiptImage || ''
+              receiptImage: item.receiptImage || '',
+              bank: item.bank || '',
+              resolvedExpenseId: item.resolvedExpenseId || ''
             })
           } else if (type === 'PURCHASE') {
             if (desc.startsWith('ORDER|')) {
@@ -1516,15 +1518,51 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     }
   }
 
-  const commitDepositReceipt = (rowId: string, result: ReceiptDialogResult) => {
-    setDeposits(p => p.map(r => r.id !== rowId ? r : {
-      ...r,
+  // A COH deposit is recorded in Expense Records as a DEPOSIT, linked by the item's resolvedExpenseId
+  // so re-saving the DTR updates the same record instead of adding another.
+  const depositExpenseId = (rowId: string) => `dtr-${selectedBranchId || user?.branchId || 'branch'}-${reportDate}-dep-${rowId}`
+  const pushDepositToExpenses = async (row: DepositRow) => {
+    if (!row.resolvedExpenseId) return
+    await upsertAuditExpense({
+      id: row.resolvedExpenseId,
+      branchId: selectedBranchId || user?.branchId || '',
+      branchName: branchName || '',
+      date: formatExpenseDate(),
+      incurredBy: (receivedBy || user?.name || 'STAFF').trim().toUpperCase(),
+      description: (row.description || 'COH Deposit to HO').trim(),
+      company: (row.bank || '').trim().toUpperCase(),
+      receiptNo: (row.referenceNo || '').trim(),
+      amount: parseFloat(String(row.amount).replace(/,/g, '')) || 0,
+      expenseCategory: 'DEPOSIT' as AuditExpenseCategory,
+      sourceOfFunds: 'COLLECTION',
+      receiptImageUri: row.receiptImage || '',
+      createdAt: '',
+      updatedAt: '',
+      updateHistory: []
+    })
+  }
+
+  const commitDepositReceipt = async (rowId: string, result: ReceiptDialogResult) => {
+    const current = deposits.find(r => r.id === rowId)
+    const next: DepositRow = {
+      ...(current || mkDeposit()),
+      id: rowId,
       description: result.description,
       referenceNo: result.receiptNo,
       amount: result.amount,
       receiptImage: result.receiptImage,
-    }))
+      bank: result.company,
+      resolvedExpenseId: current?.resolvedExpenseId || depositExpenseId(rowId),
+    }
+    setDeposits(p => p.map(r => r.id !== rowId ? r : next))
     setReceiptDialog(null)
+    try {
+      await pushDepositToExpenses(next)
+    } catch (err) {
+      console.error('[commitDepositReceipt] Failed to push deposit to Expense Records:', err)
+      setError('Saved on the DTR, but could not add the deposit to Expense Records. Save the DTR to retry.')
+      setTimeout(() => setError(null), 5000)
+    }
   }
 
   // Only used by "Expenses with Receipts" rows — Purchases are never synced into the Expenses list.
@@ -1936,6 +1974,12 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           : r
       )
       setExpReceipt(expReceiptForSave)
+      const depositsForSave = deposits.map(r =>
+        (r.description || r.referenceNo || r.amount) && !r.resolvedExpenseId
+          ? { ...r, resolvedExpenseId: depositExpenseId(r.id) }
+          : r
+      )
+      setDeposits(depositsForSave)
 
       // Build unified items array from all DTR sections
       const dtrItems: object[] = [
@@ -1972,11 +2016,13 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           description: `${r.memberName}|${r.details}`,
           amount: parseFloat(r.amount) || 0,
         })),
-        ...deposits.filter(r => r.description || r.referenceNo || r.amount).map(r => ({
+        ...depositsForSave.filter(r => r.description || r.referenceNo || r.amount).map(r => ({
           type: 'DEPOSIT',
           description: r.description || 'COH Deposit',
           receiptNo: r.referenceNo || null,
           receiptImage: r.receiptImage || null,
+          bank: r.bank || null,
+          resolvedExpenseId: r.resolvedExpenseId || null,
           amount: parseFloat(r.amount) || 0,
         })),
         ...expPurch.filter(r => r.name || r.amount).map(r => ({
@@ -2136,6 +2182,14 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
             })
           } catch (err) {
             console.error('[DTR→AuditExpenses] Failed to push expense:', err)
+          }
+        }
+
+        for (const row of depositsForSave.filter(r => r.description || r.referenceNo || r.amount)) {
+          try {
+            await pushDepositToExpenses(row)
+          } catch (err) {
+            console.error('[DTR→AuditExpenses] Failed to push deposit:', err)
           }
         }
 
@@ -3286,7 +3340,12 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                       </td>
                       {canSubmit && !reviewMode && (
                         <td className={tableTd + ' text-center'}>
-                          <DelBtn onClick={() => setDeposits(p => p.filter(r => r.id !== row.id))} />
+                          <DelBtn onClick={() => {
+                            if (row.resolvedExpenseId) {
+                              deleteAuditExpense(row.resolvedExpenseId).catch(err => console.error('[DTR] Failed to delete deposit record:', err))
+                            }
+                            setDeposits(p => p.filter(r => r.id !== row.id))
+                          }} />
                         </td>
                       )}
                     </tr>
@@ -3790,7 +3849,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
               amount: expRow.amount, description: expRow.description, incurredBy: expRow.name,
               expenseCategory: expRow.expenseCategory, sourceOfFunds: expRow.sourceOfFunds,
             } : depRow ? {
-              receiptImage: depRow.receiptImage, receiptNo: depRow.referenceNo, amount: depRow.amount, description: depRow.description,
+              receiptImage: depRow.receiptImage, receiptNo: depRow.referenceNo, amount: depRow.amount, description: depRow.description, company: depRow.bank,
             } : undefined}
             onClose={() => setReceiptDialog(null)}
             onConfirm={result => isExp ? commitExpenseReceipt(receiptDialog.rowId, result) : commitDepositReceipt(receiptDialog.rowId, result)}

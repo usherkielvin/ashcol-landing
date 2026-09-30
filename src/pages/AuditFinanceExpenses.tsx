@@ -49,7 +49,7 @@ const formatDetailsName = (raw?: string | null): string => {
  *  category DEPOSIT or FUND TRANSFER, or a description like "DEPOSIT TO HO". */
 const isDepositRecord = (e: { expenseCategory?: string; description?: string }) => {
   const cat = (e.expenseCategory || '').trim().toUpperCase()
-  return cat === 'DEPOSIT' || cat === 'FUND TRANSFER' || /deposit(ed)?s*(to|for)?s*(ho|heads*office|companys*bank)/i.test(e.description || '')
+  return cat === 'DEPOSIT' || cat === 'FUND TRANSFER' || /deposit(ed)?\s*(to|for)?\s*(ho|head\s*office|company\s*bank)/i.test(e.description || '')
 }
 const emptyForm = (defaultBranchId = '') => ({ date: formatTodayReceiptDate(), company: '', description: '', receiptNo: '', amount: '', expenseCategory: 'OTHER' as AuditExpenseCategory, sourceOfFunds: '', incurredBy: '', branchId: defaultBranchId })
 
@@ -562,9 +562,31 @@ export default function AuditFinanceExpenses() {
     return Array.from(months).sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
   }, [branchExpenses])
 
+  // Possible duplicates: same receipt no. + amount, or (no receipt no.) same date + amount + description.
+  const duplicateInfo = useMemo(() => {
+    const groups = new Map<string, AuditExpense[]>()
+    for (const e of branchExpenses) {
+      const amt = Number(e.amount || 0).toFixed(2)
+      const receipt = (e.receiptNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+      const key = receipt
+        ? `R|${receipt}|${amt}`
+        : `D|${dateToTime(e.date)}|${amt}|${(e.description || '').toUpperCase().replace(/[^A-Z0-9]/g, '')}`
+      const list = groups.get(key)
+      if (list) list.push(e)
+      else groups.set(key, [e])
+    }
+    const ids = new Set<string>()
+    for (const list of groups.values()) {
+      if (list.length > 1) list.forEach(e => ids.add(e.id))
+    }
+    return { ids, groups }
+  }, [branchExpenses])
+  const [showDupesOnly, setShowDupesOnly] = useState(false)
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     let rows = [...branchExpenses]
+    if (showDupesOnly) rows = rows.filter(e => duplicateInfo.ids.has(e.id))
 
     if (filterMonth !== 'All') {
       rows = rows.filter(e => {
@@ -609,7 +631,7 @@ export default function AuditFinanceExpenses() {
     }
 
     return rows
-  }, [branchExpenses, search, sortConfig, filterMonth])
+  }, [branchExpenses, search, sortConfig, filterMonth, showDupesOnly, duplicateInfo])
 
   const totalFiltered = filtered.reduce((s, e) => s + e.amount, 0)
 
@@ -672,6 +694,20 @@ export default function AuditFinanceExpenses() {
   const recordsForDtr = useMemo(() => periodRecords.filter(e => !isDepositRecord(e)), [periodRecords])
   const recordsTotalForDtr = recordsForDtr.reduce((sum, e) => sum + e.amount, 0)
   const depositsForDtr = periodRecords.filter(isDepositRecord).reduce((sum, e) => sum + e.amount, 0)
+  // Duplicates inside the period: every copy after the first is the amount possibly counted twice.
+  const periodDupes = useMemo(() => {
+    const inPeriod = new Set(periodRecords.map(e => e.id))
+    let rows = 0
+    let extra = 0
+    for (const list of duplicateInfo.groups.values()) {
+      const hits = list.filter(e => inPeriod.has(e.id))
+      if (hits.length > 1) {
+        rows += hits.length
+        extra += hits.slice(1).reduce((sum, e) => sum + e.amount, 0)
+      }
+    }
+    return { rows, extra }
+  }, [periodRecords, duplicateInfo])
 
   const handleDateBlur = (raw: string) => {
     const parsed = parseSmartDate(raw)
@@ -1764,30 +1800,22 @@ export default function AuditFinanceExpenses() {
 
       {/* ── Expense Records vs DTR summary ── */}
       {activeTab === 'expenses' && branchId && dtrPeriod && (() => {
-        const dtr = dtrExpenses.total
-        const diff = dtr == null ? null : recordsTotalForDtr - dtr
         const fmt = (n: number) => `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '-' : ''}${fmt(Math.abs(n))}`
+        const hasDtr = dtrExpenses.matched && !dtrExpenses.loading && dtrExpenses.total != null
+        // Expense Records hold both expenses and resolved purchases (materials), so compare them with
+        // the DTR's Expenses + Purchases, not Expenses alone.
+        const dtrSpend = (dtrExpenses.total || 0) + dtrExpenses.purchases
+        const diff = hasDtr ? recordsTotalForDtr - dtrSpend : null
         const balanced = diff != null && Math.abs(diff) < 0.005
         const diffColor = diff == null ? textMuted : balanced ? accent : danger
-        const periodRows = recordsForDtr
-        const hasDtr = dtrExpenses.matched && !dtrExpenses.loading
-        const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '-' : ''}${fmt(Math.abs(n))}`
-        // Deposits leave the branch's cash just like expenses do, so compare total outflow too.
-        const dtrOutflow = (dtr || 0) + dtrExpenses.deposits
-        // Deposits come from the DTR's COH Deposit section (source of truth); fall back to deposit-type
-        // expense records only when no DTR was found for the period.
-        const cohFromDtr = hasDtr && dtrExpenses.deposits > 0
-        const cohDeposits = cohFromDtr ? dtrExpenses.deposits : depositsForDtr
-        const outflowDiff = recordsTotalForDtr + cohDeposits - dtrOutflow
-        const depositRows = periodRecords.filter(isDepositRecord)
-        const depositDiff = depositsForDtr - dtrExpenses.deposits // recorded expense rows vs COH Deposit
-        const outflowColor = !hasDtr ? textPrimary : Math.abs(outflowDiff) < 0.005 ? accent : danger
-        const byCategory = Object.entries(periodRows.reduce<Record<string, number>>((acc, e) => {
+        const depositDiff = depositsForDtr - dtrExpenses.deposits
+        const byCategory = Object.entries(recordsForDtr.reduce<Record<string, number>>((acc, e) => {
           const k = e.expenseCategory || 'OTHER'
           acc[k] = (acc[k] || 0) + e.amount
           return acc
         }, {})).sort((a, b) => b[1] - a[1])
-        const stat = (label: string, value: string, color: string, sub?: string) => (
+        const stat = (label: string, value: string, color: string, sub?: React.ReactNode) => (
           <div className="flex flex-col gap-0.5 rounded-lg px-3 py-2.5" style={{ border: `1px solid ${border}` }}>
             <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{label}</span>
             <span className="text-lg font-black tabular-nums" style={{ color }}>{value}</span>
@@ -1801,28 +1829,34 @@ export default function AuditFinanceExpenses() {
                 <span className="text-xs font-black" style={{ color: textPrimary }}>Summary</span>
                 <span className="text-[11px]" style={{ color: textMuted }}>{filterMonth === 'All' ? `${dtrPeriod.from} to ${dtrPeriod.to}` : filterMonth} · Records vs DTR</span>
               </div>
-              {diff != null && !dtrExpenses.loading && (
+              {diff != null && (
                 <span className="text-[11px] font-bold px-2.5 py-1 rounded-full" style={{ color: diffColor, backgroundColor: `${diffColor}18`, border: `1px solid ${diffColor}44` }}>
                   {balanced ? 'Balanced' : diff > 0 ? 'Records exceed DTR' : 'DTR exceeds records'}
                 </span>
               )}
             </div>
             <div className="p-3 grid grid-cols-2 lg:grid-cols-4 gap-2">
-              {stat('Expense Records', fmt(recordsTotalForDtr), textPrimary, `${periodRows.length} record${periodRows.length === 1 ? '' : 's'} · excl. deposits`)}
-              {stat('DTR Total Expenses', dtrExpenses.loading ? 'Loading…' : dtr == null ? 'Unavailable' : fmt(dtr), textPrimary,
-                dtrExpenses.loading || dtr == null ? undefined : !dtrExpenses.matched ? 'No DTR found for this branch' : `Payroll ${fmt(dtrExpenses.payroll)} · Purchases ${fmt(dtrExpenses.purchases)}`)}
-              {stat('Difference', dtrExpenses.loading || diff == null ? '—' : `${diff > 0 ? '+' : diff < 0 ? '-' : ''}${fmt(Math.abs(diff))}`, diffColor, 'Records − DTR')}
-              {stat('Total Cash Outflow', fmt(recordsTotalForDtr + cohDeposits), outflowColor, hasDtr ? `DTR ${fmt(dtrOutflow)} · diff ${signed(outflowDiff)}` : 'Expenses + deposits')}
+              {stat('Expense Records', fmt(recordsTotalForDtr), textPrimary, `${recordsForDtr.length} record${recordsForDtr.length === 1 ? '' : 's'} · excl. deposits`)}
+              {stat('DTR Expenses + Purchases', dtrExpenses.loading ? 'Loading…' : !hasDtr ? 'Unavailable' : fmt(dtrSpend), textPrimary,
+                dtrExpenses.loading ? undefined : !dtrExpenses.matched ? 'No DTR found for this branch' : `Expenses ${fmt(dtrExpenses.total || 0)} · Purchases ${fmt(dtrExpenses.purchases)}`)}
+              {stat('Difference', diff == null ? '—' : signed(diff), diffColor, 'Records − DTR')}
+              {stat('Possible Duplicates', periodDupes.rows === 0 ? 'None' : `${periodDupes.rows} rows`, periodDupes.rows === 0 ? accent : danger,
+                periodDupes.rows === 0 ? 'No repeated receipts found' : (
+                  <button type="button" onClick={() => setShowDupesOnly(v => !v)} className="font-bold underline cursor-pointer" style={{ color: danger }}>
+                    {signed(periodDupes.extra)} extra · {showDupesOnly ? 'show all' : 'show them'}
+                  </button>
+                ))}
             </div>
             <div className="mx-3 mb-3 w-fit max-w-full rounded-lg px-3 py-1.5 flex items-center gap-3" style={{ border: `1px solid ${accent}44`, backgroundColor: `${accent}0d` }}>
               <div className="flex flex-col">
-                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: accent }}>Deposited to Bank</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: accent }}>Deposit to HO</span>
                 <span className="text-[10px]" style={{ color: textMuted }}>
-                  {cohFromDtr ? 'Per DTR' : `${depositRows.length} deposit${depositRows.length === 1 ? '' : 's'}`}
-                  {cohFromDtr && <> · rec. {fmt(depositsForDtr)} · <span style={{ color: Math.abs(depositDiff) < 0.005 ? accent : danger }}>{signed(depositDiff)}</span></>}
+                  {hasDtr
+                    ? <>Per DTR · in records {fmt(depositsForDtr)} · <span style={{ color: Math.abs(depositDiff) < 0.005 ? accent : danger }}>{signed(depositDiff)}</span></>
+                    : `${periodRecords.filter(isDepositRecord).length} deposit record(s)`}
                 </span>
               </div>
-              <span className="text-base font-black tabular-nums" style={{ color: textPrimary }}>{fmt(cohDeposits)}</span>
+              <span className="text-base font-black tabular-nums" style={{ color: textPrimary }}>{fmt(hasDtr ? dtrExpenses.deposits : depositsForDtr)}</span>
             </div>
             {byCategory.length > 0 && (
               <div className="px-3 pb-3 flex flex-wrap gap-1.5">
