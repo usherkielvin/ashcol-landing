@@ -661,6 +661,23 @@ Build passes; not viewed in a browser.
 
 ---
 
+## Task 30 — Expense Records opens faster (2026-10-01, uncommitted)
+
+Where the time went (from the code, not measured): (1) the splash had a built-in **2-second minimum**; (2) since Task 25 it also waited for the
+month's DTR totals and the purchases feed, started only after the records came back; (3) the page downloads **every** expense record of **every**
+branch (`GET /audit-expenses`) and filters in the browser; (4) the purchases endpoint loaded every purchase ever for the branch, then loaded every
+cash sale / expense of the branch again just to find a few RETURN| / REIMBURSE rows.
+**Done:** removed the 2-second minimum; the splash now waits at most 3 seconds for the summary data (it used to be 15), then opens with the
+placeholders from Task 22; `/purchases` takes an optional `from` date and the portal asks for 2026 onward only (the picker starts in January 2026);
+the cash-return and reimbursement checks use new narrow queries (`findByTypeAndBranchIdAndDescriptionLike`) instead of loading all cash sales /
+expenses. Backend changes need a deploy; an old backend simply ignores `from`.
+**Not done (bigger, each needs care):** load only the selected branch's records (`/audit-expenses/branch/{id}`) — the page's branch matching has
+legacy Taguig id aliases that must be preserved; paginate or trim the records payload; remember the last result in the browser so a repeat visit
+paints instantly; fetch report items with their report in one query (the repository queries use implicit joins, likely one extra query per report);
+database indexes on `report_items(type)` / the report date. Measure first (browser Network tab: `audit-expenses`, `purchases`, `audit-summary-range`).
+
+---
+
 ## Deferred (need a decision or a schema change — ask the user before starting)
 
 - **Month close / lock** (recommended right after Task 4 — it is the only control that makes "must match from October" stick). Admin marks a branch-month "Closed" once Balanced; DTRs and records for that month become

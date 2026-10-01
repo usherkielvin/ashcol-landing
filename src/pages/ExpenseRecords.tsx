@@ -511,7 +511,6 @@ export default function ExpenseRecords() {
 
   useEffect(() => {
     let active = true
-    const startTime = Date.now()
 
     const preloadTabDetails = async () => {
       try {
@@ -524,11 +523,7 @@ export default function ExpenseRecords() {
       } catch (err) {
         console.error('[ExpenseRecords] Preload error:', err)
       } finally {
-        const elapsed = Date.now() - startTime
-        const remaining = Math.max(0, 2000 - elapsed)
-        setTimeout(() => {
-          if (active) setInitialLoading(false)
-        }, remaining)
+        if (active) setInitialLoading(false)
       }
     }
 
@@ -764,7 +759,8 @@ export default function ExpenseRecords() {
     setPurchasesFeed({ loading: !cached, rows: cached || [], failed: false })
     if (cached) setPurchasesSettledFor(branchId)
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-    const params = new URLSearchParams({ branchId: branchId.replace(/-(sales|services?)$/i, '') })
+    // Nothing before 2026 is needed here (the month picker starts in January 2026).
+    const params = new URLSearchParams({ branchId: branchId.replace(/-(sales|services?)$/i, ''), from: '2026-01-01' })
     if (/-services?$/i.test(branchId)) params.set('auditLine', 'TAGUIG_SERVICE')
     else if (/-sales$/i.test(branchId)) params.set('auditLine', 'TAGUIG_SALES')
     fetch(`${API_BASE_URL}/v1/reports/purchases?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } })
@@ -799,7 +795,7 @@ export default function ExpenseRecords() {
     if (!revealed && !initialLoading && firstDataReady) setRevealed(true)
   }, [revealed, initialLoading, firstDataReady])
   useEffect(() => {
-    const t = setTimeout(() => setRevealed(true), 15000)
+    const t = setTimeout(() => setRevealed(true), 3000)
     return () => clearTimeout(t)
   }, [])
 
