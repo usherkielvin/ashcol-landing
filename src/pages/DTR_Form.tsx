@@ -1401,6 +1401,35 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       setCashAdvances(cashAdvancesList.length > 0 ? cashAdvancesList : [mkCashAdv()])
       setDeposits(depositsList)
 
+      // Deposits / cash advances saved before the backend returned their record link would get a new record on every
+      // re-save. Re-attach each unlinked row to the record already made for it (same amount and slip no. / member).
+      const unlinkedDeposits = depositsList.filter(d => !d.resolvedExpenseId && (d.description || d.referenceNo || d.amount))
+      const unlinkedAdvances = cashAdvancesList.filter(c => !c.resolvedExpenseId && (c.memberName || c.amount))
+      if (unlinkedDeposits.length > 0 || unlinkedAdvances.length > 0) {
+        const dayTag = `-${data.reportDate}-`
+        linkedExpenseLoad.current = linkedExpenseLoad.current.then(() => loadAuditExpenses()).then(all => {
+          const toAmt = (v: string | number) => parseFloat(String(v).replace(/,/g, '')) || 0
+          const upper = (v?: string) => (v || '').trim().toUpperCase()
+          const claimed = new Set<string>([...depositsList, ...cashAdvancesList].map(r => r.resolvedExpenseId).filter(Boolean) as string[])
+          const depLinks = new Map<string, string>()
+          const advLinks = new Map<string, string>()
+          for (const d of unlinkedDeposits) {
+            const rec = all.find(e => e.id.startsWith('dtr-') && e.id.includes(`${dayTag}dep-`) && !claimed.has(e.id)
+              && Math.abs(e.amount - toAmt(d.amount)) < 0.01 && upper(e.receiptNo) === upper(d.referenceNo))
+            if (rec) { claimed.add(rec.id); depLinks.set(d.id, rec.id) }
+          }
+          for (const c of unlinkedAdvances) {
+            const rec = all.find(e => e.id.startsWith('dtr-') && e.id.includes(`${dayTag}ca-`) && !claimed.has(e.id)
+              && Math.abs(e.amount - toAmt(c.amount)) < 0.01 && upper(e.incurredBy) === upper(c.memberName))
+            if (rec) { claimed.add(rec.id); advLinks.set(c.id, rec.id) }
+          }
+          if (depLinks.size > 0) setDeposits(p => p.map(r => depLinks.has(r.id) ? { ...r, resolvedExpenseId: depLinks.get(r.id)! } : r))
+          if (advLinks.size > 0) setCashAdvances(p => p.map(r => advLinks.has(r.id) ? { ...r, resolvedExpenseId: advLinks.get(r.id)! } : r))
+        }).catch(err => {
+          console.error('[fetchReportDetails] Failed to re-link deposits/cash advances:', err)
+        })
+      }
+
       if (expPurchList.length === 0 && data.totalForPurchase != null && Number(data.totalForPurchase) > 0) {
         expPurchList.push({
           id: uid(),

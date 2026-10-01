@@ -429,6 +429,24 @@ Portal only; build passes; manual test pending.
 
 ---
 
+## Task 16 — BUG: re-saving a DTR duplicated deposit (and cash-advance) records (2026-10-01, uncommitted)
+
+**Cause:** the DTR links a deposit / cash-advance row to its Expense Record through `resolvedExpenseId`. The backend's report-detail
+response only returned that field for PURCHASE/EXPENSE items, not DEPOSIT or CASH_ADVANCE. So every reopen loaded those rows
+unlinked, and each re-save stamped a fresh id (`dtr-…-dep-<new row uid>`) and created another record — e.g. three identical
+₱6,737 COH deposits for Sep 28.
+
+**Fix (needs backend deploy):** `ReportService` detail response now returns `resolvedExpenseId` for DEPOSIT and CASH_ADVANCE.
+**Portal safety net (works before the deploy, and for DTRs already saved without a link):** when a DTR loads, unlinked deposit
+rows are re-attached to the existing `dtr-*-dep-` record for that day with the same amount and slip no.; cash advances to the
+`-ca-` record with the same amount and member (`DTR_Form.tsx`, in `fetchReportDetails`).
+
+**Not done — existing duplicates:** the extra copies already created are not deleted automatically. After one re-save per DTR
+they will show under "Records not on any DTR" and "Possible duplicates"; an admin should delete the extras. A bulk clean-up
+script is possible. Builds pass; manual test pending.
+
+---
+
 ## Deferred (need a decision or a schema change — ask the user before starting)
 
 - **Month close / lock** (recommended right after Task 4 — it is the only control that makes "must match from October" stick). Admin marks a branch-month "Closed" once Balanced; DTRs and records for that month become
