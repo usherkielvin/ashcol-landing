@@ -458,8 +458,12 @@ Expense Records. No schema change — the marker is `receiptNo = 'NO RECEIPT'` a
 - Expense Records: these records are left out of "records without a photo" / Pending receipts, are not treated as duplicates of
   each other, show an amber "No receipt" tag (click to attach a photo if one turns up), get their own summary chip with count
   and amount, and appear in the month export (Summary rows and a "No Receipt" column).
-- Not done: no approval step and no limit — any user can use it. A tolerance/approval policy needs a decision. Manual "Add
-  Record" on Expense Records is unchanged (still needs a photo from Oct 1). Build passes; manual test pending.
+- **Update (2026-10-01):** the record form on Expense Records (Add Record and the Edit Receipt popup) now has the same option — a
+  **"No receipt available for this expense"** checkbox with a required reason, shown when no photo is attached. It saves the record with
+  receipt no. `NO RECEIPT` and the reason appended to the description, skips the "attach a photo from October 2026" block and the duplicate-receipt
+  check, and reopening such a record shows the plain description with the box ticked. (Before this, editing any receipt-less record dated
+  October or later was refused with "Attach a photo of the receipt".)
+- Not done: no approval step and no limit — any user can use it. A tolerance/approval policy needs a decision. Build passes; manual test pending.
 
 ---
 

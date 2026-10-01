@@ -16,7 +16,7 @@ import AutoSuggestInput from '../components/AutoSuggestInput'
 import AshcolLoader from '../components/AshcolLoader'
 import * as XLSX from 'xlsx'
 import { uploadReceiptImage } from '../services/supabaseStorage'
-import ReceiptScanDialog, { type ReceiptDialogResult } from '../components/ReceiptScanDialog'
+import ReceiptScanDialog, { type ReceiptDialogResult, NO_RECEIPT_NO, NO_RECEIPT_SEP } from '../components/ReceiptScanDialog'
 
 interface BranchOption { id: string; name: string }
 
@@ -136,6 +136,9 @@ export default function AuditFinanceExpenses() {
   const photoTargetRef = useRef<AuditExpense | null>(null)
   const [attachingPhotoId, setAttachingPhotoId] = useState<string | null>(null)
   const [pendingOpen, setPendingOpen] = useState(true)
+  // "No receipt available" option of the record form (same convention as the DTR: receipt no. NO RECEIPT + reason in the description)
+  const [noReceiptForm, setNoReceiptForm] = useState(false)
+  const [noReceiptReasonForm, setNoReceiptReasonForm] = useState('')
   useEffect(() => {
     const refresh = () => { if (document.visibilityState === 'visible') setDataVersion(v => v + 1) }
     window.addEventListener('focus', refresh)
@@ -1041,6 +1044,19 @@ export default function AuditFinanceExpenses() {
     XLSX.writeFile(wb, `${safeBranch}_${periodKey}_expense_reconciliation.xlsx`)
   }
 
+  useEffect(() => {
+    if (editing && isNoReceipt(editing)) {
+      const at = (editing.description || '').indexOf(NO_RECEIPT_SEP)
+      setNoReceiptForm(true)
+      setNoReceiptReasonForm(at >= 0 ? editing.description.slice(at + NO_RECEIPT_SEP.length) : '')
+      // show the plain description and an empty receipt no. in the form; the marker is added back on save
+      setForm(f => ({ ...f, description: at >= 0 ? editing.description.slice(0, at) : editing.description, receiptNo: '' }))
+    } else {
+      setNoReceiptForm(false)
+      setNoReceiptReasonForm('')
+    }
+  }, [editing])
+
   const pickPhotoFor = (row: AuditExpense) => {
     photoTargetRef.current = row
     photoInputRef.current?.click()
@@ -1203,11 +1219,17 @@ export default function AuditFinanceExpenses() {
     if (!form.company.trim() && !form.description.trim()) { alert('Enter company or description.'); return }
     if (!amount || amount <= 0) { alert('Enter a valid amount.'); return }
     if (!form.date.trim()) { alert('Enter a valid date.'); return }
+    // No receipt: allowed (with a reason) instead of the photo; a photo, if one is attached, wins.
+    const noReceipt = noReceiptForm && !uploadedReceiptUrl
+    if (noReceipt && noReceiptReasonForm.trim().length < 5) { alert('Say why there is no receipt (at least 5 characters).'); return }
+    const baseDescription = form.description.split(NO_RECEIPT_SEP)[0].trim()
+    const finalDescription = noReceipt ? `${baseDescription}${NO_RECEIPT_SEP}${noReceiptReasonForm.trim()}` : baseDescription
+    const finalReceiptNo = noReceipt ? NO_RECEIPT_NO : form.receiptNo.trim()
     if (form.expenseCategory === 'OTHER' && form.description.trim().length < 10) { alert('Category "Other" needs a clear description (what and why) — at least 10 characters.'); return }
     {
       const d = new Date(parseSmartDate(form.date.trim()) || form.date.trim())
       const needsPhoto = !isNaN(d.getTime()) && d >= new Date('2026-10-01T00:00:00')
-      if (needsPhoto && !uploadedReceiptUrl && !editing?.receiptImageUri) {
+      if (needsPhoto && !noReceipt && !uploadedReceiptUrl && !editing?.receiptImageUri) {
         alert('Attach a photo of the receipt. From October 2026 every expense record needs its receipt.')
         return
       }
@@ -1240,8 +1262,8 @@ export default function AuditFinanceExpenses() {
         date: form.date.trim(),
         company: form.company.trim().toUpperCase(),
         incurredBy: (form.incurredBy.trim() || user?.name || 'STAFF').toUpperCase(),
-        description: form.description.trim(),
-        receiptNo: form.receiptNo.trim(),
+        description: finalDescription,
+        receiptNo: finalReceiptNo,
         amount,
         expenseCategory: form.expenseCategory,
         sourceOfFunds: form.sourceOfFunds.trim(),
@@ -1260,8 +1282,8 @@ export default function AuditFinanceExpenses() {
         date: form.date.trim(),
         incurredBy: (form.incurredBy.trim() || user?.name || 'STAFF').toUpperCase(),
         company: form.company.trim().toUpperCase(),
-        description: form.description.trim(),
-        receiptNo: form.receiptNo.trim(),
+        description: finalDescription,
+        receiptNo: finalReceiptNo,
         amount,
         expenseCategory: form.expenseCategory,
         sourceOfFunds: form.sourceOfFunds.trim(),
@@ -1274,7 +1296,7 @@ export default function AuditFinanceExpenses() {
         updateHistory: [{ action: 'created', by: currentUserLabel, at: now }]
       }
 
-    const normalizedReceiptNo = (form.receiptNo || '').trim().toUpperCase()
+    const normalizedReceiptNo = noReceipt ? '' : (form.receiptNo || '').trim().toUpperCase()
     if (normalizedReceiptNo) {
       const duplicate = expenses.find(
         (e) => (e.receiptNo || '').trim().toUpperCase() === normalizedReceiptNo && e.id !== (editing?.id || '')
@@ -1632,6 +1654,21 @@ export default function AuditFinanceExpenses() {
 
 
 
+  const noReceiptControl = uploadedReceiptUrl ? null : (
+    <div className="flex flex-col gap-1.5">
+      <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer" style={{ color: textPrimary }}>
+        <input type="checkbox" checked={noReceiptForm} onChange={e => setNoReceiptForm(e.target.checked)} />
+        No receipt available for this expense
+      </label>
+      {noReceiptForm && (
+        <input value={noReceiptReasonForm} onChange={e => setNoReceiptReasonForm(e.target.value)}
+          placeholder="Why is there no receipt? (e.g. toll gate, no OR issued)"
+          className="w-full rounded-lg px-3 py-2 text-xs outline-none"
+          style={{ backgroundColor: inputBg, border: `1px solid ${noReceiptReasonForm.trim().length < 5 ? danger : inputBorder}`, color: textPrimary }} />
+      )}
+    </div>
+  )
+
   if (!canAccess) return <div className="p-8 text-center" style={{ color: textMuted }}>Expense records are available for branch employees, managers, and admins only.</div>
 
   if (initialLoading || !revealed) {
@@ -1982,6 +2019,9 @@ export default function AuditFinanceExpenses() {
                   className="w-full rounded-xl sm:rounded-lg px-3.5 py-2.5 sm:px-2.5 sm:py-1.5 text-base sm:text-xs outline-none transition-all"
                   style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, ...scannedStyle('receiptNo') }} />
               )}
+
+              {/* No receipt option */}
+              {noReceiptControl && field('Receipt', noReceiptControl)}
 
               {/* Amount */}
               {field(
@@ -2724,7 +2764,8 @@ export default function AuditFinanceExpenses() {
                       <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Incurred By</th>
                       <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Company / Vendor</th>
                       <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Description</th>
-                      <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Category &amp; Source</th>
+                      <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Category</th>
+                      <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Source</th>
                       <th className="px-3 py-3 text-right font-bold" style={{ color: textMuted }}>Amount</th>
                       <th className="px-3 py-3 text-center font-bold" style={{ color: textMuted }}>Receipt</th>
                       <th className="px-3 py-3"></th>
@@ -2754,13 +2795,21 @@ export default function AuditFinanceExpenses() {
                           )}
                         </td>
                         <td className="px-3 py-2.5">
-                          <span className="uppercase font-semibold" style={{ color: textPrimary }}>
-                            {row.expenseCategory}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="uppercase font-semibold" style={{ color: textPrimary }}>
+                              {row.expenseCategory || '—'}
+                            </span>
+                            {isDepositRecord(row) && (
+                              <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ backgroundColor: `${accent}1A`, color: accent }}>
+                                Deposit
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className="uppercase font-medium text-[11px]" style={{ color: row.sourceOfFunds ? textPrimary : textMuted }}>
+                            {row.sourceOfFunds || '—'}
                           </span>
-{isDepositRecord(row) && <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ backgroundColor: `${accent}1A`, color: accent }}>Deposit</span>}
-                          {row.sourceOfFunds && (
-                            <div className="text-[10px] mt-0.5" style={{ color: textMuted }}>Source: {row.sourceOfFunds}</div>
-                          )}
                         </td>
                         <td className="px-3 py-2.5 text-right font-bold" style={{ color: textPrimary }}>
                           ₱{peso(row.amount)}
@@ -2821,7 +2870,7 @@ export default function AuditFinanceExpenses() {
                   </tbody>
                   <tfoot>
                     <tr style={{ borderTop: `2px solid ${border}` }}>
-                      <td colSpan={5} className="px-3 py-2.5 font-bold text-right" style={{ color: textMuted }}>TOTAL</td>
+                      <td colSpan={6} className="px-3 py-2.5 font-bold text-right" style={{ color: textMuted }}>TOTAL</td>
                       <td className="px-3 py-2.5 text-right font-bold" style={{ color: accent }}>₱{peso(totalFiltered)}</td>
                       <td />
                       <td />
@@ -2987,6 +3036,9 @@ export default function AuditFinanceExpenses() {
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
                     />
                   )}
+
+                  {/* No receipt option */}
+                  {noReceiptControl && field('Receipt', noReceiptControl)}
 
                   {/* Amount */}
                   {field(
