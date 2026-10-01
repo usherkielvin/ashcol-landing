@@ -131,6 +131,8 @@ export default function AuditFinanceExpenses() {
   const photoTargetRef = useRef<AuditExpense | null>(null)
   const [attachingPhotoId, setAttachingPhotoId] = useState<string | null>(null)
   const [pendingOpen, setPendingOpen] = useState(true)
+  // "Why the difference?" stays folded until asked for.
+  const [whyOpen, setWhyOpen] = useState(false)
   const scanRef = useRef<HTMLInputElement>(null)
   const cameraRef = useRef<HTMLInputElement>(null)
   const modalFileInputRef = useRef<HTMLInputElement>(null)
@@ -2244,11 +2246,20 @@ export default function AuditFinanceExpenses() {
               const visible = rows.filter(r => r.list.length > 0)
               return (
                 <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${border}` }}>
-                  <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
-                    <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: textPrimary }}>Why the difference?</span>
-                    {dtrLines.loading && <span className="text-[10px]" style={{ color: textMuted }}>Checking DTR entries…</span>}
-                    {dtrLines.failed && <span className="text-[10px]" style={{ color: danger }}>Could not load DTR entries</span>}
-                  </div>
+                  <button type="button" onClick={() => setWhyOpen(v => !v)} className="w-full px-3 py-2 flex items-center justify-between gap-3 text-left cursor-pointer hover:bg-black/5 dark:hover:bg-white/5" style={{ borderBottom: whyOpen ? `1px solid ${border}` : undefined }}>
+                    <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: textPrimary }}>
+                      Why the difference?
+                      <span className="ml-2 normal-case tracking-normal font-semibold" style={{ color: textMuted }}>
+                        {visible.length + (cashAdvance > 0.005 ? 1 : 0) === 0 ? 'every entry matches' : `${visible.length + (cashAdvance > 0.005 ? 1 : 0)} reason${visible.length + (cashAdvance > 0.005 ? 1 : 0) === 1 ? '' : 's'}`}
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-2">
+                      {dtrLines.loading && <span className="text-[10px]" style={{ color: textMuted }}>Checking DTR entries…</span>}
+                      {dtrLines.failed && <span className="text-[10px]" style={{ color: danger }}>Could not load DTR entries</span>}
+                      <ChevronDown size={13} style={{ color: textMuted, transform: whyOpen ? 'rotate(180deg)' : undefined }} />
+                    </span>
+                  </button>
+                  {whyOpen && (<div>
                   {cashAdvance > 0.005 && (
                     <div className="px-3 py-2 flex items-center justify-between gap-3 text-xs" style={{ borderBottom: `1px solid ${border}` }}>
                       <div className="flex flex-col">
@@ -2290,6 +2301,7 @@ export default function AuditFinanceExpenses() {
                       </div>
                     )
                   })}
+                  </div>)}
                 </div>
               )
             })()}

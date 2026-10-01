@@ -527,7 +527,7 @@ Possible duplicates counter on its right** → **Pending receipts**, then the ca
 tiles (Expense Records, DTR Expenses + Purchases, Difference) → deposit / photo / no-receipt chips → category chips. The Pending
 receipts list is open by default (own open/closed state `pendingOpen`), scrolls up to 65% of the screen height, and has larger
 rows and **Add receipt / Add photo** buttons so the pendings are quick to clear. On narrow screens the duplicates counter stacks
-under the difference list. Build passes; not viewed in a browser yet.
+under the difference list. "Why the difference?" is **folded by default**: its header is a dropdown showing how many reasons there are (`whyOpen`). Build passes; not viewed in a browser yet.
 
 ---
 
