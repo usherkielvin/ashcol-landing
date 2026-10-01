@@ -772,6 +772,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const [refundablePurchases, setRefundablePurchases] = useState<any[]>([])
   // Purchases whose receipt was higher than the cash given: the member is owed the extra (a REIMBURSE row below).
   const [reimbursablePurchases, setReimbursablePurchases] = useState<any[]>([])
+  // Purchases closed with cash left over: the member must hand that change back (a Cash Return row below).
+  const [cashReturnsDue, setCashReturnsDue] = useState<any[]>([])
 
   // Fetch branch details, closing cash, and rosters
   useEffect(() => {
@@ -823,9 +825,12 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           const lineOf = (p: any) => (p.auditLine || 'TAGUIG_SALES')
           setReimbursablePurchases((purchasesData || []).filter((p: any) =>
             (p.reimburseDue || 0) > 0.005 && !p.reimburseFound && (!selectedAuditLine || lineOf(p) === selectedAuditLine)))
+          setCashReturnsDue((purchasesData || []).filter((p: any) =>
+            (p.refundDue || 0) > 0.005 && !p.cashReturnFound && (!selectedAuditLine || lineOf(p) === selectedAuditLine)))
         } else {
           setRefundablePurchases([])
           setReimbursablePurchases([])
+          setCashReturnsDue([])
         }
       } catch (err) {
         console.error('Error loading branch data:', err)
@@ -1602,6 +1607,20 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     const blank = expReceipt.find(isBlankExpenseRow)
     if (blank) setExpReceipt(prev => prev.map(r => r.id === blank.id ? { ...r, ...fill } : r))
     else setExpReceipt(prev => [...prev, { ...mkExp(), ...fill }])
+  }
+
+  // Adds a ready-filled Cash Return row ("MATERIAL ALLOWANCE" -> "MATERIAL CHANGE") for change a member owes back.
+  const addCashReturnRow = (p: any) => {
+    const detail = (p.description && p.description.includes('|') ? p.description.split('|').slice(1).join(' ') : p.description || '').trim()
+    const swapped = detail.replace(/\bALLOWANCE\b/i, 'CHANGE')
+    const row = {
+      name: getWorkerName(p),
+      description: (swapped !== detail ? swapped : `${detail} CHANGE`).trim().toUpperCase(),
+      amount: Number(p.refundDue).toFixed(2),
+    }
+    const blank = cashRet.find(r => !r.name && !r.description && !r.amount)
+    if (blank) setCashRet(prev => prev.map(r => r.id === blank.id ? { ...r, ...row } : r))
+    else setCashRet(prev => [...prev, { ...mkRet(), ...row }])
   }
 
   // "Scan receipt" in the section header: reuse the empty row if there is one, otherwise add a row, then open the scanner.
@@ -2906,6 +2925,26 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           {/* Cash Returns */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Cash Returns" total={totalCashReturns} variant="income" />
+            {!isFormDisabled && (() => {
+              // Hide the ones already entered as a row on this DTR.
+              const pending = cashReturnsDue.filter(p => !cashRet.some(r =>
+                r.name.trim().toUpperCase() === getWorkerName(p).toUpperCase() && Math.abs(num(r.amount) - Number(p.refundDue)) < 0.01))
+              if (pending.length === 0) return null
+              return (
+                <div className="mx-2 mt-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-200">
+                  <p className="font-bold">Cash returns due — change left over from purchases</p>
+                  <div className="mt-1.5 flex flex-col gap-1">
+                    {pending.map(p => (
+                      <div key={p.id} className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate">{getWorkerName(p)} · {(p.description || '').split('|').slice(1).join(' ').trim() || p.description} · <strong>{php(Number(p.refundDue))}</strong></span>
+                        <button type="button" onClick={() => addCashReturnRow(p)}
+                          className="shrink-0 rounded-md bg-emerald-600 px-2 py-1 text-[11px] font-bold text-white hover:bg-emerald-700">Add cash return</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })()}
             <div className="p-2">
               <table className="w-full text-left border-collapse">
                 <thead>

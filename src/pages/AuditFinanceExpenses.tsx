@@ -131,6 +131,12 @@ export default function AuditFinanceExpenses() {
   const photoTargetRef = useRef<AuditExpense | null>(null)
   const [attachingPhotoId, setAttachingPhotoId] = useState<string | null>(null)
   const [pendingOpen, setPendingOpen] = useState(true)
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === 'visible') setDataVersion(v => v + 1) }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh) }
+  }, [])
   // "Why the difference?" stays folded until asked for.
   const [whyOpen, setWhyOpen] = useState(false)
   const scanRef = useRef<HTMLInputElement>(null)
@@ -683,35 +689,43 @@ export default function AuditFinanceExpenses() {
 
   type DtrSummary = { loading: boolean; total: number | null; payroll: number; purchases: number; deposits: number; matched: boolean }
   const [dtrExpenses, setDtrExpenses] = useState<DtrSummary>({ loading: false, total: null, payroll: 0, purchases: 0, deposits: 0, matched: false })
+  // Results are kept per branch + month: going back to a month shows it instantly and refreshes quietly behind it.
+  const dtrExpensesCache = useRef(new Map<string, DtrSummary>())
+  const dtrFrom = dtrPeriod?.from ?? ''
+  const dtrTo = dtrPeriod?.to ?? ''
   useEffect(() => {
     const empty = { loading: false, total: null, payroll: 0, purchases: 0, deposits: 0, matched: false }
-    if (!branchId || !dtrPeriod) { setDtrExpenses(empty); return }
+    if (!branchId || !dtrFrom) { setDtrExpenses(empty); return }
     let cancelled = false
-    setDtrExpenses({ ...empty, loading: true })
+    const cacheKey = `${branchId}|${branchName}|${dtrFrom}|${dtrTo}`
+    const cached = dtrExpensesCache.current.get(cacheKey)
+    setDtrExpenses(cached ? { ...cached, loading: false } : { ...empty, loading: true })
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
     // Range summary rows carry no branchId, only display names ("CANDELARIA", "TAGUIG - SALES"), so match on names.
     const norm = (n?: string | null) => (n || '').replace(/^ashcol\s+/i, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z]+/g, ' ').trim()
     const target = norm(branchName)
-    fetch(`${API_BASE_URL}/v1/reports/audit-summary-range?from=${dtrPeriod.from}&to=${dtrPeriod.to}`, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${API_BASE_URL}/v1/reports/audit-summary-range?from=${dtrFrom}&to=${dtrTo}`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((rows: Array<{ branchName?: string; logicalBranchName?: string; totalExpenses?: number; payrollExpenses?: number; totalForPurchase?: number; totalDeposits?: number }>) => {
         if (cancelled) return
         const matched = rows.filter(r => norm(r.branchName) === target)
-        setDtrExpenses({
+        const next: DtrSummary = {
           loading: false,
           matched: matched.length > 0,
           total: matched.reduce((sum, r) => sum + (r.totalExpenses || 0), 0),
           payroll: matched.reduce((sum, r) => sum + (r.payrollExpenses || 0), 0),
           purchases: matched.reduce((sum, r) => sum + (r.totalForPurchase || 0), 0),
           deposits: matched.reduce((sum, r) => sum + (r.totalDeposits || 0), 0),
-        })
+        }
+        dtrExpensesCache.current.set(cacheKey, next)
+        setDtrExpenses(next)
       })
       .catch(err => {
         console.error('[Expense Records] DTR summary fetch failed:', err)
-        if (!cancelled) setDtrExpenses(empty)
+        if (!cancelled && !cached) setDtrExpenses(empty)
       })
     return () => { cancelled = true }
-  }, [branchId, branchName, dtrPeriod])
+  }, [branchId, branchName, dtrFrom, dtrTo])
 
   const periodRecords = useMemo(() => {
     if (!dtrPeriod) return []
@@ -729,11 +743,16 @@ export default function AuditFinanceExpenses() {
   // Bumped after a purchase receipt is added so the DTR lines and the pending list reload.
   const [dataVersion, setDataVersion] = useState(0)
   type DtrLine = { id: string; type?: string; description: string; amount: number; actualAmount?: number; receiptReturned?: boolean; resolvedExpenseId?: string; reportDate?: string; refundDue?: number; cashReturnFound?: boolean; reimburseDue?: number; reimburseFound?: boolean }
-  const [dtrLines, setDtrLines] = useState<{ loading: boolean; rows: DtrLine[]; failed: boolean }>({ loading: false, rows: [], failed: false })
+  // One feed of this branch's purchases (every date), loaded once per branch and kept in a cache so switching months or
+  // coming back is instant. The month's DTR lines and the all-dates pending list are both derived from it, so they cannot
+  // disagree and the page makes one request instead of two.
+  const purchasesCache = useRef(new Map<string, any[]>())
+  const [purchasesFeed, setPurchasesFeed] = useState<{ loading: boolean; rows: any[]; failed: boolean }>({ loading: false, rows: [], failed: false })
   useEffect(() => {
-    if (!branchId || !dtrPeriod) { setDtrLines({ loading: false, rows: [], failed: false }); return }
+    if (!branchId) { setPurchasesFeed({ loading: false, rows: [], failed: false }); return }
     let cancelled = false
-    setDtrLines(prev => ({ ...prev, loading: true, failed: false }))
+    const cached = purchasesCache.current.get(branchId)
+    setPurchasesFeed({ loading: !cached, rows: cached || [], failed: false })
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
     const params = new URLSearchParams({ branchId: branchId.replace(/-(sales|services?)$/i, '') })
     if (/-services?$/i.test(branchId)) params.set('auditLine', 'TAGUIG_SERVICE')
@@ -742,18 +761,25 @@ export default function AuditFinanceExpenses() {
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((rows: any[]) => {
         if (cancelled) return
-        const inPeriod = (rows || []).filter(r => r.reportDate && r.reportDate >= dtrPeriod.from && r.reportDate <= dtrPeriod.to)
-          // ORDER| purchases are customer orders, not counted in the DTR's Purchases total.
-          .filter(r => !String(r.description || '').startsWith('ORDER|'))
-          .map(r => ({ ...r, amount: Number(r.amount) || 0, actualAmount: Number(r.actualAmount) || 0 })) as DtrLine[]
-        setDtrLines({ loading: false, rows: inPeriod, failed: false })
+        purchasesCache.current.set(branchId, rows || [])
+        setPurchasesFeed({ loading: false, rows: rows || [], failed: false })
       })
       .catch(err => {
-        console.error('[Expense Records] DTR lines fetch failed:', err)
-        if (!cancelled) setDtrLines({ loading: false, rows: [], failed: true })
+        console.error('[Expense Records] Purchases fetch failed:', err)
+        if (!cancelled) setPurchasesFeed(prev => ({ loading: false, rows: cached ? prev.rows : [], failed: !cached }))
       })
     return () => { cancelled = true }
-  }, [branchId, dtrPeriod, dataVersion])
+  }, [branchId, dataVersion])
+
+  // DTR expense + purchase lines for the selected period.
+  const dtrLines = useMemo(() => {
+    const rows = !dtrFrom ? [] : purchasesFeed.rows
+      .filter(r => r.reportDate && r.reportDate >= dtrFrom && r.reportDate <= dtrTo)
+      // ORDER| purchases are customer orders, not counted in the DTR's Purchases total.
+      .filter(r => !String(r.description || '').startsWith('ORDER|'))
+      .map(r => ({ ...r, amount: Number(r.amount) || 0, actualAmount: Number(r.actualAmount) || 0 })) as DtrLine[]
+    return { loading: purchasesFeed.loading, failed: purchasesFeed.failed, rows }
+  }, [purchasesFeed, dtrFrom, dtrTo])
 
   // Every purchase still waiting for its receipt (all dates, not just the period) with its age in days —
   // these are the main reason the DTR and Expense Records drift apart.
@@ -762,46 +788,29 @@ export default function AuditFinanceExpenses() {
   // Purchases dated before the receipt rules started are a backlog nobody can act on; keep them apart.
   const PENDING_LEGACY_BEFORE = '2026-10-01'
   const [receiptTarget, setReceiptTarget] = useState<PendingPurchase | null>(null)
-  const [agingPurchases, setAgingPurchases] = useState<PendingPurchase[]>([])
-  useEffect(() => {
-    if (!branchId) { setAgingPurchases([]); return }
-    let cancelled = false
-    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-    const params = new URLSearchParams({ branchId: branchId.replace(/-(sales|services?)$/i, ''), pendingOnly: 'true' })
-    if (/-services?$/i.test(branchId)) params.set('auditLine', 'TAGUIG_SERVICE')
-    else if (/-sales$/i.test(branchId)) params.set('auditLine', 'TAGUIG_SALES')
-    fetch(`${API_BASE_URL}/v1/reports/purchases?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((rows: any[]) => {
-        if (cancelled) return
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
-        const list = (rows || [])
-          // pendingOnly also returns EXPENSE rows; ORDER| purchases are customer orders, not DTR purchases.
-          .filter(r => (!r.type || r.type === 'PURCHASE') && r.reportDate && !String(r.description || '').startsWith('ORDER|'))
-          .map(r => {
-            const d = new Date(`${r.reportDate}T00:00:00`)
-            return {
-              id: String(r.id),
-              date: String(r.reportDate),
-              label: String(r.description || '').split('|').map((p: string) => p.trim()).filter(Boolean).join(' · ') || 'Purchase',
-              worker: String(r.description || '').includes('|') ? String(r.description).split('|')[0].trim() : '',
-              detail: String(r.description || '').includes('|') ? String(r.description).split('|').slice(1).join(' ').trim() : String(r.description || '').trim(),
-              amount: r.remaining != null ? Number(r.remaining) || 0 : Math.max(0, (Number(r.amount) || 0) - (Number(r.actualAmount) || 0)),
-              given: Number(r.amount) || 0,
-              received: Number(r.actualAmount) || 0,
-              ageDays: Math.max(0, Math.round((today.getTime() - d.getTime()) / 86400000)),
-            }
-          })
-          .sort((a, b) => b.ageDays - a.ageDays)
-        setAgingPurchases(list)
+  const agingPurchases = useMemo<PendingPurchase[]>(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return purchasesFeed.rows
+      // ORDER| purchases are customer orders, not DTR purchases; finished purchases are not pending.
+      .filter(r => (!r.type || r.type === 'PURCHASE') && !r.receiptReturned && r.reportDate && !String(r.description || '').startsWith('ORDER|'))
+      .map(r => {
+        const d = new Date(`${r.reportDate}T00:00:00`)
+        const desc = String(r.description || '')
+        return {
+          id: String(r.id),
+          date: String(r.reportDate),
+          label: desc.split('|').map((x: string) => x.trim()).filter(Boolean).join(' · ') || 'Purchase',
+          worker: desc.includes('|') ? desc.split('|')[0].trim() : '',
+          detail: desc.includes('|') ? desc.split('|').slice(1).join(' ').trim() : desc.trim(),
+          amount: r.remaining != null ? Number(r.remaining) || 0 : Math.max(0, (Number(r.amount) || 0) - (Number(r.actualAmount) || 0)),
+          given: Number(r.amount) || 0,
+          received: Number(r.actualAmount) || 0,
+          ageDays: Math.max(0, Math.round((today.getTime() - d.getTime()) / 86400000)),
+        }
       })
-      .catch(err => {
-        console.error('[Expense Records] Pending purchases fetch failed:', err)
-        if (!cancelled) setAgingPurchases([])
-      })
-    return () => { cancelled = true }
-  }, [branchId, dataVersion])
+      .sort((x, y) => y.ageDays - x.ageDays)
+  }, [purchasesFeed])
 
   const reconciliation = useMemo(() => {
     if (!dtrPeriod) return null
@@ -1082,6 +1091,25 @@ export default function AuditFinanceExpenses() {
     } else if ((out.refundDue || 0) > 0.005 && !out.cashReturnFound) {
       alert(`Receipt saved to the DTR and Expense Records.\n\nThe receipt is ₱${(out.refundDue || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })} lower than the cash given. Make sure that cash return is entered under Cash Returns on the DTR (pick the REFUND entry for this purchase).`)
     }
+  }
+
+  // A part-receipted purchase whose rest was handed back as cash: close it; the Cash Return is then added on the DTR.
+  const returnPendingAsCash = async (p: PendingPurchase) => {
+    const amt = p.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })
+    if (!window.confirm(`Close this purchase and treat the remaining ₱${amt} as cash returned by ${p.worker || 'the member'}?\n\nIt is then added as a Cash Return (e.g. “MATERIAL CHANGE”) on the DTR — it is offered ready-filled under Cash Returns on the DTR of the day the cash comes back.`)) return
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    const res = await fetch(`${API_BASE_URL}/v1/reports/purchases/${encodeURIComponent(p.id)}/close`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) {
+      let msg = `Could not close the purchase (HTTP ${res.status})`
+      try { const j = await res.json(); msg = j.error || j.message || msg } catch { /* keep default */ }
+      alert(msg)
+      return
+    }
+    setDataVersion(v => v + 1)
+    await reload()
   }
 
   const saveExpense = async (expense: AuditExpense) => {
@@ -2183,7 +2211,8 @@ export default function AuditFinanceExpenses() {
       {activeTab === 'expenses' && branchId && dtrPeriod && (() => {
         const fmt = (n: number) => `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
         const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '-' : ''}${fmt(Math.abs(n))}`
-        const hasDtr = dtrExpenses.matched && !dtrExpenses.loading && dtrExpenses.total != null
+        const summaryLoading = dtrExpenses.loading || dtrLines.loading
+        const hasDtr = dtrExpenses.matched && !summaryLoading && dtrExpenses.total != null
         // Expense Records hold both expenses and resolved purchases (materials), so compare them with
         // the DTR's Expenses + Purchases, not Expenses alone.
         const purchaseLines = dtrLines.rows.filter(l => l.type === 'PURCHASE')
@@ -2200,7 +2229,8 @@ export default function AuditFinanceExpenses() {
           acc[k] = (acc[k] || 0) + e.amount
           return acc
         }, {})).sort((a, b) => b[1] - a[1])
-        const stat = (label: string, value: string, color: string, sub?: React.ReactNode) => (
+        const pulse = <span className="inline-block h-6 w-28 rounded-md animate-pulse align-middle" style={{ backgroundColor: `${textMuted}2e` }} />
+        const stat = (label: string, value: React.ReactNode, color: string, sub?: React.ReactNode) => (
           <div className="flex flex-col gap-0.5 rounded-lg px-3 py-2.5" style={{ border: `1px solid ${border}` }}>
             <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{label}</span>
             <span className="text-lg font-black tabular-nums" style={{ color }}>{value}</span>
@@ -2322,7 +2352,24 @@ export default function AuditFinanceExpenses() {
               }
               const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0)
               type Pending = { key: string; kind: 'purchase' | 'record'; date: string; label: string; amount: number; ageDays: number; purchase?: PendingPurchase; record?: AuditExpense }
-              const purchaseItems: Pending[] = agingPurchases.map(p => ({ key: `p-${p.id}`, kind: 'purchase', date: p.date, label: p.received > 0 ? `${p.label} — ${fmt(p.received)} receipted of ${fmt(p.given)}, remaining` : p.label, amount: p.amount, ageDays: p.ageDays, purchase: p }))
+              // The dedicated pending fetch can be older than the DTR-lines feed (e.g. a DTR submitted after this page loaded),
+              // so also take every unreceipted purchase the DTR-lines feed shows — "Why the difference?" and this list must agree.
+              const agingIds = new Set(agingPurchases.map(p => p.id))
+              const fromLines: PendingPurchase[] = dtrLines.rows
+                .filter(l => l.type === 'PURCHASE' && !l.receiptReturned && !!l.reportDate && !agingIds.has(l.id) && !l.description.startsWith('ORDER|'))
+                .map(l => {
+                  const d = new Date(`${l.reportDate}T00:00:00`)
+                  const parts = l.description.split('|')
+                  return {
+                    id: l.id, date: l.reportDate as string,
+                    label: parts.map(x => x.trim()).filter(Boolean).join(' · ') || 'Purchase',
+                    worker: l.description.includes('|') ? parts[0].trim() : '',
+                    detail: l.description.includes('|') ? parts.slice(1).join(' ').trim() : l.description.trim(),
+                    amount: Math.max(0, l.amount - (l.actualAmount || 0)), given: l.amount, received: l.actualAmount || 0,
+                    ageDays: Math.max(0, Math.round((todayMid.getTime() - d.getTime()) / 86400000)),
+                  }
+                })
+              const purchaseItems: Pending[] = [...agingPurchases, ...fromLines].map(p => ({ key: `p-${p.id}`, kind: 'purchase', date: p.date, label: p.received > 0 ? `${p.label} — ${fmt(p.received)} receipted of ${fmt(p.given)}, remaining` : p.label, amount: p.amount, ageDays: p.ageDays, purchase: p }))
               // Cash advances have no receipt; every other record (expenses, deposits) needs its photo / slip.
               const recordItems: Pending[] = branchExpenses
                 .filter(e => !e.receiptImageUri && !isNoReceipt(e) && !/^CASH ADVANCE/i.test(e.expenseCategory || ''))
@@ -2345,7 +2392,11 @@ export default function AuditFinanceExpenses() {
                 // Plus the last 3 days, even when they fall in another month: yesterday's receipts are still chased today.
                 .filter(i => !byMonth || (i.date >= dtrPeriod.from && i.date <= dtrPeriod.to) || (!!i.date && i.ageDays <= 3))
                 .sort((x, y) => (y.date || '0000').localeCompare(x.date || '0000'))
-              if (all.length === 0) return null
+              if (all.length === 0) {
+                return purchasesFeed.loading ? (
+                  <div className="mb-3 rounded-lg px-4 py-3 text-sm animate-pulse" style={{ border: `1px solid ${border}`, color: textMuted }}>Loading pending receipts…</div>
+                ) : null
+              }
               const current = byMonth ? all : all.filter(i => i.date >= PENDING_LEGACY_BEFORE)
               const legacy = byMonth ? [] : all.filter(i => i.date < PENDING_LEGACY_BEFORE)
               const count = (list: Pending[], kind: Pending['kind']) => list.filter(i => i.kind === kind).length
@@ -2364,6 +2415,14 @@ export default function AuditFinanceExpenses() {
                   <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={i.label}>{i.label}</span>
                   <span className="shrink-0 font-bold tabular-nums" style={{ color: ageColor(i.ageDays) }}>{ageLabel(i.ageDays)}</span>
                   <span className="shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{fmt(i.amount)}</span>
+                  {i.purchase && i.purchase.received > 0 && (
+                    <button type="button" onClick={() => void returnPendingAsCash(i.purchase!)}
+                      title="The rest was returned as cash — close this purchase and add it as a Cash Return"
+                      className="shrink-0 flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-md cursor-pointer"
+                      style={{ color: '#b45309', border: '1px solid #f59e0b88', backgroundColor: '#f59e0b14' }}>
+                      Return {fmt(i.purchase.amount)} as cash
+                    </button>
+                  )}
                   {i.purchase ? (
                     <button type="button" onClick={() => setReceiptTarget(i.purchase!)}
                       className="shrink-0 flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-md cursor-pointer"
@@ -2492,12 +2551,12 @@ export default function AuditFinanceExpenses() {
             </div>
             <div className="p-3 grid grid-cols-2 lg:grid-cols-3 gap-2">
               {stat('Expense Records', fmt(recordsTotalForDtr), textPrimary, `${recordsForDtr.length} record${recordsForDtr.length === 1 ? '' : 's'} · excl. deposits`)}
-              {stat('DTR Expenses + Purchases', dtrExpenses.loading ? 'Loading…' : !hasDtr ? 'Unavailable' : fmt(dtrSpend), textPrimary,
-                dtrExpenses.loading ? undefined : !dtrExpenses.matched ? 'No DTR found for this branch'
+              {stat('DTR Expenses + Purchases', summaryLoading ? pulse : !hasDtr ? 'Unavailable' : fmt(dtrSpend), textPrimary,
+                summaryLoading ? 'Loading this month…' : !dtrExpenses.matched ? 'No DTR found for this branch'
                   : linesTyped
                     ? `Expenses ${fmt(dtrExpenses.total || 0)} · Purchases w/ receipt ${fmt(resolvedPurchases)}${pendingPurchases > 0 ? ` · ${fmt(pendingPurchases)} awaiting receipt (not counted)` : ''}`
                     : `Expenses ${fmt(dtrExpenses.total || 0)} · Purchases ${fmt(dtrExpenses.purchases)}`)}
-              {stat('Difference', diff == null ? '—' : signed(diff), diffColor, 'Records − DTR')}
+              {stat('Difference', summaryLoading ? pulse : diff == null ? '—' : signed(diff), diffColor, 'Records − DTR')}
             </div>
             <div className="mx-3 mb-3 flex flex-wrap items-stretch gap-2">
             <div className="w-fit max-w-full rounded-lg px-3 py-1.5 flex items-center gap-3" style={{ border: `1px solid ${accent}44`, backgroundColor: `${accent}0d` }}>

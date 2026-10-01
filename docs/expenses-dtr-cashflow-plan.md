@@ -531,6 +531,51 @@ under the difference list. "Why the difference?" is **folded by default**: its h
 
 ---
 
+## Task 21 — BUG: today's purchases missing from Pending receipts (2026-10-01, uncommitted)
+
+**Symptom:** four Oct 1 purchases appeared under "Why the difference? → Purchases waiting for receipt" but not in the Pending receipts list.
+**Likely cause (not reproduced — no access to the data):** the two lists came from two separate fetches of the same endpoint. The
+DTR-lines feed refreshes whenever the records reload; the pending-only feed was fetched once per branch, so a DTR submitted after the
+page loaded showed in one and not the other.
+**Fix (`AuditFinanceExpenses.tsx`):** (1) Pending receipts now also includes every unreceipted purchase the DTR-lines feed shows, so
+the two can no longer disagree; (2) both feeds refetch when the tab regains focus/visibility. If a purchase is still missing after
+this, the cause is elsewhere (e.g. its branch/audit-line differs between the two views) and needs a look at that DTR. Build passes.
+
+---
+
+## Task 22 — Smoother summary loading per month (2026-10-01, uncommitted)
+
+`AuditFinanceExpenses.tsx`. Before: the summary was fed by three independent fetches (DTR totals, purchases for the month, a second
+purchases fetch for the pending list); the effects depended on the `dtrPeriod` object, which is rebuilt whenever records reload, so they
+re-ran often; while a month loaded, the tiles showed the *previous* month's lines, "₱0.00" and "Balanced" before the DTR data arrived.
+Now: (1) **one purchases feed per branch** (all dates) with the month's DTR lines and the pending list both derived from it — one
+request instead of two, and the two can no longer disagree; (2) DTR totals and the purchases feed are **cached per branch (+ month)**
+and refreshed quietly, so revisiting a month or tab is instant; (3) effects depend on the period's from/to strings, not the object, so
+they stop re-running on every records reload; (4) while data is loading, the DTR/Difference tiles show a pulsing placeholder and
+"Loading this month…", the Balanced chip is hidden until both feeds are in, and the pending list shows a placeholder instead of popping
+in. The caches live for the page session only; the records list itself loads as before. Build passes; not timed in a browser.
+
+---
+
+## Task 23 — "Return ₱X as cash" on a part-receipted purchase → Cash Return on the DTR (2026-10-01, uncommitted)
+
+**Needs a backend deploy; no schema change.** Both repos compile; nothing manually tested.
+
+Case: a ₱4,500 material allowance with ₱4,410 receipted leaves ₱90 that the member hands back as change.
+- **Pending receipts:** a purchase with something receipted shows **Return ₱90.00 as cash** next to Add receipt. It calls the new
+  `POST /v1/reports/purchases/{id}/close` (`ReportService.closePurchaseShort`): marks the purchase complete (the receipts so far stay as
+  they are, no record is created), so the unreceipted rest becomes a refund due and the Cash Return check from Task 10 applies. It is
+  refused when nothing has been receipted yet (the whole amount would then have to be returned — add a receipt first).
+- **DTR → Cash Returns:** a green **Cash returns due** banner lists those purchases; **Add cash return** adds a ready-filled row in
+  the format you use: name = the member, description = the purchase detail with ALLOWANCE → CHANGE ("MATERIAL ALLOWANCE" → "MATERIAL
+  CHANGE"; otherwise "<detail> CHANGE"), amount = the change. The banner entry disappears once the row exists, and from the backend
+  once the DTR is saved with a matching Cash Return.
+- **Why not write straight into the Oct 1 DTR:** a DTR's cash totals (cash on hand carried forward) are recomputed from its rows when it is
+  saved; appending a row from this page would change a submitted report's balance without going through that check. So the change is
+  offered, ready-filled, on the DTR of the day the cash actually comes back (Oct 1 for today's), where it is saved normally.
+
+---
+
 ## Deferred (need a decision or a schema change — ask the user before starting)
 
 - **Month close / lock** (recommended right after Task 4 — it is the only control that makes "must match from October" stick). Admin marks a branch-month "Closed" once Balanced; DTRs and records for that month become
