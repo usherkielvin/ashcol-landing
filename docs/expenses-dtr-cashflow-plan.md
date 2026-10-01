@@ -382,9 +382,12 @@ the DTR's report date, as deposits and cash advances already did. The scan dialo
 (`dateNote` prop). The receipt date is still kept on the DTR row/item and in the photo; it is no longer the record's date.
 Records made from *purchases* (Add receipt on Expense Records) still use the receipt date.
 
-**Existing records:** re-saving the DTR (Update) rewrites its records with the new date, so the two flagged Oct 1 rows
-are fixed by re-saving the Oct 1 DTR. Other already-saved DTRs stay as they are until re-saved; the "Recorded in a
-different month" bucket will keep listing them. A bulk fix would need a script. Build passes; manual test pending.
+**Existing records:** re-saving the DTR (Update) rewrites its records with the new date. To avoid re-saving every DTR,
+Expense Records now has a one-click repair: in "Recorded in a different month", **Fix dates to match their DTR (N)**
+re-dates every `dtr-*` record in that list to its DTR's report date (`fixDtrRecordDates`, confirm first, updates the
+record's edit history). Only DTR-created records are offered; purchase-resolved records keep their receipt date.
+Receipts dated before the DTR (e.g. Sep 30 on the Oct 1 DTR) can still be added — only the record's date follows the DTR.
+Build passes; manual test pending.
 
 ---
 

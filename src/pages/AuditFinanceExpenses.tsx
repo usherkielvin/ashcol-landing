@@ -125,6 +125,7 @@ export default function AuditFinanceExpenses() {
   const photoInputRef = useRef<HTMLInputElement>(null)
   const photoTargetRef = useRef<AuditExpense | null>(null)
   const [attachingPhotoId, setAttachingPhotoId] = useState<string | null>(null)
+  const [fixingDates, setFixingDates] = useState(false)
   const scanRef = useRef<HTMLInputElement>(null)
   const cameraRef = useRef<HTMLInputElement>(null)
   const modalFileInputRef = useRef<HTMLInputElement>(null)
@@ -801,7 +802,7 @@ export default function AuditFinanceExpenses() {
     const byId = new Map(branchExpenses.map(e => [e.id, e]))
     const from = new Date(`${dtrPeriod.from}T00:00:00`).getTime()
     const to = new Date(`${dtrPeriod.to}T23:59:59`).getTime()
-    type Item = { key: string; date: string; label: string; amount: number; note?: string }
+    type Item = { key: string; date: string; label: string; amount: number; note?: string; recordId?: string; fixDate?: string }
     const buckets = {
       depositAsExpense: [] as Item[],
       pendingPurchase: [] as Item[],
@@ -837,7 +838,12 @@ export default function AuditFinanceExpenses() {
       const rec = byId.get(rid)
       if (!rec) { buckets.deleted.push(item); continue }
       const t = dateToTime(rec.date)
-      if (t && (t < from || t > to)) { buckets.otherMonth.push({ ...item, note: `recorded as ${rec.date}` }); continue }
+      if (t && (t < from || t > to)) {
+        // Records created from a DTR are dated with that DTR; an older receipt-dated one can be re-dated.
+        const fixable = rid.startsWith('dtr-') && !!l.reportDate
+        buckets.otherMonth.push({ ...item, note: `recorded as ${rec.date}`, ...(fixable ? { recordId: rid, fixDate: l.reportDate } : {}) })
+        continue
+      }
       const expected = l.type === 'PURCHASE' && l.receiptReturned && l.actualAmount ? l.actualAmount : l.amount
       if (Math.abs(rec.amount - expected) >= 0.01) {
         buckets.amountDiff.push({ ...item, amount: expected - rec.amount, note: `DTR ${expected.toFixed(2)} · record ${rec.amount.toFixed(2)}` })
@@ -1053,6 +1059,36 @@ export default function AuditFinanceExpenses() {
     await reload()
     if ((out.refundDue || 0) > 0.005 && !out.cashReturnFound) {
       alert(`Receipt saved to the DTR and Expense Records.\n\nThe receipt is ₱${(out.refundDue || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })} lower than the cash given. Make sure that cash return is entered under Cash Returns on the DTR (pick the REFUND entry for this purchase).`)
+    }
+  }
+
+  // Re-dates records made from a DTR to that DTR's date (older ones kept the receipt date, which can fall in the
+  // previous month and make Records and DTR disagree).
+  const fixDtrRecordDates = async (items: { recordId?: string; fixDate?: string }[]) => {
+    const todo = items.filter(i => i.recordId && i.fixDate)
+    if (todo.length === 0) return
+    if (!window.confirm(`Change the date of ${todo.length} record${todo.length === 1 ? '' : 's'} to the date of the DTR ${todo.length === 1 ? 'it was' : 'they were'} entered on?`)) return
+    setFixingDates(true)
+    try {
+      const now = new Date().toISOString()
+      for (const i of todo) {
+        const rec = expenses.find(e => e.id === i.recordId)
+        if (!rec) continue
+        await upsertAuditExpense({
+          ...rec,
+          date: parseSmartDate(i.fixDate!) || i.fixDate!,
+          updatedBy: currentUserLabel,
+          updatedAt: now,
+          updateHistory: [...(rec.updateHistory || []), { action: 'updated', by: currentUserLabel, at: now }],
+        })
+      }
+      await reload()
+      setDataVersion(v => v + 1)
+    } catch (err) {
+      console.error('[Expense Records] Fix DTR record dates failed:', err)
+      alert('Could not update every date. Please try again.')
+    } finally {
+      setFixingDates(false)
     }
   }
 
@@ -2390,6 +2426,13 @@ export default function AuditFinanceExpenses() {
                         </button>
                         {open && (
                           <div className="px-3 pb-2 max-h-56 overflow-y-auto">
+                            {r.id === 'otherMonth' && r.list.some(i => i.recordId) && (
+                              <button type="button" disabled={fixingDates} onClick={() => void fixDtrRecordDates(r.list)}
+                                className="my-1.5 flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1.5 rounded-md cursor-pointer disabled:opacity-60"
+                                style={{ color: accent, border: `1px solid ${accent}55`, backgroundColor: `${accent}12` }}>
+                                {fixingDates && <Loader2 size={11} className="animate-spin" />} Fix dates to match their DTR ({r.list.filter(i => i.recordId).length})
+                              </button>
+                            )}
                             {r.list.map(i => (
                               <div key={i.key} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
                                 <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{i.date}</span>
