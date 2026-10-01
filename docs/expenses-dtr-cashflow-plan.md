@@ -412,7 +412,7 @@ The list scrolls (max height 24rem). Build passes; manual test pending.
 before 2026 are only reachable under "All months". The whole Summary (records total, DTR comparison, duplicates, deposits, photo
 check, categories, "Why the difference?", cash returns missing) was already period-based; the **Pending receipts** box and the
 month-report export's pending-purchase rows now follow the picker too. With a month selected the box counts only items
-dated in that month (no Oct 1 legacy split, header says which month); "All months" keeps the old behaviour. Build passes;
+dated in that month **plus anything from the last 3 days even if it is in another month** (e.g. Sep 28–30 while viewing October; the header says so) — no Oct 1 legacy split; "All months" keeps the old behaviour. Build passes;
 manual test pending.
 
 ---

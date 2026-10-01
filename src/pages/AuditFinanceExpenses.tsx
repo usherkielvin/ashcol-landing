@@ -2285,7 +2285,8 @@ export default function AuditFinanceExpenses() {
               // everything, with the pre-October backlog kept apart.
               const byMonth = filterMonth !== 'All'
               const all = [...purchaseItems, ...recordItems]
-                .filter(i => !byMonth || (i.date >= dtrPeriod.from && i.date <= dtrPeriod.to))
+                // Plus the last 3 days, even when they fall in another month: yesterday's receipts are still chased today.
+                .filter(i => !byMonth || (i.date >= dtrPeriod.from && i.date <= dtrPeriod.to) || (!!i.date && i.ageDays <= 3))
                 .sort((x, y) => (y.date || '0000').localeCompare(x.date || '0000'))
               if (all.length === 0) return null
               const current = byMonth ? all : all.filter(i => i.date >= PENDING_LEGACY_BEFORE)
@@ -2331,6 +2332,7 @@ export default function AuditFinanceExpenses() {
                       </span>
                       <span className="text-[10px]" style={{ color: textMuted }}>
                         Purchases awaiting receipt: {count(current, 'purchase')} · Records without a photo: {count(current, 'record')}
+                        {byMonth && current.some(i => i.date < dtrPeriod.from || i.date > dtrPeriod.to) && ' · includes the last 3 days from other months'}
                         {legacy.length > 0 && ` · plus ${legacy.length} before Oct 1, 2026 (${fmt(legacyTotal)})`}
                       </span>
                     </div>
