@@ -27,7 +27,7 @@ const Bookings = lazyWithPreload(() => import('./pages/Bookings'))
 const Messages = lazyWithPreload(() => import('./pages/Messages'))
 
 const DailyAuditReport = lazyWithPreload(() => import('./pages/DailyAuditReport'))
-const AuditFinanceExpenses = lazyWithPreload(() => import('./pages/AuditFinanceExpenses'))
+const ExpenseRecords = lazyWithPreload(() => import('./pages/ExpenseRecords'))
 const ForCollections = lazyWithPreload(() => import('./pages/ForCollections'))
 const Commissions = lazyWithPreload(() => import('./pages/Commissions'))
 const CashAdvances = lazyWithPreload(() => import('./pages/CashAdvances'))
@@ -142,7 +142,7 @@ export default function App() {
             <Route path="/messages/:conversationId" element={<Messages />} />
 
             <Route path="/audit-report" element={<DailyAuditReport />} />
-            <Route path="/audit-expenses" element={<AuditFinanceExpenses />} />
+            <Route path="/audit-expenses" element={<ExpenseRecords />} />
             {/* Redirect legacy /daily-report to the combined tab page */}
             <Route path="/daily-report" element={<Navigate to="/audit-report?tab=submit" replace />} />
             <Route path="/collections" element={<ForCollections />} />

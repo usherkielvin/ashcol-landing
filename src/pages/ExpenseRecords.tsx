@@ -62,7 +62,7 @@ const isDepositRecord = (e: { expenseCategory?: string; description?: string }) 
 }
 const emptyForm = (defaultBranchId = '') => ({ date: formatTodayReceiptDate(), company: '', description: '', receiptNo: '', amount: '', expenseCategory: 'OTHER' as AuditExpenseCategory, sourceOfFunds: '', incurredBy: '', branchId: defaultBranchId })
 
-export default function AuditFinanceExpenses() {
+export default function ExpenseRecords() {
   const { theme } = useTheme()
   const { user } = useAuth()
   const isLight = theme === 'light'
@@ -135,7 +135,7 @@ export default function AuditFinanceExpenses() {
   const photoInputRef = useRef<HTMLInputElement>(null)
   const photoTargetRef = useRef<AuditExpense | null>(null)
   const [attachingPhotoId, setAttachingPhotoId] = useState<string | null>(null)
-  const [pendingOpen, setPendingOpen] = useState(true)
+  const [pendingOpen, setPendingOpen] = useState(false)
   // "No receipt available" option of the record form (same convention as the DTR: receipt no. NO RECEIPT + reason in the description)
   const [noReceiptForm, setNoReceiptForm] = useState(false)
   const [noReceiptReasonForm, setNoReceiptReasonForm] = useState('')
@@ -505,7 +505,7 @@ export default function AuditFinanceExpenses() {
       const data = await loadAuditExpenses()
       setExpenses(data)
     } catch (err) {
-      console.error('[AuditFinanceExpenses] Reload error:', err)
+      console.error('[ExpenseRecords] Reload error:', err)
     }
   }, [])
 
@@ -522,7 +522,7 @@ export default function AuditFinanceExpenses() {
           setExpenses(data)
         }
       } catch (err) {
-        console.error('[AuditFinanceExpenses] Preload error:', err)
+        console.error('[ExpenseRecords] Preload error:', err)
       } finally {
         const elapsed = Date.now() - startTime
         const remaining = Math.max(0, 2000 - elapsed)
@@ -2628,20 +2628,6 @@ export default function AuditFinanceExpenses() {
                       ))}
                     </div>
                   )}
-                </div>
-              )
-            })()}
-            </div>
-            <div className="mx-3 mb-3 flex flex-wrap items-stretch gap-2">
-            {(() => {
-              // Expenses recorded on a DTR without a receipt (reason in the description) — for the admin to review.
-              const noReceipt = periodRecords.filter(isNoReceipt)
-              if (noReceipt.length === 0) return null
-              const total = noReceipt.reduce((acc, e) => acc + e.amount, 0)
-              return (
-                <div className="w-fit max-w-full rounded-lg px-3 py-1.5 flex items-center gap-3" style={{ border: '1px solid #f59e0b66', backgroundColor: '#f59e0b0d' }}>
-                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#b45309' }} title="Records saved without a receipt — search NO RECEIPT">No receipt · {noReceipt.length}</span>
-                  <span className="text-base font-black tabular-nums" style={{ color: textPrimary }}>{fmt(total)}</span>
                 </div>
               )
             })()}
