@@ -570,9 +570,49 @@ Case: a ₱4,500 material allowance with ₱4,410 receipted leaves ₱90 that th
   the format you use: name = the member, description = the purchase detail with ALLOWANCE → CHANGE ("MATERIAL ALLOWANCE" → "MATERIAL
   CHANGE"; otherwise "<detail> CHANGE"), amount = the change. The banner entry disappears once the row exists, and from the backend
   once the DTR is saved with a matching Cash Return.
+- **How it is validated:** no manual step. Every time the page loads (and on focus / after an action) the backend's `cashReturnMatches`
+  looks for a saved DTR Cash Return (`RETURN|name|description` item) with the same amount (±0.01), same branch and Taguig line, on a DTR dated
+  on or after the purchase; same member name is preferred, not required; one return clears one purchase. A match clears the red "not found"
+  box and the purchase shows in a green **✓ Cash returns matched on a DTR** list with the DTR date it was found on (`cashReturnDate`).
+  It reads *saved* DTRs only, and it proves the DTR says the change came back, not that the cash did.
+- **How it is validated:** no manual step. Every time the page loads (and on focus / after an action) the backend's `cashReturnMatches`
+  looks for a saved DTR Cash Return (`RETURN|name|description` item) with the same amount (±0.01), same branch and Taguig line, on a DTR dated
+  on or after the purchase; same member name is preferred, not required; one return clears one purchase. A match clears the red "not found"
+  box and the purchase shows in a green **✓ Cash returns matched on a DTR** list with the DTR date it was found on (`cashReturnDate`).
+  It reads *saved* DTRs only, and it proves the DTR says the change came back, not that the cash did.
+- **How it is validated:** no manual step. Every time the page loads (and on focus / after an action) the backend's `cashReturnMatches`
+  looks for a saved DTR Cash Return (`RETURN|name|description` item) with the same amount (±0.01), same branch and Taguig line, on a DTR dated
+  on or after the purchase; same member name is preferred, not required; one return clears one purchase. A match clears the red "not found"
+  box and the purchase shows in a green **✓ Cash returns matched on a DTR** list with the DTR date it was found on (`cashReturnDate`).
+  It reads *saved* DTRs only, and it proves the DTR says the change came back, not that the cash did.
 - **Why not write straight into the Oct 1 DTR:** a DTR's cash totals (cash on hand carried forward) are recomputed from its rows when it is
   saved; appending a row from this page would change a submitted report's balance without going through that check. So the change is
   offered, ready-filled, on the DTR of the day the cash actually comes back (Oct 1 for today's), where it is saved normally.
+
+---
+
+## Task 24 — BUG: "Too many receipts on this purchase" (2026-10-01, uncommitted)
+
+**Cause:** Task 18 links every receipt of a purchase by comma-joining the record ids in `report_items.resolved_expense_id`, a
+`varchar(100)` column, and rejected anything longer (~7 short ids). A purchase receipted with many small receipts (hardware items)
+hits that. It happened on production, so the Task 18 backend is live there.
+**Fix (needs the SQL run, then a backend deploy):**
+1. Run `scripts/postgres/widen_report_items_resolved_expense_id.sql` in Supabase (`ALTER COLUMN … TYPE varchar(1000)`).
+2. Backend: entity length 1000; the app limit is now 1000 characters (~80 receipts); new ids are `pr-` + 8 hex (shorter) and are checked
+   against existing record ids (an existing id would be overwritten by the save); if a link longer than 100 is written before the SQL has
+   run, the user gets a clear message naming the SQL file instead of a raw database error.
+**Until then:** a purchase that has hit the limit can still be closed with **Return ₱X as cash** (no new record needed) — or
+the remaining small receipts can be added as one combined receipt.
+
+---
+
+## Task 25 — Splash until the first month is fully loaded (2026-10-01, uncommitted)
+
+`AuditFinanceExpenses.tsx`. The ASHCOL splash (`AshcolLoader`) used to disappear as soon as the records and branches were in (after a
+2-second minimum), and then the summary filled in piece by piece. It now stays up until the default month's summary data is in as
+well — the DTR totals and the purchases feed (`revealed`, `firstDataReady`) — so the page opens complete. Shown once per visit (later
+month/branch changes use the cached data and placeholders from Task 22). A failed fetch counts as "settled", and a 15-second timeout
+reveals the page regardless, so it cannot hang on the splash. Build passes; not timed in a browser.
 
 ---
 

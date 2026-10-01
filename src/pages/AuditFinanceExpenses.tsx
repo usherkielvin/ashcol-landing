@@ -100,6 +100,11 @@ export default function AuditFinanceExpenses() {
   const [branchId, setBranchId] = useState('')
   const [expenses, setExpenses] = useState<AuditExpense[]>([])
   const [initialLoading, setInitialLoading] = useState(true)
+  // The ASHCOL splash stays up until the records AND the default month's summary data (DTR totals, purchases) are in, so
+  // the page opens complete instead of filling in piece by piece. Shown once per visit; a timeout stops it hanging.
+  const [revealed, setRevealed] = useState(false)
+  const [dtrSettledKey, setDtrSettledKey] = useState('')
+  const [purchasesSettledFor, setPurchasesSettledFor] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<AuditExpense | null>(null)
   const [showAddAnotherPrompt, setShowAddAnotherPrompt] = useState(false)
@@ -700,6 +705,7 @@ export default function AuditFinanceExpenses() {
     const cacheKey = `${branchId}|${branchName}|${dtrFrom}|${dtrTo}`
     const cached = dtrExpensesCache.current.get(cacheKey)
     setDtrExpenses(cached ? { ...cached, loading: false } : { ...empty, loading: true })
+    if (cached) setDtrSettledKey(cacheKey)
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
     // Range summary rows carry no branchId, only display names ("CANDELARIA", "TAGUIG - SALES"), so match on names.
     const norm = (n?: string | null) => (n || '').replace(/^ashcol\s+/i, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z]+/g, ' ').trim()
@@ -719,10 +725,12 @@ export default function AuditFinanceExpenses() {
         }
         dtrExpensesCache.current.set(cacheKey, next)
         setDtrExpenses(next)
+        setDtrSettledKey(cacheKey)
       })
       .catch(err => {
         console.error('[Expense Records] DTR summary fetch failed:', err)
         if (!cancelled && !cached) setDtrExpenses(empty)
+        if (!cancelled) setDtrSettledKey(cacheKey)
       })
     return () => { cancelled = true }
   }, [branchId, branchName, dtrFrom, dtrTo])
@@ -742,7 +750,7 @@ export default function AuditFinanceExpenses() {
   // DTR expense + purchase lines for the period, used to explain Records vs DTR line by line.
   // Bumped after a purchase receipt is added so the DTR lines and the pending list reload.
   const [dataVersion, setDataVersion] = useState(0)
-  type DtrLine = { id: string; type?: string; description: string; amount: number; actualAmount?: number; receiptReturned?: boolean; resolvedExpenseId?: string; reportDate?: string; refundDue?: number; cashReturnFound?: boolean; reimburseDue?: number; reimburseFound?: boolean }
+  type DtrLine = { id: string; type?: string; description: string; amount: number; actualAmount?: number; receiptReturned?: boolean; resolvedExpenseId?: string; reportDate?: string; refundDue?: number; cashReturnFound?: boolean; cashReturnDate?: string; reimburseDue?: number; reimburseFound?: boolean }
   // One feed of this branch's purchases (every date), loaded once per branch and kept in a cache so switching months or
   // coming back is instant. The month's DTR lines and the all-dates pending list are both derived from it, so they cannot
   // disagree and the page makes one request instead of two.
@@ -753,6 +761,7 @@ export default function AuditFinanceExpenses() {
     let cancelled = false
     const cached = purchasesCache.current.get(branchId)
     setPurchasesFeed({ loading: !cached, rows: cached || [], failed: false })
+    if (cached) setPurchasesSettledFor(branchId)
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
     const params = new URLSearchParams({ branchId: branchId.replace(/-(sales|services?)$/i, '') })
     if (/-services?$/i.test(branchId)) params.set('auditLine', 'TAGUIG_SERVICE')
@@ -763,10 +772,12 @@ export default function AuditFinanceExpenses() {
         if (cancelled) return
         purchasesCache.current.set(branchId, rows || [])
         setPurchasesFeed({ loading: false, rows: rows || [], failed: false })
+        setPurchasesSettledFor(branchId)
       })
       .catch(err => {
         console.error('[Expense Records] Purchases fetch failed:', err)
         if (!cancelled) setPurchasesFeed(prev => ({ loading: false, rows: cached ? prev.rows : [], failed: !cached }))
+        if (!cancelled) setPurchasesSettledFor(branchId)
       })
     return () => { cancelled = true }
   }, [branchId, dataVersion])
@@ -780,6 +791,16 @@ export default function AuditFinanceExpenses() {
       .map(r => ({ ...r, amount: Number(r.amount) || 0, actualAmount: Number(r.actualAmount) || 0 })) as DtrLine[]
     return { loading: purchasesFeed.loading, failed: purchasesFeed.failed, rows }
   }, [purchasesFeed, dtrFrom, dtrTo])
+
+  const dtrKey = branchId && dtrFrom ? `${branchId}|${branchName}|${dtrFrom}|${dtrTo}` : ''
+  const firstDataReady = !branchId || ((!dtrKey || dtrSettledKey === dtrKey) && purchasesSettledFor === branchId)
+  useEffect(() => {
+    if (!revealed && !initialLoading && firstDataReady) setRevealed(true)
+  }, [revealed, initialLoading, firstDataReady])
+  useEffect(() => {
+    const t = setTimeout(() => setRevealed(true), 15000)
+    return () => clearTimeout(t)
+  }, [])
 
   // Every purchase still waiting for its receipt (all dates, not just the period) with its age in days —
   // these are the main reason the DTR and Expense Records drift apart.
@@ -1615,7 +1636,7 @@ export default function AuditFinanceExpenses() {
 
   if (!canAccess) return <div className="p-8 text-center" style={{ color: textMuted }}>Expense records are available for branch employees, managers, and admins only.</div>
 
-  if (initialLoading) {
+  if (initialLoading || !revealed) {
     return (
       <div style={{ minHeight: '80vh', backgroundColor: bg }} className="flex items-center justify-center w-full">
         <AshcolLoader />
@@ -2548,6 +2569,33 @@ export default function AuditFinanceExpenses() {
               )
             })()}
 
+            {/* The other side of the check: change that WAS found as a Cash Return on a DTR, so it is visible that it was validated */}
+            {(() => {
+              const matched = dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && l.cashReturnFound)
+              if (matched.length === 0) return null
+              const total = matched.reduce((acc, l) => acc + (l.refundDue || 0), 0)
+              const open = openBucket === 'cashReturnMatched'
+              return (
+                <div className="mb-3 rounded-lg overflow-hidden" style={{ border: `1px solid ${accent}44` }}>
+                  <button type="button" onClick={() => setOpenBucket(open ? null : 'cashReturnMatched')} className="w-full px-3 py-2 flex items-center justify-between gap-3 text-left text-xs cursor-pointer hover:bg-black/5 dark:hover:bg-white/5">
+                    <span className="font-bold" style={{ color: accent }}>✓ Cash returns matched on a DTR: {matched.length} ({fmt(total)})</span>
+                    <ChevronDown size={13} style={{ color: textMuted, transform: open ? 'rotate(180deg)' : undefined }} className="shrink-0" />
+                  </button>
+                  {open && (
+                    <div className="px-3 pb-2 max-h-56 overflow-y-auto">
+                      {matched.map(l => (
+                        <div key={l.id} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
+                          <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{l.reportDate}</span>
+                          <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={l.description}>{l.description.split('|').filter(Boolean).join(' · ')}</span>
+                          <span className="shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{fmt(l.refundDue || 0)}</span>
+                          <span className="shrink-0 tabular-nums" style={{ color: accent }}>found on the DTR of {l.cashReturnDate || 'a later date'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
             </div>
             <div className="p-3 grid grid-cols-2 lg:grid-cols-3 gap-2">
               {stat('Expense Records', fmt(recordsTotalForDtr), textPrimary, `${recordsForDtr.length} record${recordsForDtr.length === 1 ? '' : 's'} · excl. deposits`)}
