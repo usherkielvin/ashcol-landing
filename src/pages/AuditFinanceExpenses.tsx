@@ -50,6 +50,8 @@ const formatDetailsName = (raw?: string | null): string => {
  *  category DEPOSIT or FUND TRANSFER, or a description like "DEPOSIT TO HO". */
 // Records created from a DTR row (ids `dtr-<branch>-<date>-...`) are edited on the DTR, not here.
 const isDtrLinked = (e: { id: string }) => e.id.startsWith('dtr-')
+// Expenses saved from the DTR without a receipt carry this receipt no. (their reason is in the description).
+const isNoReceipt = (e: { receiptNo?: string }) => (e.receiptNo || '').trim().toUpperCase() === 'NO RECEIPT'
 // A DTR-created record belongs to the day of the DTR it was entered on (its id embeds that date), whatever receipt
 // date was typed. Older records kept the receipt date, so the id is the reliable source.
 const dtrDateFromId = (id: string): string => /^dtr-.*-(\d{4}-\d{2}-\d{2})-(?:exp|dep|ca)-/.exec(id)?.[1] || ''
@@ -591,7 +593,7 @@ export default function AuditFinanceExpenses() {
     const groups = new Map<string, AuditExpense[]>()
     for (const e of branchExpenses) {
       const amt = Number(e.amount || 0).toFixed(2)
-      const receipt = (e.receiptNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+      const receipt = isNoReceipt(e) ? '' : (e.receiptNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
       const key = receipt
         ? `R|${receipt}|${amt}`
         : `D|${dateToTime(e.date)}|${amt}|${(e.description || '').toUpperCase().replace(/[^A-Z0-9]/g, '')}`
@@ -612,7 +614,7 @@ export default function AuditFinanceExpenses() {
     const q = search.trim().toLowerCase()
     let rows = [...branchExpenses]
     if (showDupesOnly) rows = rows.filter(e => duplicateInfo.ids.has(e.id))
-    if (showNoPhotoOnly) rows = rows.filter(e => !e.receiptImageUri && !/^CASH ADVANCE/i.test(e.expenseCategory || ''))
+    if (showNoPhotoOnly) rows = rows.filter(e => !e.receiptImageUri && !isNoReceipt(e) && !/^CASH ADVANCE/i.test(e.expenseCategory || ''))
 
     if (filterMonth !== 'All') {
       rows = rows.filter(e => {
@@ -904,7 +906,8 @@ export default function AuditFinanceExpenses() {
     const pendingTotal = purchaseLines.filter(l => !l.receiptReturned).reduce((acc, l) => acc + l.amount, 0)
     const dtrSpend = (dtrExpenses.total || 0) + (linesTyped ? resolvedPurchases : dtrExpenses.purchases)
     const diff = hasDtr ? recordsTotalForDtr - dtrSpend : null
-    const noPhotoCount = periodRecords.filter(e => !e.receiptImageUri && !/^CASH ADVANCE/i.test(e.expenseCategory || '')).length
+    const noPhotoCount = periodRecords.filter(e => !e.receiptImageUri && !isNoReceipt(e) && !/^CASH ADVANCE/i.test(e.expenseCategory || '')).length
+    const noReceiptRecords = periodRecords.filter(isNoReceipt)
     const na = 'N/A (no DTR found)'
     const agingInPeriod = filterMonth === 'All' ? agingPurchases : agingPurchases.filter(p => p.date >= dtrPeriod.from && p.date <= dtrPeriod.to)
     const periodLabel = filterMonth === 'All' ? `${dtrPeriod.from} to ${dtrPeriod.to}` : filterMonth
@@ -930,6 +933,8 @@ export default function AuditFinanceExpenses() {
       ['Possible duplicate rows', periodDupes.rows],
       ['Possible duplicate amount (extra copies)', r2(periodDupes.extra)],
       ['Records without receipt photo', noPhotoCount],
+      ['Records saved with NO RECEIPT (count)', noReceiptRecords.length],
+      ['Records saved with NO RECEIPT (amount)', r2(noReceiptRecords.reduce((acc, e) => acc + e.amount, 0))],
       ['Purchases awaiting receipt - this period (count)', agingInPeriod.length],
       ['Purchases awaiting receipt - this period (amount)', r2(agingInPeriod.reduce((acc, p) => acc + p.amount, 0))],
       ['Purchases awaiting receipt - this period, 8+ days old (count)', agingInPeriod.filter(p => p.ageDays >= 8).length],
@@ -971,6 +976,7 @@ export default function AuditFinanceExpenses() {
         'Source of Funds': e.sourceOfFunds || '',
         Amount: r2(e.amount),
         'Has Photo': e.receiptImageUri ? 'Y' : 'N',
+        'No Receipt': isNoReceipt(e) ? 'Y' : 'N',
         'From DTR': e.id.startsWith('dtr-') ? 'Y' : 'N',
       }))
 
@@ -2231,7 +2237,7 @@ export default function AuditFinanceExpenses() {
             </div>
             {(() => {
               // Cash advances have no receipt, so they are not expected to carry a photo.
-              const noPhoto = periodRecords.filter(e => !e.receiptImageUri && !/^CASH ADVANCE/i.test(e.expenseCategory || ''))
+              const noPhoto = periodRecords.filter(e => !e.receiptImageUri && !isNoReceipt(e) && !/^CASH ADVANCE/i.test(e.expenseCategory || ''))
               const ok = noPhoto.length === 0
               const c = ok ? accent : '#d97706'
               return (
@@ -2247,6 +2253,21 @@ export default function AuditFinanceExpenses() {
                     </span>
                   </div>
                   <span className="text-base font-black tabular-nums" style={{ color: textPrimary }}>{ok ? '✓' : `${noPhoto.length} missing`}</span>
+                </div>
+              )
+            })()}
+            {(() => {
+              // Expenses recorded on a DTR without a receipt (reason in the description) — for the admin to review.
+              const noReceipt = periodRecords.filter(isNoReceipt)
+              if (noReceipt.length === 0) return null
+              const total = noReceipt.reduce((acc, e) => acc + e.amount, 0)
+              return (
+                <div className="w-fit max-w-full rounded-lg px-3 py-1.5 flex items-center gap-3" style={{ border: '1px solid #f59e0b66', backgroundColor: '#f59e0b0d' }}>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#b45309' }}>No receipt</span>
+                    <span className="text-[10px]" style={{ color: textMuted }}>{noReceipt.length} record{noReceipt.length === 1 ? '' : 's'} saved without a receipt · search “NO RECEIPT”</span>
+                  </div>
+                  <span className="text-base font-black tabular-nums" style={{ color: textPrimary }}>{fmt(total)}</span>
                 </div>
               )
             })()}
@@ -2272,7 +2293,7 @@ export default function AuditFinanceExpenses() {
               const purchaseItems: Pending[] = agingPurchases.map(p => ({ key: `p-${p.id}`, kind: 'purchase', date: p.date, label: p.label, amount: p.amount, ageDays: p.ageDays, purchase: p }))
               // Cash advances have no receipt; every other record (expenses, deposits) needs its photo / slip.
               const recordItems: Pending[] = branchExpenses
-                .filter(e => !e.receiptImageUri && !/^CASH ADVANCE/i.test(e.expenseCategory || ''))
+                .filter(e => !e.receiptImageUri && !isNoReceipt(e) && !/^CASH ADVANCE/i.test(e.expenseCategory || ''))
                 .map(e => {
                   const t = dateToTime(e.date)
                   return {
@@ -2629,6 +2650,13 @@ export default function AuditFinanceExpenses() {
                             </button>
                           ) : /^CASH ADVANCE/i.test(row.expenseCategory || '') ? (
                             <span className="text-slate-300 dark:text-slate-600 text-xs" title="Cash advances have no receipt">—</span>
+                          ) : isNoReceipt(row) ? (
+                            <button type="button" onClick={(e) => { e.stopPropagation(); pickPhotoFor(row) }}
+                              title="Saved without a receipt (reason is in the description) — click to attach a photo if one turns up"
+                              className="inline-flex items-center text-[10px] font-bold uppercase px-1.5 py-1 rounded-md cursor-pointer"
+                              style={{ color: '#b45309', border: '1px solid #f59e0b88', backgroundColor: '#f59e0b14' }}>
+                              No receipt
+                            </button>
                           ) : (
                             <button
                               type="button"

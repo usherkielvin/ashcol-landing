@@ -22,7 +22,7 @@ import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 import { fetchAndMapTickets, fetchAndMapOnlineTickets, fetchAndMapCheckTickets, fetchAndMapForCollTickets, fetchAndMapRebateTickets, fetchAndMapCommissionTickets, fetchAndCountUnitSummary, lookupRebateRate, type CommissionRow } from '../utils/schedulePrefill'
 import { DtrHistoryModal } from '../components/DtrHistoryModal'
-import ReceiptScanDialog, { type ReceiptDialogResult } from '../components/ReceiptScanDialog'
+import ReceiptScanDialog, { type ReceiptDialogResult, NO_RECEIPT_NO } from '../components/ReceiptScanDialog'
 import { upsertAuditExpense, deleteAuditExpense, loadAuditExpenses } from '../utils/auditExpenseStorage'
 import { parseSmartDate } from '../utils/smartDate'
 import type { AuditExpense, AuditExpenseCategory } from '../types/auditExpense'
@@ -2396,7 +2396,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       const issues: string[] = []
       const looksLikeDeposit = (t: string) => /deposit|\bcoh\b|\bho\b|head\s*office/i.test(t)
       const expRows = expReceipt.filter(r => num(r.amount) > 0)
-      const noPhoto = expRows.filter(r => !r.receiptImage).length
+      // A row recorded as NO RECEIPT (with its reason) is accepted without a photo.
+      const noPhoto = expRows.filter(r => !r.receiptImage && r.receiptNo !== NO_RECEIPT_NO).length
       if (noPhoto) issues.push(`${noPhoto} expense${noPhoto === 1 ? '' : 's'} with no receipt photo — use Scan on each row`)
       const depositAsExpense = expRows.filter(r => looksLikeDeposit(`${r.name} ${r.description}`)).length
       if (depositAsExpense) issues.push(`${depositAsExpense} deposit${depositAsExpense === 1 ? '' : 's'} entered under Expenses — move ${depositAsExpense === 1 ? 'it' : 'them'} to COH Deposit`)
@@ -3235,6 +3236,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
             {(() => {
               const filled = expReceipt.filter(r => !isBlankExpenseRow(r))
               const withPhoto = filled.filter(r => r.receiptImage).length
+              const noReceiptCount = filled.filter(r => !r.receiptImage && r.receiptNo === NO_RECEIPT_NO).length
               const required = reportDate >= DOCUMENTATION_REQUIRED_FROM
               if (isFormDisabled && filled.length === 0) return null
               return (
@@ -3242,9 +3244,10 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                   {filled.length === 0 ? (
                     <>Tap <strong>Scan receipt</strong> to add an expense — it reads the receipt, saves the details and adds it to Expense Records.{required && ' A receipt photo is required for every expense.'}</>
                   ) : (
-                    <span className={withPhoto < filled.length && required ? 'font-bold text-red-600 dark:text-red-400' : ''}>
+                    <span className={withPhoto + noReceiptCount < filled.length && required ? 'font-bold text-red-600 dark:text-red-400' : ''}>
                       {withPhoto} of {filled.length} expense{filled.length === 1 ? '' : 's'} {withPhoto === 1 && filled.length === 1 ? 'has' : 'have'} a receipt photo
-                      {withPhoto < filled.length && !isFormDisabled && ' — use Add receipt on the rows marked in red.'}
+                      {noReceiptCount > 0 && ` · ${noReceiptCount} recorded without a receipt`}
+                      {withPhoto + noReceiptCount < filled.length && !isFormDisabled && ' — use Add receipt on the rows marked in red.'}
                     </span>
                   )}
                 </div>
@@ -3326,7 +3329,13 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                             )}
                           </div>
                         ) : (
-                          !isFormDisabled ? (
+                          row.receiptNo === NO_RECEIPT_NO ? (
+                            <button type="button" onClick={() => setReceiptDialog({ mode: 'expense', rowId: row.id })}
+                              title="Recorded without a receipt — click to review, or attach one"
+                              className="inline-flex items-center gap-1 rounded-lg border border-amber-400 bg-amber-50 px-2.5 py-1.5 text-[11px] font-bold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+                              No receipt{isFormDisabled ? '' : ' · Edit'}
+                            </button>
+                          ) : !isFormDisabled ? (
                             <button type="button" onClick={() => setReceiptDialog({ mode: 'expense', rowId: row.id })}
                               className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-white shadow-sm transition active:scale-95 ${!isBlankExpenseRow(row) && reportDate >= DOCUMENTATION_REQUIRED_FROM ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
                               title="Scan or upload the receipt photo for this expense">
@@ -4115,6 +4124,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
             branchName={branchName}
             reportDate={reportDate}
             nameSuggestions={techSuggestions}
+            allowNoReceipt={isExp}
             dateNote={isExp ? `Expense Records date this expense with the DTR (${reportDate}), whatever the receipt date.` : undefined}
             otherReceiptNos={otherNos}
             initial={isExp && expRow ? {

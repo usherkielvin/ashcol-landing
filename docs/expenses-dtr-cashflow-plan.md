@@ -447,6 +447,22 @@ script is possible. Builds pass; manual test pending.
 
 ---
 
+## Task 17 — "No receipt" option for DTR expenses (2026-10-01, uncommitted)
+
+Some DTR expenses (tolls, reimbursements…) genuinely have no receipt. In the scan dialog (DTR expenses only, `allowNoReceipt`) the
+person can choose **No receipt available** (pick screen) and must give a reason (5+ characters). The expense is still added to
+Expense Records. No schema change — the marker is `receiptNo = 'NO RECEIPT'` and the reason is appended to the description as
+` — NO RECEIPT: <reason>` (the dialog splits it back out when the row is reopened).
+- DTR: such rows show an amber "No receipt · Edit" button; the October submit check and the "N of M have a photo" line accept
+  them (and say how many were recorded without a receipt). Deposits still need their slip.
+- Expense Records: these records are left out of "records without a photo" / Pending receipts, are not treated as duplicates of
+  each other, show an amber "No receipt" tag (click to attach a photo if one turns up), get their own summary chip with count
+  and amount, and appear in the month export (Summary rows and a "No Receipt" column).
+- Not done: no approval step and no limit — any user can use it. A tolerance/approval policy needs a decision. Manual "Add
+  Record" on Expense Records is unchanged (still needs a photo from Oct 1). Build passes; manual test pending.
+
+---
+
 ## Deferred (need a decision or a schema change — ask the user before starting)
 
 - **Month close / lock** (recommended right after Task 4 — it is the only control that makes "must match from October" stick). Admin marks a branch-month "Closed" once Balanced; DTRs and records for that month become

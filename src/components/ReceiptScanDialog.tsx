@@ -10,6 +10,10 @@ import { AUDIT_EXPENSE_CATEGORIES } from '../types/auditExpense'
 
 export type ReceiptDialogMode = 'expense' | 'deposit'
 
+/** Receipt number stamped on an expense recorded without a receipt (the reason is appended to the description). */
+export const NO_RECEIPT_NO = 'NO RECEIPT'
+export const NO_RECEIPT_SEP = ' — NO RECEIPT: '
+
 /** What the dialog hands back once the person confirms. Dates are normalised with parseSmartDate. */
 export interface ReceiptDialogResult {
   receiptImage: string
@@ -37,6 +41,8 @@ interface Props {
   dateNote?: string
   /** Cash that was handed out for this purchase; the receipt amount is compared against it. */
   expectedAmount?: number
+  /** Expenses only: let the person record the expense without a receipt photo (a reason is then required). */
+  allowNoReceipt?: boolean
   onClose: () => void
   onConfirm: (result: ReceiptDialogResult) => void | Promise<void>
 }
@@ -93,7 +99,7 @@ const inputBase =
   'w-full px-3 py-2 rounded-lg text-sm font-semibold bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-60'
 
 export default function ReceiptScanDialog({
-  mode, branchName, reportDate, initial, otherReceiptNos = [], nameSuggestions = [], dateNote, expectedAmount, onClose, onConfirm,
+  mode, branchName, reportDate, initial, otherReceiptNos = [], nameSuggestions = [], dateNote, expectedAmount, allowNoReceipt = false, onClose, onConfirm,
 }: Props) {
   const isExpense = mode === 'expense'
   const fileRef = useRef<HTMLInputElement>(null)
@@ -113,12 +119,19 @@ export default function ReceiptScanDialog({
   const [categories, setCategories] = useState<string[]>(AUDIT_EXPENSE_CATEGORIES)
   const [catQuery, setCatQuery] = useState('')
 
+  // Re-opening an expense that was saved without a receipt: split the reason back out of the description.
+  const initialNoReceipt = allowNoReceipt && isExpense && initial?.receiptNo === NO_RECEIPT_NO
+  const sepAt = initialNoReceipt ? (initial?.description || '').indexOf(NO_RECEIPT_SEP) : -1
+  const [noReceipt, setNoReceipt] = useState(initialNoReceipt)
+  const [noReceiptReason, setNoReceiptReason] = useState(sepAt >= 0 ? (initial?.description || '').slice(sepAt + NO_RECEIPT_SEP.length) : '')
+  const reasonMissing = noReceipt && noReceiptReason.trim().length < 5
+
   const [f, setF] = useState<Fields>({
     date: toIsoDate(initial?.receiptDate) || reportDate,
     company: initial?.company || '',
-    receiptNo: initial?.receiptNo || '',
+    receiptNo: initialNoReceipt ? '' : initial?.receiptNo || '',
     amount: initial?.amount || '',
-    description: initial?.description || '',
+    description: sepAt >= 0 ? (initial?.description || '').slice(0, sepAt) : initial?.description || '',
     incurredBy: initial?.incurredBy || '',
     expenseCategory: initial?.expenseCategory || 'OTHER',
     sourceOfFunds: initial?.sourceOfFunds || 'CASH',
@@ -241,18 +254,18 @@ export default function ReceiptScanDialog({
 
   const confirm = async () => {
     setTried(true)
-    if (missing.length > 0 || uploading || !imageUrl) return
+    if (missing.length > 0 || uploading || reasonMissing || (!noReceipt && !imageUrl)) return
     if (expectedAmount != null && (parseFloat(f.amount) || 0) - expectedAmount > 0.005 &&
       !window.confirm(`The receipt (${php(parseFloat(f.amount) || 0)}) is higher than the cash given (${php(expectedAmount)}). The extra ${php((parseFloat(f.amount) || 0) - expectedAmount)} was paid out of pocket and must be reimbursed. Save anyway?`)) return
     setSaving(true)
     try {
       await onConfirm({
-        receiptImage: imageUrl,
+        receiptImage: noReceipt ? '' : imageUrl,
         receiptDate: parseSmartDate(f.date) || f.date,
         company: f.company.trim().toUpperCase(),
-        receiptNo: f.receiptNo.trim(),
+        receiptNo: noReceipt ? NO_RECEIPT_NO : f.receiptNo.trim(),
         amount: parseFloat(f.amount).toFixed(2),
-        description: f.description.trim(),
+        description: noReceipt ? `${f.description.trim()}${NO_RECEIPT_SEP}${noReceiptReason.trim()}` : f.description.trim(),
         incurredBy: f.incurredBy.trim().toUpperCase(),
         expenseCategory: f.expenseCategory,
         sourceOfFunds: f.sourceOfFunds.trim().toUpperCase(),
@@ -311,9 +324,15 @@ export default function ReceiptScanDialog({
               {scanError && <p className="text-xs font-semibold text-red-600">{scanError}</p>}
             </div>
             <div className="flex justify-end mt-5">
-              <button type="button" onClick={() => setPhase('review')} className="text-xs font-bold text-slate-500 hover:underline cursor-pointer">
-                Skip — enter details without a photo
-              </button>
+              {allowNoReceipt ? (
+                <button type="button" onClick={() => { setNoReceipt(true); setPhase('review') }} className="text-xs font-bold text-amber-700 dark:text-amber-400 hover:underline cursor-pointer">
+                  No receipt available — record this expense without a photo
+                </button>
+              ) : (
+                <button type="button" onClick={() => setPhase('review')} className="text-xs font-bold text-slate-500 hover:underline cursor-pointer">
+                  Skip — enter details without a photo
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -355,7 +374,19 @@ export default function ReceiptScanDialog({
                     <AlertTriangle className="w-4 h-4 shrink-0 mt-px" /> <span>{scanError}</span>
                   </div>
                 )}
-                {duplicate && (
+                {noReceipt && (
+                  <div className="rounded-lg border border-amber-400/60 bg-amber-500/10 px-3 py-2.5 flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-extrabold uppercase tracking-wider text-amber-800 dark:text-amber-300">No receipt — saved without a photo</span>
+                      <button type="button" onClick={() => setNoReceipt(false)} className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer">Attach a receipt instead</button>
+                    </div>
+                    <input type="text" value={noReceiptReason} onChange={e => setNoReceiptReason(e.target.value)}
+                      placeholder="Why is there no receipt? (e.g. toll gate, no OR issued)"
+                      className={`${inputBase} ${tried && reasonMissing ? 'border-red-400 ring-2 ring-red-400/30' : 'border-amber-400/60'}`} />
+                    <span className="text-[10px] text-amber-800/80 dark:text-amber-300/80">It is still added to Expense Records, marked NO RECEIPT with this reason, so the admin can review it.</span>
+                  </div>
+                )}
+                {duplicate && !noReceipt && (
                   <div className="rounded-lg px-3 py-2 text-xs font-semibold bg-red-500/10 text-red-700 dark:text-red-300 flex items-start gap-2">
                     <AlertTriangle className="w-4 h-4 shrink-0 mt-px" /> <span>Receipt no. {f.receiptNo} is already listed on this DTR. Make sure it isn't a duplicate.</span>
                   </div>
@@ -443,7 +474,7 @@ export default function ReceiptScanDialog({
 
             <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-t border-slate-200 dark:border-slate-800">
               <span className="text-[11px] font-semibold text-red-600">
-                {tried && missing.length > 0 ? 'Fill in the highlighted fields.' : tried && !imageUrl && !uploading ? 'Add a photo of the receipt.' : ''}
+                {tried && missing.length > 0 ? 'Fill in the highlighted fields.' : tried && reasonMissing ? 'Say why there is no receipt.' : tried && !noReceipt && !imageUrl && !uploading ? 'Add a photo of the receipt, or choose No receipt.' : ''}
               </span>
               <div className="flex items-center gap-2">
                 <button type="button" onClick={onClose} disabled={saving} className="px-4 h-10 rounded-xl text-sm font-bold text-slate-500 hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer">
