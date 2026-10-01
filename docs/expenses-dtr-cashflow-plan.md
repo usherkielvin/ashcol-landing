@@ -494,6 +494,43 @@ a receipt was added and re-saved afterwards can overwrite the running total (sam
 
 ---
 
+## Task 19 — Receipt higher than the cash given → reimburse the member (2026-10-01, uncommitted)
+
+**Needs a backend deploy; no schema change.** Both repos compile; nothing manually tested.
+
+**Accounting rule (changes Task 15):** a purchase books at most the cash given. For a ₱1,700 receipt against ₱1,500 given, the
+Expense Record (and the DTR comparison) carry ₱1,500; the extra ₱200 is booked by the member's **REIMBURSE row** under Expenses
+with Receipts on a DTR (that row = a real cash-out). Booking it on the purchase *and* on the REIMBURSE row would count the ₱200
+twice. The purchase item keeps the full receipt total in `actualAmount`, so the extra is derived (`actual − amount`) — nothing stored.
+
+**Backend (`ReportService`):** `resolvePurchase` records `receipt − excess`; `getPurchases` adds `reimburseDue`, `reimburseFound`
+(and, only for those rows, `receiptImage` + `company`). `reimbursementStatus` looks for an EXPENSE item whose description contains
+REIMBURS, same member name, same amount (±0.01), same branch/line, on a DTR dated on/after the purchase; one row per purchase.
+
+**Portal:**
+- DTR → Expenses with Receipts: an amber **Reimbursements due** banner lists each purchase with an extra; **Add reimbursement**
+  adds a ready-filled row (name = the member, `REIMBURSE (<purchase detail>)`, the extra amount, the same receipt photo/no./
+  company, category REFUND / REIMBURSEMENT, source CASH). It disappears once the row exists, and from the backend once saved.
+- Expense Records: an amber **Reimbursements not found on the DTR** box (and month-export rows) lists the ones still missing.
+- The Add receipt dialog and the alert after saving explain the split.
+
+**Limits:** if the extra equals the cash given (e.g. ₱1,000 given, ₱2,000 receipt) the two records have the same amount and receipt no.
+and show as "possible duplicates"; matching is by member name + amount; a reimbursement typed by hand with a different amount is not
+recognised. Existing over-receipts saved before this change stay booked at the full receipt amount.
+
+---
+
+## Task 20 — Summary layout: difference list on top, bigger pending list (2026-10-01, uncommitted)
+
+`AuditFinanceExpenses.tsx`, layout only. The Summary card now reads top to bottom: header → **"Why the difference?" (left) with the
+Possible duplicates counter on its right** → **Pending receipts**, then the cash-return and reimbursement boxes → the three stat
+tiles (Expense Records, DTR Expenses + Purchases, Difference) → deposit / photo / no-receipt chips → category chips. The Pending
+receipts list is open by default (own open/closed state `pendingOpen`), scrolls up to 65% of the screen height, and has larger
+rows and **Add receipt / Add photo** buttons so the pendings are quick to clear. On narrow screens the duplicates counter stacks
+under the difference list. Build passes; not viewed in a browser yet.
+
+---
+
 ## Deferred (need a decision or a schema change — ask the user before starting)
 
 - **Month close / lock** (recommended right after Task 4 — it is the only control that makes "must match from October" stick). Admin marks a branch-month "Closed" once Balanced; DTRs and records for that month become

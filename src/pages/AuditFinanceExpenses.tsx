@@ -130,6 +130,7 @@ export default function AuditFinanceExpenses() {
   const photoInputRef = useRef<HTMLInputElement>(null)
   const photoTargetRef = useRef<AuditExpense | null>(null)
   const [attachingPhotoId, setAttachingPhotoId] = useState<string | null>(null)
+  const [pendingOpen, setPendingOpen] = useState(true)
   const scanRef = useRef<HTMLInputElement>(null)
   const cameraRef = useRef<HTMLInputElement>(null)
   const modalFileInputRef = useRef<HTMLInputElement>(null)
@@ -725,7 +726,7 @@ export default function AuditFinanceExpenses() {
   // DTR expense + purchase lines for the period, used to explain Records vs DTR line by line.
   // Bumped after a purchase receipt is added so the DTR lines and the pending list reload.
   const [dataVersion, setDataVersion] = useState(0)
-  type DtrLine = { id: string; type?: string; description: string; amount: number; actualAmount?: number; receiptReturned?: boolean; resolvedExpenseId?: string; reportDate?: string; refundDue?: number; cashReturnFound?: boolean }
+  type DtrLine = { id: string; type?: string; description: string; amount: number; actualAmount?: number; receiptReturned?: boolean; resolvedExpenseId?: string; reportDate?: string; refundDue?: number; cashReturnFound?: boolean; reimburseDue?: number; reimburseFound?: boolean }
   const [dtrLines, setDtrLines] = useState<{ loading: boolean; rows: DtrLine[]; failed: boolean }>({ loading: false, rows: [], failed: false })
   useEffect(() => {
     if (!branchId || !dtrPeriod) { setDtrLines({ loading: false, rows: [], failed: false }); return }
@@ -846,7 +847,8 @@ export default function AuditFinanceExpenses() {
       const recTotal = recs.reduce((acc, x) => acc + x.amount, 0)
       const t = dateToTime(rec.date)
       if (t && (t < from || t > to)) { buckets.otherMonth.push({ ...item, note: `recorded as ${rec.date}` }); continue }
-      const expected = l.type === 'PURCHASE' && l.actualAmount ? l.actualAmount : l.amount
+      // Receipts above the cash given are not booked on the purchase: they are reimbursed through a DTR expense row.
+      const expected = l.type === 'PURCHASE' && l.actualAmount ? Math.min(l.actualAmount, l.amount) : l.amount
       if (Math.abs(recTotal - expected) >= 0.01) {
         buckets.amountDiff.push({ ...item, amount: expected - recTotal, note: `DTR ${expected.toFixed(2)} · record${recs.length > 1 ? 's' : ''} ${recTotal.toFixed(2)}` })
       }
@@ -913,7 +915,7 @@ export default function AuditFinanceExpenses() {
     const purchaseLines = dtrLines.rows.filter(l => l.type === 'PURCHASE')
     const linesTyped = dtrLines.rows.some(l => !!l.type)
     // A purchase receipted in parts counts for what has been receipted so far; only the remainder is pending.
-    const resolvedPurchases = purchaseLines.reduce((acc, l) => acc + (l.receiptReturned ? (l.actualAmount || l.amount) : (l.actualAmount || 0)), 0)
+    const resolvedPurchases = purchaseLines.reduce((acc, l) => acc + (l.receiptReturned ? Math.min(l.actualAmount || l.amount, l.amount) : (l.actualAmount || 0)), 0)
     const pendingTotal = purchaseLines.filter(l => !l.receiptReturned).reduce((acc, l) => acc + Math.max(0, l.amount - (l.actualAmount || 0)), 0)
     const dtrSpend = (dtrExpenses.total || 0) + (linesTyped ? resolvedPurchases : dtrExpenses.purchases)
     const diff = hasDtr ? recordsTotalForDtr - dtrSpend : null
@@ -949,6 +951,8 @@ export default function AuditFinanceExpenses() {
       ['Purchases awaiting receipt - this period (count)', agingInPeriod.length],
       ['Purchases awaiting receipt - this period (amount)', r2(agingInPeriod.reduce((acc, p) => acc + p.amount, 0))],
       ['Purchases awaiting receipt - this period, 8+ days old (count)', agingInPeriod.filter(p => p.ageDays >= 8).length],
+      ['Reimbursements not found on the DTR (count)', dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.reimburseDue || 0) > 0.005 && !l.reimburseFound).length],
+      ['Reimbursements not found on the DTR (amount)', r2(dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.reimburseDue || 0) > 0.005 && !l.reimburseFound).reduce((acc, l) => acc + (l.reimburseDue || 0), 0))],
       ['Cash returns not found on the DTR (count)', dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound).length],
       ['Cash returns not found on the DTR (amount)', r2(dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound).reduce((acc, l) => acc + (l.refundDue || 0), 0))],
     ]
@@ -1072,7 +1076,7 @@ export default function AuditFinanceExpenses() {
     if (out.complete === false && (out.remaining || 0) > 0.005) {
       alert(`Receipt saved to the DTR and Expense Records.\n\n₱${(out.remaining || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })} of this purchase is still pending. Add the next receipt when you have it — it stays in Pending receipts until the receipts cover the cash given.`)
     } else if (over > 0.005) {
-      alert(`Receipt saved to the DTR and Expense Records.\n\nThe receipt is ₱${over.toLocaleString('en-PH', { minimumFractionDigits: 2 })} higher than the cash given. That extra was paid out of pocket, so a reimbursement still has to be recorded on a DTR.`)
+      alert(`Receipt saved to the DTR and Expense Records (₱${target.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}, the cash given).\n\nThe receipt is ₱${over.toLocaleString('en-PH', { minimumFractionDigits: 2 })} higher than that. ${target.worker || 'The member'} paid the extra, so add a REIMBURSE row for ₱${over.toLocaleString('en-PH', { minimumFractionDigits: 2 })} under Expenses with Receipts on the DTR — it is offered there ready-filled.`)
     } else if ((out.refundDue || 0) > 0.005 && !out.cashReturnFound) {
       alert(`Receipt saved to the DTR and Expense Records.\n\nThe receipt is ₱${(out.refundDue || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })} lower than the cash given. Make sure that cash return is entered under Cash Returns on the DTR (pick the REFUND entry for this purchase).`)
     }
@@ -2182,7 +2186,7 @@ export default function AuditFinanceExpenses() {
         // the DTR's Expenses + Purchases, not Expenses alone.
         const purchaseLines = dtrLines.rows.filter(l => l.type === 'PURCHASE')
         const linesTyped = dtrLines.rows.some(l => !!l.type)
-        const resolvedPurchases = purchaseLines.reduce((acc, l) => acc + (l.receiptReturned ? (l.actualAmount || l.amount) : (l.actualAmount || 0)), 0)
+        const resolvedPurchases = purchaseLines.reduce((acc, l) => acc + (l.receiptReturned ? Math.min(l.actualAmount || l.amount, l.amount) : (l.actualAmount || 0)), 0)
         const pendingPurchases = purchaseLines.filter(l => !l.receiptReturned).reduce((acc, l) => acc + Math.max(0, l.amount - (l.actualAmount || 0)), 0)
         const dtrSpend = (dtrExpenses.total || 0) + (linesTyped ? resolvedPurchases : dtrExpenses.purchases)
         const diff = hasDtr ? recordsTotalForDtr - dtrSpend : null
@@ -2222,7 +2226,259 @@ export default function AuditFinanceExpenses() {
                 </button>
               </div>
             </div>
-            <div className="p-3 grid grid-cols-2 lg:grid-cols-4 gap-2">
+            {/* Top of the summary: why records and DTR differ, with the duplicates counter beside it */}
+            <div className="p-3 pb-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_260px] gap-3 items-start">
+              <div className="min-w-0">
+            {/* Why the difference? — each DTR line matched to its Expense Record */}
+            {hasDtr && reconciliation && (() => {
+              const { buckets, cashAdvance, sum } = reconciliation
+              const rows: { id: string; title: string; hint: string; list: typeof buckets.manual; amount: number; side: 'dtr' | 'records' }[] = [
+                { id: 'depositAsExpense', title: 'Deposits to HO entered as expenses', hint: 'Logged as DTR expense rows before the COH Deposit section existed. They inflate DTR Expenses; move them to COH Deposit on those DTRs.', list: buckets.depositAsExpense, amount: sum(buckets.depositAsExpense), side: 'dtr' },
+                { id: 'pendingPurchase', title: 'Purchases waiting for receipt', hint: 'Not counted in the comparison until the receipt is returned — resolve them in Purchases so they become records.', list: buckets.pendingPurchase, amount: sum(buckets.pendingPurchase), side: 'dtr' },
+                { id: 'neverPushed', title: 'DTR entries with no record', hint: 'Saved on the DTR but never sent to Expense Records (older DTRs or imported totals). Re-save the DTR to push them.', list: buckets.neverPushed, amount: sum(buckets.neverPushed), side: 'dtr' },
+                { id: 'deleted', title: 'Records deleted', hint: 'The DTR entry was linked to a record that has since been deleted.', list: buckets.deleted, amount: sum(buckets.deleted), side: 'dtr' },
+                { id: 'otherMonth', title: 'Recorded in a different month', hint: 'The record’s receipt date falls outside this month, so it is counted elsewhere.', list: buckets.otherMonth, amount: sum(buckets.otherMonth), side: 'dtr' },
+                { id: 'amountDiff', title: 'Amount differs', hint: 'The DTR amount and the record amount do not match (positive = DTR higher).', list: buckets.amountDiff, amount: sum(buckets.amountDiff), side: 'dtr' },
+                { id: 'manual', title: 'Records not on any DTR', hint: 'Added directly in Expense Records — they raise the records total.', list: buckets.manual, amount: sum(buckets.manual), side: 'records' },
+              ]
+              const visible = rows.filter(r => r.list.length > 0)
+              return (
+                <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${border}` }}>
+                  <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
+                    <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: textPrimary }}>Why the difference?</span>
+                    {dtrLines.loading && <span className="text-[10px]" style={{ color: textMuted }}>Checking DTR entries…</span>}
+                    {dtrLines.failed && <span className="text-[10px]" style={{ color: danger }}>Could not load DTR entries</span>}
+                  </div>
+                  {cashAdvance > 0.005 && (
+                    <div className="px-3 py-2 flex items-center justify-between gap-3 text-xs" style={{ borderBottom: `1px solid ${border}` }}>
+                      <div className="flex flex-col">
+                        <span className="font-bold" style={{ color: textPrimary }}>Cash advances on the DTR</span>
+                        <span className="text-[10px]" style={{ color: textMuted }}>Counted in DTR Expenses, but not kept in Expense Records.</span>
+                      </div>
+                      <span className="font-black tabular-nums" style={{ color: danger }}>-{fmt(cashAdvance)}</span>
+                    </div>
+                  )}
+                  {!dtrLines.loading && visible.length === 0 && cashAdvance <= 0.005 && (
+                    <div className="px-3 py-2 text-xs" style={{ color: textMuted }}>Every DTR entry matches a record.</div>
+                  )}
+                  {visible.map(r => {
+                    const open = openBucket === r.id
+                    const color = r.side === 'records' ? accent : danger
+                    return (
+                      <div key={r.id} style={{ borderBottom: `1px solid ${border}` }}>
+                        <button type="button" onClick={() => setOpenBucket(open ? null : r.id)} className="w-full px-3 py-2 flex items-center justify-between gap-3 text-left text-xs cursor-pointer hover:bg-black/5 dark:hover:bg-white/5">
+                          <div className="flex flex-col min-w-0">
+                            <span className="font-bold" style={{ color: textPrimary }}>{r.title} <span style={{ color: textMuted }}>· {r.list.length}</span></span>
+                            <span className="text-[10px]" style={{ color: textMuted }}>{r.hint}</span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="font-black tabular-nums" style={{ color }}>{r.side === 'records' ? '+' : '-'}{fmt(Math.abs(r.amount))}</span>
+                            <ChevronDown size={13} style={{ color: textMuted, transform: open ? 'rotate(180deg)' : undefined }} />
+                          </div>
+                        </button>
+                        {open && (
+                          <div className="px-3 pb-2 max-h-56 overflow-y-auto">
+                            {r.list.map(i => (
+                              <div key={i.key} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
+                                <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{i.date}</span>
+                                <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={i.label}>{i.label}{i.note && <span style={{ color: textMuted }}> · {i.note}</span>}</span>
+                                <span className="shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{fmt(i.amount)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+              </div>
+              {stat('Possible Duplicates', periodDupes.rows === 0 ? 'None' : `${periodDupes.rows} rows`, periodDupes.rows === 0 ? accent : danger,
+                periodDupes.rows === 0 ? 'No repeated receipts found' : (
+                  <button type="button" onClick={() => setShowDupesOnly(v => !v)} className="font-bold underline cursor-pointer" style={{ color: danger }}>
+                    {signed(periodDupes.extra)} extra · {showDupesOnly ? 'show all' : 'show them'}
+                  </button>
+                ))}
+            </div>
+            <div className="p-3 pb-0">
+            {/* Everything still waiting for a receipt: purchases without one + records without a photo. Newest first. */}
+            {(() => {
+              const isoOf = (t: number) => {
+                const d = new Date(t)
+                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+              }
+              const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0)
+              type Pending = { key: string; kind: 'purchase' | 'record'; date: string; label: string; amount: number; ageDays: number; purchase?: PendingPurchase; record?: AuditExpense }
+              const purchaseItems: Pending[] = agingPurchases.map(p => ({ key: `p-${p.id}`, kind: 'purchase', date: p.date, label: p.received > 0 ? `${p.label} — ${fmt(p.received)} receipted of ${fmt(p.given)}, remaining` : p.label, amount: p.amount, ageDays: p.ageDays, purchase: p }))
+              // Cash advances have no receipt; every other record (expenses, deposits) needs its photo / slip.
+              const recordItems: Pending[] = branchExpenses
+                .filter(e => !e.receiptImageUri && !isNoReceipt(e) && !/^CASH ADVANCE/i.test(e.expenseCategory || ''))
+                .map(e => {
+                  const t = dateToTime(e.date)
+                  return {
+                    key: `r-${e.id}`, kind: 'record' as const,
+                    date: t ? isoOf(t) : '',
+                    label: `${isDepositRecord(e) ? 'Deposit slip' : e.expenseCategory || 'Expense'}: ${e.description || e.company || 'Record'}`,
+                    amount: e.amount,
+                    ageDays: t ? Math.max(0, Math.round((todayMid.getTime() - t) / 86400000)) : 0,
+                    record: e,
+                  }
+                })
+              // Newest first: today's, then yesterday's, and so on — the recent ones are the ones that can still be chased.
+              // The summary follows the month picker: only items dated inside the selected month. "All months" shows
+              // everything, with the pre-October backlog kept apart.
+              const byMonth = filterMonth !== 'All'
+              const all = [...purchaseItems, ...recordItems]
+                // Plus the last 3 days, even when they fall in another month: yesterday's receipts are still chased today.
+                .filter(i => !byMonth || (i.date >= dtrPeriod.from && i.date <= dtrPeriod.to) || (!!i.date && i.ageDays <= 3))
+                .sort((x, y) => (y.date || '0000').localeCompare(x.date || '0000'))
+              if (all.length === 0) return null
+              const current = byMonth ? all : all.filter(i => i.date >= PENDING_LEGACY_BEFORE)
+              const legacy = byMonth ? [] : all.filter(i => i.date < PENDING_LEGACY_BEFORE)
+              const count = (list: Pending[], kind: Pending['kind']) => list.filter(i => i.kind === kind).length
+              const total = current.reduce((acc, i) => acc + i.amount, 0)
+              const legacyTotal = legacy.reduce((acc, i) => acc + i.amount, 0)
+              const old = current.filter(i => i.ageDays >= 8)
+              const open = pendingOpen
+              const ageColor = (d: number) => (d >= 8 ? danger : d >= 3 ? '#D97706' : textMuted)
+              const ageLabel = (d: number) => (d === 0 ? 'today' : `${d} day${d === 1 ? '' : 's'}`)
+              const row = (i: Pending) => (
+                <div key={i.key} className="flex items-center justify-between gap-3 py-2.5 text-xs" style={{ borderTop: `1px dashed ${border}` }}>
+                  <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{i.date || '—'}</span>
+                  <span className="shrink-0 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ color: textMuted, border: `1px solid ${border}` }}>
+                    {i.kind === 'purchase' ? 'Purchase' : 'No photo'}
+                  </span>
+                  <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={i.label}>{i.label}</span>
+                  <span className="shrink-0 font-bold tabular-nums" style={{ color: ageColor(i.ageDays) }}>{ageLabel(i.ageDays)}</span>
+                  <span className="shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{fmt(i.amount)}</span>
+                  {i.purchase ? (
+                    <button type="button" onClick={() => setReceiptTarget(i.purchase!)}
+                      className="shrink-0 flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-md cursor-pointer"
+                      style={{ color: accent, border: `1px solid ${accent}55`, backgroundColor: `${accent}12` }}>
+                      <Upload size={13} /> Add receipt
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => pickPhotoFor(i.record!)} disabled={attachingPhotoId === i.record!.id}
+                      className="shrink-0 flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-md cursor-pointer disabled:opacity-60"
+                      style={{ color: accent, border: `1px solid ${accent}55`, backgroundColor: `${accent}12` }}>
+                      {attachingPhotoId === i.record!.id ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} Add photo
+                    </button>
+                  )}
+                </div>
+              )
+              return (
+                <div className="mb-3 rounded-lg overflow-hidden" style={{ border: `1px solid ${border}` }}>
+                  <button type="button" onClick={() => setPendingOpen(v => !v)} className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left text-sm cursor-pointer hover:bg-black/5 dark:hover:bg-white/5">
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-bold" style={{ color: textPrimary }}>
+                        Pending receipts{byMonth ? ` — ${filterMonth}` : ''}: {current.length} ({fmt(total)})
+                        {old.length > 0 && <span style={{ color: danger }}> · 8+ days: {old.length}</span>}
+                      </span>
+                      <span className="text-[10px]" style={{ color: textMuted }}>
+                        Purchases awaiting receipt: {count(current, 'purchase')} · Records without a photo: {count(current, 'record')}
+                        {byMonth && current.some(i => i.date < dtrPeriod.from || i.date > dtrPeriod.to) && ' · includes the last 3 days from other months'}
+                        {legacy.length > 0 && ` · plus ${legacy.length} before Oct 1, 2026 (${fmt(legacyTotal)})`}
+                      </span>
+                    </div>
+                    <ChevronDown size={13} style={{ color: textMuted, transform: open ? 'rotate(180deg)' : undefined }} className="shrink-0" />
+                  </button>
+                  {open && (
+                    <div className="px-4 pb-3 max-h-[65vh] overflow-y-auto">
+                      {current.map(row)}
+                      {legacy.length > 0 && (
+                        <div className="mt-2 pt-1 text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted, borderTop: `1px solid ${border}` }}>
+                          Before Oct 1, 2026 · {legacy.length}
+                        </div>
+                      )}
+                      {legacy.map(row)}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
+            {/* Receipts above the cash given: the member is owed the extra, as a REIMBURSE row on a DTR */}
+            {(() => {
+              const missing = dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.reimburseDue || 0) > 0.005 && !l.reimburseFound)
+              if (missing.length === 0) return null
+              const total = missing.reduce((acc, l) => acc + (l.reimburseDue || 0), 0)
+              const open = openBucket === 'reimburseMissing'
+              return (
+                <div className="mb-3 rounded-lg overflow-hidden" style={{ border: '1px solid #f59e0b88' }}>
+                  <button type="button" onClick={() => setOpenBucket(open ? null : 'reimburseMissing')} className="w-full px-3 py-2 flex items-center justify-between gap-3 text-left text-xs cursor-pointer hover:bg-black/5 dark:hover:bg-white/5">
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-bold" style={{ color: '#b45309' }}>Reimbursements not found on the DTR: {missing.length} ({fmt(total)})</span>
+                      <span className="text-[10px]" style={{ color: textMuted }}>The receipt was higher than the cash given, so the member paid the extra. Add a REIMBURSE row for them under Expenses with Receipts on a DTR dated on or after the purchase.</span>
+                    </div>
+                    <ChevronDown size={13} style={{ color: textMuted, transform: open ? 'rotate(180deg)' : undefined }} className="shrink-0" />
+                  </button>
+                  {open && (
+                    <div className="px-3 pb-2 max-h-56 overflow-y-auto">
+                      {missing.map(l => (
+                        <div key={l.id} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
+                          <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{l.reportDate}</span>
+                          <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={l.description}>{l.description.split('|').filter(Boolean).join(' · ')}</span>
+                          <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>receipt {fmt(l.actualAmount || 0)} vs {fmt(l.amount)} given</span>
+                          <span className="shrink-0 font-bold tabular-nums" style={{ color: '#b45309' }}>reimburse {fmt(l.reimburseDue || 0)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
+            {/* Resolved purchases whose receipt was lower than the cash given: the difference must be a DTR Cash Return */}
+            {(() => {
+              const missing = dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound)
+              if (missing.length === 0) return null
+              const total = missing.reduce((acc, l) => acc + (l.refundDue || 0), 0)
+              const open = openBucket === 'cashReturnMissing'
+              return (
+                <div className="mb-3 rounded-lg overflow-hidden" style={{ border: `1px solid ${danger}55` }}>
+                  <button type="button" onClick={() => setOpenBucket(open ? null : 'cashReturnMissing')} className="w-full px-3 py-2 flex items-center justify-between gap-3 text-left text-xs cursor-pointer hover:bg-black/5 dark:hover:bg-white/5">
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-bold" style={{ color: danger }}>Cash returns not found on the DTR: {missing.length} ({fmt(total)})</span>
+                      <span className="text-[10px]" style={{ color: textMuted }}>The receipt was lower than the cash given, but no matching Cash Return was entered on a DTR dated on or after the purchase. Add it under Cash Returns on the DTR.</span>
+                    </div>
+                    <ChevronDown size={13} style={{ color: textMuted, transform: open ? 'rotate(180deg)' : undefined }} className="shrink-0" />
+                  </button>
+                  {open && (
+                    <div className="px-3 pb-2 max-h-56 overflow-y-auto">
+                      {missing.map(l => (
+                        <div key={l.id} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
+                          <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{l.reportDate}</span>
+                          <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={l.description}>{l.description.split('|').filter(Boolean).join(' · ')}</span>
+                          <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>receipt {fmt(l.actualAmount || 0)} of {fmt(l.amount)}</span>
+                          <span className="shrink-0 font-bold tabular-nums" style={{ color: danger }}>return {fmt(l.refundDue || 0)}</span>
+                          <button type="button"
+                            onClick={() => setReceiptTarget({
+                              id: l.id,
+                              date: l.reportDate || '',
+                              label: l.description.split('|').filter(Boolean).join(' · '),
+                              worker: l.description.includes('|') ? l.description.split('|')[0].trim() : '',
+                              detail: l.description.includes('|') ? l.description.split('|').slice(1).join(' ').trim() : l.description,
+                              amount: l.refundDue || 0,
+                              given: l.amount,
+                              received: l.actualAmount || 0,
+                              ageDays: 0,
+                            })}
+                            title="Add another receipt for the remaining amount (e.g. the toll gate receipt)"
+                            className="shrink-0 flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-md cursor-pointer"
+                            style={{ color: accent, border: `1px solid ${accent}55`, backgroundColor: `${accent}12` }}>
+                            <Upload size={13} /> Add another receipt
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
+            </div>
+            <div className="p-3 grid grid-cols-2 lg:grid-cols-3 gap-2">
               {stat('Expense Records', fmt(recordsTotalForDtr), textPrimary, `${recordsForDtr.length} record${recordsForDtr.length === 1 ? '' : 's'} · excl. deposits`)}
               {stat('DTR Expenses + Purchases', dtrExpenses.loading ? 'Loading…' : !hasDtr ? 'Unavailable' : fmt(dtrSpend), textPrimary,
                 dtrExpenses.loading ? undefined : !dtrExpenses.matched ? 'No DTR found for this branch'
@@ -2230,12 +2486,6 @@ export default function AuditFinanceExpenses() {
                     ? `Expenses ${fmt(dtrExpenses.total || 0)} · Purchases w/ receipt ${fmt(resolvedPurchases)}${pendingPurchases > 0 ? ` · ${fmt(pendingPurchases)} awaiting receipt (not counted)` : ''}`
                     : `Expenses ${fmt(dtrExpenses.total || 0)} · Purchases ${fmt(dtrExpenses.purchases)}`)}
               {stat('Difference', diff == null ? '—' : signed(diff), diffColor, 'Records − DTR')}
-              {stat('Possible Duplicates', periodDupes.rows === 0 ? 'None' : `${periodDupes.rows} rows`, periodDupes.rows === 0 ? accent : danger,
-                periodDupes.rows === 0 ? 'No repeated receipts found' : (
-                  <button type="button" onClick={() => setShowDupesOnly(v => !v)} className="font-bold underline cursor-pointer" style={{ color: danger }}>
-                    {signed(periodDupes.extra)} extra · {showDupesOnly ? 'show all' : 'show them'}
-                  </button>
-                ))}
             </div>
             <div className="mx-3 mb-3 flex flex-wrap items-stretch gap-2">
             <div className="w-fit max-w-full rounded-lg px-3 py-1.5 flex items-center gap-3" style={{ border: `1px solid ${accent}44`, backgroundColor: `${accent}0d` }}>
@@ -2296,214 +2546,6 @@ export default function AuditFinanceExpenses() {
               </div>
             )}
 
-            {/* Everything still waiting for a receipt: purchases without one + records without a photo. Newest first. */}
-            {(() => {
-              const isoOf = (t: number) => {
-                const d = new Date(t)
-                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-              }
-              const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0)
-              type Pending = { key: string; kind: 'purchase' | 'record'; date: string; label: string; amount: number; ageDays: number; purchase?: PendingPurchase; record?: AuditExpense }
-              const purchaseItems: Pending[] = agingPurchases.map(p => ({ key: `p-${p.id}`, kind: 'purchase', date: p.date, label: p.received > 0 ? `${p.label} — ${fmt(p.received)} receipted of ${fmt(p.given)}, remaining` : p.label, amount: p.amount, ageDays: p.ageDays, purchase: p }))
-              // Cash advances have no receipt; every other record (expenses, deposits) needs its photo / slip.
-              const recordItems: Pending[] = branchExpenses
-                .filter(e => !e.receiptImageUri && !isNoReceipt(e) && !/^CASH ADVANCE/i.test(e.expenseCategory || ''))
-                .map(e => {
-                  const t = dateToTime(e.date)
-                  return {
-                    key: `r-${e.id}`, kind: 'record' as const,
-                    date: t ? isoOf(t) : '',
-                    label: `${isDepositRecord(e) ? 'Deposit slip' : e.expenseCategory || 'Expense'}: ${e.description || e.company || 'Record'}`,
-                    amount: e.amount,
-                    ageDays: t ? Math.max(0, Math.round((todayMid.getTime() - t) / 86400000)) : 0,
-                    record: e,
-                  }
-                })
-              // Newest first: today's, then yesterday's, and so on — the recent ones are the ones that can still be chased.
-              // The summary follows the month picker: only items dated inside the selected month. "All months" shows
-              // everything, with the pre-October backlog kept apart.
-              const byMonth = filterMonth !== 'All'
-              const all = [...purchaseItems, ...recordItems]
-                // Plus the last 3 days, even when they fall in another month: yesterday's receipts are still chased today.
-                .filter(i => !byMonth || (i.date >= dtrPeriod.from && i.date <= dtrPeriod.to) || (!!i.date && i.ageDays <= 3))
-                .sort((x, y) => (y.date || '0000').localeCompare(x.date || '0000'))
-              if (all.length === 0) return null
-              const current = byMonth ? all : all.filter(i => i.date >= PENDING_LEGACY_BEFORE)
-              const legacy = byMonth ? [] : all.filter(i => i.date < PENDING_LEGACY_BEFORE)
-              const count = (list: Pending[], kind: Pending['kind']) => list.filter(i => i.kind === kind).length
-              const total = current.reduce((acc, i) => acc + i.amount, 0)
-              const legacyTotal = legacy.reduce((acc, i) => acc + i.amount, 0)
-              const old = current.filter(i => i.ageDays >= 8)
-              const open = openBucket === 'pendingAging'
-              const ageColor = (d: number) => (d >= 8 ? danger : d >= 3 ? '#D97706' : textMuted)
-              const ageLabel = (d: number) => (d === 0 ? 'today' : `${d} day${d === 1 ? '' : 's'}`)
-              const row = (i: Pending) => (
-                <div key={i.key} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
-                  <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{i.date || '—'}</span>
-                  <span className="shrink-0 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ color: textMuted, border: `1px solid ${border}` }}>
-                    {i.kind === 'purchase' ? 'Purchase' : 'No photo'}
-                  </span>
-                  <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={i.label}>{i.label}</span>
-                  <span className="shrink-0 font-bold tabular-nums" style={{ color: ageColor(i.ageDays) }}>{ageLabel(i.ageDays)}</span>
-                  <span className="shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{fmt(i.amount)}</span>
-                  {i.purchase ? (
-                    <button type="button" onClick={() => setReceiptTarget(i.purchase!)}
-                      className="shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md cursor-pointer"
-                      style={{ color: accent, border: `1px solid ${accent}55`, backgroundColor: `${accent}12` }}>
-                      <Upload size={10} /> Add receipt
-                    </button>
-                  ) : (
-                    <button type="button" onClick={() => pickPhotoFor(i.record!)} disabled={attachingPhotoId === i.record!.id}
-                      className="shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md cursor-pointer disabled:opacity-60"
-                      style={{ color: accent, border: `1px solid ${accent}55`, backgroundColor: `${accent}12` }}>
-                      {attachingPhotoId === i.record!.id ? <Loader2 size={10} className="animate-spin" /> : <Upload size={10} />} Add photo
-                    </button>
-                  )}
-                </div>
-              )
-              return (
-                <div className="mx-3 mb-3 rounded-lg overflow-hidden" style={{ border: `1px solid ${border}` }}>
-                  <button type="button" onClick={() => setOpenBucket(open ? null : 'pendingAging')} className="w-full px-3 py-2 flex items-center justify-between gap-3 text-left text-xs cursor-pointer hover:bg-black/5 dark:hover:bg-white/5">
-                    <div className="flex flex-col min-w-0">
-                      <span className="font-bold" style={{ color: textPrimary }}>
-                        Pending receipts{byMonth ? ` — ${filterMonth}` : ''}: {current.length} ({fmt(total)})
-                        {old.length > 0 && <span style={{ color: danger }}> · 8+ days: {old.length}</span>}
-                      </span>
-                      <span className="text-[10px]" style={{ color: textMuted }}>
-                        Purchases awaiting receipt: {count(current, 'purchase')} · Records without a photo: {count(current, 'record')}
-                        {byMonth && current.some(i => i.date < dtrPeriod.from || i.date > dtrPeriod.to) && ' · includes the last 3 days from other months'}
-                        {legacy.length > 0 && ` · plus ${legacy.length} before Oct 1, 2026 (${fmt(legacyTotal)})`}
-                      </span>
-                    </div>
-                    <ChevronDown size={13} style={{ color: textMuted, transform: open ? 'rotate(180deg)' : undefined }} className="shrink-0" />
-                  </button>
-                  {open && (
-                    <div className="px-3 pb-2 max-h-96 overflow-y-auto">
-                      {current.map(row)}
-                      {legacy.length > 0 && (
-                        <div className="mt-2 pt-1 text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted, borderTop: `1px solid ${border}` }}>
-                          Before Oct 1, 2026 · {legacy.length}
-                        </div>
-                      )}
-                      {legacy.map(row)}
-                    </div>
-                  )}
-                </div>
-              )
-            })()}
-
-            {/* Resolved purchases whose receipt was lower than the cash given: the difference must be a DTR Cash Return */}
-            {(() => {
-              const missing = dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound)
-              if (missing.length === 0) return null
-              const total = missing.reduce((acc, l) => acc + (l.refundDue || 0), 0)
-              const open = openBucket === 'cashReturnMissing'
-              return (
-                <div className="mx-3 mb-3 rounded-lg overflow-hidden" style={{ border: `1px solid ${danger}55` }}>
-                  <button type="button" onClick={() => setOpenBucket(open ? null : 'cashReturnMissing')} className="w-full px-3 py-2 flex items-center justify-between gap-3 text-left text-xs cursor-pointer hover:bg-black/5 dark:hover:bg-white/5">
-                    <div className="flex flex-col min-w-0">
-                      <span className="font-bold" style={{ color: danger }}>Cash returns not found on the DTR: {missing.length} ({fmt(total)})</span>
-                      <span className="text-[10px]" style={{ color: textMuted }}>The receipt was lower than the cash given, but no matching Cash Return was entered on a DTR dated on or after the purchase. Add it under Cash Returns on the DTR.</span>
-                    </div>
-                    <ChevronDown size={13} style={{ color: textMuted, transform: open ? 'rotate(180deg)' : undefined }} className="shrink-0" />
-                  </button>
-                  {open && (
-                    <div className="px-3 pb-2 max-h-56 overflow-y-auto">
-                      {missing.map(l => (
-                        <div key={l.id} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
-                          <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{l.reportDate}</span>
-                          <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={l.description}>{l.description.split('|').filter(Boolean).join(' · ')}</span>
-                          <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>receipt {fmt(l.actualAmount || 0)} of {fmt(l.amount)}</span>
-                          <span className="shrink-0 font-bold tabular-nums" style={{ color: danger }}>return {fmt(l.refundDue || 0)}</span>
-                          <button type="button"
-                            onClick={() => setReceiptTarget({
-                              id: l.id,
-                              date: l.reportDate || '',
-                              label: l.description.split('|').filter(Boolean).join(' · '),
-                              worker: l.description.includes('|') ? l.description.split('|')[0].trim() : '',
-                              detail: l.description.includes('|') ? l.description.split('|').slice(1).join(' ').trim() : l.description,
-                              amount: l.refundDue || 0,
-                              given: l.amount,
-                              received: l.actualAmount || 0,
-                              ageDays: 0,
-                            })}
-                            title="Add another receipt for the remaining amount (e.g. the toll gate receipt)"
-                            className="shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md cursor-pointer"
-                            style={{ color: accent, border: `1px solid ${accent}55`, backgroundColor: `${accent}12` }}>
-                            <Upload size={10} /> Add another receipt
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )
-            })()}
-
-            {/* Why the difference? — each DTR line matched to its Expense Record */}
-            {hasDtr && reconciliation && (() => {
-              const { buckets, cashAdvance, sum } = reconciliation
-              const rows: { id: string; title: string; hint: string; list: typeof buckets.manual; amount: number; side: 'dtr' | 'records' }[] = [
-                { id: 'depositAsExpense', title: 'Deposits to HO entered as expenses', hint: 'Logged as DTR expense rows before the COH Deposit section existed. They inflate DTR Expenses; move them to COH Deposit on those DTRs.', list: buckets.depositAsExpense, amount: sum(buckets.depositAsExpense), side: 'dtr' },
-                { id: 'pendingPurchase', title: 'Purchases waiting for receipt', hint: 'Not counted in the comparison until the receipt is returned — resolve them in Purchases so they become records.', list: buckets.pendingPurchase, amount: sum(buckets.pendingPurchase), side: 'dtr' },
-                { id: 'neverPushed', title: 'DTR entries with no record', hint: 'Saved on the DTR but never sent to Expense Records (older DTRs or imported totals). Re-save the DTR to push them.', list: buckets.neverPushed, amount: sum(buckets.neverPushed), side: 'dtr' },
-                { id: 'deleted', title: 'Records deleted', hint: 'The DTR entry was linked to a record that has since been deleted.', list: buckets.deleted, amount: sum(buckets.deleted), side: 'dtr' },
-                { id: 'otherMonth', title: 'Recorded in a different month', hint: 'The record’s receipt date falls outside this month, so it is counted elsewhere.', list: buckets.otherMonth, amount: sum(buckets.otherMonth), side: 'dtr' },
-                { id: 'amountDiff', title: 'Amount differs', hint: 'The DTR amount and the record amount do not match (positive = DTR higher).', list: buckets.amountDiff, amount: sum(buckets.amountDiff), side: 'dtr' },
-                { id: 'manual', title: 'Records not on any DTR', hint: 'Added directly in Expense Records — they raise the records total.', list: buckets.manual, amount: sum(buckets.manual), side: 'records' },
-              ]
-              const visible = rows.filter(r => r.list.length > 0)
-              return (
-                <div className="mx-3 mb-3 rounded-lg overflow-hidden" style={{ border: `1px solid ${border}` }}>
-                  <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
-                    <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: textPrimary }}>Why the difference?</span>
-                    {dtrLines.loading && <span className="text-[10px]" style={{ color: textMuted }}>Checking DTR entries…</span>}
-                    {dtrLines.failed && <span className="text-[10px]" style={{ color: danger }}>Could not load DTR entries</span>}
-                  </div>
-                  {cashAdvance > 0.005 && (
-                    <div className="px-3 py-2 flex items-center justify-between gap-3 text-xs" style={{ borderBottom: `1px solid ${border}` }}>
-                      <div className="flex flex-col">
-                        <span className="font-bold" style={{ color: textPrimary }}>Cash advances on the DTR</span>
-                        <span className="text-[10px]" style={{ color: textMuted }}>Counted in DTR Expenses, but not kept in Expense Records.</span>
-                      </div>
-                      <span className="font-black tabular-nums" style={{ color: danger }}>-{fmt(cashAdvance)}</span>
-                    </div>
-                  )}
-                  {!dtrLines.loading && visible.length === 0 && cashAdvance <= 0.005 && (
-                    <div className="px-3 py-2 text-xs" style={{ color: textMuted }}>Every DTR entry matches a record.</div>
-                  )}
-                  {visible.map(r => {
-                    const open = openBucket === r.id
-                    const color = r.side === 'records' ? accent : danger
-                    return (
-                      <div key={r.id} style={{ borderBottom: `1px solid ${border}` }}>
-                        <button type="button" onClick={() => setOpenBucket(open ? null : r.id)} className="w-full px-3 py-2 flex items-center justify-between gap-3 text-left text-xs cursor-pointer hover:bg-black/5 dark:hover:bg-white/5">
-                          <div className="flex flex-col min-w-0">
-                            <span className="font-bold" style={{ color: textPrimary }}>{r.title} <span style={{ color: textMuted }}>· {r.list.length}</span></span>
-                            <span className="text-[10px]" style={{ color: textMuted }}>{r.hint}</span>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className="font-black tabular-nums" style={{ color }}>{r.side === 'records' ? '+' : '-'}{fmt(Math.abs(r.amount))}</span>
-                            <ChevronDown size={13} style={{ color: textMuted, transform: open ? 'rotate(180deg)' : undefined }} />
-                          </div>
-                        </button>
-                        {open && (
-                          <div className="px-3 pb-2 max-h-56 overflow-y-auto">
-                            {r.list.map(i => (
-                              <div key={i.key} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
-                                <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{i.date}</span>
-                                <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={i.label}>{i.label}{i.note && <span style={{ color: textMuted }}> · {i.note}</span>}</span>
-                                <span className="shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{fmt(i.amount)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              )
-            })()}
           </div>
         )
       })()}

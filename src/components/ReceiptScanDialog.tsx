@@ -260,7 +260,7 @@ export default function ReceiptScanDialog({
     setTried(true)
     if (missing.length > 0 || uploading || reasonMissing || (!noReceipt && !imageUrl)) return
     if (expectedAmount != null && (parseFloat(f.amount) || 0) - expectedAmount > 0.005 &&
-      !window.confirm(`The receipt (${php(parseFloat(f.amount) || 0)}) is higher than the cash given (${php(expectedAmount)}). The extra ${php((parseFloat(f.amount) || 0) - expectedAmount)} was paid out of pocket and must be reimbursed. Save anyway?`)) return
+      !window.confirm(`The receipt (${php(parseFloat(f.amount) || 0)}) is higher than the cash given (${php(expectedAmount)}). Only ${php(expectedAmount)} is recorded against the cash given; the extra ${php((parseFloat(f.amount) || 0) - expectedAmount)} was paid by the member and must be reimbursed on the DTR. Save anyway?`)) return
     setSaving(true)
     try {
       await onConfirm({
@@ -426,7 +426,7 @@ export default function ReceiptScanDialog({
                           </label>
                         </div>
                       )
-                      return <span className="text-[10px] font-semibold text-red-600 dark:text-red-400">{php(diff)} more than the {given} given — the extra was paid out of pocket and needs a reimbursement on the DTR.</span>
+                      return <span className="text-[10px] font-semibold text-red-600 dark:text-red-400">{php(diff)} more than the {given} given — {given} is recorded against the cash given; the extra {php(diff)} was paid by the member and must be reimbursed with a REIMBURSE row under Expenses with Receipts on the DTR.</span>
                     })()}
                   </div>
                 </div>

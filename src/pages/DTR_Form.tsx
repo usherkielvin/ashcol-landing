@@ -770,6 +770,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   // ── Auto Prefill & Suggestions Hook ──────────────────────────────
   const [techSuggestions, setTechSuggestions] = useState<string[]>([])
   const [refundablePurchases, setRefundablePurchases] = useState<any[]>([])
+  // Purchases whose receipt was higher than the cash given: the member is owed the extra (a REIMBURSE row below).
+  const [reimbursablePurchases, setReimbursablePurchases] = useState<any[]>([])
 
   // Fetch branch details, closing cash, and rosters
   useEffect(() => {
@@ -817,8 +819,13 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           const purchasesData = await resPurchases.json()
           const refPurchases = (purchasesData || []).filter((p: any) => p.receiptReturned && p.amount > p.actualAmount)
           setRefundablePurchases(refPurchases)
+          // Same Taguig line only (a blank line on a report means Sales).
+          const lineOf = (p: any) => (p.auditLine || 'TAGUIG_SALES')
+          setReimbursablePurchases((purchasesData || []).filter((p: any) =>
+            (p.reimburseDue || 0) > 0.005 && !p.reimburseFound && (!selectedAuditLine || lineOf(p) === selectedAuditLine)))
         } else {
           setRefundablePurchases([])
+          setReimbursablePurchases([])
         }
       } catch (err) {
         console.error('Error loading branch data:', err)
@@ -1576,6 +1583,26 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   }
 
   const isBlankExpenseRow = (r: ExpenseRow) => !r.name && !r.description && !r.amount && !r.receiptImage && !r.receiptNo
+
+  // Adds a ready-filled REIMBURSE row for a member who paid more than the cash given (same receipt, only the extra).
+  const addReimbursementRow = (p: any) => {
+    const worker = getWorkerName(p)
+    const detail = p.description && p.description.includes('|') ? p.description.split('|').slice(1).join(' ').trim() : p.description || ''
+    const fill: Partial<ExpenseRow> = {
+      name: worker,
+      description: `REIMBURSE (${detail})`,
+      amount: Number(p.reimburseDue).toFixed(2),
+      company: p.company || '',
+      receiptNo: p.receiptNo || '',
+      receiptDate: p.receiptDate || '',
+      receiptImage: p.receiptImage || '',
+      expenseCategory: 'REFUND / REIMBURSEMENT',
+      sourceOfFunds: 'CASH',
+    }
+    const blank = expReceipt.find(isBlankExpenseRow)
+    if (blank) setExpReceipt(prev => prev.map(r => r.id === blank.id ? { ...r, ...fill } : r))
+    else setExpReceipt(prev => [...prev, { ...mkExp(), ...fill }])
+  }
 
   // "Scan receipt" in the section header: reuse the empty row if there is one, otherwise add a row, then open the scanner.
   const startNewReceipt = () => {
@@ -3250,6 +3277,26 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                       {withPhoto + noReceiptCount < filled.length && !isFormDisabled && ' — use Add receipt on the rows marked in red.'}
                     </span>
                   )}
+                </div>
+              )
+            })()}
+            {!isFormDisabled && (() => {
+              // Hide the ones already added as a row on this DTR.
+              const pending = reimbursablePurchases.filter(p => !expReceipt.some(r =>
+                r.name.trim().toUpperCase() === getWorkerName(p).toUpperCase() && /REIMBURS/i.test(r.description) && Math.abs(num(r.amount) - Number(p.reimburseDue)) < 0.01))
+              if (pending.length === 0) return null
+              return (
+                <div className="mx-2 mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+                  <p className="font-bold">Reimbursements due — the member paid more than the cash given</p>
+                  <div className="mt-1.5 flex flex-col gap-1">
+                    {pending.map(p => (
+                      <div key={p.id} className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate">{getWorkerName(p)} · {getRefundOptionText(p).replace(/^.*\(REFUND - /, '').replace(/\)$/, '')} · <strong>{php(Number(p.reimburseDue))}</strong></span>
+                        <button type="button" onClick={() => addReimbursementRow(p)}
+                          className="shrink-0 rounded-md bg-amber-600 px-2 py-1 text-[11px] font-bold text-white hover:bg-amber-700">Add reimbursement</button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )
             })()}
