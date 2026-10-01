@@ -382,12 +382,26 @@ the DTR's report date, as deposits and cash advances already did. The scan dialo
 (`dateNote` prop). The receipt date is still kept on the DTR row/item and in the photo; it is no longer the record's date.
 Records made from *purchases* (Add receipt on Expense Records) still use the receipt date.
 
-**Existing records:** re-saving the DTR (Update) rewrites its records with the new date. To avoid re-saving every DTR,
-Expense Records now has a one-click repair: in "Recorded in a different month", **Fix dates to match their DTR (N)**
-re-dates every `dtr-*` record in that list to its DTR's report date (`fixDtrRecordDates`, confirm first, updates the
-record's edit history). Only DTR-created records are offered; purchase-resolved records keep their receipt date.
-Receipts dated before the DTR (e.g. Sep 30 on the Oct 1 DTR) can still be added — only the record's date follows the DTR.
+**Existing records — automatic, no manual step:** Expense Records now treats a DTR-created record as belonging to the day of
+its DTR, read from the DTR date embedded in the record id (`dtr-<branch>-<YYYY-MM-DD>-exp|dep|ca-<row>`, `dtrDateFromId`).
+That date drives the table, month filter, period totals, exports and the "Recorded in a different month" check, so a
+receipt dated Sep 30 entered on the Oct 1 DTR counts as October with nobody editing any date. An earlier one-click
+"Fix dates" button was removed as redundant. The stored date of old records is unchanged until the DTR is re-saved or the
+record is edited; other consumers that read the raw date (mobile app, backend reports) still see the receipt date.
+Caveat: the rule relies on the id date matching the DTR date; DTR dates cannot be edited on an existing report (changing
+the date starts a fresh form with new ids). Purchase-resolved records (UUID ids) keep their receipt date.
 Build passes; manual test pending.
+
+---
+
+## Task 13 — One "Pending receipts" list (2026-10-01, uncommitted)
+
+The Expense Records summary box (was "Purchases awaiting receipt") now lists **everything still waiting for a receipt** in one
+place, oldest first: purchases with no receipt (button **Add receipt**) and records with no photo — expenses and deposit
+slips, not cash advances (button **Add photo**, the Task 8 attach flow). Each row has a Purchase / No photo tag and its age.
+The pre-October backlog is no longer hidden behind a toggle: it is listed below the current items under a
+"Before Oct 1, 2026" divider, while the headline count and amount cover only current items (legacy shown as "plus N").
+The list scrolls (max height 24rem). Build passes; manual test pending.
 
 ---
 

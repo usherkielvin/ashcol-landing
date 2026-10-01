@@ -50,6 +50,9 @@ const formatDetailsName = (raw?: string | null): string => {
  *  category DEPOSIT or FUND TRANSFER, or a description like "DEPOSIT TO HO". */
 // Records created from a DTR row (ids `dtr-<branch>-<date>-...`) are edited on the DTR, not here.
 const isDtrLinked = (e: { id: string }) => e.id.startsWith('dtr-')
+// A DTR-created record belongs to the day of the DTR it was entered on (its id embeds that date), whatever receipt
+// date was typed. Older records kept the receipt date, so the id is the reliable source.
+const dtrDateFromId = (id: string): string => /^dtr-.*-(\d{4}-\d{2}-\d{2})-(?:exp|dep|ca)-/.exec(id)?.[1] || ''
 
 const isDepositRecord = (e: { expenseCategory?: string; description?: string }) => {
   const cat = (e.expenseCategory || '').trim().toUpperCase()
@@ -125,7 +128,6 @@ export default function AuditFinanceExpenses() {
   const photoInputRef = useRef<HTMLInputElement>(null)
   const photoTargetRef = useRef<AuditExpense | null>(null)
   const [attachingPhotoId, setAttachingPhotoId] = useState<string | null>(null)
-  const [fixingDates, setFixingDates] = useState(false)
   const scanRef = useRef<HTMLInputElement>(null)
   const cameraRef = useRef<HTMLInputElement>(null)
   const modalFileInputRef = useRef<HTMLInputElement>(null)
@@ -342,10 +344,10 @@ export default function AuditFinanceExpenses() {
       if (aliasE && aliasSel && aliasE === aliasSel) return true
 
       return false
-    }).map(e => ({
-      ...e,
-      date: parseSmartDate(e.date) || e.date
-    }))
+    }).map(e => {
+      const dtrDate = dtrDateFromId(e.id)
+      return { ...e, date: (dtrDate && (parseSmartDate(dtrDate) || dtrDate)) || parseSmartDate(e.date) || e.date }
+    })
   }, [expenses, branchId, branchName])
 
   // Suggestions derived from past expenses (limited to current branch)
@@ -756,7 +758,6 @@ export default function AuditFinanceExpenses() {
   type PendingPurchase = { id: string; date: string; label: string; worker: string; detail: string; amount: number; ageDays: number }
   // Purchases dated before the receipt rules started are a backlog nobody can act on; keep them apart.
   const PENDING_LEGACY_BEFORE = '2026-10-01'
-  const [showLegacyPending, setShowLegacyPending] = useState(false)
   const [receiptTarget, setReceiptTarget] = useState<PendingPurchase | null>(null)
   const [agingPurchases, setAgingPurchases] = useState<PendingPurchase[]>([])
   useEffect(() => {
@@ -802,7 +803,7 @@ export default function AuditFinanceExpenses() {
     const byId = new Map(branchExpenses.map(e => [e.id, e]))
     const from = new Date(`${dtrPeriod.from}T00:00:00`).getTime()
     const to = new Date(`${dtrPeriod.to}T23:59:59`).getTime()
-    type Item = { key: string; date: string; label: string; amount: number; note?: string; recordId?: string; fixDate?: string }
+    type Item = { key: string; date: string; label: string; amount: number; note?: string }
     const buckets = {
       depositAsExpense: [] as Item[],
       pendingPurchase: [] as Item[],
@@ -838,12 +839,7 @@ export default function AuditFinanceExpenses() {
       const rec = byId.get(rid)
       if (!rec) { buckets.deleted.push(item); continue }
       const t = dateToTime(rec.date)
-      if (t && (t < from || t > to)) {
-        // Records created from a DTR are dated with that DTR; an older receipt-dated one can be re-dated.
-        const fixable = rid.startsWith('dtr-') && !!l.reportDate
-        buckets.otherMonth.push({ ...item, note: `recorded as ${rec.date}`, ...(fixable ? { recordId: rid, fixDate: l.reportDate } : {}) })
-        continue
-      }
+      if (t && (t < from || t > to)) { buckets.otherMonth.push({ ...item, note: `recorded as ${rec.date}` }); continue }
       const expected = l.type === 'PURCHASE' && l.receiptReturned && l.actualAmount ? l.actualAmount : l.amount
       if (Math.abs(rec.amount - expected) >= 0.01) {
         buckets.amountDiff.push({ ...item, amount: expected - rec.amount, note: `DTR ${expected.toFixed(2)} · record ${rec.amount.toFixed(2)}` })
@@ -1059,36 +1055,6 @@ export default function AuditFinanceExpenses() {
     await reload()
     if ((out.refundDue || 0) > 0.005 && !out.cashReturnFound) {
       alert(`Receipt saved to the DTR and Expense Records.\n\nThe receipt is ₱${(out.refundDue || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })} lower than the cash given. Make sure that cash return is entered under Cash Returns on the DTR (pick the REFUND entry for this purchase).`)
-    }
-  }
-
-  // Re-dates records made from a DTR to that DTR's date (older ones kept the receipt date, which can fall in the
-  // previous month and make Records and DTR disagree).
-  const fixDtrRecordDates = async (items: { recordId?: string; fixDate?: string }[]) => {
-    const todo = items.filter(i => i.recordId && i.fixDate)
-    if (todo.length === 0) return
-    if (!window.confirm(`Change the date of ${todo.length} record${todo.length === 1 ? '' : 's'} to the date of the DTR ${todo.length === 1 ? 'it was' : 'they were'} entered on?`)) return
-    setFixingDates(true)
-    try {
-      const now = new Date().toISOString()
-      for (const i of todo) {
-        const rec = expenses.find(e => e.id === i.recordId)
-        if (!rec) continue
-        await upsertAuditExpense({
-          ...rec,
-          date: parseSmartDate(i.fixDate!) || i.fixDate!,
-          updatedBy: currentUserLabel,
-          updatedAt: now,
-          updateHistory: [...(rec.updateHistory || []), { action: 'updated', by: currentUserLabel, at: now }],
-        })
-      }
-      await reload()
-      setDataVersion(v => v + 1)
-    } catch (err) {
-      console.error('[Expense Records] Fix DTR record dates failed:', err)
-      alert('Could not update every date. Please try again.')
-    } finally {
-      setFixingDates(false)
     }
   }
 
@@ -2294,52 +2260,88 @@ export default function AuditFinanceExpenses() {
               </div>
             )}
 
-            {/* Purchases awaiting receipt — oldest first; pre-October backlog kept separate */}
-            {agingPurchases.length > 0 && (() => {
-              const current = agingPurchases.filter(p => p.date >= PENDING_LEGACY_BEFORE)
-              const legacy = agingPurchases.filter(p => p.date < PENDING_LEGACY_BEFORE)
-              const total = current.reduce((acc, p) => acc + p.amount, 0)
-              const legacyTotal = legacy.reduce((acc, p) => acc + p.amount, 0)
-              const old = current.filter(p => p.ageDays >= 8)
+            {/* Everything still waiting for a receipt: purchases without one + records without a photo. Oldest first. */}
+            {(() => {
+              const isoOf = (t: number) => {
+                const d = new Date(t)
+                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+              }
+              const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0)
+              type Pending = { key: string; kind: 'purchase' | 'record'; date: string; label: string; amount: number; ageDays: number; purchase?: PendingPurchase; record?: AuditExpense }
+              const purchaseItems: Pending[] = agingPurchases.map(p => ({ key: `p-${p.id}`, kind: 'purchase', date: p.date, label: p.label, amount: p.amount, ageDays: p.ageDays, purchase: p }))
+              // Cash advances have no receipt; every other record (expenses, deposits) needs its photo / slip.
+              const recordItems: Pending[] = branchExpenses
+                .filter(e => !e.receiptImageUri && !/^CASH ADVANCE/i.test(e.expenseCategory || ''))
+                .map(e => {
+                  const t = dateToTime(e.date)
+                  return {
+                    key: `r-${e.id}`, kind: 'record' as const,
+                    date: t ? isoOf(t) : '',
+                    label: `${isDepositRecord(e) ? 'Deposit slip' : e.expenseCategory || 'Expense'}: ${e.description || e.company || 'Record'}`,
+                    amount: e.amount,
+                    ageDays: t ? Math.max(0, Math.round((todayMid.getTime() - t) / 86400000)) : 0,
+                    record: e,
+                  }
+                })
+              const all = [...purchaseItems, ...recordItems].sort((x, y) => (x.date || '9999').localeCompare(y.date || '9999'))
+              if (all.length === 0) return null
+              const current = all.filter(i => i.date >= PENDING_LEGACY_BEFORE)
+              const legacy = all.filter(i => i.date < PENDING_LEGACY_BEFORE)
+              const count = (list: Pending[], kind: Pending['kind']) => list.filter(i => i.kind === kind).length
+              const total = current.reduce((acc, i) => acc + i.amount, 0)
+              const legacyTotal = legacy.reduce((acc, i) => acc + i.amount, 0)
+              const old = current.filter(i => i.ageDays >= 8)
               const open = openBucket === 'pendingAging'
               const ageColor = (d: number) => (d >= 8 ? danger : d >= 3 ? '#D97706' : textMuted)
               const ageLabel = (d: number) => (d === 0 ? 'today' : `${d} day${d === 1 ? '' : 's'}`)
-              const shown = showLegacyPending ? [...current, ...legacy] : current
+              const row = (i: Pending) => (
+                <div key={i.key} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
+                  <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{i.date || '—'}</span>
+                  <span className="shrink-0 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ color: textMuted, border: `1px solid ${border}` }}>
+                    {i.kind === 'purchase' ? 'Purchase' : 'No photo'}
+                  </span>
+                  <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={i.label}>{i.label}</span>
+                  <span className="shrink-0 font-bold tabular-nums" style={{ color: ageColor(i.ageDays) }}>{ageLabel(i.ageDays)}</span>
+                  <span className="shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{fmt(i.amount)}</span>
+                  {i.purchase ? (
+                    <button type="button" onClick={() => setReceiptTarget(i.purchase!)}
+                      className="shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md cursor-pointer"
+                      style={{ color: accent, border: `1px solid ${accent}55`, backgroundColor: `${accent}12` }}>
+                      <Upload size={10} /> Add receipt
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => pickPhotoFor(i.record!)} disabled={attachingPhotoId === i.record!.id}
+                      className="shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md cursor-pointer disabled:opacity-60"
+                      style={{ color: accent, border: `1px solid ${accent}55`, backgroundColor: `${accent}12` }}>
+                      {attachingPhotoId === i.record!.id ? <Loader2 size={10} className="animate-spin" /> : <Upload size={10} />} Add photo
+                    </button>
+                  )}
+                </div>
+              )
               return (
                 <div className="mx-3 mb-3 rounded-lg overflow-hidden" style={{ border: `1px solid ${border}` }}>
                   <button type="button" onClick={() => setOpenBucket(open ? null : 'pendingAging')} className="w-full px-3 py-2 flex items-center justify-between gap-3 text-left text-xs cursor-pointer hover:bg-black/5 dark:hover:bg-white/5">
                     <div className="flex flex-col min-w-0">
                       <span className="font-bold" style={{ color: textPrimary }}>
-                        Purchases awaiting receipt: {current.length} ({fmt(total)})
+                        Pending receipts: {current.length} ({fmt(total)})
                         {old.length > 0 && <span style={{ color: danger }}> · 8+ days: {old.length}</span>}
                       </span>
                       <span className="text-[10px]" style={{ color: textMuted }}>
-                        0–2 days: {current.filter(p => p.ageDays <= 2).length} · 3–7 days: {current.filter(p => p.ageDays >= 3 && p.ageDays <= 7).length} · 8+ days: {old.length}
-                        {legacy.length > 0 && ` · plus ${legacy.length} older than Oct 1, 2026 (${fmt(legacyTotal)})`} — add the receipt once it is returned.
+                        Purchases awaiting receipt: {count(current, 'purchase')} · Records without a photo: {count(current, 'record')}
+                        {legacy.length > 0 && ` · plus ${legacy.length} before Oct 1, 2026 (${fmt(legacyTotal)})`}
                       </span>
                     </div>
                     <ChevronDown size={13} style={{ color: textMuted, transform: open ? 'rotate(180deg)' : undefined }} className="shrink-0" />
                   </button>
                   {open && (
-                    <div className="px-3 pb-2 max-h-72 overflow-y-auto">
+                    <div className="px-3 pb-2 max-h-96 overflow-y-auto">
+                      {current.map(row)}
                       {legacy.length > 0 && (
-                        <button type="button" onClick={() => setShowLegacyPending(v => !v)} className="my-1 text-[10px] font-bold underline cursor-pointer" style={{ color: textMuted }}>
-                          {showLegacyPending ? 'hide' : 'show'} {legacy.length} older purchases (before Oct 1, 2026)
-                        </button>
-                      )}
-                      {shown.map(p => (
-                        <div key={p.id} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
-                          <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{p.date}</span>
-                          <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={p.label}>{p.label}</span>
-                          <span className="shrink-0 font-bold tabular-nums" style={{ color: ageColor(p.ageDays) }}>{ageLabel(p.ageDays)}</span>
-                          <span className="shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{fmt(p.amount)}</span>
-                          <button type="button" onClick={() => setReceiptTarget(p)}
-                            className="shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md cursor-pointer"
-                            style={{ color: accent, border: `1px solid ${accent}55`, backgroundColor: `${accent}12` }}>
-                            <Upload size={10} /> Add receipt
-                          </button>
+                        <div className="mt-2 pt-1 text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted, borderTop: `1px solid ${border}` }}>
+                          Before Oct 1, 2026 · {legacy.length}
                         </div>
-                      ))}
+                      )}
+                      {legacy.map(row)}
                     </div>
                   )}
                 </div>
@@ -2426,13 +2428,6 @@ export default function AuditFinanceExpenses() {
                         </button>
                         {open && (
                           <div className="px-3 pb-2 max-h-56 overflow-y-auto">
-                            {r.id === 'otherMonth' && r.list.some(i => i.recordId) && (
-                              <button type="button" disabled={fixingDates} onClick={() => void fixDtrRecordDates(r.list)}
-                                className="my-1.5 flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1.5 rounded-md cursor-pointer disabled:opacity-60"
-                                style={{ color: accent, border: `1px solid ${accent}55`, backgroundColor: `${accent}12` }}>
-                                {fixingDates && <Loader2 size={11} className="animate-spin" />} Fix dates to match their DTR ({r.list.filter(i => i.recordId).length})
-                              </button>
-                            )}
                             {r.list.map(i => (
                               <div key={i.key} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
                                 <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{i.date}</span>
