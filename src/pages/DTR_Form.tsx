@@ -1545,6 +1545,19 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     return parseSmartDate(reportDate) || reportDate
   }
 
+  // Branch fields for Expense Records. Taguig Sales and Services share one branch id on the DTR, and the backend
+  // stores any Taguig id without "service" in it as BR-TAGUIG-SALES — so the line must be spelled out in the id
+  // (and name) or Services records land under Sales.
+  const expenseRecordBranch = () => {
+    const rawId = selectedBranchId || user?.branchId || ''
+    if (!selectedAuditLine) return { branchId: rawId, branchName: branchName || '' }
+    const isService = selectedAuditLine === 'TAGUIG_SERVICE'
+    return {
+      branchId: `${rawId.replace(/-(sales|services?)$/i, '')}-${isService ? 'services' : 'sales'}`,
+      branchName: isService ? 'TAGUIG - SERVICES' : 'TAGUIG - SALES',
+    }
+  }
+
   // The scan dialog hands back reviewed details: write them to the row and push the expense to Expense Records.
   const commitExpenseReceipt = async (rowId: string, result: ReceiptDialogResult) => {
     const branchIdToUse = selectedBranchId || user?.branchId || ''
@@ -1567,8 +1580,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     try {
       await upsertAuditExpense({
         id: resolvedId,
-        branchId: branchIdToUse,
-        branchName: branchName || '',
+        ...expenseRecordBranch(),
         date: formatExpenseDate(result.receiptDate),
         incurredBy: result.incurredBy || (user?.name || 'STAFF').trim().toUpperCase(),
         description: result.description || 'Expense with Receipt',
@@ -1596,8 +1608,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     if (!row.resolvedExpenseId) return
     await upsertAuditExpense({
       id: row.resolvedExpenseId,
-      branchId: selectedBranchId || user?.branchId || '',
-      branchName: branchName || '',
+      ...expenseRecordBranch(),
       date: formatExpenseDate(),
       incurredBy: (receivedBy || user?.name || 'STAFF').trim().toUpperCase(),
       description: (row.description || 'COH Deposit to HO').trim(),
@@ -1639,15 +1650,13 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   // Only used by "Expenses with Receipts" rows — Purchases are never synced into the Expenses list.
   const syncExpenseRowOnBlur = async (row: ExpenseRow) => {
     if (!row.resolvedExpenseId) return
-    const branchIdToUse = selectedBranchId || user?.branchId || ''
     const numAmt = typeof row.amount === 'string'
       ? (parseFloat(row.amount.replace(/,/g, '')) || 0)
       : (Number(row.amount) || 0)
     try {
       await upsertAuditExpense({
         id: row.resolvedExpenseId,
-        branchId: branchIdToUse,
-        branchName: branchName || '',
+        ...expenseRecordBranch(),
         date: formatExpenseDate(row.receiptDate),
         incurredBy: (row.name || user?.name || 'STAFF').trim().toUpperCase(),
         description: (row.description || 'Expense with Receipt').trim(),
@@ -2247,8 +2256,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
             const expenseId = row.resolvedExpenseId || `dtr-${expenseBranchKey}-${reportDate}-exp-${row.id}`
             await upsertAuditExpense({
               id: expenseId,
-              branchId: selectedBranchId || user?.branchId || '',
-              branchName: branchName || '',
+              ...expenseRecordBranch(),
               date: formatExpenseDate(row.receiptDate),
               incurredBy: (row.name || user?.name || 'STAFF').trim().toUpperCase(),
               description: (row.description || 'Expense with Receipt').trim(),
@@ -2271,8 +2279,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           try {
             await upsertAuditExpense({
               id: row.resolvedExpenseId!,
-              branchId: selectedBranchId || user?.branchId || '',
-              branchName: branchName || '',
+              ...expenseRecordBranch(),
               date: formatExpenseDate(),
               incurredBy: (row.memberName || user?.name || 'STAFF').trim().toUpperCase(),
               description: `CASH ADVANCE${row.details ? `: ${row.details.trim()}` : ''}`,

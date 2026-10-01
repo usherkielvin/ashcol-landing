@@ -16,6 +16,7 @@ import AutoSuggestInput from '../components/AutoSuggestInput'
 import AshcolLoader from '../components/AshcolLoader'
 import * as XLSX from 'xlsx'
 import { uploadReceiptImage } from '../services/supabaseStorage'
+import ReceiptScanDialog, { type ReceiptDialogResult } from '../components/ReceiptScanDialog'
 
 interface BranchOption { id: string; name: string }
 
@@ -274,7 +275,17 @@ export default function AuditFinanceExpenses() {
       
       const eBidLower = e.branchId.toLowerCase().trim()
       const selBidLower = branchId.toLowerCase().trim()
-      
+
+      // Taguig is split into Sales and Services. A record whose id says Sales can still carry a Services
+      // branch name (older DTR pushes were stored as Sales), so the name decides the line, not just the id.
+      const selIsSales = selBidLower.endsWith('-sales')
+      const selIsServices = selBidLower.endsWith('-services') || selBidLower.endsWith('-service')
+      if (selIsSales || selIsServices) {
+        const recIsServices = /-services?$/.test(eBidLower) || /service/i.test(e.branchName || '')
+        if (selIsSales && recIsServices) return false
+        if (selIsServices && !recIsServices) return false
+      }
+
       // Exact match
       if (eBidLower === selBidLower) return true
       
@@ -710,7 +721,9 @@ export default function AuditFinanceExpenses() {
   const recordsTotalForDtr = recordsForDtr.reduce((sum, e) => sum + e.amount, 0)
   const depositsForDtr = periodRecords.filter(isDepositRecord).reduce((sum, e) => sum + e.amount, 0)
   // DTR expense + purchase lines for the period, used to explain Records vs DTR line by line.
-  type DtrLine = { id: string; type?: string; description: string; amount: number; actualAmount?: number; receiptReturned?: boolean; resolvedExpenseId?: string; reportDate?: string }
+  // Bumped after a purchase receipt is added so the DTR lines and the pending list reload.
+  const [dataVersion, setDataVersion] = useState(0)
+  type DtrLine = { id: string; type?: string; description: string; amount: number; actualAmount?: number; receiptReturned?: boolean; resolvedExpenseId?: string; reportDate?: string; refundDue?: number; cashReturnFound?: boolean }
   const [dtrLines, setDtrLines] = useState<{ loading: boolean; rows: DtrLine[]; failed: boolean }>({ loading: false, rows: [], failed: false })
   useEffect(() => {
     if (!branchId || !dtrPeriod) { setDtrLines({ loading: false, rows: [], failed: false }); return }
@@ -735,11 +748,15 @@ export default function AuditFinanceExpenses() {
         if (!cancelled) setDtrLines({ loading: false, rows: [], failed: true })
       })
     return () => { cancelled = true }
-  }, [branchId, dtrPeriod])
+  }, [branchId, dtrPeriod, dataVersion])
 
   // Every purchase still waiting for its receipt (all dates, not just the period) with its age in days —
   // these are the main reason the DTR and Expense Records drift apart.
-  type PendingPurchase = { id: string; date: string; label: string; amount: number; ageDays: number }
+  type PendingPurchase = { id: string; date: string; label: string; worker: string; detail: string; amount: number; ageDays: number }
+  // Purchases dated before the receipt rules started are a backlog nobody can act on; keep them apart.
+  const PENDING_LEGACY_BEFORE = '2026-10-01'
+  const [showLegacyPending, setShowLegacyPending] = useState(false)
+  const [receiptTarget, setReceiptTarget] = useState<PendingPurchase | null>(null)
   const [agingPurchases, setAgingPurchases] = useState<PendingPurchase[]>([])
   useEffect(() => {
     if (!branchId) { setAgingPurchases([]); return }
@@ -763,6 +780,8 @@ export default function AuditFinanceExpenses() {
               id: String(r.id),
               date: String(r.reportDate),
               label: String(r.description || '').split('|').map((p: string) => p.trim()).filter(Boolean).join(' · ') || 'Purchase',
+              worker: String(r.description || '').includes('|') ? String(r.description).split('|')[0].trim() : '',
+              detail: String(r.description || '').includes('|') ? String(r.description).split('|').slice(1).join(' ').trim() : String(r.description || '').trim(),
               amount: Number(r.amount) || 0,
               ageDays: Math.max(0, Math.round((today.getTime() - d.getTime()) / 86400000)),
             }
@@ -775,7 +794,7 @@ export default function AuditFinanceExpenses() {
         if (!cancelled) setAgingPurchases([])
       })
     return () => { cancelled = true }
-  }, [branchId])
+  }, [branchId, dataVersion])
 
   const reconciliation = useMemo(() => {
     if (!dtrPeriod) return null
@@ -913,7 +932,10 @@ export default function AuditFinanceExpenses() {
       ['Records without receipt photo', noPhotoCount],
       ['Purchases awaiting receipt - all dates (count)', agingPurchases.length],
       ['Purchases awaiting receipt - all dates (amount)', r2(agingPurchases.reduce((acc, p) => acc + p.amount, 0))],
-      ['Purchases awaiting receipt - 8+ days old (count)', agingPurchases.filter(p => p.ageDays >= 8).length],
+      ['Purchases awaiting receipt - 8+ days old (count)', agingPurchases.filter(p => p.date >= PENDING_LEGACY_BEFORE && p.ageDays >= 8).length],
+      ['Purchases awaiting receipt - before Oct 1, 2026 (count)', agingPurchases.filter(p => p.date < PENDING_LEGACY_BEFORE).length],
+      ['Cash returns not found on the DTR (count)', dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound).length],
+      ['Cash returns not found on the DTR (amount)', r2(dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound).reduce((acc, l) => acc + (l.refundDue || 0), 0))],
     ]
 
     const bucketMeta: { id: keyof typeof reconciliation.buckets; title: string; side: string }[] = [
@@ -997,6 +1019,40 @@ export default function AuditFinanceExpenses() {
       alert('Could not attach the photo. Please try again.')
     } finally {
       setAttachingPhotoId(null)
+    }
+  }
+
+  // Adds the receipt to a purchase: creates the Expense Record and marks the DTR purchase line as received
+  // (receipt no., actual amount, date, photo) in one call.
+  const resolvePendingPurchase = async (target: PendingPurchase, r: ReceiptDialogResult) => {
+    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+    const res = await fetch(`${API_BASE_URL}/v1/reports/purchases/${encodeURIComponent(target.id)}/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        receiptNo: r.receiptNo,
+        actualAmount: parseFloat(r.amount),
+        receiptDate: r.receiptDate,
+        company: r.company,
+        description: r.description,
+        expenseCategory: r.expenseCategory,
+        sourceOfFunds: r.sourceOfFunds,
+        incurredBy: r.incurredBy,
+        receiptImage: r.receiptImage,
+      }),
+    })
+    if (!res.ok) {
+      let msg = `Could not save the receipt (HTTP ${res.status})`
+      try { const j = await res.json(); msg = j.error || j.message || msg } catch { /* keep default */ }
+      alert(msg)
+      return
+    }
+    const out = await res.json() as { refundDue?: number; cashReturnFound?: boolean }
+    setReceiptTarget(null)
+    setDataVersion(v => v + 1)
+    await reload()
+    if ((out.refundDue || 0) > 0.005 && !out.cashReturnFound) {
+      alert(`Receipt saved to the DTR and Expense Records.\n\nThe receipt is ₱${(out.refundDue || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })} lower than the cash given. Make sure that cash return is entered under Cash Returns on the DTR (pick the REFUND entry for this purchase).`)
     }
   }
 
@@ -2082,6 +2138,18 @@ export default function AuditFinanceExpenses() {
 
       <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={e => void handleAttachPhoto(e)} />
 
+      {receiptTarget && (
+        <ReceiptScanDialog
+          mode="expense"
+          branchName={branchName}
+          reportDate={receiptTarget.date}
+          initial={{ incurredBy: receiptTarget.worker, sourceOfFunds: 'CASH' }}
+          otherReceiptNos={branchExpenses.map(e => e.receiptNo).filter(Boolean)}
+          onClose={() => setReceiptTarget(null)}
+          onConfirm={r => resolvePendingPurchase(receiptTarget, r)}
+        />
+      )}
+
       {/* ── Expense Records vs DTR summary ── */}
       {activeTab === 'expenses' && branchId && dtrPeriod && (() => {
         const fmt = (n: number) => `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -2190,35 +2258,81 @@ export default function AuditFinanceExpenses() {
               </div>
             )}
 
-            {/* Purchases awaiting receipt — all dates, oldest first */}
+            {/* Purchases awaiting receipt — oldest first; pre-October backlog kept separate */}
             {agingPurchases.length > 0 && (() => {
-              const total = agingPurchases.reduce((acc, p) => acc + p.amount, 0)
-              const old = agingPurchases.filter(p => p.ageDays >= 8)
+              const current = agingPurchases.filter(p => p.date >= PENDING_LEGACY_BEFORE)
+              const legacy = agingPurchases.filter(p => p.date < PENDING_LEGACY_BEFORE)
+              const total = current.reduce((acc, p) => acc + p.amount, 0)
+              const legacyTotal = legacy.reduce((acc, p) => acc + p.amount, 0)
+              const old = current.filter(p => p.ageDays >= 8)
               const open = openBucket === 'pendingAging'
               const ageColor = (d: number) => (d >= 8 ? danger : d >= 3 ? '#D97706' : textMuted)
               const ageLabel = (d: number) => (d === 0 ? 'today' : `${d} day${d === 1 ? '' : 's'}`)
+              const shown = showLegacyPending ? [...current, ...legacy] : current
               return (
                 <div className="mx-3 mb-3 rounded-lg overflow-hidden" style={{ border: `1px solid ${border}` }}>
                   <button type="button" onClick={() => setOpenBucket(open ? null : 'pendingAging')} className="w-full px-3 py-2 flex items-center justify-between gap-3 text-left text-xs cursor-pointer hover:bg-black/5 dark:hover:bg-white/5">
                     <div className="flex flex-col min-w-0">
                       <span className="font-bold" style={{ color: textPrimary }}>
-                        Purchases awaiting receipt: {agingPurchases.length} ({fmt(total)})
+                        Purchases awaiting receipt: {current.length} ({fmt(total)})
                         {old.length > 0 && <span style={{ color: danger }}> · 8+ days: {old.length}</span>}
                       </span>
                       <span className="text-[10px]" style={{ color: textMuted }}>
-                        0–2 days: {agingPurchases.filter(p => p.ageDays <= 2).length} · 3–7 days: {agingPurchases.filter(p => p.ageDays >= 3 && p.ageDays <= 7).length} · 8+ days: {old.length} — resolve them in Purchases once the receipt is returned.
+                        0–2 days: {current.filter(p => p.ageDays <= 2).length} · 3–7 days: {current.filter(p => p.ageDays >= 3 && p.ageDays <= 7).length} · 8+ days: {old.length}
+                        {legacy.length > 0 && ` · plus ${legacy.length} older than Oct 1, 2026 (${fmt(legacyTotal)})`} — add the receipt once it is returned.
                       </span>
                     </div>
                     <ChevronDown size={13} style={{ color: textMuted, transform: open ? 'rotate(180deg)' : undefined }} className="shrink-0" />
                   </button>
                   {open && (
-                    <div className="px-3 pb-2 max-h-56 overflow-y-auto">
-                      {agingPurchases.map(p => (
+                    <div className="px-3 pb-2 max-h-72 overflow-y-auto">
+                      {legacy.length > 0 && (
+                        <button type="button" onClick={() => setShowLegacyPending(v => !v)} className="my-1 text-[10px] font-bold underline cursor-pointer" style={{ color: textMuted }}>
+                          {showLegacyPending ? 'hide' : 'show'} {legacy.length} older purchases (before Oct 1, 2026)
+                        </button>
+                      )}
+                      {shown.map(p => (
                         <div key={p.id} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
                           <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{p.date}</span>
                           <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={p.label}>{p.label}</span>
                           <span className="shrink-0 font-bold tabular-nums" style={{ color: ageColor(p.ageDays) }}>{ageLabel(p.ageDays)}</span>
                           <span className="shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{fmt(p.amount)}</span>
+                          <button type="button" onClick={() => setReceiptTarget(p)}
+                            className="shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md cursor-pointer"
+                            style={{ color: accent, border: `1px solid ${accent}55`, backgroundColor: `${accent}12` }}>
+                            <Upload size={10} /> Add receipt
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
+            {/* Resolved purchases whose receipt was lower than the cash given: the difference must be a DTR Cash Return */}
+            {(() => {
+              const missing = dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound)
+              if (missing.length === 0) return null
+              const total = missing.reduce((acc, l) => acc + (l.refundDue || 0), 0)
+              const open = openBucket === 'cashReturnMissing'
+              return (
+                <div className="mx-3 mb-3 rounded-lg overflow-hidden" style={{ border: `1px solid ${danger}55` }}>
+                  <button type="button" onClick={() => setOpenBucket(open ? null : 'cashReturnMissing')} className="w-full px-3 py-2 flex items-center justify-between gap-3 text-left text-xs cursor-pointer hover:bg-black/5 dark:hover:bg-white/5">
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-bold" style={{ color: danger }}>Cash returns not found on the DTR: {missing.length} ({fmt(total)})</span>
+                      <span className="text-[10px]" style={{ color: textMuted }}>The receipt was lower than the cash given, but no matching Cash Return was entered on a DTR dated on or after the purchase. Add it under Cash Returns on the DTR.</span>
+                    </div>
+                    <ChevronDown size={13} style={{ color: textMuted, transform: open ? 'rotate(180deg)' : undefined }} className="shrink-0" />
+                  </button>
+                  {open && (
+                    <div className="px-3 pb-2 max-h-56 overflow-y-auto">
+                      {missing.map(l => (
+                        <div key={l.id} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
+                          <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{l.reportDate}</span>
+                          <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={l.description}>{l.description.split('|').filter(Boolean).join(' · ')}</span>
+                          <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>receipt {fmt(l.actualAmount || 0)} of {fmt(l.amount)}</span>
+                          <span className="shrink-0 font-bold tabular-nums" style={{ color: danger }}>return {fmt(l.refundDue || 0)}</span>
                         </div>
                       ))}
                     </div>

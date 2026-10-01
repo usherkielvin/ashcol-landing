@@ -308,6 +308,57 @@ count); (4) admin-added records and Excel imports skip the check; (5) old DTR ro
 
 ---
 
+## Task 9 — BUG: Taguig Services records showing under Taguig Sales (2026-10-01, uncommitted)
+
+**Cause:** Taguig Sales and Services share one branch id on the DTR (only `selectedAuditLine` differs). The DTR
+pushed records with that base id, and `BranchIdNormalizer.normalizeForStorage` stores any Taguig id without
+"SERVICE" in it as `BR-TAGUIG-SALES`. So Services DTR records were saved as Sales, and the Expense Records filter
+matched them by exact id.
+
+**Fixed (portal):** `DTR_Form.tsx` `expenseRecordBranch()` sends `<base>-services|sales` plus an explicit
+`TAGUIG - SERVICES|SALES` name on every record push (receipt scan, blur sync, submit loop, cash advance, deposit).
+`AuditFinanceExpenses.tsx` `branchExpenses` now checks the line first: for a `-sales`/`-services` selection a record
+counts as Services if its id ends `-services` **or its branch name contains "service"**, and is excluded from the
+other line before any id/alias fallback.
+
+**Not fixed — existing data:** records already saved with branch id `BR-TAGUIG-SALES` whose name does *not* say
+services cannot be told apart. Re-saving the Services DTR rewrites them with the right id (the push upserts by the
+same record id). A bulk repair would need a script matching `resolvedExpenseId` to each report's `auditLine`.
+Backend `normalizeForStorage` is unchanged. Build passes; manual test pending.
+
+---
+
+## Task 10 — Add a receipt to a pending purchase + cash-return check (2026-10-01, uncommitted)
+
+**Needs a backend build + deploy (no schema change).** Portal and backend compile; nothing manually tested.
+
+**Backend** (`ReportService`, `ResolvePurchaseRequest`):
+- `resolvePurchase` now accepts `receiptImage` and stores it on the Expense Record **and** the DTR purchase item
+  (this also closes the "resolved purchases never get a photo" gap from Task 8). Rejects a purchase that already has its
+  receipt and a missing/zero receipt amount. The record's branch id/name now carry the Taguig line (same fix as Task 9;
+  before, a Services purchase resolved as Sales). Response adds `refundDue` and `cashReturnFound`.
+- `getPurchases` adds `refundDue` (advanced − receipt, for resolved purchases) and `cashReturnFound` per item.
+- Cash-return rule (`cashReturnStatus`): a `CASH_SALE` item `RETURN|name|desc` on the same branch **and audit line**, same
+  amount (±0.01), on a DTR dated **on or after** the purchase. Each return satisfies one purchase; same worker name is
+  preferred but not required. ORDER| purchases are excluded.
+
+**Portal** (`AuditFinanceExpenses.tsx`):
+- Each pending purchase has an **Add receipt** button → `ReceiptScanDialog` (photo, scan, receipt no., actual amount,
+  category…) → `POST /v1/reports/purchases/{id}/resolve`. That one call creates the record and marks the DTR line received,
+  so the DTR shows it next time it is opened. Lists and summary refresh afterwards.
+- If the receipt is lower than the cash given and no matching Cash Return exists, an alert tells the user to enter it on
+  the DTR. A red box "Cash returns not found on the DTR" lists those (selected period) and they count in the month export.
+- **"Fix the report":** purchases dated before 2026-10-01 are split out of the main count into "plus N older than Oct 1
+  (₱X)" with a show/hide toggle (`PENDING_LEGACY_BEFORE`), so the box reflects what can still be acted on. Nothing is hidden
+  or deleted. Change the constant if the cutoff should differ.
+
+**Known limits:** the check matches on amount, so two purchases with the same refund can be mismatched; it does not
+auto-create the Cash Return. A DTR opened *before* a receipt was added and re-saved afterwards can overwrite the
+received flags (it sends its stale rows). The DTR's own Purchases table has no Add receipt button yet. The resolve
+endpoint does not check the caller's branch (pre-existing).
+
+---
+
 ## Deferred (need a decision or a schema change — ask the user before starting)
 
 - **Month close / lock** (recommended right after Task 4 — it is the only control that makes "must match from October" stick). Admin marks a branch-month "Closed" once Balanced; DTRs and records for that month become
