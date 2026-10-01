@@ -405,6 +405,18 @@ The list scrolls (max height 24rem). Build passes; manual test pending.
 
 ---
 
+## Task 14 — Month picker is a real calendar; the summary follows it (2026-10-01, uncommitted)
+
+`AuditFinanceExpenses.tsx`. The month dropdown no longer lists months found in record dates (a mistyped receipt date had added
+"SEPTEMBER 2024/2025"); it lists real calendar months from **January 2026 to the current month**, newest first. Records dated
+before 2026 are only reachable under "All months". The whole Summary (records total, DTR comparison, duplicates, deposits, photo
+check, categories, "Why the difference?", cash returns missing) was already period-based; the **Pending receipts** box and the
+month-report export's pending-purchase rows now follow the picker too. With a month selected the box counts only items
+dated in that month (no Oct 1 legacy split, header says which month); "All months" keeps the old behaviour. Build passes;
+manual test pending.
+
+---
+
 ## Deferred (need a decision or a schema change — ask the user before starting)
 
 - **Month close / lock** (recommended right after Task 4 — it is the only control that makes "must match from October" stick). Admin marks a branch-month "Closed" once Balanced; DTRs and records for that month become

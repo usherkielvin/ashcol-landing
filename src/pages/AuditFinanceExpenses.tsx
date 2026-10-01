@@ -574,20 +574,17 @@ export default function AuditFinanceExpenses() {
 
 
 
+  // Real calendar months, January 2026 up to the current month (newest first). Not derived from record dates, so a
+  // mistyped receipt date can never add a bogus month such as "SEPTEMBER 2024".
   const availableMonths = useMemo(() => {
-    const months = new Set<string>()
     const now = new Date()
-    months.add(now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).toUpperCase())
-    
-    for (const e of branchExpenses) {
-      if (!e.date) continue
-      const d = new Date(e.date)
-      if (!isNaN(d.getTime())) {
-        months.add(d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).toUpperCase())
-      }
+    const months: string[] = []
+    for (let y = now.getFullYear(), m = now.getMonth(); y > 2026 || (y === 2026 && m >= 0); m--) {
+      if (m < 0) { y--; m = 11 }
+      months.push(new Date(y, m, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).toUpperCase())
     }
-    return Array.from(months).sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
-  }, [branchExpenses])
+    return months
+  }, [])
 
   // Possible duplicates: same receipt no. + amount, or (no receipt no.) same date + amount + description.
   const duplicateInfo = useMemo(() => {
@@ -909,6 +906,7 @@ export default function AuditFinanceExpenses() {
     const diff = hasDtr ? recordsTotalForDtr - dtrSpend : null
     const noPhotoCount = periodRecords.filter(e => !e.receiptImageUri && !/^CASH ADVANCE/i.test(e.expenseCategory || '')).length
     const na = 'N/A (no DTR found)'
+    const agingInPeriod = filterMonth === 'All' ? agingPurchases : agingPurchases.filter(p => p.date >= dtrPeriod.from && p.date <= dtrPeriod.to)
     const periodLabel = filterMonth === 'All' ? `${dtrPeriod.from} to ${dtrPeriod.to}` : filterMonth
 
     const summaryRows: (string | number)[][] = [
@@ -932,10 +930,9 @@ export default function AuditFinanceExpenses() {
       ['Possible duplicate rows', periodDupes.rows],
       ['Possible duplicate amount (extra copies)', r2(periodDupes.extra)],
       ['Records without receipt photo', noPhotoCount],
-      ['Purchases awaiting receipt - all dates (count)', agingPurchases.length],
-      ['Purchases awaiting receipt - all dates (amount)', r2(agingPurchases.reduce((acc, p) => acc + p.amount, 0))],
-      ['Purchases awaiting receipt - 8+ days old (count)', agingPurchases.filter(p => p.date >= PENDING_LEGACY_BEFORE && p.ageDays >= 8).length],
-      ['Purchases awaiting receipt - before Oct 1, 2026 (count)', agingPurchases.filter(p => p.date < PENDING_LEGACY_BEFORE).length],
+      ['Purchases awaiting receipt - this period (count)', agingInPeriod.length],
+      ['Purchases awaiting receipt - this period (amount)', r2(agingInPeriod.reduce((acc, p) => acc + p.amount, 0))],
+      ['Purchases awaiting receipt - this period, 8+ days old (count)', agingInPeriod.filter(p => p.ageDays >= 8).length],
       ['Cash returns not found on the DTR (count)', dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound).length],
       ['Cash returns not found on the DTR (amount)', r2(dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound).reduce((acc, l) => acc + (l.refundDue || 0), 0))],
     ]
@@ -2284,10 +2281,15 @@ export default function AuditFinanceExpenses() {
                   }
                 })
               // Newest first: today's, then yesterday's, and so on — the recent ones are the ones that can still be chased.
-              const all = [...purchaseItems, ...recordItems].sort((x, y) => (y.date || '0000').localeCompare(x.date || '0000'))
+              // The summary follows the month picker: only items dated inside the selected month. "All months" shows
+              // everything, with the pre-October backlog kept apart.
+              const byMonth = filterMonth !== 'All'
+              const all = [...purchaseItems, ...recordItems]
+                .filter(i => !byMonth || (i.date >= dtrPeriod.from && i.date <= dtrPeriod.to))
+                .sort((x, y) => (y.date || '0000').localeCompare(x.date || '0000'))
               if (all.length === 0) return null
-              const current = all.filter(i => i.date >= PENDING_LEGACY_BEFORE)
-              const legacy = all.filter(i => i.date < PENDING_LEGACY_BEFORE)
+              const current = byMonth ? all : all.filter(i => i.date >= PENDING_LEGACY_BEFORE)
+              const legacy = byMonth ? [] : all.filter(i => i.date < PENDING_LEGACY_BEFORE)
               const count = (list: Pending[], kind: Pending['kind']) => list.filter(i => i.kind === kind).length
               const total = current.reduce((acc, i) => acc + i.amount, 0)
               const legacyTotal = legacy.reduce((acc, i) => acc + i.amount, 0)
@@ -2324,7 +2326,7 @@ export default function AuditFinanceExpenses() {
                   <button type="button" onClick={() => setOpenBucket(open ? null : 'pendingAging')} className="w-full px-3 py-2 flex items-center justify-between gap-3 text-left text-xs cursor-pointer hover:bg-black/5 dark:hover:bg-white/5">
                     <div className="flex flex-col min-w-0">
                       <span className="font-bold" style={{ color: textPrimary }}>
-                        Pending receipts: {current.length} ({fmt(total)})
+                        Pending receipts{byMonth ? ` — ${filterMonth}` : ''}: {current.length} ({fmt(total)})
                         {old.length > 0 && <span style={{ color: danger }}> · 8+ days: {old.length}</span>}
                       </span>
                       <span className="text-[10px]" style={{ color: textMuted }}>
