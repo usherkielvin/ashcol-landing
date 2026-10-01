@@ -616,6 +616,15 @@ reveals the page regardless, so it cannot hang on the splash. Build passes; not 
 
 ---
 
+## Task 26 — Counters in the Summary header (2026-10-01, uncommitted)
+
+`AuditFinanceExpenses.tsx`, layout only. **Expense Records**, **DTR Exp. + Purchases** and **Difference** moved out of their own row into the
+Summary header, as compact counters to the left of the "Records exceed DTR / Balanced" badge and the Export button (they wrap on narrow
+screens). Their detail text moved into hover tooltips and one muted line under the header (DTR expenses, purchases with receipt, amount
+awaiting receipt, record count). Loading placeholders from Task 22 still apply. Build passes; not viewed in a browser.
+
+---
+
 ## Deferred (need a decision or a schema change — ask the user before starting)
 
 - **Month close / lock** (recommended right after Task 4 — it is the only control that makes "must match from October" stick). Admin marks a branch-month "Closed" once Balanced; DTRs and records for that month become

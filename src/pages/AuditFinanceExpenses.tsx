@@ -2251,6 +2251,12 @@ export default function AuditFinanceExpenses() {
           return acc
         }, {})).sort((a, b) => b[1] - a[1])
         const pulse = <span className="inline-block h-6 w-28 rounded-md animate-pulse align-middle" style={{ backgroundColor: `${textMuted}2e` }} />
+        const miniStat = (label: string, value: React.ReactNode, color: string, title?: string) => (
+          <div title={title} className="flex flex-col gap-0 rounded-lg px-3 py-1 min-w-[112px]" style={{ border: `1px solid ${border}` }}>
+            <span className="text-[9px] font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: textMuted }}>{label}</span>
+            <span className="text-base font-black tabular-nums leading-tight whitespace-nowrap" style={{ color }}>{value}</span>
+          </div>
+        )
         const stat = (label: string, value: React.ReactNode, color: string, sub?: React.ReactNode) => (
           <div className="flex flex-col gap-0.5 rounded-lg px-3 py-2.5" style={{ border: `1px solid ${border}` }}>
             <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{label}</span>
@@ -2260,12 +2266,19 @@ export default function AuditFinanceExpenses() {
         )
         return (
           <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-            <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
               <div className="flex flex-col">
                 <span className="text-xs font-black" style={{ color: textPrimary }}>Summary</span>
                 <span className="text-[11px]" style={{ color: textMuted }}>{filterMonth === 'All' ? `${dtrPeriod.from} to ${dtrPeriod.to}` : filterMonth} · Records vs DTR</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {miniStat('Expense Records', fmt(recordsTotalForDtr), textPrimary, `${recordsForDtr.length} record${recordsForDtr.length === 1 ? '' : 's'} · excl. deposits`)}
+                {miniStat('DTR Exp. + Purchases', summaryLoading ? pulse : !hasDtr ? 'Unavailable' : fmt(dtrSpend), textPrimary,
+                  summaryLoading ? 'Loading this month…' : !dtrExpenses.matched ? 'No DTR found for this branch'
+                    : linesTyped
+                      ? `Expenses ${fmt(dtrExpenses.total || 0)} · Purchases w/ receipt ${fmt(resolvedPurchases)}${pendingPurchases > 0 ? ` · ${fmt(pendingPurchases)} awaiting receipt (not counted)` : ''}`
+                      : `Expenses ${fmt(dtrExpenses.total || 0)} · Purchases ${fmt(dtrExpenses.purchases)}`)}
+                {miniStat('Difference', summaryLoading ? pulse : diff == null ? '—' : signed(diff), diffColor, 'Records − DTR')}
                 {diff != null && (
                   <span className="text-[11px] font-bold px-2.5 py-1 rounded-full" style={{ color: diffColor, backgroundColor: `${diffColor}18`, border: `1px solid ${diffColor}44` }}>
                     {balanced ? 'Balanced' : diff > 0 ? 'Records exceed DTR' : 'DTR exceeds records'}
@@ -2278,6 +2291,13 @@ export default function AuditFinanceExpenses() {
                   <Download size={12} /> Export month report
                 </button>
               </div>
+            </div>
+            <div className="px-4 pt-2 text-[11px]" style={{ color: textMuted }}>
+              {summaryLoading ? 'Loading this month…' : !dtrExpenses.matched ? 'No DTR found for this branch'
+                : linesTyped
+                  ? `DTR: Expenses ${fmt(dtrExpenses.total || 0)} · Purchases w/ receipt ${fmt(resolvedPurchases)}${pendingPurchases > 0 ? ` · ${fmt(pendingPurchases)} awaiting receipt (not counted)` : ''}`
+                  : `DTR: Expenses ${fmt(dtrExpenses.total || 0)} · Purchases ${fmt(dtrExpenses.purchases)}`}
+              {` · ${recordsForDtr.length} record${recordsForDtr.length === 1 ? '' : 's'}, excl. deposits`}
             </div>
             {/* Top of the summary: why records and DTR differ, with the duplicates counter beside it */}
             <div className="p-3 pb-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_260px] gap-3 items-start">
@@ -2596,15 +2616,6 @@ export default function AuditFinanceExpenses() {
                 </div>
               )
             })()}
-            </div>
-            <div className="p-3 grid grid-cols-2 lg:grid-cols-3 gap-2">
-              {stat('Expense Records', fmt(recordsTotalForDtr), textPrimary, `${recordsForDtr.length} record${recordsForDtr.length === 1 ? '' : 's'} · excl. deposits`)}
-              {stat('DTR Expenses + Purchases', summaryLoading ? pulse : !hasDtr ? 'Unavailable' : fmt(dtrSpend), textPrimary,
-                summaryLoading ? 'Loading this month…' : !dtrExpenses.matched ? 'No DTR found for this branch'
-                  : linesTyped
-                    ? `Expenses ${fmt(dtrExpenses.total || 0)} · Purchases w/ receipt ${fmt(resolvedPurchases)}${pendingPurchases > 0 ? ` · ${fmt(pendingPurchases)} awaiting receipt (not counted)` : ''}`
-                    : `Expenses ${fmt(dtrExpenses.total || 0)} · Purchases ${fmt(dtrExpenses.purchases)}`)}
-              {stat('Difference', summaryLoading ? pulse : diff == null ? '—' : signed(diff), diffColor, 'Records − DTR')}
             </div>
             <div className="mx-3 mb-3 flex flex-wrap items-stretch gap-2">
             <div className="w-fit max-w-full rounded-lg px-3 py-1.5 flex items-center gap-3" style={{ border: `1px solid ${accent}44`, backgroundColor: `${accent}0d` }}>
