@@ -1050,7 +1050,10 @@ export default function AuditFinanceExpenses() {
     setReceiptTarget(null)
     setDataVersion(v => v + 1)
     await reload()
-    if ((out.refundDue || 0) > 0.005 && !out.cashReturnFound) {
+    const over = Math.round((parseFloat(r.amount) - target.amount) * 100) / 100
+    if (over > 0.005) {
+      alert(`Receipt saved to the DTR and Expense Records.\n\nThe receipt is ₱${over.toLocaleString('en-PH', { minimumFractionDigits: 2 })} higher than the cash given. That extra was paid out of pocket, so a reimbursement still has to be recorded on a DTR.`)
+    } else if ((out.refundDue || 0) > 0.005 && !out.cashReturnFound) {
       alert(`Receipt saved to the DTR and Expense Records.\n\nThe receipt is ₱${(out.refundDue || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })} lower than the cash given. Make sure that cash return is entered under Cash Returns on the DTR (pick the REFUND entry for this purchase).`)
     }
   }
@@ -2142,6 +2145,7 @@ export default function AuditFinanceExpenses() {
           mode="expense"
           branchName={branchName}
           reportDate={receiptTarget.date}
+          expectedAmount={receiptTarget.amount}
           initial={{ incurredBy: receiptTarget.worker, sourceOfFunds: 'CASH' }}
           otherReceiptNos={branchExpenses.map(e => e.receiptNo).filter(Boolean)}
           onClose={() => setReceiptTarget(null)}
@@ -2558,10 +2562,11 @@ export default function AuditFinanceExpenses() {
 
               {/* ── Desktop Table View ── */}
               <div className="hidden sm:block overflow-x-auto">
-                <table className="w-full text-xs min-w-[850px]">
+                <table className="w-full text-xs min-w-[950px]">
                   <thead>
                     <tr style={{ backgroundColor: `${accent}18` }}>
-                      <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Date &amp; Incurred By</th>
+                      <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Date</th>
+                      <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Incurred By</th>
                       <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Company / Vendor</th>
                       <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Description</th>
                       <th className="px-3 py-3 text-left font-bold" style={{ color: textMuted }}>Category &amp; Source</th>
@@ -2579,8 +2584,10 @@ export default function AuditFinanceExpenses() {
                         className="transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
                         style={{ borderTop: `1px solid ${border}`, backgroundColor: i % 2 ? (isLight ? '#f8fafc' : '#0d1520') : undefined, cursor: 'pointer' }}>
                         <td className="px-3 py-2.5">
-                          <div className="font-semibold" style={{ color: textPrimary }}>{row.date}</div>
-                          <div className="text-[10px]" style={{ color: textMuted }}>By: <EmployeeNameLink nameOrId={row.incurredBy} /></div>
+                          <div className="font-semibold whitespace-nowrap" style={{ color: textPrimary }}>{row.date}</div>
+                        </td>
+                        <td className="px-3 py-2.5 font-medium" style={{ color: textPrimary }}>
+                          {row.incurredBy ? <EmployeeNameLink nameOrId={row.incurredBy} /> : '—'}
                         </td>
                         <td className="px-3 py-2.5 font-medium" style={{ color: textPrimary }}>
                           {row.company || '—'}
@@ -2652,7 +2659,7 @@ export default function AuditFinanceExpenses() {
                   </tbody>
                   <tfoot>
                     <tr style={{ borderTop: `2px solid ${border}` }}>
-                      <td colSpan={4} className="px-3 py-2.5 font-bold text-right" style={{ color: textMuted }}>TOTAL</td>
+                      <td colSpan={5} className="px-3 py-2.5 font-bold text-right" style={{ color: textMuted }}>TOTAL</td>
                       <td className="px-3 py-2.5 text-right font-bold" style={{ color: accent }}>₱{peso(totalFiltered)}</td>
                       <td />
                       <td />

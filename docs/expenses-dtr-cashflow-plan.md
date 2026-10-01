@@ -417,6 +417,18 @@ manual test pending.
 
 ---
 
+## Task 15 — Receipt amount differs from the cash given (pending purchases) (2026-10-01, uncommitted)
+
+The Add receipt dialog now shows the cash given for the purchase and compares live (`expectedAmount` prop): equal → green;
+**smaller** → amber, "₱X must be returned as a Cash Return on the DTR" (backend then checks the DTR, Task 10);
+**bigger** → red, "paid out of pocket, needs a reimbursement", and saving asks for confirmation; after saving an alert repeats it.
+For a bigger receipt the record and DTR comparison use the actual (higher) amount. **Not built:** nothing verifies or tracks the
+reimbursement (it would be an ordinary expense/cash advance on a later DTR), and there is no approval step. Possible follow-ups
+(need a policy decision): require admin approval above a tolerance, or add a "reimbursement due" list like the cash-return box.
+Portal only; build passes; manual test pending.
+
+---
+
 ## Deferred (need a decision or a schema change — ask the user before starting)
 
 - **Month close / lock** (recommended right after Task 4 — it is the only control that makes "must match from October" stick). Admin marks a branch-month "Closed" once Balanced; DTRs and records for that month become

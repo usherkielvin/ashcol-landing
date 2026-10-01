@@ -35,6 +35,8 @@ interface Props {
   nameSuggestions?: string[]
   /** Optional hint under the date field. */
   dateNote?: string
+  /** Cash that was handed out for this purchase; the receipt amount is compared against it. */
+  expectedAmount?: number
   onClose: () => void
   onConfirm: (result: ReceiptDialogResult) => void | Promise<void>
 }
@@ -85,12 +87,13 @@ function cleanAmount(raw: unknown): string {
   return isNaN(n) ? '' : n.toFixed(2)
 }
 
+const php = (n: number) => `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const label = 'text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400'
 const inputBase =
   'w-full px-3 py-2 rounded-lg text-sm font-semibold bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-60'
 
 export default function ReceiptScanDialog({
-  mode, branchName, reportDate, initial, otherReceiptNos = [], nameSuggestions = [], dateNote, onClose, onConfirm,
+  mode, branchName, reportDate, initial, otherReceiptNos = [], nameSuggestions = [], dateNote, expectedAmount, onClose, onConfirm,
 }: Props) {
   const isExpense = mode === 'expense'
   const fileRef = useRef<HTMLInputElement>(null)
@@ -239,6 +242,8 @@ export default function ReceiptScanDialog({
   const confirm = async () => {
     setTried(true)
     if (missing.length > 0 || uploading || !imageUrl) return
+    if (expectedAmount != null && (parseFloat(f.amount) || 0) - expectedAmount > 0.005 &&
+      !window.confirm(`The receipt (${php(parseFloat(f.amount) || 0)}) is higher than the cash given (${php(expectedAmount)}). The extra ${php((parseFloat(f.amount) || 0) - expectedAmount)} was paid out of pocket and must be reimbursed. Save anyway?`)) return
     setSaving(true)
     try {
       await onConfirm({
@@ -366,6 +371,15 @@ export default function ReceiptScanDialog({
                     <div className="flex items-center justify-between"><span className={label}>Amount (₱) <span className="text-red-500">*</span></span>{badge('amount')}</div>
                     <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale allowNegative={false} placeholder="0.00" value={f.amount}
                       onValueChange={v => set('amount', v.value)} className={`${inputBase} text-right ${fieldBox('amount')}`} />
+                    {expectedAmount != null && (() => {
+                      const given = php(expectedAmount)
+                      const got = parseFloat(f.amount) || 0
+                      const diff = Math.round((got - expectedAmount) * 100) / 100
+                      if (!got) return <span className="text-[10px] text-slate-500 dark:text-slate-400">Cash given for this purchase: {given}</span>
+                      if (diff === 0) return <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Matches the {given} given.</span>
+                      if (diff < 0) return <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">{php(-diff)} less than the {given} given — that {php(-diff)} must be returned as a Cash Return on the DTR.</span>
+                      return <span className="text-[10px] font-semibold text-red-600 dark:text-red-400">{php(diff)} more than the {given} given — the extra was paid out of pocket and needs a reimbursement on the DTR.</span>
+                    })()}
                   </div>
                 </div>
 
