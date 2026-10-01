@@ -33,6 +33,8 @@ interface Props {
   /** Receipt numbers already on this DTR (excluding the row being edited), to warn about duplicates. */
   otherReceiptNos?: string[]
   nameSuggestions?: string[]
+  /** Optional hint under the date field. */
+  dateNote?: string
   onClose: () => void
   onConfirm: (result: ReceiptDialogResult) => void | Promise<void>
 }
@@ -88,7 +90,7 @@ const inputBase =
   'w-full px-3 py-2 rounded-lg text-sm font-semibold bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-60'
 
 export default function ReceiptScanDialog({
-  mode, branchName, reportDate, initial, otherReceiptNos = [], nameSuggestions = [], onClose, onConfirm,
+  mode, branchName, reportDate, initial, otherReceiptNos = [], nameSuggestions = [], dateNote, onClose, onConfirm,
 }: Props) {
   const isExpense = mode === 'expense'
   const fileRef = useRef<HTMLInputElement>(null)
@@ -358,6 +360,7 @@ export default function ReceiptScanDialog({
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center justify-between"><span className={label}>Receipt date <span className="text-red-500">*</span></span>{badge('date')}</div>
                     <input type="date" value={f.date} onChange={e => set('date', e.target.value)} className={`${inputBase} ${fieldBox('date')}`} />
+                    {dateNote && <span className="text-[10px] text-slate-500 dark:text-slate-400">{dateNote}</span>}
                   </div>
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center justify-between"><span className={label}>Amount (₱) <span className="text-red-500">*</span></span>{badge('amount')}</div>

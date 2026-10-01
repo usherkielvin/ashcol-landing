@@ -359,6 +359,35 @@ endpoint does not check the caller's branch (pre-existing).
 
 ---
 
+## Task 11 — DTR "Expenses with Receipts": make Scan/Add receipt the obvious path (2026-10-01, uncommitted)
+
+`DTR_Form.tsx` only. Scanning is the only way to attach a receipt there, but it was a tiny "Scan" text link.
+- Header has a solid **Scan receipt** button (`SectionHeader` got an optional `action` slot). It reuses the empty row or
+  adds one, opens the scanner, and removes the row again if the scan is cancelled (`startNewReceipt`, `closeReceiptDialog`).
+- Empty section shows a large dashed "Scan a receipt" card; otherwise a status line "N of M expenses have a receipt
+  photo", red from Oct 1 when any are missing.
+- Rows without a photo show an **Add receipt** button (red from Oct 1 for filled rows, green otherwise); rows with a
+  photo show the thumbnail with Edit/View + Remove; read-only DTRs show "No receipt". "Add row" is now "Add row manually".
+Build passes; not viewed in a browser yet.
+
+---
+
+## Task 12 — DTR expenses are dated with the DTR, not the receipt (2026-10-01, uncommitted)
+
+**Problem:** an Oct 1 DTR carried "ON CALL … payslip" expenses with a Sep 30 receipt date. The DTR counted them in October,
+but the Expense Records were dated Sep 30, so they fell in September and showed up under "Recorded in a different month".
+
+**Change (`DTR_Form.tsx`):** all three expense pushes (receipt scan, blur sync, submit loop) now use `formatExpenseDate()` =
+the DTR's report date, as deposits and cash advances already did. The scan dialog says so under the date field
+(`dateNote` prop). The receipt date is still kept on the DTR row/item and in the photo; it is no longer the record's date.
+Records made from *purchases* (Add receipt on Expense Records) still use the receipt date.
+
+**Existing records:** re-saving the DTR (Update) rewrites its records with the new date, so the two flagged Oct 1 rows
+are fixed by re-saving the Oct 1 DTR. Other already-saved DTRs stay as they are until re-saved; the "Recorded in a
+different month" bucket will keep listing them. A bulk fix would need a script. Build passes; manual test pending.
+
+---
+
 ## Deferred (need a decision or a schema change — ask the user before starting)
 
 - **Month close / lock** (recommended right after Task 4 — it is the only control that makes "must match from October" stick). Admin marks a branch-month "Closed" once Balanced; DTRs and records for that month become

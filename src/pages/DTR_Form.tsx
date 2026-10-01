@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import { NumericFormat } from 'react-number-format'
-import { Plus, Trash2, Check, Receipt, Send, Edit, CalendarDays, ChevronDown, History as HistoryIcon, Lock } from 'lucide-react'
+import { Plus, Trash2, Check, Receipt, Send, Edit, CalendarDays, ChevronDown, History as HistoryIcon, Lock, Camera } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -343,7 +343,7 @@ const getWorkerName = (p: any) => {
 
 // ── Helper Components ─────────────────────────────────────────
 
-const SectionHeader = ({ label, total, variant = 'neutral' }: { label: string; total?: number; variant?: 'income' | 'expense' | 'neutral' }) => {
+const SectionHeader = ({ label, total, variant = 'neutral', action }: { label: string; total?: number; variant?: 'income' | 'expense' | 'neutral'; action?: React.ReactNode }) => {
   const styles = {
     income: {
       wrap: 'bg-emerald-50 dark:bg-emerald-900/20 border-b border-emerald-200 dark:border-emerald-900/40',
@@ -365,6 +365,7 @@ const SectionHeader = ({ label, total, variant = 'neutral' }: { label: string; t
   return (
     <div className={`px-4 py-3 flex items-center justify-between gap-2 ${styles.wrap}`}>
       <span className={`text-xs md:text-sm font-extrabold uppercase tracking-wider ${styles.label}`}>{label}</span>
+      {action && <span className="ml-auto">{action}</span>}
       {total !== undefined && (
         <span className="text-sm md:text-base font-black tabular-nums" style={{ color: styles.total }}>
           ₱{total.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1545,6 +1546,28 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     return parseSmartDate(reportDate) || reportDate
   }
 
+  const isBlankExpenseRow = (r: ExpenseRow) => !r.name && !r.description && !r.amount && !r.receiptImage && !r.receiptNo
+
+  // "Scan receipt" in the section header: reuse the empty row if there is one, otherwise add a row, then open the scanner.
+  const startNewReceipt = () => {
+    const blank = expReceipt.find(isBlankExpenseRow)
+    const rowId = blank ? blank.id : uid()
+    if (!blank) setExpReceipt(p => [...p, { ...mkExp(), id: rowId }])
+    setReceiptDialog({ mode: 'expense', rowId })
+  }
+
+  // Cancelling a scan must not leave the empty row it created behind.
+  const closeReceiptDialog = () => {
+    const d = receiptDialog
+    setReceiptDialog(null)
+    if (d?.mode === 'expense') {
+      setExpReceipt(p => {
+        const row = p.find(r => r.id === d.rowId)
+        return row && isBlankExpenseRow(row) && p.length > 1 ? p.filter(r => r.id !== d.rowId) : p
+      })
+    }
+  }
+
   // Branch fields for Expense Records. Taguig Sales and Services share one branch id on the DTR, and the backend
   // stores any Taguig id without "service" in it as BR-TAGUIG-SALES — so the line must be spelled out in the id
   // (and name) or Services records land under Sales.
@@ -1581,7 +1604,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       await upsertAuditExpense({
         id: resolvedId,
         ...expenseRecordBranch(),
-        date: formatExpenseDate(result.receiptDate),
+        date: formatExpenseDate(), // dated with the DTR, not the receipt, so Records and DTR fall in the same month
         incurredBy: result.incurredBy || (user?.name || 'STAFF').trim().toUpperCase(),
         description: result.description || 'Expense with Receipt',
         company: result.company,
@@ -1657,7 +1680,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       await upsertAuditExpense({
         id: row.resolvedExpenseId,
         ...expenseRecordBranch(),
-        date: formatExpenseDate(row.receiptDate),
+        date: formatExpenseDate(),
         incurredBy: (row.name || user?.name || 'STAFF').trim().toUpperCase(),
         description: (row.description || 'Expense with Receipt').trim(),
         company: (row.company || linkedExpenseCache.current.get(row.resolvedExpenseId)?.company || '').trim().toUpperCase(),
@@ -2257,7 +2280,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
             await upsertAuditExpense({
               id: expenseId,
               ...expenseRecordBranch(),
-              date: formatExpenseDate(row.receiptDate),
+              date: formatExpenseDate(),
               incurredBy: (row.name || user?.name || 'STAFF').trim().toUpperCase(),
               description: (row.description || 'Expense with Receipt').trim(),
               company: (row.company || linkedExpenseCache.current.get(expenseId)?.company || '').trim().toUpperCase(),
@@ -3169,7 +3192,45 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
 
           {/* Expenses with Receipts */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-            <SectionHeader label="Expenses with Receipts" total={totalExpReceipt} variant="expense" />
+            <SectionHeader
+              label="Expenses with Receipts"
+              total={totalExpReceipt}
+              variant="expense"
+              action={!isFormDisabled ? (
+                <button type="button" onClick={startNewReceipt}
+                  className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700 active:scale-95">
+                  <Camera className="h-3.5 w-3.5" /> Scan receipt
+                </button>
+              ) : undefined}
+            />
+            {(() => {
+              const filled = expReceipt.filter(r => !isBlankExpenseRow(r))
+              const withPhoto = filled.filter(r => r.receiptImage).length
+              const required = reportDate >= DOCUMENTATION_REQUIRED_FROM
+              if (isFormDisabled && filled.length === 0) return null
+              return (
+                <div className="px-3 pt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                  {filled.length === 0 ? (
+                    <>Tap <strong>Scan receipt</strong> to add an expense — it reads the receipt, saves the details and adds it to Expense Records.{required && ' A receipt photo is required for every expense.'}</>
+                  ) : (
+                    <span className={withPhoto < filled.length && required ? 'font-bold text-red-600 dark:text-red-400' : ''}>
+                      {withPhoto} of {filled.length} expense{filled.length === 1 ? '' : 's'} {withPhoto === 1 && filled.length === 1 ? 'has' : 'have'} a receipt photo
+                      {withPhoto < filled.length && !isFormDisabled && ' — use Add receipt on the rows marked in red.'}
+                    </span>
+                  )}
+                </div>
+              )
+            })()}
+            {!isFormDisabled && expReceipt.every(isBlankExpenseRow) && (
+              <div className="p-2 pb-0">
+                <button type="button" onClick={startNewReceipt}
+                  className="flex w-full flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-emerald-400/60 bg-emerald-50/50 px-4 py-5 text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-500/40 dark:bg-emerald-500/5 dark:text-emerald-300 dark:hover:bg-emerald-500/10">
+                  <Camera className="h-6 w-6" />
+                  <span className="text-sm font-extrabold">Scan a receipt</span>
+                  <span className="text-[11px] opacity-80">Take a photo or upload one — the details are filled in for you</span>
+                </button>
+              </div>
+            )}
             <div className="p-2">
               <table className="w-full text-left border-collapse table-fixed">
                 <thead>
@@ -3177,7 +3238,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                     <th className={tableTh + ' w-28'}>Name</th>
                     <th className={tableTh}>Description</th>
                     <th className={tableTh + ' text-right w-28'}>Amount</th>
-                    <th className={tableTh + ' text-center w-24'}>Receipt</th>
+                    <th className={tableTh + ' text-center w-32'}>Receipt</th>
                     {canSubmit && !reviewMode && <th className={tableTh + ' w-9'}></th>}
                   </tr>
                 </thead>
@@ -3218,8 +3279,10 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                       <td className={tableTd + ' text-center'}>
                         {row.receiptImage ? (
                           <div className="flex items-center justify-center gap-1.5">
-                            <button type="button" onClick={() => setReceiptDialog({ mode: 'expense', rowId: row.id })} title={isFormDisabled ? 'View receipt details' : 'Review / edit receipt details'}>
-                              <img src={row.receiptImage} alt="Receipt" className="h-8 w-8 object-cover rounded border border-slate-300 dark:border-slate-700 hover:opacity-80 transition cursor-pointer" />
+                            <button type="button" onClick={() => setReceiptDialog({ mode: 'expense', rowId: row.id })} title={isFormDisabled ? 'View receipt details' : 'Review / edit receipt details'}
+                              className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-emerald-600 dark:text-emerald-400">
+                              <img src={row.receiptImage} alt="Receipt" className="h-8 w-8 object-cover rounded border border-emerald-400 hover:opacity-80 transition cursor-pointer" />
+                              {isFormDisabled ? 'View' : 'Edit'}
                             </button>
                             {!isFormDisabled && (
                               <button type="button" onClick={() => {
@@ -3236,9 +3299,12 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                         ) : (
                           !isFormDisabled ? (
                             <button type="button" onClick={() => setReceiptDialog({ mode: 'expense', rowId: row.id })}
-                              className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 hover:underline">
-                              Scan
+                              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-white shadow-sm transition active:scale-95 ${!isBlankExpenseRow(row) && reportDate >= DOCUMENTATION_REQUIRED_FROM ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+                              title="Scan or upload the receipt photo for this expense">
+                              <Camera className="h-3.5 w-3.5" /> Add receipt
                             </button>
+                          ) : !isBlankExpenseRow(row) ? (
+                            <span className="text-[10px] font-bold uppercase text-amber-600 dark:text-amber-400">No receipt</span>
                           ) : (
                             <span className="text-xs text-slate-400">—</span>
                           )
@@ -3258,7 +3324,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                   ))}
                 </tbody>
               </table>
-              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setExpReceipt(p => [...p, mkExp()])} label="Add row" />}
+              {canSubmit && !reviewMode && <AddRowBtn onClick={() => setExpReceipt(p => [...p, mkExp()])} label="Add row manually" />}
             </div>
           </div>
 
@@ -4020,6 +4086,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
             branchName={branchName}
             reportDate={reportDate}
             nameSuggestions={techSuggestions}
+            dateNote={isExp ? `Expense Records date this expense with the DTR (${reportDate}), whatever the receipt date.` : undefined}
             otherReceiptNos={otherNos}
             initial={isExp && expRow ? {
               receiptImage: expRow.receiptImage, receiptDate: expRow.receiptDate, company: expRow.company, receiptNo: expRow.receiptNo,
@@ -4028,7 +4095,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
             } : depRow ? {
               receiptImage: depRow.receiptImage, receiptNo: depRow.referenceNo, amount: depRow.amount, description: depRow.description, company: depRow.bank,
             } : undefined}
-            onClose={() => setReceiptDialog(null)}
+            onClose={closeReceiptDialog}
             onConfirm={result => isExp ? commitExpenseReceipt(receiptDialog.rowId, result) : commitDepositReceipt(receiptDialog.rowId, result)}
           />
         )
