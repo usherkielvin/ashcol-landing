@@ -483,6 +483,11 @@ adds `complete` and `remaining`; `getPurchases` adds `remaining`.
 - Records vs DTR counts the receipted part right away (so records and DTR stay level) and lists only the remainder as pending;
   reconciliation sums all linked records for a split purchase instead of reporting "Amount differs".
 
+**Follow-up:** a purchase closed short (e.g. receipted before this feature, or the backend was not yet deployed so "another receipt" was
+ignored) appears under "Cash returns not found on the DTR". Each row there now has **Add another receipt**, which reopens the Add
+receipt dialog for the remaining amount. Backend: `resolvePurchase` now only refuses a purchase whose receipts already cover the cash
+given; a closed-short purchase can take more receipts (it reopens if still short and "more receipts" is chosen).
+
 **Limits:** there is no way yet to remove or edit one receipt of a split purchase from this screen (edit the record as an admin);
 anything that reads `resolvedExpenseId` as a single id (e.g. the mobile app) will not understand the comma list; a DTR opened before
 a receipt was added and re-saved afterwards can overwrite the running total (same stale-DTR caveat as Task 10).

@@ -2415,6 +2415,23 @@ export default function AuditFinanceExpenses() {
                           <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={l.description}>{l.description.split('|').filter(Boolean).join(' · ')}</span>
                           <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>receipt {fmt(l.actualAmount || 0)} of {fmt(l.amount)}</span>
                           <span className="shrink-0 font-bold tabular-nums" style={{ color: danger }}>return {fmt(l.refundDue || 0)}</span>
+                          <button type="button"
+                            onClick={() => setReceiptTarget({
+                              id: l.id,
+                              date: l.reportDate || '',
+                              label: l.description.split('|').filter(Boolean).join(' · '),
+                              worker: l.description.includes('|') ? l.description.split('|')[0].trim() : '',
+                              detail: l.description.includes('|') ? l.description.split('|').slice(1).join(' ').trim() : l.description,
+                              amount: l.refundDue || 0,
+                              given: l.amount,
+                              received: l.actualAmount || 0,
+                              ageDays: 0,
+                            })}
+                            title="Add another receipt for the remaining amount (e.g. the toll gate receipt)"
+                            className="shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md cursor-pointer"
+                            style={{ color: accent, border: `1px solid ${accent}55`, backgroundColor: `${accent}12` }}>
+                            <Upload size={10} /> Add another receipt
+                          </button>
                         </div>
                       ))}
                     </div>
