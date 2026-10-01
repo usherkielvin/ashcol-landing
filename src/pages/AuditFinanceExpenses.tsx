@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Upload, Building2, Plus, Trash2, Pencil, Settings, FileSpreadsheet, Search, X, Loader2, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays, Camera } from 'lucide-react'
+import { Upload, Building2, Plus, Trash2, Pencil, Settings, Search, X, Loader2, ChevronDown, ClipboardPaste, Download, AlertTriangle, ClipboardList, CalendarDays, Camera } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatRole, isSameBaseBranch, branchAliasKey, isPortalAdmin, resolveArchivesBranchFilter } from '../utils/api'
@@ -622,13 +622,11 @@ export default function AuditFinanceExpenses() {
     return { ids, groups }
   }, [branchExpenses])
   const [showDupesOnly, setShowDupesOnly] = useState(false)
-  const [showNoPhotoOnly, setShowNoPhotoOnly] = useState(false)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     let rows = [...branchExpenses]
     if (showDupesOnly) rows = rows.filter(e => duplicateInfo.ids.has(e.id))
-    if (showNoPhotoOnly) rows = rows.filter(e => !e.receiptImageUri && !isNoReceipt(e) && !/^CASH ADVANCE/i.test(e.expenseCategory || ''))
 
     if (filterMonth !== 'All') {
       rows = rows.filter(e => {
@@ -673,7 +671,7 @@ export default function AuditFinanceExpenses() {
     }
 
     return rows
-  }, [branchExpenses, search, sortConfig, filterMonth, showDupesOnly, showNoPhotoOnly, duplicateInfo])
+  }, [branchExpenses, search, sortConfig, filterMonth, showDupesOnly, duplicateInfo])
 
   const totalFiltered = filtered.reduce((s, e) => s + e.amount, 0)
 
@@ -2245,11 +2243,6 @@ export default function AuditFinanceExpenses() {
         const balanced = diff != null && Math.abs(diff) < 0.005
         const diffColor = diff == null ? textMuted : balanced ? accent : danger
         const depositDiff = depositsForDtr - dtrExpenses.deposits
-        const byCategory = Object.entries(recordsForDtr.reduce<Record<string, number>>((acc, e) => {
-          const k = e.expenseCategory || 'OTHER'
-          acc[k] = (acc[k] || 0) + e.amount
-          return acc
-        }, {})).sort((a, b) => b[1] - a[1])
         const pulse = <span className="inline-block h-6 w-28 rounded-md animate-pulse align-middle" style={{ backgroundColor: `${textMuted}2e` }} />
         const miniStat = (label: string, value: React.ReactNode, color: string, title?: string) => (
           <div title={title} className="flex flex-col gap-0 rounded-lg px-3 py-1 min-w-[112px]" style={{ border: `1px solid ${border}` }}>
@@ -2257,53 +2250,8 @@ export default function AuditFinanceExpenses() {
             <span className="text-base font-black tabular-nums leading-tight whitespace-nowrap" style={{ color }}>{value}</span>
           </div>
         )
-        const stat = (label: string, value: React.ReactNode, color: string, sub?: React.ReactNode) => (
-          <div className="flex flex-col gap-0.5 rounded-lg px-3 py-2.5" style={{ border: `1px solid ${border}` }}>
-            <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>{label}</span>
-            <span className="text-lg font-black tabular-nums" style={{ color }}>{value}</span>
-            {sub && <span className="text-[10px]" style={{ color: textMuted }}>{sub}</span>}
-          </div>
-        )
-        return (
-          <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
-              <div className="flex flex-col">
-                <span className="text-xs font-black" style={{ color: textPrimary }}>Summary</span>
-                <span className="text-[11px]" style={{ color: textMuted }}>{filterMonth === 'All' ? `${dtrPeriod.from} to ${dtrPeriod.to}` : filterMonth} · Records vs DTR</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {miniStat('Expense Records', fmt(recordsTotalForDtr), textPrimary, `${recordsForDtr.length} record${recordsForDtr.length === 1 ? '' : 's'} · excl. deposits`)}
-                {miniStat('DTR Exp. + Purchases', summaryLoading ? pulse : !hasDtr ? 'Unavailable' : fmt(dtrSpend), textPrimary,
-                  summaryLoading ? 'Loading this month…' : !dtrExpenses.matched ? 'No DTR found for this branch'
-                    : linesTyped
-                      ? `Expenses ${fmt(dtrExpenses.total || 0)} · Purchases w/ receipt ${fmt(resolvedPurchases)}${pendingPurchases > 0 ? ` · ${fmt(pendingPurchases)} awaiting receipt (not counted)` : ''}`
-                      : `Expenses ${fmt(dtrExpenses.total || 0)} · Purchases ${fmt(dtrExpenses.purchases)}`)}
-                {miniStat('Difference', summaryLoading ? pulse : diff == null ? '—' : signed(diff), diffColor, 'Records − DTR')}
-                {diff != null && (
-                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-full" style={{ color: diffColor, backgroundColor: `${diffColor}18`, border: `1px solid ${diffColor}44` }}>
-                    {balanced ? 'Balanced' : diff > 0 ? 'Records exceed DTR' : 'DTR exceeds records'}
-                  </span>
-                )}
-                <button type="button" onClick={handleExportMonthReport} disabled={dtrLines.loading || dtrExpenses.loading || !reconciliation}
-                  className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
-                  style={{ backgroundColor: `${accent}18`, border: `1px solid ${accent}44`, color: accent }}
-                  title="Download Summary, Differences and Records for this period as an Excel file">
-                  <Download size={12} /> Export month report
-                </button>
-              </div>
-            </div>
-            <div className="px-4 pt-2 text-[11px]" style={{ color: textMuted }}>
-              {summaryLoading ? 'Loading this month…' : !dtrExpenses.matched ? 'No DTR found for this branch'
-                : linesTyped
-                  ? `DTR: Expenses ${fmt(dtrExpenses.total || 0)} · Purchases w/ receipt ${fmt(resolvedPurchases)}${pendingPurchases > 0 ? ` · ${fmt(pendingPurchases)} awaiting receipt (not counted)` : ''}`
-                  : `DTR: Expenses ${fmt(dtrExpenses.total || 0)} · Purchases ${fmt(dtrExpenses.purchases)}`}
-              {` · ${recordsForDtr.length} record${recordsForDtr.length === 1 ? '' : 's'}, excl. deposits`}
-            </div>
-            {/* Top of the summary: why records and DTR differ, with the duplicates counter beside it */}
-            <div className="p-3 pb-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_260px] gap-3 items-start">
-              <div className="min-w-0">
-            {/* Why the difference? — each DTR line matched to its Expense Record */}
-            {hasDtr && reconciliation && (() => {
+        // Reasons the records and the DTR differ (shown in a popup, count in the header)
+        const why = hasDtr && reconciliation ? (() => {
               const { buckets, cashAdvance, sum } = reconciliation
               const rows: { id: string; title: string; hint: string; list: typeof buckets.manual; amount: number; side: 'dtr' | 'records' }[] = [
                 { id: 'depositAsExpense', title: 'Deposits to HO entered as expenses', hint: 'Logged as DTR expense rows before the COH Deposit section existed. They inflate DTR Expenses; move them to COH Deposit on those DTRs.', list: buckets.depositAsExpense, amount: sum(buckets.depositAsExpense), side: 'dtr' },
@@ -2315,22 +2263,63 @@ export default function AuditFinanceExpenses() {
                 { id: 'manual', title: 'Records not on any DTR', hint: 'Added directly in Expense Records — they raise the records total.', list: buckets.manual, amount: sum(buckets.manual), side: 'records' },
               ]
               const visible = rows.filter(r => r.list.length > 0)
-              return (
-                <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${border}` }}>
-                  <button type="button" onClick={() => setWhyOpen(v => !v)} className="w-full px-3 py-2 flex items-center justify-between gap-3 text-left cursor-pointer hover:bg-black/5 dark:hover:bg-white/5" style={{ borderBottom: whyOpen ? `1px solid ${border}` : undefined }}>
-                    <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: textPrimary }}>
-                      Why the difference?
-                      <span className="ml-2 normal-case tracking-normal font-semibold" style={{ color: textMuted }}>
-                        {visible.length + (cashAdvance > 0.005 ? 1 : 0) === 0 ? 'every entry matches' : `${visible.length + (cashAdvance > 0.005 ? 1 : 0)} reason${visible.length + (cashAdvance > 0.005 ? 1 : 0) === 1 ? '' : 's'}`}
-                      </span>
-                    </span>
-                    <span className="flex items-center gap-2">
-                      {dtrLines.loading && <span className="text-[10px]" style={{ color: textMuted }}>Checking DTR entries…</span>}
-                      {dtrLines.failed && <span className="text-[10px]" style={{ color: danger }}>Could not load DTR entries</span>}
-                      <ChevronDown size={13} style={{ color: textMuted, transform: whyOpen ? 'rotate(180deg)' : undefined }} />
-                    </span>
+          return { cashAdvance, visible }
+        })() : null
+        const cashAdvance = why?.cashAdvance ?? 0
+        const visible = why?.visible ?? []
+        const whyCount = visible.length + (cashAdvance > 0.005 ? 1 : 0)
+        return (
+          <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
+              <span className="text-sm font-black uppercase tracking-wider" style={{ color: textPrimary }}>Summary</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" disabled={periodDupes.rows === 0} onClick={() => setShowDupesOnly(v => !v)}
+                  title={periodDupes.rows === 0 ? 'No repeated receipts found' : `${signed(periodDupes.extra)} extra · click to ${showDupesOnly ? 'show all records' : 'show only these'}`}
+                  className="flex flex-col text-left rounded-lg px-3 py-1 min-w-[112px] disabled:cursor-default"
+                  style={{ border: `1px solid ${periodDupes.rows === 0 ? border : `${danger}66`}`, cursor: periodDupes.rows === 0 ? 'default' : 'pointer' }}>
+                  <span className="text-[9px] font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: textMuted }}>Possible duplicates</span>
+                  <span className="text-base font-black leading-tight whitespace-nowrap" style={{ color: periodDupes.rows === 0 ? accent : danger }}>{periodDupes.rows === 0 ? 'None' : `${periodDupes.rows} rows`}</span>
+                </button>
+                {miniStat('Deposit to HO', fmt(hasDtr ? dtrExpenses.deposits : depositsForDtr), textPrimary,
+                  hasDtr ? `Per DTR · in records ${fmt(depositsForDtr)} · ${signed(depositDiff)}` : `${periodRecords.filter(isDepositRecord).length} deposit record(s)`)}
+                {miniStat('Expense Records', fmt(recordsTotalForDtr), textPrimary, `${recordsForDtr.length} record${recordsForDtr.length === 1 ? '' : 's'} · excl. deposits`)}
+                {miniStat('DTR Exp. + Purchases', summaryLoading ? pulse : !hasDtr ? 'Unavailable' : fmt(dtrSpend), textPrimary,
+                  summaryLoading ? 'Loading this month…' : !dtrExpenses.matched ? 'No DTR found for this branch'
+                    : linesTyped
+                      ? `Expenses ${fmt(dtrExpenses.total || 0)} · Purchases w/ receipt ${fmt(resolvedPurchases)}${pendingPurchases > 0 ? ` · ${fmt(pendingPurchases)} awaiting receipt (not counted)` : ''}`
+                      : `Expenses ${fmt(dtrExpenses.total || 0)} · Purchases ${fmt(dtrExpenses.purchases)}`)}
+                {miniStat('Difference', summaryLoading ? pulse : diff == null ? '—' : signed(diff), diffColor, 'Records − DTR')}
+                {whyCount > 0 && (
+                  <button type="button" onClick={() => setWhyOpen(true)}
+                    className="inline-flex items-center justify-center gap-1.5 h-10 px-5 rounded-full text-xs font-bold uppercase tracking-wide whitespace-nowrap min-w-[250px] cursor-pointer transition-opacity hover:opacity-80"
+                    style={{ color: textPrimary, border: `1px solid ${border}` }}>
+                    Why the difference? · {whyCount} reason{whyCount === 1 ? '' : 's'}
                   </button>
-                  {whyOpen && (<div>
+                )}
+                {diff != null && (
+                  <span className="inline-flex items-center justify-center gap-1.5 h-10 px-5 rounded-full text-xs font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: diffColor, backgroundColor: `${diffColor}18`, border: `1px solid ${diffColor}44` }}>
+                    {balanced ? 'Balanced' : diff > 0 ? 'Records exceed DTR' : 'DTR exceeds records'}
+                  </span>
+                )}
+                <button type="button" onClick={handleExportMonthReport} disabled={dtrLines.loading || dtrExpenses.loading || !reconciliation}
+                  className="inline-flex items-center justify-center gap-1.5 h-10 px-5 rounded-full text-xs font-bold uppercase tracking-wide whitespace-nowrap transition-opacity hover:opacity-80 disabled:opacity-50 cursor-pointer"
+                  style={{ backgroundColor: `${accent}18`, border: `1px solid ${accent}44`, color: accent }}
+                  title="Download Summary, Differences and Records for this period as an Excel file">
+                  <Download size={14} /> Export month report
+                </button>
+              </div>
+            </div>
+            {whyOpen && why && createPortal(
+              <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/50">
+                <div className="w-full max-w-5xl min-h-[60vh] max-h-[92vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+                  <div className="flex items-center justify-between gap-3 px-4 py-3" style={{ borderBottom: `1px solid ${border}` }}>
+                    <div className="flex flex-col">
+                      <span className="text-lg font-black uppercase tracking-wider" style={{ color: textPrimary }}>Why the difference?</span>
+                      <span className="text-[11px]" style={{ color: textMuted }}>{filterMonth === 'All' ? `${dtrPeriod.from} to ${dtrPeriod.to}` : filterMonth} · Records vs DTR{diff != null ? ` · ${signed(diff)}` : ''}</span>
+                    </div>
+                    <button type="button" onClick={() => setWhyOpen(false)} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer" style={{ color: textMuted }} title="Close"><X size={22} /></button>
+                  </div>
+                  <div className="overflow-y-auto" style={{ zoom: 1.2 }}>
                   {cashAdvance > 0.005 && (
                     <div className="px-3 py-2 flex items-center justify-between gap-3 text-xs" style={{ borderBottom: `1px solid ${border}` }}>
                       <div className="flex flex-col">
@@ -2372,18 +2361,11 @@ export default function AuditFinanceExpenses() {
                       </div>
                     )
                   })}
-                  </div>)}
+                  </div>
                 </div>
-              )
-            })()}
-              </div>
-              {stat('Possible Duplicates', periodDupes.rows === 0 ? 'None' : `${periodDupes.rows} rows`, periodDupes.rows === 0 ? accent : danger,
-                periodDupes.rows === 0 ? 'No repeated receipts found' : (
-                  <button type="button" onClick={() => setShowDupesOnly(v => !v)} className="font-bold underline cursor-pointer" style={{ color: danger }}>
-                    {signed(periodDupes.extra)} extra · {showDupesOnly ? 'show all' : 'show them'}
-                  </button>
-                ))}
-            </div>
+              </div>,
+              document.body
+            )}
             <div className="p-3 pb-0">
             {/* Everything still waiting for a receipt: purchases without one + records without a photo. Newest first. */}
             {(() => {
@@ -2430,8 +2412,8 @@ export default function AuditFinanceExpenses() {
               // everything, with the pre-October backlog kept apart.
               const byMonth = filterMonth !== 'All'
               const all = [...purchaseItems, ...recordItems]
-                // Plus the last 3 days, even when they fall in another month: yesterday's receipts are still chased today.
-                .filter(i => !byMonth || (i.date >= dtrPeriod.from && i.date <= dtrPeriod.to) || (!!i.date && i.ageDays <= 3))
+                // Focused on the selected month only; a month with nothing pending shows no box at all.
+                .filter(i => !byMonth || (i.date >= dtrPeriod.from && i.date <= dtrPeriod.to))
                 .sort((x, y) => (y.date || '0000').localeCompare(x.date || '0000'))
               if (all.length === 0) {
                 return purchasesFeed.loading ? (
@@ -2440,10 +2422,7 @@ export default function AuditFinanceExpenses() {
               }
               const current = byMonth ? all : all.filter(i => i.date >= PENDING_LEGACY_BEFORE)
               const legacy = byMonth ? [] : all.filter(i => i.date < PENDING_LEGACY_BEFORE)
-              const count = (list: Pending[], kind: Pending['kind']) => list.filter(i => i.kind === kind).length
               const total = current.reduce((acc, i) => acc + i.amount, 0)
-              const legacyTotal = legacy.reduce((acc, i) => acc + i.amount, 0)
-              const old = current.filter(i => i.ageDays >= 8)
               const open = pendingOpen
               const ageColor = (d: number) => (d >= 8 ? danger : d >= 3 ? '#D97706' : textMuted)
               const ageLabel = (d: number) => (d === 0 ? 'today' : `${d} day${d === 1 ? '' : 's'}`)
@@ -2480,20 +2459,16 @@ export default function AuditFinanceExpenses() {
                 </div>
               )
               return (
-                <div className="mb-3 rounded-lg overflow-hidden" style={{ border: `1px solid ${border}` }}>
+                <div className="mb-3 rounded-lg overflow-hidden" style={{ border: '1px solid #f59e0b99', backgroundColor: '#f59e0b14' }}>
                   <button type="button" onClick={() => setPendingOpen(v => !v)} className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left text-sm cursor-pointer hover:bg-black/5 dark:hover:bg-white/5">
-                    <div className="flex flex-col min-w-0">
-                      <span className="font-bold" style={{ color: textPrimary }}>
-                        Pending receipts{byMonth ? ` — ${filterMonth}` : ''}: {current.length} ({fmt(total)})
-                        {old.length > 0 && <span style={{ color: danger }}> · 8+ days: {old.length}</span>}
-                      </span>
-                      <span className="text-[10px]" style={{ color: textMuted }}>
-                        Purchases awaiting receipt: {count(current, 'purchase')} · Records without a photo: {count(current, 'record')}
-                        {byMonth && current.some(i => i.date < dtrPeriod.from || i.date > dtrPeriod.to) && ' · includes the last 3 days from other months'}
-                        {legacy.length > 0 && ` · plus ${legacy.length} before Oct 1, 2026 (${fmt(legacyTotal)})`}
-                      </span>
-                    </div>
-                    <ChevronDown size={13} style={{ color: textMuted, transform: open ? 'rotate(180deg)' : undefined }} className="shrink-0" />
+                    <span className="flex items-center gap-2.5 min-w-0">
+                      <span className="font-bold uppercase tracking-wider" style={{ color: '#b45309' }}>Pending purchases receipts</span>
+                      <span className="text-xs font-black px-2 py-0.5 rounded-full tabular-nums" style={{ color: '#b45309', border: '1px solid #f59e0b99', backgroundColor: '#f59e0b22' }}>{current.length}</span>
+                    </span>
+                    <span className="flex items-center gap-3 shrink-0">
+                      <span className="font-black tabular-nums" style={{ color: '#b45309' }}>{fmt(total)}</span>
+                      <ChevronDown size={14} style={{ color: '#d97706', transform: open ? 'rotate(180deg)' : undefined }} />
+                    </span>
                   </button>
                   {open && (
                     <div className="px-4 pb-3 max-h-[65vh] overflow-y-auto">
@@ -2618,38 +2593,6 @@ export default function AuditFinanceExpenses() {
             })()}
             </div>
             <div className="mx-3 mb-3 flex flex-wrap items-stretch gap-2">
-            <div className="w-fit max-w-full rounded-lg px-3 py-1.5 flex items-center gap-3" style={{ border: `1px solid ${accent}44`, backgroundColor: `${accent}0d` }}>
-              <div className="flex flex-col">
-                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: accent }}>Deposit to HO</span>
-                <span className="text-[10px]" style={{ color: textMuted }}>
-                  {hasDtr
-                    ? <>Per DTR · in records {fmt(depositsForDtr)} · <span style={{ color: Math.abs(depositDiff) < 0.005 ? accent : danger }}>{signed(depositDiff)}</span></>
-                    : `${periodRecords.filter(isDepositRecord).length} deposit record(s)`}
-                </span>
-              </div>
-              <span className="text-base font-black tabular-nums" style={{ color: textPrimary }}>{fmt(hasDtr ? dtrExpenses.deposits : depositsForDtr)}</span>
-            </div>
-            {(() => {
-              // Cash advances have no receipt, so they are not expected to carry a photo.
-              const noPhoto = periodRecords.filter(e => !e.receiptImageUri && !isNoReceipt(e) && !/^CASH ADVANCE/i.test(e.expenseCategory || ''))
-              const ok = noPhoto.length === 0
-              const c = ok ? accent : '#d97706'
-              return (
-                <div className="w-fit max-w-full rounded-lg px-3 py-1.5 flex items-center gap-3" style={{ border: `1px solid ${c}44`, backgroundColor: `${c}0d` }}>
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: c }}>Receipt photos</span>
-                    <span className="text-[10px]" style={{ color: textMuted }}>
-                      {ok ? 'Every record has its receipt' : (
-                        <button type="button" onClick={() => setShowNoPhotoOnly(v => !v)} className="font-bold underline cursor-pointer" style={{ color: c }}>
-                          {showNoPhotoOnly ? 'show all records' : 'show records without a photo'}
-                        </button>
-                      )}
-                    </span>
-                  </div>
-                  <span className="text-base font-black tabular-nums" style={{ color: textPrimary }}>{ok ? '✓' : `${noPhoto.length} missing`}</span>
-                </div>
-              )
-            })()}
             {(() => {
               // Expenses recorded on a DTR without a receipt (reason in the description) — for the admin to review.
               const noReceipt = periodRecords.filter(isNoReceipt)
@@ -2657,24 +2600,12 @@ export default function AuditFinanceExpenses() {
               const total = noReceipt.reduce((acc, e) => acc + e.amount, 0)
               return (
                 <div className="w-fit max-w-full rounded-lg px-3 py-1.5 flex items-center gap-3" style={{ border: '1px solid #f59e0b66', backgroundColor: '#f59e0b0d' }}>
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#b45309' }}>No receipt</span>
-                    <span className="text-[10px]" style={{ color: textMuted }}>{noReceipt.length} record{noReceipt.length === 1 ? '' : 's'} saved without a receipt · search “NO RECEIPT”</span>
-                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#b45309' }} title="Records saved without a receipt — search NO RECEIPT">No receipt · {noReceipt.length}</span>
                   <span className="text-base font-black tabular-nums" style={{ color: textPrimary }}>{fmt(total)}</span>
                 </div>
               )
             })()}
             </div>
-            {byCategory.length > 0 && (
-              <div className="px-3 pb-3 flex flex-wrap gap-1.5">
-                {byCategory.map(([cat, amt]) => (
-                  <span key={cat} className="text-[10px] font-semibold px-2 py-1 rounded-md tabular-nums" style={{ color: textMuted, border: `1px solid ${border}` }}>
-                    {cat} <span style={{ color: textPrimary }}>{fmt(amt)}</span>
-                  </span>
-                ))}
-              </div>
-            )}
 
           </div>
         )
@@ -2904,15 +2835,6 @@ export default function AuditFinanceExpenses() {
       )}
 
 
-
-      {/* ── Excel hint ── */}
-      <div className="rounded-xl p-4 flex gap-3 items-start text-sm"
-        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textMuted }}>
-        <FileSpreadsheet size={18} style={{ color: accent, flexShrink: 0 }} />
-        <div>
-          <strong style={{ color: textPrimary }}>Excel import</strong> — The importer automatically scans all sheet tabs and finds the one with <strong>DATE</strong> and <strong>AMOUNT</strong> columns. Headers can be on any row. All data from that sheet is imported.
-        </div>
-      </div>
 
       {detailRow && typeof document !== 'undefined' && createPortal(
         <div

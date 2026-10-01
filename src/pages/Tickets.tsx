@@ -4423,20 +4423,20 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
     setExpandedCell(null)
     setStatusPicker(null)
 
-    const popupW = 360
-    const popupH = 320
+    const popupW = 380
+    const popupH = 480
     const el = anchorEl
       || (document.querySelector(`[data-cell-key="${ticket.id}:STATUS"]`) as HTMLElement | null)
     const rect = el?.getBoundingClientRect()
     const left = rect
-      ? Math.min(Math.max(8, rect.left + rect.width / 2 - popupW / 2), window.innerWidth - popupW - 8)
-      : Math.max(8, (window.innerWidth - popupW) / 2)
+      ? Math.min(Math.max(12, rect.left + rect.width / 2 - popupW / 2), window.innerWidth - popupW - 12)
+      : Math.max(12, (window.innerWidth - popupW) / 2)
     const below = rect ? rect.bottom + 6 : 80
     const above = rect ? rect.top - popupH - 6 : 80
-    const fitsBelow = below + Math.min(popupH, window.innerHeight * 0.75) <= window.innerHeight - 8
-    const top = fitsBelow
-      ? Math.min(below, window.innerHeight - 120)
-      : Math.max(8, above)
+    const fitsBelow = below + popupH <= window.innerHeight - 12
+    const top = rect
+      ? (fitsBelow ? below : (above >= 12 ? above : Math.max(12, window.innerHeight - popupH - 12)))
+      : 80
 
     setScheduleDetailsPopup({ ticket, x: left, y: top, ghostKind })
   }, [])

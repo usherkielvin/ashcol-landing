@@ -412,7 +412,7 @@ The list scrolls (max height 24rem). Build passes; manual test pending.
 before 2026 are only reachable under "All months". The whole Summary (records total, DTR comparison, duplicates, deposits, photo
 check, categories, "Why the difference?", cash returns missing) was already period-based; the **Pending receipts** box and the
 month-report export's pending-purchase rows now follow the picker too. With a month selected the box counts only items
-dated in that month **plus anything from the last 3 days even if it is in another month** (e.g. Sep 28–30 while viewing October; the header says so) — no Oct 1 legacy split; "All months" keeps the old behaviour. Build passes;
+dated in that month **only** (the earlier "plus the last 3 days from other months" carry-over was dropped on request, 2026-10-01; a month with nothing pending shows no box) — no Oct 1 legacy split; "All months" keeps the old behaviour. Build passes;
 manual test pending.
 
 ---
@@ -620,8 +620,29 @@ reveals the page regardless, so it cannot hang on the splash. Build passes; not 
 
 `AuditFinanceExpenses.tsx`, layout only. **Expense Records**, **DTR Exp. + Purchases** and **Difference** moved out of their own row into the
 Summary header, as compact counters to the left of the "Records exceed DTR / Balanced" badge and the Export button (they wrap on narrow
-screens). Their detail text moved into hover tooltips and one muted line under the header (DTR expenses, purchases with receipt, amount
-awaiting receipt, record count). Loading placeholders from Task 22 still apply. Build passes; not viewed in a browser.
+screens). **Revised:** the header now reads, left to right, Possible duplicates · Deposit to HO · Expense Records · DTR Exp. + Purchases ·
+Difference · "Why the difference? · N" button · badge · Export. "Why the difference?" is a **popup** (opened from that button) instead of a
+dropdown. All subtexts are gone (details are hover tooltips): the muted DTR line, the duplicates/deposit subtexts, and the "No receipt" chip's.
+The **Receipt photos** chip and the Excel-import hint box under the table were removed; the "show records without a photo" filter that
+only the chip drove was removed with it (the Pending receipts list covers it). Loading placeholders from Task 22 still apply. Build passes; not viewed in a browser.
+
+---
+
+## Task 27 — Matching big pill badges in the Summary header (2026-10-01, uncommitted)
+
+`AuditFinanceExpenses.tsx`. The "Why the difference?", status ("Balanced / Records exceed DTR / DTR exceeds records") and "Export month report"
+controls now share one design: full pills, 40px tall (`h-10 px-5 rounded-full text-xs font-bold`). The Why button is longer (min width
+250px) and reads "Why the difference? · N reasons". Build passes; not viewed in a browser.
+
+---
+
+## Task 28 — Cleaner Pending receipts title (2026-10-01, uncommitted)
+
+`AuditFinanceExpenses.tsx`. The Pending receipts header is now just **"Pending receipts"**, a count pill and the total amount on the right
+(no month — the picker already shows it — and no subtext). Removed: "8+ days: N" (the number of pending items 8 or more days old;
+each row already shows its own age, in red once it is 8+ days), the "Purchases awaiting receipt / Records without a photo" counts (each row
+carries a Purchase / No photo tag), the "includes the last 3 days" note and the "plus N before Oct 1" note (the list still has its
+"Before Oct 1, 2026" divider). The box is **amber/orange** (tinted background, amber border, title, count pill and total). The category chips ("MOBILIZATION ₱500.00" …) under the summary were removed. **Capitals:** the box title is now "PENDING PURCHASES RECEIPTS"; the Summary title, the three header pills (Why the difference / status / Export) and the Why popup title are upper-case; the Why popup is larger (max width 5xl, at least 60% of the screen height, content scaled 1.2×) and closes **only** with its X button (no click-outside); the "SEPTEMBER 2026 · Records vs DTR" subtext under SUMMARY is removed. Build passes; not viewed in a browser.
 
 ---
 

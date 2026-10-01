@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import ReactDOM from 'react-dom'
 import { X, ClipboardList } from 'lucide-react'
 import { EMPTY_CELL, formatPesoPrefix } from '../../utils/textSanitize'
@@ -58,10 +58,52 @@ export function TicketScheduleDetailsPopover({
 }) {
   const [currentTicket, setCurrentTicket] = useState<Ticket>(popup.ticket)
   const [showChecklist, setShowChecklist] = useState(false)
+  const popoverRef = useRef<HTMLDivElement>(null)
+  const [coords, setCoords] = useState<{ top: number; left: number }>({
+    top: popup.y,
+    left: popup.x,
+  })
 
   useEffect(() => {
     setCurrentTicket(popup.ticket)
   }, [popup.ticket])
+
+  useLayoutEffect(() => {
+    const updatePosition = () => {
+      const el = popoverRef.current
+      if (!el) return
+
+      const rect = el.getBoundingClientRect()
+      const margin = 12
+      const viewportW = window.innerWidth
+      const viewportH = window.innerHeight
+
+      let nextLeft = popup.x
+      let nextTop = popup.y
+
+      // Clamp horizontal
+      if (nextLeft + rect.width > viewportW - margin) {
+        nextLeft = Math.max(margin, viewportW - rect.width - margin)
+      }
+      if (nextLeft < margin) {
+        nextLeft = margin
+      }
+
+      // Clamp vertical: prevent bottom cropping
+      if (nextTop + rect.height > viewportH - margin) {
+        nextTop = Math.max(margin, viewportH - rect.height - margin)
+      }
+      if (nextTop < margin) {
+        nextTop = margin
+      }
+
+      setCoords({ top: Math.round(nextLeft === popup.x ? nextTop : nextTop), left: Math.round(nextLeft) })
+    }
+
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    return () => window.removeEventListener('resize', updatePosition)
+  }, [popup.x, popup.y, currentTicket])
 
   const cardBg = isLight ? '#ffffff' : '#0f172a'
   const border = isLight ? '#cbd5e1' : '#1e293b'
@@ -116,13 +158,14 @@ export function TicketScheduleDetailsPopover({
   return ReactDOM.createPortal(
     <div className="fixed inset-0 z-[12000]" onClick={onClose}>
       <div
-        className="fixed w-[min(23.5rem,calc(100vw-1.5rem))] rounded-xl shadow-2xl overflow-hidden flex flex-col"
+        ref={popoverRef}
+        className="fixed w-[min(23.5rem,calc(100vw-1.5rem))] rounded-xl shadow-2xl overflow-hidden flex flex-col transition-all duration-75"
         style={{
-          left: popup.x,
-          top: popup.y,
+          left: coords.left,
+          top: coords.top,
           backgroundColor: cardBg,
           border: `1px solid ${border}`,
-          maxHeight: 'min(500px, 80vh)',
+          maxHeight: 'min(520px, calc(100dvh - 24px))',
           boxShadow: isLight
             ? '0 10px 25px -5px rgba(15,23,42,0.12), 0 8px 10px -6px rgba(15,23,42,0.1)'
             : '0 10px 25px -5px rgba(0,0,0,0.5)',
