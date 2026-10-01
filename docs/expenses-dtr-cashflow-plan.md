@@ -463,6 +463,32 @@ Expense Records. No schema change — the marker is `receiptNo = 'NO RECEIPT'` a
 
 ---
 
+## Task 18 — One purchase, several receipts (gas 1,000 + toll 500 against 1,500 given) (2026-10-01, uncommitted)
+
+**Needs a backend deploy; no schema change.** Both repos compile; nothing manually tested.
+
+**Model:** a pending purchase can be receipted in parts. Each receipt is its own Expense Record (own category/company/photo — gas and
+toll can differ). On the DTR purchase item: `actualAmount` = receipted so far; `receiptReturned` stays false until the receipts cover
+the cash given (or the person says "that's all"); `resolved_expense_id` holds the record ids comma-joined (short `pr-<10hex>` ids so
+about 7 fit in the 100-char column; an 8th is rejected). The old single-receipt flow is unchanged in effect.
+
+**Backend (`ReportService.resolvePurchase`, `ResolvePurchaseRequest.closeRemaining`):** adds this receipt to the total; completes when
+total ≥ given, or when `closeRemaining` is true (rest returned as cash → refund due → the Cash Return check from Task 10). Response
+adds `complete` and `remaining`; `getPurchases` adds `remaining`.
+
+**Portal:**
+- The Add receipt dialog compares against what is still to be receipted. If the receipt is lower it asks: *another receipt for the
+  remaining ₱X* (default — purchase stays pending) or *that's all, ₱X returned as cash*.
+- Pending receipts shows the remaining amount ("₱1,000 receipted of ₱1,500, remaining") until the purchase is complete.
+- Records vs DTR counts the receipted part right away (so records and DTR stay level) and lists only the remainder as pending;
+  reconciliation sums all linked records for a split purchase instead of reporting "Amount differs".
+
+**Limits:** there is no way yet to remove or edit one receipt of a split purchase from this screen (edit the record as an admin);
+anything that reads `resolvedExpenseId` as a single id (e.g. the mobile app) will not understand the comma list; a DTR opened before
+a receipt was added and re-saved afterwards can overwrite the running total (same stale-DTR caveat as Task 10).
+
+---
+
 ## Deferred (need a decision or a schema change — ask the user before starting)
 
 - **Month close / lock** (recommended right after Task 4 — it is the only control that makes "must match from October" stick). Admin marks a branch-month "Closed" once Balanced; DTRs and records for that month become

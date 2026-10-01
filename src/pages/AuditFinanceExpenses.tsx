@@ -754,7 +754,8 @@ export default function AuditFinanceExpenses() {
 
   // Every purchase still waiting for its receipt (all dates, not just the period) with its age in days —
   // these are the main reason the DTR and Expense Records drift apart.
-  type PendingPurchase = { id: string; date: string; label: string; worker: string; detail: string; amount: number; ageDays: number }
+  // amount = still to be receipted (a purchase can be receipted in parts); given = cash handed out; received = receipted so far
+  type PendingPurchase = { id: string; date: string; label: string; worker: string; detail: string; amount: number; given: number; received: number; ageDays: number }
   // Purchases dated before the receipt rules started are a backlog nobody can act on; keep them apart.
   const PENDING_LEGACY_BEFORE = '2026-10-01'
   const [receiptTarget, setReceiptTarget] = useState<PendingPurchase | null>(null)
@@ -783,7 +784,9 @@ export default function AuditFinanceExpenses() {
               label: String(r.description || '').split('|').map((p: string) => p.trim()).filter(Boolean).join(' · ') || 'Purchase',
               worker: String(r.description || '').includes('|') ? String(r.description).split('|')[0].trim() : '',
               detail: String(r.description || '').includes('|') ? String(r.description).split('|').slice(1).join(' ').trim() : String(r.description || '').trim(),
-              amount: Number(r.amount) || 0,
+              amount: r.remaining != null ? Number(r.remaining) || 0 : Math.max(0, (Number(r.amount) || 0) - (Number(r.actualAmount) || 0)),
+              given: Number(r.amount) || 0,
+              received: Number(r.actualAmount) || 0,
               ageDays: Math.max(0, Math.round((today.getTime() - d.getTime()) / 86400000)),
             }
           })
@@ -834,14 +837,21 @@ export default function AuditFinanceExpenses() {
         else buckets.neverPushed.push(item)
         continue
       }
-      linked.add(rid)
-      const rec = byId.get(rid)
-      if (!rec) { buckets.deleted.push(item); continue }
+      // A purchase receipted in parts (gas + toll…) links several records: ids are comma-joined.
+      const recIds = rid.split(',').map(x => x.trim()).filter(Boolean)
+      recIds.forEach(x => linked.add(x))
+      const recs = recIds.map(x => byId.get(x)).filter((x): x is AuditExpense => !!x)
+      if (recs.length === 0) { buckets.deleted.push(item); continue }
+      const rec = recs[0]
+      const recTotal = recs.reduce((acc, x) => acc + x.amount, 0)
       const t = dateToTime(rec.date)
       if (t && (t < from || t > to)) { buckets.otherMonth.push({ ...item, note: `recorded as ${rec.date}` }); continue }
-      const expected = l.type === 'PURCHASE' && l.receiptReturned && l.actualAmount ? l.actualAmount : l.amount
-      if (Math.abs(rec.amount - expected) >= 0.01) {
-        buckets.amountDiff.push({ ...item, amount: expected - rec.amount, note: `DTR ${expected.toFixed(2)} · record ${rec.amount.toFixed(2)}` })
+      const expected = l.type === 'PURCHASE' && l.actualAmount ? l.actualAmount : l.amount
+      if (Math.abs(recTotal - expected) >= 0.01) {
+        buckets.amountDiff.push({ ...item, amount: expected - recTotal, note: `DTR ${expected.toFixed(2)} · record${recs.length > 1 ? 's' : ''} ${recTotal.toFixed(2)}` })
+      }
+      if (l.type === 'PURCHASE' && !l.receiptReturned && l.amount - (l.actualAmount || 0) > 0.005) {
+        buckets.pendingPurchase.push({ ...item, amount: l.amount - (l.actualAmount || 0), note: `${(l.actualAmount || 0).toFixed(2)} of ${l.amount.toFixed(2)} receipted` })
       }
     }
     for (const e of recordsForDtr) {
@@ -902,8 +912,9 @@ export default function AuditFinanceExpenses() {
     const r2 = (n: number) => Math.round(n * 100) / 100
     const purchaseLines = dtrLines.rows.filter(l => l.type === 'PURCHASE')
     const linesTyped = dtrLines.rows.some(l => !!l.type)
-    const resolvedPurchases = purchaseLines.filter(l => l.receiptReturned).reduce((acc, l) => acc + (l.actualAmount || l.amount), 0)
-    const pendingTotal = purchaseLines.filter(l => !l.receiptReturned).reduce((acc, l) => acc + l.amount, 0)
+    // A purchase receipted in parts counts for what has been receipted so far; only the remainder is pending.
+    const resolvedPurchases = purchaseLines.reduce((acc, l) => acc + (l.receiptReturned ? (l.actualAmount || l.amount) : (l.actualAmount || 0)), 0)
+    const pendingTotal = purchaseLines.filter(l => !l.receiptReturned).reduce((acc, l) => acc + Math.max(0, l.amount - (l.actualAmount || 0)), 0)
     const dtrSpend = (dtrExpenses.total || 0) + (linesTyped ? resolvedPurchases : dtrExpenses.purchases)
     const diff = hasDtr ? recordsTotalForDtr - dtrSpend : null
     const noPhotoCount = periodRecords.filter(e => !e.receiptImageUri && !isNoReceipt(e) && !/^CASH ADVANCE/i.test(e.expenseCategory || '')).length
@@ -1044,6 +1055,7 @@ export default function AuditFinanceExpenses() {
         sourceOfFunds: r.sourceOfFunds,
         incurredBy: r.incurredBy,
         receiptImage: r.receiptImage,
+        closeRemaining: r.closeRemaining,
       }),
     })
     if (!res.ok) {
@@ -1052,12 +1064,14 @@ export default function AuditFinanceExpenses() {
       alert(msg)
       return
     }
-    const out = await res.json() as { refundDue?: number; cashReturnFound?: boolean }
+    const out = await res.json() as { refundDue?: number; cashReturnFound?: boolean; complete?: boolean; remaining?: number }
     setReceiptTarget(null)
     setDataVersion(v => v + 1)
     await reload()
     const over = Math.round((parseFloat(r.amount) - target.amount) * 100) / 100
-    if (over > 0.005) {
+    if (out.complete === false && (out.remaining || 0) > 0.005) {
+      alert(`Receipt saved to the DTR and Expense Records.\n\n₱${(out.remaining || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })} of this purchase is still pending. Add the next receipt when you have it — it stays in Pending receipts until the receipts cover the cash given.`)
+    } else if (over > 0.005) {
       alert(`Receipt saved to the DTR and Expense Records.\n\nThe receipt is ₱${over.toLocaleString('en-PH', { minimumFractionDigits: 2 })} higher than the cash given. That extra was paid out of pocket, so a reimbursement still has to be recorded on a DTR.`)
     } else if ((out.refundDue || 0) > 0.005 && !out.cashReturnFound) {
       alert(`Receipt saved to the DTR and Expense Records.\n\nThe receipt is ₱${(out.refundDue || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })} lower than the cash given. Make sure that cash return is entered under Cash Returns on the DTR (pick the REFUND entry for this purchase).`)
@@ -2168,8 +2182,8 @@ export default function AuditFinanceExpenses() {
         // the DTR's Expenses + Purchases, not Expenses alone.
         const purchaseLines = dtrLines.rows.filter(l => l.type === 'PURCHASE')
         const linesTyped = dtrLines.rows.some(l => !!l.type)
-        const resolvedPurchases = purchaseLines.filter(l => l.receiptReturned).reduce((acc, l) => acc + (l.actualAmount || l.amount), 0)
-        const pendingPurchases = purchaseLines.filter(l => !l.receiptReturned).reduce((acc, l) => acc + l.amount, 0)
+        const resolvedPurchases = purchaseLines.reduce((acc, l) => acc + (l.receiptReturned ? (l.actualAmount || l.amount) : (l.actualAmount || 0)), 0)
+        const pendingPurchases = purchaseLines.filter(l => !l.receiptReturned).reduce((acc, l) => acc + Math.max(0, l.amount - (l.actualAmount || 0)), 0)
         const dtrSpend = (dtrExpenses.total || 0) + (linesTyped ? resolvedPurchases : dtrExpenses.purchases)
         const diff = hasDtr ? recordsTotalForDtr - dtrSpend : null
         const balanced = diff != null && Math.abs(diff) < 0.005
@@ -2290,7 +2304,7 @@ export default function AuditFinanceExpenses() {
               }
               const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0)
               type Pending = { key: string; kind: 'purchase' | 'record'; date: string; label: string; amount: number; ageDays: number; purchase?: PendingPurchase; record?: AuditExpense }
-              const purchaseItems: Pending[] = agingPurchases.map(p => ({ key: `p-${p.id}`, kind: 'purchase', date: p.date, label: p.label, amount: p.amount, ageDays: p.ageDays, purchase: p }))
+              const purchaseItems: Pending[] = agingPurchases.map(p => ({ key: `p-${p.id}`, kind: 'purchase', date: p.date, label: p.received > 0 ? `${p.label} — ${fmt(p.received)} receipted of ${fmt(p.given)}, remaining` : p.label, amount: p.amount, ageDays: p.ageDays, purchase: p }))
               // Cash advances have no receipt; every other record (expenses, deposits) needs its photo / slip.
               const recordItems: Pending[] = branchExpenses
                 .filter(e => !e.receiptImageUri && !isNoReceipt(e) && !/^CASH ADVANCE/i.test(e.expenseCategory || ''))

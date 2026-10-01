@@ -25,6 +25,8 @@ export interface ReceiptDialogResult {
   incurredBy: string
   expenseCategory: string
   sourceOfFunds: string
+  /** Purchases only: this receipt is lower than the cash given and it is the last one (rest returned as cash). */
+  closeRemaining?: boolean
 }
 
 interface Props {
@@ -125,6 +127,8 @@ export default function ReceiptScanDialog({
   const [noReceipt, setNoReceipt] = useState(initialNoReceipt)
   const [noReceiptReason, setNoReceiptReason] = useState(sepAt >= 0 ? (initial?.description || '').slice(sepAt + NO_RECEIPT_SEP.length) : '')
   const reasonMissing = noReceipt && noReceiptReason.trim().length < 5
+  // Purchase with several receipts (e.g. gas + toll): when this one is lower than the cash given, is it the last?
+  const [moreReceipts, setMoreReceipts] = useState(true)
 
   const [f, setF] = useState<Fields>({
     date: toIsoDate(initial?.receiptDate) || reportDate,
@@ -269,6 +273,7 @@ export default function ReceiptScanDialog({
         incurredBy: f.incurredBy.trim().toUpperCase(),
         expenseCategory: f.expenseCategory,
         sourceOfFunds: f.sourceOfFunds.trim().toUpperCase(),
+        ...(expectedAmount != null && (parseFloat(f.amount) || 0) < expectedAmount - 0.005 ? { closeRemaining: !moreReceipts } : {}),
       })
     } finally {
       setSaving(false)
@@ -408,7 +413,19 @@ export default function ReceiptScanDialog({
                       const diff = Math.round((got - expectedAmount) * 100) / 100
                       if (!got) return <span className="text-[10px] text-slate-500 dark:text-slate-400">Cash given for this purchase: {given}</span>
                       if (diff === 0) return <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Matches the {given} given.</span>
-                      if (diff < 0) return <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">{php(-diff)} less than the {given} given — that {php(-diff)} must be returned as a Cash Return on the DTR.</span>
+                      if (diff < 0) return (
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">{php(-diff)} less than the {given} given.</span>
+                          <label className="flex items-start gap-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200 cursor-pointer">
+                            <input type="radio" name="partial-receipt" checked={moreReceipts} onChange={() => setMoreReceipts(true)} className="mt-0.5" />
+                            <span>I have another receipt for the remaining {php(-diff)} (e.g. toll gate) — keep this purchase pending</span>
+                          </label>
+                          <label className="flex items-start gap-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200 cursor-pointer">
+                            <input type="radio" name="partial-receipt" checked={!moreReceipts} onChange={() => setMoreReceipts(false)} className="mt-0.5" />
+                            <span>That's all — the remaining {php(-diff)} was returned as cash (enter it under Cash Returns on the DTR)</span>
+                          </label>
+                        </div>
+                      )
                       return <span className="text-[10px] font-semibold text-red-600 dark:text-red-400">{php(diff)} more than the {given} given — the extra was paid out of pocket and needs a reimbursement on the DTR.</span>
                     })()}
                   </div>
