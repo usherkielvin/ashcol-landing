@@ -650,6 +650,17 @@ carries a Purchase / No photo tag), the "includes the last 3 days" note and the 
 
 ---
 
+## Task 29 — Cleaner expenses list header (2026-10-01, uncommitted)
+
+**Note: the page file is now `src/pages/ExpenseRecords.tsx`** (renamed from `AuditFinanceExpenses.tsx` outside this work; every earlier task in this
+plan that names `AuditFinanceExpenses.tsx` means this file now). Changes: the list title is just the branch name in capitals with no symbols
+("TAGUIG SALES", no dash and no "— Expenses"); the **search field moved from the page header to the list header, next to Export** (and the list
+header now shows on phones too, so search is still reachable there); search and Export are rounded pills in the same style as the summary badges; the
+empty state is a plain "NO EXPENSE RECORDS" ("NO MATCHING RECORDS" while searching) — the "add records manually or import from Excel" text is gone.
+Build passes; not viewed in a browser.
+
+---
+
 ## Deferred (need a decision or a schema change — ask the user before starting)
 
 - **Month close / lock** (recommended right after Task 4 — it is the only control that makes "must match from October" stick). Admin marks a branch-month "Closed" once Balanced; DTRs and records for that month become

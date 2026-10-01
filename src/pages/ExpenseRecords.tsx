@@ -1725,23 +1725,6 @@ export default function ExpenseRecords() {
               </div>
             )}
 
-            {/* Search — capped width, grows on focus */}
-            <div style={{ position: 'relative' }} className="flex-1 lg:flex-none min-w-[140px] lg:w-52 lg:focus-within:w-64 transition-all">
-              <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search records"
-                className="w-full rounded-lg pl-8 pr-7 py-2 text-sm sm:text-xs outline-none focus:border-emerald-500"
-                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-              />
-              {search && (
-                <button type="button" onClick={() => setSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: textMuted }}>
-                  <X size={12} />
-                </button>
-              )}
-            </div>
-
             {activeTab === 'expenses' && (
               <>
                 {/* Desktop actions */}
@@ -2640,25 +2623,38 @@ export default function ExpenseRecords() {
       {/* ── RECEIPT TABLE / DAILY LOG / PURCHASES ── */}
       {activeTab === 'expenses' && branchId && (
         <div className="rounded-xl overflow-hidden" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-          <div className="hidden sm:flex flex-row items-center justify-between gap-3 px-4 py-2.5" style={{ borderBottom: `1px solid ${border}` }}>
-            <div className="min-w-0">
-              <h2 className="text-xs font-black truncate" style={{ color: textPrimary }}>
-                {branchName} — Expenses
-              </h2>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3" style={{ borderBottom: `1px solid ${border}` }}>
+            <h2 className="text-sm font-black uppercase tracking-wider truncate min-w-0" style={{ color: textPrimary }}>
+              {branchName.replace(/[^A-Za-z0-9]+/g, ' ').trim()}
+            </h2>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div style={{ position: 'relative' }} className="flex-1 sm:flex-none min-w-[140px] sm:w-56 sm:focus-within:w-72 transition-all">
+                <Search size={13} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: textMuted, pointerEvents: 'none' }} />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search records"
+                  className="w-full h-9 rounded-full pl-9 pr-8 text-xs font-medium outline-none focus:border-emerald-500"
+                  style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
+                />
+                {search && (
+                  <button type="button" onClick={() => setSearch('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: textMuted }}>
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
               <button type="button" onClick={handleExportExcel}
-                className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-colors"
+                className="inline-flex items-center justify-center gap-1.5 h-9 px-4 rounded-full text-xs font-bold uppercase tracking-wide transition-opacity hover:opacity-80 shrink-0"
                 style={{ backgroundColor: `${accent}18`, border: `1px solid ${accent}44`, color: accent }}
-                title="Export filtered expense records to Excel">
-                <Download size={12} /> Export
+                title="Export the records shown to Excel">
+                <Download size={13} /> Export
               </button>
             </div>
           </div>
 
           {filtered.length === 0 ? (
-            <div className="p-10 text-center" style={{ color: textMuted }}>
-              No expense records found. {!search && 'Add records manually or import from Excel.'}
+            <div className="py-12 text-center text-sm font-bold uppercase tracking-widest" style={{ color: textMuted }}>
+              {search ? 'No matching records' : 'No expense records'}
             </div>
           ) : (
             <>
