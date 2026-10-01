@@ -2260,7 +2260,7 @@ export default function AuditFinanceExpenses() {
               </div>
             )}
 
-            {/* Everything still waiting for a receipt: purchases without one + records without a photo. Oldest first. */}
+            {/* Everything still waiting for a receipt: purchases without one + records without a photo. Newest first. */}
             {(() => {
               const isoOf = (t: number) => {
                 const d = new Date(t)
@@ -2283,7 +2283,8 @@ export default function AuditFinanceExpenses() {
                     record: e,
                   }
                 })
-              const all = [...purchaseItems, ...recordItems].sort((x, y) => (x.date || '9999').localeCompare(y.date || '9999'))
+              // Newest first: today's, then yesterday's, and so on — the recent ones are the ones that can still be chased.
+              const all = [...purchaseItems, ...recordItems].sort((x, y) => (y.date || '0000').localeCompare(x.date || '0000'))
               if (all.length === 0) return null
               const current = all.filter(i => i.date >= PENDING_LEGACY_BEFORE)
               const legacy = all.filter(i => i.date < PENDING_LEGACY_BEFORE)
