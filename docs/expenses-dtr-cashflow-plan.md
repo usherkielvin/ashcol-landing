@@ -756,3 +756,13 @@ Backend (**no schema change**; confirm deployed — Task 3 depends on `type` in 
 
 1. Task 1 ✅ → 2. Task 4 ✅ (UI only) → 3. Task 2 ✅ (with multi-day lookback) → 4. Task 5 ✅, Task 3 ✅, Task 7 ✅, then
 5. Task 6 (after the holiday question) → 6. Month close/lock.
+
+### Task 35 — Expense Records load speed (backend queries)
+- Already in place: records request scoped to the selected branch (`/audit-expenses?branchId=&branchName=`), per-branch cached copy shown at once, `/audit-expenses/receipt-check` for duplicates.
+- New (backend, not yet deployed): `/reports/purchases` loaded every purchase/expense the branch ever had, then fetched each item's report with its own query and applied `from` in Java. `ReportItemRepository.findByTypeInAndBranchIdFrom` now applies the date bound in SQL and fetches report + branch in the same query (JOIN FETCH); the cash-return / reimbursement lookups fetch their report the same way.
+- Still open: `/reports/audit-summary-range` computes every branch for the month to show one; a per-branch variant would cut it further. DB indexes on `report_items(type)` / `daily_branch_reports(report_date)` if the tables keep growing.
+
+### Task 36 — Saved copies in the browser (less to download on repeat visits)
+- Records: saved per user+branch (last 4 branches, with save time). A returning user's page opens from the copy, then `syncBranchExpenses` asks `GET /audit-expenses?...&updatedSince=<newest createdAt/updatedAt in the copy>` (only new/changed rows) plus `GET /audit-expenses/ids?...` (ids still existing, to drop deleted ones) and merges. Copy older than 14 days, an older server (ids endpoint 404), or an id the copy lacks -> full download.
+- Purchases feed (`expense-purchases`, last 3 branches) and month DTR totals (`expense-dtr`, last 24 months) survive a page reload; a month that has already ended is not asked again for 30 minutes.
+- Backend: `AuditExpenseRepository.findChangedSince` (COALESCE(updatedAt, createdAt) >= since) and `findIdsByBranchIdIn`; controller `updatedSince` param and `/ids`. Needs the backend redeploy to take effect; until then the page falls back to the full download.

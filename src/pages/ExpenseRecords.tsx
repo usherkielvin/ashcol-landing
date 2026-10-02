@@ -35,10 +35,12 @@ import {
   createExpenseId,
   deleteAuditExpense,
   findExpenseByReceiptNo,
-  loadAuditExpensesStrict,
-  readCachedBranchExpenses,
+  readSavedBranchExpenses,
+  readSavedFeed,
+  syncBranchExpenses,
   upsertAuditExpense,
   writeCachedBranchExpenses,
+  writeSavedFeed,
 } from "../utils/auditExpenseStorage";
 import {
   loadAuditExpenseCategories,
@@ -685,7 +687,10 @@ export default function ExpenseRecords() {
     if (!branchId) return;
     const requestId = ++expensesRequest.current;
     try {
-      const data = await loadAuditExpensesStrict({ branchId, branchName });
+      const data = await syncBranchExpenses(
+        { branchId, branchName },
+        readSavedBranchExpenses(expenseCacheKey),
+      );
       if (requestId !== expensesRequest.current) return;
       setExpenses(data);
       setLoadError(false);
@@ -729,16 +734,17 @@ export default function ExpenseRecords() {
     if (!branchId) return;
     let active = true;
     const requestId = ++expensesRequest.current;
-    const cached = readCachedBranchExpenses(expenseCacheKey);
-    if (cached) {
-      setExpenses(cached);
+    const saved = readSavedBranchExpenses(expenseCacheKey);
+    if (saved) {
+      setExpenses(saved.rows);
       setInitialLoading(false);
     } else {
       // Nothing kept for this branch: wait on the loading screen rather than show another branch's totals as zero.
       setExpenses([]);
       setInitialLoading(true);
     }
-    loadAuditExpensesStrict({ branchId, branchName })
+    // With a saved copy only what changed since is downloaded; without one, the whole branch.
+    syncBranchExpenses({ branchId, branchName }, saved)
       .then((data) => {
         if (!active || requestId !== expensesRequest.current) return;
         setExpenses(data);
@@ -1105,11 +1111,21 @@ export default function ExpenseRecords() {
     }
     let cancelled = false;
     const cacheKey = `${branchId}|${branchName}|${dtrFrom}|${dtrTo}`;
-    const cached = dtrExpensesCache.current.get(cacheKey);
+    const savedDtr = readSavedFeed<DtrSummary>(
+      "expense-dtr",
+      `${expenseCacheKey}|${dtrFrom}|${dtrTo}`,
+    );
+    const cached = dtrExpensesCache.current.get(cacheKey) ?? savedDtr?.data;
     setDtrExpenses(
       cached ? { ...cached, loading: false } : { ...empty, loading: true },
     );
     if (cached) setDtrSettledKey(cacheKey);
+    // A month that has already ended rarely changes: reuse what was saved in the last 30 minutes without asking again.
+    const now = new Date();
+    const thisMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    if (savedDtr && dtrTo < thisMonthStart && Date.now() - savedDtr.at < 30 * 60 * 1000) {
+      return;
+    }
     const token =
       localStorage.getItem("ashcol-token") ||
       sessionStorage.getItem("ashcol-token") ||
@@ -1162,6 +1178,7 @@ export default function ExpenseRecords() {
             ),
           };
           dtrExpensesCache.current.set(cacheKey, next);
+          writeSavedFeed("expense-dtr", `${expenseCacheKey}|${dtrFrom}|${dtrTo}`, next, 24);
           setDtrExpenses(next);
           setDtrSettledKey(cacheKey);
         },
@@ -1174,7 +1191,7 @@ export default function ExpenseRecords() {
     return () => {
       cancelled = true;
     };
-  }, [branchId, branchName, dtrFrom, dtrTo]);
+  }, [branchId, branchName, dtrFrom, dtrTo, expenseCacheKey]);
 
   const periodRecords = useMemo(() => {
     if (!dtrPeriod) return [];
@@ -1231,7 +1248,11 @@ export default function ExpenseRecords() {
       return;
     }
     let cancelled = false;
-    const cached = purchasesCache.current.get(branchId);
+    const savedPurchases = readSavedFeed<Record<string, unknown>[]>(
+      "expense-purchases",
+      expenseCacheKey,
+    );
+    const cached = purchasesCache.current.get(branchId) ?? savedPurchases?.data;
     setPurchasesFeed({ loading: !cached, rows: cached || [], failed: false });
     if (cached) setPurchasesSettledFor(branchId);
     const token =
@@ -1265,6 +1286,7 @@ export default function ExpenseRecords() {
       .then((rows: Record<string, unknown>[]) => {
         if (cancelled) return;
         purchasesCache.current.set(branchId, rows || []);
+        writeSavedFeed("expense-purchases", expenseCacheKey, rows || [], 3);
         setPurchasesFeed({ loading: false, rows: rows || [], failed: false });
         setPurchasesSettledFor(branchId);
       })
@@ -1281,7 +1303,7 @@ export default function ExpenseRecords() {
     return () => {
       cancelled = true;
     };
-  }, [branchId, dataVersion]);
+  }, [branchId, dataVersion, expenseCacheKey]);
 
   // DTR expense + purchase lines for the selected period.
   const dtrLines = useMemo(() => {
