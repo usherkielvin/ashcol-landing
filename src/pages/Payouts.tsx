@@ -5564,6 +5564,7 @@ export default function Payouts() {
             { label: 'Losses / Material Checklist', amount: moneyField('losses', deductionValue(installerRows, 'losses')), remarks: remark('Lost tools or unreturned materials') },
             { label: 'Remit', amount: moneyField('remitPenalty', deductionValue(installerRows, 'remitPenalty')), remarks: remark('No remit — ×3 charges') },
             { label: 'Grooming', amount: moneyField('grooming', deductionValue(installerRows, 'grooming')), remarks: remark('Haircut, uniform cleanliness, etc.') },
+            { label: 'Backjob', amount: moneyField('backjob', deductionValue(installerRows, 'backjob')), remarks: remark('Redo / return visit caused by faulty work') },
             {
               label: 'Uniform',
               sub: `₱${peso(UNIFORM_PRICE_PER_PC)} / pc`,
