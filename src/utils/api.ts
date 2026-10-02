@@ -1166,18 +1166,19 @@ export async function fetchTicketsPage(
     return result.tickets
   }
 
-  const all: unknown[] = []
-  let page = 0
-  let totalPages = 1
-  while (page < totalPages && page < maxPages) {
-    const result = await fetchTicketsPageOnce(endpoint, token, { ...options, page, size: pageSize })
-    if (result.tickets.length === 0) break
-    all.push(...result.tickets)
-    totalPages = Math.max(1, result.totalPages)
-    page += 1
-    if (result.tickets.length < pageSize) break
-    if (page >= totalPages) break
-  }
+  // The first page says how many pages there are; the rest are then requested together instead of one after the other
+  // (each round trip to the API can take seconds on a slow link). Results keep page order.
+  const first = await fetchTicketsPageOnce(endpoint, token, { ...options, page: 0, size: pageSize })
+  if (first.tickets.length === 0) return []
+  const all: unknown[] = [...first.tickets]
+  const totalPages = Math.max(1, first.totalPages)
+  if (first.tickets.length < pageSize || totalPages <= 1) return all
+  const rest = await Promise.all(
+    Array.from({ length: Math.min(totalPages, maxPages) - 1 }, (_, i) =>
+      fetchTicketsPageOnce(endpoint, token, { ...options, page: i + 1, size: pageSize }),
+    ),
+  )
+  for (const result of rest) all.push(...result.tickets)
   return all
 }
 

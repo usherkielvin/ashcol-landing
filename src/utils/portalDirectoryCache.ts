@@ -64,6 +64,12 @@ export async function fetchCachedEmployees(
   return normalized
 }
 
+/** The branch list kept by fetchCachedBranches, whatever its age, for showing something at once while a fresh copy loads. */
+export function readSavedBranches(): Array<Record<string, unknown>> | null {
+  const cached = readTabCacheEntry<Array<Record<string, unknown>>>(branchesKey())
+  return cached?.data?.length ? cached.data : null
+}
+
 export async function fetchCachedBranches(
   token: string,
 ): Promise<Array<Record<string, unknown>>> {

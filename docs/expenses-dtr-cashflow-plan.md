@@ -766,3 +766,8 @@ Backend (**no schema change**; confirm deployed — Task 3 depends on `type` in 
 - Records: saved per user+branch (last 4 branches, with save time). A returning user's page opens from the copy, then `syncBranchExpenses` asks `GET /audit-expenses?...&updatedSince=<newest createdAt/updatedAt in the copy>` (only new/changed rows) plus `GET /audit-expenses/ids?...` (ids still existing, to drop deleted ones) and merges. Copy older than 14 days, an older server (ids endpoint 404), or an id the copy lacks -> full download.
 - Purchases feed (`expense-purchases`, last 3 branches) and month DTR totals (`expense-dtr`, last 24 months) survive a page reload; a month that has already ended is not asked again for 30 minutes.
 - Backend: `AuditExpenseRepository.findChangedSince` (COALESCE(updatedAt, createdAt) >= since) and `findIdsByBranchIdIn`; controller `updatedSince` param and `/ids`. Needs the backend redeploy to take effect; until then the page falls back to the full download.
+
+### Task 37 — Payouts and ticket-list load speed
+- `fetchTicketsPage` (api.ts): after page 0 the remaining pages are requested together (was one after another); order kept. Benefits every page that loads a paginated ticket list (Payouts, Schedules).
+- Payouts: months of the selected week loaded together; the three held-ticket months loaded together; branch list shown from the saved copy (`readSavedBranches`) and refreshed behind it (applied again only if it changed); technicians come from `fetchCachedEmployees` (5-minute shared cache) instead of downloading every user on each branch change.
+- Not done: the sheet still waits for the schedule sync before rows show; showing saved rows first needs the sync/save paths made safe against edits made mid-sync.

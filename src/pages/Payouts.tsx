@@ -10,6 +10,7 @@ import {
   Archive, PauseCircle, Send, Undo2, MoreVertical,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
+import { fetchCachedEmployees, readSavedBranches } from '../utils/portalDirectoryCache'
 import { useAuth } from '../contexts/AuthContext'
 import { API_BASE_URL, formatBranchName, isPortalAdmin, isPayrollMember, isFranchiseBranch, formatPersonName, fetchTicketByNumber } from '../utils/api'
 import {
@@ -22,6 +23,10 @@ import {
   todayYMD,
   type PayrollWeek,
 } from '../utils/payrollWeeks'
+import AdjustBalanceModal from './Payouts/AdjustBalanceModal'
+import CorrectionHistoryModal from './Payouts/CorrectionHistoryModal'
+import HoldModal from './Payouts/HoldModal'
+import CompletePayoutModal from './Payouts/CompletePayoutModal'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 import WeekSummaryModal from '../components/WeekSummaryModal'
 import { TicketDetailsModal } from '../components/tickets/TicketDetailsModal'
@@ -63,274 +68,7 @@ import {
   type PayrollRow,
   type PayrollRates,
 } from '../utils/payrollDerive'
-
-const num = (v: number | string | null | undefined): number => {
-  if (v == null) return 0
-  if (typeof v === 'number') return isNaN(v) ? 0 : v
-  const cleaned = String(v).replace(/[^0-9.-]/g, '')
-  if (!cleaned) return 0
-  const parsed = parseFloat(cleaned)
-  return isNaN(parsed) ? 0 : parsed
-}
-
-const peso = (v: number | string | null | undefined) => {
-  const n = num(v)
-  return n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-const pesoSigned = (n: number) => `${n < 0 ? '−' : ''}₱${peso(Math.abs(n))}`
-const shortDate = (ymd: string) => {
-  if (!ymd) return ''
-  const [y, m, d] = ymd.split('-').map(Number)
-  if (!y || !m || !d) return ymd
-  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
-const longDate = (ymd: string) => {
-  if (!ymd) return ''
-  const [y, m, d] = ymd.split('-').map(Number)
-  if (!y || !m || !d) return ymd
-  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-}
-const getInitials = (name: string) => {
-  const words = name.trim().split(/\s+/).filter(Boolean)
-  if (words.length === 0) return '—'
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase()
-  return (words[0][0] + words[1][0]).toUpperCase()
-}
-// Display-only formatting — the underlying name stays ALL-CAPS everywhere it's used as a
-// key/lookup (grouping, aliasing, avatar color hashing); this just softens how it reads on screen.
-const titleCase = (name: string) =>
-  name.trim().toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase())
-// A handful of deterministic flat colors so each installer's avatar reads as a distinct
-// person at a glance, without storing per-user color state anywhere.
-const AVATAR_COLORS: string[] = ['#10B981', '#F59E0B', '#8B5CF6', '#0EA5E9', '#84CC16', '#F97316', '#EC4899', '#06B6D4']
-const avatarColor = (name: string) => {
-  let hash = 0
-  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0
-  return AVATAR_COLORS[hash % AVATAR_COLORS.length]
-}
-
-// Legacy date helpers removed — week logic now lives in payrollWeeks.ts
-
-const rowAddOns = (r: PayrollRow): number => Math.max(0, rowTotal(r) - num(r.installationFee) * payFactor(r))
-
-// A job counts once its schedule status is a DONE outcome — install, cleaning, checkup, service,
-// etc. — so service branches (mostly cleanings) don't read as zero work. installerRows is already
-// scoped to the active date-range filter, so this is automatically "within the selected range" too.
-const isCompletedRow = (r: PayrollRow) => /^DONE\b/i.test(r.installationUpload.trim())
-// Carry-over copies are a payout landing in this week, not a job actually done in it — they'd
-// otherwise double-count (or mis-attribute) completed-job stats against the copy's own workDate.
-const completedJobsCount = (installerRows: PayrollRow[]) => installerRows.filter(r => !isCarryOver(r) && isCompletedRow(r)).length
-/** "2 Cleaning · 1 Install" — what kind of work those completed jobs were, most frequent first. */
-const completedJobsBreakdown = (installerRows: PayrollRow[]) => {
-  const counts = new Map<string, number>()
-  for (const r of installerRows) {
-    if (isCarryOver(r) || !isCompletedRow(r)) continue
-    const kind = titleCase(r.installationUpload.trim().replace(/^DONE\s*/i, '')) || 'Job'
-    counts.set(kind, (counts.get(kind) || 0) + 1)
-  }
-  return Array.from(counts).sort((a, b) => b[1] - a[1]).map(([kind, n]) => `${n} ${kind}`).join(' · ')
-}
-
-// Money owed BACK to the branch — parses the free-text remit field ("2,000 CASH", "FREE")
-// down to its numeric amount, ignoring the payment-method text.
-const parseMoneyText = (s: string | number | null | undefined) => num(s)
-const remittanceTotal = (rowsIn: PayrollRow[]) => rowsIn.reduce((sum, r) => sum + parseMoneyText(r.actualCollected), 0)
-// A carry-over's full payout counts as Add-ons (Add-ons = gross − base), never Base Install.
-const baseInstallTotal = (rowsIn: PayrollRow[]) => rowsIn.reduce((sum, r) => sum + (isCarryOver(r) ? 0 : num(r.installationFee) * payFactor(r)), 0)
-
-
-
-type ColumnKey =
-  | 'date' | 'ticketNumber' | 'customerName' | 'brandCapacity' | 'remit'
-  | 'installationUpload' | 'paymentStatus' | 'installationFee' | 'totalPipeLength' | 'earthGrounding' | 'dailyAllowance'
-  | 'excessCopperTube' | 'hauling' | 'dismantling' | 'electricalWorks' | 'chippingWorks' | 'breaker'
-  | 'powerSupplyLaborOnly' | 'powerSupplyLaborMaterials' | 'specialBracketCatwalk' | 'specialBracketWelding'
-  | 'excessCopperTubeLaborOnly' | 'relocationAccuFcu' | 'systemReprocessLabor' | 'drainPumpInstallation'
-  | 'scaffoldingInstallation' | 'flushingOldPipe' | 'sterneBracket' | 'breakerInstallationLabor'
-  | 'chargingOfFreon' | 'materialsReturn' | 'installationChecklist' | 'videoUpload' | 'remarks' | 'audited'
-
-type ColumnCategory = 'standard' | 'piping' | 'electrical' | 'structural' | 'masonry' | 'admin'
-
-const CATEGORY_META: Record<ColumnCategory, { label: string }> = {
-  standard: { label: 'Standard Add-ons' },
-  piping: { label: 'Piping & Copper' },
-  electrical: { label: 'Electrical & Power' },
-  structural: { label: 'Structural Work' },
-  masonry: { label: 'Masonry & Labor' },
-  admin: { label: 'Admin & Notes' },
-}
-
-interface ColumnDef {
-  // Widened to `string` (not just ColumnKey) so branch-created custom columns — which have no
-  // fixed field on PayrollRow, just a generated key into row.customFields — can be described
-  // with this same shape. See CustomColumnDef/customColumnDefs below.
-  key: string
-  label: string
-  width: number
-  align: 'left' | 'right'
-  /** Always shown, no toggle in the column manager — the identifying/core columns. */
-  pinned?: boolean
-  /** Group shown under in the column manager. Omitted for pinned columns. */
-  category?: ColumnCategory
-  /** Comma-thousands formatted via NumericFormat instead of a plain text input. */
-  isMoney?: boolean
-  /** Read-only once the row is synced from a schedule ticket (row.ticketId set) — corrected
-   *  at the source instead of here. Manually added rows (no ticketId) stay editable. */
-  readOnlyWhenSynced?: boolean
-}
-
-// Column order + widths. Any non-pinned column can be hidden via the column manager (the
-// options button beside each installer's name) — rows have no delete control of their own,
-// so this is the only per-column control surface. This mirrors the branch's real payroll
-// worksheet ("Standard Rates of Installer Payroll"), which has ~24 possible fee/misc columns
-// per job — most blank for any given job. Everything past Daily Allowance is hidden by
-// default (see DEFAULT_HIDDEN_COLUMNS) so staff unhide only what that sheet actually needs.
-const COLUMN_DEFS: ColumnDef[] = [
-  { key: 'date', label: 'Date', width: 128, align: 'left', pinned: true, readOnlyWhenSynced: true },
-  { key: 'ticketNumber', label: 'Ticket', width: 110, align: 'left', pinned: true, readOnlyWhenSynced: true },
-  { key: 'customerName', label: 'Customer', width: 220, align: 'left', pinned: true, readOnlyWhenSynced: true },
-  { key: 'brandCapacity', label: 'Brand', width: 150, align: 'left', pinned: true },
-  { key: 'remit', label: 'Remit', width: 120, align: 'right', pinned: true },
-  { key: 'installationUpload', label: 'Status', width: 130, align: 'left', pinned: true, readOnlyWhenSynced: true },
-  { key: 'paymentStatus', label: 'Payment', width: 130, align: 'left', pinned: true },
-  { key: 'installationFee', label: 'Install Fee', width: 100, align: 'right', pinned: true, isMoney: true },
-  { key: 'totalPipeLength', label: 'Pipe Length', width: 90, align: 'right', category: 'standard' },
-  { key: 'earthGrounding', label: 'Earth Grounding', width: 100, align: 'right', category: 'standard', isMoney: true },
-  { key: 'dailyAllowance', label: 'Allowance', width: 100, align: 'right', category: 'standard', isMoney: true },
-  { key: 'excessCopperTube', label: 'Excess Copper Tube', width: 110, align: 'right', category: 'piping', isMoney: true },
-  { key: 'excessCopperTubeLaborOnly', label: 'Copper Tube Labor', width: 120, align: 'right', category: 'piping', isMoney: true },
-  { key: 'flushingOldPipe', label: 'Flushing Old Pipe', width: 110, align: 'right', category: 'piping', isMoney: true },
-  { key: 'electricalWorks', label: 'Electrical Works', width: 110, align: 'right', category: 'electrical', isMoney: true },
-  { key: 'breaker', label: 'Breaker', width: 100, align: 'right', category: 'electrical', isMoney: true },
-  { key: 'breakerInstallationLabor', label: 'Breaker Install Labor', width: 130, align: 'right', category: 'electrical', isMoney: true },
-  { key: 'powerSupplyLaborOnly', label: 'Power Supply (Labor)', width: 120, align: 'right', category: 'electrical', isMoney: true },
-  { key: 'powerSupplyLaborMaterials', label: 'Power Supply (L+M)', width: 120, align: 'right', category: 'electrical', isMoney: true },
-  { key: 'chargingOfFreon', label: 'Charging of Freon', width: 110, align: 'right', category: 'electrical', isMoney: true },
-  { key: 'hauling', label: 'Hauling', width: 100, align: 'right', category: 'structural', isMoney: true },
-  { key: 'dismantling', label: 'Dismantling', width: 100, align: 'right', category: 'structural', isMoney: true },
-  { key: 'chippingWorks', label: 'Chipping Works', width: 110, align: 'right', category: 'masonry', isMoney: true },
-  { key: 'specialBracketCatwalk', label: 'Bracket w/ Catwalk', width: 120, align: 'right', category: 'structural', isMoney: true },
-  { key: 'specialBracketWelding', label: 'Bracket Welding', width: 110, align: 'right', category: 'structural', isMoney: true },
-  { key: 'sterneBracket', label: 'Sterne Bracket', width: 110, align: 'right', category: 'structural', isMoney: true },
-  { key: 'scaffoldingInstallation', label: 'Scaffolding', width: 100, align: 'right', category: 'structural', isMoney: true },
-  { key: 'drainPumpInstallation', label: 'Drain Pump', width: 100, align: 'right', category: 'structural', isMoney: true },
-  { key: 'relocationAccuFcu', label: 'Relocation ACCU/FCU', width: 130, align: 'right', category: 'structural', isMoney: true },
-  { key: 'systemReprocessLabor', label: 'System Reprocess', width: 120, align: 'right', category: 'structural', isMoney: true },
-  // Free-text note of what was returned (e.g. "2pcs wire"), not a peso amount.
-  { key: 'materialsReturn', label: 'Materials Return', width: 130, align: 'left', category: 'admin' },
-  { key: 'installationChecklist', label: 'Install Checklist', width: 110, align: 'left', category: 'admin' },
-  { key: 'videoUpload', label: 'Video Upload', width: 110, align: 'left', category: 'admin' },
-  // Always trail the table, not part of the hide/show system — any unhidden column lands
-  // between Install Fee and these two, never after them.
-  { key: 'remarks', label: 'Remarks', width: 150, align: 'left', pinned: true },
-  { key: 'audited', label: 'Audited', width: 90, align: 'left', pinned: true },
-]
-
-// Roster columns: Installer (completed-jobs count folded into its subtitle) | Payroll Amount |
-// Payroll Status | Remarks. There's no action column — the whole row opens that installer's payroll.
-const ROSTER_GRID_TEMPLATE = 'minmax(260px, 2fr) 160px 200px minmax(220px, 1.6fr)'
-
-const COLUMN_PRESETS: { label: string; cats: ColumnCategory[] }[] = [
-  { label: 'Standard', cats: ['standard'] },
-  { label: 'Electrical Heavy', cats: ['standard', 'electrical'] },
-  { label: 'Structural Heavy', cats: ['standard', 'structural'] },
-]
-
-// "Standard Add-ons" and "Admin & Notes" (Materials Return, Install Checklist, Video Upload)
-// show on first visit — every other fee category starts hidden since most are blank for any
-// given installer/job (see COLUMN_DEFS comment above).
-const DEFAULT_HIDDEN_COLUMNS: ColumnKey[] = COLUMN_DEFS
-  .filter(c => !c.pinned && c.category !== 'standard' && c.category !== 'admin')
-  .map(c => c.key as ColumnKey)
-
-const HIDDEN_COLUMNS_KEY = 'ashcol-payroll-hidden-columns'
-const COLUMN_WIDTHS_KEY = 'ashcol-payroll-column-widths'
-const CUSTOM_COLUMNS_KEY = 'ashcol-payroll-custom-columns'
-// Payroll keeps its own branch selection, independent of the app-wide branch switcher — once
-// picked here it must survive a reload and only change when this page's dropdown is used.
-const PAYROLL_BRANCH_KEY = 'ashcol-payroll-branch-id'
-const PAYROLL_WEEK_KEY = (branchId: string) => `ashcol-payroll-week-${branchId}`
-const PAYROLL_LAST_SELECTION_KEY = 'ashcol-payroll-last-selection'
-const MIN_COLUMN_WIDTH = 70
-
-export const normalizeSlug = (str: string) =>
-  str.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
-
-export const compactSlug = (str: string) =>
-  str.toLowerCase().replace(/[^a-z0-9]/g, '')
-
-interface SavedPayrollSelection {
-  month: string
-  weekFrom: string
-  weekTo: string
-  weekNumber?: number
-  label?: string
-}
-
-interface PayrollWeekClosure {
-  id?: number
-  branchId: string
-  weekFrom: string
-  weekTo: string
-  closedAt?: string
-  closedBy?: string
-  notes?: string | null
-}
-
-function getSavedPayrollSelection(branchId?: string): SavedPayrollSelection | null {
-  try {
-    if (branchId) {
-      const raw = localStorage.getItem(PAYROLL_WEEK_KEY(branchId))
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        if (parsed && typeof parsed.month === 'string' && typeof parsed.weekFrom === 'string' && typeof parsed.weekTo === 'string') {
-          return parsed
-        }
-      }
-    }
-    const general = localStorage.getItem(PAYROLL_LAST_SELECTION_KEY)
-    if (general) {
-      const parsed = JSON.parse(general)
-      if (parsed && typeof parsed.month === 'string' && typeof parsed.weekFrom === 'string' && typeof parsed.weekTo === 'string') {
-        return parsed
-      }
-    }
-  } catch {
-    // Corrupt/foreign localStorage value — fall through to null, same as "nothing saved yet".
-  }
-  return null
-}
-
-// Installer job list: columns are sized from their real rendered text (see listWidths in the
-// detail view), so fonts here must match the list's classes. Date/Ticket/Customer stay pinned.
-const LIST_PINNED_KEYS = ['date', 'ticketNumber', 'customerName']
-const LIST_CELL_FONT = '400 13px Inter, system-ui, sans-serif'
-const LIST_CELL_BOLD_FONT = '700 13px Inter, system-ui, sans-serif'
-const LIST_HEAD_FONT = '700 11px Inter, system-ui, sans-serif'
-const LIST_HEAD_TRACKING = 0.275 // Tailwind tracking-wide (0.025em) at 11px, per character
-let measureCtx: CanvasRenderingContext2D | null | undefined
-const measureText = (text: string, font: string, trackingPerChar = 0): number => {
-  if (measureCtx === undefined) measureCtx = document.createElement('canvas').getContext('2d')
-  if (!measureCtx) return text.length * 7.5
-  measureCtx.font = font
-  return measureCtx.measureText(text).width + text.length * trackingPerChar
-}
-
-// Widths default to COLUMN_DEFS but are user-adjustable (drag the header edge) and shared
-// across every installer table — a resize is a layout preference, not per-installer state.
-const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = COLUMN_DEFS.reduce((acc, c) => {
-  acc[c.key as ColumnKey] = c.width
-  return acc
-}, {} as Record<ColumnKey, number>)
-
-// A column a branch adds by hand from the "Manage Columns" modal — no fixed field on
-// PayrollRow, its values live in row.customFields keyed by `key`. Always money-type (a fee),
-// always visible once created (no per-installer hide/show or resize in this first pass), and
-// removable from the same modal.
-interface CustomColumnDef {
-  key: string
-  label: string
-}
+import { num, peso, pesoSigned, shortDate, longDate, getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef } from './Payouts/payoutUtils';
 
 export default function Payouts() {
   const { theme } = useTheme()
@@ -483,7 +221,6 @@ export default function Payouts() {
   const [deductionsModalInstaller, setDeductionsModalInstaller] = useState<string | null>(null)
   // Hold & release (carry-over to a later week) — see docs/payroll-hold-release-plan.md.
   const [holdModalRow, setHoldModalRow] = useState<PayrollRow | null>(null)
-  const [holdReason, setHoldReason] = useState('')
   const [holdSubmitting, setHoldSubmitting] = useState(false)
   const [heldTicketsOpen, setHeldTicketsOpen] = useState(false)
   const [heldTicketsLoading, setHeldTicketsLoading] = useState(false)
@@ -499,11 +236,9 @@ export default function Payouts() {
   const [undoingRowKey, setUndoingRowKey] = useState<string | null>(null)
   // Balance adjustment on a closed week's ticket + its correction history.
   const [adjustRow, setAdjustRow] = useState<{ row: PayrollRow; month: string } | null>(null)
-  const [adjustEdits, setAdjustEdits] = useState<Record<string, string>>({})
-  const [adjustReason, setAdjustReason] = useState('')
-  const [adjustTargetWeek, setAdjustTargetWeek] = useState<PayrollWeek | null>(null)
   const [adjustSubmitting, setAdjustSubmitting] = useState(false)
   const [correctionsOpen, setCorrectionsOpen] = useState(false)
+  // What the Correction History search box starts with (a ticket number when opened from that ticket).
   const [correctionsSearch, setCorrectionsSearch] = useState('')
   const [corrections, setCorrections] = useState<{ row: PayrollRow; month: string }[]>([])
   const [selectedTicketForModal, setSelectedTicketForModal] = useState<Ticket | null>(null)
@@ -778,14 +513,18 @@ export default function Payouts() {
     let cancelled = false
     const loadUsers = async () => {
       try {
-        let res = await fetch(`${API_BASE_URL}/user/all`, { headers: { Authorization: `Bearer ${getToken()}` } })
-        if (!res.ok) {
-          res = await fetch(`${API_BASE_URL}/user/all?role=EMPLOYEE`, { headers: { Authorization: `Bearer ${getToken()}` } })
+        let list: any[] | null = null
+        try {
+          list = await fetchCachedEmployees(getToken())
+        } catch {
+          try {
+            list = await fetchCachedEmployees(getToken(), 'EMPLOYEE')
+          } catch {
+            list = null
+          }
         }
-        if (res.ok) {
-          const data = await res.json()
-          if (cancelled || !data) return
-          const list: any[] = data?.data || []
+        if (list) {
+          if (cancelled) return
           const mapped = list
             .filter(u => u && u.name)
             .map(u => ({
@@ -1370,7 +1109,8 @@ export default function Payouts() {
       let combinedSavedRows: PayrollRow[] = []
       const currentBranchName = branches.find(b => b.id === branchFilter)?.name || ''
 
-      for (const mKey of monthsToFetch) {
+      // A week that crosses two months needs both: they are loaded together and combined in month order below.
+      const perMonth = await Promise.all(monthsToFetch.map(async (mKey): Promise<PayrollRow[]> => {
         const params = new URLSearchParams({ branchId: branchFilter, month: mKey })
         const res = await fetch(`${API_BASE_URL}/v1/payroll?${params.toString()}`, {
           headers: { Authorization: `Bearer ${getToken()}` },
@@ -1383,8 +1123,7 @@ export default function Payouts() {
 
         // If the active week is closed, use saved rows only and skip schedule sync & auto-save
         if (activeWeek && closures.some(c => c.branchId === branchFilter && c.weekFrom === activeWeek.from && c.weekTo === activeWeek.to)) {
-          combinedSavedRows = deduplicateAndMergePayroll(combinedSavedRows, savedRows)
-          continue
+          return savedRows
         }
 
         // Automatically fetch latest results from schedules
@@ -1404,8 +1143,9 @@ export default function Payouts() {
           void savePayrollToBackend(merged, branchFilter, mKey)
         }
 
-        combinedSavedRows = deduplicateAndMergePayroll(combinedSavedRows, merged)
-      }
+        return merged
+      }))
+      for (const monthRows of perMonth) combinedSavedRows = deduplicateAndMergePayroll(combinedSavedRows, monthRows)
 
       // Auto-discover custom fee columns stored in row customFields so they show up
       setCustomColumnDefs(prev => {
@@ -1439,27 +1179,38 @@ export default function Payouts() {
 
   useEffect(() => {
     const token = getToken()
+    let appliedJson = ''
+    const apply = (data: any) => {
+      const raw = (data?.data || data || [])
+        .filter((b: any) => !b.isFranchise && !isFranchiseBranch(b.id) && !isFranchiseBranch(b.name))
+        .map((b: any) => ({
+          id: b.id,
+          name: b.name,
+          payrollRates: b.payrollRates,
+          isFranchise: false,
+        }))
+      const sorted = raw.sort((a: any, b: any) => a.name.localeCompare(b.name))
+      // The saved list and the fresh one are usually identical: applying it twice would load the sheet twice.
+      const json = JSON.stringify(sorted)
+      if (json === appliedJson) return
+      appliedJson = json
+      setBranches(sorted)
+
+      setBranchFilter(prev => {
+        if (prev && sorted.some((b: any) => b.id === prev)) return prev
+        const taguigSales = sorted.find((b: any) => /TAGUIG.*SALES/i.test(b.name))
+          || sorted.find((b: any) => /TAGUIG/i.test(b.name))
+        return taguigSales ? taguigSales.id : (sorted[0]?.id || '')
+      })
+    }
+    // Last copy of the branch list (rates included) so the sheet can start loading without waiting for the API.
+    const saved = readSavedBranches()
+    if (saved) apply(saved)
     fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data) return
-        const raw = (data?.data || data || [])
-          .filter((b: any) => !b.isFranchise && !isFranchiseBranch(b.id) && !isFranchiseBranch(b.name))
-          .map((b: any) => ({
-            id: b.id,
-            name: b.name,
-            payrollRates: b.payrollRates,
-            isFranchise: false,
-          }))
-        const sorted = raw.sort((a: any, b: any) => a.name.localeCompare(b.name))
-        setBranches(sorted)
-
-        setBranchFilter(prev => {
-          if (prev && sorted.some((b: any) => b.id === prev)) return prev
-          const taguigSales = sorted.find((b: any) => /TAGUIG.*SALES/i.test(b.name))
-            || sorted.find((b: any) => /TAGUIG/i.test(b.name))
-          return taguigSales ? taguigSales.id : (sorted[0]?.id || '')
-        })
+        apply(data)
       })
       .catch(() => {})
   }, [])
@@ -1483,13 +1234,19 @@ export default function Payouts() {
       // Deduplicate across months by business key (ticketId|installer or ticket#+installer+date).
       // Also auto-cleans any duplicate held rows from the DB in the background.
       const seenKeys = new Set<string>()
-      for (const m of months) {
+      // Requested together (each call can take seconds); processed in month order below.
+      const monthLists = await Promise.all(months.map(async (m) => {
+        // A failed request still ends in the outer catch (the badge keeps its last value), as before.
         const params = new URLSearchParams({ branchId: branchFilter, month: m })
         const res = await fetch(`${API_BASE_URL}/v1/payroll?${params.toString()}`, {
           headers: { Authorization: `Bearer ${getToken()}` },
         })
-        if (!res.ok) continue
-        const list = await res.json()
+        return res.ok ? await res.json() : null
+      }))
+      for (let mi = 0; mi < months.length; mi++) {
+        const m = months[mi]
+        const list = monthLists[mi]
+        if (list === null) continue
         const monthRows: PayrollRow[] = (Array.isArray(list) ? list : []).map(mapSavedPayrollEntry)
 
         // Track which held rows in this month are unique vs duplicate.
@@ -1557,13 +1314,13 @@ export default function Payouts() {
   // Uses mutateSavedMonth (atomic GET → mutate → PUT) so the hold is saved reliably even when
   // the row sits in a frozen/closed week — flushSave sends the full month and fails isSameExcept
   // checks on frozen rows, causing the "Could Not Put on Hold" error and silent duplicates.
-  const submitHold = async () => {
-    if (!holdModalRow || !branchFilter || !activeWeek || !holdReason.trim() || isWeekClosed) return
+  const submitHold = async (reason: string) => {
+    if (!holdModalRow || !branchFilter || !activeWeek || !reason.trim() || isWeekClosed) return
     setHoldSubmitting(true)
     const heldFields = {
       ...(holdModalRow.customFields || {}),
       'hold:state': 'held',
-      'hold:reason': holdReason.trim(),
+      'hold:reason': reason.trim(),
       'hold:heldAt': new Date().toISOString(),
       'hold:heldBy': userDisplayName,
       'hold:heldWeekFrom': activeWeek.from,
@@ -1588,7 +1345,6 @@ export default function Payouts() {
       // Update local rows to reflect the held state instantly — no re-fetch needed.
       setRows(prev => prev.map(r => r.id === holdModalRow.id ? { ...r, customFields: heldFields } : r))
       setHoldModalRow(null)
-      setHoldReason('')
       // Refresh the held tickets list from server so the count and list are accurate.
       void refreshHeldTickets()
     } finally {
@@ -1718,19 +1474,13 @@ export default function Payouts() {
   ]
 
   const openAdjustModal = (row: PayrollRow) => {
-    const today = todayYMD()
-    const firstOpen = [...weeksOfMonth(activeMonth, cycle), ...weeksOfMonth(nextMonth(activeMonth), cycle)]
-      .find(w => w.to >= today && !closures.some(c => c.branchId === branchFilter && c.weekFrom === w.from && c.weekTo === w.to))
     setAdjustRow({ row, month: saveMonthOf(row) })
-    setAdjustEdits({})
-    setAdjustReason('')
-    setAdjustTargetWeek(firstOpen ?? null)
   }
 
   // Post a balance correction for a closed-week ticket: the closed row stays frozen, the difference
   // (per fee column, add OR deduct) lands as an adjustment row in the chosen open week, and the
   // change is logged on the original ticket. Inserted first; rolled back if logging fails.
-  const submitAdjust = async () => {
+  const submitAdjust = async (adjustEdits: Record<string, string>, adjustTargetWeek: PayrollWeek, adjustReason: string) => {
     if (!adjustRow || !branchFilter || !adjustTargetWeek || !adjustReason.trim()) return
     const { row: origin, month: originMonth } = adjustRow
     const changes = getAdjustableCols().flatMap(col => {
@@ -4968,7 +4718,7 @@ export default function Payouts() {
                       {canManagePayroll && !isWeekClosed && !isCarryOver(liveRow) && (
                         <button
                           type="button"
-                          onClick={() => { setDetailRow(null); setHoldModalRow(liveRow); setHoldReason('') }}
+                          onClick={() => { setDetailRow(null); setHoldModalRow(liveRow); }}
                           className={`${actionBtn} hover:bg-amber-500/10 hover:border-amber-500/50`}
                           style={{ color: '#D97706', borderColor: isLight ? '#fde68a' : 'rgba(217,119,6,0.35)', backgroundColor: isLight ? '#fffbeb' : 'rgba(217,119,6,0.08)' }}
                           title="Carry this payout to a later week"
@@ -5714,172 +5464,33 @@ export default function Payouts() {
       )}
 
       {completeModalFor && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
-          onClick={() => setCompleteModalFor(null)}
-        >
-          <div
-            className="w-full rounded-2xl shadow-2xl flex flex-col overflow-hidden border animate-in zoom-in-95 duration-150"
-            style={{ maxWidth: 460, backgroundColor: cardBg, borderColor: border }}
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                <h2 className="text-sm font-black uppercase tracking-wide" style={{ color: textPrimary }}>
-                  COMPLETE PAYOUT — {displayInstallerName(completeModalFor).toUpperCase()}
-                </h2>
-              </div>
-              <button type="button" onClick={() => setCompleteModalFor(null)} className="p-1.5 rounded-lg hover:bg-slate-500/10 transition-colors">
-                <X className="w-4 h-4" style={{ color: textMuted }} />
-              </button>
-            </div>
-
-            {/* Content */}
-            <div className="p-5 flex flex-col gap-4">
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
-                  COMPLETED BY
-                </span>
-                <div
-                  className="w-full rounded-xl border px-3 py-2 text-xs font-black uppercase tracking-wider select-none opacity-90"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: '#10B981' }}
-                >
-                  {userFirstName}
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
-                  DATE SUBMITTED
-                </span>
-                <div
-                  className="w-full rounded-xl border px-3 py-2 text-xs font-bold uppercase tracking-wider select-none"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                >
-                  {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()}
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
-                  REMARKS (OPTIONAL)
-                </span>
-                <textarea
-                  rows={3}
-                  placeholder="ADD ANY REMARKS OR AUDIT NOTES..."
-                  value={completeRemarks}
-                  onChange={e => setCompleteRemarks(e.target.value.toUpperCase())}
-                  className="w-full rounded-xl border p-3 text-xs font-bold uppercase focus:outline-none focus:ring-2 focus:ring-emerald-500/40 resize-none"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                />
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-end gap-2 px-5 py-3.5 shrink-0 border-t" style={{ borderColor: border }}>
-              <button
-                type="button"
-                onClick={() => setCompleteModalFor(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold uppercase transition-colors"
-                style={{ color: textMuted, backgroundColor: isLight ? '#f1f5f9' : '#0d1520' }}
-              >
-                CANCEL
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!completeModalFor) return
-                  const upperRemarks = completeRemarks.trim().toUpperCase()
-                  updateInstallerRows(completeModalFor, {
-                    status: 'COMPLETE',
-                    audited: userFirstName,
-                    remarks: upperRemarks,
-                  })
-                  setCompleteModalFor(null)
-                }}
-                className="px-5 py-2 rounded-xl text-xs font-black uppercase text-white shadow-md active:scale-95 transition-all"
-                style={{ backgroundColor: '#10B981' }}
-              >
-                SAVE &amp; COMPLETE
-              </button>
-            </div>
-          </div>
-        </div>
+        <CompletePayoutModal
+          installerName={completeModalFor}
+          userFirstName={userFirstName}
+          onClose={() => setCompleteModalFor(null)}
+          onComplete={(remarks) => {
+            const upperRemarks = remarks.trim().toUpperCase()
+            updateInstallerRows(completeModalFor, {
+              status: 'COMPLETE',
+              audited: userFirstName,
+              remarks: upperRemarks,
+            })
+            setCompleteModalFor(null)
+          }}
+          displayInstallerName={displayInstallerName}
+          initialRemarks={completeRemarks}
+        />
       )}
-
       {/* Hold modal — see docs/payroll-hold-release-plan.md */}
-      {holdModalRow && createPortal(
-        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-150">
-          <div className="w-full max-w-md rounded-2xl border shadow-2xl flex flex-col overflow-hidden" style={{ backgroundColor: cardBg, borderColor: border }}>
-            <div className="flex items-start justify-between gap-3 px-6 py-4 shrink-0" style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <PauseCircle className="w-4 h-4 text-amber-500" />
-                  <span className="text-sm font-extrabold uppercase tracking-wide" style={{ color: textPrimary }}>Put on Hold</span>
-                </div>
-                <div className="text-xs font-semibold mt-1 truncate" style={{ color: textMuted }}>
-                  {holdModalRow.customerName || 'No customer'} · {holdModalRow.ticketNumber || 'No ticket'}
-                  {' · '}<span className="text-emerald-500">{displayInstallerName(holdModalRow.installerName)}</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => { setHoldModalRow(null); setHoldReason('') }}
-                className="p-2 rounded-full shrink-0 border cursor-pointer hover:bg-red-500 hover:border-red-500 hover:text-white transition-all"
-                style={{ color: textMuted, backgroundColor: inputBg, borderColor: inputBorder }}
-                aria-label="Close"
-              >
-                <X className="w-4 h-4" strokeWidth={2.5} />
-              </button>
-            </div>
-            <div className="px-6 py-5 flex flex-col gap-3">
-              <div
-                className="flex items-center justify-between rounded-xl px-4 py-3"
-                style={{ backgroundColor: isLight ? '#fffbeb' : 'rgba(217,119,6,0.08)', border: `1px solid ${isLight ? '#fde68a' : 'rgba(217,119,6,0.3)'}` }}
-              >
-                <span className="text-xs font-bold uppercase tracking-wide" style={{ color: '#D97706' }}>Job Payout</span>
-                <span className="text-lg font-extrabold tabular-nums" style={{ color: '#D97706' }}>₱{peso(rowTotal(holdModalRow))}</span>
-              </div>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Reason (required)</span>
-                <textarea
-                  rows={3}
-                  value={holdReason}
-                  onChange={e => setHoldReason(e.target.value)}
-                  placeholder="Why is this job's payout being held? e.g. Approved by Ma'am Patt"
-                  className="w-full rounded-xl border p-3 text-xs font-semibold outline-none focus:ring-2 focus:ring-amber-500/40 resize-none"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                />
-              </label>
-            </div>
-            <div
-              className="flex items-center justify-end gap-3 px-6 py-4 shrink-0"
-              style={{ backgroundColor: isLight ? 'rgba(241, 245, 249, 0.7)' : 'rgba(15, 26, 46, 0.7)', borderTop: `1px solid ${border}` }}
-            >
-              <button
-                type="button"
-                onClick={() => { setHoldModalRow(null); setHoldReason('') }}
-                className="px-5 py-2.5 rounded-xl text-xs font-bold border transition-all hover:opacity-80 cursor-pointer"
-                style={{ borderColor: border, color: textMuted, backgroundColor: inputBg }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => { void submitHold() }}
-                disabled={!holdReason.trim() || holdSubmitting}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black text-white transition-all shadow-md disabled:opacity-50 cursor-pointer"
-                style={{ background: '#D97706' }}
-              >
-                {holdSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <PauseCircle className="w-4 h-4" />}
-                <span>{holdSubmitting ? 'Holding…' : 'Confirm Hold'}</span>
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
+      {holdModalRow && (
+        <HoldModal
+          holdModalRow={holdModalRow}
+          onClose={() => setHoldModalRow(null)}
+          onSubmit={submitHold}
+          holdSubmitting={holdSubmitting}
+          displayInstallerName={displayInstallerName}
+          rowTotal={rowTotal}
+        />
       )}
 
       {/* Held Tickets — branch-wide, spans the active month + the 2 months before it; see
@@ -6117,212 +5728,31 @@ export default function Payouts() {
       )}
 
       {/* Balance adjustment modal */}
-      {adjustRow && createPortal(
-        (() => {
-          const cols = getAdjustableCols()
-          const targetWeekOptions = [...weeksOfMonth(activeMonth, cycle), ...weeksOfMonth(nextMonth(activeMonth), cycle)]
-            .filter(w => !closures.some(c => c.branchId === branchFilter && c.weekFrom === w.from && c.weekTo === w.to))
-          const rowsView = cols.map(col => {
-            const from = num(getColAccessor(col.key).get(adjustRow.row))
-            const raw = adjustEdits[col.key]
-            const to = raw === undefined || raw === '' ? from : num(raw)
-            return { ...col, from, to, delta: Math.round((to - from) * 100) / 100 }
-          })
-          const net = Math.round(rowsView.reduce((sum, r) => sum + r.delta, 0) * 100) / 100
-          const canSubmit = net !== 0 || rowsView.some(r => r.delta !== 0)
-          return (
-            <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-150">
-              <div className="w-full max-w-2xl max-h-[92vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden" style={{ backgroundColor: cardBg, borderColor: border }}>
-                <div className="flex items-start justify-between gap-3 px-6 py-4 shrink-0" style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}>
-                  <div className="min-w-0">
-                    <div className="text-sm font-extrabold uppercase tracking-wide" style={{ color: textPrimary }}>Adjust Balance</div>
-                    <div className="text-xs font-semibold mt-1 truncate" style={{ color: textMuted }}>
-                      {adjustRow.row.customerName || 'No customer'} · {adjustRow.row.ticketNumber || 'No ticket'} · <span className="text-emerald-500">{displayInstallerName(adjustRow.row.installerName)}</span>
-                    </div>
-                    <div className="text-[11px] mt-1" style={{ color: textMuted }}>This week is closed and stays as paid. Enter the corrected amount per column — the difference is added or deducted in the open week you pick.</div>
-                  </div>
-                  <button type="button" onClick={() => setAdjustRow(null)} className="p-2 rounded-full shrink-0 border cursor-pointer hover:bg-red-500 hover:border-red-500 hover:text-white transition-all" style={{ color: textMuted, backgroundColor: inputBg, borderColor: inputBorder }} aria-label="Close">
-                    <X className="w-4 h-4" strokeWidth={2.5} />
-                  </button>
-                </div>
-                <div className="flex-1 min-h-0 overflow-y-auto px-6 py-3">
-                  <div className="grid grid-cols-[minmax(0,1fr)_110px_120px_100px] gap-x-3 pb-2 text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted, borderBottom: `1px solid ${border}` }}>
-                    <span>Column</span><span className="text-right">Paid</span><span className="text-right">Corrected</span><span className="text-right">Difference</span>
-                  </div>
-                  {rowsView.map(r => (
-                    <div key={r.key} className="grid grid-cols-[minmax(0,1fr)_110px_120px_100px] gap-x-3 items-center py-1.5" style={{ borderBottom: `1px solid ${border}` }}>
-                      <span className="text-xs font-bold truncate" style={{ color: textPrimary }}>{r.label}</span>
-                      <span className="text-xs tabular-nums text-right" style={{ color: textMuted }}>{r.from ? `₱${peso(r.from)}` : '—'}</span>
-                      <input
-                        type="number"
-                        step="0.01"
-                        placeholder={String(r.from || 0)}
-                        value={adjustEdits[r.key] ?? ''}
-                        onChange={e => setAdjustEdits(prev => ({ ...prev, [r.key]: e.target.value }))}
-                        className="w-full px-2 py-1 rounded-lg border text-xs font-semibold text-right tabular-nums outline-none focus:ring-2 focus:ring-violet-500/40"
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                      />
-                      <span className="text-xs font-bold tabular-nums text-right" style={{ color: r.delta === 0 ? textMuted : r.delta > 0 ? '#10B981' : (isLight ? '#DC2626' : '#F87171') }}>
-                        {r.delta === 0 ? '—' : (r.delta > 0 ? '+' : '−') + '₱' + peso(Math.abs(r.delta))}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <div className="px-6 py-3 flex flex-col gap-3 shrink-0" style={{ borderTop: `1px solid ${border}`, backgroundColor: headerBg }}>
-                  <div className="flex items-center justify-between rounded-xl px-4 py-2.5" style={{ backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.10)', border: `1px solid ${isLight ? '#ddd6fe' : 'rgba(139,92,246,0.3)'}` }}>
-                    <span className="text-xs font-bold uppercase tracking-wide" style={{ color: '#8B5CF6' }}>Net adjustment ({net < 0 ? 'deduct' : 'add'})</span>
-                    <span className="text-lg font-extrabold tabular-nums" style={{ color: net < 0 ? (isLight ? '#DC2626' : '#F87171') : '#8B5CF6' }}>{net === 0 ? '₱0.00' : pesoSigned(net)}</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <label className="flex flex-col gap-1">
-                      <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Apply in week (open only)</span>
-                      <select
-                        value={adjustTargetWeek ? `${adjustTargetWeek.from}|${adjustTargetWeek.to}` : ''}
-                        onChange={e => { const [f, t] = e.target.value.split('|'); setAdjustTargetWeek(targetWeekOptions.find(w => w.from === f && w.to === t) || null) }}
-                        className="w-full px-3 py-2 rounded-xl border text-xs font-bold outline-none"
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                      >
-                        <option value="">Select a week…</option>
-                        {targetWeekOptions.map(w => <option key={`${w.from}|${w.to}`} value={`${w.from}|${w.to}`}>{formatMonth(w.owningMonth)} — Week {w.weekNumber} ({w.label})</option>)}
-                      </select>
-                    </label>
-                    <label className="flex flex-col gap-1">
-                      <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Reason (required)</span>
-                      <input
-                        type="text"
-                        value={adjustReason}
-                        onChange={e => setAdjustReason(e.target.value)}
-                        placeholder="e.g. Computation error on grounding"
-                        className="w-full px-3 py-2 rounded-xl border text-xs font-semibold outline-none"
-                        style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                      />
-                    </label>
-                  </div>
-                  <div className="flex items-center justify-end gap-3">
-                    {!(!canSubmit || !adjustTargetWeek || !adjustReason.trim()) ? null : (
-                      <span className="mr-auto text-[11px] font-semibold" style={{ color: '#D97706' }}>
-                        {!canSubmit ? 'Change at least one amount' : !adjustTargetWeek ? 'Pick an open week' : 'Type a reason to continue'}
-                      </span>
-                    )}
-                    <button type="button" onClick={() => setAdjustRow(null)} className="px-5 py-2.5 rounded-xl text-xs font-bold border hover:opacity-80 cursor-pointer" style={{ borderColor: border, color: textMuted, backgroundColor: inputBg }}>Cancel</button>
-                    <button
-                      type="button"
-                      onClick={() => void submitAdjust()}
-                      disabled={!canSubmit || !adjustTargetWeek || !adjustReason.trim() || adjustSubmitting}
-                      className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black text-white shadow-md disabled:opacity-50 cursor-pointer"
-                      style={{ background: '#8B5CF6' }}
-                    >
-                      {adjustSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                      <span>{adjustSubmitting ? 'Posting…' : 'Post Adjustment'}</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )
-        })(),
-        document.body
+      {adjustRow && (
+        <AdjustBalanceModal
+          adjustRow={adjustRow}
+          closures={closures}
+          activeMonth={activeMonth}
+          cycle={cycle}
+          branchFilter={branchFilter}
+          getAdjustableCols={getAdjustableCols}
+          getColAccessor={getColAccessor}
+          onClose={() => setAdjustRow(null)}
+          onSubmit={submitAdjust}
+          adjustSubmitting={adjustSubmitting}
+          displayInstallerName={displayInstallerName}
+        />
       )}
 
-      {/* Correction history — every logged balance adjustment, with who / when / which columns */}
-      {correctionsOpen && createPortal(
-        (() => {
-          const term = correctionsSearch.trim().toLowerCase()
-          const entries = corrections.flatMap(({ row }) => parseAdjustmentLog(row).map(entry => ({ row, entry })))
-            .filter(({ row }) => !term || (row.ticketNumber || '').toLowerCase().includes(term) || row.customerName.toLowerCase().includes(term) || row.installerName.toLowerCase().includes(term))
-            .sort((a, b) => b.entry.at.localeCompare(a.entry.at))
-          return (
-            <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-150">
-              <div className="w-full max-w-2xl rounded-2xl border shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: '90vh', backgroundColor: cardBg, borderColor: border }}>
-                <div className="flex items-start justify-between gap-3 px-6 pt-5 pb-4 shrink-0" style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}>
-                  <div className="min-w-0">
-                    <div className="text-lg font-extrabold tracking-tight" style={{ color: textPrimary }}>Correction History</div>
-                    <div className="text-xs font-semibold mt-0.5" style={{ color: textMuted }}>
-                      {currentBranchDisplay || 'Branch'} · {entries.length} correction{entries.length === 1 ? '' : 's'} · last 3 months
-                      {entries.length > 0 && <> · net <span className="font-bold" style={{ color: entries.reduce((sum, e) => sum + e.entry.net, 0) < 0 ? (isLight ? '#DC2626' : '#F87171') : '#10B981' }}>{pesoSigned(entries.reduce((sum, e) => sum + e.entry.net, 0))}</span></>}
-                    </div>
-                  </div>
-                  <button type="button" onClick={() => setCorrectionsOpen(false)} className="p-2.5 rounded-full shrink-0 border cursor-pointer hover:bg-red-500 hover:border-red-500 hover:text-white transition-all" style={{ color: textMuted, backgroundColor: inputBg, borderColor: inputBorder }} aria-label="Close">
-                    <X className="w-5 h-5" strokeWidth={2.5} />
-                  </button>
-                </div>
-                <div className="px-6 py-3 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: textMuted }} />
-                    <input
-                      type="text"
-                      value={correctionsSearch}
-                      onChange={e => setCorrectionsSearch(e.target.value)}
-                      placeholder="Search ticket, customer or installer…"
-                      className="w-full pl-9 pr-3 py-2 rounded-xl text-sm font-semibold border outline-none focus:ring-2 focus:ring-violet-500/30"
-                      style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                    />
-                  </div>
-                </div>
-                <div className="flex-1 min-h-0 overflow-y-auto p-5 flex flex-col gap-3" style={{ backgroundColor: headerBg }}>
-                  {entries.length === 0 ? (
-                    <div className="py-16 text-center text-sm font-semibold" style={{ color: textMuted }}>No corrections logged.</div>
-                  ) : (
-                    entries.map(({ row, entry }) => {
-                      const red = isLight ? '#DC2626' : '#F87171'
-                      return (
-                        <div key={entry.id} className="rounded-2xl border overflow-hidden" style={{ backgroundColor: cardBg, borderColor: border }}>
-                          <div className="flex items-start justify-between gap-4 px-4 pt-4 pb-3">
-                            <div className="min-w-0">
-                              <div className="flex items-baseline gap-2 flex-wrap">
-                                <span className="text-lg font-black tracking-tight text-emerald-500">{row.ticketNumber || 'No ticket'}</span>
-                                <span className="text-sm font-bold break-words" style={{ color: textPrimary }}>{row.customerName}</span>
-                              </div>
-                              <div className="text-xs font-bold mt-0.5" style={{ color: textMuted }}>{displayInstallerName(row.installerName)}</div>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <div className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>{entry.net < 0 ? 'Deducted' : 'Added'}</div>
-                              <div className="text-xl font-black tabular-nums leading-tight" style={{ color: entry.net < 0 ? red : '#10B981' }}>{pesoSigned(entry.net)}</div>
-                            </div>
-                          </div>
-
-                          <div className="mx-4 mb-3 rounded-xl border overflow-hidden" style={{ borderColor: border }}>
-                            {entry.changes.map((c, i) => (
-                              <div key={c.key} className="flex items-center justify-between gap-3 px-3 py-2 text-xs" style={{ borderTop: i > 0 ? `1px solid ${border}` : 'none' }}>
-                                <span className="font-bold" style={{ color: textPrimary }}>{c.label}</span>
-                                <span className="flex items-center gap-2 tabular-nums">
-                                  <span style={{ color: textMuted }}>₱{peso(c.from)}</span>
-                                  <span style={{ color: textMuted }}>→</span>
-                                  <span className="font-bold" style={{ color: textPrimary }}>₱{peso(c.to)}</span>
-                                  <span
-                                    className="font-black px-1.5 py-0.5 rounded"
-                                    style={{ color: c.delta < 0 ? red : '#10B981', backgroundColor: c.delta < 0 ? (isLight ? '#fef2f2' : 'rgba(248,113,113,0.12)') : (isLight ? '#ecfdf5' : 'rgba(16,185,129,0.12)') }}
-                                  >
-                                    {c.delta > 0 ? '+' : '−'}₱{peso(Math.abs(c.delta))}
-                                  </span>
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-
-                          <div className="px-4 py-3 flex flex-col gap-1.5 text-xs" style={{ borderTop: `1px solid ${border}`, backgroundColor: headerBg }}>
-                            <div style={{ color: textPrimary }}><span className="font-bold">Reason:</span> <span style={{ color: textMuted }}>{entry.reason || '—'}</span></div>
-                            <div className="flex items-center justify-between gap-3 flex-wrap" style={{ color: textMuted }}>
-                              <span>
-                                By <span className="font-bold" style={{ color: textPrimary }}>{formatPersonName(entry.by)}</span>
-                                {' · '}{new Date(entry.at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
-                                {' '}{new Date(entry.at).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })}
-                              </span>
-                              <span className="font-semibold px-2 py-0.5 rounded-md" style={{ color: '#8B5CF6', backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.14)' }}>
-                                Applied in {shortDate(entry.targetWeekFrom)} – {shortDate(entry.targetWeekTo)}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })
-                  )}
-                </div>
-              </div>
-            </div>
-          )
-        })(),
-        document.body
+      {/* Correction history modal */}
+      {correctionsOpen && (
+        <CorrectionHistoryModal
+          corrections={corrections}
+          currentBranchDisplay={currentBranchDisplay}
+          onClose={() => setCorrectionsOpen(false)}
+          displayInstallerName={displayInstallerName}
+          initialSearch={correctionsSearch}
+        />
       )}
 
       {/* Release modal — see docs/payroll-hold-release-plan.md */}
