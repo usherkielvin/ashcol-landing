@@ -704,6 +704,19 @@ purchases cannot be receipted or returned as cash from this list until tomorrow.
 
 ---
 
+## Task 33 — BUG: Expense Records stuck on the loading screen (2026-10-02, uncommitted)
+
+**Found:** from this PC `https://api.ashcol.com.ph/api/v1/audit-expenses` did not answer within 30 s (twice), while the local backend on `:8080` answered in
+45 ms. The portal's first request (`/audit-expenses`) had **no timeout**, and the loading screen waits for it, so a server that does not answer = a loading
+screen forever. The cause of the unreachable public API is not in the code (tunnel / proxy / the 1:57 PM restart are the suspects) and has to be checked
+on the server PC; whether my backend changes slow it down is unverified.
+**Fixed (portal):** `loadAuditExpensesStrict` (25 s deadline, throws on failure) is used for the first load; branches also get a 25 s deadline; the two summary
+feeds have 25 s deadlines; if the records cannot be loaded the page opens anyway with a red banner "Could not load the expense records — the server did not
+answer in time" and a Retry button; coming back to the tab refetches at most once a minute (it fired on both `focus` and `visibilitychange` before).
+Build passes.
+
+---
+
 ## Deferred (need a decision or a schema change — ask the user before starting)
 
 - **Month close / lock** (recommended right after Task 4 — it is the only control that makes "must match from October" stick). Admin marks a branch-month "Closed" once Balanced; DTRs and records for that month become

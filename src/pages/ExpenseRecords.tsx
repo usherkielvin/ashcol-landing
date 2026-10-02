@@ -35,6 +35,7 @@ import {
   createExpenseId,
   deleteAuditExpense,
   loadAuditExpenses,
+  loadAuditExpensesStrict,
   upsertAuditExpense,
 } from "../utils/auditExpenseStorage";
 import {
@@ -133,6 +134,8 @@ export default function ExpenseRecords() {
   const [branchId, setBranchId] = useState("");
   const [expenses, setExpenses] = useState<AuditExpense[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
+  // The records could not be loaded (server error or no answer): say so instead of showing an empty list.
+  const [loadError, setLoadError] = useState(false);
   // The ASHCOL splash stays up until the records AND the default month's summary data (DTR totals, purchases) are in, so
   // the page opens complete instead of filling in piece by piece. Shown once per visit; a timeout stops it hanging.
   const [revealed, setRevealed] = useState(false);
@@ -182,8 +185,11 @@ export default function ExpenseRecords() {
   const [noReceiptForm, setNoReceiptForm] = useState(false);
   const [noReceiptReasonForm, setNoReceiptReasonForm] = useState("");
   useEffect(() => {
+    let last = Date.now();
     const refresh = () => {
-      if (document.visibilityState === "visible") setDataVersion((v) => v + 1);
+      if (document.visibilityState !== "visible" || Date.now() - last < 60000) return;
+      last = Date.now();
+      setDataVersion((v) => v + 1);
     };
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
@@ -246,6 +252,13 @@ export default function ExpenseRecords() {
       const list = allBranches.length > 0 ? allBranches : branches;
       const exists = list.some((b) => b.id === id);
       if (!exists) {
+        if (
+          id.toLowerCase().includes("taguig") ||
+          id.startsWith("2880c29e-581c-11f1-bf8c-74d4dd6dfc0b")
+        ) {
+          const isServ = id.toLowerCase().includes("service");
+          return isServ ? "BR-TAGUIG-SERVICES" : "BR-TAGUIG-SALES";
+        }
         const splitOption = list.find((b) => b.id.startsWith(`${id}-`));
         if (splitOption) {
           const salesOption = list.find((b) => b.id === `${id}-sales`);
@@ -554,41 +567,47 @@ export default function ExpenseRecords() {
       const list: BranchOption[] = (data as { id: string; name: string }[]).map(
         (b) => ({ id: b.id, name: b.name }),
       );
-      const hasExplicitTaguigSales = list.some((b) => {
-        const id = b.id.toUpperCase();
-        const name = b.name.toUpperCase();
-        return (
-          id === "BR-TAGUIG-SALES-EXPLICIT" ||
-          (name.includes("TAGUIG") &&
-            name.includes("SALES") &&
-            id !== "BR-TAGUIG-SALES")
-        );
-      });
-      const hasExplicitTaguigServices = list.some((b) => {
-        const id = b.id.toUpperCase();
-        const name = b.name.toUpperCase();
-        return (
-          id === "BR-TAGUIG-SERVICES" ||
-          id === "BR-TAGUIG-SERVICE" ||
-          (name.includes("TAGUIG") && name.includes("SERVICE"))
-        );
-      });
 
       const newList: BranchOption[] = [];
       for (const b of list) {
         const cleanName = b.name.replace(/^(ashcol\s+)/i, "");
         const cleanNameUpper = cleanName.toUpperCase();
-        if (cleanNameUpper === "TAGUIG" || cleanNameUpper === "ASHCOL TAGUIG") {
-          if (!hasExplicitTaguigSales)
-            newList.push({ id: `${b.id}-sales`, name: "TAGUIG - SALES" });
-          if (!hasExplicitTaguigServices)
-            newList.push({ id: `${b.id}-services`, name: "TAGUIG - SERVICES" });
+        const idUpper = (b.id || "").toUpperCase();
+
+        if (
+          idUpper === "BR-TAGUIG-SALES" ||
+          idUpper === "2880C29E-581C-11F1-BF8C-74D4DD6DFC0B"
+        ) {
+          if (!newList.some((item) => item.id === "BR-TAGUIG-SALES")) {
+            newList.push({ id: "BR-TAGUIG-SALES", name: "TAGUIG - SALES" });
+          }
+          if (!newList.some((item) => item.id === "BR-TAGUIG-SERVICES")) {
+            newList.push({ id: "BR-TAGUIG-SERVICES", name: "TAGUIG - SERVICES" });
+          }
+        } else if (
+          idUpper === "BR-TAGUIG-SERVICES" ||
+          idUpper === "2880C29E-581C-11F1-BF8C-74D4DD6DFC0B-SERVICES" ||
+          idUpper === "BR-TAGUIG-SALES-SERVICES"
+        ) {
+          if (!newList.some((item) => item.id === "BR-TAGUIG-SERVICES")) {
+            newList.push({ id: "BR-TAGUIG-SERVICES", name: "TAGUIG - SERVICES" });
+          }
+        } else if (cleanNameUpper === "TAGUIG" || cleanNameUpper === "ASHCOL TAGUIG") {
+          if (!newList.some((item) => item.id === "BR-TAGUIG-SALES")) {
+            newList.push({ id: "BR-TAGUIG-SALES", name: "TAGUIG - SALES" });
+          }
+          if (!newList.some((item) => item.id === "BR-TAGUIG-SERVICES")) {
+            newList.push({ id: "BR-TAGUIG-SERVICES", name: "TAGUIG - SERVICES" });
+          }
         } else if (cleanNameUpper.includes("TAGUIG")) {
           const isServ = cleanNameUpper.includes("SERVICE");
-          newList.push({
-            id: isServ ? `${b.id}-services` : `${b.id}-sales`,
-            name: isServ ? "TAGUIG - SERVICES" : "TAGUIG - SALES",
-          });
+          const tId = isServ ? "BR-TAGUIG-SERVICES" : "BR-TAGUIG-SALES";
+          if (!newList.some((item) => item.id === tId)) {
+            newList.push({
+              id: tId,
+              name: isServ ? "TAGUIG - SERVICES" : "TAGUIG - SALES",
+            });
+          }
         } else {
           newList.push({ id: b.id, name: cleanName });
         }
@@ -631,78 +650,10 @@ export default function ExpenseRecords() {
 
       setBranches(finalList);
       setAllBranches(newList);
-
-      if (finalList.length > 0) {
-        let matchedSlugBranch: BranchOption | undefined;
-        if (branchSlug) {
-          const clean = normalizeSlug(branchSlug);
-          const compact = compactSlug(branchSlug);
-          matchedSlugBranch = finalList.find(
-            (b) =>
-              normalizeSlug(b.name) === clean ||
-              compactSlug(b.name) === compact ||
-              normalizeSlug(b.id) === clean ||
-              compactSlug(b.id) === compact,
-          );
-        }
-
-        if (isBranchScopedUser && user?.branchId) {
-          const userBranchLower = user.branchId.toLowerCase();
-          const isUserTaguig =
-            userBranchLower.includes("taguig") ||
-            userBranchLower.startsWith("2880c29e-581c-11f1-bf8c-74d4dd6dfc0b");
-          if (isUserTaguig) {
-            const emailLower = (user?.email || "").toLowerCase();
-            const isServicesUser =
-              userBranchLower.includes("service") ||
-              emailLower.includes("service");
-            const matched = finalList.find((b) => {
-              const bNameUpper = b.name.toUpperCase();
-              return isServicesUser
-                ? bNameUpper.includes("SERVICE")
-                : bNameUpper.includes("SALES");
-            });
-            setBranchId(
-              matchedSlugBranch
-                ? matchedSlugBranch.id
-                : matched
-                  ? matched.id
-                  : (finalList[0]?.id ?? ""),
-            );
-          } else {
-            const userBranchIdUpper = user.branchId.toUpperCase();
-            const exactMatch = finalList.find(
-              (b) => b.id.toUpperCase() === userBranchIdUpper,
-            );
-            setBranchId(
-              matchedSlugBranch
-                ? matchedSlugBranch.id
-                : exactMatch
-                  ? exactMatch.id
-                  : (finalList[0]?.id ?? ""),
-            );
-          }
-        } else {
-          const storedGlobal = localStorage.getItem("ashcol-global-branch-id");
-          const resolved = resolveArchivesBranchFilter(
-            storedGlobal,
-            finalList,
-            user,
-          );
-          const nextId = matchedSlugBranch
-            ? matchedSlugBranch.id
-            : resolved || finalList[0]?.id || "";
-          setBranchId(nextId);
-          if (isAdmin && nextId && (!storedGlobal || matchedSlugBranch)) {
-            localStorage.setItem("ashcol-global-branch-id", nextId);
-            window.dispatchEvent(new Event("ashcol-global-branch-change"));
-          }
-        }
-      }
     } catch (e) {
       console.error(e);
     }
-  }, [isBranchScopedUser, user, isAdmin, branchSlug]);
+  }, [isBranchScopedUser, user]);
 
   const reload = useCallback(async () => {
     try {
@@ -718,14 +669,23 @@ export default function ExpenseRecords() {
 
     const preloadTabDetails = async () => {
       try {
-        const promises: Promise<unknown>[] = [loadAuditExpenses()];
-        if (canAccess) promises.push(loadBranches());
+        // Neither request may keep the loading screen up forever if the server is not answering.
+        const promises: Promise<unknown>[] = [loadAuditExpensesStrict()];
+        if (canAccess) {
+          promises.push(
+            Promise.race([
+              loadBranches(),
+              new Promise((_, reject) => setTimeout(() => reject(new Error("branches timed out")), 25000)),
+            ]),
+          );
+        }
         const [data] = await Promise.all(promises);
         if (active && data) {
           setExpenses(data as AuditExpense[]);
         }
       } catch (err) {
         console.error("[ExpenseRecords] Preload error:", err);
+        if (active) setLoadError(true);
       } finally {
         if (active) setInitialLoading(false);
       }
@@ -737,16 +697,81 @@ export default function ExpenseRecords() {
     };
   }, [canAccess, loadBranches]);
 
+  // When branches load, initialize active branchId
+  useEffect(() => {
+    if (branches.length === 0) return;
+    if (branchId && branches.some((b) => b.id === branchId)) return;
+
+    let targetBranch: BranchOption | undefined;
+    if (branchSlug) {
+      const clean = normalizeSlug(branchSlug);
+      const compact = compactSlug(branchSlug);
+      targetBranch = branches.find(
+        (b) =>
+          normalizeSlug(b.name) === clean ||
+          compactSlug(b.name) === clean ||
+          normalizeSlug(b.id) === clean ||
+          compactSlug(b.id) === compact,
+      );
+    }
+
+    if (!targetBranch) {
+      if (isBranchScopedUser && user?.branchId) {
+        const userBranchLower = user.branchId.toLowerCase();
+        const isUserTaguig =
+          userBranchLower.includes("taguig") ||
+          userBranchLower.startsWith("2880c29e-581c-11f1-bf8c-74d4dd6dfc0b");
+        if (isUserTaguig) {
+          const emailLower = (user?.email || "").toLowerCase();
+          const isServicesUser =
+            userBranchLower.includes("service") ||
+            emailLower.includes("service");
+          targetBranch = branches.find((b) => {
+            const bNameUpper = b.name.toUpperCase();
+            return isServicesUser
+              ? bNameUpper.includes("SERVICE")
+              : bNameUpper.includes("SALES");
+          });
+        } else {
+          const userBranchIdUpper = user.branchId.toUpperCase();
+          targetBranch = branches.find(
+            (b) => b.id.toUpperCase() === userBranchIdUpper,
+          );
+        }
+      } else {
+        const storedGlobal = localStorage.getItem("ashcol-global-branch-id");
+        const resolved = resolveArchivesBranchFilter(
+          storedGlobal,
+          branches,
+          user,
+        );
+        targetBranch = branches.find((b) => b.id === resolved);
+      }
+    }
+
+    const nextBranch = targetBranch || branches[0];
+    if (nextBranch) {
+      setBranchId(nextBranch.id);
+      if (isAdmin) {
+        const storedGlobal = localStorage.getItem("ashcol-global-branch-id");
+        if (storedGlobal !== nextBranch.id) {
+          localStorage.setItem("ashcol-global-branch-id", nextBranch.id);
+          window.dispatchEvent(new Event("ashcol-global-branch-change"));
+        }
+      }
+    }
+  }, [branches, branchSlug, branchId, isAdmin, isBranchScopedUser, user]);
+
+  // Sync active branch when admin changes the global branch in the top navbar
   useEffect(() => {
     if (!isAdmin || branches.length === 0) return;
     const syncFromGlobal = () => {
       const gId = localStorage.getItem("ashcol-global-branch-id");
       const resolved = resolveArchivesBranchFilter(gId, branches, user);
       if (resolved) {
-        setBranchId((prev) => (prev !== resolved ? resolved : prev));
+        setBranchId((prev) => (resolved !== prev ? resolved : prev));
       }
     };
-    syncFromGlobal();
     window.addEventListener("ashcol-global-branch-change", syncFromGlobal);
     return () =>
       window.removeEventListener("ashcol-global-branch-change", syncFromGlobal);
@@ -764,14 +789,26 @@ export default function ExpenseRecords() {
         normalizeSlug(b.id) === clean ||
         compactSlug(b.id) === compact,
     );
-    if (matched && matched.id !== branchId) {
-      setBranchId(matched.id);
-      if (isAdmin) {
-        localStorage.setItem("ashcol-global-branch-id", matched.id);
-        window.dispatchEvent(new Event("ashcol-global-branch-change"));
-      }
+    
+    if (matched) {
+      setBranchId((prev) => {
+        if (matched.id !== prev) {
+          if (isAdmin) {
+            const stored = localStorage.getItem("ashcol-global-branch-id");
+            if (stored !== matched.id) {
+              localStorage.setItem("ashcol-global-branch-id", matched.id);
+              // Defer the event dispatch to prevent synchronous event loops during render
+              setTimeout(() => {
+                window.dispatchEvent(new Event("ashcol-global-branch-change"));
+              }, 0);
+            }
+          }
+          return matched.id;
+        }
+        return prev;
+      });
     }
-  }, [branchSlug, branches, branchId, isAdmin]);
+  }, [branchSlug, branches, isAdmin]);
 
   // Keep URL path in sync with active branch (e.g. /expenses/silang)
   useEffect(() => {
@@ -783,7 +820,7 @@ export default function ExpenseRecords() {
     const currentSlug = branchSlug ? normalizeSlug(branchSlug) : "";
     if (currentSlug !== expectedSlug) {
       navigate(`/expenses/${expectedSlug}${location.search}`, {
-        replace: !branchSlug,
+        replace: true,
       });
     }
   }, [
@@ -1037,7 +1074,7 @@ export default function ExpenseRecords() {
     const target = norm(branchName);
     fetch(
       `${API_BASE_URL}/v1/reports/audit-summary-range?from=${dtrFrom}&to=${dtrTo}`,
-      { headers: { Authorization: `Bearer ${token}` } },
+      { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(25000) },
     )
       .then((r) =>
         r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)),
@@ -1149,16 +1186,26 @@ export default function ExpenseRecords() {
       localStorage.getItem("ashcol-token") ||
       sessionStorage.getItem("ashcol-token") ||
       "";
-    // Nothing before 2026 is needed here (the month picker starts in January 2026).
+    const isTaguig = branchId.toUpperCase().includes("TAGUIG");
+    const isTaguigServices =
+      isTaguig &&
+      (branchId.toUpperCase().includes("SERVICE") ||
+        branchName.toUpperCase().includes("SERVICE"));
     const params = new URLSearchParams({
-      branchId: branchId.replace(/-(sales|services?)$/i, ""),
+      branchId: isTaguig
+        ? isTaguigServices
+          ? "BR-TAGUIG-SERVICES"
+          : "BR-TAGUIG-SALES"
+        : branchId.replace(/-(sales|services?)$/i, ""),
       from: "2026-01-01",
     });
-    if (/-services?$/i.test(branchId))
+    if (isTaguigServices || /-services?$/i.test(branchId))
       params.set("auditLine", "TAGUIG_SERVICE");
-    else if (/-sales$/i.test(branchId)) params.set("auditLine", "TAGUIG_SALES");
+    else if (isTaguig || /-sales$/i.test(branchId))
+      params.set("auditLine", "TAGUIG_SALES");
     fetch(`${API_BASE_URL}/v1/reports/purchases?${params.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(25000),
     })
       .then((r) =>
         r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)),
@@ -2750,6 +2797,23 @@ export default function ExpenseRecords() {
       style={{ minHeight: "100vh", backgroundColor: bg }}
       className="flex flex-col gap-3 px-2 py-3 md:p-6 pb-12"
     >
+      {loadError && (
+        <div
+          className="rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-sm font-semibold"
+          style={{ backgroundColor: "#ef444418", border: "1px solid #ef444466", color: "#b91c1c" }}
+        >
+          <span>Could not load the expense records — the server did not answer in time. What you see may be incomplete.</span>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="h-9 px-4 rounded-full text-xs font-bold uppercase tracking-wide cursor-pointer"
+            style={{ backgroundColor: "#b91c1c", color: "#fff" }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* ── HEADER ── */}
       <div
         className="rounded-2xl px-4 py-3.5 flex flex-col gap-3"
