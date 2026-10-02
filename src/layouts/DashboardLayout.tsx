@@ -534,7 +534,7 @@ export default function DashboardLayout() {
     { name: 'LINEUP',          path: '/lineup',           icon: ListOrdered,     roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Members',         path: '/members',          icon: UserCog,         roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic', 'technician', 'driver'] },
     { name: 'Vehicles',        path: '/vehicles',         icon: Truck,           roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic', 'technician', 'driver'] },
-    { name: 'Expense Records', path: '/audit-expenses',  icon: ClipboardList,  roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Expense Records', path: '/expenses',         icon: ClipboardList,  roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'For Collections',  path: '/collections',     icon: CircleDollarSign, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Commissions',      path: '/commissions',     icon: Percent,          roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Cash Advance',     path: '/cash-advances',   icon: Wallet,           roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
@@ -577,7 +577,7 @@ export default function DashboardLayout() {
     if (!user) return
     const currentPath = location.pathname
     const alwaysAllowed = ['/profile', '/tickets/create', '/create-ticket', '/request-forms-archive']
-    if (alwaysAllowed.includes(currentPath) || currentPath.startsWith('/messages')) return
+    if (alwaysAllowed.includes(currentPath) || currentPath.startsWith('/messages') || currentPath.startsWith('/audit-expenses')) return
 
 
     const isAllowed = navLinks.some(link => currentPath === link.path || currentPath.startsWith(link.path + '/'))

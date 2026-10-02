@@ -142,7 +142,10 @@ export default function App() {
             <Route path="/messages/:conversationId" element={<Messages />} />
 
             <Route path="/audit-report" element={<DailyAuditReport />} />
+            <Route path="/expenses" element={<ExpenseRecords />} />
+            <Route path="/expenses/:branchSlug" element={<ExpenseRecords />} />
             <Route path="/audit-expenses" element={<ExpenseRecords />} />
+            <Route path="/audit-expenses/:branchSlug" element={<ExpenseRecords />} />
             {/* Redirect legacy /daily-report to the combined tab page */}
             <Route path="/daily-report" element={<Navigate to="/audit-report?tab=submit" replace />} />
             <Route path="/collections" element={<ForCollections />} />

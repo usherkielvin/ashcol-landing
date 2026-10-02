@@ -481,7 +481,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
     { label: 'My Tickets', to: '/my-tickets', icon: QuickTicketIcon },
     { label: 'Schedules', to: '/schedules', icon: QuickScheduleIcon },
     { label: 'Daily Transaction', to: '/audit-report', icon: QuickDailyTxIcon },
-    { label: 'Expenses', to: '/audit-expenses', icon: QuickExpensesIcon },
+    { label: 'Expenses', to: '/expenses', icon: QuickExpensesIcon },
     { label: 'Payouts', to: '/payouts', icon: QuickPesoPayoutIcon, hidden: !canAccessPayoutsQuick },
     { label: 'LINEUP', to: '/lineup', icon: QuickLineupIcon },
     { label: 'Request Forms', to: '/operations-forms', icon: QuickRequestFormsIcon },

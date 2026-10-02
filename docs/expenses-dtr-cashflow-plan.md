@@ -695,6 +695,15 @@ database indexes on `report_items(type)` / the report date. Measure first (brows
 
 ---
 
+## Task 32 — Today's items are not "pending" until tomorrow (2026-10-02, uncommitted)
+
+`ExpenseRecords.tsx`. The PENDING PURCHASES RECEIPTS box (and the month report's pending-purchase rows) leave out anything dated **today**: a
+purchase made on Oct 2 first appears on Oct 3. Applies to purchases and to records without a photo (`ageDays >= 1`). The "Why the difference?"
+popup still lists today's unreceipted purchases, because it explains the DTR comparison rather than what to chase. Consequence: today's
+purchases cannot be receipted or returned as cash from this list until tomorrow. Build passes. The green "✓ Cash returns matched on a DTR" list (Task 23) was removed on request; the validation itself is unchanged (a matched purchase simply leaves the red "not found" box).
+
+---
+
 ## Deferred (need a decision or a schema change — ask the user before starting)
 
 - **Month close / lock** (recommended right after Task 4 — it is the only control that makes "must match from October" stick). Admin marks a branch-month "Closed" once Balanced; DTRs and records for that month become

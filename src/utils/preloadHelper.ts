@@ -87,6 +87,10 @@ export function warmUpPortalRoutes() {
 export function preloadPath(path: string) {
   if (!path) return
   const clean = path.split('?')[0].toLowerCase()
+  if (clean.startsWith('/expenses/')) {
+    try { portalPagePreloaders.expenseRecords() } catch {}
+    return
+  }
   try {
     switch (clean) {
       case '/relays': portalPagePreloaders.relays(); break
@@ -96,6 +100,7 @@ export function preloadPath(path: string) {
       case '/my-tickets': portalPagePreloaders.myTickets(); break
       case '/lineup': portalPagePreloaders.lineUp(); break
       case '/audit-report': portalPagePreloaders.dailyAuditReport(); break
+      case '/expenses':
       case '/audit-expenses': portalPagePreloaders.expenseRecords(); break
       case '/members': portalPagePreloaders.employees(); break
       case '/admin-hris': portalPagePreloaders.hris(); break
