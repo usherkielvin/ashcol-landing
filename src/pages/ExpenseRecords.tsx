@@ -62,6 +62,13 @@ const isDepositRecord = (e: { expenseCategory?: string; description?: string }) 
 }
 const emptyForm = (defaultBranchId = '') => ({ date: formatTodayReceiptDate(), company: '', description: '', receiptNo: '', amount: '', expenseCategory: 'OTHER' as AuditExpenseCategory, sourceOfFunds: '', incurredBy: '', branchId: defaultBranchId })
 
+/** A purchase's cash return can only be entered on a later day's DTR, so it is not "missing" until the day after the purchase. */
+const returnIsDue = (purchaseDate?: string) => {
+  const n = new Date()
+  const today = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
+  return !!purchaseDate && purchaseDate < today
+}
+
 export default function ExpenseRecords() {
   const { theme } = useTheme()
   const { user } = useAuth()
@@ -818,7 +825,7 @@ export default function ExpenseRecords() {
         return {
           id: String(r.id),
           date: String(r.reportDate),
-          label: `${r.ref ? `${r.ref} · ` : ''}${desc.split('|').map((x: string) => x.trim()).filter(Boolean).join(' · ') || 'Purchase'}`,
+          label: desc.split('|').map((x: string) => x.trim()).filter(Boolean).join(' · ') || 'Purchase',
           worker: desc.includes('|') ? desc.split('|')[0].trim() : '',
           detail: desc.includes('|') ? desc.split('|').slice(1).join(' ').trim() : desc.trim(),
           amount: r.remaining != null ? Number(r.remaining) || 0 : Math.max(0, (Number(r.amount) || 0) - (Number(r.actualAmount) || 0)),
@@ -984,8 +991,8 @@ export default function ExpenseRecords() {
       ['Purchases awaiting receipt - this period, 8+ days old (count)', agingInPeriod.filter(p => p.ageDays >= 8).length],
       ['Reimbursements not found on the DTR (count)', dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.reimburseDue || 0) > 0.005 && !l.reimburseFound).length],
       ['Reimbursements not found on the DTR (amount)', r2(dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.reimburseDue || 0) > 0.005 && !l.reimburseFound).reduce((acc, l) => acc + (l.reimburseDue || 0), 0))],
-      ['Cash returns not found on the DTR (count)', dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound).length],
-      ['Cash returns not found on the DTR (amount)', r2(dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound).reduce((acc, l) => acc + (l.refundDue || 0), 0))],
+      ['Cash returns not found on the DTR (count)', dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound && returnIsDue(l.reportDate)).length],
+      ['Cash returns not found on the DTR (amount)', r2(dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound && returnIsDue(l.reportDate)).reduce((acc, l) => acc + (l.refundDue || 0), 0))],
     ]
 
     const bucketMeta: { id: keyof typeof reconciliation.buckets; title: string; side: string }[] = [
@@ -2558,7 +2565,7 @@ export default function ExpenseRecords() {
                       {missing.map(l => (
                         <div key={l.id} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
                           <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{l.reportDate}</span>
-                          <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={l.description}>{l.ref && <span className="font-mono font-bold mr-1.5" style={{ color: textMuted }}>{l.ref}</span>}{l.description.split('|').filter(Boolean).join(' · ')}</span>
+                          <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={l.description}>{l.description.split('|').filter(Boolean).join(' · ')}</span>
                           <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>receipt {fmt(l.actualAmount || 0)} vs {fmt(l.amount)} given</span>
                           <span className="shrink-0 font-bold tabular-nums" style={{ color: '#b45309' }}>reimburse {fmt(l.reimburseDue || 0)}</span>
                         </div>
@@ -2571,7 +2578,7 @@ export default function ExpenseRecords() {
 
             {/* Resolved purchases whose receipt was lower than the cash given: the difference must be a DTR Cash Return */}
             {(() => {
-              const missing = dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound)
+              const missing = dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound && returnIsDue(l.reportDate))
               if (missing.length === 0) return null
               const total = missing.reduce((acc, l) => acc + (l.refundDue || 0), 0)
               const open = openBucket === 'cashReturnMissing'
@@ -2589,7 +2596,7 @@ export default function ExpenseRecords() {
                       {missing.map(l => (
                         <div key={l.id} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
                           <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{l.reportDate}</span>
-                          <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={l.description}>{l.ref && <span className="font-mono font-bold mr-1.5" style={{ color: textMuted }}>{l.ref}</span>}{l.description.split('|').filter(Boolean).join(' · ')}</span>
+                          <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={l.description}>{l.description.split('|').filter(Boolean).join(' · ')}</span>
                           <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>receipt {fmt(l.actualAmount || 0)} of {fmt(l.amount)}</span>
                           <span className="shrink-0 font-bold tabular-nums" style={{ color: danger }}>return {fmt(l.refundDue || 0)}</span>
                           <button type="button"
@@ -2641,7 +2648,7 @@ export default function ExpenseRecords() {
                       {matched.map(l => (
                         <div key={l.id} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
                           <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{l.reportDate}</span>
-                          <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={l.description}>{l.ref && <span className="font-mono font-bold mr-1.5" style={{ color: textMuted }}>{l.ref}</span>}{l.description.split('|').filter(Boolean).join(' · ')}</span>
+                          <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={l.description}>{l.description.split('|').filter(Boolean).join(' · ')}</span>
                           <span className="shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{fmt(l.refundDue || 0)}</span>
                           <span className="shrink-0 tabular-nums" style={{ color: accent }}>found on the DTR of {l.cashReturnDate || 'a later date'}</span>
                         </div>

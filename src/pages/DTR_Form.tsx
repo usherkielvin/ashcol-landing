@@ -2186,6 +2186,31 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       )
       setCashAdvances(cashAdvForSave)
 
+      // Hidden link between a Cash Return and the purchase it closes (the purchase's PR- reference). Rows added with the
+      // buttons already carry it; a hand-typed row gets it only when exactly one earlier purchase fits.
+      const cashReturnRefs = new Map<string, string>()
+      {
+        const taken = new Set<string>()
+        cashRet.forEach(r => { const ref = (r.refNo || '').trim().toUpperCase(); if (ref) { cashReturnRefs.set(r.id, ref); taken.add(ref) } })
+        const openAmount = (p: any) => !p.receiptReturned
+          ? (p.remaining != null ? Number(p.remaining) : Math.max(0, Number(p.amount) - (Number(p.actualAmount) || 0)))
+          : Number(p.refundDue) || 0
+        for (const r of cashRet) {
+          if (cashReturnRefs.has(r.id) || !r.name.trim() || !(parseFloat(r.amount) > 0)) continue
+          const fits = branchPurchases.filter((p: any) => p.ref && !taken.has(String(p.ref).toUpperCase())
+            && (!p.type || p.type === 'PURCHASE') && !String(p.description || '').startsWith('ORDER|')
+            && p.reportDate && p.reportDate < reportDate
+            && (!p.receiptReturned || !p.cashReturnFound)
+            && getWorkerName(p).toUpperCase() === r.name.trim().toUpperCase()
+            && Math.abs(openAmount(p) - parseFloat(r.amount)) < 0.01)
+          if (fits.length === 1) {
+            const ref = String(fits[0].ref).toUpperCase()
+            cashReturnRefs.set(r.id, ref)
+            taken.add(ref)
+          }
+        }
+      }
+
       // Build unified items array from all DTR sections
       const dtrItems: object[] = [
         ...cashTx.filter(r => r.customer || r.installer || r.amount).map(r => ({
@@ -2193,7 +2218,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         })),
         ...cashRet.filter(r => r.name || r.description || r.amount).map(r => ({
           type: 'CASH_SALE', description: `RETURN|${r.name}|${(r.description || '').replace(/\|/g, '/')}`, amount: parseFloat(r.amount) || 0,
-          ticketNumber: (r.refNo || '').trim().toUpperCase() || null
+          ticketNumber: cashReturnRefs.get(r.id) || null
         })),
         ...onlineTx.filter(r => r.installer || r.amount).map(r => ({
           type: 'ONLINE_SALE', description: r.installer, customer: r.customer, bank: r.bank, amount: parseFloat(r.amount) || 0
@@ -3043,7 +3068,6 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                   <tr>
                     <th className={tableTh}>Name</th>
                     <th className={tableTh}>Description</th>
-                    <th className={tableTh + ' w-28'} title="Reference of the purchase this cash return closes">Purchase ref</th>
                     <th className={tableTh + ' text-right w-32'}>Amount</th>
                     {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
                   </tr>
@@ -3077,12 +3101,6 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                         <input type="text" placeholder="Description" value={row.description || ''}
                           onChange={e => setCashRet(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
                           className={flushInput} disabled={isFormDisabled} />
-                      </td>
-                      <td className={tableTd}>
-                        <input type="text" placeholder="PR-…" value={row.refNo || ''} list="purchase-ref-suggestions"
-                          title="Pick the purchase this cash return closes, so it is matched to that purchase and no other"
-                          onChange={e => setCashRet(p => p.map(r => r.id === row.id ? { ...r, refNo: e.target.value.toUpperCase() } : r))}
-                          className={flushInput + ' font-mono uppercase'} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
@@ -3641,9 +3659,6 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                         <input type="text" placeholder="Description" value={row.description}
                           onChange={e => setExpPurch(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
                           className={flushInput} disabled={isFormDisabled} />
-                        {row.refNo && (
-                          <div className="px-2.5 text-[10px] font-mono font-bold text-slate-400 dark:text-slate-500" title="Quote this reference on the Cash Return when unspent cash comes back">Ref {row.refNo}</div>
-                        )}
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
@@ -4328,16 +4343,6 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           />
         )
       })()}
-
-      <datalist id="purchase-ref-suggestions">
-        {branchPurchases
-          .filter((p: any) => p.ref && (!p.type || p.type === 'PURCHASE') && !String(p.description || '').startsWith('ORDER|')
-            && p.reportDate && p.reportDate < reportDate
-            && (!p.receiptReturned || ((p.refundDue || 0) > 0.005 && !p.cashReturnFound)))
-          .map((p: any) => (
-            <option key={p.id} value={p.ref}>{`${p.reportDate} · ${String(p.description || '').split('|').filter(Boolean).join(' · ')} · ${Number(p.amount).toFixed(2)}`}</option>
-          ))}
-      </datalist>
 
       <datalist id="cash-return-suggestions">
         {techSuggestions.map(name => (
