@@ -746,7 +746,7 @@ export default function ExpenseRecords() {
   // DTR expense + purchase lines for the period, used to explain Records vs DTR line by line.
   // Bumped after a purchase receipt is added so the DTR lines and the pending list reload.
   const [dataVersion, setDataVersion] = useState(0)
-  type DtrLine = { id: string; type?: string; description: string; amount: number; actualAmount?: number; receiptReturned?: boolean; resolvedExpenseId?: string; reportDate?: string; refundDue?: number; cashReturnFound?: boolean; cashReturnDate?: string; reimburseDue?: number; reimburseFound?: boolean }
+  type DtrLine = { id: string; type?: string; description: string; amount: number; actualAmount?: number; receiptReturned?: boolean; resolvedExpenseId?: string; reportDate?: string; refundDue?: number; cashReturnFound?: boolean; cashReturnDate?: string; returnedAll?: boolean; reimburseDue?: number; reimburseFound?: boolean }
   // One feed of this branch's purchases (every date), loaded once per branch and kept in a cache so switching months or
   // coming back is instant. The month's DTR lines and the all-dates pending list are both derived from it, so they cannot
   // disagree and the page makes one request instead of two.
@@ -850,6 +850,8 @@ export default function ExpenseRecords() {
     let expenseLinesTotal = 0
     for (const l of dtrLines.rows) {
       if (l.type === 'EXPENSE') expenseLinesTotal += l.amount
+      // All of it was handed back unspent: nothing is recorded or expected on either side.
+      if (l.type === 'PURCHASE' && l.returnedAll) continue
       const label = `${l.type === 'PURCHASE' ? 'Purchase' : l.type === 'EXPENSE' ? 'Expense' : 'DTR'}: ${lineLabel(l.description)}`
       const item: Item = { key: l.id, date: l.reportDate || '', label, amount: l.amount }
       const rid = l.resolvedExpenseId || ''
@@ -944,7 +946,7 @@ export default function ExpenseRecords() {
     const purchaseLines = dtrLines.rows.filter(l => l.type === 'PURCHASE')
     const linesTyped = dtrLines.rows.some(l => !!l.type)
     // A purchase receipted in parts counts for what has been receipted so far; only the remainder is pending.
-    const resolvedPurchases = purchaseLines.reduce((acc, l) => acc + (l.receiptReturned ? Math.min(l.actualAmount || l.amount, l.amount) : (l.actualAmount || 0)), 0)
+    const resolvedPurchases = purchaseLines.reduce((acc, l) => acc + (l.returnedAll ? 0 : l.receiptReturned ? Math.min(l.actualAmount || l.amount, l.amount) : (l.actualAmount || 0)), 0)
     const pendingTotal = purchaseLines.filter(l => !l.receiptReturned).reduce((acc, l) => acc + Math.max(0, l.amount - (l.actualAmount || 0)), 0)
     const dtrSpend = (dtrExpenses.total || 0) + (linesTyped ? resolvedPurchases : dtrExpenses.purchases)
     const diff = hasDtr ? recordsTotalForDtr - dtrSpend : null
@@ -1127,7 +1129,7 @@ export default function ExpenseRecords() {
   // A part-receipted purchase whose rest was handed back as cash: close it; the Cash Return is then added on the DTR.
   const returnPendingAsCash = async (p: PendingPurchase) => {
     const amt = p.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })
-    if (!window.confirm(`Close this purchase and treat the remaining ₱${amt} as cash returned by ${p.worker || 'the member'}?\n\nIt is then added as a Cash Return (e.g. “MATERIAL CHANGE”) on the DTR — it is offered ready-filled under Cash Returns on the DTR of the day the cash comes back.`)) return
+    if (!window.confirm(`Close this purchase and treat ${p.received > 0 ? 'the remaining' : 'all'} ₱${amt} as unspent cash returned by ${p.worker || 'the member'}?\n\nIt is then added as a Cash Return (e.g. “MATERIAL CHANGE”) on the DTR — it is offered ready-filled under Cash Returns on the DTR of the day the cash comes back.`)) return
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
     const res = await fetch(`${API_BASE_URL}/v1/reports/purchases/${encodeURIComponent(p.id)}/close`, {
       method: 'POST',
@@ -2255,7 +2257,7 @@ export default function ExpenseRecords() {
         // the DTR's Expenses + Purchases, not Expenses alone.
         const purchaseLines = dtrLines.rows.filter(l => l.type === 'PURCHASE')
         const linesTyped = dtrLines.rows.some(l => !!l.type)
-        const resolvedPurchases = purchaseLines.reduce((acc, l) => acc + (l.receiptReturned ? Math.min(l.actualAmount || l.amount, l.amount) : (l.actualAmount || 0)), 0)
+        const resolvedPurchases = purchaseLines.reduce((acc, l) => acc + (l.returnedAll ? 0 : l.receiptReturned ? Math.min(l.actualAmount || l.amount, l.amount) : (l.actualAmount || 0)), 0)
         const pendingPurchases = purchaseLines.filter(l => !l.receiptReturned).reduce((acc, l) => acc + Math.max(0, l.amount - (l.actualAmount || 0)), 0)
         const dtrSpend = (dtrExpenses.total || 0) + (linesTyped ? resolvedPurchases : dtrExpenses.purchases)
         const diff = hasDtr ? recordsTotalForDtr - dtrSpend : null
@@ -2454,7 +2456,7 @@ export default function ExpenseRecords() {
                   <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={i.label}>{i.label}</span>
                   <span className="shrink-0 font-bold tabular-nums" style={{ color: ageColor(i.ageDays) }}>{ageLabel(i.ageDays)}</span>
                   <span className="shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{fmt(i.amount)}</span>
-                  {i.purchase && i.purchase.received > 0 && (
+                  {i.purchase && (
                     <button type="button" onClick={() => void returnPendingAsCash(i.purchase!)}
                       title="The rest was returned as cash — close this purchase and add it as a Cash Return"
                       className="shrink-0 flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-md cursor-pointer"

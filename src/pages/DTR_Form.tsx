@@ -774,6 +774,11 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const [reimbursablePurchases, setReimbursablePurchases] = useState<any[]>([])
   // Purchases closed with cash left over: the member must hand that change back (a Cash Return row below).
   const [cashReturnsDue, setCashReturnsDue] = useState<any[]>([])
+  // Every purchase of this branch (raw), to offer the still-pending ones from earlier days as Cash Returns, and the ones the
+  // member is returning on this DTR: they are closed once the DTR is saved (so cancelling leaves them pending).
+  const [branchPurchases, setBranchPurchases] = useState<any[]>([])
+  const [closeAfterSave, setCloseAfterSave] = useState<{ rowId: string; itemId: string }[]>([])
+  const [showOlderPending, setShowOlderPending] = useState(false)
 
   // Fetch branch details, closing cash, and rosters
   useEffect(() => {
@@ -827,7 +832,9 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
             (p.reimburseDue || 0) > 0.005 && !p.reimburseFound && (!selectedAuditLine || lineOf(p) === selectedAuditLine)))
           setCashReturnsDue((purchasesData || []).filter((p: any) =>
             (p.refundDue || 0) > 0.005 && !p.cashReturnFound && (!selectedAuditLine || lineOf(p) === selectedAuditLine)))
+          setBranchPurchases(purchasesData || [])
         } else {
+          setBranchPurchases([])
           setRefundablePurchases([])
           setReimbursablePurchases([])
           setCashReturnsDue([])
@@ -1610,17 +1617,28 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   }
 
   // Adds a ready-filled Cash Return row ("MATERIAL ALLOWANCE" -> "MATERIAL CHANGE") for change a member owes back.
-  const addCashReturnRow = (p: any) => {
+  const changeDescription = (p: any) => {
     const detail = (p.description && p.description.includes('|') ? p.description.split('|').slice(1).join(' ') : p.description || '').trim()
     const swapped = detail.replace(/\bALLOWANCE\b/i, 'CHANGE')
-    const row = {
-      name: getWorkerName(p),
-      description: (swapped !== detail ? swapped : `${detail} CHANGE`).trim().toUpperCase(),
-      amount: Number(p.refundDue).toFixed(2),
-    }
+    return (swapped !== detail ? swapped : `${detail} CHANGE`).trim().toUpperCase()
+  }
+  const addCashReturnRow = (p: any) => {
+    const row = { name: getWorkerName(p), description: changeDescription(p), amount: Number(p.refundDue).toFixed(2) }
     const blank = cashRet.find(r => !r.name && !r.description && !r.amount)
     if (blank) setCashRet(prev => prev.map(r => r.id === blank.id ? { ...r, ...row } : r))
     else setCashRet(prev => [...prev, { ...mkRet(), ...row }])
+  }
+
+  // A pending purchase from an earlier day whose unreceipted amount is being handed back on this DTR: add the Cash Return row now,
+  // close the purchase when the DTR is saved.
+  const returnPendingPurchase = (p: any) => {
+    const remaining = p.remaining != null ? Number(p.remaining) : Math.max(0, Number(p.amount) - (Number(p.actualAmount) || 0))
+    const row = { name: getWorkerName(p), description: changeDescription(p), amount: remaining.toFixed(2) }
+    const blank = cashRet.find(r => !r.name && !r.description && !r.amount)
+    const rowId = blank ? blank.id : uid()
+    if (blank) setCashRet(prev => prev.map(r => r.id === blank.id ? { ...r, ...row } : r))
+    else setCashRet(prev => [...prev, { ...mkRet(), id: rowId, ...row }])
+    setCloseAfterSave(prev => [...prev, { rowId, itemId: String(p.id) }])
   }
 
   // "Scan receipt" in the section header: reuse the empty row if there is one, otherwise add a row, then open the scanner.
@@ -2328,6 +2346,24 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       const saved = await res.json() as { id?: string; success?: boolean; message?: string }
       invalidateLookupCache(reportDate)
 
+      // Purchases whose unspent amount was returned on this DTR (picked under Cash Returns): close them now that the row is saved.
+      const toClose = closeAfterSave.filter(c => cashRet.some(r => r.id === c.rowId))
+      if (toClose.length > 0) {
+        const closeToken = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        for (const c of toClose) {
+          try {
+            await fetch(`${API_BASE_URL}/v1/reports/purchases/${encodeURIComponent(c.itemId)}/close`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${closeToken}` },
+            })
+          } catch (err) {
+            console.error('[DTR] Failed to close returned purchase:', err)
+          }
+        }
+        setBranchPurchases(prev => prev.filter(p => !toClose.some(c => c.itemId === String(p.id))))
+        setCloseAfterSave([])
+      }
+
       // Auto-push expense rows to Audit Expenses with complete details
       const reportIdForExpenses = saved?.id || reportId
       if (reportIdForExpenses) {
@@ -2925,6 +2961,50 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           {/* Cash Returns */}
           <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
             <SectionHeader label="Cash Returns" total={totalCashReturns} variant="income" />
+            {!isFormDisabled && (() => {
+              // Purchases from earlier days that are still waiting for a receipt: pick the ones whose unspent amount is handed back today.
+              const lineOf = (p: any) => (p.auditLine || 'TAGUIG_SALES')
+              const { year, month, day } = getIsoDateParts(reportDate)
+              const y = new Date(year, month - 1, day - 1)
+              const yesterday = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`
+              const queued = new Set(closeAfterSave.filter(c => cashRet.some(r => r.id === c.rowId)).map(c => c.itemId))
+              const earlier = branchPurchases
+                .filter((p: any) => (!p.type || p.type === 'PURCHASE') && !p.receiptReturned && p.reportDate && p.reportDate < reportDate
+                  && !String(p.description || '').startsWith('ORDER|') && (!selectedAuditLine || lineOf(p) === selectedAuditLine) && !queued.has(String(p.id)))
+                .sort((a: any, b: any) => String(b.reportDate).localeCompare(String(a.reportDate)))
+              if (earlier.length === 0) return null
+              const yesterdays = earlier.filter((p: any) => p.reportDate === yesterday)
+              const shown = showOlderPending ? earlier : yesterdays
+              return (
+                <div className="mx-2 mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-bold uppercase tracking-wider">{showOlderPending ? 'Pending purchases (earlier days)' : "Yesterday's pending purchases"}</p>
+                    {earlier.length > yesterdays.length || showOlderPending ? (
+                      <button type="button" onClick={() => setShowOlderPending(v => !v)} className="font-bold underline">
+                        {showOlderPending ? "Only yesterday's" : `Show all earlier (${earlier.length})`}
+                      </button>
+                    ) : null}
+                  </div>
+                  {shown.length === 0 ? (
+                    <p className="mt-1 opacity-80">Nothing from yesterday is pending.</p>
+                  ) : (
+                    <div className="mt-1.5 flex max-h-56 flex-col gap-1 overflow-y-auto">
+                      {shown.map((p: any) => {
+                        const remaining = p.remaining != null ? Number(p.remaining) : Math.max(0, Number(p.amount) - (Number(p.actualAmount) || 0))
+                        return (
+                          <div key={p.id} className="flex items-center justify-between gap-2">
+                            <span className="min-w-0 truncate">{showOlderPending && <span className="opacity-70">{p.reportDate} · </span>}{getWorkerName(p)} · {(p.description || '').split('|').slice(1).join(' ').trim() || p.description} · <strong>{php(remaining)}</strong></span>
+                            <button type="button" onClick={() => returnPendingPurchase(p)}
+                              title="The member handed this unspent amount back: add it as a Cash Return and close the purchase when this DTR is saved"
+                              className="shrink-0 rounded-md bg-amber-600 px-2 py-1 text-[11px] font-bold text-white hover:bg-amber-700">Return as cash</button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
             {!isFormDisabled && (() => {
               // Hide the ones already entered as a row on this DTR.
               const pending = cashReturnsDue.filter(p => !cashRet.some(r =>

@@ -678,6 +678,23 @@ database indexes on `report_items(type)` / the report date. Measure first (brows
 
 ---
 
+## Task 31 — Close pending purchases from the DTR's Cash Returns (2026-10-02, uncommitted)
+
+**Needs a backend deploy; no schema change.** Both repos compile; nothing manually tested.
+- **Pending receipts list:** the **Return ₱X as cash** button is back on **every** pending purchase (it had only shown once something was receipted).
+  With nothing receipted it means the whole amount was handed back unspent.
+- **DTR → Cash Returns:** a new amber panel **"YESTERDAY'S PENDING PURCHASES"** lists the purchases dated the day before the DTR that are still
+  waiting for a receipt (member · what · amount still unreceipted); **Show all earlier (N)** widens it to every earlier day. **Return as cash**
+  adds the ready-filled Cash Return row (name = member, description "<detail> CHANGE", amount = the remaining) and queues the purchase; **when
+  the DTR is saved** the queued purchases are closed (`POST /purchases/{id}/close`), so cancelling or deleting the row leaves them pending. The
+  existing "Cash returns due" banner (purchases already closed with change owed) is unchanged.
+- **Backend:** `closePurchaseShort` now accepts a purchase with nothing receipted (actualAmount set to 0 = all returned); `getPurchases` adds
+  `returnedAll` for those, and Expense Records counts them as 0 spent and leaves them out of "DTR entries with no record".
+- Only purchases from **earlier** days are offered: closing needs the purchase's own DTR line to still exist, and saving today's DTR re-creates
+  today's lines.
+
+---
+
 ## Deferred (need a decision or a schema change — ask the user before starting)
 
 - **Month close / lock** (recommended right after Task 4 — it is the only control that makes "must match from October" stick). Admin marks a branch-month "Closed" once Balanced; DTRs and records for that month become
