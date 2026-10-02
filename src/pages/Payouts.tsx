@@ -1596,6 +1596,42 @@ export default function Payouts() {
     }
   }
 
+  // Undo a hold — strips the hold tags so the job goes back into its own week's payout. Only a
+  // still-held original can be un-held (a released one has a carry-over copy; use Undo release).
+  const [unholdingKey, setUnholdingKey] = useState<string | null>(null)
+  const submitUnhold = async (row: PayrollRow, month: string) => {
+    if (!branchFilter) return
+    const origKey = rowMatchKey(row)
+    setUnholdingKey(origKey)
+    try {
+      const ok = await mutateSavedMonth(branchFilter, month, rowsIn => rowsIn.map(r => {
+        if (rowMatchKey(r) !== origKey || r.customFields?.['hold:state'] !== 'held') return r
+        const cf = { ...(r.customFields || {}) }
+        for (const k of ['hold:state', 'hold:reason', 'hold:heldAt', 'hold:heldBy', 'hold:heldWeekFrom', 'hold:heldWeekTo']) delete cf[k]
+        return { ...r, customFields: cf }
+      }))
+      if (!ok) {
+        setConfirmDialog({
+          title: 'Undo Hold Failed',
+          message: 'Could not take this ticket off hold. Please try again.',
+          confirmText: 'OK',
+          variant: 'info',
+          onConfirm: () => {},
+        })
+        return
+      }
+      setRows(prev => prev.map(r => {
+        if (rowMatchKey(r) !== origKey || r.customFields?.['hold:state'] !== 'held') return r
+        const cf = { ...(r.customFields || {}) }
+        for (const k of ['hold:state', 'hold:reason', 'hold:heldAt', 'hold:heldBy', 'hold:heldWeekFrom', 'hold:heldWeekTo']) delete cf[k]
+        return { ...r, customFields: cf }
+      }))
+      void refreshHeldTickets()
+    } finally {
+      setUnholdingKey(null)
+    }
+  }
+
   // Same 3-month scan as refreshHeldTickets, for tickets whose withheld 50% is still unreleased.
   const refreshBalances = useCallback(async () => {
     if (!branchFilter) { setBalanceTickets([]); return }
@@ -5968,6 +6004,18 @@ export default function Payouts() {
                               </td>
                               <td className="px-3 py-2.5 text-right font-bold tabular-nums whitespace-nowrap">₱{peso(rowTotal(row))}</td>
                               <td className="px-6 py-2.5 text-right whitespace-nowrap">
+                                {canManagePayroll && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void submitUnhold(row, month)}
+                                    disabled={unholdingKey === rowMatchKey(row)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 mr-2 rounded-lg text-[11px] font-bold border transition-colors hover:border-rose-500/50 hover:text-rose-500 disabled:opacity-50 cursor-pointer"
+                                    style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}
+                                  >
+                                    <Undo2 className="w-3 h-3" />
+                                    {unholdingKey === rowMatchKey(row) ? 'Undoing…' : 'Undo hold'}
+                                  </button>
+                                )}
                                 {canManagePayroll && (
                                   <button
                                     type="button"
