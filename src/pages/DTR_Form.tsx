@@ -3018,7 +3018,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
             })()}
             {!isFormDisabled && (() => {
               // Hide the ones already entered as a row on this DTR.
-              const pending = cashReturnsDue.filter(p => !cashRet.some(r =>
+              // Only purchases from an EARLIER day: change comes back on a later DTR, never on the purchase's own day or before it.
+              const pending = cashReturnsDue.filter(p => p.reportDate && p.reportDate < reportDate).filter(p => !cashRet.some(r =>
                 r.name.trim().toUpperCase() === getWorkerName(p).toUpperCase() && Math.abs(num(r.amount) - Number(p.refundDue)) < 0.01))
               if (pending.length === 0) return null
               return (
@@ -3419,7 +3420,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
             })()}
             {!isFormDisabled && (() => {
               // Hide the ones already added as a row on this DTR.
-              const pending = reimbursablePurchases.filter(p => !expReceipt.some(r =>
+              // Not for purchases dated after this DTR — a reimbursement cannot be paid before the purchase exists.
+              const pending = reimbursablePurchases.filter(p => !p.reportDate || p.reportDate <= reportDate).filter(p => !expReceipt.some(r =>
                 r.name.trim().toUpperCase() === getWorkerName(p).toUpperCase() && /REIMBURS/i.test(r.description) && Math.abs(num(r.amount) - Number(p.reimburseDue)) < 0.01))
               if (pending.length === 0) return null
               return (
@@ -4330,6 +4332,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       <datalist id="purchase-ref-suggestions">
         {branchPurchases
           .filter((p: any) => p.ref && (!p.type || p.type === 'PURCHASE') && !String(p.description || '').startsWith('ORDER|')
+            && p.reportDate && p.reportDate < reportDate
             && (!p.receiptReturned || ((p.refundDue || 0) > 0.005 && !p.cashReturnFound)))
           .map((p: any) => (
             <option key={p.id} value={p.ref}>{`${p.reportDate} · ${String(p.description || '').split('|').filter(Boolean).join(' · ')} · ${Number(p.amount).toFixed(2)}`}</option>

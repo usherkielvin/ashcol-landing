@@ -1129,6 +1129,15 @@ export default function ExpenseRecords() {
   // A part-receipted purchase whose rest was handed back as cash: close it; the Cash Return is then added on the DTR.
   const returnPendingAsCash = async (p: PendingPurchase) => {
     const amt = p.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })
+    // A purchase released today is closed tomorrow at the earliest: its cash return belongs on a later day's DTR.
+    {
+      const n = new Date()
+      const todayIso = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
+      if (p.date >= todayIso) {
+        alert(`This purchase was released today (${p.date}). It can only be closed as returned from tomorrow — the cash return goes on a later day's DTR.`)
+        return
+      }
+    }
     // The same budget is often returned and released again the next day, which leaves two pending purchases that look
     // alike. A return closes the OLDER one; closing the newer one by mistake makes it look like cash is missing.
     const older = agingPurchases.find(o => o.id !== p.id && o.date < p.date
@@ -2571,7 +2580,7 @@ export default function ExpenseRecords() {
                   <button type="button" onClick={() => setOpenBucket(open ? null : 'cashReturnMissing')} className="w-full px-3 py-2 flex items-center justify-between gap-3 text-left text-xs cursor-pointer hover:bg-black/5 dark:hover:bg-white/5">
                     <div className="flex flex-col min-w-0">
                       <span className="font-bold" style={{ color: danger }}>Cash returns not found on the DTR: {missing.length} ({fmt(total)})</span>
-                      <span className="text-[10px]" style={{ color: textMuted }}>The receipt was lower than the cash given, but no matching Cash Return was entered on a DTR dated on or after the purchase. Add it under Cash Returns on the DTR — or, if the cash is still with the member, reopen the purchase.</span>
+                      <span className="text-[10px]" style={{ color: textMuted }}>The receipt was lower than the cash given, but no matching Cash Return was entered on a DTR dated after the purchase (a same-day return does not count). Add it under Cash Returns on the DTR — or, if the cash is still with the member, reopen the purchase.</span>
                     </div>
                     <ChevronDown size={13} style={{ color: textMuted, transform: open ? 'rotate(180deg)' : undefined }} className="shrink-0" />
                   </button>
