@@ -103,6 +103,10 @@ export default function Payouts() {
   const [rows, setRows] = useState<PayrollRow[]>([])
   const [initialLoading, setInitialLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  // The saved sheet is on screen but the first sync with Schedules is still running behind it: the list is locked
+  // (read-only) until that finishes, so nothing can be edited against rows the sync is about to merge into.
+  const [earlyView, setEarlyView] = useState(false)
+  const loadRequest = useRef(0)
   // True when the last pull from Schedules failed — the table is then only showing previously
   // saved rows, which can stop partway through the period.
   const [syncFailed, setSyncFailed] = useState(false)
@@ -1096,9 +1100,13 @@ export default function Payouts() {
 
   // Auto-fetch: loads saved entries AND automatically fetches latest jobs from Schedules
   const loadAndSync = useCallback(async (isManualRefresh = false) => {
+    // Latest call wins: a slow earlier one must not overwrite (or unlock) what a newer one is showing.
+    const requestId = ++loadRequest.current
+    const isLatest = () => requestId === loadRequest.current
     if (!branchFilter) {
       setRows([])
       setInitialLoading(false)
+      setEarlyView(false)
       return
     }
     if (isManualRefresh) setSyncing(true)
@@ -1106,25 +1114,36 @@ export default function Payouts() {
 
     let anySyncFailed = false
     try {
-      let combinedSavedRows: PayrollRow[] = []
       const currentBranchName = branches.find(b => b.id === branchFilter)?.name || ''
+      // If the active week is closed, use saved rows only and skip schedule sync & auto-save
+      const weekIsClosed = Boolean(activeWeek && closures.some(c => c.branchId === branchFilter && c.weekFrom === activeWeek.from && c.weekTo === activeWeek.to))
 
-      // A week that crosses two months needs both: they are loaded together and combined in month order below.
-      const perMonth = await Promise.all(monthsToFetch.map(async (mKey): Promise<PayrollRow[]> => {
+      // Saved entries first. A week that crosses two months needs both: requested together, combined in month order.
+      const savedByMonth = await Promise.all(monthsToFetch.map(async (mKey): Promise<PayrollRow[]> => {
         const params = new URLSearchParams({ branchId: branchFilter, month: mKey })
         const res = await fetch(`${API_BASE_URL}/v1/payroll?${params.toString()}`, {
           headers: { Authorization: `Bearer ${getToken()}` },
         })
-        let savedRows: PayrollRow[] = []
-        if (res.ok) {
-          const list = await res.json()
-          savedRows = (Array.isArray(list) ? list : []).map(mapSavedPayrollEntry)
-        }
+        if (!res.ok) return []
+        const list = await res.json()
+        return (Array.isArray(list) ? list : []).map(mapSavedPayrollEntry)
+      }))
+      if (!isLatest()) return
+      let combinedSavedRows: PayrollRow[] = []
+      for (const monthRows of savedByMonth) combinedSavedRows = deduplicateAndMergePayroll(combinedSavedRows, monthRows)
 
-        // If the active week is closed, use saved rows only and skip schedule sync & auto-save
-        if (activeWeek && closures.some(c => c.branchId === branchFilter && c.weekFrom === activeWeek.from && c.weekTo === activeWeek.to)) {
-          return savedRows
-        }
+      if (!isManualRefresh && !weekIsClosed) {
+        // Show the saved sheet now instead of a loading screen for the whole Schedules sync (the slow part);
+        // the list stays locked until the sync below has merged in.
+        setRows(combinedSavedRows)
+        setEarlyView(true)
+        setSyncing(true)
+        setInitialLoading(false)
+      }
+
+      const perMonth = await Promise.all(monthsToFetch.map(async (mKey, i): Promise<PayrollRow[]> => {
+        const savedRows = savedByMonth[i]
+        if (weekIsClosed) return savedRows
 
         // Automatically fetch latest results from schedules
         const scheduleResult = await fetchAndMapPayroll(branchFilter, mKey, currentBranchName, rates)
@@ -1145,6 +1164,8 @@ export default function Payouts() {
 
         return merged
       }))
+      if (!isLatest()) return
+      combinedSavedRows = []
       for (const monthRows of perMonth) combinedSavedRows = deduplicateAndMergePayroll(combinedSavedRows, monthRows)
 
       // Auto-discover custom fee columns stored in row customFields so they show up
@@ -1171,9 +1192,12 @@ export default function Payouts() {
       anySyncFailed = true
       console.error('Failed to auto-fetch payroll and schedules:', e)
     } finally {
-      setSyncFailed(anySyncFailed)
-      setInitialLoading(false)
-      setSyncing(false)
+      if (isLatest()) {
+        setSyncFailed(anySyncFailed)
+        setInitialLoading(false)
+        setSyncing(false)
+        setEarlyView(false)
+      }
     }
   }, [branchFilter, monthsToFetch, branches, rates, canManagePayroll, savePayrollToBackend, activeWeek, closures])
 
@@ -2869,7 +2893,12 @@ export default function Payouts() {
       {(() => {
         const showRosterLedger = !initialLoading && !!branchFilter && grouped.length > 0 && !selectedInstaller
         return (
-      <div className={`flex flex-col ${showRosterLedger ? 'rounded-2xl shadow-sm' : ''}`} style={{ gap: showRosterLedger ? 0 : '1rem' }}>
+      <div
+        className={`flex flex-col ${showRosterLedger ? 'rounded-2xl shadow-sm' : ''}`}
+        style={{ gap: showRosterLedger ? 0 : '1rem', opacity: earlyView ? 0.7 : 1, transition: 'opacity 150ms' }}
+        inert={earlyView}
+        aria-busy={earlyView}
+      >
       {branchFilter && !selectedInstaller && (
         <div
           className={`${showRosterLedger ? 'rounded-t-2xl border border-b-0' : 'rounded-2xl border shadow-sm'}`}
