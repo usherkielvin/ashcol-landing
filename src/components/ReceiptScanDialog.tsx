@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { NumericFormat } from 'react-number-format'
-import { AlertTriangle, Camera, Check, Loader2, RefreshCw, Upload, X } from 'lucide-react'
+import { AlertTriangle, Camera, Check, ClipboardPaste, Loader2, RefreshCw, Upload, X } from 'lucide-react'
 import { API_BASE_URL } from '../utils/api'
 import { parseSmartDate } from '../utils/smartDate'
 import { uploadReceiptImage } from '../services/supabaseStorage'
@@ -36,6 +36,8 @@ interface Props {
   reportDate: string
   /** Existing row values, so re-opening a row edits it instead of starting over. */
   initial?: Partial<ReceiptDialogResult>
+  /** Initial image file to process on mount (e.g. pasted directly from caller). */
+  initialFile?: File | null
   /** Receipt numbers already on this DTR (excluding the row being edited), to warn about duplicates. */
   otherReceiptNos?: string[]
   nameSuggestions?: string[]
@@ -101,14 +103,14 @@ const inputBase =
   'w-full px-3 py-2 rounded-lg text-sm font-semibold bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-60'
 
 export default function ReceiptScanDialog({
-  mode, branchName, reportDate, initial, otherReceiptNos = [], nameSuggestions = [], dateNote, expectedAmount, allowNoReceipt = false, onClose, onConfirm,
+  mode, branchName, reportDate, initial, initialFile, otherReceiptNos = [], nameSuggestions = [], dateNote, expectedAmount, allowNoReceipt = false, onClose, onConfirm,
 }: Props) {
   const isExpense = mode === 'expense'
   const fileRef = useRef<HTMLInputElement>(null)
   const cameraRef = useRef<HTMLInputElement>(null)
 
   const hasInitial = !!(initial && (initial.receiptImage || initial.amount || initial.description || initial.receiptNo))
-  const [phase, setPhase] = useState<'pick' | 'review'>(hasInitial ? 'review' : 'pick')
+  const [phase, setPhase] = useState<'pick' | 'review'>(hasInitial || initialFile ? 'review' : 'pick')
   const [preview, setPreview] = useState<string>(initial?.receiptImage || '')
   const [imageUrl, setImageUrl] = useState<string>(initial?.receiptImage || '')
   const [uploading, setUploading] = useState(false)
@@ -213,17 +215,50 @@ export default function ReceiptScanDialog({
     }
   }, [branchName, isExpense])
 
-  // Paste a screenshot straight into the pick screen.
   useEffect(() => {
-    if (phase !== 'pick') return
+    if (initialFile) {
+      void processFile(initialFile)
+    }
+  }, [initialFile, processFile])
+
+  const handlePasteClick = async () => {
+    setScanError('')
+    try {
+      if (!navigator.clipboard?.read) {
+        setScanError('Direct clipboard access is not supported by your browser. Please press Ctrl+V to paste.')
+        return
+      }
+      const items = await navigator.clipboard.read()
+      for (const item of items) {
+        const imageType = item.types.find(t => t.startsWith('image/'))
+        if (imageType) {
+          const blob = await item.getType(imageType)
+          const ext = imageType.split('/')[1] || 'png'
+          const file = new File([blob], `receipt-clipboard-${Date.now()}.${ext}`, { type: imageType })
+          void processFile(file)
+          return
+        }
+      }
+      setScanError('No image found in clipboard. Please copy a receipt photo or screenshot first, or press Ctrl+V.')
+    } catch (err: any) {
+      console.warn('[ReceiptScanDialog] Clipboard read failed:', err)
+      setScanError('Could not access clipboard. Please check browser permissions or press Ctrl+V to paste.')
+    }
+  }
+
+  // Paste a screenshot straight into the dialog (both pick and review screens).
+  useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       const item = Array.from(e.clipboardData?.items || []).find(i => i.type.startsWith('image/'))
       const file = item?.getAsFile()
-      if (file) void processFile(file)
+      if (file) {
+        e.preventDefault()
+        void processFile(file)
+      }
     }
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
-  }, [phase, processFile])
+  }, [processFile])
 
   // Alphabetical; a category read off the receipt that isn't on the list is still shown so it isn't silently lost.
   const sortedCategories = useMemo(() => {
@@ -322,6 +357,9 @@ export default function ReceiptScanDialog({
                 <button type="button" onClick={() => cameraRef.current?.click()} className="inline-flex items-center gap-2 px-5 h-10 rounded-xl text-sm font-bold text-white bg-emerald-500 hover:bg-emerald-600 transition-colors cursor-pointer">
                   <Camera className="w-4 h-4" /> Take photo
                 </button>
+                <button type="button" onClick={() => void handlePasteClick()} className="inline-flex items-center gap-2 px-5 h-10 rounded-xl text-sm font-bold border border-emerald-500/50 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors cursor-pointer">
+                  <ClipboardPaste className="w-4 h-4" /> Paste receipt
+                </button>
                 <button type="button" onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-2 px-5 h-10 rounded-xl text-sm font-bold border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer">
                   <Upload className="w-4 h-4" /> Upload image
                 </button>
@@ -360,9 +398,12 @@ export default function ReceiptScanDialog({
                     </div>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-3">
                   <button type="button" onClick={() => fileRef.current?.click()} disabled={scanning || saving} className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline disabled:opacity-50 cursor-pointer">
                     <RefreshCw className="w-3.5 h-3.5" /> {preview ? 'Replace photo & rescan' : 'Add photo & scan'}
+                  </button>
+                  <button type="button" onClick={() => void handlePasteClick()} disabled={scanning || saving} className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline disabled:opacity-50 cursor-pointer">
+                    <ClipboardPaste className="w-3.5 h-3.5" /> Paste photo
                   </button>
                 </div>
               </div>

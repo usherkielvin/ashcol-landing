@@ -163,6 +163,8 @@ export default function ExpenseTable({
                         >
                           <img
                             src={row.receiptImageUri}
+                            loading="lazy"
+                            decoding="async"
                             alt="Receipt"
                             className="w-8 h-8 object-cover rounded border border-slate-300 dark:border-slate-700 shadow-xs hover:scale-105 transition-transform"
                           />
@@ -442,6 +444,8 @@ export default function ExpenseTable({
                         >
                           <img
                             src={row.receiptImageUri}
+                            loading="lazy"
+                            decoding="async"
                             alt="Receipt thumbnail"
                             className="w-7 h-7 object-cover rounded border border-slate-300 dark:border-slate-700 shadow-xs group-hover:scale-110 transition-transform"
                           />

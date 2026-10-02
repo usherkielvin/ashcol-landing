@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import { NumericFormat } from 'react-number-format'
-import { Plus, Trash2, Check, Receipt, Send, Edit, CalendarDays, ChevronDown, History as HistoryIcon, Lock, Camera } from 'lucide-react'
+import { Plus, Trash2, Check, Receipt, Send, Edit, CalendarDays, ChevronDown, History as HistoryIcon, Lock, Camera, ClipboardPaste } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -747,7 +747,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const [payables, setPayables]         = useState<OrderRow[]>([mkPay()])
   // Expenses with Receipts
   const [expReceipt, setExpReceipt]     = useState<ExpenseRow[]>([mkExp()])
-  const [receiptDialog, setReceiptDialog] = useState<{ mode: 'expense' | 'deposit'; rowId: string } | null>(null)
+  const [receiptDialog, setReceiptDialog] = useState<{ mode: 'expense' | 'deposit'; rowId: string; initialFile?: File | null } | null>(null)
   // Cash Advance
   const [cashAdvances, setCashAdvances] = useState<CashAdvanceRow[]>([mkCashAdv()])
   // Bank Deposits (cash physically dropped off at the company bank)
@@ -1650,6 +1650,56 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     if (!blank) setExpReceipt(p => [...p, { ...mkExp(), id: rowId }])
     setReceiptDialog({ mode: 'expense', rowId })
   }
+
+  // Paste a receipt directly for a specific row from clipboard
+  const pasteReceiptForRow = async (rowId: string) => {
+    try {
+      if (navigator.clipboard?.read) {
+        const items = await navigator.clipboard.read()
+        for (const item of items) {
+          const imgType = item.types.find(t => t.startsWith('image/'))
+          if (imgType) {
+            const blob = await item.getType(imgType)
+            const ext = imgType.split('/')[1] || 'png'
+            const file = new File([blob], `receipt-clipboard-${Date.now()}.${ext}`, { type: imgType })
+            setReceiptDialog({ mode: 'expense', rowId, initialFile: file })
+            return
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[DTR] Direct clipboard read error:', err)
+    }
+    // Fallback: open dialog directly so user can use the in-dialog Paste button or Ctrl+V
+    setReceiptDialog({ mode: 'expense', rowId })
+  }
+
+  // "Paste receipt" in the section header: reuse the empty row if there is one, otherwise add a row, then open scanner with pasted image.
+  const pasteNewReceipt = async () => {
+    const blank = expReceipt.find(isBlankExpenseRow)
+    const rowId = blank ? blank.id : uid()
+    if (!blank) setExpReceipt(p => [...p, { ...mkExp(), id: rowId }])
+    await pasteReceiptForRow(rowId)
+  }
+
+  // Global paste handler on DTR Form: when an image is pasted, open receipt scanner
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (isFormDisabled || receiptDialog) return
+      const item = Array.from(e.clipboardData?.items || []).find(i => i.type.startsWith('image/'))
+      if (!item) return
+      const file = item.getAsFile()
+      if (file) {
+        e.preventDefault()
+        const blank = expReceipt.find(isBlankExpenseRow)
+        const rowId = blank ? blank.id : uid()
+        if (!blank) setExpReceipt(p => [...p, { ...mkExp(), id: rowId }])
+        setReceiptDialog({ mode: 'expense', rowId, initialFile: file })
+      }
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [isFormDisabled, receiptDialog, expReceipt])
 
   // Cancelling a scan must not leave the empty row it created behind.
   const closeReceiptDialog = () => {
@@ -3410,10 +3460,17 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
               total={totalExpReceipt}
               variant="expense"
               action={!isFormDisabled ? (
-                <button type="button" onClick={startNewReceipt}
-                  className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700 active:scale-95">
-                  <Camera className="h-3.5 w-3.5" /> Scan receipt
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button type="button" onClick={startNewReceipt}
+                    className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700 active:scale-95 cursor-pointer">
+                    <Camera className="h-3.5 w-3.5" /> Scan receipt
+                  </button>
+                  <button type="button" onClick={() => void pasteNewReceipt()}
+                    className="flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-50 dark:bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 shadow-sm transition hover:bg-emerald-100 dark:hover:bg-emerald-500/20 active:scale-95 cursor-pointer"
+                    title="Paste receipt image from clipboard">
+                    <ClipboardPaste className="h-3.5 w-3.5" /> Paste receipt
+                  </button>
+                </div>
               ) : undefined}
             />
             {(() => {
@@ -3459,12 +3516,20 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
             })()}
             {!isFormDisabled && expReceipt.every(isBlankExpenseRow) && (
               <div className="p-2 pb-0">
-                <button type="button" onClick={startNewReceipt}
-                  className="flex w-full flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-emerald-400/60 bg-emerald-50/50 px-4 py-5 text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-500/40 dark:bg-emerald-500/5 dark:text-emerald-300 dark:hover:bg-emerald-500/10">
-                  <Camera className="h-6 w-6" />
-                  <span className="text-sm font-extrabold">Scan a receipt</span>
-                  <span className="text-[11px] opacity-80">Take a photo or upload one — the details are filled in for you</span>
-                </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button type="button" onClick={startNewReceipt}
+                    className="flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-emerald-400/60 bg-emerald-50/50 px-4 py-5 text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-500/40 dark:bg-emerald-500/5 dark:text-emerald-300 dark:hover:bg-emerald-500/10 cursor-pointer">
+                    <Camera className="h-6 w-6" />
+                    <span className="text-sm font-extrabold">Scan a receipt</span>
+                    <span className="text-[11px] opacity-80">Take a photo or upload one — the details are filled in for you</span>
+                  </button>
+                  <button type="button" onClick={() => void pasteNewReceipt()}
+                    className="flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-emerald-400/60 bg-emerald-50/50 px-4 py-5 text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-500/40 dark:bg-emerald-500/5 dark:text-emerald-300 dark:hover:bg-emerald-500/10 cursor-pointer">
+                    <ClipboardPaste className="h-6 w-6" />
+                    <span className="text-sm font-extrabold">Paste a receipt</span>
+                    <span className="text-[11px] opacity-80">Paste screenshot or copied image from clipboard</span>
+                  </button>
+                </div>
               </div>
             )}
             <div className="p-2">
@@ -3474,7 +3539,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                     <th className={tableTh + ' w-28'}>Name</th>
                     <th className={tableTh}>Description</th>
                     <th className={tableTh + ' text-right w-28'}>Amount</th>
-                    <th className={tableTh + ' text-center w-32'}>Receipt</th>
+                    <th className={tableTh + ' text-center w-44'}>Receipt</th>
                     {canSubmit && !reviewMode && <th className={tableTh + ' w-9'}></th>}
                   </tr>
                 </thead>
@@ -3540,11 +3605,18 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                               No receipt{isFormDisabled ? '' : ' · Edit'}
                             </button>
                           ) : !isFormDisabled ? (
-                            <button type="button" onClick={() => setReceiptDialog({ mode: 'expense', rowId: row.id })}
-                              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-white shadow-sm transition active:scale-95 ${!isBlankExpenseRow(row) && reportDate >= DOCUMENTATION_REQUIRED_FROM ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
-                              title="Scan or upload the receipt photo for this expense">
-                              <Camera className="h-3.5 w-3.5" /> Add receipt
-                            </button>
+                            <div className="flex items-center justify-center gap-1">
+                              <button type="button" onClick={() => setReceiptDialog({ mode: 'expense', rowId: row.id })}
+                                className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-white shadow-sm transition active:scale-95 cursor-pointer ${!isBlankExpenseRow(row) && reportDate >= DOCUMENTATION_REQUIRED_FROM ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+                                title="Scan or upload the receipt photo for this expense">
+                                <Camera className="h-3.5 w-3.5" /> Add receipt
+                              </button>
+                              <button type="button" onClick={() => void pasteReceiptForRow(row.id)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-[11px] font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 shadow-sm transition active:scale-95 cursor-pointer"
+                                title="Paste receipt image from clipboard">
+                                <ClipboardPaste className="h-3.5 w-3.5" /> Paste
+                              </button>
+                            </div>
                           ) : !isBlankExpenseRow(row) ? (
                             <span className="text-[10px] font-bold uppercase text-amber-600 dark:text-amber-400">No receipt</span>
                           ) : (
@@ -4329,6 +4401,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
             reportDate={reportDate}
             nameSuggestions={techSuggestions}
             allowNoReceipt={isExp}
+            initialFile={receiptDialog.initialFile}
             dateNote={isExp ? `Expense Records date this expense with the DTR (${reportDate}), whatever the receipt date.` : undefined}
             otherReceiptNos={otherNos}
             initial={isExp && expRow ? {

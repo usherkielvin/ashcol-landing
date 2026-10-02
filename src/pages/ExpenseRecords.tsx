@@ -34,9 +34,11 @@ import { formatTodayReceiptDate } from "../utils/auditExpenseDates";
 import {
   createExpenseId,
   deleteAuditExpense,
-  loadAuditExpenses,
+  findExpenseByReceiptNo,
   loadAuditExpensesStrict,
+  readCachedBranchExpenses,
   upsertAuditExpense,
+  writeCachedBranchExpenses,
 } from "../utils/auditExpenseStorage";
 import {
   loadAuditExpenseCategories,
@@ -74,6 +76,19 @@ import {
   returnIsDue,
 } from "./ExpenseRecords/expenseUtils";
 
+type DtrSummary = {
+  loading: boolean;
+  total: number | null;
+  payroll: number;
+  purchases: number;
+  deposits: number;
+  matched: boolean;
+};
+
+// Kept outside the component so they survive leaving the page: coming back shows the last DTR totals and purchases
+// at once (each is still refreshed in the background), instead of waiting on the loading screen again.
+const dtrSummaryMemory = new Map<string, DtrSummary>();
+const purchasesMemory = new Map<string, Record<string, unknown>[]>();
 
 export default function ExpenseRecords() {
   const { branchSlug } = useParams<{ branchSlug?: string }>();
@@ -650,52 +665,97 @@ export default function ExpenseRecords() {
 
       setBranches(finalList);
       setAllBranches(newList);
+      return finalList.length;
     } catch (e) {
       console.error(e);
+      return -1;
     }
   }, [isBranchScopedUser, user]);
 
+  // Only the selected branch's records are loaded (the server narrows them down), and the last copy of each branch is
+  // kept so the page opens at once on a slow link and refreshes behind it. The key carries the user so one account's
+  // cached records are never shown to another.
+  const expenseCacheKey = branchId
+    ? `${(user?.email || "user").toLowerCase()}|${branchId}`
+    : "";
+  // Latest request wins: a slow answer for a branch the user already left must not overwrite the current one.
+  const expensesRequest = useRef(0);
+
   const reload = useCallback(async () => {
+    if (!branchId) return;
+    const requestId = ++expensesRequest.current;
     try {
-      const data = await loadAuditExpenses();
+      const data = await loadAuditExpensesStrict({ branchId, branchName });
+      if (requestId !== expensesRequest.current) return;
       setExpenses(data);
+      setLoadError(false);
+      writeCachedBranchExpenses(expenseCacheKey, data);
     } catch (err) {
+      // Keep what is on screen: a failed refresh must not blank the list.
       console.error("[ExpenseRecords] Reload error:", err);
     }
-  }, []);
+  }, [branchId, branchName, expenseCacheKey]);
 
+  // Branch list first — it decides which branch's records to ask for. It may not keep the loading screen up forever.
   useEffect(() => {
+    if (!canAccess) return;
     let active = true;
-
-    const preloadTabDetails = async () => {
-      try {
-        // Neither request may keep the loading screen up forever if the server is not answering.
-        const promises: Promise<unknown>[] = [loadAuditExpensesStrict()];
-        if (canAccess) {
-          promises.push(
-            Promise.race([
-              loadBranches(),
-              new Promise((_, reject) => setTimeout(() => reject(new Error("branches timed out")), 25000)),
-            ]),
-          );
+    Promise.race([
+      loadBranches(),
+      new Promise<number>((_, reject) =>
+        setTimeout(() => reject(new Error("branches timed out")), 25000),
+      ),
+    ])
+      .then((count) => {
+        if (!active) return;
+        if (count < 0) setLoadError(true);
+        // No branch to show means no records request will follow, so nothing else would end the loading screen.
+        if (count <= 0) setInitialLoading(false);
+      })
+      .catch((err) => {
+        console.error("[ExpenseRecords] Branch load error:", err);
+        if (active) {
+          setLoadError(true);
+          setInitialLoading(false);
         }
-        const [data] = await Promise.all(promises);
-        if (active && data) {
-          setExpenses(data as AuditExpense[]);
-        }
-      } catch (err) {
-        console.error("[ExpenseRecords] Preload error:", err);
-        if (active) setLoadError(true);
-      } finally {
-        if (active) setInitialLoading(false);
-      }
-    };
-
-    preloadTabDetails();
+      });
     return () => {
       active = false;
     };
   }, [canAccess, loadBranches]);
+
+  // Records of the selected branch: show the kept copy immediately, then replace it with the server's.
+  useEffect(() => {
+    if (!branchId) return;
+    let active = true;
+    const requestId = ++expensesRequest.current;
+    const cached = readCachedBranchExpenses(expenseCacheKey);
+    if (cached) {
+      setExpenses(cached);
+      setInitialLoading(false);
+    } else {
+      // Nothing kept for this branch: wait on the loading screen rather than show another branch's totals as zero.
+      setExpenses([]);
+      setInitialLoading(true);
+    }
+    loadAuditExpensesStrict({ branchId, branchName })
+      .then((data) => {
+        if (!active || requestId !== expensesRequest.current) return;
+        setExpenses(data);
+        setLoadError(false);
+        writeCachedBranchExpenses(expenseCacheKey, data);
+      })
+      .catch((err) => {
+        console.error("[ExpenseRecords] Preload error:", err);
+        if (active) setLoadError(true);
+      })
+      .finally(() => {
+        if (active) setInitialLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [branchId, branchName, expenseCacheKey]);
 
   // When branches load, initialize active branchId
   useEffect(() => {
@@ -1018,14 +1078,6 @@ export default function ExpenseRecords() {
     };
   }, [filterMonth, branchExpenses]);
 
-  type DtrSummary = {
-    loading: boolean;
-    total: number | null;
-    payroll: number;
-    purchases: number;
-    deposits: number;
-    matched: boolean;
-  };
   const [dtrExpenses, setDtrExpenses] = useState<DtrSummary>({
     loading: false,
     total: null,
@@ -1035,7 +1087,7 @@ export default function ExpenseRecords() {
     matched: false,
   });
   // Results are kept per branch + month: going back to a month shows it instantly and refreshes quietly behind it.
-  const dtrExpensesCache = useRef(new Map<string, DtrSummary>());
+  const dtrExpensesCache = useRef(dtrSummaryMemory);
   const dtrFrom = dtrPeriod?.from ?? "";
   const dtrTo = dtrPeriod?.to ?? "";
   useEffect(() => {
@@ -1167,7 +1219,7 @@ export default function ExpenseRecords() {
   // One feed of this branch's purchases (every date), loaded once per branch and kept in a cache so switching months or
   // coming back is instant. The month's DTR lines and the all-dates pending list are both derived from it, so they cannot
   // disagree and the page makes one request instead of two.
-  const purchasesCache = useRef(new Map<string, Record<string, unknown>[]>());
+  const purchasesCache = useRef(purchasesMemory);
   const [purchasesFeed, setPurchasesFeed] = useState<{
     loading: boolean;
     rows: Record<string, unknown>[];
@@ -1286,6 +1338,32 @@ export default function ExpenseRecords() {
   const [receiptTarget, setReceiptTarget] = useState<PendingPurchase | null>(
     null,
   );
+  const [receiptTargetFile, setReceiptTargetFile] = useState<File | null>(null);
+
+  const handlePasteForPurchase = async (purchase: PendingPurchase) => {
+    try {
+      if (navigator.clipboard?.read) {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          const imgType = item.types.find((t) => t.startsWith("image/"));
+          if (imgType) {
+            const blob = await item.getType(imgType);
+            const ext = imgType.split("/")[1] || "png";
+            const file = new File([blob], `receipt-clipboard-${Date.now()}.${ext}`, {
+              type: imgType,
+            });
+            setReceiptTargetFile(file);
+            setReceiptTarget(purchase);
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[Expense Records] Clipboard read failed:", err);
+    }
+    setReceiptTargetFile(null);
+    setReceiptTarget(purchase);
+  };
   const agingPurchases = useMemo<PendingPurchase[]>(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -2264,11 +2342,13 @@ export default function ExpenseRecords() {
       ? ""
       : (form.receiptNo || "").trim().toUpperCase();
     if (normalizedReceiptNo) {
-      const duplicate = expenses.find(
-        (e) =>
-          (e.receiptNo || "").trim().toUpperCase() === normalizedReceiptNo &&
-          e.id !== (editing?.id || ""),
-      );
+      // The page holds only the branch on screen, so the server is asked about every other branch.
+      const duplicate =
+        expenses.find(
+          (e) =>
+            (e.receiptNo || "").trim().toUpperCase() === normalizedReceiptNo &&
+            e.id !== (editing?.id || ""),
+        ) || (await findExpenseByReceiptNo(normalizedReceiptNo, editing?.id));
       if (duplicate) {
         setDuplicateModal({
           isOpen: true,
@@ -3927,11 +4007,18 @@ export default function ExpenseRecords() {
           reportDate={receiptTarget.date}
           expectedAmount={receiptTarget.amount}
           initial={{ incurredBy: receiptTarget.worker, sourceOfFunds: "CASH" }}
+          initialFile={receiptTargetFile}
           otherReceiptNos={branchExpenses
             .map((e) => e.receiptNo)
             .filter(Boolean)}
-          onClose={() => setReceiptTarget(null)}
-          onConfirm={(r) => resolvePendingPurchase(receiptTarget, r)}
+          onClose={() => {
+            setReceiptTarget(null);
+            setReceiptTargetFile(null);
+          }}
+          onConfirm={(r) => {
+            setReceiptTargetFile(null);
+            return resolvePendingPurchase(receiptTarget, r);
+          }}
         />
       )}
 
@@ -4593,18 +4680,36 @@ export default function ExpenseRecords() {
                         </button>
                       )}
                       {i.purchase ? (
-                        <button
-                          type="button"
-                          onClick={() => setReceiptTarget(i.purchase!)}
-                          className="shrink-0 flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-md cursor-pointer"
-                          style={{
-                            color: accent,
-                            border: `1px solid ${accent}55`,
-                            backgroundColor: `${accent}12`,
-                          }}
-                        >
-                          <Upload size={13} /> Add receipt
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReceiptTargetFile(null);
+                              setReceiptTarget(i.purchase!);
+                            }}
+                            className="shrink-0 flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-md cursor-pointer"
+                            style={{
+                              color: accent,
+                              border: `1px solid ${accent}55`,
+                              backgroundColor: `${accent}12`,
+                            }}
+                          >
+                            <Upload size={13} /> Add receipt
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handlePasteForPurchase(i.purchase!)}
+                            className="shrink-0 flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-md cursor-pointer"
+                            style={{
+                              color: accent,
+                              border: `1px solid ${accent}55`,
+                              backgroundColor: `${accent}12`,
+                            }}
+                            title="Paste receipt image from clipboard"
+                          >
+                            <ClipboardPaste size={13} /> Paste
+                          </button>
+                        </div>
                       ) : (
                         <button
                           type="button"
@@ -4883,42 +4988,81 @@ export default function ExpenseRecords() {
                               >
                                 return {fmt(l.refundDue || 0)}
                               </span>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setReceiptTarget({
-                                    id: l.id,
-                                    date: l.reportDate || "",
-                                    label: l.description
-                                      .split("|")
-                                      .filter(Boolean)
-                                      .join(" · "),
-                                    worker: l.description.includes("|")
-                                      ? l.description.split("|")[0].trim()
-                                      : "",
-                                    detail: l.description.includes("|")
-                                      ? l.description
-                                          .split("|")
-                                          .slice(1)
-                                          .join(" ")
-                                          .trim()
-                                      : l.description,
-                                    amount: l.refundDue || 0,
-                                    given: l.amount,
-                                    received: l.actualAmount || 0,
-                                    ageDays: 0,
-                                  })
-                                }
-                                title="Add another receipt for the remaining amount (e.g. the toll gate receipt)"
-                                className="shrink-0 flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-md cursor-pointer"
-                                style={{
-                                  color: accent,
-                                  border: `1px solid ${accent}55`,
-                                  backgroundColor: `${accent}12`,
-                                }}
-                              >
-                                <Upload size={13} /> Add another receipt
-                              </button>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setReceiptTargetFile(null);
+                                    setReceiptTarget({
+                                      id: l.id,
+                                      date: l.reportDate || "",
+                                      label: l.description
+                                        .split("|")
+                                        .filter(Boolean)
+                                        .join(" · "),
+                                      worker: l.description.includes("|")
+                                        ? l.description.split("|")[0].trim()
+                                        : "",
+                                      detail: l.description.includes("|")
+                                        ? l.description
+                                            .split("|")
+                                            .slice(1)
+                                            .join(" ")
+                                            .trim()
+                                        : l.description,
+                                      amount: l.refundDue || 0,
+                                      given: l.amount,
+                                      received: l.actualAmount || 0,
+                                      ageDays: 0,
+                                    });
+                                  }}
+                                  title="Add another receipt for the remaining amount (e.g. the toll gate receipt)"
+                                  className="shrink-0 flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-md cursor-pointer"
+                                  style={{
+                                    color: accent,
+                                    border: `1px solid ${accent}55`,
+                                    backgroundColor: `${accent}12`,
+                                  }}
+                                >
+                                  <Upload size={13} /> Add another receipt
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void handlePasteForPurchase({
+                                      id: l.id,
+                                      date: l.reportDate || "",
+                                      label: l.description
+                                        .split("|")
+                                        .filter(Boolean)
+                                        .join(" · "),
+                                      worker: l.description.includes("|")
+                                        ? l.description.split("|")[0].trim()
+                                        : "",
+                                      detail: l.description.includes("|")
+                                        ? l.description
+                                            .split("|")
+                                            .slice(1)
+                                            .join(" ")
+                                            .trim()
+                                        : l.description,
+                                      amount: l.refundDue || 0,
+                                      given: l.amount,
+                                      received: l.actualAmount || 0,
+                                      ageDays: 0,
+                                    })
+                                  }
+                                  title="Paste receipt image from clipboard"
+                                  className="shrink-0 flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-md cursor-pointer"
+                                  style={{
+                                    color: accent,
+                                    border: `1px solid ${accent}55`,
+                                    backgroundColor: `${accent}12`,
+                                  }}
+                                >
+                                  <ClipboardPaste size={13} /> Paste
+                                </button>
+                              </div>
                               <button
                                 type="button"
                                 onClick={() =>
