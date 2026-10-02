@@ -746,7 +746,7 @@ export default function ExpenseRecords() {
   // DTR expense + purchase lines for the period, used to explain Records vs DTR line by line.
   // Bumped after a purchase receipt is added so the DTR lines and the pending list reload.
   const [dataVersion, setDataVersion] = useState(0)
-  type DtrLine = { id: string; type?: string; description: string; amount: number; actualAmount?: number; receiptReturned?: boolean; resolvedExpenseId?: string; reportDate?: string; refundDue?: number; cashReturnFound?: boolean; cashReturnDate?: string; returnedAll?: boolean; reimburseDue?: number; reimburseFound?: boolean }
+  type DtrLine = { id: string; type?: string; description: string; amount: number; actualAmount?: number; receiptReturned?: boolean; resolvedExpenseId?: string; reportDate?: string; refundDue?: number; cashReturnFound?: boolean; cashReturnDate?: string; returnedAll?: boolean; reimburseDue?: number; reimburseFound?: boolean; restatedOf?: string }
   // One feed of this branch's purchases (every date), loaded once per branch and kept in a cache so switching months or
   // coming back is instant. The month's DTR lines and the all-dates pending list are both derived from it, so they cannot
   // disagree and the page makes one request instead of two.
@@ -984,8 +984,8 @@ export default function ExpenseRecords() {
       ['Purchases awaiting receipt - this period, 8+ days old (count)', agingInPeriod.filter(p => p.ageDays >= 8).length],
       ['Reimbursements not found on the DTR (count)', dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.reimburseDue || 0) > 0.005 && !l.reimburseFound).length],
       ['Reimbursements not found on the DTR (amount)', r2(dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.reimburseDue || 0) > 0.005 && !l.reimburseFound).reduce((acc, l) => acc + (l.reimburseDue || 0), 0))],
-      ['Cash returns not found on the DTR (count)', dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound).length],
-      ['Cash returns not found on the DTR (amount)', r2(dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound).reduce((acc, l) => acc + (l.refundDue || 0), 0))],
+      ['Cash returns not found on the DTR (count)', dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound && !l.restatedOf).length],
+      ['Cash returns not found on the DTR (amount)', r2(dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound && !l.restatedOf).reduce((acc, l) => acc + (l.refundDue || 0), 0))],
     ]
 
     const bucketMeta: { id: keyof typeof reconciliation.buckets; title: string; side: string }[] = [
@@ -2539,7 +2539,7 @@ export default function ExpenseRecords() {
 
             {/* Resolved purchases whose receipt was lower than the cash given: the difference must be a DTR Cash Return */}
             {(() => {
-              const missing = dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound)
+              const missing = dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound && !l.restatedOf)
               if (missing.length === 0) return null
               const total = missing.reduce((acc, l) => acc + (l.refundDue || 0), 0)
               const open = openBucket === 'cashReturnMissing'
@@ -2577,6 +2577,37 @@ export default function ExpenseRecords() {
                             style={{ color: accent, border: `1px solid ${accent}55`, backgroundColor: `${accent}12` }}>
                             <Upload size={13} /> Add another receipt
                           </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
+            {/* Same budget entered under Purchases twice: the change was already returned against the first entry */}
+            {(() => {
+              const restated = dtrLines.rows.filter(l => l.type === 'PURCHASE' && (l.refundDue || 0) > 0.005 && !l.cashReturnFound && !!l.restatedOf)
+              if (restated.length === 0) return null
+              const total = restated.reduce((acc, l) => acc + (l.refundDue || 0), 0)
+              const open = openBucket === 'restatedPurchase'
+              return (
+                <div className="mb-3 rounded-lg overflow-hidden" style={{ border: '1px solid #d9770655' }}>
+                  <button type="button" onClick={() => setOpenBucket(open ? null : 'restatedPurchase')} className="w-full px-3 py-2 flex items-center justify-between gap-3 text-left text-xs cursor-pointer hover:bg-black/5 dark:hover:bg-white/5">
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-bold" style={{ color: '#b45309' }}>Same purchase entered twice: {restated.length} ({fmt(total)})</span>
+                      <span className="text-[10px]" style={{ color: textMuted }}>The change was already returned against the first entry, so no second Cash Return is needed. Remove these rows from Purchases on the DTR shown — left in, they take the amount out of cash a second time.</span>
+                    </div>
+                    <ChevronDown size={13} style={{ color: textMuted, transform: open ? 'rotate(180deg)' : undefined }} className="shrink-0" />
+                  </button>
+                  {open && (
+                    <div className="px-3 pb-2 max-h-56 overflow-y-auto">
+                      {restated.map(l => (
+                        <div key={l.id} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
+                          <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{l.reportDate}</span>
+                          <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={l.description}>{l.description.split('|').filter(Boolean).join(' · ')}</span>
+                          <span className="shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{fmt(l.refundDue || 0)}</span>
+                          <span className="shrink-0 tabular-nums" style={{ color: '#b45309' }}>same as the purchase of {l.restatedOf}</span>
                         </div>
                       ))}
                     </div>
