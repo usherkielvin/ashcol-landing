@@ -32,14 +32,14 @@ import type { AuditExpense, AuditExpenseCategory } from '../types/auditExpense'
 
 // DTR-specific row types
 interface CashTxRow    { id: string; ticketNumber?: string; customer: string; installer: string; amount: string }
-interface CashRetRow   { id: string; name: string; description: string; amount: string }
+interface CashRetRow   { id: string; name: string; description: string; amount: string; /** reference of the purchase this cash return closes (PR-…) */ refNo?: string }
 interface OnlineTxRow  { id: string; ticketNumber?: string; installer: string; customer: string; bank: string; amount: string }
 interface CheckRow     { id: string; ticketNumber?: string; installer: string; customer: string; bank: string; amount: string }
 interface PartsSaleRow { id: string; customer: string; description: string; amount: string; paymentMethod: 'CASH' | 'ONLINE' }
 interface ForCollRow   { id: string; ticketNumber?: string; installer: string; customer: string; amount: string; collectionResolved?: boolean }
 interface RebateRow    { id: string; ticketNumber: string; customer: string; company: string; raNumber: string; hp: string; amount: string }
 interface OrderRow     { id: string; customer: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string }
-interface ExpenseRow   { id: string; name: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string; receiptImage?: string; company?: string; expenseCategory?: string; sourceOfFunds?: string }
+interface ExpenseRow   { id: string; name: string; description: string; amount: string; receiptReturned?: boolean; actualAmount?: string; receiptNo?: string; receiptDate?: string; resolvedExpenseId?: string; receiptStatus?: string; receiptImage?: string; company?: string; expenseCategory?: string; sourceOfFunds?: string; /** purchases: reference assigned on first save (PR-…) */ refNo?: string }
 interface IncentiveRow { id: string; customer: string; company: string; hp: string; promodiser: string; amount: string; collectionResolved?: boolean }
 interface CashAdvanceRow { id: string; memberName: string; details: string; amount: string; resolvedExpenseId?: string }
 interface DepositRow   { id: string; description: string; referenceNo: string; amount: string; receiptImage?: string; bank?: string; resolvedExpenseId?: string }
@@ -1202,7 +1202,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                 id: uid(),
                 name: formatDisplayUserLabel(retName),
                 description: retDesc.join('|'),
-                amount: amt
+                amount: amt,
+                refNo: item.ticketNumber || ''
               })
             } else {
               cashSales.push({
@@ -1293,6 +1294,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
               const parts = desc.split('|')
               expPurchList.push({
                 id: uid(),
+                refNo: item.ticketNumber || '',
                 name: parts[0] ? formatDisplayUserLabel(parts[0]) : '',
                 description: parts[1] || '',
                 amount: amt,
@@ -1623,7 +1625,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     return (swapped !== detail ? swapped : `${detail} CHANGE`).trim().toUpperCase()
   }
   const addCashReturnRow = (p: any) => {
-    const row = { name: getWorkerName(p), description: changeDescription(p), amount: Number(p.refundDue).toFixed(2) }
+    const row = { name: getWorkerName(p), description: changeDescription(p), amount: Number(p.refundDue).toFixed(2), refNo: String(p.ref || '') }
     const blank = cashRet.find(r => !r.name && !r.description && !r.amount)
     if (blank) setCashRet(prev => prev.map(r => r.id === blank.id ? { ...r, ...row } : r))
     else setCashRet(prev => [...prev, { ...mkRet(), ...row }])
@@ -1633,7 +1635,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   // close the purchase when the DTR is saved.
   const returnPendingPurchase = (p: any) => {
     const remaining = p.remaining != null ? Number(p.remaining) : Math.max(0, Number(p.amount) - (Number(p.actualAmount) || 0))
-    const row = { name: getWorkerName(p), description: changeDescription(p), amount: remaining.toFixed(2) }
+    const row = { name: getWorkerName(p), description: changeDescription(p), amount: remaining.toFixed(2), refNo: String(p.ref || '') }
     const blank = cashRet.find(r => !r.name && !r.description && !r.amount)
     const rowId = blank ? blank.id : uid()
     if (blank) setCashRet(prev => prev.map(r => r.id === blank.id ? { ...r, ...row } : r))
@@ -2190,7 +2192,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           type: 'CASH_SALE', description: r.installer, customer: r.customer, amount: parseFloat(r.amount) || 0
         })),
         ...cashRet.filter(r => r.name || r.description || r.amount).map(r => ({
-          type: 'CASH_SALE', description: `RETURN|${r.name}|${(r.description || '').replace(/\|/g, '/')}`, amount: parseFloat(r.amount) || 0
+          type: 'CASH_SALE', description: `RETURN|${r.name}|${(r.description || '').replace(/\|/g, '/')}`, amount: parseFloat(r.amount) || 0,
+          ticketNumber: (r.refNo || '').trim().toUpperCase() || null
         })),
         ...onlineTx.filter(r => r.installer || r.amount).map(r => ({
           type: 'ONLINE_SALE', description: r.installer, customer: r.customer, bank: r.bank, amount: parseFloat(r.amount) || 0
@@ -2232,6 +2235,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         })),
         ...expPurch.filter(r => r.name || r.amount).map(r => ({
           type: 'PURCHASE',
+          ticketNumber: r.refNo || null,
           description: `${r.name}|${r.description}`,
           amount: parseFloat(r.amount) || 0,
           receiptReturned: r.receiptReturned || false,
@@ -2350,18 +2354,25 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       const toClose = closeAfterSave.filter(c => cashRet.some(r => r.id === c.rowId))
       if (toClose.length > 0) {
         const closeToken = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        let closeFailures = 0
         for (const c of toClose) {
           try {
-            await fetch(`${API_BASE_URL}/v1/reports/purchases/${encodeURIComponent(c.itemId)}/close`, {
+            const closeRes = await fetch(`${API_BASE_URL}/v1/reports/purchases/${encodeURIComponent(c.itemId)}/close`, {
               method: 'POST',
               headers: { Authorization: `Bearer ${closeToken}` },
             })
+            if (!closeRes.ok) closeFailures++
           } catch (err) {
             console.error('[DTR] Failed to close returned purchase:', err)
+            closeFailures++
           }
         }
         setBranchPurchases(prev => prev.filter(p => !toClose.some(c => c.itemId === String(p.id))))
         setCloseAfterSave([])
+        if (closeFailures > 0) {
+          alert(`The DTR was saved, but ${closeFailures} returned purchase${closeFailures === 1 ? '' : 's'} could not be closed (it may have been changed on its own DTR). `
+            + `Open Expense Records → Pending receipts and close the EARLIER-dated purchase there.`)
+        }
       }
 
       // Auto-push expense rows to Audit Expenses with complete details
@@ -3031,6 +3042,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                   <tr>
                     <th className={tableTh}>Name</th>
                     <th className={tableTh}>Description</th>
+                    <th className={tableTh + ' w-28'} title="Reference of the purchase this cash return closes">Purchase ref</th>
                     <th className={tableTh + ' text-right w-32'}>Amount</th>
                     {canSubmit && !reviewMode && <th className={tableTh + ' w-10'}></th>}
                   </tr>
@@ -3064,6 +3076,12 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                         <input type="text" placeholder="Description" value={row.description || ''}
                           onChange={e => setCashRet(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
                           className={flushInput} disabled={isFormDisabled} />
+                      </td>
+                      <td className={tableTd}>
+                        <input type="text" placeholder="PR-…" value={row.refNo || ''} list="purchase-ref-suggestions"
+                          title="Pick the purchase this cash return closes, so it is matched to that purchase and no other"
+                          onChange={e => setCashRet(p => p.map(r => r.id === row.id ? { ...r, refNo: e.target.value.toUpperCase() } : r))}
+                          className={flushInput + ' font-mono uppercase'} disabled={isFormDisabled} />
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
@@ -3621,6 +3639,9 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                         <input type="text" placeholder="Description" value={row.description}
                           onChange={e => setExpPurch(p => p.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
                           className={flushInput} disabled={isFormDisabled} />
+                        {row.refNo && (
+                          <div className="px-2.5 text-[10px] font-mono font-bold text-slate-400 dark:text-slate-500" title="Quote this reference on the Cash Return when unspent cash comes back">Ref {row.refNo}</div>
+                        )}
                       </td>
                       <td className={tableTd}>
                         <NumericFormat thousandSeparator="," decimalScale={2} fixedDecimalScale={true} allowNegative={false} placeholder="0.00" value={row.amount}
@@ -4305,6 +4326,15 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           />
         )
       })()}
+
+      <datalist id="purchase-ref-suggestions">
+        {branchPurchases
+          .filter((p: any) => p.ref && (!p.type || p.type === 'PURCHASE') && !String(p.description || '').startsWith('ORDER|')
+            && (!p.receiptReturned || ((p.refundDue || 0) > 0.005 && !p.cashReturnFound)))
+          .map((p: any) => (
+            <option key={p.id} value={p.ref}>{`${p.reportDate} · ${String(p.description || '').split('|').filter(Boolean).join(' · ')} · ${Number(p.amount).toFixed(2)}`}</option>
+          ))}
+      </datalist>
 
       <datalist id="cash-return-suggestions">
         {techSuggestions.map(name => (

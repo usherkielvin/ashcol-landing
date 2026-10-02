@@ -746,7 +746,7 @@ export default function ExpenseRecords() {
   // DTR expense + purchase lines for the period, used to explain Records vs DTR line by line.
   // Bumped after a purchase receipt is added so the DTR lines and the pending list reload.
   const [dataVersion, setDataVersion] = useState(0)
-  type DtrLine = { id: string; type?: string; description: string; amount: number; actualAmount?: number; receiptReturned?: boolean; resolvedExpenseId?: string; reportDate?: string; refundDue?: number; cashReturnFound?: boolean; cashReturnDate?: string; returnedAll?: boolean; reimburseDue?: number; reimburseFound?: boolean }
+  type DtrLine = { id: string; type?: string; description: string; amount: number; actualAmount?: number; receiptReturned?: boolean; resolvedExpenseId?: string; reportDate?: string; refundDue?: number; cashReturnFound?: boolean; cashReturnDate?: string; returnedAll?: boolean; reimburseDue?: number; reimburseFound?: boolean; ref?: string }
   // One feed of this branch's purchases (every date), loaded once per branch and kept in a cache so switching months or
   // coming back is instant. The month's DTR lines and the all-dates pending list are both derived from it, so they cannot
   // disagree and the page makes one request instead of two.
@@ -818,7 +818,7 @@ export default function ExpenseRecords() {
         return {
           id: String(r.id),
           date: String(r.reportDate),
-          label: desc.split('|').map((x: string) => x.trim()).filter(Boolean).join(' · ') || 'Purchase',
+          label: `${r.ref ? `${r.ref} · ` : ''}${desc.split('|').map((x: string) => x.trim()).filter(Boolean).join(' · ') || 'Purchase'}`,
           worker: desc.includes('|') ? desc.split('|')[0].trim() : '',
           detail: desc.includes('|') ? desc.split('|').slice(1).join(' ').trim() : desc.trim(),
           amount: r.remaining != null ? Number(r.remaining) || 0 : Math.max(0, (Number(r.amount) || 0) - (Number(r.actualAmount) || 0)),
@@ -1129,7 +1129,12 @@ export default function ExpenseRecords() {
   // A part-receipted purchase whose rest was handed back as cash: close it; the Cash Return is then added on the DTR.
   const returnPendingAsCash = async (p: PendingPurchase) => {
     const amt = p.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })
-    if (!window.confirm(`Close this purchase and treat ${p.received > 0 ? 'the remaining' : 'all'} ₱${amt} as unspent cash returned by ${p.worker || 'the member'}?\n\nIt is then added as a Cash Return (e.g. “MATERIAL CHANGE”) on the DTR — it is offered ready-filled under Cash Returns on the DTR of the day the cash comes back.`)) return
+    // The same budget is often returned and released again the next day, which leaves two pending purchases that look
+    // alike. A return closes the OLDER one; closing the newer one by mistake makes it look like cash is missing.
+    const older = agingPurchases.find(o => o.id !== p.id && o.date < p.date
+      && o.worker.toUpperCase() === p.worker.toUpperCase() && Math.abs(o.given - p.given) < 0.01)
+    if (older && !window.confirm(`Wait — there is an OLDER pending purchase for ${p.worker || 'this member'} with the same amount:\n\n${older.date} · ${older.label}\n\nYou picked the NEWER one (${p.date}). Returned cash normally closes the older release, and the newer one stays pending.\n\nPress Cancel to go back and close the ${older.date} one instead.\nPress OK only if the ${p.date} release itself was returned.`)) return
+    if (!window.confirm(`Close the purchase from the DTR of ${p.date}?\n\n${p.label}\n\nThis treats ${p.received > 0 ? 'the remaining' : 'all'} ₱${amt} as unspent cash returned by ${p.worker || 'the member'}. If the same budget was released again on a later day, make sure this is the EARLIER one — the newer release must stay pending.\n\nIt is then added as a Cash Return (e.g. “MATERIAL CHANGE”) on the DTR — it is offered ready-filled under Cash Returns on the DTR of the day the cash comes back.`)) return
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
     const res = await fetch(`${API_BASE_URL}/v1/reports/purchases/${encodeURIComponent(p.id)}/close`, {
       method: 'POST',
@@ -2544,7 +2549,7 @@ export default function ExpenseRecords() {
                       {missing.map(l => (
                         <div key={l.id} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
                           <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{l.reportDate}</span>
-                          <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={l.description}>{l.description.split('|').filter(Boolean).join(' · ')}</span>
+                          <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={l.description}>{l.ref && <span className="font-mono font-bold mr-1.5" style={{ color: textMuted }}>{l.ref}</span>}{l.description.split('|').filter(Boolean).join(' · ')}</span>
                           <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>receipt {fmt(l.actualAmount || 0)} vs {fmt(l.amount)} given</span>
                           <span className="shrink-0 font-bold tabular-nums" style={{ color: '#b45309' }}>reimburse {fmt(l.reimburseDue || 0)}</span>
                         </div>
@@ -2575,7 +2580,7 @@ export default function ExpenseRecords() {
                       {missing.map(l => (
                         <div key={l.id} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
                           <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{l.reportDate}</span>
-                          <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={l.description}>{l.description.split('|').filter(Boolean).join(' · ')}</span>
+                          <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={l.description}>{l.ref && <span className="font-mono font-bold mr-1.5" style={{ color: textMuted }}>{l.ref}</span>}{l.description.split('|').filter(Boolean).join(' · ')}</span>
                           <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>receipt {fmt(l.actualAmount || 0)} of {fmt(l.amount)}</span>
                           <span className="shrink-0 font-bold tabular-nums" style={{ color: danger }}>return {fmt(l.refundDue || 0)}</span>
                           <button type="button"
@@ -2627,7 +2632,7 @@ export default function ExpenseRecords() {
                       {matched.map(l => (
                         <div key={l.id} className="flex items-center justify-between gap-3 py-1 text-[11px]" style={{ borderTop: `1px dashed ${border}` }}>
                           <span className="shrink-0 tabular-nums" style={{ color: textMuted }}>{l.reportDate}</span>
-                          <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={l.description}>{l.description.split('|').filter(Boolean).join(' · ')}</span>
+                          <span className="flex-1 min-w-0 truncate" style={{ color: textPrimary }} title={l.description}>{l.ref && <span className="font-mono font-bold mr-1.5" style={{ color: textMuted }}>{l.ref}</span>}{l.description.split('|').filter(Boolean).join(' · ')}</span>
                           <span className="shrink-0 font-bold tabular-nums" style={{ color: textPrimary }}>{fmt(l.refundDue || 0)}</span>
                           <span className="shrink-0 tabular-nums" style={{ color: accent }}>found on the DTR of {l.cashReturnDate || 'a later date'}</span>
                         </div>
