@@ -8,13 +8,13 @@ function getToken() {
 }
 
 /**
- * Like loadAuditExpenses, but a failure or a server that does not answer within 25 seconds throws instead of looking like
+ * Like loadAuditExpenses, but a failure or a server that does not answer within 90 seconds throws instead of looking like
  * "no records". The Expense Records page uses it so it can say so (and never sit on its loading screen forever).
  */
 export async function loadAuditExpensesStrict(): Promise<AuditExpense[]> {
   const res = await fetch(BASE_URL, {
     headers: { Authorization: `Bearer ${getToken()}` },
-    signal: AbortSignal.timeout(25000),
+    signal: AbortSignal.timeout(90000), // the full list is a big download; give it time, but never wait forever
   })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return await res.json()
