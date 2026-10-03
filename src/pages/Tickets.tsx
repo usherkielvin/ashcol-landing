@@ -5125,7 +5125,9 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
 
     const normalizedStatus = value.toUpperCase().replace(/\s+/g, '_')
     const body = buildCellPatchBody(liveTicket, colLabel, value, branchEmployees)
-    if (Object.keys(body).length === 0) {
+    // The PAYMENT column has no cell patch of its own — its whole patch is the injected payment below,
+    // so an empty body is only a no-op when there is no payment to apply either.
+    if (Object.keys(body).length === 0 && !injectedPayment) {
       cancelEdit()
       setStatusPicker(null)
       closeFinalDatePicker()
