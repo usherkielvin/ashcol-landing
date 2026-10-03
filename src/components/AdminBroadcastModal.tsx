@@ -10,7 +10,7 @@ interface Props {
 }
 
 const TITLE_MAX = 80
-const MESSAGE_MAX = 500
+const MESSAGE_MAX = 5000
 
 export default function AdminBroadcastModal({ onClose, isLight, getToken }: Props) {
   const [title, setTitle] = useState('')
@@ -80,7 +80,7 @@ export default function AdminBroadcastModal({ onClose, isLight, getToken }: Prop
       onMouseDown={e => { if (e.target === e.currentTarget && status !== 'sending') onClose() }}
     >
       <div
-        className="w-full max-w-md max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-fadeIn"
+        className="w-full max-w-xl max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-fadeIn"
         style={{ backgroundColor: cardBg, border: `1px solid ${border}`, color: textPrimary }}
       >
         {/* Header */}
@@ -146,12 +146,12 @@ export default function AdminBroadcastModal({ onClose, isLight, getToken }: Prop
                 <span className="text-[10px] tabular-nums" style={{ color: textMuted }}>{message.length}/{MESSAGE_MAX}</span>
               </div>
               <textarea
-                rows={5}
+                rows={12}
                 value={message}
                 maxLength={MESSAGE_MAX}
                 onChange={e => setMessage(e.target.value)}
                 placeholder="Type your message to all members…"
-                className={`${inputCls} resize-none`}
+                className={`${inputCls} resize-y min-h-[8rem]`}
                 style={inputStyle}
                 required
                 disabled={busy}
