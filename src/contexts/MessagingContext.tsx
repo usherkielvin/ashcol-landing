@@ -45,9 +45,18 @@ export function MessagingProvider({ children }: { children: React.ReactNode }) {
   const [unreadCount, setUnreadCount] = useState(0)
   const [loading, setLoading] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // A refresh still waiting on the API: another one asked for meanwhile is not stacked behind it on a slow link;
+  // it runs once, right after (so a refresh requested after sending a message is never lost).
+  const fetchingRef = useRef(false)
+  const refetchQueuedRef = useRef(false)
 
   const fetchConversations = useCallback(async () => {
     if (!getToken()) return
+    if (fetchingRef.current) {
+      refetchQueuedRef.current = true
+      return
+    }
+    fetchingRef.current = true
     try {
       setLoading(true)
       const [convRes, unreadRes] = await Promise.all([
@@ -65,9 +74,16 @@ export function MessagingProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // silent — polled, next tick retries
     } finally {
+      fetchingRef.current = false
       setLoading(false)
+      if (refetchQueuedRef.current) {
+        refetchQueuedRef.current = false
+        void fetchConversationsRef.current()
+      }
     }
   }, [])
+  const fetchConversationsRef = useRef(fetchConversations)
+  fetchConversationsRef.current = fetchConversations
 
   const getMessages = useCallback(async (conversationId: string): Promise<ChatMessage[]> => {
     const res = await fetch(`${API_BASE_URL}/messages/conversations/${conversationId}/messages`, { headers: authHeaders() })
@@ -103,7 +119,9 @@ export function MessagingProvider({ children }: { children: React.ReactNode }) {
     }
 
     poll()
-    intervalRef.current = setInterval(poll, 20_000)
+    // Once a minute (was every 20 s): every open tab polls, and those requests compete with page loads. Coming back
+    // to the tab and sending a message still refresh at once; an open chat window has its own faster poll.
+    intervalRef.current = setInterval(poll, 60_000)
 
     const onVisible = () => {
       if (document.visibilityState === 'visible') void fetchConversations()

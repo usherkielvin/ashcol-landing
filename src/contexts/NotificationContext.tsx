@@ -41,8 +41,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const [viewingNotification, setViewingNotification] = useState<AppNotification | null>(null)
   const pendingViewIdRef = useRef<string | null>(null)
 
+  // A refresh still waiting on the API: the next poll is skipped rather than stacked behind it on a slow link.
+  const fetchingRef = useRef(false)
   const fetchNotifications = useCallback(async () => {
-    if (!getToken()) return
+    if (!getToken() || fetchingRef.current) return
+    fetchingRef.current = true
     try {
       setLoading(true)
       const res = await fetch(`${API_BASE_URL}/notifications`, { headers: authHeaders() })
@@ -68,6 +71,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     } catch {
       // silent
     } finally {
+      fetchingRef.current = false
       setLoading(false)
     }
   }, [])
@@ -147,7 +151,9 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
 
     poll()
-    intervalRef.current = setInterval(poll, 30_000)
+    // Once a minute (was every 30 s): every open tab polls, and those requests compete with page loads.
+    // Coming back to the tab still refreshes at once.
+    intervalRef.current = setInterval(poll, 60_000)
 
     const onVisible = () => {
       if (document.visibilityState === 'visible') void fetchNotifications()

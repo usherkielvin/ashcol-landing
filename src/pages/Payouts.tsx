@@ -107,6 +107,7 @@ export default function Payouts() {
   // (read-only) until that finishes, so nothing can be edited against rows the sync is about to merge into.
   const [earlyView, setEarlyView] = useState(false)
   const loadRequest = useRef(0)
+  const monthCache = useRef<Record<string, { rows: PayrollRow[]; fetchedAt: number }>>({})
   // True when the last pull from Schedules failed — the table is then only showing previously
   // saved rows, which can stop partway through the period.
   const [syncFailed, setSyncFailed] = useState(false)
@@ -769,6 +770,7 @@ export default function Payouts() {
     if (!branchFilter) return
     if (lastBranchRef.current === branchFilter) return
     lastBranchRef.current = branchFilter
+    monthCache.current = {}
 
     const branch = branches.find(b => b.id === branchFilter)
     const c = branchWeekCycle(branch?.name || branchFilter || '')
@@ -1012,6 +1014,8 @@ export default function Payouts() {
       })
       if (res.ok) {
         setSaveStatus('saved')
+      // Keep cache in sync: the saved data is now the ground truth for this month
+        monthCache.current[`${bId}:${mKey}`] = { rows: data, fetchedAt: Date.now() }
       } else if (res.status === 423) {
         setSaveStatus('error')
         console.warn('Cannot save payroll: this week is closed/locked.')
@@ -1118,15 +1122,35 @@ export default function Payouts() {
       // If the active week is closed, use saved rows only and skip schedule sync & auto-save
       const weekIsClosed = Boolean(activeWeek && closures.some(c => c.branchId === branchFilter && c.weekFrom === activeWeek.from && c.weekTo === activeWeek.to))
 
-      // Saved entries first. A week that crosses two months needs both: requested together, combined in month order.
+      // Week switches within a month: show the last copy of the month(s) at once (locked, like the early view below).
+      // It is only ever displayed — the merge and the auto-save always work from the fresh copy fetched next, because
+      // holds/releases/adjustments (mutateSavedMonth) and other users write to the month without touching this cache,
+      // and saving a stale month back would undo them.
+      const CACHE_TTL = 5 * 60 * 1000
+      if (!isManualRefresh && !weekIsClosed) {
+        const cachedMonths = monthsToFetch.map(mKey => monthCache.current[`${branchFilter}:${mKey}`])
+        if (cachedMonths.every(c => c && Date.now() - c.fetchedAt < CACHE_TTL)) {
+          let cachedRows: PayrollRow[] = []
+          for (const c of cachedMonths) cachedRows = deduplicateAndMergePayroll(cachedRows, c!.rows)
+          setRows(cachedRows)
+          setEarlyView(true)
+          setSyncing(true)
+          setInitialLoading(false)
+        }
+      }
+
+      // Saved entries, always fresh. A week that crosses two months needs both; requested together, combined in month order.
       const savedByMonth = await Promise.all(monthsToFetch.map(async (mKey): Promise<PayrollRow[]> => {
+        const cacheKey = `${branchFilter}:${mKey}`
         const params = new URLSearchParams({ branchId: branchFilter, month: mKey })
         const res = await fetch(`${API_BASE_URL}/v1/payroll?${params.toString()}`, {
           headers: { Authorization: `Bearer ${getToken()}` },
         })
         if (!res.ok) return []
         const list = await res.json()
-        return (Array.isArray(list) ? list : []).map(mapSavedPayrollEntry)
+        const rows = (Array.isArray(list) ? list : []).map(mapSavedPayrollEntry)
+        monthCache.current[cacheKey] = { rows, fetchedAt: Date.now() }
+        return rows
       }))
       if (!isLatest()) return
       let combinedSavedRows: PayrollRow[] = []
@@ -1155,6 +1179,9 @@ export default function Payouts() {
         if (scheduleResult.ok && scheduleResult.rows.length > 0) {
           merged = deduplicateAndMergePayroll(savedRows, scheduleResult.rows)
         }
+
+        // Update the month cache with fully-merged rows so week switches within this month are instant
+        monthCache.current[`${branchFilter}:${mKey}`] = { rows: merged, fetchedAt: Date.now() }
 
         // Auto-save when the sync added rows or changed existing ones (e.g. a Payroll Settings
         // rate change re-stamping Allowance / Earth Grounding), so the saved sheet matches.
