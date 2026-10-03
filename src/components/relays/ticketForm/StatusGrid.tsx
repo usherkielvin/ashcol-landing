@@ -57,7 +57,7 @@ export function StatusGrid({
               onClick={onCloseTicket}
               className="h-10 px-4 rounded-xl text-xs font-black uppercase tracking-wide text-white shadow-md flex items-center gap-1.5 cursor-pointer transition-all hover:brightness-110 active:scale-95"
               style={{ background: 'linear-gradient(135deg,#10B981,#059669)' }}
-              title="Checks the saved ticket, then closes it. Save your edits first."
+              title="Saves your edits, then checks details, payment and documents before closing"
             >
               <Check className="w-4 h-4 stroke-[3]" /> Close ticket
             </button>

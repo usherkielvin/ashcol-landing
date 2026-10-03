@@ -54,6 +54,9 @@ export function DispatchSection({
             style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
           >
             <option value="">{isTaguigServices ? 'Select technician...' : 'Select installer...'}</option>
+            {installerName && !installerOptions.some(opt => opt.name === installerName || opt.id === installerName) && (
+              <option value={installerName}>{installerName} (Current)</option>
+            )}
             {installerOptions.map(opt => (
               <option key={opt.id} value={opt.name}>{opt.label || opt.name}</option>
             ))}

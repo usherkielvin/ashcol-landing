@@ -280,8 +280,19 @@ export function ScheduleEditTicketModal({
                 <input type="text" value={form.serviceDriver || ''} placeholder="e.g. FB19 or T2" onChange={e => onChange({ serviceDriver: e.target.value })} style={inp} />
               </Field>
               <Field label={isTaguigServices ? 'Technician' : 'Installer'}>
-                <input type="text" value={form.installerName || ''} list="sched-edit-installer-roster" placeholder={installerRoster.length ? 'Select or type…' : 'e.g. RANIL'} onChange={e => onChange({ installerName: e.target.value })} style={inp} />
-                <datalist id="sched-edit-installer-roster">{installerRoster.map(n => <option key={n} value={n} />)}</datalist>
+                <select
+                  value={form.installerName || ''}
+                  onChange={e => onChange({ installerName: e.target.value })}
+                  style={selectInp}
+                >
+                  <option value="">{isTaguigServices ? 'Select technician...' : 'Select installer...'}</option>
+                  {form.installerName && !installerRoster.includes(form.installerName) && (
+                    <option value={form.installerName}>{form.installerName} (Current)</option>
+                  )}
+                  {installerRoster.map(n => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
               </Field>
             </Row>
           </div>

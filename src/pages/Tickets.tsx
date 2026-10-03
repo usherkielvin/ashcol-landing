@@ -2094,7 +2094,8 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
 
 
 
-  const handleUnifiedEditSave = (draft: RelayEditDraft) => {
+  /** Returns false when validation stopped the save (an alert has already been shown). */
+  const handleUnifiedEditSave = (draft: RelayEditDraft): boolean => {
     const nextForm = mapRelayDraftToScheduleEditForm(draft, {
       ...editForm,
       id: editForm.id || editTicket?.id,
@@ -2103,10 +2104,22 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
     const error = validateEditFormFor(nextForm)
     if (error) {
       alert(error)
-      return
+      return false
     }
     setEditForm(nextForm)
     void commitSaveEditTicket(nextForm)
+    return true
+  }
+
+  /**
+   * Close Ticket from inside Edit Ticket: save what's on the form first (the checklist reads the
+   * saved ticket, so an unsaved payment/detail would show as missing), then continue to the
+   * Close Ticket checklist once the save has landed.
+   */
+  const saveThenRequestClose = (draft: RelayEditDraft) => {
+    const ticket = editTicket
+    if (!ticket) return
+    if (handleUnifiedEditSave(draft)) setCloseResumeTicket(ticket)
   }
 
 
@@ -8912,35 +8925,25 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                     </datalist>
                   </Field>
                   <Field label={isTaguigServices ? 'Technician' : 'Installer / Technician'}>
-                    {addModalTechnicians.length > 0 ? (
-                      <select
-                        value={addForm.installerName || ''}
-                        onChange={e => setAddForm({ ...addForm, installerName: e.target.value })}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
-                      >
-                        <option value="">
-                          {isTaguigServices ? 'Select technician…' : 'Select installer / technician…'}
-                        </option>
-                        {addModalTechnicians.map(t => (
+                    <select
+                      value={addForm.installerName || ''}
+                      onChange={e => setAddForm({ ...addForm, installerName: e.target.value })}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full"
+                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
+                    >
+                      <option value="">
+                        {isTaguigServices ? 'Select technician…' : 'Select installer / technician…'}
+                      </option>
+                      {addModalTechnicians.length > 0 ? (
+                        addModalTechnicians.map(t => (
                           <option key={t.id} value={t.name}>{t.label || (t.name || '').trim().split(/\s+/)[0]?.toUpperCase() || t.name}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <>
-                        <input type="text" value={addForm.installerName || ''}
-                          list="add-ticket-installer-roster"
-                          placeholder={activeBranchRoster.installers.length ? 'Select or type installer…' : 'e.g. RYAN - 1'}
-                          onChange={e => setAddForm({ ...addForm, installerName: e.target.value })}
-                          className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                        <datalist id="add-ticket-installer-roster">
-                          {activeBranchRoster.installers.map(name => (
-                            <option key={name} value={name} />
-                          ))}
-                        </datalist>
-                      </>
-                    )}
+                        ))
+                      ) : (
+                        activeBranchRoster.installers.map(name => (
+                          <option key={name} value={name}>{name}</option>
+                        ))
+                      )}
+                    </select>
                   </Field>
                   <Field label="Negotiator" required>
                     <select
@@ -9074,7 +9077,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
           negotiatorsForBranch={negotiatorsForBranch}
           saving={editSaving}
           showDelete={canEdit && activeTab !== 'overview'}
-          onRequestCloseTicket={editTicket ? () => requestCloseTicket(editTicket) : undefined}
+          onRequestCloseTicket={editTicket ? saveThenRequestClose : undefined}
           closedLabel={editTicket && isTicketClosed(editTicket) ? getScheduleStatusLabel(getScheduleStatusValue(editTicket)) : undefined}
           driverRoster={editModalRoster.drivers}
           installerRoster={editModalRoster.installers}
@@ -9137,7 +9140,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
           resolveBranch={resolveBranch}
           negotiatorsForBranch={negotiatorsForBranch}
           saving={editSaving}
-          onRequestCloseTicket={editTicket ? () => requestCloseTicket(editTicket) : undefined}
+          onRequestCloseTicket={editTicket ? saveThenRequestClose : undefined}
           closedLabel={editTicket && isTicketClosed(editTicket) ? getScheduleStatusLabel(getScheduleStatusValue(editTicket)) : undefined}
           showDelete={canEdit}
           driverRoster={editModalRoster.drivers}

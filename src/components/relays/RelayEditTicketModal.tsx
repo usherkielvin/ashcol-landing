@@ -82,7 +82,8 @@ export type RelayEditTicketModalProps = {
   parseAcDetails: (ticket: any) => { finalDate?: string; previousScheduleDates?: string[] }
   draftExtensions?: Partial<RelayEditDraft>
   /** Opens the guarded Close Ticket dialog (field surfaces only). */
-  onRequestCloseTicket?: () => void
+  /** Called with the current (possibly unsaved) form, so the parent can save it before closing. */
+  onRequestCloseTicket?: (draft: RelayEditDraft) => void
   /** Outcome label when the ticket is already closed (admin editing a closed ticket). */
   closedLabel?: string
 }
@@ -363,7 +364,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
               isLight={isLight}
               border={border}
               textMuted={textMuted}
-              onCloseTicket={isFieldSurface ? props.onRequestCloseTicket : undefined}
+              onCloseTicket={isFieldSurface && props.onRequestCloseTicket ? () => props.onRequestCloseTicket?.(draft) : undefined}
               closedLabel={props.closedLabel}
             />
           </div>

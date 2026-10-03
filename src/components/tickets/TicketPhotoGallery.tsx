@@ -49,6 +49,11 @@ export const INSTALL_PHOTO_PRESETS = [
   'SERVICE REPORT',
 ] as const
 
+export const SERVICES_PHOTO_PRESETS = [
+  'JOB ORDER',
+  'SERVICE REPORT',
+] as const
+
 export function isInstallTicket(ticket?: Partial<Ticket> | null): boolean {
   if (!ticket) return false
   const cat = (ticket.ticketCategory || ticket.ticket_category || '').toUpperCase().trim()
@@ -67,6 +72,11 @@ export function isInstallTicket(ticket?: Partial<Ticket> | null): boolean {
   return !cat && !st
 }
 
+export function isServiceTicket(ticket?: Partial<Ticket> | null): boolean {
+  if (!ticket) return false
+  return !isInstallTicket(ticket)
+}
+
 /**
  * Which fixed holder each photo sits in. Photos remember their holder (`slot`); older photos
  * without one are matched to the preset with the same label, then to the first free holder.
@@ -82,7 +92,7 @@ function assignPhotoSlots(list: TicketPhoto[], presets?: readonly string[]): Map
   const leftover: TicketPhoto[] = []
   for (const p of rest) {
     const label = (p.description || '').trim().toUpperCase()
-    const idx = presets && label ? presets.findIndex((preset, i) => !map.has(i) && preset === label) : -1
+    const idx = presets && label ? presets.findIndex((preset, i) => !map.has(i) && (preset === label || label.startsWith(preset))) : -1
     if (idx >= 0) map.set(idx, p)
     else leftover.push(p)
   }
@@ -145,9 +155,11 @@ function formatUploadedAt(iso?: string): string {
 
 /**
  * Unified 10-slot photo grid for ticket attachments.
- * For INSTALL tickets, slots are preset with standard required documentation:
- * 1. SCHEMATIC, 2. QUOTATION FORM, 3. COCA, 4. NOA, 5. PR/SALES INVOICE,
- * 6. START UP, 7. STICKER, 8. INDOOR UNIT, 9. OUTDOOR UNIT, 10. SERVICE REPORT.
+ * - For INSTALL tickets, slots are preset with standard required documentation:
+ *   1. SCHEMATIC, 2. QUOTATION FORM, 3. COCA, 4. NOA, 5. PR/SALES INVOICE,
+ *   6. START UP, 7. STICKER, 8. INDOOR UNIT, 9. OUTDOOR UNIT, 10. SERVICE REPORT.
+ * - For SERVICES tickets (cleaning, checkup, repair, dismantle), slots #1 and #2 are pre-encoded
+ *   as: 1. JOB ORDER, 2. SERVICE REPORT. Additional slots are available for extra job photos.
  */
 export function TicketPhotoGallery({
   ticket,
@@ -205,7 +217,7 @@ export function TicketPhotoGallery({
   const textMuted = isLight ? '#64748b' : '#94a3b8'
 
   const ticketId = ticket.id
-  const slotPresets = isInstall ? INSTALL_PHOTO_PRESETS : undefined
+  const slotPresets = isInstall ? INSTALL_PHOTO_PRESETS : SERVICES_PHOTO_PRESETS
   const ticketKey = ticket.ticketNumber || ticket.ticket_number || ticketId
   const canUpload = canManage && !!ticketId && !isTempTicketId(ticketId)
   const activePending = pending.filter(p => p.status !== 'error').length
@@ -338,7 +350,7 @@ export function TicketPhotoGallery({
   }
 
   // ── auto-upload on attach or paste (no click upload button) ────────────────
-  const slotLabel = (i: number) => (isInstall && INSTALL_PHOTO_PRESETS[i] ? `#${i + 1} ${INSTALL_PHOTO_PRESETS[i]}` : `#${i + 1}`)
+  const slotLabel = (i: number) => (slotPresets?.[i] ? `#${i + 1} ${slotPresets[i]}` : `#${i + 1}`)
 
   /** Holders that already have a photo or an upload in flight. */
   const occupiedSlots = (): Set<number> => {
@@ -387,7 +399,7 @@ export function TicketPhotoGallery({
     const newEntries: PendingUpload[] = accepted.map((file, i) => {
       const slotIndex = slots[i]
       claimedSlotsRef.current.add(slotIndex)
-      const presetDesc = (isInstall && INSTALL_PHOTO_PRESETS[slotIndex]) ? INSTALL_PHOTO_PRESETS[slotIndex] : ''
+      const presetDesc = slotPresets?.[slotIndex] || ''
       const defaultDesc = presetDesc || file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim().toUpperCase() || 'PHOTO'
       return {
         key: `up-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
@@ -558,9 +570,13 @@ export function TicketPhotoGallery({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <p className="text-[11.5px] font-black uppercase tracking-wider text-emerald-600 leading-tight">Photos</p>
-                {isInstall && (
+                {isInstall ? (
                   <span className="text-[8.5px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-600 border border-emerald-500/25">
                     Installation Checklist Preset
+                  </span>
+                ) : (
+                  <span className="text-[8.5px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/25">
+                    Services Preset (Job Order &amp; Service Report)
                   </span>
                 )}
               </div>
@@ -580,9 +596,13 @@ export function TicketPhotoGallery({
             <p className="text-[10px] font-black uppercase tracking-wider text-[#10B981]">
               Photos <span style={{ color: textMuted }}>{photos.length}/{MAX_TICKET_PHOTOS}</span>
             </p>
-            {isInstall && (
+            {isInstall ? (
               <span className="text-[8px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-600 border border-emerald-500/25">
                 Install Preset
+              </span>
+            ) : (
+              <span className="text-[8px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/25">
+                Services Preset (2 Holders)
               </span>
             )}
           </div>
@@ -608,12 +628,12 @@ export function TicketPhotoGallery({
         </div>
       ) : (
         <>
-          {/* drag-hint strip when grid has something */}
-          {canUpload && usedSlots > 0 && (
+          {/* drag-hint strip */}
+          {canUpload && (
             <p className="text-[10px] mb-2" style={{ color: textMuted }}>
               {isInstall
                 ? 'Attach images to the corresponding preset slots below or drag and drop anywhere.'
-                : 'Drag images anywhere, paste with Ctrl+V, or click an empty slot to add.'}
+                : 'Attach Job Order and Service Report to preset slots #1 and #2, or drag and drop anywhere.'}
             </p>
           )}
 
@@ -678,7 +698,7 @@ export function TicketPhotoGallery({
                   </div>
                 )
               }
-              const preset = isInstall ? INSTALL_PHOTO_PRESETS[slotIdx] : undefined
+              const preset = slotPresets?.[slotIdx]
               if (canUpload) {
                 return (
                   <EmptySlotCell
@@ -695,7 +715,7 @@ export function TicketPhotoGallery({
                 )
               }
               // Read-only: keep the holder in place so photos sit in the same spot as when editing.
-              return isInstall ? (
+              return preset ? (
                 <div
                   key={`empty-${slotIdx}`}
                   className="aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-0.5 p-1.5 text-center select-none"
@@ -711,7 +731,7 @@ export function TicketPhotoGallery({
             {/* Legacy staged uploads (normally flushed immediately) */}
             {staged.map((slot, i) => {
               const slotIdx = slot.slotIndex ?? (photos.length + i)
-              const preset = isInstall ? INSTALL_PHOTO_PRESETS[slotIdx] : undefined
+              const preset = slotPresets?.[slotIdx]
               return (
                 <StagedSlotCell
                   key={slot.key}
@@ -789,13 +809,13 @@ export function TicketPhotoGallery({
               </div>
             </div>
 
-            {isInstall && (
+            {slotPresets && slotPresets.length > 0 && (
               <div className="flex flex-col gap-1.5">
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-emerald-600">
-                  Quick Install Presets
+                  {isInstall ? 'Quick Install Presets' : 'Quick Services Presets'}
                 </label>
                 <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
-                  {INSTALL_PHOTO_PRESETS.map((p) => (
+                  {slotPresets.map((p) => (
                     <button
                       key={p}
                       type="button"
@@ -820,7 +840,7 @@ export function TicketPhotoGallery({
               <textarea
                 autoFocus
                 rows={2}
-                placeholder="e.g. SCHEMATIC, INDOOR UNIT…"
+                placeholder={isInstall ? "e.g. SCHEMATIC, INDOOR UNIT…" : "e.g. JOB ORDER, SERVICE REPORT…"}
                 value={editDescDraft}
                 onChange={(e) => setEditDescDraft(e.target.value)}
                 className="w-full text-xs font-semibold p-2.5 rounded-xl border outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 resize-none uppercase"

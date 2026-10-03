@@ -7,7 +7,7 @@ import {
   SlidersHorizontal, Plus, X, RotateCcw, RefreshCw, Save, Loader2, EyeOff, Trash2,
   Stethoscope, Lightbulb, HardHat, PiggyBank, Wind, Recycle, ArrowBigDownDash, Snowflake,
   Users, Receipt, ArrowRightLeft, ExternalLink, Lock, Unlock, FileSpreadsheet,
-  Archive, PauseCircle, Send, Undo2, MoreVertical, Maximize2, Copy,
+  Archive, PauseCircle, Send, Undo2, MoreVertical, Maximize2, Copy, Clock,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { fetchCachedEmployees, readSavedBranches } from '../utils/portalDirectoryCache'
@@ -4095,30 +4095,60 @@ export default function Payouts() {
                       </span>
                     </div>
 
-                    {/* 3. STATUS — a plain dropdown, not a colored badge. Switching to Completed
-                        still opens the modal to capture who completed it; switching back to
-                        Pending applies immediately. */}
-                    <div className="order-4 md:order-none flex justify-end md:justify-center">
-                      <select
-                        value={isComplete ? 'COMPLETE' : 'PENDING'}
-                        disabled={isWeekClosed}
-                        onClick={e => e.stopPropagation()}
-                        onChange={e => {
-                          e.stopPropagation()
-                          if (e.target.value === 'COMPLETE') {
+                    {/* 3. STATUS — A clean confirmation button instead of a dropdown.
+                        Clicking opens the confirmation & validation popup. */}
+                    <div className="order-4 md:order-none flex flex-col items-end md:items-center justify-center gap-1">
+                      {isComplete ? (
+                        <button
+                          type="button"
+                          disabled={isWeekClosed}
+                          onClick={e => {
+                            e.stopPropagation()
                             setCompleteModalFor(installerName)
                             setCompleteRemarks(summaryRemarks)
-                          } else {
-                            updateInstallerRows(installerName, { status: 'PENDING' })
-                          }
-                        }}
-                        title={isComplete ? `Completed by ${titleCase(summaryAudited || userFirstName)}` : 'Mark this payout complete'}
-                        className="text-xs font-bold bg-transparent border-0 outline-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
-                        style={{ color: isComplete ? '#10B981' : '#D97706' }}
-                      >
-                        <option value="PENDING">Pending</option>
-                        <option value="COMPLETE">Completed</option>
-                      </select>
+                          }}
+                          title={`Completed & finalized by ${titleCase(summaryAudited || userDisplayName || userFirstName)}. Click to view validation details.`}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all duration-150 shadow-xs cursor-pointer active:scale-95 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
+                          style={{
+                            color: isLight ? '#065F46' : '#34D399',
+                            backgroundColor: isLight ? '#D1FAE5' : 'rgba(16, 185, 129, 0.16)',
+                            border: `1px solid ${isLight ? '#6EE7B7' : 'rgba(16, 185, 129, 0.35)'}`,
+                          }}
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                          <span>Completed</span>
+                          <Lock className="w-2.5 h-2.5 shrink-0 opacity-70 ml-0.5" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={isWeekClosed}
+                          onClick={e => {
+                            e.stopPropagation()
+                            setCompleteModalFor(installerName)
+                            setCompleteRemarks(summaryRemarks)
+                          }}
+                          title="Click to validate and finalize payout as Completed"
+                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all duration-150 shadow-xs cursor-pointer active:scale-95 hover:scale-102 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                          style={{
+                            color: '#D97706',
+                            backgroundColor: isLight ? '#FEF3C7' : 'rgba(217, 119, 6, 0.15)',
+                            border: `1px solid ${isLight ? '#FCD34D' : 'rgba(217, 119, 6, 0.35)'}`,
+                          }}
+                        >
+                          <Clock className="w-3.5 h-3.5 shrink-0 text-amber-500" />
+                          <span>Pending</span>
+                        </button>
+                      )}
+                      {isComplete && summaryAudited && (
+                        <span
+                          className="text-[10px] font-semibold truncate max-w-[130px] opacity-80"
+                          style={{ color: textMuted }}
+                          title={`Audited by ${summaryAudited}`}
+                        >
+                          by {summaryAudited}
+                        </span>
+                      )}
                     </div>
 
                     {/* 4. REMARKS — wide column, click to edit inline instead of a truncated
@@ -5740,24 +5770,49 @@ export default function Payouts() {
         document.body
       )}
 
-      {completeModalFor && (
-        <CompletePayoutModal
-          installerName={completeModalFor}
-          userFirstName={userFirstName}
-          onClose={() => setCompleteModalFor(null)}
-          onComplete={(remarks) => {
-            const upperRemarks = remarks.trim().toUpperCase()
-            updateInstallerRows(completeModalFor, {
-              status: 'COMPLETE',
-              audited: userFirstName,
-              remarks: upperRemarks,
-            })
-            setCompleteModalFor(null)
-          }}
-          displayInstallerName={displayInstallerName}
-          initialRemarks={completeRemarks}
-        />
-      )}
+      {completeModalFor && (() => {
+        const modalRows = grouped.find(([name]) => name === completeModalFor)?.[1] ?? []
+        const modalNet = modalRows.length > 0 ? installerNet(modalRows) : 0
+        const modalJobCount = modalRows.length > 0 ? completedJobsCount(modalRows) : 0
+        const modalJobBreakdown = modalRows.length > 0 ? completedJobsBreakdown(modalRows) : ''
+        const modalIsComplete = modalRows.length > 0 && modalRows.every(r => r.status === 'COMPLETE')
+        const modalAudited = modalRows.find(r => !isCarryOver(r))?.audited || modalRows[0]?.audited || ''
+
+        return (
+          <CompletePayoutModal
+            installerName={completeModalFor}
+            userDisplayName={userDisplayName}
+            userFirstName={userFirstName}
+            userRole={role || (user as any)?.jobTitle || 'STAFF'}
+            totalAmount={modalNet}
+            jobCount={modalJobCount}
+            jobBreakdown={modalJobBreakdown}
+            isAlreadyComplete={modalIsComplete}
+            auditedBy={modalAudited}
+            isWeekClosed={isWeekClosed}
+            canManagePayroll={canManagePayroll}
+            onClose={() => setCompleteModalFor(null)}
+            onComplete={(remarks, validatorName) => {
+              const upperRemarks = remarks.trim().toUpperCase()
+              updateInstallerRows(completeModalFor, {
+                status: 'COMPLETE',
+                audited: validatorName || userDisplayName || userFirstName,
+                remarks: upperRemarks,
+              })
+              setCompleteModalFor(null)
+            }}
+            onRevertToPending={() => {
+              updateInstallerRows(completeModalFor, {
+                status: 'PENDING',
+                audited: '',
+              })
+              setCompleteModalFor(null)
+            }}
+            displayInstallerName={displayInstallerName}
+            initialRemarks={completeRemarks}
+          />
+        )
+      })()}
       {/* Hold modal — see docs/payroll-hold-release-plan.md */}
       {holdModalRow && (
         <HoldModal

@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  X, Printer, Download, Copy, Check, RefreshCw,
+  X, Copy, Check, Loader2,
   Building2, RotateCcw, Wrench, PauseCircle, CircleDollarSign, Wallet, Sparkles
 } from 'lucide-react'
+import html2canvas from 'html2canvas'
 import { useTheme } from '../contexts/ThemeContext'
 import { API_BASE_URL, formatBranchName, branchScopesMatch } from '../utils/api'
 import InstallerTicketHistoryModal from './InstallerTicketHistoryModal'
@@ -102,7 +103,9 @@ export default function WeekSummaryModal({
 
   const [region, setRegion] = useState<'north' | 'south'>(initialRegion)
   const [loading, setLoading] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [copyingImage, setCopyingImage] = useState(false)
+  const [copiedImage, setCopiedImage] = useState(false)
+  const tableRef = useRef<HTMLTableElement>(null)
   const [historyModalInstaller, setHistoryModalInstaller] = useState<HistoryPerson | null>(null)
 
   // Manual row overrides stored in state & localStorage
@@ -193,6 +196,11 @@ export default function WeekSummaryModal({
 
   const getToken = () =>
     localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+
+  // Clean up any stray staging capture elements left behind in document.body
+  useEffect(() => {
+    document.querySelectorAll('#summary-capture-staging, #summary-image-staging').forEach(el => el.remove())
+  }, [isOpen])
 
   // Load employees list
   useEffect(() => {
@@ -290,33 +298,46 @@ export default function WeekSummaryModal({
         return true
       })
 
-      const groups = new Map<string, PayrollRow[]>()
+      // ── Step 1: resolve each ticket row to a canonical displayName FIRST ──────────────────
+      // Grouping by rawName (the ticket's installerName string) causes duplicate summary rows
+      // when one ticket is saved with a slightly different spelling variant of the same person's
+      // name. Resolving to the employee record's canonical name before grouping ensures all
+      // tickets that belong to the same installer always merge into a single summary row.
+      const resolvedGroups = new Map<string, { rows: PayrollRow[]; emp: any | undefined }>()
+
       for (const r of filtered) {
         let rawName = (r.installerName || 'Unassigned').trim().toUpperCase()
+        // Normalise known nickname aliases
         if (rawName === 'JUSTINE' || rawName === 'JUSTINE ROI' || rawName === 'JUSTINE BIEN' || rawName === 'JUSTINE ROI BIEN') {
           rawName = 'JUSTIN ROI BIEN'
         }
-        if (!groups.has(rawName)) groups.set(rawName, [])
-        groups.get(rawName)!.push(r)
-      }
 
-      const branchLabel = getBranchLabel(b.name || b.id)
-
-      for (const [rawName, iRows] of groups.entries()) {
-        const matchesName = (e: any) => {
+        // Try to find the canonical employee record for this raw name
+        const matchesRaw = (e: any) => {
           const n = (e.name || '').trim().toUpperCase()
           const nick = (e.nickname || '').trim().toUpperCase()
           return n === rawName || (nick && nick === rawName) || n.includes(rawName) || rawName.includes(n)
         }
-        // Prefer a same-branch match so a namesake in another branch can't supply the wrong
-        // name, phone, or in-house flag.
-        const emp = employees.find(e => matchesName(e) && branchScopesMatch(e.branchId, b.id))
-          || employees.find(matchesName)
+        const emp = employees.find(e => matchesRaw(e) && branchScopesMatch(e.branchId, b.id))
+          || employees.find(matchesRaw)
 
-        // In-house (salaried) technicians aren't on the per-job payroll — same rule as the Payroll page.
+        // Skip in-house salaried workers
         if (emp?.inHouse) continue
 
+        // Key by the RESOLVED display name so variants collapse to one row
         const displayName = emp?.name ? emp.name.toUpperCase() : rawName
+        const groupKey = displayName // unique per installer within this branch loop
+
+        if (!resolvedGroups.has(groupKey)) {
+          resolvedGroups.set(groupKey, { rows: [], emp })
+        }
+        resolvedGroups.get(groupKey)!.rows.push(r)
+      }
+
+      // ── Step 2: build one summary row per resolved installer ──────────────────────────────
+      const branchLabel = getBranchLabel(b.name || b.id)
+
+      for (const [displayName, { rows: iRows, emp }] of resolvedGroups.entries()) {
         // This cut-off's own jobs only — a carry-over's payout is this installer's PREVIOUS
         // cut-off's money, reported separately below, never folded into this week's amount.
         const regularRows = iRows.filter(r => !isCarryOver(r))
@@ -441,136 +462,211 @@ export default function WeekSummaryModal({
     }
   }, [displayedRows])
 
-  // Copy table to clipboard
-  const handleCopy = () => {
-    const lines: string[] = []
-    lines.push(`${region.toUpperCase()} PAYOUTS SUMMARY`)
-    lines.push(`CUT-OFF DATE:\t${formatShortDate(weekFrom)} to ${formatShortDate(weekTo)}`)
-    lines.push(`PAYOUT DATE:\t${payrollDateStr}`)
-    lines.push('')
-    lines.push([
-      'BRANCH',
-      'INSTALLER',
-      'AMOUNT',
-      'CASH',
-      'ONLINE TRANSFER',
-      'SALARY AMOUNT FROM PREVIOUS PAYOUT',
-      'CASH ADVANCE FROM PREVIOUS SALARY ON-HOLD',
-      'TOTAL AMOUNT OF SALARY FOR RELEASE THIS PAYOUT',
-      'MOP',
-      'ACCOUNT NO',
-      'STATUS',
-      'REMARKS',
-      'SUB-TOTAL (CURRENT CUT-OFF ONLY)',
-    ].join('\t'))
-
-    for (const [, rows] of groupedByBranch.entries()) {
-      const branchSubtotal = rows.reduce((s, r) => s + r.amount, 0)
-      rows.forEach((r, idx) => {
-        lines.push([
-          r.branchName,
-          r.installerName,
-          r.amount.toFixed(2),
-          r.cash ? r.cash.toFixed(2) : '',
-          r.onlineTransfer ? r.onlineTransfer.toFixed(2) : '',
-          r.prevSalary ? r.prevSalary.toFixed(2) : '',
-          r.prevCashAdvance ? r.prevCashAdvance.toFixed(2) : '',
-          r.totalForRelease ? r.totalForRelease.toFixed(2) : '',
-          r.mop,
-          r.accountNo,
-          r.status,
-          r.remarks,
-          idx === 0 ? branchSubtotal.toFixed(2) : '',
-        ].join('\t'))
-      })
-    }
-
-    lines.push('')
-    lines.push([
-      'TOTALS',
-      '',
-      totals.totalAmount.toFixed(2),
-      totals.totalCash.toFixed(2),
-      totals.totalOnline.toFixed(2),
-      totals.totalPrevSalary.toFixed(2),
-      '',
-      totals.totalRelease.toFixed(2),
-      '',
-      '',
-      '',
-      '',
-      totals.totalAmount.toFixed(2),
-    ].join('\t'))
-
-    lines.push('')
-    lines.push(`LESS HOLD (CURRENT CUT-OFF):\t${totals.holdAmount.toFixed(2)}`)
-    lines.push(`FINAL TOTAL (CURRENT CUT-OFF):\t${totals.finalTotal.toFixed(2)}`)
-    lines.push(`FROM PREVIOUS CUT-OFF:\t${totals.totalPrevSalary.toFixed(2)}`)
-    lines.push(`GRAND TOTAL:\t${totals.grandTotal.toFixed(2)}`)
-
-    navigator.clipboard.writeText(lines.join('\n')).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
-  }
-
-  // Export as CSV
-  const handleExportCSV = () => {
-    const csvRows: string[] = []
-    csvRows.push(`"${region.toUpperCase()} PAYOUTS SUMMARY"`)
-    csvRows.push(`"CUT-OFF DATE: ${formatShortDate(weekFrom)} to ${formatShortDate(weekTo)}"`)
-    csvRows.push(`"PAYOUT DATE: ${payrollDateStr}"`)
-    csvRows.push('')
-    csvRows.push([
-      '"BRANCH"',
-      '"INSTALLER"',
-      '"AMOUNT"',
-      '"CASH"',
-      '"ONLINE TRANSFER"',
-      '"SALARY AMOUNT FROM PREVIOUS PAYOUT"',
-      '"CASH ADVANCE FROM PREVIOUS SALARY ON-HOLD"',
-      '"TOTAL AMOUNT OF SALARY FOR RELEASE THIS PAYOUT"',
-      '"MOP"',
-      '"ACCOUNT NO"',
-      '"STATUS"',
-      '"REMARKS"',
-      '"SUB-TOTAL (CURRENT CUT-OFF ONLY)"',
-    ].join(','))
-
-    for (const [, rows] of groupedByBranch.entries()) {
-      const branchSubtotal = rows.reduce((s, r) => s + r.amount, 0)
-      rows.forEach((r, idx) => {
-        csvRows.push([
-          `"${r.branchName}"`,
-          `"${r.installerName}"`,
-          `"${r.amount.toFixed(2)}"`,
-          `"${r.cash ? r.cash.toFixed(2) : ''}"`,
-          `"${r.onlineTransfer ? r.onlineTransfer.toFixed(2) : ''}"`,
-          `"${r.prevSalary ? r.prevSalary.toFixed(2) : ''}"`,
-          `"${r.prevCashAdvance ? r.prevCashAdvance.toFixed(2) : ''}"`,
-          `"${r.totalForRelease ? r.totalForRelease.toFixed(2) : ''}"`,
-          `"${r.mop}"`,
-          `"${r.accountNo}"`,
-          `"${r.status}"`,
-          `"${r.remarks.replace(/"/g, '""')}"`,
-          `"${idx === 0 ? branchSubtotal.toFixed(2) : ''}"`,
-        ].join(','))
-      })
-    }
-
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' })
+  const downloadImageBlob = (blob: Blob) => {
     const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.setAttribute('download', `${region}_payouts_summary_${weekFrom}_${weekTo}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${region}_payouts_summary_${weekFrom || 'week'}_${weekTo || 'sheet'}.png`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    setCopiedImage(true)
+    setTimeout(() => setCopiedImage(false), 3000)
   }
 
-  // Print view
-  const handlePrint = () => {
-    window.print()
+  // Copy full table as image with full width and scrolled height for sending
+  const handleCopyImage = async () => {
+    if (!tableRef.current || copyingImage) return
+    setCopyingImage(true)
+    try {
+      const tableEl = tableRef.current
+      const tableWidth = Math.max(tableEl.scrollWidth, tableEl.offsetWidth, 1350)
+
+      const canvas = await html2canvas(tableEl, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        onclone: (clonedDoc) => {
+          const clonedTable = clonedDoc.querySelector('[data-summary-table]') as HTMLElement
+          if (!clonedTable) return
+
+          // Remove any stray staging elements inside the cloned sandbox
+          clonedDoc.querySelectorAll('#summary-capture-staging, #summary-image-staging').forEach(el => el.remove())
+
+          // Prepare clean document body in sandbox with margin/padding
+          clonedDoc.body.innerHTML = ''
+          clonedDoc.body.style.margin = '0'
+          clonedDoc.body.style.padding = '0'
+          clonedDoc.body.style.backgroundColor = '#ffffff'
+          clonedDoc.body.style.overflow = 'visible'
+
+          const wrapper = clonedDoc.createElement('div')
+          wrapper.style.backgroundColor = '#ffffff'
+          wrapper.style.padding = '16px'
+          wrapper.style.margin = '0'
+          wrapper.style.boxSizing = 'border-box'
+          wrapper.style.width = `${tableWidth + 32}px`
+          wrapper.style.overflow = 'visible'
+
+          clonedTable.style.margin = '0'
+          clonedTable.style.borderCollapse = 'collapse'
+          clonedTable.style.width = `${tableWidth}px`
+          clonedTable.style.minWidth = `${tableWidth}px`
+          clonedTable.style.maxWidth = 'none'
+          clonedTable.style.backgroundColor = '#ffffff'
+          clonedTable.style.color = '#000000'
+          clonedTable.style.border = '1.5px solid #000000'
+
+          // Remove interactive icons and links
+          clonedTable.querySelectorAll('.lucide-wrench').forEach(el => el.remove())
+          clonedTable.querySelectorAll('button').forEach(btn => {
+            const span = clonedDoc.createElement('span')
+            span.textContent = btn.textContent || ''
+            span.style.fontWeight = '500'
+            span.style.fontSize = '15px'
+            span.style.color = '#000000'
+            btn.parentNode?.replaceChild(span, btn)
+          })
+
+          // Ensure all table headers and cells have high-contrast styling and borders with clean, readable weights
+          const cells = clonedTable.querySelectorAll<HTMLElement>('th, td')
+          cells.forEach(cell => {
+            cell.style.borderColor = '#000000'
+            cell.style.borderWidth = '1px'
+            cell.style.borderStyle = 'solid'
+            cell.style.boxSizing = 'border-box'
+
+            const isGreenHeader = cell.classList.contains('bg-[#056434]') || cell.closest('tr')?.classList.contains('bg-[#056434]')
+            const isYellowHeader = cell.classList.contains('bg-[#FFFF00]') || cell.closest('tr')?.classList.contains('bg-[#FFFF00]')
+            const isHoldCell = cell.classList.contains('bg-[#FEF08A]')
+            const isTotalsRow = cell.closest('tr')?.classList.contains('bg-slate-100') || cell.classList.contains('bg-slate-200')
+
+            if (isGreenHeader) {
+              cell.style.backgroundColor = '#056434'
+              cell.style.color = '#ffffff'
+              cell.style.fontWeight = '600'
+              cell.style.fontSize = '12px'
+              cell.style.padding = '10px 8px'
+              cell.style.lineHeight = '1.3'
+            } else if (isYellowHeader) {
+              cell.style.backgroundColor = '#FFFF00'
+              cell.style.color = '#000000'
+              cell.style.fontWeight = '600'
+              cell.style.fontSize = '11px'
+              cell.style.padding = '8px 6px'
+              cell.style.lineHeight = '1.25'
+            } else if (isHoldCell) {
+              cell.style.backgroundColor = '#FEF08A'
+              cell.style.color = '#451a03'
+              cell.style.fontWeight = '500'
+              cell.style.fontSize = '14px'
+              cell.style.padding = '8px 10px'
+            } else if (isTotalsRow) {
+              cell.style.backgroundColor = cell.classList.contains('bg-slate-200') ? '#e2e8f0' : '#f1f5f9'
+              cell.style.color = '#000000'
+              cell.style.fontWeight = '600'
+              cell.style.fontSize = '15px'
+              cell.style.padding = '10px 10px'
+            } else {
+              cell.style.backgroundColor = '#ffffff'
+              cell.style.color = '#000000'
+              cell.style.fontWeight = '400'
+              cell.style.fontSize = '14px'
+              cell.style.padding = '8px 10px'
+            }
+          })
+
+          // Replace inputs with clean, readable text divs (not bold)
+          const liveInputs = tableEl.querySelectorAll<HTMLInputElement>('input')
+          const clonedInputs = clonedTable.querySelectorAll<HTMLInputElement>('input')
+          liveInputs.forEach((inp, idx) => {
+            const clonedInp = clonedInputs[idx]
+            if (!clonedInp) return
+            const val = inp.value || ''
+            const textDiv = clonedDoc.createElement('div')
+            textDiv.textContent = val
+            textDiv.style.border = 'none'
+            textDiv.style.background = 'transparent'
+            textDiv.style.boxShadow = 'none'
+            textDiv.style.display = 'flex'
+            textDiv.style.alignItems = 'center'
+            textDiv.style.width = '100%'
+            textDiv.style.minHeight = '1.5rem'
+            textDiv.style.color = '#000000'
+            textDiv.style.fontSize = '14px'
+            textDiv.style.fontWeight = '400'
+            textDiv.style.padding = '0 0.25rem'
+            if (inp.classList.contains('text-right')) {
+              textDiv.style.justifyContent = 'flex-end'
+              textDiv.style.textAlign = 'right'
+            } else if (inp.classList.contains('text-center')) {
+              textDiv.style.justifyContent = 'center'
+              textDiv.style.textAlign = 'center'
+            } else {
+              textDiv.style.justifyContent = 'flex-start'
+              textDiv.style.textAlign = 'left'
+            }
+            clonedInp.parentNode?.replaceChild(textDiv, clonedInp)
+          })
+
+          // Replace select elements with clean, readable text (not a badge, not bold)
+          const liveSelects = tableEl.querySelectorAll<HTMLSelectElement>('select')
+          const clonedSelects = clonedTable.querySelectorAll<HTMLSelectElement>('select')
+          liveSelects.forEach((sel, idx) => {
+            const clonedSel = clonedSelects[idx]
+            if (!clonedSel) return
+            const val = sel.value
+            const isHold = val === 'HOLD'
+            const isPaid = val === 'PAID'
+            const textEl = clonedDoc.createElement('div')
+            textEl.textContent = val
+            textEl.style.display = 'flex'
+            textEl.style.alignItems = 'center'
+            textEl.style.justifyContent = 'center'
+            textEl.style.width = '100%'
+            textEl.style.border = 'none'
+            textEl.style.background = 'transparent'
+            textEl.style.fontSize = '13px'
+            textEl.style.fontWeight = '500'
+            textEl.style.letterSpacing = '0.03em'
+            textEl.style.textTransform = 'uppercase'
+            textEl.style.color = isHold ? '#b45309' : (isPaid ? '#047857' : '#000000')
+            clonedSel.parentNode?.replaceChild(textEl, clonedSel)
+          })
+
+          wrapper.appendChild(clonedTable)
+          clonedDoc.body.appendChild(wrapper)
+        },
+      })
+
+      canvas.toBlob(async (blob) => {
+        if (!blob) {
+          alert('Failed to generate image from table.')
+          return
+        }
+        try {
+          if (navigator.clipboard && window.ClipboardItem) {
+            await navigator.clipboard.write([
+              new ClipboardItem({ 'image/png': blob })
+            ])
+            setCopiedImage(true)
+            setTimeout(() => setCopiedImage(false), 3000)
+          } else {
+            downloadImageBlob(blob)
+          }
+        } catch (clipErr) {
+          console.warn('Clipboard write failed, downloading as PNG fallback:', clipErr)
+          downloadImageBlob(blob)
+        }
+      }, 'image/png')
+    } catch (err) {
+      console.error('Failed to copy table image:', err)
+      alert('Failed to capture table image. Please try again.')
+    } finally {
+      setCopyingImage(false)
+    }
   }
 
   if (!isOpen) return null
@@ -629,50 +725,35 @@ export default function WeekSummaryModal({
           </button>
         </div>
 
-        {/* Action buttons — icon-only on mobile, horizontally scrollable so nothing clips */}
+        {/* Action buttons */}
         <div className="flex items-center gap-2 md:gap-3 overflow-x-auto hide-scrollbar">
           <button
             type="button"
-            onClick={() => void fetchData()}
-            disabled={loading}
-            className="flex items-center gap-2 px-3 md:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold border transition-all hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 cursor-pointer shrink-0"
-            style={{ borderColor: isLight ? '#CBD5E1' : '#243452' }}
-            title="Refresh numbers from all branches"
+            onClick={handleCopyImage}
+            disabled={copyingImage || loading || displayedRows.length === 0}
+            className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-sm cursor-pointer shrink-0 ${
+              copiedImage
+                ? 'bg-emerald-600 text-white'
+                : 'bg-[#056434] hover:bg-[#04522a] text-white active:scale-95'
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
+            title="Copy entire table as an image with full width and all rows for sending (Ctrl+V into Messenger, Viber, etc.)"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="flex items-center gap-2 px-3 md:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold border transition-all hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer shadow-xs shrink-0"
-            style={{ borderColor: isLight ? '#CBD5E1' : '#243452' }}
-            title="Copy table formatted for Excel or Google Sheets"
-          >
-            {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
-            <span className="hidden sm:inline">{copied ? 'Copied to Clipboard!' : 'Copy for Excel'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            className="flex items-center gap-2 px-3 md:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold border transition-all hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer shrink-0"
-            style={{ borderColor: isLight ? '#CBD5E1' : '#243452' }}
-            title="Download clean CSV spreadsheet"
-          >
-            <Download className="w-4 h-4" />
-            <span className="hidden sm:inline">Download CSV</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handlePrint}
-            className="flex items-center gap-2 px-3 md:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-[#056434] hover:bg-[#04522a] text-white transition-all shadow-sm cursor-pointer shrink-0"
-            title="Print sheet or save as PDF"
-          >
-            <Printer className="w-4 h-4" />
-            <span className="hidden sm:inline">Print</span>
+            {copyingImage ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                <span>Capturing…</span>
+              </>
+            ) : copiedImage ? (
+              <>
+                <Check className="w-4 h-4 text-white shrink-0" />
+                <span>Copied Image!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-4 h-4 shrink-0" />
+                <span>Copy Image</span>
+              </>
+            )}
           </button>
 
           {Object.keys(overrides).length > 0 && (
@@ -783,54 +864,58 @@ export default function WeekSummaryModal({
 
         {/* Table Container — desktop/tablet only; phones get the card list below */}
         <div className="hidden md:block overflow-x-auto border border-black dark:border-slate-600 rounded-sm print:border-black bg-white dark:bg-slate-950">
-          <table className="w-full border-collapse text-xs text-slate-900 dark:text-slate-100 min-w-[1300px]">
+          <table
+            ref={tableRef}
+            data-summary-table
+            className="w-full border-collapse text-sm text-slate-900 dark:text-slate-100 min-w-[1300px]"
+          >
             <thead>
               {/* Dark Green Header Row (matching Excel) */}
-              <tr className="bg-[#056434] text-white text-center border-b border-black font-bold text-xs uppercase tracking-wide">
-                <th rowSpan={2} className="border border-black px-3 py-3 text-center w-[130px] font-bold">
+              <tr className="bg-[#056434] text-white text-center border-b border-black font-semibold text-xs uppercase tracking-wide">
+                <th rowSpan={2} className="border border-black px-3 py-3 text-center w-[130px] font-semibold">
                   BRANCH
                 </th>
-                <th rowSpan={2} className="border border-black px-4 py-3 text-left min-w-[220px] font-bold">
+                <th rowSpan={2} className="border border-black px-4 py-3 text-left min-w-[220px] font-semibold">
                   INSTALLER
                 </th>
-                <th rowSpan={2} className="border border-black px-3 py-3 text-right w-[125px] font-bold">
+                <th rowSpan={2} className="border border-black px-3 py-3 text-right w-[125px] font-semibold">
                   AMOUNT
                 </th>
-                <th rowSpan={2} className="border border-black px-2 py-3 text-right w-[100px] font-bold">
+                <th rowSpan={2} className="border border-black px-2 py-3 text-right w-[100px] font-semibold">
                   CASH
                 </th>
-                <th rowSpan={2} className="border border-black px-2 py-3 text-right w-[115px] font-bold leading-tight">
+                <th rowSpan={2} className="border border-black px-2 py-3 text-right w-[115px] font-semibold leading-tight">
                   ONLINE<br />TRANSFER
                 </th>
                 {/* Yellow Previous Week On- Header */}
-                <th colSpan={2} className="border border-black bg-[#FFFF00] text-black font-bold px-3 py-2 text-center text-xs tracking-wide">
+                <th colSpan={2} className="border border-black bg-[#FFFF00] text-black font-semibold px-3 py-2 text-center text-xs tracking-wide">
                   PREVIOUS WEEK ON-
                 </th>
-                <th rowSpan={2} className="border border-black px-3 py-3 text-right w-[145px] font-bold leading-tight">
+                <th rowSpan={2} className="border border-black px-3 py-3 text-right w-[145px] font-semibold leading-tight">
                   TOTAL AMOUNT OF<br />SALARY FOR RELEASE<br />THIS PAYOUT
                 </th>
-                <th rowSpan={2} className="border border-black px-2 py-3 text-center w-[85px] font-bold">
+                <th rowSpan={2} className="border border-black px-2 py-3 text-center w-[85px] font-semibold">
                   MOP
                 </th>
-                <th rowSpan={2} className="border border-black px-3 py-3 text-center w-[140px] font-bold">
+                <th rowSpan={2} className="border border-black px-3 py-3 text-center w-[140px] font-semibold">
                   ACCOUNT NO
                 </th>
-                <th rowSpan={2} className="border border-black px-2 py-3 text-center w-[95px] font-bold">
+                <th rowSpan={2} className="border border-black px-2 py-3 text-center w-[95px] font-semibold">
                   STATUS
                 </th>
-                <th rowSpan={2} className="border border-black px-3 py-3 text-left min-w-[140px] font-bold">
+                <th rowSpan={2} className="border border-black px-3 py-3 text-left min-w-[140px] font-semibold">
                   REMARKS
                 </th>
-                <th rowSpan={2} className="border border-black px-3 py-3 text-right w-[135px] font-bold leading-tight">
+                <th rowSpan={2} className="border border-black px-3 py-3 text-right w-[135px] font-semibold leading-tight">
                   SUB-TOTAL<br />(CURRENT<br />CUT-OFF ONLY)
                 </th>
               </tr>
               {/* Secondary Sub-Row for Yellow Header */}
-              <tr className="bg-[#FFFF00] text-black font-bold text-[11px] text-center border-b border-black">
-                <th className="border border-black px-2 py-2 w-[115px] leading-tight font-bold">
+              <tr className="bg-[#FFFF00] text-black font-semibold text-[11px] text-center border-b border-black">
+                <th className="border border-black px-2 py-2 w-[115px] leading-tight font-semibold">
                   SALARY AMOUNT<br />FROM PREVIOUS<br />PAYOUT
                 </th>
-                <th className="border border-black px-2 py-2 w-[115px] leading-tight font-bold">
+                <th className="border border-black px-2 py-2 w-[115px] leading-tight font-semibold">
                   CASH ADVANCE<br />FROM PREVIOUS<br />SALARY ON-HOLD
                 </th>
               </tr>
@@ -853,17 +938,17 @@ export default function WeekSummaryModal({
                     return (
                       <tr
                         key={rowKey}
-                        className={`h-14 sm:h-16 hover:bg-slate-50/70 dark:hover:bg-slate-900/50 transition-colors ${
+                        className={`h-14 hover:bg-slate-50/70 dark:hover:bg-slate-900/50 transition-colors ${
                           r.isHighlighted ? 'bg-emerald-50/40 dark:bg-emerald-950/20' : ''
                         }`}
                       >
                         {/* BRANCH (Listed on each installer row) */}
-                        <td className="border border-black dark:border-slate-600 px-3 py-3 text-center text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-200 uppercase whitespace-nowrap">
+                        <td className="border border-black dark:border-slate-600 px-3 py-2.5 text-center text-xs sm:text-sm font-normal text-slate-700 dark:text-slate-300 uppercase whitespace-nowrap">
                           {r.branchName || branchName}
                         </td>
 
-                        {/* INSTALLER (Bigger Name Font + Ticket History Link) */}
-                        <td className="border border-black dark:border-slate-600 px-4 py-3 uppercase text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 tracking-tight">
+                        {/* INSTALLER (Clean Readable Name + Ticket History Link) */}
+                        <td className="border border-black dark:border-slate-600 px-3.5 py-2.5 uppercase text-sm sm:text-base font-medium text-slate-900 dark:text-slate-100 tracking-normal">
                           <button
                             type="button"
                             onClick={() => {
@@ -883,14 +968,14 @@ export default function WeekSummaryModal({
                             className="hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline transition-colors text-left flex items-center gap-1.5 cursor-pointer group"
                             title={`Click to view ticket history for ${r.installerName}`}
                           >
-                            <span>{r.installerName}</span>
+                            <span className="font-medium text-sm sm:text-base">{r.installerName}</span>
                             <Wrench className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 text-emerald-500 transition-opacity shrink-0" />
                           </button>
                         </td>
 
                         {/* AMOUNT (Soft Yellow Highlight if HOLD) */}
                         <td
-                          className={`border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-normal ${
+                          className={`border border-black dark:border-slate-600 px-3.5 py-2.5 text-right font-number text-sm sm:text-base font-normal ${
                             isHold ? 'bg-[#FEF08A] text-amber-950 dark:text-amber-200' : 'text-slate-900 dark:text-slate-100'
                           }`}
                         >
@@ -909,7 +994,7 @@ export default function WeekSummaryModal({
                                 onlineTransfer: Math.max(0, r.amount - val),
                               })
                             }}
-                            className="w-full h-9 text-right bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-sm sm:text-base font-number font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
+                            className="w-full h-8 text-right bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-sm sm:text-base font-number font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
@@ -919,7 +1004,7 @@ export default function WeekSummaryModal({
                             type="text"
                             value={r.onlineTransfer ? peso(r.onlineTransfer) : ''}
                             onChange={e => updateRowOverride(rowKey, { onlineTransfer: num(e.target.value) })}
-                            className="w-full h-9 text-right bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-sm sm:text-base font-number font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
+                            className="w-full h-8 text-right bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-sm sm:text-base font-number font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
@@ -935,7 +1020,7 @@ export default function WeekSummaryModal({
                                 totalForRelease: (r.status === 'HOLD' ? 0 : r.amount) + val - r.prevCashAdvance,
                               })
                             }}
-                            className="w-full h-9 text-right bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-sm sm:text-base font-number font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
+                            className="w-full h-8 text-right bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-sm sm:text-base font-number font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
@@ -951,12 +1036,12 @@ export default function WeekSummaryModal({
                                 totalForRelease: (r.status === 'HOLD' ? 0 : r.amount) + r.prevSalary - val,
                               })
                             }}
-                            className="w-full h-9 text-right bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-sm sm:text-base font-number font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
+                            className="w-full h-8 text-right bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-sm sm:text-base font-number font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
                         {/* TOTAL FOR RELEASE */}
-                        <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
+                        <td className="border border-black dark:border-slate-600 px-3.5 py-2.5 text-right font-number text-sm sm:text-base font-medium text-slate-900 dark:text-slate-100">
                           {r.totalForRelease > 0 ? peso(r.totalForRelease) : ''}
                         </td>
 
@@ -966,7 +1051,7 @@ export default function WeekSummaryModal({
                             type="text"
                             value={r.mop}
                             onChange={e => updateRowOverride(rowKey, { mop: e.target.value.toUpperCase() })}
-                            className="w-full h-9 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1 uppercase text-xs font-semibold outline-none transition-all text-slate-900 dark:text-slate-100"
+                            className="w-full h-8 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1 uppercase text-xs sm:text-sm font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
@@ -976,12 +1061,12 @@ export default function WeekSummaryModal({
                             type="text"
                             value={r.accountNo}
                             onChange={e => updateRowOverride(rowKey, { accountNo: e.target.value })}
-                            className="w-full h-9 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1.5 font-number text-xs sm:text-sm font-normal outline-none tracking-normal transition-all text-slate-900 dark:text-slate-100"
+                            className="w-full h-8 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1.5 font-number text-xs sm:text-sm font-normal outline-none tracking-normal transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
-                        {/* STATUS */}
-                        <td className="border border-black dark:border-slate-600 p-1.5 text-center">
+                        {/* STATUS (Pure text dropdown, no badge box, not bold) */}
+                        <td className="border border-black dark:border-slate-600 p-1 text-center">
                           <select
                             value={r.status}
                             onChange={e => {
@@ -992,17 +1077,17 @@ export default function WeekSummaryModal({
                                 onlineTransfer: s === 'HOLD' ? 0 : Math.max(0, r.amount - r.cash),
                               })
                             }}
-                            className={`h-8 px-2 rounded text-xs font-semibold border uppercase outline-none cursor-pointer transition-all ${
+                            className={`w-full h-8 bg-transparent border-0 text-center text-xs sm:text-sm font-medium uppercase outline-none cursor-pointer tracking-wider ${
                               isHold
-                                ? 'bg-[#FEF08A] text-amber-950 border-black font-bold'
+                                ? 'text-amber-600 dark:text-amber-400'
                                 : r.status === 'PAID'
-                                ? 'bg-emerald-100 text-emerald-900 border-black'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-200 border-black dark:border-slate-700'
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-slate-700 dark:text-slate-300'
                             }`}
                           >
-                            <option value="SENT">SENT</option>
-                            <option value="PAID">PAID</option>
-                            <option value="HOLD">HOLD</option>
+                            <option value="SENT" className="text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900">SENT</option>
+                            <option value="PAID" className="text-emerald-600 dark:text-emerald-400 bg-white dark:bg-slate-900">PAID</option>
+                            <option value="HOLD" className="text-amber-600 dark:text-amber-400 bg-white dark:bg-slate-900">HOLD</option>
                           </select>
                         </td>
 
@@ -1012,7 +1097,7 @@ export default function WeekSummaryModal({
                             type="text"
                             value={r.remarks}
                             onChange={e => updateRowOverride(rowKey, { remarks: e.target.value })}
-                            className="w-full h-9 bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-xs font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
+                            className="w-full h-8 bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-xs sm:text-sm font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
@@ -1020,7 +1105,7 @@ export default function WeekSummaryModal({
                         {idx === 0 ? (
                           <td
                             rowSpan={rows.length}
-                            className="border border-black dark:border-slate-600 px-4 py-3 text-right font-number text-base sm:text-lg font-bold bg-slate-50/70 dark:bg-slate-900/40 align-middle text-slate-900 dark:text-slate-100"
+                            className="border border-black dark:border-slate-600 px-4 py-2.5 text-right font-number text-sm sm:text-base font-medium bg-slate-50/70 dark:bg-slate-900/40 align-middle text-slate-900 dark:text-slate-100"
                           >
                             ₱{peso(branchSubtotal)}
                           </td>
@@ -1033,29 +1118,29 @@ export default function WeekSummaryModal({
 
               {/* Bottom Total Row */}
               {displayedRows.length > 0 && (
-                <tr className="h-14 bg-slate-100 dark:bg-slate-900 border-t-2 border-b-2 border-black dark:border-slate-600 font-bold">
-                  <td colSpan={2} className="border border-black dark:border-slate-600 px-4 py-3 text-center uppercase tracking-wider text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
+                <tr className="h-14 bg-slate-100 dark:bg-slate-900 border-t-2 border-b-2 border-black dark:border-slate-600 font-semibold">
+                  <td colSpan={2} className="border border-black dark:border-slate-600 px-4 py-3 text-center uppercase tracking-wider text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100">
                     TOTALS
                   </td>
-                  <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right text-sm sm:text-base font-number font-bold text-slate-900 dark:text-slate-100">
+                  <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right text-sm sm:text-base font-number font-semibold text-slate-900 dark:text-slate-100">
                     {peso(totals.totalAmount)}
                   </td>
-                  <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
+                  <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
                     {totals.totalCash > 0 ? peso(totals.totalCash) : ''}
                   </td>
-                  <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
+                  <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
                     {totals.totalOnline > 0 ? peso(totals.totalOnline) : ''}
                   </td>
-                  <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
+                  <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
                     {totals.totalPrevSalary > 0 ? peso(totals.totalPrevSalary) : ''}
                   </td>
                   <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-normal text-slate-400">
                   </td>
-                  <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
+                  <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
                     {totals.totalRelease > 0 ? peso(totals.totalRelease) : ''}
                   </td>
                   <td colSpan={4} className="border border-black dark:border-slate-600"></td>
-                  <td className="border border-black dark:border-slate-600 px-4 py-3 text-right text-base sm:text-lg font-number font-bold bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white">
+                  <td className="border border-black dark:border-slate-600 px-4 py-3 text-right text-base sm:text-lg font-number font-semibold bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white">
                     ₱{peso(totals.totalAmount)}
                   </td>
                 </tr>
@@ -1403,6 +1488,16 @@ export default function WeekSummaryModal({
           </div>
         )}
       </main>
+
+      {/* ── Copied Image Floating Toast ── */}
+      {copiedImage && (
+        <div className="fixed bottom-6 right-6 z-[1000000] flex items-center gap-2.5 px-4 py-3 rounded-xl bg-slate-900 text-white shadow-2xl border border-emerald-500/50 animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span className="text-xs font-bold">
+            Full table image copied to clipboard! Paste (Ctrl+V) anywhere to send.
+          </span>
+        </div>
+      )}
 
       {/* ── Installer Ticket History Modal ── */}
       <InstallerTicketHistoryModal
