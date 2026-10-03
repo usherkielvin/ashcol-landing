@@ -322,6 +322,7 @@ export default function Payouts() {
   // Showcase full-view modal state
   const [showcaseOpen, setShowcaseOpen] = useState(false)
   const [showcaseCopying, setShowcaseCopying] = useState(false)
+  const [showcasePdfing, setShowcasePdfing] = useState(false)
   const showcaseRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -3140,7 +3141,7 @@ export default function Payouts() {
               ...(listPinLeft[col.key] !== undefined ? { position: 'sticky', left: listPinLeft[col.key], zIndex: 2, backgroundColor: bg } : {}),
             })
             return (
-              <div key={installerName} className="rounded-2xl shadow-sm overflow-hidden" style={{ backgroundColor: cardBg, border: `2px solid ${gridLine}` }}>
+              <div key={installerName} data-main-table={installerName} className="rounded-2xl shadow-sm overflow-hidden" style={{ backgroundColor: cardBg, border: `2px solid ${gridLine}` }}>
                 <div
                   className="flex items-center justify-between gap-2 md:grid md:grid-cols-[1fr_auto_1fr] md:gap-3 px-3 md:px-6 py-2.5 md:py-4"
                   style={{ backgroundColor: headerBg, borderBottom: `2px solid ${gridLine}` }}
@@ -3154,7 +3155,7 @@ export default function Payouts() {
                   <span className="order-1 md:order-none flex-1 min-w-0 text-[13px] md:text-2xl font-black uppercase tracking-wide text-left md:text-center truncate md:whitespace-nowrap" style={{ color: textPrimary }}>
                     {displayInstallerName(installerName).toUpperCase()}
                   </span>
-                  <div className="order-2 md:order-none flex items-center gap-1.5 md:gap-2 justify-end shrink-0">
+                  <div data-html2canvas-ignore="true" className="order-2 md:order-none flex items-center gap-1.5 md:gap-2 justify-end shrink-0">
                     {/* Kept on the installer view even though the filter bar is hidden here */}
                     <button
                       type="button"
@@ -3214,6 +3215,37 @@ export default function Payouts() {
                       <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-500" />
                       <span className="hidden md:inline">Columns</span>
                     </button>
+                    <button
+                      type="button"
+                      disabled={showcasePdfing}
+                      onClick={async () => {
+                        const el = document.querySelector<HTMLElement>('[data-main-table]')
+                        if (!el) return
+                        setShowcasePdfing(true)
+                        try {
+                          const { exportShowcaseToPdf } = await import('../utils/showcasePdf')
+                          const safe = (t: string) => t.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '')
+                          const weekLabel = activeWeek ? `${shortDate(activeWeek.from)} – ${shortDate(activeWeek.to)}` : ''
+                          await exportShowcaseToPdf(el, {
+                            filename: `Payout_${safe(displayInstallerName(installerName))}_${activeWeek ? `${activeWeek.from}_${activeWeek.to}` : 'period'}.pdf`,
+                            background: isLight ? '#ffffff' : '#0a1120',
+                            footerLeft: `${currentBranchDisplay} · ${displayInstallerName(installerName).toUpperCase()}${weekLabel ? ` · ${weekLabel}` : ''} · Printed ${new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}`,
+                            footerColor: isLight ? [100, 116, 139] : [148, 163, 184],
+                          })
+                        } catch (e) {
+                          console.error('Payout table PDF export failed:', e)
+                          setConfirmDialog({ title: 'PDF Export Failed', message: 'Could not create the PDF. Please try again.', confirmText: 'OK', variant: 'info', onConfirm: () => {} })
+                        } finally {
+                          setShowcasePdfing(false)
+                        }
+                      }}
+                      title="Export this table (the columns currently shown) as a landscape PDF"
+                      className="hidden md:flex items-center justify-center gap-1.5 w-8 h-8 md:w-auto md:h-auto md:px-3 md:py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/60 cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-wait"
+                      style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
+                    >
+                      {showcasePdfing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />}
+                      <span className="hidden lg:inline">{showcasePdfing ? 'Creating PDF…' : 'Export PDF'}</span>
+                    </button>
                     {/* Showcase — full-view with copy-as-image */}
                     <button
                       type="button"
@@ -3246,12 +3278,14 @@ export default function Payouts() {
                     `}</style>
                     <div
                       ref={listScrollRef}
+                      data-sc-scroll="1"
                       className="pl-scroll w-full overflow-x-auto"
                       onScroll={e => updateListEdges(e.currentTarget)}
                     >
                       <div style={{ minWidth: listMinWidth }}>
                         {/* Header */}
                         <div
+                          data-sc-head="1"
                           className="grid text-[11px] font-bold uppercase tracking-wide"
                           style={{ gridTemplateColumns: listGridTemplate, borderBottom: `2px solid ${gridLine}`, color: textMuted, backgroundColor: headerBg }}
                         >
@@ -3306,6 +3340,7 @@ export default function Payouts() {
                           <div
                             key={row.id}
                             tabIndex={0}
+                            data-sc-row="1"
                             title="Right-click to view job details · Double-click cell to edit"
                             onContextMenu={e => {
                               e.preventDefault()
@@ -3521,7 +3556,7 @@ export default function Payouts() {
                           </div>
                         ) : (
                           /* Totals — one sum under every money column, aligned to the grid. */
-                          <div className="grid text-[13px]" style={{ gridTemplateColumns: listGridTemplate, backgroundColor: headerBg, borderBottom: `2px solid ${gridLine}` }}>
+                          <div data-sc-row="1" className="grid text-[13px]" style={{ gridTemplateColumns: listGridTemplate, backgroundColor: headerBg, borderBottom: `2px solid ${gridLine}` }}>
                             {groupVisibleColumns.map((col, i) => {
                               const total = listTotals[i]
                               return (
@@ -3546,7 +3581,7 @@ export default function Payouts() {
 
                     {/* Edge cues — fade + arrow wherever more columns are hidden off-screen. */}
                     {listEdges.left && (
-                      <div className="absolute top-0 bottom-[14px] pointer-events-none flex items-center" style={{ left: listPinLeft[lastListPinKey ?? ''] !== undefined ? (listWidths[groupVisibleColumns.findIndex(c => c.key === lastListPinKey)] + listPinLeft[lastListPinKey!]) : 0 }}>
+                      <div data-html2canvas-ignore="true" className="absolute top-0 bottom-[14px] pointer-events-none flex items-center" style={{ left: listPinLeft[lastListPinKey ?? ''] !== undefined ? (listWidths[groupVisibleColumns.findIndex(c => c.key === lastListPinKey)] + listPinLeft[lastListPinKey!]) : 0 }}>
                         <div className="h-full w-10" style={{ background: `linear-gradient(to right, ${cardBg}, transparent)` }} />
                         <button
                           type="button"
@@ -3560,7 +3595,7 @@ export default function Payouts() {
                       </div>
                     )}
                     {listEdges.right && (
-                      <div className="absolute top-0 right-0 bottom-[14px] pointer-events-none flex items-center justify-end">
+                      <div data-html2canvas-ignore="true" className="absolute top-0 right-0 bottom-[14px] pointer-events-none flex items-center justify-end">
                         <div className="h-full w-12" style={{ background: `linear-gradient(to left, ${cardBg}, transparent)` }} />
                         <button
                           type="button"
@@ -6153,6 +6188,43 @@ export default function Payouts() {
               </button>
               <button
                 type="button"
+                disabled={showcasePdfing}
+                onClick={async () => {
+                  if (!showcaseRef.current) return
+                  setShowcasePdfing(true)
+                  try {
+                    const { exportShowcaseToPdf } = await import('../utils/showcasePdf')
+                    const safe = (t: string) => t.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '')
+                    const weekLabel = activeWeek ? `${shortDate(activeWeek.from)} – ${shortDate(activeWeek.to)}` : ''
+                    await exportShowcaseToPdf(showcaseRef.current, {
+                      filename: `Payout_${safe(displayInstallerName(selectedInstaller))}_${activeWeek ? `${activeWeek.from}_${activeWeek.to}` : 'period'}.pdf`,
+                      background: isLight ? '#ffffff' : '#0a1120',
+                      footerLeft: `${currentBranchDisplay} · ${displayInstallerName(selectedInstaller).toUpperCase()}${weekLabel ? ` · ${weekLabel}` : ''} · Printed ${new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}`,
+                      footerColor: isLight ? [100, 116, 139] : [148, 163, 184],
+                    })
+                  } catch (e) {
+                    console.error('Showcase PDF export failed:', e)
+                    setConfirmDialog({ title: 'PDF Export Failed', message: 'Could not create the PDF. Please try again.', confirmText: 'OK', variant: 'info', onConfirm: () => {} })
+                  } finally {
+                    setShowcasePdfing(false)
+                  }
+                }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 7,
+                  padding: '8px 18px', borderRadius: 10,
+                  border: '1px solid rgba(16,185,129,0.5)',
+                  backgroundColor: '#10B981',
+                  color: '#ffffff', fontSize: 13, fontWeight: 700,
+                  cursor: showcasePdfing ? 'wait' : 'pointer',
+                  opacity: showcasePdfing ? 0.7 : 1,
+                  transition: 'all 0.15s',
+                }}
+              >
+                <FileSpreadsheet size={14} />
+                {showcasePdfing ? 'Creating PDF…' : 'Export PDF'}
+              </button>
+              <button
+                type="button"
                 onClick={() => setShowcaseOpen(false)}
                 title="Close full tab (Esc)"
                 style={{
@@ -6216,6 +6288,7 @@ export default function Payouts() {
             return (
               <div
                 ref={showcaseRef}
+                data-showcase-capture="1"
                 style={{
                   flex: 1,
                   width: '100%',
@@ -6257,10 +6330,10 @@ export default function Payouts() {
                 </div>
 
                 {/* Table with all columns that have data */}
-                <div style={{ flex: 1, overflowX: 'auto', backgroundColor: scCard }}>
+                <div data-sc-scroll="1" style={{ flex: 1, overflowX: 'auto', backgroundColor: scCard }}>
                   <div style={{ minWidth: '100%' }}>
                     {/* Column headers */}
-                    <div style={{
+                    <div data-sc-head="1" style={{
                       display: 'grid',
                       gridTemplateColumns: scGridTemplate,
                       backgroundColor: scHeaderBg,
@@ -6293,7 +6366,7 @@ export default function Payouts() {
                       const paid2 = paymentStatusOf(row) === 'PAID'
                       const remitAmt = num(row.actualCollected)
                       return (
-                        <div key={row.id} style={{
+                        <div key={row.id} data-sc-row="1" style={{
                           display: 'grid',
                           gridTemplateColumns: scGridTemplate,
                           backgroundColor: rowBg2,
@@ -6379,7 +6452,7 @@ export default function Payouts() {
 
                     {/* Column totals bar aligned with table columns */}
                     {showRows.length > 0 && (
-                      <div style={{
+                      <div data-sc-row="1" style={{
                         display: 'grid',
                         gridTemplateColumns: scGridTemplate,
                         backgroundColor: scHeaderBg,

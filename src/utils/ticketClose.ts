@@ -57,19 +57,27 @@ function readToken(): string {
 /** Mirrors ashcol.tickets.close-lock-legacy-month on the backend. */
 const LEGACY_EDITABLE_MONTH = '2026-10'
 
+const dayKey = (raw: unknown) => String(raw ?? '').split('T')[0].split(' ')[0].trim()
+
 /**
- * Tickets scheduled in the legacy month that were closed before the close lock shipped (no
- * closedAt stamp) and have no photo attached yet stay editable like open tickets, so crews can
- * still finish documenting them. Attaching a photo (or closing through the guarded flow) ends it.
+ * Closed tickets from the legacy month (scheduled, installed or closed in it) that have no photo
+ * attached yet stay editable like open tickets, so crews can still finish documenting them.
+ * Attaching a photo ends the exemption and the normal admin-only lock applies.
  */
 export function isLegacyEditableClosedTicket(ticket: Partial<Ticket> | null | undefined): boolean {
   if (!ticket) return false
   const t = ticket as any
-  if (String(t.closedAt ?? t.closed_at ?? '').trim()) return false
   if (t.hasPhotoAttachments === true) return false
   const rawPhotos = t.photoAttachments !== undefined ? t.photoAttachments : t.photo_attachments
   if (rawPhotos != null && parseTicketPhotos(rawPhotos).length > 0) return false
-  return getEffectiveScheduleDateKey(ticket as Ticket).slice(0, 7) === LEGACY_EDITABLE_MONTH
+  const meta = parseAcMeta(ticket as Ticket) as any
+  const dates = [
+    getEffectiveScheduleDateKey(ticket as Ticket),
+    dayKey(meta.installedDate),
+    dayKey(t.actualCompletion ?? t.actual_completion),
+    dayKey(t.closedAt ?? t.closed_at),
+  ]
+  return dates.some(d => d.slice(0, 7) === LEGACY_EDITABLE_MONTH)
 }
 
 /** Closed field-schedule ticket. Office tickets reuse COMPLETED as a plain workflow state. */
