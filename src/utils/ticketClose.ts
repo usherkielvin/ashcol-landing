@@ -58,7 +58,7 @@ function readToken(): string {
 export function isTicketClosed(ticket: Partial<Ticket> | null | undefined): boolean {
   if (!ticket) return false
   const status = normStatus((ticket as any).scheduleStatus || (ticket as any).schedule_status || ticket.status)
-  const outcome = normStatus(ticket.scheduleOutcome || (ticket as any).schedule_outcome)
+  const outcome = normStatus((ticket as any).scheduleOutcome || (ticket as any).schedule_outcome)
   const isClosedStatus = CLOSED_STATUS_FALLBACK.has(status) || status.startsWith('DONE_') || (
     Boolean(outcome) && (CLOSED_STATUS_FALLBACK.has(outcome) || outcome.startsWith('DONE_'))
   )

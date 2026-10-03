@@ -631,15 +631,19 @@ export default function DashboardLayout() {
 
   // Auto collapse on route change and scroll to top
   const mainContentRef = useRef<HTMLElement>(null)
+  const prevRouteRef = useRef<string | null>(null)
   useEffect(() => {
+    const routeKey = location.pathname + location.search
     if (mainContentRef.current) {
       mainContentRef.current.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior })
     }
     if (window.innerWidth < 768) {
       setSidebarOpen(false)
-    } else if (isHoverExpanded) {
+    } else if (prevRouteRef.current !== null && prevRouteRef.current !== routeKey) {
+      // Minimize the rail after every navigation (pinned or hover-expanded); hovering re-opens it.
       collapseSidebar()
     }
+    prevRouteRef.current = routeKey
   }, [location.pathname, location.search])
 
   // Prevent minimized state on mobile
@@ -793,7 +797,7 @@ export default function DashboardLayout() {
                     onMouseEnter={() => preloadPath(link.path)}
                     onClick={() => {
                       setSidebarOpen(false)
-                      if (isHoverExpanded) collapseSidebar()
+                      collapseSidebar()
                     }}
                     className="group flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150 relative"
                     style={isActive
@@ -887,7 +891,7 @@ export default function DashboardLayout() {
                                 e.stopPropagation()
                                 setActiveSubItem(sub.name)
                                 setSidebarOpen(false)
-                                if (isHoverExpanded) collapseSidebar()
+                                collapseSidebar()
                               }}
                               className={`relative flex items-center gap-2 text-[13.5px] font-semibold transition-colors py-1 ${
                                 isSubActive ? 'text-white' : 'text-white/50 hover:text-white'
