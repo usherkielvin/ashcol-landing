@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import ReactDOM from 'react-dom'
-import { X, GitCommit, Clock, User, Calendar, Send } from 'lucide-react'
+import { X, GitCommit, Clock, User, Calendar, Send, Lock } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { API_BASE_URL } from '../utils/api'
+import { isTicketClosed } from '../utils/ticketClose'
 
 interface HistoryEntry {
   id: string
@@ -30,6 +31,14 @@ interface Ticket {
   ticket_number?: string
   customerName?: string
   customer_name?: string
+  status?: string
+  scheduleStatus?: string
+  schedule_status?: string
+  scheduleOutcome?: string
+  schedule_outcome?: string
+  ticketCategory?: string
+  ticket_category?: string
+  [key: string]: any
 }
 
 interface TicketHistoryGraphModalProps {
@@ -37,6 +46,7 @@ interface TicketHistoryGraphModalProps {
   isOpen: boolean
   onClose: () => void
   onRemarkSubmitted?: (ticketId: string, remark: string) => void
+  readOnly?: boolean
 }
 
 /** Format a raw YYYY-MM-DD string to AUG-16-2026 */
@@ -73,9 +83,13 @@ export default function TicketHistoryGraphModal({
   isOpen,
   onClose,
   onRemarkSubmitted,
+  readOnly = false,
 }: TicketHistoryGraphModalProps) {
   const { theme } = useTheme()
   const isLight = theme === 'light'
+
+  const isClosed = isTicketClosed(ticket as any)
+  const isLocked = Boolean(readOnly || isClosed)
 
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [loading, setLoading] = useState(false)
@@ -117,10 +131,10 @@ export default function TicketHistoryGraphModal({
   useEffect(() => { if (isOpen) void loadHistory() }, [isOpen, loadHistory])
 
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen || isLocked) return
     const t = window.setTimeout(() => remarkInputRef.current?.focus(), 0)
     return () => window.clearTimeout(t)
-  }, [isOpen])
+  }, [isOpen, isLocked])
 
   useEffect(() => {
     if (!isOpen || loading) return
@@ -132,6 +146,7 @@ export default function TicketHistoryGraphModal({
 
   const submitRemark = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (isLocked) return
     const trimmedRemark = remark.trim().toUpperCase()
     if (!trimmedRemark || submittingRemark) return
     setSubmittingRemark(true)
@@ -143,13 +158,20 @@ export default function TicketHistoryGraphModal({
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ remarksUpdate: trimmedRemark }),
       })
-      if (!response.ok) throw new Error('Failed to save remark')
+      if (!response.ok) {
+        let msg = 'Unable to save the update. Please try again.'
+        try {
+          const errData = await response.json()
+          if (errData?.message) msg = errData.message
+        } catch { /* use fallback */ }
+        throw new Error(msg)
+      }
       onRemarkSubmitted?.(ticket.id, trimmedRemark)
       setRemark('')
       onClose()
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saving ticket remark:', err)
-      setRemarkError('Unable to save the update. Please try again.')
+      setRemarkError(err?.message || 'Unable to save the update. Please try again.')
     } finally {
       setSubmittingRemark(false)
     }
@@ -447,50 +469,64 @@ export default function TicketHistoryGraphModal({
           )}
         </div>
 
-        {/* Remark composer */}
+        {/* Remark composer / Read-only notice */}
         <div
           className="px-5 py-4 border-t"
           style={{ borderColor: border, backgroundColor: headerBg }}
         >
-          <form onSubmit={submitRemark} className="flex items-end gap-3">
-            <div className="min-w-0 flex-1">
-              <label htmlFor="ticket-history-remark" className="sr-only">Add ticket remark</label>
-              <textarea
-                ref={remarkInputRef}
-                id="ticket-history-remark"
-                value={remark}
-                onChange={(e) => setRemark(e.target.value.toUpperCase())}
-                onKeyDown={handleKeyDown}
-                placeholder="ADD AN UPDATE OR REMARK..."
-                rows={2}
-                disabled={submittingRemark}
-                className="w-full resize-none rounded-lg border px-3.5 py-2.5 outline-none transition-colors focus:ring-2 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60 uppercase"
-                style={{
-                  fontSize: '0.95rem',
-                  backgroundColor: isLight ? '#ffffff' : '#111827',
-                  borderColor: border, color: textPrimary, fontFamily: 'inherit',
-                  textTransform: 'uppercase',
-                }}
-              />
-              {remarkError && (
-                <p className="mt-1 text-sm" role="alert" style={{ color: '#ef4444' }}>
-                  {remarkError}
-                </p>
-              )}
+          {isLocked ? (
+            <div className="flex items-center justify-between gap-3 py-1">
+              <div className="flex items-center gap-2 text-xs font-semibold" style={{ color: textMuted }}>
+                <Lock className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
+                <span>This ticket is closed — commit history is read-only.</span>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: textMuted, fontWeight: 500 }}>
+                {history.length} commit{history.length === 1 ? '' : 's'}
+              </div>
             </div>
-            <button
-              type="submit"
-              disabled={!remark.trim() || submittingRemark}
-              className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-              style={{ fontSize: '0.9rem' }}
-            >
-              <Send style={{ width: 16, height: 16 }} />
-              {submittingRemark ? 'Saving...' : 'Send'}
-            </button>
-          </form>
-          <div className="mt-2" style={{ fontSize: '0.8rem', color: textMuted, fontWeight: 500 }}>
-            {history.length} commit{history.length === 1 ? '' : 's'}
-          </div>
+          ) : (
+            <>
+              <form onSubmit={submitRemark} className="flex items-end gap-3">
+                <div className="min-w-0 flex-1">
+                  <label htmlFor="ticket-history-remark" className="sr-only">Add ticket remark</label>
+                  <textarea
+                    ref={remarkInputRef}
+                    id="ticket-history-remark"
+                    value={remark}
+                    onChange={(e) => setRemark(e.target.value.toUpperCase())}
+                    onKeyDown={handleKeyDown}
+                    placeholder="ADD AN UPDATE OR REMARK..."
+                    rows={2}
+                    disabled={submittingRemark}
+                    className="w-full resize-none rounded-lg border px-3.5 py-2.5 outline-none transition-colors focus:ring-2 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60 uppercase"
+                    style={{
+                      fontSize: '0.95rem',
+                      backgroundColor: isLight ? '#ffffff' : '#111827',
+                      borderColor: border, color: textPrimary, fontFamily: 'inherit',
+                      textTransform: 'uppercase',
+                    }}
+                  />
+                  {remarkError && (
+                    <p className="mt-1 text-sm" role="alert" style={{ color: '#ef4444' }}>
+                      {remarkError}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="submit"
+                  disabled={!remark.trim() || submittingRemark}
+                  className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+                  style={{ fontSize: '0.9rem' }}
+                >
+                  <Send style={{ width: 16, height: 16 }} />
+                  {submittingRemark ? 'Saving...' : 'Send'}
+                </button>
+              </form>
+              <div className="mt-2" style={{ fontSize: '0.8rem', color: textMuted, fontWeight: 500 }}>
+                {history.length} commit{history.length === 1 ? '' : 's'}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>,

@@ -27,7 +27,21 @@ export type CloseRules = {
 }
 
 const CLOSED_STATUS_FALLBACK = new Set([
-  'COMPLETED', 'INSTALLED', 'DONE_DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'DONE_MOUNTING', 'DONE_RELOCATED', 'DONE_NEGOTIATION',
+  'COMPLETED',
+  'INSTALLED',
+  'DONE_INSTALLED',
+  'DONE_INSTALL',
+  'DONE_CLEANING',
+  'DONE_SURVEY',
+  'DONE_CHECKUP',
+  'DONE_BACKJOB',
+  'DONE_SERVICE',
+  'DONE_DISMANTLE',
+  'DONE_SYSTEM_REPROCESS',
+  'DONE_MOUNTING',
+  'DONE_RELOCATED',
+  'DONE_NEGOTIATION',
+  'DONE_QUOTATION',
 ])
 
 function normStatus(raw?: string | null): string {
@@ -43,7 +57,12 @@ function readToken(): string {
 /** Closed field-schedule ticket. Office tickets reuse COMPLETED as a plain workflow state. */
 export function isTicketClosed(ticket: Partial<Ticket> | null | undefined): boolean {
   if (!ticket) return false
-  if (!CLOSED_STATUS_FALLBACK.has(normStatus(ticket.status))) return false
+  const status = normStatus((ticket as any).scheduleStatus || (ticket as any).schedule_status || ticket.status)
+  const outcome = normStatus(ticket.scheduleOutcome || (ticket as any).schedule_outcome)
+  const isClosedStatus = CLOSED_STATUS_FALLBACK.has(status) || status.startsWith('DONE_') || (
+    Boolean(outcome) && (CLOSED_STATUS_FALLBACK.has(outcome) || outcome.startsWith('DONE_'))
+  )
+  if (!isClosedStatus) return false
   return isFieldCategory(ticket.ticketCategory || ticket.ticket_category)
 }
 

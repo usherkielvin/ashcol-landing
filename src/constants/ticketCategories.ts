@@ -53,7 +53,7 @@ export function getCategoryLabel(value?: string | null): string {
 export function isFieldCategory(value?: string | null): boolean {
   if (!value) return true
   const upper = value.toUpperCase()
-  return upper === 'INSTALLATION' || upper === 'SERVICES' || upper === 'SURVEY'
+  return upper === 'INSTALLATION' || upper === 'INSTALL' || upper === 'SERVICES' || upper === 'SERVICE' || upper === 'SURVEY'
 }
 
 export function isOfficeCategory(value?: string | null): boolean {

@@ -7,7 +7,7 @@ import {
   SlidersHorizontal, Plus, X, RotateCcw, RefreshCw, Save, Loader2, EyeOff, Trash2,
   Stethoscope, Lightbulb, HardHat, PiggyBank, Wind, Recycle, ArrowBigDownDash, Snowflake,
   Users, Receipt, ArrowRightLeft, ExternalLink, Lock, Unlock, FileSpreadsheet,
-  Archive, PauseCircle, Send, Undo2, MoreVertical, Maximize2, Copy, ImageIcon,
+  Archive, PauseCircle, Send, Undo2, MoreVertical, Maximize2, Copy,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { fetchCachedEmployees, readSavedBranches } from '../utils/portalDirectoryCache'
@@ -2256,11 +2256,9 @@ export default function Payouts() {
     return [...fixedMiddle, ...custom, ...trailing]
   }
   const zebraBg = isLight ? '#f8fafc' : '#0c1420'
-  const rowHoverBg = isLight ? '#eef2f7' : '#111d33'
   const headerBg = isLight ? '#f8fafc' : '#0d1520'
   // Grid lines — darker + thicker than default for better scanability
   const gridLine = isLight ? '#64748b' : '#334155'
-  const gridLineBold = isLight ? '#475569' : '#475569'
 
   // ── Date-band colour palette ─────────────────────────────────────────────────
   // Alternating between white/gray shades and green shades for each date group.
@@ -2338,7 +2336,7 @@ export default function Payouts() {
           disabled={isWeekClosed || isCarryOver(row)}
           onChange={e => acc.set(row.id, e.target.value)}
           className="w-full text-center px-2.5 py-2.5 rounded-lg text-xs font-black tracking-wide uppercase bg-transparent border-0 outline-none cursor-pointer disabled:cursor-not-allowed appearance-none"
-          style={{ color: unpaid ? '#D97706' : '#10B981', WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none', textAlign: 'center', textAlignLast: 'center' }}
+          style={{ color: unpaid ? '#D97706' : textPrimary, WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none', textAlign: 'center', textAlignLast: 'center' }}
         >
           {PAYMENT_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
@@ -3238,15 +3236,12 @@ export default function Payouts() {
                           uniqueDates.forEach((d, i) => { dateColorIdx[d] = i % DATE_BAND_PALETTES.length })
                           // Track per-date row counter for alternating light/dark within the band
                           const dateRowCount: Record<string, number> = {}
-                          return regularRows.map((row, idx) => {
+                          return regularRows.map((row) => {
                             const dk = row.workDate || ''
                             const palette = DATE_BAND_PALETTES[dateColorIdx[dk] ?? 0]
                             const countWithinDate = dateRowCount[dk] ?? 0
                             dateRowCount[dk] = countWithinDate + 1
                             const rowBg = countWithinDate % 2 === 0 ? palette.light : palette.dark
-                            // Show a heavier separator at every date boundary
-                            const prevDate = idx > 0 ? (regularRows[idx - 1].workDate || '') : null
-                            const isDateStart = prevDate !== null && prevDate !== dk
                             return (
                           <div
                             key={row.id}
@@ -3321,7 +3316,7 @@ export default function Payouts() {
                               const inlineInputStyle: React.CSSProperties = {
                                 backgroundColor: isLight ? '#ffffff' : '#0f172a',
                                 borderColor: '#10B981',
-                                color: col.key === 'remit' ? remitAccent : textPrimary,
+                                color: textPrimary,
                                 boxShadow: '0 0 0 2px rgba(16, 185, 129, 0.25)',
                               }
 
@@ -3344,7 +3339,7 @@ export default function Payouts() {
                                       title={unpaid ? 'Not fully paid — the tech is paid 50% until the ticket is paid' : 'Paid'}
                                       className="w-full text-[12px] font-black tracking-wide uppercase bg-transparent border-0 outline-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-70 appearance-none text-center"
                                       style={{
-                                        color: unpaid ? '#D97706' : '#10B981',
+                                        color: unpaid ? '#D97706' : textPrimary,
                                         WebkitAppearance: 'none',
                                         MozAppearance: 'none',
                                         appearance: 'none',
@@ -3445,13 +3440,7 @@ export default function Payouts() {
                                         ? textMuted
                                         : isStatus
                                           ? (isDone ? (isLight ? '#047857' : '#34D399') : (isLight ? '#b45309' : '#fbbf24'))
-                                          : col.key === 'remit'
-                                            ? remitAccent
-                                            : col.key === 'date'
-                                              ? (isLight ? '#065F46' : '#34D399')
-                                              : col.key === 'ticketNumber'
-                                                ? textMuted
-                                                : undefined,
+                                          : textPrimary,
                                       opacity: empty ? 0.45 : 1,
                                       fontWeight: col.key === 'date' ? 700 : undefined,
                                     }}
@@ -6124,7 +6113,6 @@ export default function Payouts() {
           {(() => {
             const showRows = selectedInstallerRows.filter(r => !isCarryOver(r))
             const gross = installerTotal(selectedInstallerRows)
-            const base = baseInstallTotal(selectedInstallerRows)
             const totalDed = deductionTotal(selectedInstallerRows)
             const net = gross - totalDed
             const uniqueDates2 = Array.from(new Set(showRows.map(r => r.workDate || ''))).sort()
@@ -6197,7 +6185,7 @@ export default function Payouts() {
                     </div>
                     <div style={{ fontSize: 13, color: '#A7F3D0', marginTop: 4, fontWeight: 500 }}>
                       {activeWeek ? `${shortDate(activeWeek.from)} – ${shortDate(activeWeek.to)}` : ''}
-                      {showRows.length > 0 ? ` · ${showRows.length} job${showRows.length !== 1 ? 's' : ''}` : ''}
+                      {showRows.length > 0 ? ` · ${showRows.length} ticket${showRows.length !== 1 ? 's' : ''}` : ''}
                     </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
@@ -6234,7 +6222,7 @@ export default function Payouts() {
                       <div style={{ padding: '48px', textAlign: 'center', color: scTextMuted, fontSize: 14, fontWeight: 600 }}>
                         No jobs for this period.
                       </div>
-                    ) : showRows.map((row, idx) => {
+                    ) : showRows.map((row) => {
                       const dk = row.workDate || ''
                       const palette = DATE_BAND_PALETTES[dateColorIdx2[dk] ?? 0]
                       const cnt2 = dateRowCount2[dk] ?? 0
@@ -6259,14 +6247,14 @@ export default function Payouts() {
 
                             if (col.key === 'date') {
                               return (
-                                <div key={col.key} style={{ padding: '14px 12px', fontSize: 12, fontWeight: 800, color: isLight ? '#065F46' : '#34D399', borderRight: borderR, height: '100%', display: 'flex', alignItems: 'center' }}>
+                                <div key={col.key} style={{ padding: '14px 12px', fontSize: 12, fontWeight: 800, color: scTextPrimary, borderRight: borderR, height: '100%', display: 'flex', alignItems: 'center' }}>
                                   {row.workDate ? shortDate(row.workDate) : '—'}
                                 </div>
                               )
                             }
                             if (col.key === 'ticketNumber') {
                               return (
-                                <div key={col.key} style={{ padding: '14px 12px', fontSize: 11, color: scTextMuted, borderRight: borderR, height: '100%', display: 'flex', alignItems: 'center' }}>
+                                <div key={col.key} style={{ padding: '14px 12px', fontSize: 11, color: scTextPrimary, borderRight: borderR, height: '100%', display: 'flex', alignItems: 'center' }}>
                                   {row.ticketNumber || row.ticketId || '—'}
                                 </div>
                               )
@@ -6280,7 +6268,7 @@ export default function Payouts() {
                             }
                             if (col.key === 'brandCapacity') {
                               return (
-                                <div key={col.key} style={{ padding: '14px 12px', fontSize: 11, color: scTextMuted, borderRight: borderR, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+                                <div key={col.key} style={{ padding: '14px 12px', fontSize: 11, color: scTextPrimary, borderRight: borderR, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
                                   {row.brandCapacity || '—'}
                                 </div>
                               )
@@ -6294,14 +6282,14 @@ export default function Payouts() {
                             }
                             if (col.key === 'paymentStatus') {
                               return (
-                                <div key={col.key} style={{ padding: '14px 12px', fontSize: 11, fontWeight: 800, color: paid2 ? '#10B981' : '#D97706', borderRight: borderR, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <div key={col.key} style={{ padding: '14px 12px', fontSize: 11, fontWeight: 800, color: paid2 ? scTextPrimary : '#D97706', borderRight: borderR, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                   {paymentStatusLabel(row)}
                                 </div>
                               )
                             }
                             if (col.key === 'remit') {
                               return (
-                                <div key={col.key} style={{ padding: '14px 12px', fontSize: 12, fontWeight: 700, color: remitAmt > 0 ? remitAccentSC : scTextMuted, backgroundColor: remitAmt > 0 ? remitTintSC : undefined, borderRight: borderR, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                                <div key={col.key} style={{ padding: '14px 12px', fontSize: 12, fontWeight: 700, color: scTextPrimary, backgroundColor: remitAmt > 0 ? remitTintSC : undefined, borderRight: borderR, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                                   {remitAmt > 0 ? `₱${peso(remitAmt)}` : (row.actualCollected || '—')}
                                 </div>
                               )
@@ -6371,80 +6359,6 @@ export default function Payouts() {
                         })}
                       </div>
                     )}
-                  </div>
-                </div>
-
-                {/* Compact single counter summary below — sleek, not oversized, avoids duplicate counters */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 16,
-                  padding: '10px 24px',
-                  backgroundColor: scHeaderBg,
-                  flexShrink: 0,
-                  borderTop: `2px solid ${scBord}`,
-                  minHeight: 50,
-                }}>
-                  {/* Left: Job count & secondary breakdown info if applicable */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                    <span style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      padding: '3px 8px',
-                      borderRadius: 6,
-                      fontSize: 11,
-                      fontWeight: 800,
-                      backgroundColor: isLight ? '#E2E8F0' : '#334155',
-                      color: scTextPrimary,
-                      letterSpacing: '0.04em',
-                    }}>
-                      {showRows.length} {showRows.length === 1 ? 'JOB' : 'JOBS'}
-                    </span>
-                    {totalDed > 0 ? (
-                      <span style={{ fontSize: 12, color: scTextMuted, fontWeight: 600 }}>
-                        Gross: <strong style={{ color: scTextPrimary, fontVariantNumeric: 'tabular-nums' }}>₱{peso(gross)}</strong>
-                        {' · '}
-                        Deductions: <strong style={{ color: isLight ? '#DC2626' : '#F87171', fontVariantNumeric: 'tabular-nums' }}>−₱{peso(totalDed)}</strong>
-                      </span>
-                    ) : (
-                      gross !== base && (
-                        <span style={{ fontSize: 12, color: scTextMuted, fontWeight: 500 }}>
-                          Base ₱{peso(base)} · Add-ons ₱{peso(gross - base)}
-                        </span>
-                      )
-                    )}
-                  </div>
-
-                  {/* Right: ONLY ONE prominent counter badge */}
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '5px 14px',
-                    borderRadius: 8,
-                    backgroundColor: isLight ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.2)',
-                    border: '1px solid rgba(16,185,129,0.35)',
-                    flexShrink: 0,
-                  }}>
-                    <span style={{
-                      fontSize: 11,
-                      fontWeight: 800,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.08em',
-                      color: isLight ? '#047857' : '#34D399',
-                    }}>
-                      Net Payout
-                    </span>
-                    <span style={{
-                      fontSize: 17,
-                      fontWeight: 900,
-                      color: net < 0 ? (isLight ? '#DC2626' : '#F87171') : (isLight ? '#047857' : '#34D399'),
-                      fontVariantNumeric: 'tabular-nums',
-                      letterSpacing: '-0.01em',
-                    }}>
-                      {net < 0 ? '−' : ''}₱{peso(Math.abs(net))}
-                    </span>
                   </div>
                 </div>
               </div>

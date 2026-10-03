@@ -7718,6 +7718,8 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                                     // VEHICLE is drag-to-reorder now — a tap-to-view-details popup
                                     // on the same cell just gets in the way of grabbing it.
                                     if (col.label === 'VEHICLE' || col.label === 'TICKET NO') return
+                                    // Closed tickets: COMMIT and UPDATE cells are strictly read-only and unclickable
+                                    if (isTicketClosed(ticket) && (col.label === 'COMMIT' || col.label === 'UPDATE')) return
                                     // INSTALLER/NEGOTIATOR are strict dropdown pickers — a single
                                     // click should open the dropdown directly, not a view-popup
                                     // with a separate pencil button to get to the picker.
@@ -7760,7 +7762,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                                     overflow: 'hidden',
                                     textOverflow: 'clip',
                                     transition: isDropTargetRow ? 'background-color 1s ease' : 'background-color 0.1s ease',
-                                    cursor: canEdit && !isTicketClosed(ticket) && (!isGhost || allowGhostCellEdit) && INLINE_EDIT_COLUMNS.has(col.label) ? 'text' : 'default',
+                                    cursor: canEdit && !isTicketClosed(ticket) && (!isGhost || allowGhostCellEdit) && INLINE_EDIT_COLUMNS.has(col.label) && !isCellLockedForInline(ticket, col.label) ? 'text' : 'default',
                                     verticalAlign: 'middle',
                                     textAlign: col.align || 'left',
                                     userSelect: isEditingCell ? 'text' : (canEdit && !isTicketClosed(ticket) && (!isGhost || allowGhostCellEdit) ? 'none' : undefined),
@@ -10220,6 +10222,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
         <TicketHistoryGraphModal
           ticket={historyGraphModal.ticket}
           isOpen={historyGraphModal.isOpen}
+          readOnly={isTicketLockedFor(historyGraphModal.ticket, role)}
           onClose={() => setHistoryGraphModal(null)}
           onRemarkSubmitted={(ticketId, remark) => {
             setTickets(currentTickets => currentTickets.map(currentTicket => (
