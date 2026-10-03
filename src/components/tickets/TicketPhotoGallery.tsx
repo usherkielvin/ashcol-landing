@@ -141,6 +141,20 @@ function isImageFile(file: File): boolean {
   return file.type.startsWith('image/') || IMAGE_NAME_RE.test(file.name)
 }
 
+/** True below Tailwind's `sm` breakpoint (the same point the photo grid drops to 2 columns). */
+function useIsMobile(): boolean {
+  const query = '(max-width: 639px)'
+  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(query)
+    const onChange = () => setMobile(mq.matches)
+    onChange()
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  return mobile
+}
+
 function formatUploadedAt(iso?: string): string {
   if (!iso) return ''
   const d = new Date(iso)
@@ -197,6 +211,7 @@ export function TicketPhotoGallery({
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [confirm, setConfirm] = useState<ConfirmDialogState | null>(null)
   const [globalDragOver, setGlobalDragOver] = useState(false)
+  const isMobile = useIsMobile()
 
   const inputRef = useRef<HTMLInputElement>(null)
   /** The holder Ctrl+V pastes into. It stays put: once filled, pasting again is blocked, not advanced. */
@@ -522,22 +537,27 @@ export function TicketPhotoGallery({
     setEditDescDraft(photo.description || '')
   }
 
+  /** Saves a photo's title (shared by the inline title field and the edit modal). Resolves true on success. */
+  const persistDescription = async (photo: TicketPhoto, raw: string): Promise<boolean> => {
+    const nextDesc = raw.trim().toUpperCase() || undefined
+    try {
+      const saved = await updateTicketPhotos(ticketId, photosRef.current, current =>
+        withSlots(current, slotPresets).map(p => (p.id === photo.id || p.url === photo.url ? { ...p, description: nextDesc } : p)))
+      applySaved(saved)
+      setMessage({ kind: 'ok', text: nextDesc ? 'Description updated.' : 'Description removed.' })
+      return true
+    } catch (err) {
+      setMessage({ kind: 'error', text: err instanceof Error ? err.message : 'Failed to save description' })
+      return false
+    }
+  }
+
   const saveEditedDescription = async () => {
     if (!editingPhoto) return
     setSavingDesc(true)
-    const targetId = editingPhoto.id
-    const nextDesc = editDescDraft.trim().toUpperCase() || undefined
-    try {
-      const saved = await updateTicketPhotos(ticketId, photosRef.current, current =>
-        withSlots(current, slotPresets).map(p => (p.id === targetId || p.url === editingPhoto.url ? { ...p, description: nextDesc } : p)))
-      applySaved(saved)
-      setMessage({ kind: 'ok', text: nextDesc ? 'Description updated.' : 'Description removed.' })
-      setEditingPhoto(null)
-    } catch (err) {
-      setMessage({ kind: 'error', text: err instanceof Error ? err.message : 'Failed to save description' })
-    } finally {
-      setSavingDesc(false)
-    }
+    const ok = await persistDescription(editingPhoto, editDescDraft)
+    setSavingDesc(false)
+    if (ok) setEditingPhoto(null)
   }
 
   // ── global drop zone on the entire gallery ────────────────────────────────
@@ -652,9 +672,15 @@ export function TicketPhotoGallery({
                     canManage={canManage}
                     deletingId={deletingId}
                     tileStyle={tileStyle}
+                    presets={slotPresets}
+                    cardBg={cardBg}
+                    border={border}
+                    textPrimary={textPrimary}
+                    textMuted={textMuted}
                     onView={() => setLightboxIndex(Math.max(0, photos.indexOf(photo)))}
                     onEdit={() => startEditDescription(photo)}
                     onDelete={() => askDelete(photo)}
+                    onRename={(desc) => persistDescription(photo, desc)}
                   />
                 )
               }
@@ -795,10 +821,17 @@ export function TicketPhotoGallery({
               </button>
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="w-16 h-16 rounded-lg overflow-hidden shrink-0 border" style={{ borderColor: border }}>
-                <img src={editingPhoto.thumbUrl || editingPhoto.url} alt="" className="w-full h-full object-cover" />
+            {isMobile && (
+              <div className="w-full h-44 rounded-xl overflow-hidden border flex items-center justify-center bg-black/80" style={{ borderColor: border }}>
+                <img src={editingPhoto.url || editingPhoto.thumbUrl} alt="" className="max-w-full max-h-full object-contain" />
               </div>
+            )}
+            <div className="flex items-center gap-3">
+              {!isMobile && (
+                <div className="w-16 h-16 rounded-lg overflow-hidden shrink-0 border" style={{ borderColor: border }}>
+                  <img src={editingPhoto.thumbUrl || editingPhoto.url} alt="" className="w-full h-full object-cover" />
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <p className="text-[11px] font-bold truncate" style={{ color: textPrimary }}>
                   {editingPhoto.uploadedBy || 'Uploaded Photo'}
@@ -838,10 +871,11 @@ export function TicketPhotoGallery({
                 Description / Note
               </label>
               <textarea
-                autoFocus
                 rows={2}
                 placeholder={isInstall ? "e.g. SCHEMATIC, INDOOR UNIT…" : "e.g. JOB ORDER, SERVICE REPORT…"}
                 value={editDescDraft}
+                // on mobile the keyboard would cover the presets — let the person pick or tap in
+                autoFocus={!isMobile}
                 onChange={(e) => setEditDescDraft(e.target.value)}
                 className="w-full text-xs font-semibold p-2.5 rounded-xl border outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 resize-none uppercase"
                 style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
@@ -902,17 +936,23 @@ export function TicketPhotoGallery({
 /** Already-uploaded photo tile with hover overlay + edit/delete buttons. */
 function UploadedPhotoCell({
   photo, index, canManage, deletingId,
-  tileStyle,
-  onView, onEdit, onDelete,
+  tileStyle, presets, cardBg, border, textPrimary, textMuted,
+  onView, onEdit, onDelete, onRename,
 }: {
   photo: TicketPhoto
   index: number
   canManage: boolean
   deletingId: string | null
   tileStyle: React.CSSProperties
+  presets: readonly string[]
+  cardBg: string
+  border: string
+  textPrimary: string
+  textMuted: string
   onView: () => void
   onEdit: () => void
   onDelete: () => void
+  onRename: (description: string) => Promise<boolean>
 }) {
   return (
     <div className="group relative aspect-square rounded-xl overflow-hidden transition-all duration-200" style={tileStyle}>
@@ -929,7 +969,7 @@ function UploadedPhotoCell({
           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
           draggable={false}
         />
-        {photo.description && (
+        {!canManage && photo.description && (
           <div
             className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-md bg-black/75 backdrop-blur-sm text-emerald-400 flex items-center gap-1 border border-emerald-500/30 group-hover:opacity-0 transition-opacity max-w-[90%]"
             title={photo.description}
@@ -943,9 +983,9 @@ function UploadedPhotoCell({
       {/* Hover overlay */}
       <div
         onClick={onView}
-        className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/95 via-black/80 to-transparent text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none flex flex-col justify-end"
+        className={`absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/95 via-black/80 to-transparent text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none flex flex-col justify-end ${canManage ? 'pb-9' : ''}`}
       >
-        {photo.description ? (
+        {canManage ? null : photo.description ? (
           <div className="flex items-start gap-1">
             <FileText className="w-3 h-3 text-emerald-400 shrink-0 mt-0.5" />
             <p className="text-[10px] font-black leading-tight text-emerald-300 line-clamp-3 select-none uppercase">{photo.description}</p>
@@ -958,6 +998,20 @@ function UploadedPhotoCell({
           {photo.size ? <span>· {formatBytes(photo.size)}</span> : null}
         </div>
       </div>
+
+      {/* Editable title with preset picker */}
+      {canManage && (
+        <PhotoTitleField
+          value={photo.description || ''}
+          presets={presets}
+          cardBg={cardBg}
+          border={border}
+          textPrimary={textPrimary}
+          textMuted={textMuted}
+          onCommit={onRename}
+          onOpenPopup={onEdit}
+        />
+      )}
 
       {/* Action buttons */}
       {canManage && (
@@ -981,6 +1035,112 @@ function UploadedPhotoCell({
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * Photo title shown on the tile as an editable text field. Focusing it opens the preset list
+ * (pick one, or type anything); Enter / blur / picking a preset saves, Escape cancels.
+ */
+function PhotoTitleField({
+  value, presets, cardBg, border, textPrimary, textMuted, onCommit, onOpenPopup,
+}: {
+  value: string
+  presets: readonly string[]
+  cardBg: string
+  border: string
+  textPrimary: string
+  textMuted: string
+  onCommit: (description: string) => Promise<boolean>
+  /** Mobile: tapping the title opens the centered edit popup instead of editing inline. */
+  onOpenPopup: () => void
+}) {
+  const isMobile = useIsMobile()
+  const [draft, setDraft] = useState('')
+  const [open, setOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  /** Set when a preset was picked or Escape pressed, so the blur that follows doesn't save the old draft. */
+  const skipBlurRef = useRef(false)
+
+  const commit = async (next: string) => {
+    setOpen(false)
+    const clean = next.trim().toUpperCase()
+    if (clean === value.trim().toUpperCase()) return
+    setSaving(true)
+    await onCommit(clean)
+    setSaving(false)
+  }
+
+  const shown = open ? draft : value
+
+  if (isMobile) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onOpenPopup() }}
+        aria-label={`Edit photo title: ${value || 'none'}`}
+        className="absolute bottom-1 inset-x-1 z-20 flex items-center gap-1 pl-1.5 pr-1.5 py-1 rounded-md bg-black/75 backdrop-blur-sm border border-emerald-500/30 text-left active:scale-[0.98] transition-transform"
+      >
+        <MessageSquare className="w-2.5 h-2.5 shrink-0 text-emerald-400" />
+        <span className={`text-[9px] font-black truncate ${value ? 'uppercase text-emerald-400' : 'text-slate-400 font-semibold'}`}>
+          {value || 'Add title…'}
+        </span>
+        <Pencil className="w-2.5 h-2.5 shrink-0 ml-auto text-slate-400" />
+      </button>
+    )
+  }
+
+  return (
+    <div className="absolute bottom-1 inset-x-1 z-20" onClick={(e) => e.stopPropagation()}>
+      {open && presets.length > 0 && (
+        <div
+          className="absolute bottom-full mb-1 inset-x-0 overflow-y-auto rounded-lg border shadow-xl p-1 flex flex-col gap-0.5"
+          style={{ backgroundColor: cardBg, borderColor: border, maxHeight: '9rem' }}
+          // keep focus in the input so a click on a preset isn't swallowed by the blur
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          {presets.map(p => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => { skipBlurRef.current = true; inputRef.current?.blur(); void commit(p) }}
+              className={`text-left px-2 py-1 rounded text-[9.5px] font-black uppercase tracking-tight transition-colors ${
+                value.trim().toUpperCase() === p ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/15'
+              }`}
+              style={value.trim().toUpperCase() === p ? undefined : { color: textPrimary }}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="relative">
+        <input
+          ref={inputRef}
+          type="text"
+          value={shown}
+          disabled={saving}
+          placeholder="Add title…"
+          aria-label="Photo title"
+          onFocus={() => { setDraft(value); setOpen(true) }}
+          onChange={(e) => setDraft(e.target.value.toUpperCase())}
+          onBlur={() => {
+            if (skipBlurRef.current) { skipBlurRef.current = false; setOpen(false); return }
+            void commit(draft)
+          }}
+          onKeyDown={(e) => {
+            e.stopPropagation()
+            if (e.key === 'Enter') { e.preventDefault(); inputRef.current?.blur() }
+            else if (e.key === 'Escape') { skipBlurRef.current = true; inputRef.current?.blur() }
+          }}
+          className="w-full pl-1.5 pr-5 py-0.5 rounded-md bg-black/75 backdrop-blur-sm text-[8.5px] font-black uppercase text-emerald-400 placeholder:text-slate-400 placeholder:normal-case border border-emerald-500/30 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 disabled:opacity-60"
+        />
+        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }}>
+          {saving ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <MessageSquare className="w-2.5 h-2.5" />}
+        </span>
+      </div>
     </div>
   )
 }
