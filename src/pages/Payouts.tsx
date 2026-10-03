@@ -2343,6 +2343,79 @@ export default function Payouts() {
     return String(raw).trim()
   }
 
+  // PDF of an installer's payout table, drawn as real text (see utils/payoutPdf.ts). `onlyWithData`
+  // (Showcase) drops columns with no values; the main table exports exactly the columns it shows.
+  const runPayoutPdf = async (installerName: string, onlyWithData: boolean) => {
+    setShowcasePdfing(true)
+    try {
+      const { exportPayoutPdf } = await import('../utils/payoutPdf')
+      const allRows = selectedInstallerRows
+      const regular = allRows.filter(r => !isCarryOver(r))
+      let cols = visibleColumnsFor(installerName)
+      if (onlyWithData) {
+        cols = cols.filter(col => ['date', 'ticketNumber', 'customerName', 'brandCapacity', 'installationUpload', 'paymentStatus'].includes(col.key)
+          || regular.some(r => { const t = listCellText(col, r).trim(); return t && t !== '—' && t !== '₱0.00' && t !== '0' }))
+      }
+      const bands = [{ light: '#FFFFFF', dark: '#F1F5F9' }, { light: '#F0FDF4', dark: '#DCFCE7' }]
+      const dates = Array.from(new Set(regular.map(r => r.workDate || ''))).sort()
+      const bandOf: Record<string, number> = {}
+      dates.forEach((d, i) => { bandOf[d] = i % bands.length })
+      const seen: Record<string, number> = {}
+      const rows = regular.map(row => {
+        const dk = row.workDate || ''
+        const n = seen[dk] ?? 0
+        seen[dk] = n + 1
+        const tones: Record<number, 'done' | 'warn'> = {}
+        const cells = cols.map((col, i) => {
+          const text = listCellText(col, row)
+          if (col.key === 'installationUpload' && text) tones[i] = /^DONE\b/i.test(text) ? 'done' : 'warn'
+          if (col.key === 'paymentStatus' && paymentStatusOf(row) !== 'PAID') tones[i] = 'warn'
+          return text
+        })
+        return { cells, fill: n % 2 === 0 ? bands[bandOf[dk] ?? 0].light : bands[bandOf[dk] ?? 0].dark, tones }
+      })
+      const totals = cols.map((col, i) => {
+        if (i === 0) return 'TOTAL'
+        if (col.key === 'remit') { const t = remittanceTotal(regular); return t ? `₱${peso(t)}` : '' }
+        if (col.isMoney) { const t = regular.reduce((sum, r) => sum + num(String(getColAccessor(col.key).get(r) ?? '')), 0); return t ? `₱${peso(t)}` : '' }
+        return ''
+      })
+      const gross = installerTotal(allRows)
+      const ded = deductionTotal(allRows)
+      const awaiting = allRows.filter(hasPendingBalance).reduce((sum, r) => sum + rowTotal(r), 0)
+      const net = gross - ded
+      const weekLabel = activeWeek ? `Week ${activeWeek.weekNumber} (${activeWeek.label})` : formatMonth(activeMonth)
+      const safe = (t: string) => t.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '')
+      exportPayoutPdf({
+        filename: `Payout_${safe(displayInstallerName(installerName))}_${activeWeek ? `${activeWeek.from}_${activeWeek.to}` : activeMonth}.pdf`,
+        branch: currentBranchDisplay || 'Branch',
+        title: displayInstallerName(installerName),
+        chips: [
+          { label: weekLabel },
+          { label: `${regular.length} ${regular.length === 1 ? 'ticket' : 'tickets'}` },
+          { label: 'Gross', value: `₱${peso(gross)}` },
+          ...(awaiting > 0 ? [{ label: 'Awaiting payment', value: `₱${peso(awaiting)}`, tone: 'warn' as const }] : []),
+          ...(ded > 0 ? [{ label: 'Deductions', value: `-₱${peso(ded)}`, tone: 'bad' as const }] : []),
+          { label: 'Net payout', value: `${net < 0 ? '-' : ''}₱${peso(Math.abs(net))}`, tone: 'good' as const },
+        ],
+        columns: cols.map(col => ({
+          key: col.key,
+          label: col.label,
+          align: col.key === 'paymentStatus' ? 'center' as const : (col.align === 'right' || col.isMoney) ? 'right' as const : 'left' as const,
+          remit: col.key === 'remit',
+        })),
+        rows,
+        totals,
+        footerLeft: `${currentBranchDisplay} | ${displayInstallerName(installerName).toUpperCase()} | ${weekLabel} | Printed ${new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}`,
+      })
+    } catch (e) {
+      console.error('Payout PDF export failed:', e)
+      setConfirmDialog({ title: 'PDF Export Failed', message: 'Could not create the PDF. Please try again.', confirmText: 'OK', variant: 'info', onConfirm: () => {} })
+    } finally {
+      setShowcasePdfing(false)
+    }
+  }
+
   // Mobile card value cell — same accessors as the desktop grid, just without the
   // sticky/pin plumbing a card list doesn't need. Date/Ticket #/Customer Name and Job
   // Total are never passed in here — the mobile card shows those in its header instead.
@@ -3218,27 +3291,7 @@ export default function Payouts() {
                     <button
                       type="button"
                       disabled={showcasePdfing}
-                      onClick={async () => {
-                        const el = document.querySelector<HTMLElement>('[data-main-table]')
-                        if (!el) return
-                        setShowcasePdfing(true)
-                        try {
-                          const { exportShowcaseToPdf } = await import('../utils/showcasePdf')
-                          const safe = (t: string) => t.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '')
-                          const weekLabel = activeWeek ? `${shortDate(activeWeek.from)} – ${shortDate(activeWeek.to)}` : ''
-                          await exportShowcaseToPdf(el, {
-                            filename: `Payout_${safe(displayInstallerName(installerName))}_${activeWeek ? `${activeWeek.from}_${activeWeek.to}` : 'period'}.pdf`,
-                            background: isLight ? '#ffffff' : '#0a1120',
-                            footerLeft: `${currentBranchDisplay} · ${displayInstallerName(installerName).toUpperCase()}${weekLabel ? ` · ${weekLabel}` : ''} · Printed ${new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}`,
-                            footerColor: isLight ? [100, 116, 139] : [148, 163, 184],
-                          })
-                        } catch (e) {
-                          console.error('Payout table PDF export failed:', e)
-                          setConfirmDialog({ title: 'PDF Export Failed', message: 'Could not create the PDF. Please try again.', confirmText: 'OK', variant: 'info', onConfirm: () => {} })
-                        } finally {
-                          setShowcasePdfing(false)
-                        }
-                      }}
+                      onClick={() => void runPayoutPdf(installerName, false)}
                       title="Export this table (the columns currently shown) as a landscape PDF"
                       className="hidden md:flex items-center justify-center gap-1.5 w-8 h-8 md:w-auto md:h-auto md:px-3 md:py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/60 cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-wait"
                       style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
@@ -6189,26 +6242,7 @@ export default function Payouts() {
               <button
                 type="button"
                 disabled={showcasePdfing}
-                onClick={async () => {
-                  if (!showcaseRef.current) return
-                  setShowcasePdfing(true)
-                  try {
-                    const { exportShowcaseToPdf } = await import('../utils/showcasePdf')
-                    const safe = (t: string) => t.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '')
-                    const weekLabel = activeWeek ? `${shortDate(activeWeek.from)} – ${shortDate(activeWeek.to)}` : ''
-                    await exportShowcaseToPdf(showcaseRef.current, {
-                      filename: `Payout_${safe(displayInstallerName(selectedInstaller))}_${activeWeek ? `${activeWeek.from}_${activeWeek.to}` : 'period'}.pdf`,
-                      background: isLight ? '#ffffff' : '#0a1120',
-                      footerLeft: `${currentBranchDisplay} · ${displayInstallerName(selectedInstaller).toUpperCase()}${weekLabel ? ` · ${weekLabel}` : ''} · Printed ${new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}`,
-                      footerColor: isLight ? [100, 116, 139] : [148, 163, 184],
-                    })
-                  } catch (e) {
-                    console.error('Showcase PDF export failed:', e)
-                    setConfirmDialog({ title: 'PDF Export Failed', message: 'Could not create the PDF. Please try again.', confirmText: 'OK', variant: 'info', onConfirm: () => {} })
-                  } finally {
-                    setShowcasePdfing(false)
-                  }
-                }}
+                onClick={() => void runPayoutPdf(selectedInstaller, true)}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 7,
                   padding: '8px 18px', borderRadius: 10,
