@@ -683,6 +683,26 @@ export default function ExpenseRecords() {
   // Latest request wins: a slow answer for a branch the user already left must not overwrite the current one.
   const expensesRequest = useRef(0);
 
+  // A receipt record whose link to its purchase was lost: attach it to the purchase again.
+  const linkRecordToPurchase = async (recordId: string, purchaseId: string, label: string) => {
+    if (!purchaseId) return;
+    if (!window.confirm(`Link this record to the purchase\n\n${label}\n\nas its receipt?`)) return;
+    const token = localStorage.getItem("ashcol-token") || sessionStorage.getItem("ashcol-token") || "";
+    const res = await fetch(`${API_BASE_URL}/v1/reports/purchases/${encodeURIComponent(purchaseId)}/link-expense`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ expenseId: recordId }),
+    });
+    if (!res.ok) {
+      let msg = `Could not link the record (HTTP ${res.status})`;
+      try { const j = await res.json(); msg = j.error || j.message || msg; } catch { /* keep default */ }
+      alert(msg);
+      return;
+    }
+    setDataVersion((v) => v + 1);
+    await reload();
+  };
+
   // A record whose date was misread (e.g. 2024 instead of 2026) falls into another month: put it on its DTR's date.
   const moveRecordsToDtrDate = async (recIds: string[], isoDate: string) => {
     const label = parseSmartDate(isoDate) || isoDate;
@@ -1248,6 +1268,9 @@ export default function ExpenseRecords() {
     reimburseDue?: number;
     reimburseFound?: boolean;
     ref?: string;
+      receiptNo?: string;
+    receiptImage?: string;
+    company?: string;
   };
   // One feed of this branch's purchases (every date), loaded once per branch and kept in a cache so switching months or
   // coming back is instant. The month's DTR lines and the all-dates pending list are both derived from it, so they cannot
@@ -4518,6 +4541,29 @@ export default function ExpenseRecords() {
                                       >
                                         {fmt(i.amount)}
                                       </span>
+                                      {r.id === "manual" && (() => {
+                                        // purchases in this period that could own this receipt (not the ones handed back unspent)
+                                        const options = dtrLines.rows.filter((l) => l.type === "PURCHASE" && !l.returnedAll);
+                                        if (options.length === 0) return null;
+                                        const labelOf = (l: DtrLine) => `${l.reportDate} · ${l.description.split("|").filter(Boolean).join(" · ")} · ${fmt(l.amount)}`;
+                                        return (
+                                          <select
+                                            value=""
+                                            onChange={(e) => {
+                                              const line = options.find((l) => l.id === e.target.value);
+                                              if (line) void linkRecordToPurchase(i.key, line.id, labelOf(line));
+                                            }}
+                                            title="This record is the receipt of a DTR purchase whose link was lost — pick the purchase"
+                                            className="shrink-0 max-w-[180px] text-[11px] font-bold px-2 py-1 rounded-md cursor-pointer"
+                                            style={{ color: accent, border: `1px solid ${accent}55`, backgroundColor: `${accent}12` }}
+                                          >
+                                            <option value="">Link to purchase…</option>
+                                            {options.map((l) => (
+                                              <option key={l.id} value={l.id}>{labelOf(l)}</option>
+                                            ))}
+                                          </select>
+                                        );
+                                      })()}
                                       {i.recIds && i.fixDate && (
                                         <button
                                           type="button"
@@ -4951,19 +4997,38 @@ export default function ExpenseRecords() {
                           )).flatMap((rowEl, idx) => {
                             // The receipt(s) linked to this purchase, so it is clear which receipt came in over the cash given.
                             const l = missing[idx];
-                            const recs = (l.resolvedExpenseId || "")
+                            const linkedRecs = (l.resolvedExpenseId || "")
                               .split(",")
                               .map((x) => x.trim())
                               .filter(Boolean)
                               .map((x) => expenses.find((e) => e.id === x))
                               .filter((x): x is AuditExpense => !!x);
+                            // Link lost (e.g. the DTR was re-saved from an old copy): fall back to the receipt number on the purchase.
+                            const recNo = (l.receiptNo || "").trim().toUpperCase();
+                            const recs = linkedRecs.length > 0 || !recNo
+                              ? linkedRecs
+                              : expenses.filter((e) => (e.receiptNo || "").trim().toUpperCase() === recNo);
+                            const findInList = (term: string) => {
+                              setFilterMonth("All");
+                              setSearch(term);
+                              setWhyOpen(false);
+                              setTimeout(() => document.getElementById("expense-records-table")?.scrollIntoView({ behavior: "smooth" }), 50);
+                            };
                             return [
                               rowEl,
                               <div key={`${l.id}-receipts`} className="pl-[88px] pb-1.5 flex flex-col gap-1">
                                 {recs.length === 0 ? (
-                                  <span className="text-[10px]" style={{ color: textMuted }}>
-                                    No receipt record linked to this purchase.
-                                  </span>
+                                  <div className="flex items-center gap-2 text-[10px]" style={{ color: textMuted }}>
+                                    {l.receiptImage && (
+                                      <a href={l.receiptImage} target="_blank" rel="noopener noreferrer" title="Open receipt">
+                                        <img src={l.receiptImage} alt="Receipt" className="h-7 w-7 rounded object-cover" style={{ border: `1px solid ${border}` }} />
+                                      </a>
+                                    )}
+                                    <span>
+                                      {l.receiptImage ? "Receipt photo is on the purchase, but its record was not found" : "No receipt record linked to this purchase"}
+                                      {l.receiptNo ? ` (OR ${l.receiptNo})` : ""}.
+                                    </span>
+                                  </div>
                                 ) : (
                                   recs.map((r) => (
                                     <div key={r.id} className="flex items-center gap-2 text-[10px]" style={{ color: textMuted }}>
@@ -4978,6 +5043,15 @@ export default function ExpenseRecords() {
                                         {r.company || r.description || "Receipt"}
                                         {r.receiptNo ? ` · OR ${r.receiptNo}` : ""} · {r.date} · recorded {fmt(r.amount)}
                                       </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => findInList(r.receiptNo || r.description || r.company || "")}
+                                        title="Show this record in the list below (all months)"
+                                        className="font-bold underline cursor-pointer"
+                                        style={{ color: accent }}
+                                      >
+                                        Find in list
+                                      </button>
                                     </div>
                                   ))
                                 )}
@@ -5189,6 +5263,7 @@ export default function ExpenseRecords() {
         })()}
 
       {/* ── RECEIPT TABLE / DAILY LOG / PURCHASES ── */}
+      <div id="expense-records-table" />
       {activeTab === "expenses" && branchId && (
         <ExpenseTable
           branchName={branchName}
