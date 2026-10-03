@@ -74,6 +74,8 @@ export interface Ticket {
   /** JSON array of TicketPhoto (see utils/ticketPhotos.ts); null on light schedule payloads. */
   photoAttachments?: string | null
   photo_attachments?: string | null
+  /** Server flag: at least one photo is attached (set even when the light payload omits the list). */
+  hasPhotoAttachments?: boolean | null
   finalDate?: string
   final_date?: string
   /** Stamped by the backend when the ticket is closed via Close Ticket. */

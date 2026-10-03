@@ -113,7 +113,7 @@ export default function Payouts() {
   const [syncFailed, setSyncFailed] = useState(false)
   // Header shows no save-status indicator per the simplified toolbar — the setter still
   // drives autosave logic below, the value itself just isn't rendered anywhere right now.
-  const [, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('idle')
 
   const [branches, setBranches] = useState<{ id: string; name: string; payrollRates?: string | null }[]>([])
   const [branchFilter, setBranchFilter] = useState(() => {
@@ -1013,11 +1013,11 @@ export default function Payouts() {
   }))
 
   // Core background save routine
-  const savePayrollToBackend = useCallback(async (data: PayrollRow[], bId: string, mKey: string) => {
-    if (!bId || !mKey) return
+  const savePayrollToBackend = useCallback(async (data: PayrollRow[], bId: string, mKey: string): Promise<boolean> => {
+    if (!bId || !mKey) return false
     // Guard against saving a locked week
     if (activeWeek && closures.some(c => c.branchId === bId && c.weekFrom === activeWeek.from && c.weekTo === activeWeek.to)) {
-      return
+      return false
     }
     setSaveStatus('saving')
     try {
@@ -1030,6 +1030,7 @@ export default function Payouts() {
         setSaveStatus('saved')
       // Keep cache in sync: the saved data is now the ground truth for this month
         monthCache.current[`${bId}:${mKey}`] = { rows: data, fetchedAt: Date.now() }
+        return true
       } else if (res.status === 423) {
         setSaveStatus('error')
         console.warn('Cannot save payroll: this week is closed/locked.')
@@ -1040,6 +1041,7 @@ export default function Payouts() {
       console.error('Failed to auto-save payroll:', e)
       setSaveStatus('error')
     }
+    return false
   }, [activeWeek, closures])
 
   // Fetches exactly one branch+month's saved rows, applies `mutate`, and PUTs the result back —
@@ -1847,32 +1849,75 @@ export default function Payouts() {
 
   // Shared by every mutation below — groups by month (a row can belong to a different month
   // than the active filter) and pushes each group to its own backend save.
-  const flushSave = (updated: PayrollRow[]) => {
-    if (isWeekClosed) return
-    if (canManagePayroll && branchFilter) {
-      const monthGroups = new Map<string, PayrollRow[]>()
-      for (const r of updated) {
-        const m = saveMonthOf(r)
-        if (!monthGroups.has(m)) monthGroups.set(m, [])
-        monthGroups.get(m)!.push(r)
-      }
-      for (const [mKey, mRows] of monthGroups.entries()) {
-        void savePayrollToBackend(mRows, branchFilter, mKey)
-      }
+  // Rows edited but not yet written. Held in a ref so Save / unload / unmount always flush the LATEST edits.
+  const pendingRowsRef = useRef<PayrollRow[] | null>(null)
+  const flushSave = async (updated: PayrollRow[]): Promise<boolean> => {
+    if (isWeekClosed || !canManagePayroll || !branchFilter) return false
+    const monthGroups = new Map<string, PayrollRow[]>()
+    for (const r of updated) {
+      const m = saveMonthOf(r)
+      if (!monthGroups.has(m)) monthGroups.set(m, [])
+      monthGroups.get(m)!.push(r)
     }
+    const results = await Promise.all(Array.from(monthGroups.entries()).map(([mKey, mRows]) => savePayrollToBackend(mRows, branchFilter, mKey)))
+    const ok = results.every(Boolean)
+    // Only clear the pending edits if nothing newer was typed while the request was in flight.
+    if (ok && pendingRowsRef.current === updated) { pendingRowsRef.current = null; setSaveStatus('saved') }
+    return ok
   }
   const scheduleAutoSave = (updated: PayrollRow[]) => {
     if (isWeekClosed) return
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
-    setSaveStatus('saving')
-    autoSaveTimer.current = setTimeout(() => flushSave(updated), 700)
+    pendingRowsRef.current = updated
+    setSaveStatus('dirty')
+    autoSaveTimer.current = setTimeout(() => { void flushSave(updated) }, 1500)
   }
+  // Explicit Save — writes every edit on the table right now and reports the result.
+  const saveTableNow = async () => {
+    if (isWeekClosed || !canManagePayroll) return
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    const toSave = pendingRowsRef.current ?? rows
+    pendingRowsRef.current = toSave
+    setSaveStatus('saving')
+    const ok = await flushSave(toSave)
+    if (!ok) {
+      setSaveStatus('error')
+      setConfirmDialog({
+        title: 'Save Failed',
+        message: 'Could not save the table. Your changes are still on screen — please try Save again.',
+        confirmText: 'OK',
+        variant: 'info',
+        onConfirm: () => {},
+      })
+    }
+  }
+  // Never lose pending edits: warn on reload/close, and flush when the tab is hidden or the page unmounts.
+  const flushRef = useRef(flushSave)
+  flushRef.current = flushSave
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!pendingRowsRef.current) return
+      void flushRef.current(pendingRowsRef.current)
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    const onHidden = () => {
+      if (document.visibilityState === 'hidden' && pendingRowsRef.current) void flushRef.current(pendingRowsRef.current)
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    document.addEventListener('visibilitychange', onHidden)
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload)
+      document.removeEventListener('visibilitychange', onHidden)
+      if (pendingRowsRef.current) void flushRef.current(pendingRowsRef.current)
+    }
+  }, [])
   // Save-now for the Deductions modal — skips the debounce so "Save" persists immediately.
   const saveDeductionsNow = () => {
     if (isWeekClosed) return
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     setSaveStatus('saving')
-    flushSave(rows)
+    void flushSave(pendingRowsRef.current ?? rows)
     setDeductionsModalInstaller(null)
   }
 
@@ -1965,7 +2010,7 @@ export default function Payouts() {
     remit: { get: r => r.actualCollected, set: (id, v) => updateRow(id, { actualCollected: v }) },
     installationUpload: { get: r => r.installationUpload, set: (id, v) => updateRow(id, { installationUpload: v }) },
     paymentStatus: { get: r => paymentStatusOf(r), set: (id, v) => setPaymentStatus(id, v) },
-    installationFee: { get: r => r.installationFee, set: (id, v) => updateRow(id, { installationFee: v }) },
+    installationFee: { get: r => r.installationFee, set: (id, v) => setAutoStampedFee(id, 'installationFee', v) },
     totalPipeLength: { get: r => r.totalPipeLength, set: (id, v) => updateRow(id, { totalPipeLength: v }) },
     earthGrounding: { get: r => r.earthGrounding, set: (id, v) => setAutoStampedFee(id, 'earthGrounding', v) },
     dailyAllowance: { get: r => r.dailyAllowance, set: (id, v) => setAutoStampedFee(id, 'dailyAllowance', v) },
@@ -3122,6 +3167,21 @@ export default function Payouts() {
                       {isWeekClosed ? <Lock className="w-3.5 h-3.5 text-amber-500" /> : <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />}
                       <span className="hidden lg:inline">{isWeekClosed ? 'Week Locked' : syncing ? 'Syncing…' : 'Sync Latest'}</span>
                     </button>
+                    {canManagePayroll && !isWeekClosed && (
+                      <button
+                        type="button"
+                        onClick={() => void saveTableNow()}
+                        disabled={saveStatus === 'saving'}
+                        title={saveStatus === 'dirty' ? 'You have unsaved changes — click to save the whole table' : saveStatus === 'error' ? 'Last save failed — click to retry' : 'Save all table changes'}
+                        className="flex items-center justify-center gap-1.5 w-8 h-8 md:w-auto md:h-auto md:px-3 md:py-1.5 rounded-xl text-xs font-bold transition-colors border cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-wait"
+                        style={saveStatus === 'dirty' || saveStatus === 'error'
+                          ? { color: '#fff', backgroundColor: saveStatus === 'error' ? '#DC2626' : '#D97706', borderColor: 'transparent' }
+                          : { color: '#10B981', backgroundColor: isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)', borderColor: '#10B98150' }}
+                      >
+                        {saveStatus === 'saving' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : saveStatus === 'saved' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
+                        <span className="hidden lg:inline">{saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved' : saveStatus === 'error' ? 'Retry Save' : saveStatus === 'dirty' ? 'Save Changes' : 'Save'}</span>
+                      </button>
+                    )}
                     {canManagePayroll && (
                       <button
                         type="button"

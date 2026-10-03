@@ -2,7 +2,7 @@ import { API_BASE_URL, isPortalAdmin, parseCreatedTicketResponse, readApiError }
 import { isFieldCategory } from '../constants/ticketCategories'
 import type { Ticket, ScheduleOutcome } from './ticketTypes'
 import { parseAcMeta } from './ticketPatch'
-import { isReschedulePending } from './ticketDates'
+import { isReschedulePending, getEffectiveScheduleDateKey } from './ticketDates'
 import { getEmptyRequiredColumnsForClose, resolveTicketPaymentAmount, resolveTicketPaymentModeRaw, getPaymentBreakdown } from './ticketPayment'
 import { getTicketPhotosRaw, parseTicketPhotos } from './ticketPhotos'
 import { fetchTicketById } from './ticketDisplay'
@@ -54,6 +54,24 @@ function readToken(): string {
 
 // ─── closed state / lock ──────────────────────────────────────────────────────
 
+/** Mirrors ashcol.tickets.close-lock-legacy-month on the backend. */
+const LEGACY_EDITABLE_MONTH = '2026-10'
+
+/**
+ * Tickets scheduled in the legacy month that were closed before the close lock shipped (no
+ * closedAt stamp) and have no photo attached yet stay editable like open tickets, so crews can
+ * still finish documenting them. Attaching a photo (or closing through the guarded flow) ends it.
+ */
+export function isLegacyEditableClosedTicket(ticket: Partial<Ticket> | null | undefined): boolean {
+  if (!ticket) return false
+  const t = ticket as any
+  if (String(t.closedAt ?? t.closed_at ?? '').trim()) return false
+  if (t.hasPhotoAttachments === true) return false
+  const rawPhotos = t.photoAttachments !== undefined ? t.photoAttachments : t.photo_attachments
+  if (rawPhotos != null && parseTicketPhotos(rawPhotos).length > 0) return false
+  return getEffectiveScheduleDateKey(ticket as Ticket).slice(0, 7) === LEGACY_EDITABLE_MONTH
+}
+
 /** Closed field-schedule ticket. Office tickets reuse COMPLETED as a plain workflow state. */
 export function isTicketClosed(ticket: Partial<Ticket> | null | undefined): boolean {
   if (!ticket) return false
@@ -63,6 +81,7 @@ export function isTicketClosed(ticket: Partial<Ticket> | null | undefined): bool
     Boolean(outcome) && (CLOSED_STATUS_FALLBACK.has(outcome) || outcome.startsWith('DONE_'))
   )
   if (!isClosedStatus) return false
+  if (isLegacyEditableClosedTicket(ticket)) return false
   return isFieldCategory(ticket.ticketCategory || ticket.ticket_category)
 }
 

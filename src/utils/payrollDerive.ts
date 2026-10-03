@@ -376,7 +376,7 @@ export function mapTicketToPayrollRows(ticket: Ticket, branchName: string, rates
  *  e.g. "manual:dailyAllowance" = "1". Flagged fields keep the user's value on every re-sync;
  *  unflagged ones follow the branch's Payroll Settings rate. Not a fee — skip when summing. */
 export const MANUAL_FEE_PREFIX = 'manual:'
-export type AutoStampedFee = 'dailyAllowance' | 'earthGrounding'
+export type AutoStampedFee = 'dailyAllowance' | 'earthGrounding' | 'installationFee'
 const isManualFee = (row: PayrollRow, field: AutoStampedFee) =>
   row.customFields?.[MANUAL_FEE_PREFIX + field] === '1'
 
@@ -483,7 +483,8 @@ export function deduplicateAndMergePayroll(existing: PayrollRow[], incoming: Pay
         cityAddress: row.cityAddress || fresh.cityAddress || '',
         brandCapacity: row.brandCapacity || fresh.brandCapacity || '',
         installationUpload: (!isRowDone && isFreshDone) ? fresh.installationUpload : (row.installationUpload || fresh.installationUpload || ''),
-        installationFee: rowInstallFeeNum > 0 ? row.installationFee : (freshInstallFeeNum > 0 ? fresh.installationFee : (row.installationFee || '')),
+        // A hand-edited fee (survey, or cleared to zero) is kept as typed; otherwise a blank/zero fee follows the ticket's rate.
+        installationFee: isManualFee(row, 'installationFee') ? row.installationFee : rowInstallFeeNum > 0 ? row.installationFee : (freshInstallFeeNum > 0 ? fresh.installationFee : (row.installationFee || '')),
         // Auto-stamped from the branch rate: follow the current rate (so a Payroll Settings change,
         // including to zero, reaches existing rows) unless the user edited this row's value by hand.
         dailyAllowance: isManualFee(row, 'dailyAllowance') ? row.dailyAllowance : fresh.dailyAllowance,

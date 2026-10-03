@@ -35,14 +35,14 @@ export default function NotificationDetailModal() {
       onClick={closeNotificationDetail}
     >
       <div
-        className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150"
+        className="w-full max-w-md max-h-[88dvh] flex flex-col rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150"
         style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="notification-detail-title"
       >
-        <div className="px-5 py-4 flex items-start justify-between gap-3" style={{ borderBottom: `1px solid ${border}` }}>
+        <div className="px-5 py-4 flex items-start justify-between gap-3 shrink-0" style={{ borderBottom: `1px solid ${border}` }}>
           <div className="flex items-start gap-3 min-w-0">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(16,185,129,0.12)' }}>
               <Bell className="w-4 h-4" style={{ color: '#10B981' }} />
@@ -66,13 +66,13 @@ export default function NotificationDetailModal() {
         </div>
 
         <div
-          className="px-5 py-4 mx-5 mt-4 rounded-xl text-sm leading-relaxed whitespace-pre-wrap"
+          className="px-4 py-3 mx-4 sm:mx-5 mt-4 rounded-xl text-sm leading-6 whitespace-pre-wrap break-words overflow-y-auto min-h-0 flex-1 overscroll-contain"
           style={{ backgroundColor: isLight ? '#f8fafc' : '#0f172a', border: `1px solid ${border}`, color: textPrimary }}
         >
           {n.message}
         </div>
 
-        <div className="px-5 py-4 flex items-center justify-end gap-2 mt-1">
+        <div className="px-5 py-4 flex items-center justify-end gap-2 mt-1 shrink-0">
           <button
             type="button"
             onClick={closeNotificationDetail}
