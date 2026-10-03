@@ -2132,10 +2132,10 @@ export default function ExpenseRecords() {
   };
 
   // A purchase closed as "returned as cash" by mistake (the cash is still with the member): put it back to pending.
-  const reopenPurchase = async (id: string, label: string) => {
+  const reopenPurchase = async (id: string, label: string, why?: string) => {
     if (
       !window.confirm(
-        `Reopen this purchase as pending?\n\n${label}\n\nUse this when the cash was NOT returned and is still with the member. It goes back to Pending purchases receipts and no Cash Return is expected for it.`,
+        `Reopen this purchase as pending?\n\n${label}\n\n${why || "Use this when the cash was NOT returned and is still with the member. It goes back to Pending purchases receipts and no Cash Return is expected for it."}`,
       )
     )
       return;
@@ -4541,6 +4541,17 @@ export default function ExpenseRecords() {
                                       >
                                         {fmt(i.amount)}
                                       </span>
+                                      {r.id === "deleted" && (
+                                        <button
+                                          type="button"
+                                          onClick={() => void reopenPurchase(i.key, i.label, "Its receipt record no longer exists. The purchase goes back to Pending purchases receipts — add the receipt there again (or, if the record still exists, link it with Link to purchase).")}
+                                          title="Its receipt record is gone — put the purchase back in Pending receipts so the receipt can be added again"
+                                          className="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-md cursor-pointer"
+                                          style={{ color: "#b45309", border: "1px solid #d9770655", backgroundColor: "#d9770612" }}
+                                        >
+                                          Re-add receipt
+                                        </button>
+                                      )}
                                       {r.id === "manual" && (() => {
                                         // purchases in this period that could own this receipt (not the ones handed back unspent)
                                         const options = dtrLines.rows.filter((l) => l.type === "PURCHASE" && !l.returnedAll);
