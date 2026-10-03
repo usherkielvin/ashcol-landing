@@ -39,6 +39,8 @@ export interface TicketPhoto {
   uploadedBy?: string
   uploadedById?: string
   description?: string
+  /** Fixed holder (0-based) this photo sits in; photos never move between holders. */
+  slot?: number
 }
 
 export function parseTicketPhotos(raw: unknown): TicketPhoto[] {
@@ -79,7 +81,11 @@ export async function fetchLatestTicketPhotos(ticketId: string): Promise<TicketP
   if (!token) return null
   const fresh = await fetchTicketById(token, ticketId)
   if (!fresh) return null
-  return parseTicketPhotos(getTicketPhotosRaw(fresh))
+  const raw = getTicketPhotosRaw(fresh)
+  // A payload that doesn't carry the field at all is NOT "no photos" — treating it as an empty list made
+  // the next save (e.g. deleting one photo) overwrite the whole column with nothing.
+  if (raw === undefined) return null
+  return parseTicketPhotos(raw)
 }
 
 /** PATCHes the full photo list and returns what the server persisted. */
@@ -119,6 +125,9 @@ export async function updateTicketPhotos(
   fallback: TicketPhoto[],
   mutate: (current: TicketPhoto[]) => TicketPhoto[],
 ): Promise<TicketPhoto[]> {
-  const latest = (await fetchLatestTicketPhotos(ticketId)) ?? fallback
+  let latest = (await fetchLatestTicketPhotos(ticketId)) ?? fallback
+  // The server copy came back empty while the screen still shows photos: a light/stale payload, not a real
+  // wipe. Trust what the user is looking at so one delete/add can never clear the others.
+  if (latest.length === 0 && fallback.length > 0) latest = fallback
   return saveTicketPhotos(ticketId, mutate(latest))
 }

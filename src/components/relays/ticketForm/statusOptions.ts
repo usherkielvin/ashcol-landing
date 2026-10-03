@@ -16,20 +16,7 @@ export const PENDING_STATUS_OPTIONS: StatusOption[] = [
   { value: 'RELOCATION', label: 'RELOCATION' },
 ]
 
-export const CLOSING_STATUS_OPTIONS: StatusOption[] = [
-  { value: 'DONE_INSTALLED', label: 'DONE INSTALL' },
-  { value: 'DONE_CLEANING', label: 'DONE CLEANING' },
-  { value: 'DONE_SURVEY', label: 'DONE SURVEY' },
-  { value: 'DONE_CHECKUP', label: 'DONE CHECKUP' },
-  { value: 'DONE_BACKJOB', label: 'DONE BACKJOB' },
-  { value: 'DONE_SERVICE', label: 'DONE SERVICE' },
-  { value: 'DONE_MOUNTING', label: 'DONE MOUNTING' },
-  { value: 'DONE_SYSTEM_REPROCESS', label: 'DONE SYSTEM REPROCESS' },
-  { value: 'DONE_DISMANTLE', label: 'DONE DISMANTLE' },
-  { value: 'DONE_RELOCATED', label: 'DONE RELOCATED' },
-  { value: 'DONE_QUOTATION', label: 'DONE QUOTATION' },
-  { value: 'CANCELLED', label: 'CANCELLED' },
-]
+export const CANCEL_STATUS_OPTION: StatusOption = { value: 'CANCELLED', label: 'CANCELLED' }
 
 /** Normalizes a raw status/serviceType value into the label shown in the status-change
  *  confirmation dialog (handles the legacy SERVICES/INSTALLATION/S-I aliases). */

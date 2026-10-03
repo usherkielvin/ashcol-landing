@@ -1,7 +1,7 @@
-import { useState, useEffect, useLayoutEffect, useRef } from 'react'
+import { useState, useLayoutEffect, useRef } from 'react'
 import ReactDOM from 'react-dom'
-import { X, ClipboardList } from 'lucide-react'
-import { EMPTY_CELL, formatPesoPrefix } from '../../utils/textSanitize'
+import { X, Eye } from 'lucide-react'
+import { EMPTY_CELL } from '../../utils/textSanitize'
 import {
   type Ticket,
   type ScheduleGhostKind,
@@ -11,62 +11,36 @@ import {
   getScheduleStatusBadgeStyle,
   formatGhostRemarks,
   getScheduleUpdateDisplay,
-  formatCombinedPayment,
-  getPaymentMode,
-  formatPaymentAmount,
   getCustomerDisplayName,
 } from '../../utils/ticketHelpers'
-import {
-  ConfirmationChecklistModal,
-  isChecklistFilled,
-  parseChecklistData,
-} from './ConfirmationChecklistModal'
 
-export function formatChecklistLastUpdated(completedAt?: string): string {
-  if (!completedAt) return ''
-  try {
-    const d = new Date(completedAt)
-    if (isNaN(d.getTime())) return ''
-    const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).replace(/\s+/g, '').toUpperCase()
-    const monthStr = d.toLocaleDateString('en-US', { month: 'long' }).toUpperCase()
-    const day = d.getDate()
-    const year = d.getFullYear()
-    return `${timeStr} ${monthStr} ${day} ${year} LAST UPDATED ON 15Q FORM`
-  } catch (e) {
-    return ''
-  }
-}
-
+/**
+ * Quick look at one schedule row: who, current status, and the latest remark. Payment and the 15Q
+ * form live inside the edit ticket modal, not here. Closed (or read-only) rows only offer
+ * "View details"; editors also get "Change status".
+ */
 export function TicketScheduleDetailsPopover({
   popup,
   isLight,
   dateFilter,
-  canEdit,
+  canChangeStatus,
   onClose,
   onOpenStatusPicker,
-  onOpenChecklist,
-  onUpdateTicket,
+  onViewDetails,
 }: {
   popup: { ticket: Ticket; x: number; y: number; ghostKind?: ScheduleGhostKind }
   isLight: boolean
   dateFilter: string
-  canEdit: boolean
+  canChangeStatus: boolean
   onClose: () => void
   onOpenStatusPicker: (ticket: Ticket, mode?: 'inline' | 'edit-form', anchorEl?: HTMLElement | null) => void
-  onOpenChecklist?: (ticket: Ticket) => void
-  onUpdateTicket?: (updatedTicket: Ticket) => void
+  onViewDetails: (ticket: Ticket) => void
 }) {
-  const [currentTicket, setCurrentTicket] = useState<Ticket>(popup.ticket)
-  const [showChecklist, setShowChecklist] = useState(false)
   const popoverRef = useRef<HTMLDivElement>(null)
   const [coords, setCoords] = useState<{ top: number; left: number }>({
     top: popup.y,
     left: popup.x,
   })
-
-  useEffect(() => {
-    setCurrentTicket(popup.ticket)
-  }, [popup.ticket])
 
   useLayoutEffect(() => {
     const updatePosition = () => {
@@ -75,43 +49,33 @@ export function TicketScheduleDetailsPopover({
 
       const rect = el.getBoundingClientRect()
       const margin = 12
-      const viewportW = window.innerWidth
-      const viewportH = window.innerHeight
-
       let nextLeft = popup.x
       let nextTop = popup.y
 
-      // Clamp horizontal
-      if (nextLeft + rect.width > viewportW - margin) {
-        nextLeft = Math.max(margin, viewportW - rect.width - margin)
+      if (nextLeft + rect.width > window.innerWidth - margin) {
+        nextLeft = Math.max(margin, window.innerWidth - rect.width - margin)
       }
-      if (nextLeft < margin) {
-        nextLeft = margin
+      if (nextLeft < margin) nextLeft = margin
+      if (nextTop + rect.height > window.innerHeight - margin) {
+        nextTop = Math.max(margin, window.innerHeight - rect.height - margin)
       }
+      if (nextTop < margin) nextTop = margin
 
-      // Clamp vertical: prevent bottom cropping
-      if (nextTop + rect.height > viewportH - margin) {
-        nextTop = Math.max(margin, viewportH - rect.height - margin)
-      }
-      if (nextTop < margin) {
-        nextTop = margin
-      }
-
-      setCoords({ top: Math.round(nextLeft === popup.x ? nextTop : nextTop), left: Math.round(nextLeft) })
+      setCoords({ top: Math.round(nextTop), left: Math.round(nextLeft) })
     }
 
     updatePosition()
     window.addEventListener('resize', updatePosition)
     return () => window.removeEventListener('resize', updatePosition)
-  }, [popup.x, popup.y, currentTicket])
+  }, [popup.x, popup.y, popup.ticket])
 
   const cardBg = isLight ? '#ffffff' : '#0f172a'
-  const border = isLight ? '#cbd5e1' : '#1e293b'
+  const border = isLight ? '#e2e8f0' : '#1e293b'
+  const panel = isLight ? '#f8fafc' : '#0b1424'
   const textPrimary = isLight ? '#0f172a' : '#f8fafc'
   const textMuted = isLight ? '#64748b' : '#94a3b8'
-  const textGreen = isLight ? '#16A34A' : '#4ade80'
 
-  const detailTicket = currentTicket
+  const detailTicket = popup.ticket
   const ghostKind = popup.ghostKind
   const isGhost = Boolean(ghostKind)
   const statusVal = getScheduleStatusValue(detailTicket)
@@ -121,70 +85,46 @@ export function TicketScheduleDetailsPopover({
     ? formatGhostRemarks(detailTicket, ghostKind ?? null, dateFilter)
     : getScheduleUpdateDisplay(detailTicket)
   const customerName = getCustomerDisplayName(detailTicket)
+  const ticketNo = String(detailTicket.ticketNumber || detailTicket.ticket_number || '').trim()
+  const showChangeStatus = canChangeStatus && !isGhost
 
-  const rawChecklist = detailTicket.confirmationChecklist || (detailTicket as any).confirmation_checklist
-  const isFilled = isChecklistFilled(rawChecklist)
-  const checklistData = parseChecklistData(rawChecklist)
-  const lastUpdatedText = formatChecklistLastUpdated(checklistData.completedAt)
-
-  const handleOpenChecklist = () => {
-    if (onOpenChecklist) {
-      onClose()
-      onOpenChecklist(detailTicket)
-    } else {
-      setShowChecklist(true)
-    }
-  }
-
-  if (showChecklist) {
-    return (
-      <ConfirmationChecklistModal
-        ticket={currentTicket}
-        isLight={isLight}
-        onClose={() => {
-          setShowChecklist(false)
-          onClose()
-        }}
-        onSaved={(updated) => {
-          setCurrentTicket(updated)
-          onUpdateTicket?.(updated)
-          setShowChecklist(false)
-          onClose()
-        }}
-      />
-    )
+  const viewDetails = () => {
+    const t = detailTicket
+    onClose()
+    onViewDetails(t)
   }
 
   return ReactDOM.createPortal(
     <div className="fixed inset-0 z-[12000]" onClick={onClose}>
       <div
         ref={popoverRef}
-        className="fixed w-[min(23.5rem,calc(100vw-1.5rem))] rounded-xl shadow-2xl overflow-hidden flex flex-col transition-all duration-75"
+        role="dialog"
+        aria-label="Schedule details"
+        className="fixed w-[min(21rem,calc(100vw-1.5rem))] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
         style={{
           left: coords.left,
           top: coords.top,
           backgroundColor: cardBg,
           border: `1px solid ${border}`,
-          maxHeight: 'min(520px, calc(100dvh - 24px))',
+          maxHeight: 'min(440px, calc(100dvh - 24px))',
           boxShadow: isLight
-            ? '0 10px 25px -5px rgba(15,23,42,0.12), 0 8px 10px -6px rgba(15,23,42,0.1)'
-            : '0 10px 25px -5px rgba(0,0,0,0.5)',
+            ? '0 16px 32px -8px rgba(15,23,42,0.18), 0 6px 12px -6px rgba(15,23,42,0.1)'
+            : '0 16px 32px -8px rgba(0,0,0,0.6)',
         }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div
-          className="px-3 py-2.5 flex items-start justify-between gap-2 shrink-0"
-          style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}
-        >
+        <div className="px-4 pt-3.5 pb-3 flex items-start justify-between gap-3 shrink-0">
           <div className="min-w-0">
-            <p className="text-[9px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>Schedule details</p>
-            <p className="text-[12px] font-bold truncate mt-0.5" style={{ color: textPrimary }} title={customerName}>
+            {ticketNo && (
+              <p className="text-[10px] font-black tracking-[0.12em] tabular-nums text-emerald-600 dark:text-emerald-400">{ticketNo}</p>
+            )}
+            <p className="text-[14px] font-extrabold uppercase leading-tight truncate mt-0.5" style={{ color: textPrimary }} title={customerName}>
               {customerName || EMPTY_CELL}
             </p>
             <span
-              className="inline-block mt-1.5 text-[11px] font-bold uppercase tracking-wide"
-              style={{ color: statusStyle.color }}
+              className="inline-block mt-2 px-2.5 py-0.5 rounded-full border text-[10.5px] font-black uppercase tracking-wide"
+              style={{ color: statusStyle.color, backgroundColor: statusStyle.backgroundColor, borderColor: statusStyle.borderColor }}
             >
               {statusLabel}
             </span>
@@ -192,103 +132,42 @@ export function TicketScheduleDetailsPopover({
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-md hover:bg-slate-500/10 shrink-0"
+            className="p-1.5 -mr-1.5 -mt-1 rounded-lg hover:bg-slate-500/10 shrink-0 cursor-pointer"
             style={{ color: textMuted }}
             aria-label="Close"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Content body */}
-        <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
-          {/* Remarks */}
-          <div>
-            <p className="text-[9px] font-black uppercase tracking-[0.14em] mb-1.5" style={{ color: textMuted }}>Remarks</p>
+        {/* Latest remark */}
+        <div className="flex-1 overflow-y-auto px-4 pb-4 min-h-0">
+          <div className="rounded-xl px-3.5 py-3" style={{ backgroundColor: panel, border: `1px solid ${border}` }}>
+            <p className="text-[9px] font-black uppercase tracking-[0.14em] mb-1" style={{ color: textMuted }}>Remarks</p>
             <p
-              className="text-[12px] font-semibold whitespace-pre-wrap break-words leading-relaxed"
+              className="text-[12.5px] font-semibold whitespace-pre-wrap break-words leading-relaxed"
               style={{
-                color: remarksText ? textGreen : textMuted,
+                color: remarksText ? textPrimary : textMuted,
                 fontStyle: isGhost ? 'italic' : undefined,
               }}
             >
-              {remarksText || EMPTY_CELL}
+              {remarksText || 'No remarks yet'}
             </p>
-          </div>
-
-          {/* Payment */}
-          <div style={{ borderTop: `1px solid ${border}` }} className="pt-3">
-            <p className="text-[9px] font-black uppercase tracking-[0.14em] mb-1.5" style={{ color: textMuted }}>Payment</p>
-            {(() => {
-              const paymentCombined = formatCombinedPayment(detailTicket)
-              const paymentMode = getPaymentMode(detailTicket).trim().toUpperCase()
-              const paymentAmount = formatPaymentAmount(detailTicket)
-              if (!paymentCombined && !paymentMode) {
-                return <p className="text-[12px]" style={{ color: textMuted }}>{EMPTY_CELL}</p>
-              }
-              if (paymentMode === 'FREE' || paymentMode === 'FREE INSTALL') {
-                return <p className="text-[12px] font-bold" style={{ color: isLight ? '#047857' : '#6ee7b7' }}>FREE</p>
-              }
-              return (
-                <div className="flex flex-col gap-1">
-                  <p className="text-[12px]">
-                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Mode </span>
-                    <span className="font-semibold" style={{ color: textPrimary }}>{paymentMode || 'NO PAYMENT'}</span>
-                  </p>
-                  <p className="text-[12px]">
-                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>Amount </span>
-                    <span className="font-bold" style={{ fontVariantNumeric: 'tabular-nums', color: textPrimary }}>{paymentAmount ? formatPesoPrefix(paymentAmount) : '₱0'}</span>
-                  </p>
-                </div>
-              )
-            })()}
-          </div>
-
-          {/* 15Q Confirmation Checklist Section */}
-          <div style={{ borderTop: `1px solid ${border}` }} className="pt-3 flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[9px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>15Q Confirmation Form</p>
-              <span className={`px-2 py-0.5 rounded text-[9.5px] font-black uppercase tracking-wider ${
-                isFilled
-                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
-                  : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
-              }`}>
-                {isFilled ? 'COMPLETED' : 'PENDING'}
-              </span>
-            </div>
-
-            {lastUpdatedText ? (
-              <p className="text-[10px] font-black uppercase tracking-tight text-emerald-600 dark:text-emerald-400 leading-tight">
-                {lastUpdatedText}
-              </p>
-            ) : (
-              <p className="text-[10px] font-bold uppercase tracking-tight text-amber-600 dark:text-amber-400 leading-tight">
-                NOT YET UPDATED ON 15Q FORM
-              </p>
-            )}
-
-            <button
-              type="button"
-              onClick={handleOpenChecklist}
-              className={`w-full py-2 px-3 rounded-lg text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-sm ${
-                isFilled
-                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20'
-                  : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/20'
-              }`}
-            >
-              <ClipboardList className="w-3.5 h-3.5" />
-              <span>15Q Form ({isFilled ? 'Completed' : 'Pending'})</span>
-            </button>
           </div>
         </div>
 
-        {/* Footer actions */}
-        {canEdit && !isGhost ? (
-          <div
-            className="px-3 py-2.5 shrink-0 flex flex-col gap-2"
-            style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}
+        {/* Actions */}
+        <div className="px-4 pb-4 shrink-0 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={viewDetails}
+            className={`${showChangeStatus ? 'flex-1' : 'w-full'} h-10 rounded-xl border text-xs font-black uppercase tracking-wide flex items-center justify-center gap-1.5 cursor-pointer transition-all hover:bg-slate-500/10 active:scale-[0.97]`}
+            style={{ borderColor: isLight ? '#cbd5e1' : '#334155', color: textPrimary }}
           >
-
+            <Eye className="w-3.5 h-3.5" />
+            View details
+          </button>
+          {showChangeStatus && (
             <button
               type="button"
               onClick={() => {
@@ -296,22 +175,13 @@ export function TicketScheduleDetailsPopover({
                 onClose()
                 onOpenStatusPicker(t, 'inline', document.querySelector(`[data-cell-key="${t.id}:STATUS"]`) as HTMLElement)
               }}
-              className="w-full py-2.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-[0.97]"
-              style={{
-                background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
-                color: '#ffffff',
-                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'linear-gradient(135deg, #047857 0%, #059669 100%)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'linear-gradient(135deg, #059669 0%, #10b981 100%)')}
+              className="flex-1 h-10 rounded-xl text-xs font-black uppercase tracking-wide text-white cursor-pointer transition-all hover:brightness-110 active:scale-[0.97]"
+              style={{ background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)' }}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 5v14M5 12l7 7 7-7" />
-              </svg>
-              Change Status
+              Change status
             </button>
-          </div>
-        ) : null}
+          )}
+        </div>
       </div>
     </div>,
     document.body,

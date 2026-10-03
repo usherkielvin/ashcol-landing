@@ -641,17 +641,17 @@ export const customFieldsFeeTotal = (r: PayrollRow): number => {
 export const PAY_PREFIX = 'pay:'
 export type PaymentStatus = 'PAID' | 'DOWNPAYMENT' | 'FOR_COLLECTION' | 'PENDING'
 export const PAYMENT_STATUS_OPTIONS: { value: PaymentStatus; label: string }[] = [
-  { value: 'PAID', label: 'Fully Paid' },
-  { value: 'DOWNPAYMENT', label: 'Downpayment' },
-  { value: 'FOR_COLLECTION', label: 'For Collection' },
-  { value: 'PENDING', label: 'Pending' },
+  { value: 'PAID', label: 'PAID' },
+  { value: 'DOWNPAYMENT', label: 'DOWNPAYMENT' },
+  { value: 'FOR_COLLECTION', label: 'FOR COLLECTION' },
+  { value: 'PENDING', label: 'PENDING' },
 ]
 export const paymentStatusOf = (r: PayrollRow): PaymentStatus => {
   const v = r.customFields?.['pay:status']
   return v === 'DOWNPAYMENT' || v === 'FOR_COLLECTION' || v === 'PENDING' ? v : 'PAID'
 }
 export const paymentStatusLabel = (r: PayrollRow): string =>
-  PAYMENT_STATUS_OPTIONS.find(o => o.value === paymentStatusOf(r))?.label ?? 'Fully Paid'
+  PAYMENT_STATUS_OPTIONS.find(o => o.value === paymentStatusOf(r))?.label ?? 'PAID'
 /** Share of the row's fees this week owes the tech: a carry-over balance copy carries its own
  *  factor; an unpaid ticket (or one already split when its week closed) pays 50%. */
 export const payFactor = (r: PayrollRow): number => {

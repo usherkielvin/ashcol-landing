@@ -76,6 +76,11 @@ export interface Ticket {
   photo_attachments?: string | null
   finalDate?: string
   final_date?: string
+  /** Stamped by the backend when the ticket is closed via Close Ticket. */
+  closedAt?: string | null
+  closed_at?: string | null
+  closedBy?: string | null
+  closed_by?: string | null
   paymentStatus?: string
   paymentMode?: string
   source?: string
@@ -142,6 +147,8 @@ export type PendingTicketSave = {
   rollback: Ticket
   afterSave?: () => Promise<void>
   lookupRetried?: boolean
+  /** Send this save to POST /tickets/{id}/close (guarded, confirmed close) instead of a plain PATCH. */
+  closeConfirmed?: boolean
 }
 
 export type HistorySpecifics = {

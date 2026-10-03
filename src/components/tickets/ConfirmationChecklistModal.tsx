@@ -82,6 +82,8 @@ interface ConfirmationChecklistModalProps {
   isLight: boolean
   onClose: () => void
   onSaved?: (updatedTicket: Ticket) => void
+  /** View-only (closed ticket, non-manager): no answering, no remarks, no save. */
+  readOnly?: boolean
 }
 
 export function ConfirmationChecklistModal({
@@ -89,6 +91,7 @@ export function ConfirmationChecklistModal({
   isLight,
   onClose,
   onSaved,
+  readOnly = false,
 }: ConfirmationChecklistModalProps) {
   const rawChecklist = ticket.confirmationChecklist || (ticket as any).confirmation_checklist
   const initialData = parseChecklistData(rawChecklist)
@@ -113,7 +116,17 @@ export function ConfirmationChecklistModal({
   const ticketNo = ticket.ticketNumber || ticket.ticket_number || 'N/A'
   const contactPhone = getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
 
+  // Esc closes (capture phase so it doesn't also close the details modal underneath).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.stopPropagation(); onClose() }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [onClose])
+
   const handleAnswerChange = (qId: string, answer: 'YES' | 'NO') => {
+    if (readOnly) return
     setData(prev => ({
       ...prev,
       answers: {
@@ -127,6 +140,7 @@ export function ConfirmationChecklistModal({
   }
 
   const handleRemarksChange = (qId: string, remarks: string) => {
+    if (readOnly) return
     setData(prev => ({
       ...prev,
       answers: {
@@ -140,6 +154,7 @@ export function ConfirmationChecklistModal({
   }
 
   const handleSave = async () => {
+    if (readOnly) return
     setSaving(true)
     setErrorMessage(null)
     setToastMessage(null)
@@ -207,7 +222,9 @@ export function ConfirmationChecklistModal({
 
   return ReactDOM.createPortal(
     <div
-      className="fixed inset-0 z-[20000] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-fadeIn"
+      // Must sit above TicketDetailsModal (z 2147483647, which also opens this); later in the DOM wins the tie.
+      className="fixed inset-0 z-[2147483647] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-fadeIn"
+      onClick={onClose}
     >
       <div
         className="w-[96vw] max-w-[1400px] h-[92vh] max-h-[920px] rounded-2xl shadow-2xl flex flex-col overflow-hidden border"
@@ -227,6 +244,11 @@ export function ConfirmationChecklistModal({
               <span className="text-xs font-bold text-slate-400 dark:text-slate-400">
                 {filledCount} of 15 Answered
               </span>
+              {readOnly && (
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-slate-500/10 text-slate-500 border border-slate-500/25">
+                  Read only · ticket closed
+                </span>
+              )}
             </div>
             <h2 className="text-lg sm:text-xl font-black uppercase tracking-wide" style={{ color: textPrimary }}>
               ASHCOL INSTALLATION – CONFIRMATION CHECKLIST
@@ -310,7 +332,8 @@ export function ConfirmationChecklistModal({
                           <button
                             type="button"
                             onClick={() => handleAnswerChange(q.id, 'YES')}
-                            className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${
+                            disabled={readOnly}
+                            className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${readOnly ? 'cursor-default' : ''} ${
                               isYes
                                 ? 'bg-emerald-600 text-white shadow-md scale-105'
                                 : 'text-slate-600 dark:text-slate-400 hover:text-emerald-500'
@@ -321,7 +344,8 @@ export function ConfirmationChecklistModal({
                           <button
                             type="button"
                             onClick={() => handleAnswerChange(q.id, 'NO')}
-                            className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${
+                            disabled={readOnly}
+                            className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${readOnly ? 'cursor-default' : ''} ${
                               isNo
                                 ? 'bg-rose-600 text-white shadow-md scale-105'
                                 : 'text-slate-600 dark:text-slate-400 hover:text-rose-500'
@@ -336,7 +360,8 @@ export function ConfirmationChecklistModal({
                           type="text"
                           value={current.remarks}
                           onChange={e => handleRemarksChange(q.id, e.target.value)}
-                          placeholder="Type notes / details here..."
+                          readOnly={readOnly}
+                          placeholder={readOnly ? '—' : 'Type notes / details here...'}
                           className="w-full px-4 py-2.5 rounded-xl text-sm font-semibold border focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
                           style={{
                             backgroundColor: inputBg,
@@ -365,7 +390,8 @@ export function ConfirmationChecklistModal({
                 type="text"
                 value={data.calledBy}
                 onChange={e => setData(prev => ({ ...prev, calledBy: e.target.value }))}
-                placeholder="Enter caller name / staff..."
+                readOnly={readOnly}
+                placeholder={readOnly ? '—' : 'Enter caller name / staff...'}
                 className="w-full px-4 py-2.5 rounded-xl text-sm font-bold border focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 style={{
                   backgroundColor: inputBg,
@@ -383,7 +409,8 @@ export function ConfirmationChecklistModal({
                 type="text"
                 value={data.checkedBy}
                 onChange={e => setData(prev => ({ ...prev, checkedBy: e.target.value }))}
-                placeholder="Enter checker / supervisor name..."
+                readOnly={readOnly}
+                placeholder={readOnly ? '—' : 'Enter checker / supervisor name...'}
                 className="w-full px-4 py-2.5 rounded-xl text-sm font-bold border focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 style={{
                   backgroundColor: inputBg,
@@ -403,6 +430,8 @@ export function ConfirmationChecklistModal({
           <div className="text-xs text-slate-400 dark:text-slate-400 font-semibold">
             {data.completedAt ? (
               <span>Last saved: {new Date(data.completedAt).toLocaleString()}</span>
+            ) : readOnly ? (
+              <span>No checklist was filled in</span>
             ) : (
               <span>Unsaved changes</span>
             )}
@@ -415,9 +444,9 @@ export function ConfirmationChecklistModal({
               className="px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider border transition-colors hover:bg-slate-500/10"
               style={{ borderColor: border, color: textMuted }}
             >
-              Cancel
+              {readOnly ? 'Close' : 'Cancel'}
             </button>
-            <button
+            {!readOnly && <button
               type="button"
               onClick={handleSave}
               disabled={saving}
@@ -434,7 +463,7 @@ export function ConfirmationChecklistModal({
                   <span>Save Form</span>
                 </>
               )}
-            </button>
+            </button>}
           </div>
         </div>
       </div>

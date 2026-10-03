@@ -8,6 +8,7 @@ import { EMPTY_CELL } from '../../utils/textSanitize'
 import { ROBINSON_APPLIANCES_RE } from '../../utils/dealer'
 import type { AuthUser } from '../../contexts/AuthContext'
 import { isPortalAdmin, type BranchStaffOption } from '../../utils/api'
+import { isTicketLockedFor } from '../../utils/ticketClose'
 import {
   type Ticket,
   getScheduleStatusValue,
@@ -118,6 +119,8 @@ export function TicketDetailsModal({
     setCurrentTicket(ticket)
   }, [ticket])
   const t = currentTicket
+  // Closed tickets are read-only for everyone except admin/management/manager.
+  const locked = isTicketLockedFor(t, user?.role)
   const hasChecklist = isChecklistFilled(t.confirmationChecklist || t.confirmation_checklist)
   const cardBg = isLight ? '#ffffff' : '#0f172a'
   const border = isLight ? '#cbd5e1' : '#1e293b'
@@ -260,7 +263,7 @@ export function TicketDetailsModal({
                 onClick={() => setShowChecklist(true)}
                 className="px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all hover:bg-emerald-500/10 hover:border-emerald-500/30"
                 style={{ borderColor: border, backgroundColor: inputBg, color: textPrimary }}
-                title="View & Fill 15Q Confirmation Checklist"
+                title={locked ? 'View 15Q Confirmation Checklist (read only)' : 'View & Fill 15Q Confirmation Checklist'}
               >
                 <ClipboardList className="w-3.5 h-3.5 text-emerald-500" />
                 <span className="hidden sm:inline">15Q Checklist</span>
@@ -269,7 +272,7 @@ export function TicketDetailsModal({
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 )}
               </button>
-              {onEdit && (
+              {onEdit && !locked && (
                 <button
                   type="button"
                   onClick={onEdit}
@@ -426,7 +429,7 @@ export function TicketDetailsModal({
               <TicketPhotoGallery
                 ticket={t}
                 isLight={isLight}
-                canManage={canEdit}
+                canManage={false}
                 user={user}
                 branchLabel={branchName && branchName !== EMPTY_CELL ? branchName : undefined}
                 onPhotosChange={(photos) => {
@@ -667,6 +670,7 @@ export function TicketDetailsModal({
           <ConfirmationChecklistModal
             ticket={currentTicket}
             isLight={isLight}
+            readOnly={locked}
             onClose={() => setShowChecklist(false)}
             onSaved={(updated) => {
               setCurrentTicket(updated)

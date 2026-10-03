@@ -753,7 +753,7 @@ export function SchedulesShowcase({
     return (
       <div key={`${kind}-page-${pageIdx}`}
         className={`schedules-showcase-sheet mx-auto ${!isLast ? 'showcase-page-break' : ''}`}
-        style={{ maxWidth: '1123px', width: '100%', backgroundColor: PAPER, border: '1px solid #dbe5ef',
+        style={{ maxWidth: '1760px', width: '100%', backgroundColor: PAPER, border: '1px solid #dbe5ef',
           boxShadow: '0 12px 40px rgba(15,23,42,0.08)', borderRadius: 12, overflow: 'hidden', marginBottom: !isLast ? 24 : 0 }}>
         {renderDateTable(title)}
         {kind === 'installer' ? renderInstallerTable(pageRows, pageIdx === pageCount - 1) : renderDriverTable(pageRows)}
@@ -851,6 +851,22 @@ export function SchedulesShowcase({
           .schedules-showcase-table td, .schedules-showcase-table th, .schedules-showcase-date-table td {
             color: #000000 !important; background: #ffffff !important; border-color: #000000 !important;
           }
+        }
+        /* On-screen only: bigger, roomier type. Print / PDF keep the compact A4 sizing above. */
+        @media screen {
+          .schedules-showcase-sheet { max-width: min(1760px, 100%) !important; }
+          .schedules-showcase-table th {
+            font-size: 12px !important; padding: 12px 8px !important; letter-spacing: 0.04em !important;
+            background: #f1f5f9 !important; white-space: normal !important;
+          }
+          .schedules-showcase-table td {
+            font-size: 14px !important; line-height: 1.45 !important;
+            padding: 11px 10px !important; vertical-align: middle !important;
+          }
+          .schedules-showcase-installer td:nth-child(12), .schedules-showcase-installer td:nth-child(13) { font-size: 13px !important; }
+          .schedules-showcase-table tbody tr:hover td { filter: brightness(0.97); }
+          .schedules-showcase-date-table td { font-size: 12px !important; padding: 6px 12px !important; }
+          .schedules-showcase-payment-summary { font-size: 12px !important; }
         }
         body.showcase-mode-active aside, body.showcase-mode-active header { display: none !important; }
         body.showcase-mode-active main { padding: 0 !important; margin: 0 !important; }

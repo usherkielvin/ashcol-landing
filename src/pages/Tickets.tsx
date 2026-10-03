@@ -56,17 +56,19 @@ import { VehicleTripLabel } from '../components/tickets/VehicleTripLabel'
 import { Field } from '../components/tickets/Field'
 import { TicketDetailsModal } from '../components/tickets/TicketDetailsModal'
 import { TicketStatusPickerPopover } from '../components/tickets/TicketStatusPickerPopover'
+import { CloseTicketDialog } from '../components/tickets/CloseTicketDialog'
+import { ColumnHeaderContextMenu, HiddenColumnsButton } from '../components/tickets/ColumnVisibilityControls'
 import { TicketScheduleDetailsPopover } from '../components/tickets/TicketScheduleDetailsPopover'
 import { TicketFinalDatePickerPopover } from '../components/tickets/TicketFinalDatePickerPopover'
 import { TableCustomSelectDropdown, type DropdownOption } from '../components/tickets/TableCustomSelectDropdown'
 import { AssignDriversModal } from '../components/tickets/AssignDriversModal'
 import { ExcelImportResultsModal } from '../components/tickets/ExcelImportResultsModal'
-import { ConfirmationChecklistModal } from '../components/tickets/ConfirmationChecklistModal'
 import { CustomDatePickerModal } from '../components/tickets/CustomDatePickerModal'
 import TicketHistoryGraphModal from '../components/TicketHistoryGraphModal'
 import { guessDistrict } from '../utils/districtGuesser'
 import {
   CLOSING_SCHEDULE_STATUSES, INLINE_EDIT_COLUMNS, SCHEDULES_ACTIVE_DATE_KEY, SCHEDULE_CLOSING_OPTS,
+  canEditClosedTicket, getClosedStamp, isTicketClosed, isTicketLockedFor, readCloseError, reopenTicketRequest,
   SCHEDULE_PENDING_OPTS, SCHEDULE_PENDING_STATUS_VALUES, TABLE_ROW_HEIGHT,
   applyImportFieldsFromRow, applyReturnToNegotiatorMyTicketsPatch, applyScheduleStatusPatch,
   buildArchiveServiceReportPayload, buildCellPatchBody, buildImportCreateRow, buildPatchImportBody,
@@ -100,6 +102,7 @@ import {
   type ImportUpdate,
   type ImportPaymentConfirmation,
   type ImportUnmatchedRow,
+  type CloseBlockerKind,
   type PaymentBreakdownEntry,
   type PendingTicketSave,
   type ScheduleOutcome,
@@ -125,6 +128,11 @@ export {
  * instead, which left AutoFitText with nothing well-defined to measure and made it a no-op.
  */
 const AUTOFIT_COLUMNS = new Set(['DESTINATION', 'DLR', 'COMMIT', 'BRAND'])
+
+/** Schedules columns the user can hide (right-click a header); remembered per browser. */
+const SCHEDULE_HIDDEN_COLS_KEY = 'ashcol_schedule_hidden_cols_v1'
+/** Always visible: the row's identity and the status control everything else hangs off. */
+const PROTECTED_SCHEDULE_COLS = new Set(['TICKET NO', "CUSTOMER'S NAME", 'STATUS'])
 
 const DEFAULT_COL_WIDTHS: Record<string, number> = {
   'TICKET NO': 115,
@@ -1965,6 +1973,10 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
   }, [branchEmployees, activeBranchId, isMyTickets, user?.id, resolveBranch])
 
   const openEditModal = (ticket: Ticket) => {
+    if (isTicketLockedFor(ticket, role)) {
+      showToast('This ticket is closed — only the administrator can edit this ticket.')
+      return
+    }
     // Search results come straight from a fresh /tickets?q= call — findTicketInListByRef's
     // fallbacks (the `tickets` array built for Schedules/My Tickets, and the cross-tab ticket
     // store) can hold a stale snapshot of the same ticket from an earlier visit to another
@@ -2067,6 +2079,10 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
     const isClosing = CLOSING_SCHEDULE_STATUSES.has(targetStatus)
       || ['COMPLETED', 'INSTALLED', 'CANCELLED'].includes(targetStatus)
     if (isClosing && targetStatus !== 'CANCELLED') {
+      const original = resolveEditOriginalTicket()
+      if (!original || !isTicketClosed(original)) {
+        return 'A ticket can only be closed with Close Ticket (status button, then Done) — it checks details, payment and documents first.'
+      }
       const missing = getEmptyRequiredColumnsForClose(form)
       if (missing.length > 0) {
         return `Cannot close ticket because the following columns are empty:\n\u2022 ${missing.join('\n\u2022 ')}`
@@ -3194,6 +3210,21 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
     return {}
   })
 
+  const [hiddenCols, setHiddenCols] = useState<string[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SCHEDULE_HIDDEN_COLS_KEY) || '[]')
+      return Array.isArray(saved) ? saved.filter((l): l is string => typeof l === 'string' && !PROTECTED_SCHEDULE_COLS.has(l)) : []
+    } catch { return [] }
+  })
+  const [colHeaderMenu, setColHeaderMenu] = useState<{ x: number; y: number; label: string; display: string } | null>(null)
+  const updateHiddenCols = useCallback((updater: (prev: string[]) => string[]) => {
+    setHiddenCols(prev => {
+      const next = updater(prev)
+      try { localStorage.setItem(SCHEDULE_HIDDEN_COLS_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }, [])
+
   const startColResize = useCallback((e: React.MouseEvent, colLabel: string, currentWidth: number) => {
     e.preventDefault()
     e.stopPropagation()
@@ -3238,13 +3269,15 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
     x: number
     y: number
   } | null>(null)
+  const [closeDialogTicket, setCloseDialogTicket] = useState<Ticket | null>(null)
+  /** Ticket whose Close dialog should come back once the Fix (edit / payment) is finished. */
+  const [closeResumeTicket, setCloseResumeTicket] = useState<Ticket | null>(null)
   const [scheduleDetailsPopup, setScheduleDetailsPopup] = useState<{
     ticket: Ticket
     x: number
     y: number
     ghostKind?: ScheduleGhostKind
   } | null>(null)
-  const [checklistTicket, setChecklistTicket] = useState<Ticket | null>(null)
   const [finalDatePicker, setFinalDatePicker] = useState<{
     ticket: Ticket
     x: number
@@ -3426,7 +3459,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
       { label: 'UPDATE', display: 'REMARKS', weight: 13, expMul: 1.5, sticky: false, freeze: false, align: 'right' as const },
       { label: 'FINAL DATE', display: 'FINAL DATE', weight: 10, expMul: 1.3, sticky: false, freeze: false, align: 'center' as const },
     ]
-    const raw = isMyTickets ? myTicketsCols : scheduleCols
+    const raw = isMyTickets ? myTicketsCols : scheduleCols.filter(c => !hiddenCols.includes(c.label))
     let stickyLeft = 0
     return raw.map((c) => {
       const isExpanded = !!expandedCols[c.label]
@@ -3436,7 +3469,24 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
       if (c.sticky) stickyLeft += pixelWidth
       return { ...c, isExpanded, pixelWidth, w: `${pixelWidth}px`, left: leftPx }
     })
-  }, [expandedCols, isTaguigServices, isMyTickets, monthViewActive, customColWidths])
+  }, [expandedCols, isTaguigServices, isMyTickets, monthViewActive, customColWidths, hiddenCols])
+
+  const columnDisplayName = (label: string): string => {
+    switch (label) {
+      case "CUSTOMER'S NAME": return 'CUSTOMER'
+      case 'DESTINATION': return 'DISTRICT'
+      case 'DLR': return isTaguigServices ? 'ENDORSED BY' : 'DEALER'
+      case 'INSTALLER': return isTaguigServices ? 'TECHNICIAN' : 'INSTALLER'
+      case 'SERVICE': return 'DRIVER'
+      case 'UPDATE': return 'REMARKS'
+      case 'FINAL DATE': return 'DATE'
+      default: return label
+    }
+  }
+  // FINAL DATE only exists on the Schedules table while the month view is showing.
+  const hiddenColumnItems = hiddenCols
+    .filter(label => label !== 'FINAL DATE' || monthViewActive)
+    .map(label => ({ label, display: columnDisplayName(label) }))
 
   const totalTableWidth = useMemo(() => {
     return columns.reduce((acc, c) => acc + (c as any).pixelWidth, 0)
@@ -4479,6 +4529,16 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
     setFinalDatePicker({ ticket, x: left, y: top, value: initDate, preferredDate })
   }, [])
 
+  // Identity/commercial fields are changed through Edit Ticket (or set at creation), not in the grid:
+  // dealer, commit and district for every ticket; customer and brand too while the row is overdue-pending.
+  const isCellLockedForInline = (ticket: Ticket, colLabel: string): boolean => {
+    if (colLabel === 'DLR' || colLabel === 'COMMIT' || colLabel === 'DESTINATION') return true
+    if (colLabel === "CUSTOMER'S NAME" || colLabel === 'BRAND') {
+      return isOverduePendingScheduleTicket(ticket, null, dateFilter)
+    }
+    return false
+  }
+
   const startCellEdit = (ticket: Ticket, colLabel: string, anchorEl?: HTMLElement | null, rowIndex?: number) => {
     // Clicking straight from one open cell editor into another must save the first cell's
     // draft rather than silently drop it — previously this only cleared the pending blur
@@ -4487,6 +4547,14 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
     setExpandedCell(null)
     if (colLabel === 'STATUS') {
       openStatusPicker(ticket)
+      return
+    }
+    if (isTicketClosed(ticket)) {
+      showToast('This ticket is closed — its cells are read-only.')
+      return
+    }
+    if (isCellLockedForInline(ticket, colLabel)) {
+      showToast('Change this through Edit Ticket details.')
       return
     }
     if (colLabel === 'FINAL DATE') {
@@ -4691,16 +4759,19 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
         try {
           const auth = token()
           if (!auth) throw new Error('Not signed in Ã¢â‚¬â€ refresh and try again')
-          const res = await fetch(`${API_BASE_URL}/tickets/${saveId}`, {
-            method: 'PATCH',
+          // A confirmed close goes to the guarded endpoint, which re-runs the details / payment /
+          // document checks and stamps who closed the ticket; everything else is a plain PATCH.
+          const isClose = job.closeConfirmed === true
+          const res = await fetch(`${API_BASE_URL}/tickets/${saveId}${isClose ? '/close' : ''}`, {
+            method: isClose ? 'POST' : 'PATCH',
             headers: {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${auth}`,
             },
-            body: JSON.stringify(payload),
+            body: JSON.stringify(isClose ? { confirmed: true, patch: payload } : payload),
           })
           if (!res.ok) {
-            const errText = await readApiError(res)
+            const errText = isClose ? await readCloseError(res) : await readApiError(res)
             if (res.status === 404 && !job.lookupRetried) {
               const lookupTicket = job.rollback
                 || optimisticTicketsRef.current.get(saveId)
@@ -4804,10 +4875,17 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
     ticket: Ticket,
     body: Record<string, unknown>,
     afterSave?: () => Promise<void>,
+    opts?: { closeConfirmed?: boolean },
   ) => {
     const ticketId = ticket.id
     const existing = pendingSavesRef.current.get(ticketId)
     const baseTicket = optimisticTicketsRef.current.get(ticketId) || ticket
+    // Closed tickets are read-only for non-admins (the backend enforces the same rule) — refuse
+    // here so the row never flashes an edit that the server would only roll back with an error.
+    if (!opts?.closeConfirmed && isTicketLockedFor(baseTicket, role)) {
+      showToast('This ticket is closed — only the administrator can edit this ticket.')
+      return Promise.resolve()
+    }
     let patchBody = body
     // Cancelling from Schedules must permanently anchor the row to this date so it stays as a
     // red ghost after save/reload — never rely on a fleeting finalDate that sync might drop.
@@ -4842,6 +4920,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
       body: mergedBody,
       rollback: existing?.rollback ?? ticket,
       afterSave: afterSave ?? existing?.afterSave,
+      closeConfirmed: opts?.closeConfirmed || existing?.closeConfirmed,
     })
     applyTicketLocally(ticketId, nextTicket)
     // ─────────────────────────────────────────────────────────────
@@ -4849,7 +4928,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
       return flushTicketSave(ticketId)
     }
     return Promise.resolve()
-  }, [applyTicketLocally, flushTicketSave])
+  }, [applyTicketLocally, flushTicketSave, role])
 
   /** Clear driver + vehicle on every active (non-ghost) schedule row for the current date. */
   const clearAllDriversAndVehiclesForDate = useCallback(() => {
@@ -5026,7 +5105,8 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
     ticket: Ticket,
     colLabel: string,
     value: string,
-    injectedPayment?: { amount?: number; modeOfPayment: string; breakdown?: PaymentBreakdownEntry[] }
+    injectedPayment?: { amount?: number; modeOfPayment: string; breakdown?: PaymentBreakdownEntry[] },
+    opts?: { closeConfirmed?: boolean; remarks?: string },
   ) => {
     const liveTicket = resolveLiveScheduleTicket(ticket)
 
@@ -5037,6 +5117,17 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
       setStatusPicker(null)
       closeFinalDatePicker()
       return
+    }
+
+    // Remarks typed in the Close Ticket dialog travel with the close itself.
+    if (opts?.remarks) {
+      const remarkBody = buildCellPatchBody(
+        { ...liveTicket, acDetails: (body.acDetails as string | undefined) ?? liveTicket.acDetails } as Ticket,
+        'UPDATE',
+        opts.remarks,
+        branchEmployees,
+      )
+      Object.assign(body, mergePatchBodies(body, remarkBody))
     }
 
     if (injectedPayment) {
@@ -5056,7 +5147,9 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
       ? stripArchivedRemarkSuffix(value.trim())
       : ''
     if (colLabel === 'UPDATE' && isInstalledRemarks(remarkText)) {
-      finalBody = enrichCompletePatchBody(body, liveTicket, schedKey)
+      // A remark can no longer finish a ticket on its own — closing goes through Close Ticket,
+      // which checks details, payment and documents first. Save the remark as typed.
+      if (!isTicketClosed(liveTicket)) showToast('Remark saved. Use Done to close this ticket.')
     } else if (
       (body.status as string | undefined)?.toUpperCase() === 'COMPLETED'
       || (body.status as string | undefined)?.toUpperCase() === 'INSTALLED'
@@ -5120,9 +5213,10 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
           }
         }
         : undefined,
+      opts,
     )
 
-    if (focusRemarksAfterStatus) {
+    if (focusRemarksAfterStatus && !opts?.closeConfirmed) {
       const nextTicket = mergeTicketPatch(liveTicket, finalBody)
       requestAnimationFrame(() => {
         const rowIndex = visible.findIndex(t => t.id === nextTicket.id)
@@ -5131,6 +5225,90 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
     }
   }
   saveCellEditRef.current = (ticket, colLabel, value, injectedPayment) => { void saveCellEdit(ticket, colLabel, value, injectedPayment) }
+
+  /** Opens the Close Ticket dialog — after any unsaved/in-flight edits for this row have landed. */
+  const requestCloseTicket = (ticket: Ticket) => {
+    const live = resolveLiveScheduleTicket(ticket)
+    if (pendingSavesRef.current.has(live.id) || activeSavesRef.current.has(live.id)) {
+      flushTicketSaveRef.current(live.id)
+      showToast('Saving your latest changes — try Close Ticket again in a moment.')
+      return
+    }
+    setCloseDialogTicket(live)
+  }
+
+  /** Step-2 confirmation: the save goes to POST /tickets/{id}/close (see flushTicketSave). */
+  const confirmCloseTicket = (full: Ticket, outcome: ScheduleOutcome, remarks: string) => {
+    setCloseDialogTicket(null)
+    saveCellEdit(full, 'STATUS', outcome, undefined, { closeConfirmed: true, remarks })
+  }
+
+  /** Reopens the Close Ticket dialog once the in-flight saves for this ticket have landed. */
+  const resumeCloseDialog = (ticket: Ticket) => {
+    let tries = 0
+    const timer = setInterval(() => {
+      tries += 1
+      const busy = pendingSavesRef.current.has(ticket.id) || activeSavesRef.current.has(ticket.id)
+      if (!busy || tries > 40) {
+        clearInterval(timer)
+        setCloseDialogTicket(resolveLiveScheduleTicket(ticket))
+      }
+    }, 150)
+  }
+
+  // After a Fix the person lands back on the checklist: once the edit modal, details modal and
+  // payment prompt are all closed again (saved or cancelled), reopen Close Ticket for that ticket.
+  useEffect(() => {
+    if (!closeResumeTicket) return
+    if (editModalOpen || detailTicket || paymentPrompt || closeDialogTicket) return
+    const ticket = closeResumeTicket
+    setCloseResumeTicket(null)
+    resumeCloseDialog(ticket)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [closeResumeTicket, editModalOpen, detailTicket, paymentPrompt, closeDialogTicket])
+
+  const cancelTicketWithReason = (ticket: Ticket, reason: string) => {
+    const live = resolveLiveScheduleTicket(ticket)
+    const statusBody = buildCellPatchBody(live, 'STATUS', 'CANCELLED', branchEmployees)
+    const remarkBody = buildCellPatchBody(
+      { ...live, acDetails: (statusBody.acDetails as string | undefined) ?? live.acDetails } as Ticket,
+      'UPDATE',
+      `CANCELLED: ${reason}`,
+      branchEmployees,
+    )
+    void queueTicketPatch(live, mergePatchBodies(statusBody, remarkBody))
+    setStatusPicker(null)
+  }
+
+  const reopenClosedTicket = async (ticket: Ticket, reason: string) => {
+    try {
+      const updated = await reopenTicketRequest(ticket.id, reason)
+      optimisticTicketsRef.current.delete(updated.id)
+      applyTicketLocally(updated.id, updated)
+      cacheTicketByNumber(updated as unknown as Record<string, unknown>)
+      showToast('Ticket reopened')
+    } catch (err: unknown) {
+      alert(`Could not reopen ticket: ${formatFetchError(err)}`)
+    }
+  }
+
+  /** "Fix" on a failed checklist line: jump to the place that resolves it. */
+  const handleCloseDialogFix = (kind: CloseBlockerKind, full: Ticket) => {
+    setCloseDialogTicket(null)
+    setCloseResumeTicket(full)
+    if (kind === 'detail' || kind === 'document') {
+      if (!editModalOpen) openEditModal(full)
+      return
+    }
+    if (kind === 'payment') {
+      const payment = resolveTicketPayment(full)
+      setPaymentPrompt({ ticket: full, nextStatus: getScheduleStatusValue(full) || 'DONE_INSTALLED', updateOnly: true })
+      setPromptMode(payment.mode || 'CASH')
+      setPromptAmount(payment.amount > 0 ? String(payment.amount) : '')
+      return
+    }
+    if (!editModalOpen) openEditModal(full)
+  }
 
   // Writes a new trip order (1..N) for a vehicle group, skipping tickets whose PARSED position
   // already matches — legacy formatting quirks (extra spaces, lowercase) otherwise look
@@ -5744,7 +5922,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
     rowIndex?: number,
     allowGhostEdit?: boolean,
   ) {
-    if (!canEdit || (rowGhost && !allowGhostEdit)) return content
+    if (!canEdit || isTicketClosed(ticket) || isCellLockedForInline(ticket, colLabel) || (rowGhost && !allowGhostEdit)) return content
     const isEditing = editingCell?.ticketId === ticket.id
       && editingCell?.colLabel === colLabel
       && (rowIndex === undefined || editingCell.rowIndex === rowIndex)
@@ -5799,7 +5977,8 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
 
     // ─────────────────────────────────────────────────────────────
     const val = getCellDisplay(ticket, label)
-    const isPendingRow = isOverduePendingScheduleTicket(ticket, rowGhost ? 'ghost' : null, dateFilter)
+    // The expanded popover sits on a plain card, so it must never use the white-on-red row styling.
+    const isPendingRow = !cellExpanded && isOverduePendingScheduleTicket(ticket, rowGhost ? 'ghost' : null, dateFilter)
     const ghostMuted = isPendingRow
       ? '#ffffff'
       : (rowGhost
@@ -6018,9 +6197,13 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
         }
       }
       const showsDetails = statusShowsScheduleDetails(statusVal)
-      const statusTitle = showsDetails
-        ? `${display} ${EMPTY_CELL} click to view remarks & payment`
-        : (canEdit ? `${display} ${EMPTY_CELL} click to change` : display)
+      const rowClosed = isTicketClosed(ticket)
+      const closedStamp = rowClosed ? getClosedStamp(ticket) : null
+      const statusTitle = rowClosed
+        ? `${display} ${EMPTY_CELL} Closed${closedStamp?.by ? ` by ${closedStamp.by}` : ''}${closedStamp?.at ? ` on ${closedStamp.at}` : ''}`
+        : showsDetails
+          ? `${display} ${EMPTY_CELL} click to view remarks & payment`
+          : (canEdit ? `${display} ${EMPTY_CELL} click to change` : display)
       return (
         <span
           style={{
@@ -6066,7 +6249,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
 
     if (label === 'FINAL DATE') {
       const hasDate = Boolean(val)
-      if (!hasDate && canEdit && !rowGhost) {
+      if (!hasDate && canEdit && !rowGhost && !isTicketClosed(ticket)) {
         return (
           <button
             type="button"
@@ -6138,7 +6321,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
     if (label === 'VEHICLE' && !isMyTickets) {
       // Prefer auto trip label ("STRADA - 2") so the red number always matches table ordering.
       const vehicleCode = vehicleTripLabels.get(ticket.id || '') || getTicketVehicleDisplay(displayTicket(ticket)) || val
-      const canDragVehicle = canEdit && !rowGhost && Boolean(vehicleCode)
+      const canDragVehicle = canEdit && !rowGhost && !isTicketClosed(ticket) && Boolean(vehicleCode)
       // "MIRAGE - 2" splits into a plain name and a red trip number that live-updates as the
       // ticket's position in its vehicle group changes (drag-and-drop) — never manually typed.
       const parsedVehicle = parseNameSiteToken(vehicleCode)
@@ -6316,7 +6499,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                 ) : null}
               </div>
             )}
-            {canEdit && !rowGhost && (
+            {canEdit && !rowGhost && !isTicketClosed(ticket) && (
               <button
                 type="button"
                 onClick={(e) => {
@@ -6409,7 +6592,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
 
     if (label === 'COMMIT') {
       const commitVal = (val || '').trim()
-      if (!commitVal && canEdit && !isMyTickets && !rowGhost) {
+      if (!commitVal && canEdit && !isMyTickets && !rowGhost && !isTicketClosed(ticket) && !isCellLockedForInline(ticket, label)) {
         return (
           <button
             type="button"
@@ -6465,7 +6648,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
       const isNewInstallerGroup = idx != null && idx > 0 && curToken.name && prevToken.name && curToken.name !== prevToken.name
 
       if (isEmpty) {
-        if (canEdit && !isMyTickets && !rowGhost) {
+        if (canEdit && !isMyTickets && !rowGhost && !isTicketClosed(ticket)) {
           return (
             <button
               type="button"
@@ -7054,58 +7237,43 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                   </button>
                 )}
 
-                {/* Showcase */}
+                {/* Hidden columns */}
                 {!isMyTickets && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      persistSchedulesSnapshot()
-                      setShowcaseOpen(true)
-                    }}
-                    className="flex items-center gap-1.5 h-10 px-3 rounded-full text-[12px] xl:text-[13px] font-bold transition-[background-color,color] duration-150 shrink-0 active:scale-95"
-                    style={{
-                      backgroundColor: showcaseOpen ? 'transparent' : green,
-                      border: `1.5px solid ${green}`,
-                      color: showcaseOpen ? green : '#ffffff',
-                    }}
-                    title="Open fullscreen schedule showcase for print / PDF"
-                  >
-                    <Maximize2 className="w-4 h-4 shrink-0" />
-                    <span>{showcaseOpen ? 'Active' : 'Showcase'}</span>
-                  </button>
+                  <HiddenColumnsButton
+                    hidden={hiddenColumnItems}
+                    isLight={isLight}
+                    green={green}
+                    inputBg={inputBg}
+                    inputBorder={inputBorder}
+                    textPrimary={textPrimary}
+                    onShow={(label) => updateHiddenCols(prev => prev.filter(l => l !== label))}
+                    onShowAll={() => updateHiddenCols(() => [])}
+                  />
                 )}
+
               </div>
 
-              {/* Search bar — full width on mobile (stacks first), fixed-width and
-                  right-aligned on desktop */}
-              <div
-                className="order-1 md:order-2 md:ml-auto w-full md:w-[280px] flex items-center gap-2 h-10 px-3 rounded-2xl border transition-colors duration-150 shrink-0"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder }}
-              >
-                <Search className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
-                <input
-                  type="search"
-                  inputMode="search"
-                  placeholder="Customer, installer, ticket no, phone…"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="bg-transparent outline-none text-sm flex-1 min-w-0 placeholder:font-medium"
-                  style={{ color: textPrimary }}
-                  onClick={e => e.stopPropagation()}
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={e => { e.stopPropagation(); setSearchQuery('') }}
-                    className="shrink-0 p-1 rounded-full hover:bg-slate-500/10 transition-colors"
-                    style={{ color: textMuted }}
-                    aria-label="Clear search"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
+              {/* Showcase — pinned to the far right corner (search field removed from this toolbar) */}
+              {!isMyTickets && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    persistSchedulesSnapshot()
+                    setShowcaseOpen(true)
+                  }}
+                  className="order-1 md:order-2 ml-auto flex items-center gap-1.5 h-10 px-3 rounded-full text-[12px] xl:text-[13px] font-bold transition-[background-color,color] duration-150 shrink-0 active:scale-95"
+                  style={{
+                    backgroundColor: showcaseOpen ? 'transparent' : green,
+                    border: `1.5px solid ${green}`,
+                    color: showcaseOpen ? green : '#ffffff',
+                  }}
+                  title="Open fullscreen schedule showcase for print / PDF"
+                >
+                  <Maximize2 className="w-4 h-4 shrink-0" />
+                  <span>{showcaseOpen ? 'Active' : 'Showcase'}</span>
+                </button>
+              )}
             </>
           )}
         </div>,
@@ -7297,6 +7465,11 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                           : ArrowUpDown
                         return (
                           <th key={col.label}
+                            onContextMenu={isMyTickets ? undefined : (e => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              setColHeaderMenu({ x: e.clientX, y: e.clientY, label: col.label, display: String(col.display) })
+                            })}
                             onClick={e => {
                               const isExpanding = !expandedCols[col.label]
                               toggleCol(col.label)
@@ -7548,7 +7721,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                                     // INSTALLER/NEGOTIATOR are strict dropdown pickers — a single
                                     // click should open the dropdown directly, not a view-popup
                                     // with a separate pencil button to get to the picker.
-                                    if ((col.label === 'INSTALLER' || col.label === 'NEGOTIATOR') && canEdit && !isGhost) {
+                                    if ((col.label === 'INSTALLER' || col.label === 'NEGOTIATOR') && canEdit && !isGhost && !isTicketClosed(ticket)) {
                                       startCellEdit(ticket, col.label, e.currentTarget as HTMLElement, idx)
                                       return
                                     }
@@ -7561,7 +7734,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                                   onDoubleClick={e => {
                                     e.preventDefault()
                                     e.stopPropagation()
-                                    if (!canEdit || isEditingCell || (isGhost && !allowGhostCellEdit)) return
+                                    if (!canEdit || isTicketClosed(ticket) || isEditingCell || (isGhost && !allowGhostCellEdit)) return
                                     if (col.label === 'VEHICLE' || col.label === 'TICKET NO') {
                                       if (col.label === 'VEHICLE') {
                                         setSelectedVehicleTicketId(prev => (prev === ticket.id ? null : ticket.id))
@@ -7587,11 +7760,11 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                                     overflow: 'hidden',
                                     textOverflow: 'clip',
                                     transition: isDropTargetRow ? 'background-color 1s ease' : 'background-color 0.1s ease',
-                                    cursor: canEdit && (!isGhost || allowGhostCellEdit) && INLINE_EDIT_COLUMNS.has(col.label) ? 'text' : 'default',
+                                    cursor: canEdit && !isTicketClosed(ticket) && (!isGhost || allowGhostCellEdit) && INLINE_EDIT_COLUMNS.has(col.label) ? 'text' : 'default',
                                     verticalAlign: 'middle',
                                     textAlign: col.align || 'left',
-                                    userSelect: isEditingCell ? 'text' : (canEdit && (!isGhost || allowGhostCellEdit) ? 'none' : undefined),
-                                    WebkitUserSelect: isEditingCell ? 'text' : (canEdit && (!isGhost || allowGhostCellEdit) ? 'none' : undefined),
+                                    userSelect: isEditingCell ? 'text' : (canEdit && !isTicketClosed(ticket) && (!isGhost || allowGhostCellEdit) ? 'none' : undefined),
+                                    WebkitUserSelect: isEditingCell ? 'text' : (canEdit && !isTicketClosed(ticket) && (!isGhost || allowGhostCellEdit) ? 'none' : undefined),
                                     ...(col.sticky
                                       ? { position: 'sticky' as const, left: `${col.left}px`, zIndex: (isEditingCell || isExpandedCell) ? 95 : 5 }
                                       : { position: 'relative' as const, zIndex: (isEditingCell || isExpandedCell) ? (isEditingCell ? 90 : 85) : undefined }),
@@ -7935,7 +8108,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                                     <span className="text-xs font-black tabular-nums shrink-0 uppercase tracking-wide" style={{ color: textPrimary }}>
                                       {formatDisplayDate(finalDateKey, '')}
                                     </span>
-                                  ) : canEdit && !isGhost ? (
+                                  ) : canEdit && !isGhost && !isTicketClosed(ticket) ? (
                                     <button
                                       type="button"
                                       onClick={e => { e.stopPropagation(); startCellEdit(ticket, 'FINAL DATE', e.currentTarget as HTMLElement, idx) }}
@@ -8406,6 +8579,19 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
       </div>
 
       {/* ── Right-click context menu ── */}
+      {colHeaderMenu && (
+        <ColumnHeaderContextMenu
+          menu={colHeaderMenu}
+          isLight={isLight}
+          protectedColumn={PROTECTED_SCHEDULE_COLS.has(colHeaderMenu.label)}
+          onHide={(label) => {
+            updateHiddenCols(prev => (prev.includes(label) ? prev : [...prev, label]))
+            showToast(`${columnDisplayName(label)} hidden — restore it from "Hidden" at the top`)
+          }}
+          onClose={() => setColHeaderMenu(null)}
+        />
+      )}
+
       {contextMenu && (() => {
         const menuW = 220
         const menuH = 180
@@ -8445,7 +8631,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
               </button>
 
               {/* Edit Details */}
-              {canEdit && (
+              {canEdit && !isTicketLockedFor(contextMenu.ticket, role) && (
                 <button onClick={() => { openEditModal(contextMenu.ticket); setContextMenu(null) }}
                   className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors"
                   style={{ color: textPrimary }}
@@ -8471,7 +8657,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
           isLight={isLight}
           isMyTickets={isMyTickets}
           isTaguigServices={isTaguigServices}
-          canEdit={canEdit}
+          canEdit={canEdit && !isTicketLockedFor(detailTicket, role)}
           branchEmployees={branchEmployees}
           activeBranchId={activeBranchId}
           user={user}
@@ -8518,22 +8704,27 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
           picker={statusPicker}
           isLight={isLight}
           activeTab={activeTab}
-          editFormStatus={editForm.status}
           tickets={tickets}
           optimisticTickets={optimisticTicketsRef.current}
+          canEditClosed={canEditClosedTicket(role)}
           onClose={() => setStatusPicker(null)}
-          onSetEditFormStatus={(status) => setEditForm(prev => ({ ...prev, status }))}
           onOpenEditModal={openEditModal}
           onOpenReschedDialog={openReschedDialog}
           onOpenContinuationDialog={openContinuationDialog}
-          onOpenPaymentPrompt={(ticket, nextStatus) => {
-            setPaymentPrompt({ ticket, nextStatus })
-            setPromptAmount('')
-            setPromptMode('CASH')
-            setPromptHybridCash('')
-            setPromptHybridGcash('')
-          }}
+          onCloseTicket={requestCloseTicket}
+          onCancelTicket={cancelTicketWithReason}
+          onReopenTicket={(t, reason) => { void reopenClosedTicket(t, reason) }}
           onSaveCellEdit={(ticket, colLabel, value) => { void saveCellEdit(ticket, colLabel, value) }}
+        />
+      )}
+
+      {closeDialogTicket && (
+        <CloseTicketDialog
+          ticket={closeDialogTicket}
+          isLight={isLight}
+          onClose={() => setCloseDialogTicket(null)}
+          onConfirm={confirmCloseTicket}
+          onFix={handleCloseDialogFix}
         />
       )}
 
@@ -8542,29 +8733,10 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
           popup={scheduleDetailsPopup}
           isLight={isLight}
           dateFilter={dateFilter}
-          canEdit={canEdit}
+          canChangeStatus={canEdit && (!isTicketClosed(scheduleDetailsPopup.ticket) || canEditClosedTicket(role))}
           onClose={() => setScheduleDetailsPopup(null)}
           onOpenStatusPicker={openStatusPicker}
-          onOpenChecklist={(ticket) => {
-            setScheduleDetailsPopup(null)
-            setChecklistTicket(ticket)
-          }}
-          onUpdateTicket={(updated) => {
-            setTickets(prev => prev.map(t => (t.id === updated.id ? { ...t, ...updated } : t)))
-            setScheduleDetailsPopup(prev => prev ? { ...prev, ticket: updated } : null)
-          }}
-        />
-      )}
-
-      {checklistTicket && (
-        <ConfirmationChecklistModal
-          ticket={checklistTicket}
-          isLight={isLight}
-          onClose={() => setChecklistTicket(null)}
-          onSaved={(updated) => {
-            setTickets(prev => prev.map(t => (t.id === updated.id ? { ...t, ...updated } : t)))
-            setChecklistTicket(null)
-          }}
+          onViewDetails={(t) => setDetailTicket(t)}
         />
       )}
 
@@ -8900,6 +9072,8 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
           negotiatorsForBranch={negotiatorsForBranch}
           saving={editSaving}
           showDelete={canEdit && activeTab !== 'overview'}
+          onRequestCloseTicket={editTicket ? () => requestCloseTicket(editTicket) : undefined}
+          closedLabel={editTicket && isTicketClosed(editTicket) ? getScheduleStatusLabel(getScheduleStatusValue(editTicket)) : undefined}
           driverRoster={editModalRoster.drivers}
           installerRoster={editModalRoster.installers}
           technicianOptions={editModalTechnicians}
@@ -8961,6 +9135,8 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
           resolveBranch={resolveBranch}
           negotiatorsForBranch={negotiatorsForBranch}
           saving={editSaving}
+          onRequestCloseTicket={editTicket ? () => requestCloseTicket(editTicket) : undefined}
+          closedLabel={editTicket && isTicketClosed(editTicket) ? getScheduleStatusLabel(getScheduleStatusValue(editTicket)) : undefined}
           showDelete={canEdit}
           driverRoster={editModalRoster.drivers}
           installerRoster={editModalRoster.installers}
@@ -9011,26 +9187,51 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
         return ReactDOM.createPortal(
           <div
             data-expanded-popover="true"
-            className="rounded-lg border px-3 py-2 text-xs"
+            role="dialog"
+            aria-label={`${columnDisplayName(col.label)} details`}
+            className="rounded-xl border overflow-hidden flex flex-col"
             style={{
               position: 'fixed',
               left: expandedPopoverPos.left,
               top: expandedPopoverPos.top,
               width: expandedPopoverPos.width,
               maxWidth: 'calc(100vw - 1rem)',
-              maxHeight: 'min(320px, calc(100vh - 1rem))',
-              overflowY: 'auto',
+              maxHeight: 'min(360px, calc(100vh - 1rem))',
               zIndex: 14000,
               backgroundColor: cardBg,
-              borderColor: inputBorder,
+              borderColor: border,
               boxShadow: isLight
-                ? '0 8px 24px rgba(15,23,42,0.12)'
-                : '0 8px 24px rgba(0,0,0,0.35)',
+                ? '0 16px 32px -8px rgba(15,23,42,0.2), 0 6px 12px -6px rgba(15,23,42,0.1)'
+                : '0 16px 32px -8px rgba(0,0,0,0.6)',
             }}
             onClick={e => e.stopPropagation()}
             onPointerDown={e => e.stopPropagation()}
           >
-            {renderCell(ticket, col, idx >= 0 ? idx : undefined, isGhost, ghostKind, true)}
+            <div
+              className="px-3.5 py-2.5 flex items-start justify-between gap-2 shrink-0 border-b"
+              style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}
+            >
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>
+                  {columnDisplayName(col.label)}
+                </p>
+                <p className="text-xs font-extrabold uppercase truncate mt-0.5" style={{ color: textPrimary }}>
+                  {ticket.ticketNumber || ticket.ticket_number ? `${ticket.ticketNumber || ticket.ticket_number} · ` : ''}{getCustomerDisplayName(ticket)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExpandedCell(null)}
+                className="p-1 -mr-1 rounded-md hover:bg-slate-500/10 shrink-0 cursor-pointer"
+                style={{ color: textMuted }}
+                aria-label="Close"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="px-3.5 py-3 overflow-y-auto text-[13px] font-semibold leading-relaxed" style={{ color: textPrimary }}>
+              {renderCell(ticket, col, idx >= 0 ? idx : undefined, isGhost, ghostKind, true)}
+            </div>
           </div>,
           document.body,
         )

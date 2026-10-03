@@ -81,6 +81,10 @@ export type RelayEditTicketModalProps = {
   getTicketNumber: (ticket: any) => string
   parseAcDetails: (ticket: any) => { finalDate?: string; previousScheduleDates?: string[] }
   draftExtensions?: Partial<RelayEditDraft>
+  /** Opens the guarded Close Ticket dialog (field surfaces only). */
+  onRequestCloseTicket?: () => void
+  /** Outcome label when the ticket is already closed (admin editing a closed ticket). */
+  closedLabel?: string
 }
 
 const STANDARD_PAYMENT_MODES = new Set(['CASH', 'GCASH', 'BANK TRANSFER', 'CHEQUE', 'FOR COLLECTION', 'NO_PAYMENT', 'FREE', 'FREE INSTALL', 'PENDING'])
@@ -260,20 +264,20 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
       >
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 shrink-0 safe-area-top" style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : '#0A1120' }}>
           <div className="min-w-0 flex-1 mr-4">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h2 className="text-xl sm:text-2xl font-black leading-none uppercase tracking-wide flex items-center gap-2.5 flex-wrap" style={{ color: textPrimary }}>
-                <span>EDIT TICKET</span>
-                <span className="text-lg sm:text-xl px-3 py-0.5 rounded font-extrabold tracking-tight" style={{ backgroundColor: '#10B981', color: 'white', border: `1px solid ${border}` }}>
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] mb-1" style={{ color: textMuted }}>Edit ticket</p>
+            <div className="flex items-center gap-x-3 gap-y-1.5 flex-wrap">
+              <h2 className="text-lg sm:text-xl font-black leading-tight uppercase tracking-wide flex items-center gap-2.5 min-w-0" style={{ color: textPrimary }}>
+                <span className="text-sm sm:text-base px-2.5 py-1 rounded-lg font-extrabold tracking-tight shrink-0" style={{ backgroundColor: '#10B981', color: 'white' }}>
                   {ticketNumberLabel}
                 </span>
                 {draft.customerName && (
-                  <span className="text-lg sm:text-xl font-black truncate max-w-xs sm:max-w-md" style={{ color: textMuted }}>
-                    — {draft.customerName.toUpperCase()}
+                  <span className="truncate max-w-[14rem] sm:max-w-md" title={draft.customerName.toUpperCase()}>
+                    {draft.customerName.toUpperCase()}
                   </span>
                 )}
               </h2>
               {editOriginalDate && isFieldSurface && (
-                <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>
+                <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full border" style={{ color: textMuted, borderColor: border }}>
                   Scheduled {editOriginalDate}
                 </span>
               )}
@@ -359,6 +363,8 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
               isLight={isLight}
               border={border}
               textMuted={textMuted}
+              onCloseTicket={isFieldSurface ? props.onRequestCloseTicket : undefined}
+              closedLabel={props.closedLabel}
             />
           </div>
 

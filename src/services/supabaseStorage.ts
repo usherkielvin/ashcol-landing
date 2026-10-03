@@ -151,14 +151,9 @@ export async function uploadTicketPhoto(
   file: File | Blob,
   options: UploadTicketPhotoOptions
 ): Promise<UploadTicketPhotoResult> {
-  const supabase = getSupabaseClient()
-  if (!supabase) {
-    throw new Error('Photo storage is not configured (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).')
-  }
-
-  const full = await compressImage(file, { maxWidth: 1600, maxHeight: 1600, quality: 0.75, mimeType: 'image/jpeg' })
+  const full = await compressImage(file, { maxWidth: 1400, maxHeight: 1400, quality: 0.72, mimeType: 'image/jpeg' })
   // Thumbnail from the already-downscaled blob — much cheaper than decoding the camera original twice.
-  const thumb = await compressImage(full.blob, { maxWidth: 400, maxHeight: 400, quality: 0.65, mimeType: 'image/jpeg' })
+  const thumb = await compressImage(full.blob, { maxWidth: 380, maxHeight: 380, quality: 0.62, mimeType: 'image/jpeg' })
 
   const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
@@ -169,22 +164,40 @@ export async function uploadTicketPhoto(
   const path = `${folderPath}/${uniqueId}.jpg`
   const thumbPath = `${folderPath}/${uniqueId}_thumb.jpg`
 
-  const bucket = supabase.storage.from(TICKET_ATTACHMENTS_BUCKET)
-  const [fullUpload, thumbUpload] = await Promise.all([
-    bucket.upload(path, full.blob, { contentType: 'image/jpeg', upsert: false, cacheControl: '31536000' }),
-    bucket.upload(thumbPath, thumb.blob, { contentType: 'image/jpeg', upsert: false, cacheControl: '31536000' }),
-  ])
-  if (fullUpload.error || thumbUpload.error) {
-    const uploaded = [fullUpload.data?.path, thumbUpload.data?.path].filter((p): p is string => !!p)
-    if (uploaded.length) void bucket.remove(uploaded)
-    throw new Error((fullUpload.error || thumbUpload.error)?.message || 'Upload failed')
+  const supabase = getSupabaseClient()
+  if (supabase) {
+    try {
+      const bucket = supabase.storage.from(TICKET_ATTACHMENTS_BUCKET)
+      const [fullUpload, thumbUpload] = await Promise.all([
+        bucket.upload(path, full.blob, { contentType: 'image/jpeg', upsert: false, cacheControl: '31536000' }),
+        bucket.upload(thumbPath, thumb.blob, { contentType: 'image/jpeg', upsert: false, cacheControl: '31536000' }),
+      ])
+      if (!fullUpload.error && !thumbUpload.error) {
+        return {
+          url: bucket.getPublicUrl(path).data.publicUrl,
+          thumbUrl: bucket.getPublicUrl(thumbPath).data.publicUrl,
+          path,
+          thumbPath,
+          size: full.compressedSize + thumb.compressedSize,
+          originalSize: full.originalSize,
+          width: full.width,
+          height: full.height,
+        }
+      }
+      console.warn('[Supabase Storage] Ticket photo upload to Supabase failed, saving locally:', fullUpload.error || thumbUpload.error)
+      const uploaded = [fullUpload.data?.path, thumbUpload.data?.path].filter((p): p is string => !!p)
+      if (uploaded.length) void bucket.remove(uploaded)
+    } catch (err) {
+      console.warn('[Supabase Storage] Error during ticket photo upload, saving locally:', err)
+    }
   }
 
+  // Graceful fallback for localhost / demo mode: save photo locally as compressed DataURL
   return {
-    url: bucket.getPublicUrl(path).data.publicUrl,
-    thumbUrl: bucket.getPublicUrl(thumbPath).data.publicUrl,
-    path,
-    thumbPath,
+    url: full.dataUrl,
+    thumbUrl: thumb.dataUrl,
+    path: `local/${folderPath}/${uniqueId}.jpg`,
+    thumbPath: `local/${folderPath}/${uniqueId}_thumb.jpg`,
     size: full.compressedSize + thumb.compressedSize,
     originalSize: full.originalSize,
     width: full.width,
@@ -198,7 +211,7 @@ export async function uploadTicketPhoto(
  */
 export async function removeTicketPhotoFiles(paths: string[]): Promise<void> {
   const supabase = getSupabaseClient()
-  const clean = paths.filter(Boolean)
+  const clean = paths.filter(p => !!p && !p.startsWith('local/'))
   if (!supabase || clean.length === 0) return
   try {
     const { error } = await supabase.storage.from(TICKET_ATTACHMENTS_BUCKET).remove(clean)

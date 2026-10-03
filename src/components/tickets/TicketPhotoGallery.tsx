@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Camera,
+  ClipboardPaste,
   ImagePlus,
   Loader2,
   Trash2,
@@ -66,10 +67,46 @@ export function isInstallTicket(ticket?: Partial<Ticket> | null): boolean {
   return !cat && !st
 }
 
+/**
+ * Which fixed holder each photo sits in. Photos remember their holder (`slot`); older photos
+ * without one are matched to the preset with the same label, then to the first free holder.
+ */
+function assignPhotoSlots(list: TicketPhoto[], presets?: readonly string[]): Map<number, TicketPhoto> {
+  const map = new Map<number, TicketPhoto>()
+  const rest: TicketPhoto[] = []
+  for (const p of list) {
+    const s = p.slot
+    if (typeof s === 'number' && Number.isInteger(s) && s >= 0 && s < MAX_TICKET_PHOTOS && !map.has(s)) map.set(s, p)
+    else rest.push(p)
+  }
+  const leftover: TicketPhoto[] = []
+  for (const p of rest) {
+    const label = (p.description || '').trim().toUpperCase()
+    const idx = presets && label ? presets.findIndex((preset, i) => !map.has(i) && preset === label) : -1
+    if (idx >= 0) map.set(idx, p)
+    else leftover.push(p)
+  }
+  for (const p of leftover) {
+    for (let i = 0; i < MAX_TICKET_PHOTOS; i += 1) {
+      if (!map.has(i)) { map.set(i, p); break }
+    }
+  }
+  return map
+}
+
+/** Writes the resolved holder onto every photo, so deleting one never shifts the others. */
+function withSlots(list: TicketPhoto[], presets?: readonly string[]): TicketPhoto[] {
+  const slotOf = new Map<TicketPhoto, number>()
+  assignPhotoSlots(list, presets).forEach((photo, slot) => slotOf.set(photo, slot))
+  return list.map(p => (slotOf.has(p) ? { ...p, slot: slotOf.get(p) } : p))
+}
+
 type PendingStatus = 'uploading' | 'saving' | 'error'
 
 interface PendingUpload {
   key: string
+  /** The fixed holder this upload is filling. */
+  slotIndex: number
   file: File
   previewUrl: string
   status: PendingStatus
@@ -88,7 +125,7 @@ interface StagedSlot {
 }
 
 const IMAGE_NAME_RE = /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i
-const UPLOAD_CONCURRENCY = 2
+const UPLOAD_CONCURRENCY = 4
 
 function isImageFile(file: File): boolean {
   return file.type.startsWith('image/') || IMAGE_NAME_RE.test(file.name)
@@ -150,6 +187,11 @@ export function TicketPhotoGallery({
   const [globalDragOver, setGlobalDragOver] = useState(false)
 
   const inputRef = useRef<HTMLInputElement>(null)
+  /** The holder Ctrl+V pastes into. It stays put: once filled, pasting again is blocked, not advanced. */
+  const [activeSlot, setActiveSlot] = useState<number | null>(null)
+  const activeSlotRef = useRef<number | null>(null)
+  /** Holders reserved by uploads that are still running (updated synchronously, unlike state). */
+  const claimedSlotsRef = useRef(new Set<number>())
   const photosRef = useRef(photos)
   const pendingRef = useRef(pending)
   useEffect(() => { photosRef.current = photos }, [photos])
@@ -163,10 +205,10 @@ export function TicketPhotoGallery({
   const textMuted = isLight ? '#64748b' : '#94a3b8'
 
   const ticketId = ticket.id
+  const slotPresets = isInstall ? INSTALL_PHOTO_PRESETS : undefined
   const ticketKey = ticket.ticketNumber || ticket.ticket_number || ticketId
   const canUpload = canManage && !!ticketId && !isTempTicketId(ticketId)
   const activePending = pending.filter(p => p.status !== 'error').length
-  const slotsLeft = MAX_TICKET_PHOTOS - photos.length - staged.length - activePending
 
   // ── fetch latest photos on mount ──────────────────────────────────────────
   useEffect(() => {
@@ -209,7 +251,10 @@ export function TicketPhotoGallery({
 
   const dropPending = (keys: string[]) =>
     setPending(prev => {
-      prev.filter(p => keys.includes(p.key)).forEach(p => URL.revokeObjectURL(p.previewUrl))
+      prev.filter(p => keys.includes(p.key)).forEach(p => {
+        URL.revokeObjectURL(p.previewUrl)
+        claimedSlotsRef.current.delete(p.slotIndex)
+      })
       return prev.filter(p => !keys.includes(p.key))
     })
 
@@ -257,6 +302,7 @@ export function TicketPhotoGallery({
         uploadedBy: user?.name || undefined,
         uploadedById: user?.id || undefined,
         description: orig?.description?.trim() || undefined,
+        slot: orig?.slotIndex,
       }
     })
 
@@ -265,7 +311,16 @@ export function TicketPhotoGallery({
       const saved = await updateTicketPhotos(ticketId, photosRef.current, current => {
         const room = Math.max(0, MAX_TICKET_PHOTOS - current.length)
         overflow = newPhotos.slice(room)
-        return [...current, ...newPhotos.slice(0, room)]
+        const base = withSlots(current, slotPresets)
+        const taken = new Set(base.map(p => p.slot))
+        const added = newPhotos.slice(0, room).map(p => {
+          // Someone else filled this holder while we were uploading — take the next free one.
+          if (p.slot != null && !taken.has(p.slot)) { taken.add(p.slot); return p }
+          const free = Array.from({ length: MAX_TICKET_PHOTOS }, (_, i) => i).find(i => !taken.has(i))
+          if (free != null) taken.add(free)
+          return { ...p, slot: free }
+        })
+        return [...base, ...added]
       })
       applySaved(saved)
       if (overflow.length) void removeTicketPhotoFiles(overflow.flatMap(p => [p.path || '', p.thumbPath || '']))
@@ -282,35 +337,122 @@ export function TicketPhotoGallery({
     }
   }
 
-  // ── staging helpers ───────────────────────────────────────────────────────
-  const addFiles = (fileList: FileList | File[] | null, targetSlotIndex?: number) => {
+  // ── auto-upload on attach or paste (no click upload button) ────────────────
+  const slotLabel = (i: number) => (isInstall && INSTALL_PHOTO_PRESETS[i] ? `#${i + 1} ${INSTALL_PHOTO_PRESETS[i]}` : `#${i + 1}`)
+
+  /** Holders that already have a photo or an upload in flight. */
+  const occupiedSlots = (): Set<number> => {
+    const set = new Set<number>(assignPhotoSlots(photosRef.current, slotPresets).keys())
+    claimedSlotsRef.current.forEach(i => set.add(i))
+    return set
+  }
+
+  const selectSlot = (i: number | null) => {
+    activeSlotRef.current = i
+    setActiveSlot(i)
+  }
+
+  /**
+   * Photo holders are fixed: a file goes into one specific holder and never shifts anything.
+   *  - `targetSlotIndex`: the holder the person dropped on / clicked.
+   *  - `fromPaste`: Ctrl+V goes to the selected holder (or the first free one). Pasting again while
+   *    that holder is filled is blocked — it does NOT roll on into the next holder.
+   */
+  const addFiles = (fileList: FileList | File[] | null, targetSlotIndex?: number, fromPaste = false) => {
     const files = Array.from(fileList || []).filter(isImageFile)
-    if (!files.length || !canUpload) return
-    const take = Math.max(0, slotsLeft)
-    if (take === 0) {
+    if (!files.length || !canUpload || !ticketId) return
+    const occupied = occupiedSlots()
+    const free = Array.from({ length: MAX_TICKET_PHOTOS }, (_, i) => i).filter(i => !occupied.has(i))
+
+    const slots: number[] = []
+    let first: number | null = targetSlotIndex ?? (fromPaste ? (activeSlotRef.current ?? free[0] ?? null) : null)
+    if (first != null) {
+      if (occupied.has(first)) {
+        setMessage({ kind: 'error', text: `Holder ${slotLabel(first)} already has a photo. Select an empty holder, or delete that photo first.` })
+        return
+      }
+      slots.push(first)
+    }
+    for (const i of free) {
+      if (slots.length >= files.length) break
+      if (!slots.includes(i)) slots.push(i)
+    }
+    if (!slots.length) {
       setMessage({ kind: 'error', text: `This ticket already has ${MAX_TICKET_PHOTOS} photos. Delete one to add more.` })
       return
     }
-    const accepted = files.slice(0, take)
-    const baseIndex = targetSlotIndex != null ? targetSlotIndex : (photos.length + staged.length)
-    const newSlots: StagedSlot[] = accepted.map((file, i) => {
-      const slotIndex = targetSlotIndex != null && accepted.length === 1 ? targetSlotIndex : (baseIndex + i)
-      const defaultDesc = (isInstall && INSTALL_PHOTO_PRESETS[slotIndex]) ? INSTALL_PHOTO_PRESETS[slotIndex] : ''
+    const accepted = files.slice(0, slots.length)
+    first = slots[0]
+
+    const newEntries: PendingUpload[] = accepted.map((file, i) => {
+      const slotIndex = slots[i]
+      claimedSlotsRef.current.add(slotIndex)
+      const presetDesc = (isInstall && INSTALL_PHOTO_PRESETS[slotIndex]) ? INSTALL_PHOTO_PRESETS[slotIndex] : ''
+      const defaultDesc = presetDesc || file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim().toUpperCase() || 'PHOTO'
       return {
-        key: `${Date.now()}-${i}-${file.name}`,
+        key: `up-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
+        slotIndex,
         file,
         previewUrl: URL.createObjectURL(file),
-        description: defaultDesc,
-        slotIndex,
+        status: 'uploading' as const,
+        description: defaultDesc.toUpperCase(),
       }
     })
-    setStaged(prev => [...prev, ...newSlots])
+    // A paste/drop on a holder keeps that holder selected, so a repeat is blocked rather than moved on.
+    if (targetSlotIndex != null || fromPaste) selectSlot(first)
+
+    setPending(prev => [...prev, ...newEntries])
     if (files.length > accepted.length) {
-      setMessage({ kind: 'error', text: `Only ${accepted.length} slot${accepted.length === 1 ? '' : 's'} left (max ${MAX_TICKET_PHOTOS}). Extra files were skipped.` })
+      setMessage({ kind: 'error', text: `Only ${accepted.length} holder${accepted.length === 1 ? '' : 's'} free (max ${MAX_TICKET_PHOTOS}). Extra files were skipped.` })
     } else {
       setMessage(null)
     }
+
+    void processUploads(newEntries)
   }
+
+  // Auto-flush any remaining staged slots to upload immediately
+  useEffect(() => {
+    if (staged.length > 0 && canUpload && ticketId) {
+      const entriesToUpload: PendingUpload[] = staged.map(slot => ({
+        key: `up-${slot.key}`,
+        slotIndex: slot.slotIndex ?? 0,
+        file: slot.file,
+        previewUrl: slot.previewUrl,
+        status: 'uploading' as const,
+        description: slot.description.trim().toUpperCase() || 'PHOTO',
+      }))
+      setStaged([])
+      setPending(prev => [...prev, ...entriesToUpload])
+      void processUploads(entriesToUpload)
+    }
+  }, [staged, canUpload, ticketId])
+
+  // Global window paste handler so pressing Ctrl+V anywhere uploads immediately
+  useEffect(() => {
+    if (!canUpload || !ticketId) return
+    const handleWindowPaste = (e: ClipboardEvent) => {
+      // A holder that is focused handles its own paste (and calls preventDefault) — don't add it twice.
+      if (e.defaultPrevented) return
+      const items = Array.from(e.clipboardData?.items || [])
+      const imageItems = items.filter(it => it.type.startsWith('image/'))
+      if (!imageItems.length) return
+      e.preventDefault()
+      const files: File[] = []
+      imageItems.forEach((it, idx) => {
+        const file = it.getAsFile()
+        if (file) {
+          files.push(new File([file], `pasted-${Date.now()}-${idx}.${it.type.split('/')[1] || 'jpg'}`, { type: it.type }))
+        }
+      })
+      if (files.length) {
+        addFiles(files, undefined, true)
+      }
+    }
+    window.addEventListener('paste', handleWindowPaste)
+    return () => window.removeEventListener('paste', handleWindowPaste)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canUpload, ticketId, photos, pending, isInstall])
 
   const clearSlot = (key: string) => {
     setStaged(prev => {
@@ -323,16 +465,13 @@ export function TicketPhotoGallery({
   const uploadSlot = async (key: string) => {
     const slot = staged.find(s => s.key === key)
     if (!slot || !ticketId) return
-    if (!slot.description.trim()) {
-      setStaged(prev => prev.map(s => s.key === key ? { ...s, validationError: 'Description is required.' } : s))
-      return
-    }
     const entry: PendingUpload = {
       key: `up-${key}`,
       file: slot.file,
       previewUrl: slot.previewUrl,
       status: 'uploading',
-      description: slot.description.trim().toUpperCase(),
+      slotIndex: slot.slotIndex ?? 0,
+      description: (slot.description.trim() || 'PHOTO').toUpperCase(),
     }
     setStaged(prev => prev.filter(s => s.key !== key))
     setPending(prev => [...prev, entry])
@@ -345,7 +484,7 @@ export function TicketPhotoGallery({
     setMessage(null)
     try {
       const saved = await updateTicketPhotos(ticketId, photosRef.current, current =>
-        current.filter(p => p.id !== photo.id && p.url !== photo.url))
+        withSlots(current, slotPresets).filter(p => p.id !== photo.id && p.url !== photo.url))
       applySaved(saved)
       void removeTicketPhotoFiles([photo.path || '', photo.thumbPath || ''])
       setLightboxIndex(null)
@@ -378,7 +517,7 @@ export function TicketPhotoGallery({
     const nextDesc = editDescDraft.trim().toUpperCase() || undefined
     try {
       const saved = await updateTicketPhotos(ticketId, photosRef.current, current =>
-        current.map(p => (p.id === targetId || p.url === editingPhoto.url ? { ...p, description: nextDesc } : p)))
+        withSlots(current, slotPresets).map(p => (p.id === targetId || p.url === editingPhoto.url ? { ...p, description: nextDesc } : p)))
       applySaved(saved)
       setMessage({ kind: 'ok', text: nextDesc ? 'Description updated.' : 'Description removed.' })
       setEditingPhoto(null)
@@ -400,7 +539,8 @@ export function TicketPhotoGallery({
 
   // ── how many empty placeholder cells to show ──────────────────────────────
   const usedSlots = photos.length + staged.length + activePending
-  const emptyCount = Math.max(0, MAX_TICKET_PHOTOS - usedSlots)
+  const slotMap = assignPhotoSlots(photos, slotPresets)
+  const pendingBySlot = new Map(pending.map(p => [p.slotIndex, p]))
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -480,22 +620,95 @@ export function TicketPhotoGallery({
           {/* ── unified 10-slot grid ───────────────────────────────────────── */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
 
-            {/* 1. Already-uploaded photos */}
-            {photos.map((photo, i) => (
-              <UploadedPhotoCell
-                key={photo.id}
-                photo={photo}
-                index={i}
-                canManage={canManage}
-                deletingId={deletingId}
-                tileStyle={tileStyle}
-                onView={() => setLightboxIndex(i)}
-                onEdit={() => startEditDescription(photo)}
-                onDelete={() => askDelete(photo)}
-              />
-            ))}
+            {/* Fixed holders: every slot keeps its position — a photo never moves to another holder. */}
+            {Array.from({ length: MAX_TICKET_PHOTOS }).map((_, slotIdx) => {
+              const photo = slotMap.get(slotIdx)
+              if (photo) {
+                return (
+                  <UploadedPhotoCell
+                    key={`slot-${slotIdx}-${photo.id}`}
+                    photo={photo}
+                    index={Math.max(0, photos.indexOf(photo))}
+                    canManage={canManage}
+                    deletingId={deletingId}
+                    tileStyle={tileStyle}
+                    onView={() => setLightboxIndex(Math.max(0, photos.indexOf(photo)))}
+                    onEdit={() => startEditDescription(photo)}
+                    onDelete={() => askDelete(photo)}
+                  />
+                )
+              }
+              const p = pendingBySlot.get(slotIdx)
+              if (p) {
+                return (
+                  <div key={p.key} className="relative aspect-square rounded-xl overflow-hidden" style={tileStyle}>
+                    <img src={p.previewUrl} alt="" className="w-full h-full object-cover opacity-40" draggable={false} />
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-1.5 text-center">
+                      {p.status === 'error' ? (
+                        <>
+                          <AlertCircle className="w-4 h-4 text-red-500" />
+                          <span className="text-[9px] font-bold text-red-500 line-clamp-3">{p.error}</span>
+                          <div className="flex gap-1 mt-0.5">
+                            <button type="button" onClick={() => void processUploads([p])}
+                              className="w-6 h-6 rounded-full flex items-center justify-center bg-black/60 text-white hover:bg-emerald-600"
+                              aria-label="Retry" title="Retry">
+                              <RotateCcw className="w-3 h-3" />
+                            </button>
+                            <button type="button" onClick={() => dropPending([p.key])}
+                              className="w-6 h-6 rounded-full flex items-center justify-center bg-black/60 text-white hover:bg-red-600"
+                              aria-label="Dismiss" title="Dismiss">
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <Loader2 className="w-5 h-5 animate-spin text-emerald-500" />
+                          <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: textPrimary }}>
+                            {p.status === 'saving' ? 'Saving…' : 'Uploading…'}
+                          </span>
+                          {p.description && (
+                            <span className="text-[8.5px] font-semibold text-emerald-400/90 truncate max-w-[90%]">
+                              {p.description}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )
+              }
+              const preset = isInstall ? INSTALL_PHOTO_PRESETS[slotIdx] : undefined
+              if (canUpload) {
+                return (
+                  <EmptySlotCell
+                    key={`empty-${slotIdx}`}
+                    slotIndex={slotIdx}
+                    presetLabel={preset}
+                    active={activeSlot === slotIdx}
+                    border={border}
+                    textMuted={textMuted}
+                    textPrimary={textPrimary}
+                    onActivate={() => selectSlot(slotIdx)}
+                    onFiles={(files) => addFiles(files, slotIdx)}
+                  />
+                )
+              }
+              // Read-only: keep the holder in place so photos sit in the same spot as when editing.
+              return isInstall ? (
+                <div
+                  key={`empty-${slotIdx}`}
+                  className="aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-0.5 p-1.5 text-center select-none"
+                  style={{ borderColor: border, color: textMuted }}
+                >
+                  <span className="text-[8.5px] font-black uppercase tracking-wider">#{slotIdx + 1}</span>
+                  <span className="text-[9.5px] font-black uppercase leading-tight line-clamp-2">{preset}</span>
+                  <span className="text-[8px] font-bold uppercase opacity-60">No photo</span>
+                </div>
+              ) : null
+            })}
 
-            {/* 2. Staged slots (dropped, not yet uploaded) */}
+            {/* Legacy staged uploads (normally flushed immediately) */}
             {staged.map((slot, i) => {
               const slotIdx = slot.slotIndex ?? (photos.length + i)
               const preset = isInstall ? INSTALL_PHOTO_PRESETS[slotIdx] : undefined
@@ -510,66 +723,10 @@ export function TicketPhotoGallery({
                   cardBg={cardBg}
                   textPrimary={textPrimary}
                   onDescChange={(val) =>
-                    setStaged(prev => prev.map(s => s.key === slot.key ? { ...s, description: val, validationError: undefined } : s))
+                    setStaged(prev => prev.map(st => st.key === slot.key ? { ...st, description: val, validationError: undefined } : st))
                   }
                   onUpload={() => void uploadSlot(slot.key)}
                   onClear={() => clearSlot(slot.key)}
-                />
-              )
-            })}
-
-            {/* 3. Currently uploading */}
-            {pending.map(p => (
-              <div key={p.key} className="relative aspect-square rounded-xl overflow-hidden" style={tileStyle}>
-                <img src={p.previewUrl} alt="" className="w-full h-full object-cover opacity-40" draggable={false} />
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-1.5 text-center">
-                  {p.status === 'error' ? (
-                    <>
-                      <AlertCircle className="w-4 h-4 text-red-500" />
-                      <span className="text-[9px] font-bold text-red-500 line-clamp-3">{p.error}</span>
-                      <div className="flex gap-1 mt-0.5">
-                        <button type="button" onClick={() => void processUploads([p])}
-                          className="w-6 h-6 rounded-full flex items-center justify-center bg-black/60 text-white hover:bg-emerald-600"
-                          aria-label="Retry" title="Retry">
-                          <RotateCcw className="w-3 h-3" />
-                        </button>
-                        <button type="button" onClick={() => dropPending([p.key])}
-                          className="w-6 h-6 rounded-full flex items-center justify-center bg-black/60 text-white hover:bg-red-600"
-                          aria-label="Dismiss" title="Dismiss">
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin text-emerald-500" />
-                      <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: textPrimary }}>
-                        {p.status === 'saving' ? 'Saving…' : 'Uploading…'}
-                      </span>
-                      {p.description && (
-                        <span className="text-[8.5px] font-semibold text-emerald-400/90 truncate max-w-[90%]">
-                          {p.description}
-                        </span>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {/* 4. Empty slots — each is a drop / click target with its preset label */}
-            {canUpload && Array.from({ length: emptyCount }).map((_, i) => {
-              const slotIdx = usedSlots + i
-              const preset = isInstall ? INSTALL_PHOTO_PRESETS[slotIdx] : undefined
-              return (
-                <EmptySlotCell
-                  key={`empty-${slotIdx}`}
-                  slotIndex={slotIdx}
-                  presetLabel={preset}
-                  border={border}
-                  textMuted={textMuted}
-                  textPrimary={textPrimary}
-                  onFiles={(files) => addFiles(files, slotIdx)}
                 />
               )
             })}
@@ -885,13 +1042,16 @@ function StagedSlotCell({
 
 /** Empty slot — acts as a drop target and click-to-browse button with preset label for install tickets. */
 function EmptySlotCell({
-  slotIndex, presetLabel, border, textMuted, textPrimary, onFiles,
+  slotIndex, presetLabel, active, border, textMuted, textPrimary, onActivate, onFiles,
 }: {
   slotIndex?: number
   presetLabel?: string
+  /** This is the holder Ctrl+V will paste into. */
+  active?: boolean
   border: string
   textMuted: string
   textPrimary: string
+  onActivate?: () => void
   onFiles: (files: FileList | File[]) => void
 }) {
   const [over, setOver] = useState(false)
@@ -904,18 +1064,55 @@ function EmptySlotCell({
     setOver(false)
     onFiles(e.dataTransfer.files)
   }
+  const [pasteHint, setPasteHint] = useState('')
   const handlePaste = (e: React.ClipboardEvent) => {
     const items = Array.from(e.clipboardData.items)
     const imgItem = items.find(it => it.type.startsWith('image/'))
     if (imgItem) {
       const file = imgItem.getAsFile()
+      e.preventDefault() // this holder owns the paste; the window-level handler must not add it again
       if (file) onFiles([file])
     }
   }
+  // Button path: read the clipboard directly (needs a click + the browser's clipboard permission).
+  const pasteFromClipboard = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setPasteHint('')
+    try {
+      const entries = await navigator.clipboard.read()
+      for (const entry of entries) {
+        const type = entry.types.find(t => t.startsWith('image/'))
+        if (type) {
+          const blob = await entry.getType(type)
+          onFiles([new File([blob], `pasted-${Date.now()}.${type.split('/')[1] || 'png'}`, { type })])
+          return
+        }
+      }
+      setPasteHint('No image on clipboard')
+    } catch {
+      setPasteHint('Allow clipboard access, or press Ctrl+V')
+    }
+    window.setTimeout(() => setPasteHint(''), 3500)
+  }
+  const pasteBtn = (
+    <button
+      type="button"
+      onClick={pasteFromClipboard}
+      onKeyDown={e => e.stopPropagation()}
+      className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[9px] font-black uppercase tracking-wider transition-colors hover:bg-emerald-500/10 hover:border-emerald-500 hover:text-emerald-600"
+      style={{ borderColor: border, color: textMuted }}
+      title="Paste an image from your clipboard"
+    >
+      <ClipboardPaste className="w-3 h-3" /> Paste
+    </button>
+  )
+  const hintEl = pasteHint ? <span className="text-[8px] font-semibold text-red-500 text-center px-1 leading-tight">{pasteHint}</span> : null
 
   return (
     <div
-      onClick={() => fileInputRef.current?.click()}
+      onClick={() => { onActivate?.(); fileInputRef.current?.click() }}
+      onMouseEnter={onActivate}
+      onFocus={onActivate}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -925,8 +1122,9 @@ function EmptySlotCell({
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click() }}
       className="aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center transition-all duration-150 relative cursor-pointer group hover:border-emerald-500"
       style={{
-        borderColor: over ? '#10B981' : border,
+        borderColor: over || active ? '#10B981' : border,
         backgroundColor: over ? 'rgba(16,185,129,0.08)' : 'transparent',
+        boxShadow: active ? '0 0 0 2px rgba(16,185,129,0.25)' : undefined,
       }}
       aria-label={presetLabel ? `Attach photo: ${presetLabel}` : "Add photo"}
     >
@@ -954,6 +1152,8 @@ function EmptySlotCell({
           <span className="text-[8px] font-bold opacity-60 uppercase tracking-wider" style={{ color: textMuted }}>
             {over ? 'Drop here' : 'Attach'}
           </span>
+          {pasteBtn}
+          {hintEl}
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center gap-1 select-none">
@@ -961,6 +1161,8 @@ function EmptySlotCell({
           <span className="text-[9px] font-bold" style={{ color: over ? '#10B981' : textPrimary }}>
             {over ? 'Drop here' : 'Add photo'}
           </span>
+          {pasteBtn}
+          {hintEl}
         </div>
       )}
     </div>
