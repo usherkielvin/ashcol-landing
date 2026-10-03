@@ -212,6 +212,18 @@ function AutoFitText({ text, style, title, minScale = 0.55, align = 'center' }: 
   )
 }
 
+
+/** Modes offered by the Payment Details popup. The popup's value must always be one of these, otherwise the <select> shows
+ *  the first option (CASH) while the saved value is something else (e.g. "NO PAYMENT", which the backend treats as "clear"). */
+const PAYMENT_PROMPT_MODES = ['NO PAYMENT', 'CASH', 'BANK TRANSFER', 'GCASH', 'CHEQUE', 'FOR COLLECTION', 'HYBRID', 'FREE INSTALL', 'PENDING']
+/** What the popup starts on for a ticket whose payment is `mode`. A ticket with no payment starts on NO PAYMENT, which has no
+ *  amount field and cannot be saved: the person has to pick a real mode (CASH, GCASH…) first, which is what reveals the amount. */
+function initialPaymentPromptMode(mode?: string | null): string {
+  const v = String(mode || '').trim().toUpperCase().replace(/_/g, ' ')
+  if (!v || v === 'NO PAYMENT' || v === 'NONE' || v === 'NO') return 'NO PAYMENT'
+  return v
+}
+
 export default function Tickets({ surface }: { surface: TicketsSurface }) {
   const { theme } = useTheme()
   const { user } = useAuth()
@@ -795,7 +807,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
   const [toast, setToast] = useState<string | null>(null)
   const [paymentPrompt, setPaymentPrompt] = useState<{ ticket: Ticket; nextStatus: string; updateOnly?: boolean } | null>(null)
   const [promptAmount, setPromptAmount] = useState<string>('')
-  const [promptMode, setPromptMode] = useState<string>('CASH')
+  const [promptMode, setPromptMode] = useState<string>('NO PAYMENT')
   const [promptHybridCash, setPromptHybridCash] = useState<string>('')
   const [promptHybridGcash, setPromptHybridGcash] = useState<string>('')
 
@@ -5318,7 +5330,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
     if (kind === 'payment') {
       const payment = resolveTicketPayment(full)
       setPaymentPrompt({ ticket: full, nextStatus: getScheduleStatusValue(full) || 'DONE_INSTALLED', updateOnly: true })
-      setPromptMode(payment.mode || 'CASH')
+      setPromptMode(initialPaymentPromptMode(payment.mode))
       setPromptAmount(payment.amount > 0 ? String(payment.amount) : '')
       return
     }
@@ -6522,7 +6534,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                   setExpandedCell(null)
                   const payment = resolveTicketPayment(ticket)
                   setPaymentPrompt({ ticket, nextStatus: getScheduleStatusValue(ticket) || 'DONE_INSTALLED', updateOnly: true })
-                  setPromptMode(payment.mode || 'CASH')
+                  setPromptMode(initialPaymentPromptMode(payment.mode))
                   setPromptAmount(payment.amount > 0 ? String(payment.amount) : '')
                 }}
                 className="mt-2 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:scale-105"
@@ -9712,8 +9724,12 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
 
       {paymentPrompt && (() => {
         const { ticket, nextStatus, updateOnly } = paymentPrompt
-        const isFreeOrPending = promptMode === 'FREE' || promptMode === 'FREE INSTALL' || promptMode === 'PENDING'
-        const isHybrid = promptMode === 'HYBRID'
+        // The mode the <select> really shows and the one that gets saved — always the same value.
+        const modeValue = initialPaymentPromptMode(promptMode)
+        const modeOptions = PAYMENT_PROMPT_MODES.includes(modeValue) ? PAYMENT_PROMPT_MODES : [modeValue, ...PAYMENT_PROMPT_MODES]
+        const isNoPayment = modeValue === 'NO PAYMENT'
+        const isFreeOrPending = modeValue === 'FREE' || modeValue === 'FREE INSTALL' || modeValue === 'PENDING'
+        const isHybrid = modeValue === 'HYBRID'
         const hybridCashNum = parseFloat(promptHybridCash) || 0
         const hybridGcashNum = parseFloat(promptHybridGcash) || 0
         const hybridTotal = hybridCashNum + hybridGcashNum
@@ -9740,10 +9756,11 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
               : 'Complete & Archive'
         const handleSubmit = (e: React.FormEvent) => {
           e.preventDefault()
+          if (isNoPayment) return
           if (updateOnly) {
             // Just update payment fields without changing status
             const amt = isFreeOrPending ? 0 : (isHybrid ? hybridTotal : (parseFloat(promptAmount) || 0))
-            const mop = promptMode
+            const mop = modeValue
             let breakdown: PaymentBreakdownEntry[] | undefined
             if (isHybrid) {
               breakdown = []
@@ -9764,7 +9781,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
             return
           }
           const amt = isFreeOrPending ? undefined : parseFloat(promptAmount) || 0
-          void saveCellEdit(ticket, 'STATUS', nextStatus, { amount: amt, modeOfPayment: promptMode })
+          void saveCellEdit(ticket, 'STATUS', nextStatus, { amount: amt, modeOfPayment: modeValue })
           setPaymentPrompt(null)
         }
         return ReactDOM.createPortal(
@@ -9797,32 +9814,32 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                   <div className="flex flex-col gap-1.5">
                     <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Mode of Payment</label>
                     <select
-                      value={promptMode}
+                      value={modeValue}
                       onChange={e => {
                         const m = e.target.value
                         setPromptMode(m)
                         if (m === 'FREE' || m === 'FREE INSTALL') setPromptAmount('0')
-                        else if (m === 'PENDING') setPromptAmount('')
+                        else if (m === 'PENDING' || m === 'NO PAYMENT') setPromptAmount('')
                       }}
                       required
                       className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
                       style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
                     >
-                      <option value="CASH">CASH</option>
-                      <option value="BANK TRANSFER">BANK TRANSFER</option>
-                      <option value="GCASH">GCASH</option>
-                      <option value="CHEQUE">CHEQUE</option>
-                      <option value="FOR COLLECTION">FOR COLLECTION</option>
-                      <option value="HYBRID">HYBRID (SPLIT PAYMENT)</option>
-                      <option value="FREE INSTALL">FREE INSTALL</option>
-                      <option value="PENDING">PENDING</option>
+                      {modeOptions.map(m => (
+                        <option key={m} value={m}>{m === 'HYBRID' ? 'HYBRID (SPLIT PAYMENT)' : m}</option>
+                      ))}
                     </select>
+                    {isNoPayment && (
+                      <p className="text-[10.5px] font-semibold" style={{ color: textMuted }}>
+                        Choose how the customer paid (e.g. CASH) to enter the amount.
+                      </p>
+                    )}
                   </div>
 
-                  {isHybrid ? (
+                  {isNoPayment ? null : isHybrid ? (
                     <div className="flex flex-col gap-3">
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Cash Amount (\u20B1)</label>
+                        <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Cash Amount (&#8369;)</label>
                         <input
                           type="number"
                           step="0.01"
@@ -9835,7 +9852,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                         />
                       </div>
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>GCash Amount (\u20B1)</label>
+                        <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>GCash Amount (&#8369;)</label>
                         <input
                           type="number"
                           step="0.01"
@@ -9859,7 +9876,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                     </div>
                   ) : (
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Payment Amount (\u20B1)</label>
+                      <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Payment Amount (&#8369;)</label>
                       <input
                         type="number"
                         step="0.01"
@@ -9882,7 +9899,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                   </button>
                   <button
                     type="submit"
-                    disabled={isHybrid && hybridTotal <= 0}
+                    disabled={isNoPayment || (isHybrid && hybridTotal <= 0)}
                     className="px-5 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
                   >

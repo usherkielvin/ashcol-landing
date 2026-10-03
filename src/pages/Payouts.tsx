@@ -12,7 +12,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { fetchCachedEmployees, readSavedBranches } from '../utils/portalDirectoryCache'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatBranchName, isPortalAdmin, isPayrollMember, isFranchiseBranch, formatPersonName, fetchTicketByNumber } from '../utils/api'
+import { API_BASE_URL, formatBranchName, isPortalAdmin, isPayrollMember, resolvePortalWriteBranchId, isFranchiseBranch, formatPersonName, fetchTicketByNumber } from '../utils/api'
 import {
   branchWeekCycle,
   weeksOfMonth,
@@ -88,7 +88,11 @@ export default function Payouts() {
   // all-branch dropdown, saving/autosave, and Payroll Settings. Without this a payroll-tagged
   // member was pinned to their own branch and their edits were silently never saved.
   const canManagePayroll = isPortalAdmin(role) || isPayrollMember(user?.jobTitle)
-  const canManageClosures = isPortalAdmin(role) || role === 'manager'
+  // Everyone else on staff (branch OIC, office members, installers) gets a read-only view of their
+  // own branch: only payouts payroll has marked COMPLETED, no syncing, no editing, no remittance.
+  // The backend enforces the same scope — see PayrollService.getEntriesFor.
+  const viewOnly = !canManagePayroll
+  const canManageClosures = canManagePayroll && (isPortalAdmin(role) || role === 'manager')
 
   const userFirstName = useMemo(() => {
     const raw = (user as any)?.firstName || user?.name || (user as any)?.username || 'ADMIN'
@@ -124,7 +128,7 @@ export default function Payouts() {
       if (activeBranch && activeBranch !== 'ALL_BRANCHES') return activeBranch
       return 'BR-TAGUIG-SALES'
     }
-    return user?.branchId || 'BR-TAGUIG-SALES'
+    return resolvePortalWriteBranchId(user?.branchId, user?.email, user?.jobTitle) || user?.branchId || 'BR-TAGUIG-SALES'
   })
   useEffect(() => {
     if (canManagePayroll && branchFilter) localStorage.setItem(PAYROLL_BRANCH_KEY, branchFilter)
@@ -148,7 +152,7 @@ export default function Payouts() {
 
   // Sync active branch with branchSlug in URL (e.g. /payouts/taguig-sales or /payouts/taguigsales)
   useEffect(() => {
-    if (!branchSlug || branches.length === 0) return
+    if (viewOnly || !branchSlug || branches.length === 0) return
     const clean = normalizeSlug(branchSlug)
     const compact = compactSlug(branchSlug)
     const matched = branches.find(b =>
@@ -160,7 +164,7 @@ export default function Payouts() {
     if (matched && matched.id !== branchFilter) {
       setBranchFilter(matched.id)
     }
-  }, [branchSlug, branches, branchFilter])
+  }, [branchSlug, branches, branchFilter, viewOnly])
 
   // Sync selected installer from URL path slug or fallback searchParams
   useEffect(() => {
@@ -1137,7 +1141,9 @@ export default function Payouts() {
     try {
       const currentBranchName = branches.find(b => b.id === branchFilter)?.name || ''
       // If the active week is closed, use saved rows only and skip schedule sync & auto-save
-      const weekIsClosed = Boolean(activeWeek && closures.some(c => c.branchId === branchFilter && c.weekFrom === activeWeek.from && c.weekTo === activeWeek.to))
+      // A read-only viewer is treated the same way: saved rows only, never the Schedules merge (which
+      // would compute unreleased installers' pay in their browser).
+      const weekIsClosed = !canManagePayroll || Boolean(activeWeek && closures.some(c => c.branchId === branchFilter && c.weekFrom === activeWeek.from && c.weekTo === activeWeek.to))
 
       // Week switches within a month: show the last copy of the month(s) at once (locked, like the early view below).
       // It is only ever displayed — the merge and the auto-save always work from the fresh copy fetched next, because
@@ -2288,6 +2294,8 @@ export default function Payouts() {
     // Non-trailing columns from standard definitions
     const fixedMiddle = COLUMN_DEFS.filter(
       c => c.key !== 'remarks' && c.key !== 'audited' && (c.pinned || !hidden.has(c.key))
+        // Remittance (money owed back to the branch) is payroll-only.
+        && (canManagePayroll || c.key !== 'remit')
     )
     // Custom added columns (always stay on the left side of remarks and audited)
     const custom: ColumnDef[] = customColumnDefs
@@ -2567,6 +2575,16 @@ export default function Payouts() {
             </div>
           )}
 
+          {viewOnly && (
+            <span
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-wider shrink-0"
+              style={{ borderColor: inputBorder, color: textMuted }}
+              title="You can see payouts payroll has completed for your branch. Nothing here can be edited."
+            >
+              <Lock className="w-3 h-3" /> View only
+            </span>
+          )}
+
           {/* Month navigator — compact pill with prev/next arrows */}
           <div className="flex items-center gap-0.5 rounded-xl border px-1 py-0.5 shrink-0" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
             <button
@@ -2626,7 +2644,7 @@ export default function Payouts() {
           </div>
 
           {/* Sync Latest Button */}
-          {branchFilter && (
+          {branchFilter && canManagePayroll && (
             <button
               type="button"
               onClick={() => void loadAndSync(true)}
@@ -2687,7 +2705,7 @@ export default function Payouts() {
 
 
           {/* Week Summary Showcase button — hidden on member table view */}
-          {branchFilter && !selectedInstaller && (
+          {branchFilter && canManagePayroll && !selectedInstaller && (
             <button
               type="button"
               onClick={() => setWeekSummaryOpen(true)}
@@ -2914,7 +2932,7 @@ export default function Payouts() {
           </div>
 
           {/* More actions — Sync/Payout Settings/Week Summary */}
-          {branchFilter && (
+          {branchFilter && canManagePayroll && (
             <div className="relative ml-auto">
               <button
                 type="button"
@@ -3129,7 +3147,7 @@ export default function Payouts() {
       ) : grouped.length === 0 ? (
         <div className="rounded-2xl p-10 flex flex-col items-center justify-center gap-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
           <CheckCircle2 className="w-10 h-10 opacity-25 text-emerald-500" />
-          <p className="text-sm font-semibold" style={{ color: textMuted }}>No payout entries yet — try "Sync Latest".</p>
+          <p className="text-sm font-semibold" style={{ color: textMuted }}>{viewOnly ? 'No payouts released for this week yet.' : 'No payout entries yet — try "Sync Latest".'}</p>
         </div>
       ) : selectedInstaller ? (
         // Detail view — just the selected installer's own table for the selected week.
@@ -3230,7 +3248,7 @@ export default function Payouts() {
                   </span>
                   <div data-html2canvas-ignore="true" className="order-2 md:order-none flex items-center gap-1.5 md:gap-2 justify-end shrink-0">
                     {/* Kept on the installer view even though the filter bar is hidden here */}
-                    <button
+                    {canManagePayroll && (<button
                       type="button"
                       onClick={() => void loadAndSync(true)}
                       disabled={syncing || initialLoading || isWeekClosed}
@@ -3240,7 +3258,7 @@ export default function Payouts() {
                     >
                       {isWeekClosed ? <Lock className="w-3.5 h-3.5 text-amber-500" /> : <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />}
                       <span className="hidden lg:inline">{isWeekClosed ? 'Week Locked' : syncing ? 'Syncing…' : 'Sync Latest'}</span>
-                    </button>
+                    </button>)}
                     {canManagePayroll && !isWeekClosed && (
                       <button
                         type="button"
@@ -3413,7 +3431,7 @@ export default function Payouts() {
                               const empty = !text || text === '—'
                               const isStatus = col.key === 'installationUpload'
                               const isDone = isStatus && /^DONE\b/i.test(text)
-                              const isReadOnly = isWeekClosed || Boolean(col.readOnlyWhenSynced && row.ticketId)
+                              const isReadOnly = viewOnly || isWeekClosed || Boolean(col.readOnlyWhenSynced && row.ticketId)
                               const isEditing = editingCell?.rowId === row.id && editingCell?.colKey === col.key
                               const acc = getColAccessor(col.key)
 
@@ -3423,7 +3441,7 @@ export default function Payouts() {
                                   setEditingCell(null)
                                 } else if (e.key === 'Tab') {
                                   e.preventDefault()
-                                  const editableCols = isWeekClosed ? [] : groupVisibleColumns.filter(c => !(c.readOnlyWhenSynced && Boolean(row.ticketId)))
+                                  const editableCols = (isWeekClosed || viewOnly) ? [] : groupVisibleColumns.filter(c => !(c.readOnlyWhenSynced && Boolean(row.ticketId)))
                                   const curIdx = editableCols.findIndex(c => c.key === col.key)
                                   if (curIdx !== -1) {
                                     const step = e.shiftKey ? -1 : 1
@@ -4203,7 +4221,7 @@ export default function Payouts() {
             style={{ backgroundColor: isLight ? '#f8fafc' : '#0d1520', borderTop: `1px solid ${border}` }}
           >
             <div className="flex flex-wrap items-center gap-2.5">
-              {canManagePayroll && (
+              {branchFilter && (
                 <button
                   type="button"
                   onClick={() => {
@@ -4223,7 +4241,7 @@ export default function Payouts() {
                 </button>
               )}
 
-              {canManagePayroll && (
+              {branchFilter && (
                 <button
                   type="button"
                   onClick={() => { setCorrectionsSearch(''); setCorrectionsOpen(true); void refreshCorrections() }}
@@ -4279,7 +4297,7 @@ export default function Payouts() {
                 { label: 'Total Add-on Pay', value: globalAddOnTotal, color: textPrimary },
                 { label: 'Total Deductions', value: globalDeductionTotal, color: globalDeductionTotal > 0 ? (isLight ? '#DC2626' : '#F87171') : textPrimary },
                 { label: 'Net Payout Due', value: grandTotal - globalDeductionTotal, color: '#10B981' },
-              ] as const).map(tile => (
+              ] as const).filter(tile => canManagePayroll || tile.label !== 'Remittance Collected').map(tile => (
                 <div key={tile.label} className="flex flex-col items-start md:items-end">
                   <span className="text-[10px] font-medium uppercase tracking-wider opacity-60" style={{ color: textMuted }}>{tile.label}</span>
                   <span className="text-sm font-bold tabular-nums" style={{ color: tile.color }}>₱{peso(tile.value)}</span>

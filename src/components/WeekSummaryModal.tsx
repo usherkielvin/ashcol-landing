@@ -543,7 +543,7 @@ export default function WeekSummaryModal({
     setCopyingImage(true)
     try {
       const tableEl = tableRef.current
-      const tableWidth = Math.max(tableEl.scrollWidth, tableEl.offsetWidth, 1350)
+      const tableWidth = Math.max(tableEl.scrollWidth, tableEl.offsetWidth, 1850)
 
       const canvas = await html2canvas(tableEl, {
         scale: 2,
@@ -637,6 +637,15 @@ export default function WeekSummaryModal({
               cell.style.lineHeight = '1.2'
               cell.style.textAlign = 'center'
               cell.style.verticalAlign = 'middle'
+              if (text.includes('PREVIOUS WEEK ON-')) {
+                cell.style.width = '310px'
+                cell.style.minWidth = '310px'
+                cell.style.maxWidth = '310px'
+              } else {
+                cell.style.width = '155px'
+                cell.style.minWidth = '155px'
+                cell.style.maxWidth = '155px'
+              }
             } else if (isGreenHeader) {
               cell.style.backgroundColor = '#056434'
               cell.style.color = '#ffffff'
@@ -657,19 +666,27 @@ export default function WeekSummaryModal({
               cell.style.color = '#000000'
               cell.style.fontWeight = '700'
               cell.style.fontSize = '24px'
-              cell.style.padding = '3px 2px'
+              cell.style.padding = '2px 2px'
               cell.style.textAlign = 'center'
               cell.style.verticalAlign = 'middle'
               cell.style.lineHeight = '1.15'
+              if (isBigNumberCell) {
+                cell.style.width = '155px'
+                cell.style.minWidth = '155px'
+                cell.style.maxWidth = '155px'
+              }
             } else if (isBigNumberCell) {
               cell.style.backgroundColor = isHoldCell ? '#FEF08A' : '#ffffff'
               cell.style.color = isHoldCell ? '#451a03' : '#000000'
-              cell.style.fontWeight = '600'
+              cell.style.fontWeight = '700'
               cell.style.fontSize = '24px'
-              cell.style.padding = '3px 2px'
+              cell.style.padding = '2px 2px'
               cell.style.textAlign = 'center'
               cell.style.verticalAlign = 'middle'
               cell.style.lineHeight = '1.15'
+              cell.style.width = '155px'
+              cell.style.minWidth = '155px'
+              cell.style.maxWidth = '155px'
             } else if (isHoldCell) {
               cell.style.backgroundColor = '#FEF08A'
               cell.style.color = '#451a03'
@@ -713,7 +730,7 @@ export default function WeekSummaryModal({
             textDiv.style.color = '#000000'
             const isBigNumberInput = inp.classList.contains('font-big-number')
             textDiv.style.fontSize = isBigNumberInput ? '24px' : '12px'
-            textDiv.style.fontWeight = isBigNumberInput ? '600' : '500'
+            textDiv.style.fontWeight = isBigNumberInput ? '700' : '500'
             textDiv.style.padding = '0'
             textDiv.style.margin = '0'
             textDiv.style.textAlign = isBigNumberInput ? 'center' : (inp.classList.contains('text-center') ? 'center' : 'left')
@@ -980,7 +997,7 @@ export default function WeekSummaryModal({
           <table
             ref={tableRef}
             data-summary-table
-            className="w-full border-collapse text-sm text-slate-900 dark:text-slate-100 min-w-[1440px]"
+            className="w-full border-collapse text-sm text-slate-900 dark:text-slate-100 min-w-[1850px]"
           >
             <thead>
               {/* Dark Green Header Row (matching Excel) */}
@@ -989,7 +1006,7 @@ export default function WeekSummaryModal({
                   rowSpan={2}
                   data-header="green"
                   style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
-                  className="border border-black px-3 py-2 text-center w-[130px] font-semibold whitespace-nowrap bg-[#056434] text-white"
+                  className="border border-black px-3 py-2 text-center w-[110px] min-w-[110px] font-semibold whitespace-nowrap bg-[#056434] text-white"
                 >
                   BRANCH
                 </th>
@@ -997,31 +1014,31 @@ export default function WeekSummaryModal({
                   rowSpan={2}
                   data-header="green"
                   style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
-                  className="border border-black px-4 py-2 text-left min-w-[200px] font-semibold bg-[#056434] text-white"
+                  className="border border-black px-4 py-2 text-left min-w-[180px] font-semibold bg-[#056434] text-white"
                 >
                   INSTALLER
                 </th>
                 <th
                   rowSpan={2}
                   data-header="green"
-                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
-                  className="border border-black px-3 py-2 text-center w-[130px] font-semibold whitespace-nowrap bg-[#056434] text-white"
+                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle', width: 155, minWidth: 155, maxWidth: 155 }}
+                  className="border border-black px-2 py-2 text-center w-[155px] min-w-[155px] max-w-[155px] font-semibold whitespace-nowrap bg-[#056434] text-white"
                 >
                   AMOUNT
                 </th>
                 <th
                   rowSpan={2}
                   data-header="green"
-                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
-                  className="border border-black px-2 py-2 text-center w-[110px] font-semibold whitespace-nowrap bg-[#056434] text-white"
+                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle', width: 155, minWidth: 155, maxWidth: 155 }}
+                  className="border border-black px-2 py-2 text-center w-[155px] min-w-[155px] max-w-[155px] font-semibold whitespace-nowrap bg-[#056434] text-white"
                 >
                   CASH
                 </th>
                 <th
                   rowSpan={2}
                   data-header="green"
-                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
-                  className="border border-black px-2 py-2 text-center w-[125px] font-semibold bg-[#056434] text-white"
+                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle', width: 155, minWidth: 155, maxWidth: 155 }}
+                  className="border border-black px-2 py-2 text-center w-[155px] min-w-[155px] max-w-[155px] font-semibold bg-[#056434] text-white"
                 >
                   ONLINE<br />TRANSFER
                 </th>
@@ -1029,16 +1046,16 @@ export default function WeekSummaryModal({
                 <th
                   colSpan={2}
                   data-header="yellow"
-                  style={{ backgroundColor: '#FFFF00', color: '#000000', verticalAlign: 'middle' }}
-                  className="border border-black font-semibold px-3 py-2 text-center text-[11px] tracking-wide whitespace-nowrap bg-[#FFFF00] text-black"
+                  style={{ backgroundColor: '#FFFF00', color: '#000000', verticalAlign: 'middle', width: 310, minWidth: 310, maxWidth: 310 }}
+                  className="border border-black font-semibold px-2 py-2 text-center text-[11px] tracking-wide whitespace-nowrap bg-[#FFFF00] text-black w-[310px] min-w-[310px] max-w-[310px]"
                 >
                   PREVIOUS WEEK ON-
                 </th>
                 <th
                   rowSpan={2}
                   data-header="green"
-                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
-                  className="border border-black px-2 py-2 text-center w-[150px] font-semibold leading-snug bg-[#056434] text-white"
+                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle', width: 155, minWidth: 155, maxWidth: 155 }}
+                  className="border border-black px-2 py-2 text-center w-[155px] min-w-[155px] max-w-[155px] font-semibold leading-snug bg-[#056434] text-white"
                 >
                   TOTAL AMOUNT OF<br />SALARY FOR RELEASE<br />THIS PAYOUT
                 </th>
@@ -1046,7 +1063,7 @@ export default function WeekSummaryModal({
                   rowSpan={2}
                   data-header="green"
                   style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
-                  className="border border-black px-2 py-2 text-center w-[85px] font-semibold whitespace-nowrap bg-[#056434] text-white"
+                  className="border border-black px-2 py-2 text-center w-[85px] min-w-[85px] font-semibold whitespace-nowrap bg-[#056434] text-white"
                 >
                   MOP
                 </th>
@@ -1054,7 +1071,7 @@ export default function WeekSummaryModal({
                   rowSpan={2}
                   data-header="green"
                   style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
-                  className="border border-black px-2 py-2 text-center w-[130px] font-semibold bg-[#056434] text-white"
+                  className="border border-black px-2 py-2 text-center w-[130px] min-w-[130px] font-semibold bg-[#056434] text-white"
                 >
                   ACCOUNT NO
                 </th>
@@ -1062,7 +1079,7 @@ export default function WeekSummaryModal({
                   rowSpan={2}
                   data-header="green"
                   style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
-                  className="border border-black px-2 py-2 text-center w-[90px] font-semibold whitespace-nowrap bg-[#056434] text-white"
+                  className="border border-black px-2 py-2 text-center w-[90px] min-w-[90px] font-semibold whitespace-nowrap bg-[#056434] text-white"
                 >
                   STATUS
                 </th>
@@ -1070,15 +1087,15 @@ export default function WeekSummaryModal({
                   rowSpan={2}
                   data-header="green"
                   style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
-                  className="border border-black px-3 py-2 text-left min-w-[130px] font-semibold whitespace-nowrap bg-[#056434] text-white"
+                  className="border border-black px-3 py-2 text-left min-w-[150px] font-semibold whitespace-nowrap bg-[#056434] text-white"
                 >
                   REMARKS
                 </th>
                 <th
                   rowSpan={2}
                   data-header="green"
-                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
-                  className="border border-black px-3 py-2 text-center w-[150px] font-semibold leading-snug bg-[#056434] text-white"
+                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle', width: 155, minWidth: 155, maxWidth: 155 }}
+                  className="border border-black px-2 py-2 text-center w-[155px] min-w-[155px] max-w-[155px] font-semibold leading-snug bg-[#056434] text-white"
                 >
                   SUB-TOTAL<br />(CURRENT<br />CUT-OFF ONLY)
                 </th>
@@ -1087,15 +1104,15 @@ export default function WeekSummaryModal({
               <tr className="bg-transparent font-semibold text-[10px] text-center border-b border-black">
                 <th
                   data-header="yellow"
-                  style={{ backgroundColor: '#FFFF00', color: '#000000', verticalAlign: 'middle' }}
-                  className="border border-black px-2 py-2 w-[125px] leading-tight font-semibold bg-[#FFFF00] text-black text-center"
+                  style={{ backgroundColor: '#FFFF00', color: '#000000', verticalAlign: 'middle', width: 155, minWidth: 155, maxWidth: 155 }}
+                  className="border border-black px-2 py-2 w-[155px] min-w-[155px] max-w-[155px] leading-tight font-semibold bg-[#FFFF00] text-black text-center"
                 >
                   SALARY AMOUNT<br />FROM PREVIOUS<br />PAYOUT
                 </th>
                 <th
                   data-header="yellow"
-                  style={{ backgroundColor: '#FFFF00', color: '#000000', verticalAlign: 'middle' }}
-                  className="border border-black px-2 py-2 w-[125px] leading-tight font-semibold bg-[#FFFF00] text-black text-center"
+                  style={{ backgroundColor: '#FFFF00', color: '#000000', verticalAlign: 'middle', width: 155, minWidth: 155, maxWidth: 155 }}
+                  className="border border-black px-2 py-2 w-[155px] min-w-[155px] max-w-[155px] leading-tight font-semibold bg-[#FFFF00] text-black text-center"
                 >
                   CASH ADVANCE<br />FROM PREVIOUS<br />SALARY ON-HOLD
                 </th>
@@ -1156,7 +1173,8 @@ export default function WeekSummaryModal({
 
                         {/* AMOUNT (Soft Yellow Highlight if HOLD, large centered number) */}
                         <td
-                          className={`border border-black dark:border-slate-600 px-2 py-1 text-center align-middle font-number font-big-number text-xl sm:text-2xl font-semibold tracking-tight ${
+                          style={{ width: 155, minWidth: 155, maxWidth: 155 }}
+                          className={`border border-black dark:border-slate-600 px-1 py-1 text-center align-middle font-number font-big-number text-2xl font-bold tracking-tight w-[155px] min-w-[155px] max-w-[155px] ${
                             isHold ? 'bg-[#FEF08A] text-amber-950 dark:text-amber-200' : 'text-slate-900 dark:text-slate-100'
                           }`}
                         >
@@ -1164,7 +1182,10 @@ export default function WeekSummaryModal({
                         </td>
 
                         {/* CASH (Editable, large centered number filling almost the box) */}
-                        <td className="border border-black dark:border-slate-600 p-1 text-center align-middle font-number font-big-number">
+                        <td
+                          style={{ width: 155, minWidth: 155, maxWidth: 155 }}
+                          className="border border-black dark:border-slate-600 p-0.5 text-center align-middle font-number font-big-number w-[155px] min-w-[155px] max-w-[155px]"
+                        >
                           <input
                             type="text"
                             value={r.cash ? peso(r.cash) : ''}
@@ -1175,22 +1196,28 @@ export default function WeekSummaryModal({
                                 onlineTransfer: Math.max(0, r.amount - val),
                               })
                             }}
-                            className="w-full h-11 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1 text-xl sm:text-2xl font-number font-big-number font-semibold outline-none transition-all text-slate-900 dark:text-slate-100"
+                            className="w-full h-12 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1 text-2xl font-number font-big-number font-bold outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
                         {/* ONLINE TRANSFER (Editable, large centered number) */}
-                        <td className="border border-black dark:border-slate-600 p-1 text-center align-middle font-number font-big-number">
+                        <td
+                          style={{ width: 155, minWidth: 155, maxWidth: 155 }}
+                          className="border border-black dark:border-slate-600 p-0.5 text-center align-middle font-number font-big-number w-[155px] min-w-[155px] max-w-[155px]"
+                        >
                           <input
                             type="text"
                             value={r.onlineTransfer ? peso(r.onlineTransfer) : ''}
                             onChange={e => updateRowOverride(rowKey, { onlineTransfer: num(e.target.value) })}
-                            className="w-full h-11 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1 text-xl sm:text-2xl font-number font-big-number font-semibold outline-none transition-all text-slate-900 dark:text-slate-100"
+                            className="w-full h-12 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1 text-2xl font-number font-big-number font-bold outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
                         {/* SALARY AMOUNT FROM PREVIOUS PAYROLL (Editable, large centered number) */}
-                        <td className="border border-black dark:border-slate-600 p-1 text-center align-middle font-number font-big-number">
+                        <td
+                          style={{ width: 155, minWidth: 155, maxWidth: 155 }}
+                          className="border border-black dark:border-slate-600 p-0.5 text-center align-middle font-number font-big-number w-[155px] min-w-[155px] max-w-[155px]"
+                        >
                           <input
                             type="text"
                             value={r.prevSalary ? peso(r.prevSalary) : ''}
@@ -1201,12 +1228,15 @@ export default function WeekSummaryModal({
                                 totalForRelease: (r.status === 'HOLD' ? 0 : r.amount) + val - r.prevCashAdvance,
                               })
                             }}
-                            className="w-full h-11 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1 text-xl sm:text-2xl font-number font-big-number font-semibold outline-none transition-all text-slate-900 dark:text-slate-100"
+                            className="w-full h-12 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1 text-2xl font-number font-big-number font-bold outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
                         {/* CASH ADVANCE FROM PREVIOUS SALARY ON-HOLD (Editable, large centered number) */}
-                        <td className="border border-black dark:border-slate-600 p-1 text-center align-middle font-number font-big-number">
+                        <td
+                          style={{ width: 155, minWidth: 155, maxWidth: 155 }}
+                          className="border border-black dark:border-slate-600 p-0.5 text-center align-middle font-number font-big-number w-[155px] min-w-[155px] max-w-[155px]"
+                        >
                           <input
                             type="text"
                             value={r.prevCashAdvance ? peso(r.prevCashAdvance) : ''}
@@ -1217,12 +1247,15 @@ export default function WeekSummaryModal({
                                 totalForRelease: (r.status === 'HOLD' ? 0 : r.amount) + r.prevSalary - val,
                               })
                             }}
-                            className="w-full h-11 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1 text-xl sm:text-2xl font-number font-big-number font-semibold outline-none transition-all text-slate-900 dark:text-slate-100"
+                            className="w-full h-12 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1 text-2xl font-number font-big-number font-bold outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
                         {/* TOTAL FOR RELEASE (Large centered number) */}
-                        <td className="border border-black dark:border-slate-600 px-2 py-1 text-center align-middle font-number font-big-number text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+                        <td
+                          style={{ width: 155, minWidth: 155, maxWidth: 155 }}
+                          className="border border-black dark:border-slate-600 px-1 py-1 text-center align-middle font-number font-big-number text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 w-[155px] min-w-[155px] max-w-[155px]"
+                        >
                           {r.totalForRelease > 0 ? peso(r.totalForRelease) : ''}
                         </td>
 
@@ -1282,11 +1315,12 @@ export default function WeekSummaryModal({
                           />
                         </td>
 
-                        {/* SUB-TOTAL (Merged per branch, large bold centered number) */}
+                        {/* SUB-TOTAL (Merged per branch, large bold centered horizontal number) */}
                         {idx === 0 ? (
                           <td
                             rowSpan={rows.length}
-                            className="border border-black dark:border-slate-600 px-3 py-2 text-center align-middle font-number font-big-number text-2xl sm:text-3xl font-bold bg-slate-50/70 dark:bg-slate-900/40 text-slate-900 dark:text-slate-100"
+                            style={{ width: 155, minWidth: 155, maxWidth: 155 }}
+                            className="border border-black dark:border-slate-600 px-1 py-1 text-center align-middle font-number font-big-number text-2xl font-bold bg-slate-50/70 dark:bg-slate-900/40 text-slate-900 dark:text-slate-100 w-[155px] min-w-[155px] max-w-[155px]"
                           >
                             ₱{peso(branchSubtotal)}
                           </td>
@@ -1303,25 +1337,25 @@ export default function WeekSummaryModal({
                   <td colSpan={2} className="border border-black dark:border-slate-600 px-4 py-3 text-center uppercase tracking-wider text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100">
                     TOTALS
                   </td>
-                  <td className="border border-black dark:border-slate-600 px-2 py-1 text-center align-middle text-xl sm:text-2xl font-number font-bold text-slate-900 dark:text-slate-100">
+                  <td style={{ width: 155, minWidth: 155, maxWidth: 155 }} className="border border-black dark:border-slate-600 px-1 py-1 text-center align-middle text-2xl font-number font-big-number font-bold text-slate-900 dark:text-slate-100 w-[155px] min-w-[155px] max-w-[155px]">
                     {peso(totals.totalAmount)}
                   </td>
-                  <td className="border border-black dark:border-slate-600 px-2 py-1 text-center align-middle font-number text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
+                  <td style={{ width: 155, minWidth: 155, maxWidth: 155 }} className="border border-black dark:border-slate-600 px-1 py-1 text-center align-middle font-number font-big-number text-2xl font-bold text-slate-900 dark:text-slate-100 w-[155px] min-w-[155px] max-w-[155px]">
                     {totals.totalCash > 0 ? peso(totals.totalCash) : ''}
                   </td>
-                  <td className="border border-black dark:border-slate-600 px-2 py-1 text-center align-middle font-number text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
+                  <td style={{ width: 155, minWidth: 155, maxWidth: 155 }} className="border border-black dark:border-slate-600 px-1 py-1 text-center align-middle font-number font-big-number text-2xl font-bold text-slate-900 dark:text-slate-100 w-[155px] min-w-[155px] max-w-[155px]">
                     {totals.totalOnline > 0 ? peso(totals.totalOnline) : ''}
                   </td>
-                  <td className="border border-black dark:border-slate-600 px-2 py-1 text-center align-middle font-number text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
+                  <td style={{ width: 155, minWidth: 155, maxWidth: 155 }} className="border border-black dark:border-slate-600 px-1 py-1 text-center align-middle font-number font-big-number text-2xl font-bold text-slate-900 dark:text-slate-100 w-[155px] min-w-[155px] max-w-[155px]">
                     {totals.totalPrevSalary > 0 ? peso(totals.totalPrevSalary) : ''}
                   </td>
-                  <td className="border border-black dark:border-slate-600 px-2 py-1 text-center align-middle font-number text-xl sm:text-2xl font-normal text-slate-400">
+                  <td style={{ width: 155, minWidth: 155, maxWidth: 155 }} className="border border-black dark:border-slate-600 px-1 py-1 text-center align-middle font-number font-big-number text-2xl font-normal text-slate-400 w-[155px] min-w-[155px] max-w-[155px]">
                   </td>
-                  <td className="border border-black dark:border-slate-600 px-2 py-1 text-center align-middle font-number text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
+                  <td style={{ width: 155, minWidth: 155, maxWidth: 155 }} className="border border-black dark:border-slate-600 px-1 py-1 text-center align-middle font-number font-big-number text-2xl font-bold text-slate-900 dark:text-slate-100 w-[155px] min-w-[155px] max-w-[155px]">
                     {totals.totalRelease > 0 ? peso(totals.totalRelease) : ''}
                   </td>
                   <td colSpan={4} className="border border-black dark:border-slate-600"></td>
-                  <td className="border border-black dark:border-slate-600 px-3 py-2 text-center align-middle text-2xl sm:text-3xl font-number font-bold bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white">
+                  <td style={{ width: 155, minWidth: 155, maxWidth: 155 }} className="border border-black dark:border-slate-600 px-1 py-1 text-center align-middle text-2xl font-number font-big-number font-bold bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white w-[155px] min-w-[155px] max-w-[155px]">
                     ₱{peso(totals.totalAmount)}
                   </td>
                 </tr>
