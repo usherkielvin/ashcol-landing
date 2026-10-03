@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { registerServiceWorker } from './utils/webPush'
+import { installKeyboardSafeViewport } from './utils/keyboardSafeViewport'
+
+installKeyboardSafeViewport()
 
 // Register early so an existing push subscription can be detected on load (see Profile.tsx's
 // Notifications tab) — this alone does not prompt for permission or subscribe to anything.

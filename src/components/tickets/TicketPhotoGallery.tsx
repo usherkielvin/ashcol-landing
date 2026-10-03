@@ -537,9 +537,25 @@ export function TicketPhotoGallery({
     setEditDescDraft(photo.description || '')
   }
 
+  /** Preset titles already on a different photo — each preset may only label one photo. */
+  const presetsTakenByOthers = (photo: TicketPhoto): Set<string> => {
+    const presets: readonly string[] = slotPresets
+    const taken = new Set<string>()
+    for (const p of photosRef.current) {
+      if (p.id === photo.id || p.url === photo.url) continue
+      const d = (p.description || '').trim().toUpperCase()
+      if (d && presets.includes(d)) taken.add(d)
+    }
+    return taken
+  }
+
   /** Saves a photo's title (shared by the inline title field and the edit modal). Resolves true on success. */
   const persistDescription = async (photo: TicketPhoto, raw: string): Promise<boolean> => {
     const nextDesc = raw.trim().toUpperCase() || undefined
+    if (nextDesc && presetsTakenByOthers(photo).has(nextDesc)) {
+      setMessage({ kind: 'error', text: `"${nextDesc}" is already used by another photo on this ticket.` })
+      return false
+    }
     try {
       const saved = await updateTicketPhotos(ticketId, photosRef.current, current =>
         withSlots(current, slotPresets).map(p => (p.id === photo.id || p.url === photo.url ? { ...p, description: nextDesc } : p)))
@@ -673,6 +689,7 @@ export function TicketPhotoGallery({
                     deletingId={deletingId}
                     tileStyle={tileStyle}
                     presets={slotPresets}
+                    takenPresets={presetsTakenByOthers(photo)}
                     cardBg={cardBg}
                     border={border}
                     textPrimary={textPrimary}
@@ -822,7 +839,7 @@ export function TicketPhotoGallery({
             </div>
 
             {isMobile && (
-              <div className="w-full h-44 rounded-xl overflow-hidden border flex items-center justify-center bg-black/80" style={{ borderColor: border }}>
+              <div className="w-full h-32 shrink-0 rounded-xl overflow-hidden border flex items-center justify-center bg-black/80" style={{ borderColor: border }}>
                 <img src={editingPhoto.url || editingPhoto.thumbUrl} alt="" className="max-w-full max-h-full object-contain" />
               </div>
             )}
@@ -848,20 +865,27 @@ export function TicketPhotoGallery({
                   {isInstall ? 'Quick Install Presets' : 'Quick Services Presets'}
                 </label>
                 <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
-                  {slotPresets.map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setEditDescDraft(p)}
-                      className={`px-2 py-1 rounded text-[9.5px] font-bold border transition-colors ${
-                        editDescDraft === p
-                          ? 'bg-emerald-600 text-white border-emerald-600'
-                          : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 hover:bg-emerald-500/20'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
+                  {slotPresets.map((p) => {
+                    const taken = presetsTakenByOthers(editingPhoto).has(p)
+                    return (
+                      <button
+                        key={p}
+                        type="button"
+                        disabled={taken}
+                        title={taken ? 'Already used by another photo' : undefined}
+                        onClick={() => setEditDescDraft(p)}
+                        className={`px-2 py-1 rounded text-[9.5px] font-bold border transition-colors ${
+                          editDescDraft === p
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : taken
+                              ? 'bg-slate-500/10 text-slate-400 border-slate-500/20 line-through cursor-not-allowed opacity-60'
+                              : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 hover:bg-emerald-500/20'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -870,14 +894,19 @@ export function TicketPhotoGallery({
               <label className="block text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>
                 Description / Note
               </label>
-              <textarea
-                rows={2}
+              <input
+                type="text"
+                enterKeyHint="done"
+                autoComplete="off"
+                autoCorrect="off"
                 placeholder={isInstall ? "e.g. SCHEMATIC, INDOOR UNIT…" : "e.g. JOB ORDER, SERVICE REPORT…"}
                 value={editDescDraft}
                 // on mobile the keyboard would cover the presets — let the person pick or tap in
                 autoFocus={!isMobile}
                 onChange={(e) => setEditDescDraft(e.target.value)}
-                className="w-full text-xs font-semibold p-2.5 rounded-xl border outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 resize-none uppercase"
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); void saveEditedDescription() } }}
+                // 16px on phones: smaller text makes iOS zoom the page when the field is focused
+                className="w-full text-base sm:text-xs font-semibold p-2.5 rounded-xl border outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 uppercase"
                 style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
               />
             </div>
@@ -936,7 +965,7 @@ export function TicketPhotoGallery({
 /** Already-uploaded photo tile with hover overlay + edit/delete buttons. */
 function UploadedPhotoCell({
   photo, index, canManage, deletingId,
-  tileStyle, presets, cardBg, border, textPrimary, textMuted,
+  tileStyle, presets, takenPresets, cardBg, border, textPrimary, textMuted,
   onView, onEdit, onDelete, onRename,
 }: {
   photo: TicketPhoto
@@ -945,6 +974,7 @@ function UploadedPhotoCell({
   deletingId: string | null
   tileStyle: React.CSSProperties
   presets: readonly string[]
+  takenPresets: ReadonlySet<string>
   cardBg: string
   border: string
   textPrimary: string
@@ -1004,6 +1034,7 @@ function UploadedPhotoCell({
         <PhotoTitleField
           value={photo.description || ''}
           presets={presets}
+          takenPresets={takenPresets}
           cardBg={cardBg}
           border={border}
           textPrimary={textPrimary}
@@ -1044,10 +1075,12 @@ function UploadedPhotoCell({
  * (pick one, or type anything); Enter / blur / picking a preset saves, Escape cancels.
  */
 function PhotoTitleField({
-  value, presets, cardBg, border, textPrimary, textMuted, onCommit, onOpenPopup,
+  value, presets, takenPresets, cardBg, border, textPrimary, textMuted, onCommit, onOpenPopup,
 }: {
   value: string
   presets: readonly string[]
+  /** Presets already labelling another photo — shown disabled. */
+  takenPresets: ReadonlySet<string>
   cardBg: string
   border: string
   textPrimary: string
@@ -1101,19 +1134,25 @@ function PhotoTitleField({
           // keep focus in the input so a click on a preset isn't swallowed by the blur
           onMouseDown={(e) => e.preventDefault()}
         >
-          {presets.map(p => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => { skipBlurRef.current = true; inputRef.current?.blur(); void commit(p) }}
-              className={`text-left px-2 py-1 rounded text-[9.5px] font-black uppercase tracking-tight transition-colors ${
-                value.trim().toUpperCase() === p ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/15'
-              }`}
-              style={value.trim().toUpperCase() === p ? undefined : { color: textPrimary }}
-            >
-              {p}
-            </button>
-          ))}
+          {presets.map(p => {
+            const taken = takenPresets.has(p)
+            return (
+              <button
+                key={p}
+                type="button"
+                disabled={taken}
+                title={taken ? 'Already used by another photo' : undefined}
+                onClick={() => { skipBlurRef.current = true; inputRef.current?.blur(); void commit(p) }}
+                className={`text-left px-2 py-1 rounded text-[9.5px] font-black uppercase tracking-tight transition-colors ${
+                  value.trim().toUpperCase() === p ? 'bg-emerald-600 text-white'
+                    : taken ? 'opacity-40 line-through cursor-not-allowed' : 'hover:bg-emerald-500/15'
+                }`}
+                style={value.trim().toUpperCase() === p ? undefined : { color: textPrimary }}
+              >
+                {p}
+              </button>
+            )
+          })}
         </div>
       )}
       <div className="relative">

@@ -447,3 +447,18 @@
   opacity: 1;
 }
 
+
+/* ── On-screen keyboard: fit fixed overlays to the visible area ───────────────
+   html.kb-open and --vv-top / --vv-h are set by utils/keyboardSafeViewport.ts while a text field is
+   focused and the keyboard covers part of the screen. Centred popups re-centre in what's left, and the
+   popup card scrolls instead of running under the keyboard. */
+html.kb-open .fixed.inset-0 {
+  top: var(--vv-top, 0px);
+  bottom: auto;
+  height: var(--vv-h, 100%);
+}
+html.kb-open .fixed.inset-0 > :not(.absolute):not(.fixed) {
+  max-height: calc(var(--vv-h, 100vh) - 1rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
