@@ -683,6 +683,22 @@ export default function ExpenseRecords() {
   // Latest request wins: a slow answer for a branch the user already left must not overwrite the current one.
   const expensesRequest = useRef(0);
 
+  // A record whose date was misread (e.g. 2024 instead of 2026) falls into another month: put it on its DTR's date.
+  const moveRecordsToDtrDate = async (recIds: string[], isoDate: string) => {
+    const label = parseSmartDate(isoDate) || isoDate;
+    if (!window.confirm(`Change the date of ${recIds.length === 1 ? "this record" : `these ${recIds.length} records`} to ${label} (the DTR date)?`)) return;
+    try {
+      for (const id of recIds) {
+        const rec = expenses.find((e) => e.id === id);
+        if (rec) await upsertAuditExpense({ ...rec, date: label });
+      }
+      await reload();
+    } catch (err) {
+      console.error("[Expense Records] Failed to move record date:", err);
+      alert("Could not update the record date. Try again.");
+    }
+  };
+
   const reload = useCallback(async () => {
     if (!branchId) return;
     const requestId = ++expensesRequest.current;
@@ -1445,6 +1461,9 @@ export default function ExpenseRecords() {
       label: string;
       amount: number;
       note?: string;
+      /** "Recorded in a different month": the linked records and the DTR date they should carry */
+      recIds?: string[];
+      fixDate?: string;
     };
     const buckets = {
       depositAsExpense: [] as Item[],
@@ -1512,7 +1531,12 @@ export default function ExpenseRecords() {
       const recTotal = recs.reduce((acc, x) => acc + x.amount, 0);
       const t = dateToTime(rec.date);
       if (t && (t < from || t > to)) {
-        buckets.otherMonth.push({ ...item, note: `recorded as ${rec.date}` });
+        buckets.otherMonth.push({
+          ...item,
+          note: `recorded as ${rec.date}`,
+          recIds: recs.map((x) => x.id),
+          fixDate: l.reportDate || "",
+        });
         continue;
       }
       // Receipts above the cash given are not booked on the purchase: they are reimbursed through a DTR expense row.
@@ -4494,6 +4518,17 @@ export default function ExpenseRecords() {
                                       >
                                         {fmt(i.amount)}
                                       </span>
+                                      {i.recIds && i.fixDate && (
+                                        <button
+                                          type="button"
+                                          onClick={() => void moveRecordsToDtrDate(i.recIds!, i.fixDate!)}
+                                          title="The receipt date was read wrong — date the record with its DTR"
+                                          className="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-md cursor-pointer"
+                                          style={{ color: accent, border: `1px solid ${accent}55`, backgroundColor: `${accent}12` }}
+                                        >
+                                          Use DTR date
+                                        </button>
+                                      )}
                                     </div>
                                   ))}
                                 </div>
@@ -4913,7 +4948,42 @@ export default function ExpenseRecords() {
                                 reimburse {fmt(l.reimburseDue || 0)}
                               </span>
                             </div>
-                          ))}
+                          )).flatMap((rowEl, idx) => {
+                            // The receipt(s) linked to this purchase, so it is clear which receipt came in over the cash given.
+                            const l = missing[idx];
+                            const recs = (l.resolvedExpenseId || "")
+                              .split(",")
+                              .map((x) => x.trim())
+                              .filter(Boolean)
+                              .map((x) => expenses.find((e) => e.id === x))
+                              .filter((x): x is AuditExpense => !!x);
+                            return [
+                              rowEl,
+                              <div key={`${l.id}-receipts`} className="pl-[88px] pb-1.5 flex flex-col gap-1">
+                                {recs.length === 0 ? (
+                                  <span className="text-[10px]" style={{ color: textMuted }}>
+                                    No receipt record linked to this purchase.
+                                  </span>
+                                ) : (
+                                  recs.map((r) => (
+                                    <div key={r.id} className="flex items-center gap-2 text-[10px]" style={{ color: textMuted }}>
+                                      {r.receiptImageUri ? (
+                                        <a href={r.receiptImageUri} target="_blank" rel="noopener noreferrer" title="Open receipt">
+                                          <img src={r.receiptImageUri} alt="Receipt" className="h-7 w-7 rounded object-cover" style={{ border: `1px solid ${border}` }} />
+                                        </a>
+                                      ) : (
+                                        <span className="h-7 w-7 rounded flex items-center justify-center" style={{ border: `1px dashed ${border}` }}>—</span>
+                                      )}
+                                      <span>
+                                        {r.company || r.description || "Receipt"}
+                                        {r.receiptNo ? ` · OR ${r.receiptNo}` : ""} · {r.date} · recorded {fmt(r.amount)}
+                                      </span>
+                                    </div>
+                                  ))
+                                )}
+                              </div>,
+                            ];
+                          })}
                         </div>
                       )}
                     </div>
