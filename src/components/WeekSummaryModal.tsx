@@ -159,10 +159,17 @@ export default function WeekSummaryModal({
   // Determine branches for this region
   const regionBranches = useMemo(() => {
     const targetCycle: WeekCycle = region === 'north' ? 'friday' : 'monday'
-    return branches.filter(b => {
+    const list = branches.filter(b => {
       const cycle = branchWeekCycle(b.id || b.name)
       return cycle === targetCycle
     })
+    // Ensure both Taguig Sales and Taguig Services are available for North
+    if (region === 'north') {
+      if (!list.some(b => b.id === 'BR-TAGUIG-SERVICES' || (b.name && b.name.toUpperCase().includes('SERVICE')))) {
+        list.push({ id: 'BR-TAGUIG-SERVICES', name: 'TAGUIG SERVICES' } as any)
+      }
+    }
+    return list
   }, [branches, region])
 
   // Resolved week dates for the selected region
@@ -262,6 +269,9 @@ export default function WeekSummaryModal({
   // Clean branch display name matching Excel format
   const getBranchLabel = (nameOrId: string) => {
     const upper = nameOrId.toUpperCase()
+    if (upper.includes('SERVICE') || upper === 'BR-TAGUIG-SERVICES') {
+      return 'TAGUIG SERVICES'
+    }
     if (upper.includes('TAGUIG') || upper.includes('HEAD OFFICE') || upper.includes('SALES')) {
       return 'TAGUIG SALES'
     }
@@ -276,9 +286,36 @@ export default function WeekSummaryModal({
     return formatBranchName(nameOrId).toUpperCase()
   }
 
+  // Detect whether an installer belongs to Taguig Services instead of Taguig Sales
+  const isTaguigServicesInstaller = (displayName: string, emp?: any): boolean => {
+    const upper = displayName.toUpperCase()
+    if (
+      upper.includes('FROILAN') ||
+      upper.includes('RANZ') ||
+      upper.includes('ROLDAN') ||
+      upper.includes('MANNY')
+    ) {
+      return true
+    }
+    const empBranch = String(emp?.branchId || emp?.branch || emp?.department || '').toUpperCase()
+    if (empBranch.includes('SERVICE') || empBranch === 'BR-TAGUIG-SERVICES') {
+      return true
+    }
+    return false
+  }
+
   // Build the compiled list of installer rows per branch
   const compiledRows = useMemo<InstallerSummaryRow[]>(() => {
     const list: InstallerSummaryRow[] = []
+
+    // Group all tickets across branches by (effectiveBranchName, displayName)
+    const installerGroups = new Map<string, {
+      branchId: string
+      branchName: string
+      displayName: string
+      rows: PayrollRow[]
+      emp: any | undefined
+    }>()
 
     for (const b of regionBranches) {
       const bRows = branchData[b.id] || []
@@ -298,12 +335,7 @@ export default function WeekSummaryModal({
         return true
       })
 
-      // ── Step 1: resolve each ticket row to a canonical displayName FIRST ──────────────────
-      // Grouping by rawName (the ticket's installerName string) causes duplicate summary rows
-      // when one ticket is saved with a slightly different spelling variant of the same person's
-      // name. Resolving to the employee record's canonical name before grouping ensures all
-      // tickets that belong to the same installer always merge into a single summary row.
-      const resolvedGroups = new Map<string, { rows: PayrollRow[]; emp: any | undefined }>()
+      const rawBranchLabel = getBranchLabel(b.name || b.id)
 
       for (const r of filtered) {
         let rawName = (r.installerName || 'Unassigned').trim().toUpperCase()
@@ -326,66 +358,94 @@ export default function WeekSummaryModal({
 
         // Key by the RESOLVED display name so variants collapse to one row
         const displayName = emp?.name ? emp.name.toUpperCase() : rawName
-        const groupKey = displayName // unique per installer within this branch loop
 
-        if (!resolvedGroups.has(groupKey)) {
-          resolvedGroups.set(groupKey, { rows: [], emp })
+        // Determine branch routing: Taguig Services vs Taguig Sales vs other branches
+        let effectiveBranchName = rawBranchLabel
+        let effectiveBranchId = b.id
+
+        if (effectiveBranchName.startsWith('TAGUIG') || b.id.toUpperCase().includes('TAGUIG')) {
+          if (isTaguigServicesInstaller(displayName, emp) || rawBranchLabel === 'TAGUIG SERVICES') {
+            effectiveBranchName = 'TAGUIG SERVICES'
+            effectiveBranchId = 'BR-TAGUIG-SERVICES'
+          } else {
+            effectiveBranchName = 'TAGUIG SALES'
+            effectiveBranchId = 'BR-TAGUIG-SALES'
+          }
         }
-        resolvedGroups.get(groupKey)!.rows.push(r)
-      }
 
-      // ── Step 2: build one summary row per resolved installer ──────────────────────────────
-      const branchLabel = getBranchLabel(b.name || b.id)
-
-      for (const [displayName, { rows: iRows, emp }] of resolvedGroups.entries()) {
-        // This cut-off's own jobs only — a carry-over's payout is this installer's PREVIOUS
-        // cut-off's money, reported separately below, never folded into this week's amount.
-        const regularRows = iRows.filter(r => !isCarryOver(r))
-        const carryRows = iRows.filter(isCarryOver)
-        // Same math as the Payroll page's "Payroll Amount" (installerNet), floored at zero for release.
-        const computedAmount = Math.max(0, installerTotal(regularRows) - deductionTotal(iRows))
-        const carryOverTotal = carryRows.reduce((sum, r) => sum + rowTotal(r), 0)
-
-        const rowKey = `${b.id}-${displayName}`
-        const rowOverride = overrides[rowKey] || {}
-
-        const finalAmount = rowOverride.amount !== undefined ? rowOverride.amount : computedAmount
-        const status = rowOverride.status || (iRows[0]?.status === 'HOLD' ? 'HOLD' : 'SENT')
-        const cash = rowOverride.cash !== undefined ? rowOverride.cash : 0
-        const onlineTransfer = rowOverride.onlineTransfer !== undefined
-          ? rowOverride.onlineTransfer
-          : (status === 'HOLD' ? 0 : Math.max(0, finalAmount - cash))
-        // Salary carried from a previous cut-off via a release — defaults to the sum of this
-        // installer's carry-over copies landing in this week, editable like any other cell.
-        const prevSalary = rowOverride.prevSalary !== undefined ? rowOverride.prevSalary : carryOverTotal
-        const prevCashAdvance = rowOverride.prevCashAdvance !== undefined ? rowOverride.prevCashAdvance : 0
-        const totalForRelease = rowOverride.totalForRelease !== undefined
-          ? rowOverride.totalForRelease
-          : (status === 'HOLD' ? 0 : finalAmount) + prevSalary
-
-        const defaultMop = 'GCASH'
-        const accountNo = rowOverride.accountNo !== undefined
-          ? rowOverride.accountNo
-          : (emp?.phone || '')
-
-        list.push({
-          branchId: b.id,
-          branchName: rowOverride.branchName || branchLabel,
-          installerName: displayName,
-          amount: finalAmount,
-          cash,
-          onlineTransfer,
-          prevSalary,
-          prevCashAdvance,
-          totalForRelease,
-          mop: rowOverride.mop || defaultMop,
-          accountNo,
-          status,
-          remarks: rowOverride.remarks !== undefined ? rowOverride.remarks : (iRows[0]?.remarks || ''),
-          isHighlighted: rowOverride.isHighlighted || false,
-        })
+        const groupKey = `${effectiveBranchName}:::${displayName}`
+        if (!installerGroups.has(groupKey)) {
+          installerGroups.set(groupKey, {
+            branchId: effectiveBranchId,
+            branchName: effectiveBranchName,
+            displayName,
+            rows: [],
+            emp,
+          })
+        }
+        installerGroups.get(groupKey)!.rows.push(r)
       }
     }
+
+    // ── Step 2: build one summary row per resolved installer ──────────────────────────────
+    for (const { branchId, branchName, displayName, rows: iRows, emp } of installerGroups.values()) {
+      // This cut-off's own jobs only — a carry-over's payout is this installer's PREVIOUS
+      // cut-off's money, reported separately below, never folded into this week's amount.
+      const regularRows = iRows.filter(r => !isCarryOver(r))
+      const carryRows = iRows.filter(isCarryOver)
+      // Same math as the Payroll page's "Payroll Amount" (installerNet), floored at zero for release.
+      const computedAmount = Math.max(0, installerTotal(regularRows) - deductionTotal(iRows))
+      const carryOverTotal = carryRows.reduce((sum, r) => sum + rowTotal(r), 0)
+
+      const rowKey = `${branchId}-${displayName}`
+      const rowOverride = overrides[rowKey]
+        || overrides[`${displayName}`]
+        || (branchName === 'TAGUIG SERVICES' ? overrides[`BR-TAGUIG-SALES-${displayName}`] : undefined)
+        || {}
+
+      const finalAmount = rowOverride.amount !== undefined ? rowOverride.amount : computedAmount
+      const status = rowOverride.status || (iRows[0]?.status === 'HOLD' ? 'HOLD' : 'SENT')
+      const cash = rowOverride.cash !== undefined ? rowOverride.cash : 0
+      const onlineTransfer = rowOverride.onlineTransfer !== undefined
+        ? rowOverride.onlineTransfer
+        : (status === 'HOLD' ? 0 : Math.max(0, finalAmount - cash))
+      // Salary carried from a previous cut-off via a release — defaults to the sum of this
+      // installer's carry-over copies landing in this week, editable like any other cell.
+      const prevSalary = rowOverride.prevSalary !== undefined ? rowOverride.prevSalary : carryOverTotal
+      const prevCashAdvance = rowOverride.prevCashAdvance !== undefined ? rowOverride.prevCashAdvance : 0
+      const totalForRelease = rowOverride.totalForRelease !== undefined
+        ? rowOverride.totalForRelease
+        : (status === 'HOLD' ? 0 : finalAmount) + prevSalary
+
+      const defaultMop = 'GCASH'
+      const accountNo = rowOverride.accountNo !== undefined
+        ? rowOverride.accountNo
+        : (emp?.phone || '')
+
+      list.push({
+        branchId,
+        branchName: rowOverride.branchName || branchName,
+        installerName: displayName,
+        amount: finalAmount,
+        cash,
+        onlineTransfer,
+        prevSalary,
+        prevCashAdvance,
+        totalForRelease,
+        mop: rowOverride.mop || defaultMop,
+        accountNo,
+        status,
+        remarks: rowOverride.remarks !== undefined ? rowOverride.remarks : (iRows[0]?.remarks || ''),
+        isHighlighted: rowOverride.isHighlighted || false,
+      })
+    }
+
+    // Sort alphabetically by branch, then alphabetically by installer name
+    list.sort((a, b) => {
+      const bCmp = a.branchName.localeCompare(b.branchName)
+      if (bCmp !== 0) return bCmp
+      return a.installerName.localeCompare(b.installerName)
+    })
 
     return list
   }, [regionBranches, branchData, weekFrom, weekTo, employees, overrides])
@@ -406,7 +466,9 @@ export default function WeekSummaryModal({
         counts.set(r.branchName, (counts.get(r.branchName) || 0) + 1)
       }
     }
-    return Array.from(counts.entries()).map(([name, count]) => ({ name, count }))
+    return Array.from(counts.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name))
   }, [compiledRows])
 
   // Filtered rows based on branch selection
@@ -530,6 +592,13 @@ export default function WeekSummaryModal({
             btn.parentNode?.replaceChild(span, btn)
           })
 
+          // Make cloned table header rows transparent to avoid row-level rectangular overlap
+          clonedTable.querySelectorAll('thead tr').forEach(tr => {
+            const trEl = tr as HTMLElement
+            trEl.style.backgroundColor = 'transparent'
+            trEl.style.background = 'transparent'
+          })
+
           // Ensure all table headers and cells have high-contrast styling and borders with clean, readable weights
           const cells = clonedTable.querySelectorAll<HTMLElement>('th, td')
           cells.forEach(cell => {
@@ -538,43 +607,66 @@ export default function WeekSummaryModal({
             cell.style.borderStyle = 'solid'
             cell.style.boxSizing = 'border-box'
 
-            const isGreenHeader = cell.classList.contains('bg-[#056434]') || cell.closest('tr')?.classList.contains('bg-[#056434]')
-            const isYellowHeader = cell.classList.contains('bg-[#FFFF00]') || cell.closest('tr')?.classList.contains('bg-[#FFFF00]')
-            const isHoldCell = cell.classList.contains('bg-[#FEF08A]')
-            const isTotalsRow = cell.closest('tr')?.classList.contains('bg-slate-100') || cell.classList.contains('bg-slate-200')
+            const text = cell.textContent || ''
+            const isYellowHeader =
+              cell.getAttribute('data-header') === 'yellow' ||
+              cell.classList.contains('bg-[#FFFF00]') ||
+              text.includes('PREVIOUS WEEK ON-') ||
+              text.includes('PREVIOUS PAYOUT') ||
+              text.includes('SALARY ON-HOLD')
 
-            if (isGreenHeader) {
-              cell.style.backgroundColor = '#056434'
-              cell.style.color = '#ffffff'
-              cell.style.fontWeight = '600'
-              cell.style.fontSize = '12px'
-              cell.style.padding = '10px 8px'
-              cell.style.lineHeight = '1.3'
-            } else if (isYellowHeader) {
+            const isGreenHeader =
+              !isYellowHeader && (
+                cell.getAttribute('data-header') === 'green' ||
+                cell.classList.contains('bg-[#056434]') ||
+                cell.tagName.toLowerCase() === 'th'
+              )
+
+            const isHoldCell = cell.classList.contains('bg-[#FEF08A]')
+            const isTotalsRow = cell.closest('tr')?.classList.contains('bg-slate-100') || cell.classList.contains('bg-slate-200') || text === 'TOTALS'
+
+            if (isYellowHeader) {
               cell.style.backgroundColor = '#FFFF00'
               cell.style.color = '#000000'
-              cell.style.fontWeight = '600'
+              cell.style.fontWeight = '700'
+              cell.style.fontSize = '11px'
+              cell.style.padding = '8px 4px'
+              cell.style.lineHeight = '1.2'
+              cell.style.textAlign = 'center'
+              cell.style.verticalAlign = 'middle'
+            } else if (isGreenHeader) {
+              cell.style.backgroundColor = '#056434'
+              cell.style.color = '#ffffff'
+              cell.style.fontWeight = '700'
               cell.style.fontSize = '11px'
               cell.style.padding = '8px 6px'
               cell.style.lineHeight = '1.25'
+              cell.style.verticalAlign = 'middle'
+              if (cell.classList.contains('text-left')) {
+                cell.style.textAlign = 'left'
+              } else if (cell.classList.contains('text-right')) {
+                cell.style.textAlign = 'right'
+              } else {
+                cell.style.textAlign = 'center'
+              }
             } else if (isHoldCell) {
               cell.style.backgroundColor = '#FEF08A'
               cell.style.color = '#451a03'
               cell.style.fontWeight = '500'
-              cell.style.fontSize = '14px'
+              cell.style.fontSize = '13px'
               cell.style.padding = '8px 10px'
             } else if (isTotalsRow) {
               cell.style.backgroundColor = cell.classList.contains('bg-slate-200') ? '#e2e8f0' : '#f1f5f9'
               cell.style.color = '#000000'
-              cell.style.fontWeight = '600'
-              cell.style.fontSize = '15px'
+              cell.style.fontWeight = '700'
+              cell.style.fontSize = '14px'
               cell.style.padding = '10px 10px'
             } else {
               cell.style.backgroundColor = '#ffffff'
               cell.style.color = '#000000'
               cell.style.fontWeight = '400'
-              cell.style.fontSize = '14px'
-              cell.style.padding = '8px 10px'
+              cell.style.fontSize = '13px'
+              cell.style.padding = '6px 8px'
             }
           })
 
@@ -729,47 +821,6 @@ export default function WeekSummaryModal({
         <div className="flex items-center gap-2 md:gap-3 overflow-x-auto hide-scrollbar">
           <button
             type="button"
-            onClick={handleCopyImage}
-            disabled={copyingImage || loading || displayedRows.length === 0}
-            className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-sm cursor-pointer shrink-0 ${
-              copiedImage
-                ? 'bg-emerald-600 text-white'
-                : 'bg-[#056434] hover:bg-[#04522a] text-white active:scale-95'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
-            title="Copy entire table as an image with full width and all rows for sending (Ctrl+V into Messenger, Viber, etc.)"
-          >
-            {copyingImage ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-                <span>Capturing…</span>
-              </>
-            ) : copiedImage ? (
-              <>
-                <Check className="w-4 h-4 text-white shrink-0" />
-                <span>Copied Image!</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-4 h-4 shrink-0" />
-                <span>Copy Image</span>
-              </>
-            )}
-          </button>
-
-          {Object.keys(overrides).length > 0 && (
-            <button
-              type="button"
-              onClick={resetOverrides}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold text-rose-500 border border-rose-500/30 hover:bg-rose-500/10 transition-colors cursor-pointer shrink-0"
-              title="Reset all manual cell edits to original calculated numbers"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Reset Edits</span>
-            </button>
-          )}
-
-          <button
-            type="button"
             onClick={onClose}
             className="hidden md:flex p-2 rounded-xl hover:bg-black/10 dark:hover:bg-white/10 transition-colors ml-2 cursor-pointer shrink-0"
             title="Close Summary (Esc)"
@@ -817,8 +868,8 @@ export default function WeekSummaryModal({
           </div>
         </div>
 
-        {/* Branch Filter Tabs Bar */}
-        <div className="mb-4 flex items-center justify-between gap-3 text-xs print:hidden">
+        {/* Branch Filter Tabs Bar + Top Right Actions (Copy Image) */}
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-xs print:hidden">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[11px] mr-1">
               Filter Branch:
@@ -860,6 +911,50 @@ export default function WeekSummaryModal({
               ))}
             </div>
           </div>
+
+          {/* Top Right of Table: Action buttons aligned to filter branch */}
+          <div className="flex items-center gap-2 shrink-0">
+            {Object.keys(overrides).length > 0 && (
+              <button
+                type="button"
+                onClick={resetOverrides}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-rose-500 border border-rose-500/30 hover:bg-rose-500/10 transition-colors cursor-pointer shrink-0"
+                title="Reset all manual cell edits to original calculated numbers"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset Edits</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleCopyImage}
+              disabled={copyingImage || loading || displayedRows.length === 0}
+              className={`flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-sm cursor-pointer shrink-0 ${
+                copiedImage
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-[#056434] hover:bg-[#04522a] text-white active:scale-95'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+              title="Copy entire table as an image with full width and all rows for sending (Ctrl+V into Messenger, Viber, etc.)"
+            >
+              {copyingImage ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                  <span>Capturing…</span>
+                </>
+              ) : copiedImage ? (
+                <>
+                  <Check className="w-4 h-4 text-white shrink-0" />
+                  <span>Copied Image!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4 shrink-0" />
+                  <span>Copy Image</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Table Container — desktop/tablet only; phones get the card list below */}
@@ -867,55 +962,123 @@ export default function WeekSummaryModal({
           <table
             ref={tableRef}
             data-summary-table
-            className="w-full border-collapse text-sm text-slate-900 dark:text-slate-100 min-w-[1300px]"
+            className="w-full border-collapse text-sm text-slate-900 dark:text-slate-100 min-w-[1440px]"
           >
             <thead>
               {/* Dark Green Header Row (matching Excel) */}
-              <tr className="bg-[#056434] text-white text-center border-b border-black font-semibold text-xs uppercase tracking-wide">
-                <th rowSpan={2} className="border border-black px-3 py-3 text-center w-[130px] font-semibold">
+              <tr className="bg-transparent text-center border-b border-black font-semibold text-[11px] uppercase tracking-wide">
+                <th
+                  rowSpan={2}
+                  data-header="green"
+                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
+                  className="border border-black px-3 py-2 text-center w-[130px] font-semibold whitespace-nowrap bg-[#056434] text-white"
+                >
                   BRANCH
                 </th>
-                <th rowSpan={2} className="border border-black px-4 py-3 text-left min-w-[220px] font-semibold">
+                <th
+                  rowSpan={2}
+                  data-header="green"
+                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
+                  className="border border-black px-4 py-2 text-left min-w-[200px] font-semibold bg-[#056434] text-white"
+                >
                   INSTALLER
                 </th>
-                <th rowSpan={2} className="border border-black px-3 py-3 text-right w-[125px] font-semibold">
+                <th
+                  rowSpan={2}
+                  data-header="green"
+                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
+                  className="border border-black px-3 py-2 text-right w-[120px] font-semibold whitespace-nowrap bg-[#056434] text-white"
+                >
                   AMOUNT
                 </th>
-                <th rowSpan={2} className="border border-black px-2 py-3 text-right w-[100px] font-semibold">
+                <th
+                  rowSpan={2}
+                  data-header="green"
+                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
+                  className="border border-black px-2 py-2 text-right w-[100px] font-semibold whitespace-nowrap bg-[#056434] text-white"
+                >
                   CASH
                 </th>
-                <th rowSpan={2} className="border border-black px-2 py-3 text-right w-[115px] font-semibold leading-tight">
+                <th
+                  rowSpan={2}
+                  data-header="green"
+                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
+                  className="border border-black px-2 py-2 text-right w-[110px] font-semibold bg-[#056434] text-white"
+                >
                   ONLINE<br />TRANSFER
                 </th>
                 {/* Yellow Previous Week On- Header */}
-                <th colSpan={2} className="border border-black bg-[#FFFF00] text-black font-semibold px-3 py-2 text-center text-xs tracking-wide">
+                <th
+                  colSpan={2}
+                  data-header="yellow"
+                  style={{ backgroundColor: '#FFFF00', color: '#000000', verticalAlign: 'middle' }}
+                  className="border border-black font-semibold px-3 py-2 text-center text-[11px] tracking-wide whitespace-nowrap bg-[#FFFF00] text-black"
+                >
                   PREVIOUS WEEK ON-
                 </th>
-                <th rowSpan={2} className="border border-black px-3 py-3 text-right w-[145px] font-semibold leading-tight">
+                <th
+                  rowSpan={2}
+                  data-header="green"
+                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
+                  className="border border-black px-2 py-2 text-center w-[140px] font-semibold leading-snug bg-[#056434] text-white"
+                >
                   TOTAL AMOUNT OF<br />SALARY FOR RELEASE<br />THIS PAYOUT
                 </th>
-                <th rowSpan={2} className="border border-black px-2 py-3 text-center w-[85px] font-semibold">
+                <th
+                  rowSpan={2}
+                  data-header="green"
+                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
+                  className="border border-black px-2 py-2 text-center w-[80px] font-semibold whitespace-nowrap bg-[#056434] text-white"
+                >
                   MOP
                 </th>
-                <th rowSpan={2} className="border border-black px-3 py-3 text-center w-[140px] font-semibold">
+                <th
+                  rowSpan={2}
+                  data-header="green"
+                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
+                  className="border border-black px-2 py-2 text-center w-[130px] font-semibold bg-[#056434] text-white"
+                >
                   ACCOUNT NO
                 </th>
-                <th rowSpan={2} className="border border-black px-2 py-3 text-center w-[95px] font-semibold">
+                <th
+                  rowSpan={2}
+                  data-header="green"
+                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
+                  className="border border-black px-2 py-2 text-center w-[90px] font-semibold whitespace-nowrap bg-[#056434] text-white"
+                >
                   STATUS
                 </th>
-                <th rowSpan={2} className="border border-black px-3 py-3 text-left min-w-[140px] font-semibold">
+                <th
+                  rowSpan={2}
+                  data-header="green"
+                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
+                  className="border border-black px-3 py-2 text-left min-w-[130px] font-semibold whitespace-nowrap bg-[#056434] text-white"
+                >
                   REMARKS
                 </th>
-                <th rowSpan={2} className="border border-black px-3 py-3 text-right w-[135px] font-semibold leading-tight">
+                <th
+                  rowSpan={2}
+                  data-header="green"
+                  style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
+                  className="border border-black px-3 py-2 text-right w-[130px] font-semibold leading-snug bg-[#056434] text-white"
+                >
                   SUB-TOTAL<br />(CURRENT<br />CUT-OFF ONLY)
                 </th>
               </tr>
               {/* Secondary Sub-Row for Yellow Header */}
-              <tr className="bg-[#FFFF00] text-black font-semibold text-[11px] text-center border-b border-black">
-                <th className="border border-black px-2 py-2 w-[115px] leading-tight font-semibold">
+              <tr className="bg-transparent font-semibold text-[10px] text-center border-b border-black">
+                <th
+                  data-header="yellow"
+                  style={{ backgroundColor: '#FFFF00', color: '#000000', verticalAlign: 'middle' }}
+                  className="border border-black px-2 py-2 w-[115px] leading-tight font-semibold bg-[#FFFF00] text-black"
+                >
                   SALARY AMOUNT<br />FROM PREVIOUS<br />PAYOUT
                 </th>
-                <th className="border border-black px-2 py-2 w-[115px] leading-tight font-semibold">
+                <th
+                  data-header="yellow"
+                  style={{ backgroundColor: '#FFFF00', color: '#000000', verticalAlign: 'middle' }}
+                  className="border border-black px-2 py-2 w-[115px] leading-tight font-semibold bg-[#FFFF00] text-black"
+                >
                   CASH ADVANCE<br />FROM PREVIOUS<br />SALARY ON-HOLD
                 </th>
               </tr>
