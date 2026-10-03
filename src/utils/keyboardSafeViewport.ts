@@ -10,7 +10,7 @@
  */
 
 const KEYBOARD_MIN_PX = 120
-const EDITABLE = 'input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=file]), textarea, select, [contenteditable=""], [contenteditable="true"]'
+const EDITABLE = 'input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=file]), textarea, select, [contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]'
 
 export function installKeyboardSafeViewport(): void {
   const vv = window.visualViewport

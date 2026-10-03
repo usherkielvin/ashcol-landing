@@ -894,21 +894,30 @@ export function TicketPhotoGallery({
               <label className="block text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>
                 Description / Note
               </label>
-              <input
-                type="text"
-                enterKeyHint="done"
-                autoComplete="off"
-                autoCorrect="off"
-                placeholder={isInstall ? "e.g. SCHEMATIC, INDOOR UNIT…" : "e.g. JOB ORDER, SERVICE REPORT…"}
-                value={editDescDraft}
-                // on mobile the keyboard would cover the presets — let the person pick or tap in
-                autoFocus={!isMobile}
-                onChange={(e) => setEditDescDraft(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); void saveEditedDescription() } }}
-                // 16px on phones: smaller text makes iOS zoom the page when the field is focused
-                className="w-full text-base sm:text-xs font-semibold p-2.5 rounded-xl border outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 uppercase"
-                style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
-              />
+              {isMobile ? (
+                // contenteditable, not <input>: iOS only attaches its ▲▼✓ form-assistant bar to real form controls.
+                // On phones the field isn't auto-focused so the keyboard doesn't cover the presets.
+                <PlainEditable
+                  value={editDescDraft}
+                  onChange={setEditDescDraft}
+                  onEnter={() => void saveEditedDescription()}
+                  placeholder={isInstall ? 'e.g. SCHEMATIC, INDOOR UNIT…' : 'e.g. JOB ORDER, SERVICE REPORT…'}
+                  className="w-full min-h-[2.75rem] text-base font-semibold p-2.5 rounded-xl border outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 uppercase break-words"
+                  style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                />
+              ) : (
+                <input
+                  type="text"
+                  autoFocus
+                  autoComplete="off"
+                  placeholder={isInstall ? "e.g. SCHEMATIC, INDOOR UNIT…" : "e.g. JOB ORDER, SERVICE REPORT…"}
+                  value={editDescDraft}
+                  onChange={(e) => setEditDescDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void saveEditedDescription() } }}
+                  className="w-full text-xs font-semibold p-2.5 rounded-xl border outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 uppercase"
+                  style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
+                />
+              )}
             </div>
 
             <div className="flex items-center justify-end gap-2 border-t pt-3" style={{ borderColor: border }}>
@@ -1181,6 +1190,46 @@ function PhotoTitleField({
         </span>
       </div>
     </div>
+  )
+}
+
+/**
+ * Single-line plain-text field built on contenteditable. Used instead of <input> on iOS so the system
+ * ▲▼✓ form-assistant bar doesn't appear above the keyboard. Display is uppercased with CSS (the saved
+ * value is uppercased on save), so the caret never jumps while typing.
+ */
+function PlainEditable({
+  value, onChange, onEnter, placeholder, className, style,
+}: {
+  value: string
+  onChange: (v: string) => void
+  onEnter: () => void
+  placeholder: string
+  className?: string
+  style?: React.CSSProperties
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  // Push outside changes (e.g. a preset chip) into the DOM; skip when it already matches so typing isn't disturbed.
+  useEffect(() => {
+    if (ref.current && ref.current.textContent !== value) ref.current.textContent = value
+  }, [value])
+  return (
+    <div
+      ref={ref}
+      role="textbox"
+      aria-label="Photo title"
+      // "plaintext-only" strips pasted formatting; Safari 16+/Chrome support it
+      contentEditable={'plaintext-only' as unknown as boolean}
+      suppressContentEditableWarning
+      spellCheck={false}
+      autoCapitalize="characters"
+      enterKeyHint="done"
+      data-placeholder={placeholder}
+      onInput={(e) => onChange((e.currentTarget.textContent || '').replace(/\s+/g, ' '))}
+      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); onEnter() } }}
+      className={`${className ?? ''} empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400 empty:before:normal-case empty:before:font-normal`}
+      style={style}
+    />
   )
 }
 

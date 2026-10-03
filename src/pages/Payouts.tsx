@@ -1946,7 +1946,7 @@ export default function Payouts() {
   // not one job — so editing them writes the same value across every row grouped under that
   // installer's name, rather than a single row's field.
   const updateInstallerRows = (installerName: string, patch: Partial<PayrollRow>) => {
-    if (isWeekClosed) return
+    if (isWeekClosed || viewOnly) return
     setRows(prev => {
       const updated = prev.map(r => resolveGroupKey(r.installerName) === installerName ? { ...r, ...patch } : r)
       scheduleAutoSave(updated)
@@ -2573,16 +2573,6 @@ export default function Payouts() {
                   : formatBranchName(user?.branchId || 'My Branch')}
               </span>
             </div>
-          )}
-
-          {viewOnly && (
-            <span
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-wider shrink-0"
-              style={{ borderColor: inputBorder, color: textMuted }}
-              title="You can see payouts payroll has completed for your branch. Nothing here can be edited."
-            >
-              <Lock className="w-3 h-3" /> View only
-            </span>
           )}
 
           {/* Month navigator — compact pill with prev/next arrows */}
@@ -4196,18 +4186,18 @@ export default function Payouts() {
                       ) : (
                         <button
                           type="button"
-                          disabled={isWeekClosed}
+                          disabled={isWeekClosed || viewOnly}
                           onClick={() => { setRemarksDraft(summaryRemarks); setEditingRemarksFor(installerName) }}
-                          className="w-full text-left rounded-lg px-2.5 py-1 md:py-1.5 -mx-2.5 transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-text disabled:cursor-not-allowed disabled:hover:bg-transparent"
-                          title={summaryRemarks || 'Click to add a remark'}
+                          className="w-full text-left rounded-lg px-2.5 py-1 md:py-1.5 -mx-2.5 transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-text disabled:cursor-default disabled:hover:bg-transparent"
+                          title={viewOnly ? (summaryRemarks || undefined) : (summaryRemarks || 'Click to add a remark')}
                         >
                           {summaryRemarks ? (
                             <span className="text-xs font-medium leading-snug line-clamp-2 block" style={{ color: textPrimary }}>
                               {summaryRemarks}
                             </span>
-                          ) : (
+                          ) : !viewOnly ? (
                             <span className="text-xs italic" style={{ color: textMuted, opacity: 0.6 }}>Click to add a remark</span>
-                          )}
+                          ) : null}
                         </button>
                       )}
                     </div>
