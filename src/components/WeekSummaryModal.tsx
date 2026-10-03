@@ -624,6 +624,9 @@ export default function WeekSummaryModal({
 
             const isHoldCell = cell.classList.contains('bg-[#FEF08A]')
             const isTotalsRow = cell.closest('tr')?.classList.contains('bg-slate-100') || cell.classList.contains('bg-slate-200') || text === 'TOTALS'
+            const isBigNumberCell =
+              cell.classList.contains('font-big-number') ||
+              cell.querySelector('.font-big-number') !== null
 
             if (isYellowHeader) {
               cell.style.backgroundColor = '#FFFF00'
@@ -649,28 +652,48 @@ export default function WeekSummaryModal({
               } else {
                 cell.style.textAlign = 'center'
               }
+            } else if (isTotalsRow) {
+              cell.style.backgroundColor = cell.classList.contains('bg-slate-200') ? '#e2e8f0' : '#f1f5f9'
+              cell.style.color = '#000000'
+              cell.style.fontWeight = '700'
+              cell.style.fontSize = '24px'
+              cell.style.padding = '3px 2px'
+              cell.style.textAlign = 'center'
+              cell.style.verticalAlign = 'middle'
+              cell.style.lineHeight = '1.15'
+            } else if (isBigNumberCell) {
+              cell.style.backgroundColor = isHoldCell ? '#FEF08A' : '#ffffff'
+              cell.style.color = isHoldCell ? '#451a03' : '#000000'
+              cell.style.fontWeight = '600'
+              cell.style.fontSize = '24px'
+              cell.style.padding = '3px 2px'
+              cell.style.textAlign = 'center'
+              cell.style.verticalAlign = 'middle'
+              cell.style.lineHeight = '1.15'
             } else if (isHoldCell) {
               cell.style.backgroundColor = '#FEF08A'
               cell.style.color = '#451a03'
               cell.style.fontWeight = '500'
               cell.style.fontSize = '13px'
               cell.style.padding = '8px 10px'
-            } else if (isTotalsRow) {
-              cell.style.backgroundColor = cell.classList.contains('bg-slate-200') ? '#e2e8f0' : '#f1f5f9'
-              cell.style.color = '#000000'
-              cell.style.fontWeight = '700'
-              cell.style.fontSize = '14px'
-              cell.style.padding = '10px 10px'
             } else {
               cell.style.backgroundColor = '#ffffff'
               cell.style.color = '#000000'
               cell.style.fontWeight = '400'
               cell.style.fontSize = '13px'
-              cell.style.padding = '6px 8px'
+              cell.style.padding = '6px 6px'
+              cell.style.verticalAlign = 'middle'
+              cell.style.lineHeight = '1.2'
             }
           })
 
-          // Replace inputs with clean, readable text divs (not bold)
+          // Ensure uniform 54px row height on all tbody rows
+          clonedTable.querySelectorAll('tbody tr').forEach(tr => {
+            const trEl = tr as HTMLElement
+            trEl.style.height = '54px'
+          })
+
+          // Replace inputs with clean, readable text divs with centered and big fonts filling almost the box (keeping Acct No normal size)
           const liveInputs = tableEl.querySelectorAll<HTMLInputElement>('input')
           const clonedInputs = clonedTable.querySelectorAll<HTMLInputElement>('input')
           liveInputs.forEach((inp, idx) => {
@@ -684,22 +707,17 @@ export default function WeekSummaryModal({
             textDiv.style.boxShadow = 'none'
             textDiv.style.display = 'flex'
             textDiv.style.alignItems = 'center'
+            textDiv.style.justifyContent = 'center'
             textDiv.style.width = '100%'
-            textDiv.style.minHeight = '1.5rem'
+            textDiv.style.height = '100%'
             textDiv.style.color = '#000000'
-            textDiv.style.fontSize = '14px'
-            textDiv.style.fontWeight = '400'
-            textDiv.style.padding = '0 0.25rem'
-            if (inp.classList.contains('text-right')) {
-              textDiv.style.justifyContent = 'flex-end'
-              textDiv.style.textAlign = 'right'
-            } else if (inp.classList.contains('text-center')) {
-              textDiv.style.justifyContent = 'center'
-              textDiv.style.textAlign = 'center'
-            } else {
-              textDiv.style.justifyContent = 'flex-start'
-              textDiv.style.textAlign = 'left'
-            }
+            const isBigNumberInput = inp.classList.contains('font-big-number')
+            textDiv.style.fontSize = isBigNumberInput ? '24px' : '12px'
+            textDiv.style.fontWeight = isBigNumberInput ? '600' : '500'
+            textDiv.style.padding = '0'
+            textDiv.style.margin = '0'
+            textDiv.style.textAlign = isBigNumberInput ? 'center' : (inp.classList.contains('text-center') ? 'center' : 'left')
+            textDiv.style.lineHeight = isBigNumberInput ? '1.15' : '1.2'
             clonedInp.parentNode?.replaceChild(textDiv, clonedInp)
           })
 
@@ -987,7 +1005,7 @@ export default function WeekSummaryModal({
                   rowSpan={2}
                   data-header="green"
                   style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
-                  className="border border-black px-3 py-2 text-right w-[120px] font-semibold whitespace-nowrap bg-[#056434] text-white"
+                  className="border border-black px-3 py-2 text-center w-[130px] font-semibold whitespace-nowrap bg-[#056434] text-white"
                 >
                   AMOUNT
                 </th>
@@ -995,7 +1013,7 @@ export default function WeekSummaryModal({
                   rowSpan={2}
                   data-header="green"
                   style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
-                  className="border border-black px-2 py-2 text-right w-[100px] font-semibold whitespace-nowrap bg-[#056434] text-white"
+                  className="border border-black px-2 py-2 text-center w-[110px] font-semibold whitespace-nowrap bg-[#056434] text-white"
                 >
                   CASH
                 </th>
@@ -1003,7 +1021,7 @@ export default function WeekSummaryModal({
                   rowSpan={2}
                   data-header="green"
                   style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
-                  className="border border-black px-2 py-2 text-right w-[110px] font-semibold bg-[#056434] text-white"
+                  className="border border-black px-2 py-2 text-center w-[125px] font-semibold bg-[#056434] text-white"
                 >
                   ONLINE<br />TRANSFER
                 </th>
@@ -1020,7 +1038,7 @@ export default function WeekSummaryModal({
                   rowSpan={2}
                   data-header="green"
                   style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
-                  className="border border-black px-2 py-2 text-center w-[140px] font-semibold leading-snug bg-[#056434] text-white"
+                  className="border border-black px-2 py-2 text-center w-[150px] font-semibold leading-snug bg-[#056434] text-white"
                 >
                   TOTAL AMOUNT OF<br />SALARY FOR RELEASE<br />THIS PAYOUT
                 </th>
@@ -1028,7 +1046,7 @@ export default function WeekSummaryModal({
                   rowSpan={2}
                   data-header="green"
                   style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
-                  className="border border-black px-2 py-2 text-center w-[80px] font-semibold whitespace-nowrap bg-[#056434] text-white"
+                  className="border border-black px-2 py-2 text-center w-[85px] font-semibold whitespace-nowrap bg-[#056434] text-white"
                 >
                   MOP
                 </th>
@@ -1060,7 +1078,7 @@ export default function WeekSummaryModal({
                   rowSpan={2}
                   data-header="green"
                   style={{ backgroundColor: '#056434', color: '#ffffff', verticalAlign: 'middle' }}
-                  className="border border-black px-3 py-2 text-right w-[130px] font-semibold leading-snug bg-[#056434] text-white"
+                  className="border border-black px-3 py-2 text-center w-[150px] font-semibold leading-snug bg-[#056434] text-white"
                 >
                   SUB-TOTAL<br />(CURRENT<br />CUT-OFF ONLY)
                 </th>
@@ -1070,14 +1088,14 @@ export default function WeekSummaryModal({
                 <th
                   data-header="yellow"
                   style={{ backgroundColor: '#FFFF00', color: '#000000', verticalAlign: 'middle' }}
-                  className="border border-black px-2 py-2 w-[115px] leading-tight font-semibold bg-[#FFFF00] text-black"
+                  className="border border-black px-2 py-2 w-[125px] leading-tight font-semibold bg-[#FFFF00] text-black text-center"
                 >
                   SALARY AMOUNT<br />FROM PREVIOUS<br />PAYOUT
                 </th>
                 <th
                   data-header="yellow"
                   style={{ backgroundColor: '#FFFF00', color: '#000000', verticalAlign: 'middle' }}
-                  className="border border-black px-2 py-2 w-[115px] leading-tight font-semibold bg-[#FFFF00] text-black"
+                  className="border border-black px-2 py-2 w-[125px] leading-tight font-semibold bg-[#FFFF00] text-black text-center"
                 >
                   CASH ADVANCE<br />FROM PREVIOUS<br />SALARY ON-HOLD
                 </th>
@@ -1106,12 +1124,12 @@ export default function WeekSummaryModal({
                         }`}
                       >
                         {/* BRANCH (Listed on each installer row) */}
-                        <td className="border border-black dark:border-slate-600 px-3 py-2.5 text-center text-xs sm:text-sm font-normal text-slate-700 dark:text-slate-300 uppercase whitespace-nowrap">
+                        <td className="border border-black dark:border-slate-600 px-3 py-2 text-center text-xs sm:text-sm font-normal text-slate-700 dark:text-slate-300 uppercase whitespace-nowrap">
                           {r.branchName || branchName}
                         </td>
 
                         {/* INSTALLER (Clean Readable Name + Ticket History Link) */}
-                        <td className="border border-black dark:border-slate-600 px-3.5 py-2.5 uppercase text-sm sm:text-base font-medium text-slate-900 dark:text-slate-100 tracking-normal">
+                        <td className="border border-black dark:border-slate-600 px-3.5 py-2 uppercase text-sm sm:text-base font-medium text-slate-900 dark:text-slate-100 tracking-normal">
                           <button
                             type="button"
                             onClick={() => {
@@ -1136,17 +1154,17 @@ export default function WeekSummaryModal({
                           </button>
                         </td>
 
-                        {/* AMOUNT (Soft Yellow Highlight if HOLD) */}
+                        {/* AMOUNT (Soft Yellow Highlight if HOLD, large centered number) */}
                         <td
-                          className={`border border-black dark:border-slate-600 px-3.5 py-2.5 text-right font-number text-sm sm:text-base font-normal ${
+                          className={`border border-black dark:border-slate-600 px-2 py-1 text-center align-middle font-number font-big-number text-xl sm:text-2xl font-semibold tracking-tight ${
                             isHold ? 'bg-[#FEF08A] text-amber-950 dark:text-amber-200' : 'text-slate-900 dark:text-slate-100'
                           }`}
                         >
                           {r.amount > 0 ? peso(r.amount) : ''}
                         </td>
 
-                        {/* CASH (Editable) */}
-                        <td className="border border-black dark:border-slate-600 p-1.5 text-right">
+                        {/* CASH (Editable, large centered number filling almost the box) */}
+                        <td className="border border-black dark:border-slate-600 p-1 text-center align-middle font-number font-big-number">
                           <input
                             type="text"
                             value={r.cash ? peso(r.cash) : ''}
@@ -1157,22 +1175,22 @@ export default function WeekSummaryModal({
                                 onlineTransfer: Math.max(0, r.amount - val),
                               })
                             }}
-                            className="w-full h-8 text-right bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-sm sm:text-base font-number font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
+                            className="w-full h-11 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1 text-xl sm:text-2xl font-number font-big-number font-semibold outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
-                        {/* ONLINE TRANSFER (Editable) */}
-                        <td className="border border-black dark:border-slate-600 p-1.5 text-right">
+                        {/* ONLINE TRANSFER (Editable, large centered number) */}
+                        <td className="border border-black dark:border-slate-600 p-1 text-center align-middle font-number font-big-number">
                           <input
                             type="text"
                             value={r.onlineTransfer ? peso(r.onlineTransfer) : ''}
                             onChange={e => updateRowOverride(rowKey, { onlineTransfer: num(e.target.value) })}
-                            className="w-full h-8 text-right bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-sm sm:text-base font-number font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
+                            className="w-full h-11 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1 text-xl sm:text-2xl font-number font-big-number font-semibold outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
-                        {/* SALARY AMOUNT FROM PREVIOUS PAYROLL */}
-                        <td className="border border-black dark:border-slate-600 p-1.5 text-right">
+                        {/* SALARY AMOUNT FROM PREVIOUS PAYROLL (Editable, large centered number) */}
+                        <td className="border border-black dark:border-slate-600 p-1 text-center align-middle font-number font-big-number">
                           <input
                             type="text"
                             value={r.prevSalary ? peso(r.prevSalary) : ''}
@@ -1183,12 +1201,12 @@ export default function WeekSummaryModal({
                                 totalForRelease: (r.status === 'HOLD' ? 0 : r.amount) + val - r.prevCashAdvance,
                               })
                             }}
-                            className="w-full h-8 text-right bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-sm sm:text-base font-number font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
+                            className="w-full h-11 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1 text-xl sm:text-2xl font-number font-big-number font-semibold outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
-                        {/* CASH ADVANCE FROM PREVIOUS SALARY ON-HOLD */}
-                        <td className="border border-black dark:border-slate-600 p-1.5 text-right">
+                        {/* CASH ADVANCE FROM PREVIOUS SALARY ON-HOLD (Editable, large centered number) */}
+                        <td className="border border-black dark:border-slate-600 p-1 text-center align-middle font-number font-big-number">
                           <input
                             type="text"
                             value={r.prevCashAdvance ? peso(r.prevCashAdvance) : ''}
@@ -1199,37 +1217,37 @@ export default function WeekSummaryModal({
                                 totalForRelease: (r.status === 'HOLD' ? 0 : r.amount) + r.prevSalary - val,
                               })
                             }}
-                            className="w-full h-8 text-right bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-sm sm:text-base font-number font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
+                            className="w-full h-11 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1 text-xl sm:text-2xl font-number font-big-number font-semibold outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
-                        {/* TOTAL FOR RELEASE */}
-                        <td className="border border-black dark:border-slate-600 px-3.5 py-2.5 text-right font-number text-sm sm:text-base font-medium text-slate-900 dark:text-slate-100">
+                        {/* TOTAL FOR RELEASE (Large centered number) */}
+                        <td className="border border-black dark:border-slate-600 px-2 py-1 text-center align-middle font-number font-big-number text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
                           {r.totalForRelease > 0 ? peso(r.totalForRelease) : ''}
                         </td>
 
                         {/* MOP (Mode of Payment) */}
-                        <td className="border border-black dark:border-slate-600 p-1.5 text-center">
+                        <td className="border border-black dark:border-slate-600 p-1.5 text-center align-middle">
                           <input
                             type="text"
                             value={r.mop}
                             onChange={e => updateRowOverride(rowKey, { mop: e.target.value.toUpperCase() })}
-                            className="w-full h-8 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1 uppercase text-xs sm:text-sm font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
+                            className="w-full h-9 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1 uppercase text-xs sm:text-sm font-semibold outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
-                        {/* ACCOUNT NO */}
-                        <td className="border border-black dark:border-slate-600 p-1.5 text-center">
+                        {/* ACCOUNT NO (Normal, compact size - NOT big) */}
+                        <td className="border border-black dark:border-slate-600 p-1.5 text-center align-middle">
                           <input
                             type="text"
                             value={r.accountNo}
                             onChange={e => updateRowOverride(rowKey, { accountNo: e.target.value })}
-                            className="w-full h-8 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1.5 font-number text-xs sm:text-sm font-normal outline-none tracking-normal transition-all text-slate-900 dark:text-slate-100"
+                            className="w-full h-8 text-center bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-1.5 font-number text-xs sm:text-sm font-medium outline-none tracking-normal transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
                         {/* STATUS (Pure text dropdown, no badge box, not bold) */}
-                        <td className="border border-black dark:border-slate-600 p-1 text-center">
+                        <td className="border border-black dark:border-slate-600 p-1 text-center align-middle">
                           <select
                             value={r.status}
                             onChange={e => {
@@ -1240,7 +1258,7 @@ export default function WeekSummaryModal({
                                 onlineTransfer: s === 'HOLD' ? 0 : Math.max(0, r.amount - r.cash),
                               })
                             }}
-                            className={`w-full h-8 bg-transparent border-0 text-center text-xs sm:text-sm font-medium uppercase outline-none cursor-pointer tracking-wider ${
+                            className={`w-full h-9 bg-transparent border-0 text-center text-xs sm:text-sm font-semibold uppercase outline-none cursor-pointer tracking-wider ${
                               isHold
                                 ? 'text-amber-600 dark:text-amber-400'
                                 : r.status === 'PAID'
@@ -1255,20 +1273,20 @@ export default function WeekSummaryModal({
                         </td>
 
                         {/* REMARKS */}
-                        <td className="border border-black dark:border-slate-600 p-1.5 text-left">
+                        <td className="border border-black dark:border-slate-600 p-1.5 text-left align-middle">
                           <input
                             type="text"
                             value={r.remarks}
                             onChange={e => updateRowOverride(rowKey, { remarks: e.target.value })}
-                            className="w-full h-8 bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-xs sm:text-sm font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
+                            className="w-full h-9 bg-transparent hover:bg-slate-100/60 dark:hover:bg-slate-800/60 focus:bg-white dark:focus:bg-slate-900 border border-transparent hover:border-slate-300 dark:hover:border-slate-700 focus:border-emerald-500 rounded px-2 text-xs sm:text-sm font-normal outline-none transition-all text-slate-900 dark:text-slate-100"
                           />
                         </td>
 
-                        {/* SUB-TOTAL (Merged per branch) */}
+                        {/* SUB-TOTAL (Merged per branch, large bold centered number) */}
                         {idx === 0 ? (
                           <td
                             rowSpan={rows.length}
-                            className="border border-black dark:border-slate-600 px-4 py-2.5 text-right font-number text-sm sm:text-base font-medium bg-slate-50/70 dark:bg-slate-900/40 align-middle text-slate-900 dark:text-slate-100"
+                            className="border border-black dark:border-slate-600 px-3 py-2 text-center align-middle font-number font-big-number text-2xl sm:text-3xl font-bold bg-slate-50/70 dark:bg-slate-900/40 text-slate-900 dark:text-slate-100"
                           >
                             ₱{peso(branchSubtotal)}
                           </td>
@@ -1285,25 +1303,25 @@ export default function WeekSummaryModal({
                   <td colSpan={2} className="border border-black dark:border-slate-600 px-4 py-3 text-center uppercase tracking-wider text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100">
                     TOTALS
                   </td>
-                  <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right text-sm sm:text-base font-number font-semibold text-slate-900 dark:text-slate-100">
+                  <td className="border border-black dark:border-slate-600 px-2 py-1 text-center align-middle text-xl sm:text-2xl font-number font-bold text-slate-900 dark:text-slate-100">
                     {peso(totals.totalAmount)}
                   </td>
-                  <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
+                  <td className="border border-black dark:border-slate-600 px-2 py-1 text-center align-middle font-number text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
                     {totals.totalCash > 0 ? peso(totals.totalCash) : ''}
                   </td>
-                  <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
+                  <td className="border border-black dark:border-slate-600 px-2 py-1 text-center align-middle font-number text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
                     {totals.totalOnline > 0 ? peso(totals.totalOnline) : ''}
                   </td>
-                  <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
+                  <td className="border border-black dark:border-slate-600 px-2 py-1 text-center align-middle font-number text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
                     {totals.totalPrevSalary > 0 ? peso(totals.totalPrevSalary) : ''}
                   </td>
-                  <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-normal text-slate-400">
+                  <td className="border border-black dark:border-slate-600 px-2 py-1 text-center align-middle font-number text-xl sm:text-2xl font-normal text-slate-400">
                   </td>
-                  <td className="border border-black dark:border-slate-600 px-3.5 py-3 text-right font-number text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100">
+                  <td className="border border-black dark:border-slate-600 px-2 py-1 text-center align-middle font-number text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
                     {totals.totalRelease > 0 ? peso(totals.totalRelease) : ''}
                   </td>
                   <td colSpan={4} className="border border-black dark:border-slate-600"></td>
-                  <td className="border border-black dark:border-slate-600 px-4 py-3 text-right text-base sm:text-lg font-number font-semibold bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white">
+                  <td className="border border-black dark:border-slate-600 px-3 py-2 text-center align-middle text-2xl sm:text-3xl font-number font-bold bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white">
                     ₱{peso(totals.totalAmount)}
                   </td>
                 </tr>
