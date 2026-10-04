@@ -32,7 +32,7 @@ export function ticketMatchesNegotiatorFilter(
 
 export const INLINE_EDIT_COLUMNS = new Set([
   'INSTALLER', 'NEGOTIATOR', 'COMMIT', 'BRAND', 'DLR', "CUSTOMER'S NAME",
-  'FINAL DATE', 'SERVICE', 'UPDATE', 'DESTINATION', 'NOTE',
+  'FINAL DATE', 'SERVICE', 'VEHICLE', 'UPDATE', 'DESTINATION', 'NOTE',
 ])
 
 export const DEFAULT_MY_TICKETS_SORT = { column: 'FINAL DATE', direction: 'asc' as const }

@@ -48,6 +48,7 @@ import {
   formatRelayTicketTypeShort,
   formatServiceDriver,
   normalizeDriverInput,
+  parseNameSiteToken,
 } from './ticketDisplay'
 import {
   ticketMatchesDateKey,
@@ -877,7 +878,11 @@ export function getCellRawValue(
     case 'INSTALLER': return getInstallerDisplay(ticket, employees, branchId)
     case 'NEGOTIATOR': return getTicketNegotiatorName(ticket, employees)
     case 'SERVICE': return myTickets ? formatRelayTicketTypeShort(ticket) : getTicketDriverDisplay(ticket)
-    case 'VEHICLE': return myTickets ? '' : getTicketVehicleDisplay(ticket)
+    case 'VEHICLE': {
+      if (myTickets) return ''
+      const raw = getTicketVehicleDisplay(ticket)
+      return parseNameSiteToken(raw).label || raw
+    }
     case 'UPDATE': return getScheduleUpdateDisplay(ticket)
     default: return ''
   }
@@ -934,7 +939,8 @@ export function buildCellPatchBody(
       break
     }
     case 'VEHICLE': {
-      const vehicleVal = normalizeDriverInput(v)
+      const parsed = parseNameSiteToken(v)
+      const vehicleVal = normalizeDriverInput(parsed.label || v)
       body.serviceVehicle = vehicleVal
       body.acDetails = mergeAcMeta(acBase, { serviceVehicle: vehicleVal, service_vehicle: vehicleVal })
       break

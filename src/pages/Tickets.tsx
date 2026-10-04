@@ -53,6 +53,7 @@ import {
 } from '../constants/ticketCategories'
 import { SchedulesShowcase, type ScheduleShowcaseRow } from '../components/schedules/SchedulesShowcase'
 import { VehicleTripLabel } from '../components/tickets/VehicleTripLabel'
+import { fetchVehicles } from '../utils/vehicleApi'
 import { Field } from '../components/tickets/Field'
 import { TicketDetailsModal } from '../components/tickets/TicketDetailsModal'
 import { TicketStatusPickerPopover } from '../components/tickets/TicketStatusPickerPopover'
@@ -544,6 +545,19 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
   void setBulkAssignTrip
   const [bulkAssignSaving, setBulkAssignSaving] = useState(false)
   const [bulkClearSaving, setBulkClearSaving] = useState(false)
+
+  const [directoryVehicles, setDirectoryVehicles] = useState<string[]>([])
+  useEffect(() => {
+    let active = true
+    fetchVehicles()
+      .then(vList => {
+        if (!active || !Array.isArray(vList)) return
+        const names = vList.map(v => (v.name || '').trim()).filter(Boolean)
+        setDirectoryVehicles(names)
+      })
+      .catch(() => {})
+    return () => { active = false }
+  }, [])
 
   useEffect(() => {
     if (loading) {
@@ -4161,6 +4175,29 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
   // Driver or Vehicle fields; the trip number is derived from assignment order instead.
   const vehicleTripLabels = useMemo(() => buildVehicleTripLabels(filtered.map(displayTicket)), [filtered, displayTicket])
 
+  const availableVehicles = useMemo(() => {
+    const seen = new Set<string>()
+    const list: string[] = []
+    for (const name of directoryVehicles) {
+      const key = name.toLowerCase()
+      if (!seen.has(key)) {
+        seen.add(key)
+        list.push(name)
+      }
+    }
+    for (const t of tickets) {
+      const raw = (t.serviceVehicle || t.service_vehicle || '').trim()
+      if (!raw) continue
+      const base = parseNameSiteToken(raw).label || raw
+      const key = base.toLowerCase()
+      if (!seen.has(key)) {
+        seen.add(key)
+        list.push(base)
+      }
+    }
+    return list.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  }, [directoryVehicles, tickets])
+
   const visible = useMemo(() => {
     let list = filtered
     const cmpOpts = { myTickets: isMyTickets, employees: branchEmployees, branchId: activeBranchId, vehicleTripLabels }
@@ -4572,6 +4609,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
     // timer, which cancelled the SERVICE/VEHICLE (and other) cell's save entirely.
     commitCellEdit()
     setExpandedCell(null)
+    setSelectedVehicleTicketId(null)
     if (colLabel === 'STATUS') {
       openStatusPicker(ticket)
       return
@@ -5870,7 +5908,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
       )
     }
 
-    if ((colLabel === 'SERVICE' && !isMyTickets) || (colLabel === 'VEHICLE' && !isMyTickets)) {
+    if (colLabel === 'SERVICE' && !isMyTickets) {
       const roster = rosterForTicket(ticket)
       const options = roster.drivers
       const listId = `ticket-roster-${ticket.id}-${colLabel}`
@@ -5889,10 +5927,39 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
             onKeyDown={onKeyDown}
             className="w-full rounded-md outline-none"
             style={inputStyle}
-            placeholder={colLabel === 'VEHICLE' ? 'Type vehicle code…' : 'Select or type driver…'}
+            placeholder="Select or type driver…"
           />
           <datalist id={listId}>
             {options.map(name => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
+        </>,
+        colLabel,
+      )
+    }
+
+    if (colLabel === 'VEHICLE' && !isMyTickets) {
+      const listId = `ticket-roster-${ticket.id}-${colLabel}`
+      return wrapEditingCell(
+        <>
+          <input
+            autoFocus
+            disabled={isSaving}
+            type="text"
+            list={listId}
+            value={editingCell.value}
+            onChange={e => syncDraftValue(e.target.value.toUpperCase())}
+            onBlur={onBlur}
+            onClick={e => e.stopPropagation()}
+            onMouseDown={e => e.stopPropagation()}
+            onKeyDown={onKeyDown}
+            className="w-full rounded-md outline-none uppercase font-bold"
+            style={{ ...inputStyle, textTransform: 'uppercase' }}
+            placeholder="Type vehicle code…"
+          />
+          <datalist id={listId}>
+            {availableVehicles.map(name => (
               <option key={name} value={name} />
             ))}
           </datalist>
@@ -6363,16 +6430,17 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
       const vehicleBaseName = parsedVehicle.label || vehicleCode
       const vehicleTripNumber = parsedVehicle.site === Number.MAX_SAFE_INTEGER ? '' : String(parsedVehicle.site)
       if (!vehicleCode) {
-        return (
+        return withEditPencil(
           <span
             className="block w-full text-center font-bold tracking-wide uppercase leading-tight rounded"
             style={{ color: isPendingRow ? '#FDE047' : (isLight ? '#D97706' : '#FACC15'), opacity: rowGhost ? 0.72 : 1 }}
           >
             N/A
-          </span>
+          </span>,
+          ticket, label, rowGhost, rowIndex,
         )
       }
-      return (
+      return withEditPencil(
         <VehicleTripLabel
           name={vehicleBaseName}
           tripNumber={vehicleTripNumber}
@@ -6395,7 +6463,8 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
             setDraggedVehicleTicketId(null)
             setVehicleDropTargetId(null)
           }}
-        />
+        />,
+        ticket, label, rowGhost, rowIndex,
       )
     }
 
@@ -7720,7 +7789,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                               const emptyCellInset = (isCellEmpty && !isColoredRow)
                                 ? `inset 0 0 0 1px ${isLight ? 'rgba(148,163,184,0.28)' : 'rgba(148,163,184,0.18)'}`
                                 : undefined
-                              const isSelectedVehicleCell = col.label === 'VEHICLE' && selectedVehicleTicketId === ticket.id
+                              const isSelectedVehicleCell = col.label === 'VEHICLE' && selectedVehicleTicketId === ticket.id && !isEditingCell
                               // Resched ghosts alone keep remarks editable (one shared field, not
                               // per-date state) — every other edit affordance stays locked on ghosts.
                               const allowGhostCellEdit = isGhost && ghostKind === 'resched' && col.label === 'UPDATE'
@@ -7749,9 +7818,16 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                                       openStatusPicker(ticket, 'inline', e.currentTarget as HTMLElement)
                                       return
                                     }
-                                    // VEHICLE is drag-to-reorder now — a tap-to-view-details popup
-                                    // on the same cell just gets in the way of grabbing it.
-                                    if (col.label === 'VEHICLE' || col.label === 'TICKET NO') return
+                                    if (col.label === 'VEHICLE') {
+                                      const hasVehicle = Boolean(vehicleTripLabels.get(ticket.id || '') || getTicketVehicleDisplay(displayTicket(ticket)))
+                                      if (canEdit && !isGhost && !isTicketClosed(ticket) && !hasVehicle) {
+                                        startCellEdit(ticket, col.label, e.currentTarget as HTMLElement, idx)
+                                        return
+                                      }
+                                      setSelectedVehicleTicketId(prev => (prev === ticket.id ? null : ticket.id))
+                                      return
+                                    }
+                                    if (col.label === 'TICKET NO') return
                                     // Closed tickets: COMMIT and UPDATE cells are strictly read-only and unclickable
                                     if (isTicketClosed(ticket) && (col.label === 'COMMIT' || col.label === 'UPDATE')) return
                                     // INSTALLER/NEGOTIATOR are strict dropdown pickers — a single
@@ -7771,12 +7847,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                                     e.preventDefault()
                                     e.stopPropagation()
                                     if (!canEdit || isTicketClosed(ticket) || isEditingCell || (isGhost && !allowGhostCellEdit)) return
-                                    if (col.label === 'VEHICLE' || col.label === 'TICKET NO') {
-                                      if (col.label === 'VEHICLE') {
-                                        setSelectedVehicleTicketId(prev => (prev === ticket.id ? null : ticket.id))
-                                      }
-                                      return
-                                    }
+                                    if (col.label === 'TICKET NO') return
                                     if (INLINE_EDIT_COLUMNS.has(col.label)) {
                                       startCellEdit(ticket, col.label, undefined, idx)
                                     }
