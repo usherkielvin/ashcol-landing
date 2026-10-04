@@ -5334,6 +5334,11 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
       setPaymentPrompt({ ticket: full, nextStatus: getScheduleStatusValue(full) || 'DONE_INSTALLED', updateOnly: true })
       setPromptMode(initialPaymentPromptMode(payment.mode))
       setPromptAmount(payment.amount > 0 ? String(payment.amount) : '')
+      // Editing an existing split payment: start from what is saved, not from empty fields.
+      const split = getPaymentBreakdown(full)
+      const splitAmount = (mode: string) => split.find(e => e.mode === mode)?.amount
+      setPromptHybridCash(splitAmount('CASH') ? String(splitAmount('CASH')) : '')
+      setPromptHybridGcash(splitAmount('GCASH') ? String(splitAmount('GCASH')) : '')
       return
     }
     if (!editModalOpen) openEditModal(full)

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import ReactDOM from 'react-dom'
-import { AlertCircle, ArrowLeft, Check, CheckCircle2, FileText, Loader2, Lock, RefreshCw, Wallet, X, XCircle, ClipboardList } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Check, CheckCircle2, FileText, Loader2, Lock, Pencil, RefreshCw, Wallet, X, XCircle, ClipboardList } from 'lucide-react'
 import {
   type Ticket,
   type ScheduleOutcome,
@@ -17,6 +17,7 @@ import {
   getPreferredDateKey,
   formatDisplayDate,
   formatCombinedPayment,
+  resolveTicketPayment,
   getPaymentBreakdown,
   formatPaymentBreakdownText,
   resolveInstallerFieldRaw,
@@ -109,6 +110,7 @@ export function CloseTicketDialog({
 
   const photos = useMemo(() => parseTicketPhotos(getTicketPhotosRaw(full)), [full])
   const breakdown = getPaymentBreakdown(full)
+  const payment = resolveTicketPayment(full)
   const finalDate = getFinalDateKey(full) || getPreferredDateKey(full)
   const meta = parseAcMeta(full)
   const unitLine = parseBrand(full)
@@ -213,7 +215,26 @@ export function CloseTicketDialog({
                       <p className="text-xs font-black uppercase tracking-wide flex items-center gap-1.5" style={{ color: textPrimary }}>
                         <Icon className="w-3.5 h-3.5" style={{ color: textMuted }} /> {title}
                       </p>
-                      {passed ? (
+                      {passed && kind === 'payment' ? (
+                        <div className="mt-1 flex flex-col gap-0.5">
+                          <p className="flex flex-wrap items-center gap-1.5">
+                            <span
+                              className="px-1.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wide"
+                              style={{ backgroundColor: isLight ? '#dcfce7' : 'rgba(22,163,74,0.18)', color: ok }}
+                            >
+                              {payment.mode}
+                            </span>
+                            <span className="text-sm font-black" style={{ color: textPrimary }}>
+                              ₱{payment.amount.toLocaleString('en-PH')}
+                            </span>
+                          </p>
+                          {breakdown.length > 1 && (
+                            <p className="text-[11px] font-semibold" style={{ color: textMuted }}>
+                              {breakdown.map(e => `${e.mode} ₱${e.amount.toLocaleString('en-PH')}`).join(' + ')}
+                            </p>
+                          )}
+                        </div>
+                      ) : passed ? (
                         <p className="text-[11px] font-semibold mt-0.5" style={{ color: textMuted }}>{hint}</p>
                       ) : (
                         <ul className="mt-1 flex flex-col gap-0.5">
@@ -235,6 +256,16 @@ export function CloseTicketDialog({
                         className="shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-black text-white bg-emerald-600 hover:bg-emerald-500 cursor-pointer active:scale-95 transition-all"
                       >
                         {fix}
+                      </button>
+                    )}
+                    {passed && kind === 'payment' && (
+                      <button
+                        type="button"
+                        onClick={() => onFix(kind, full)}
+                        className="shrink-0 px-2.5 py-1.5 rounded-lg border text-[11px] font-black flex items-center gap-1 cursor-pointer hover:bg-slate-500/10 active:scale-95 transition-all"
+                        style={{ borderColor: border, color: textPrimary }}
+                      >
+                        <Pencil className="w-3 h-3" /> Edit
                       </button>
                     )}
                   </div>
