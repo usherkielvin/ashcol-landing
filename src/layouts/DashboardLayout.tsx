@@ -733,24 +733,25 @@ export default function DashboardLayout() {
             role="dialog"
             aria-label="Navigation menu"
           >
-            {/* Brand band — dark in both themes so the status-bar clock/icons stay readable */}
+            {/* Brand band — same surface as the page and status bar; green only as an accent */}
             <div
-              className="shrink-0 bg-gradient-to-br from-[#0a180f] via-[#14532d] to-[#1f7a3d] text-white"
-              style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+              className="shrink-0"
+              style={{ paddingTop: 'env(safe-area-inset-top, 0px)', backgroundColor: bg, borderBottom: `1px solid ${border}`, color: textPrimary }}
             >
               <div className="h-14 flex items-center justify-between px-4">
                 <div className="flex items-center gap-3 min-w-0">
                   <img src={logoImg} alt="ASHCOL" className="w-9 h-9 object-contain rounded-lg shrink-0" />
                   <div className="min-w-0">
                     <div className="text-[15px] font-black tracking-wide font-['Poppins',sans-serif] leading-tight">ASHCOL</div>
-                    <div className="text-[9px] font-bold tracking-[3px] text-green-400 uppercase">Portal</div>
+                    <div className="text-[9px] font-bold tracking-[3px] text-emerald-500 uppercase">Portal</div>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setSidebarOpen(false)}
                   aria-label="Close menu"
-                  className="w-9 h-9 rounded-full flex items-center justify-center bg-white/10 active:scale-95 transition-transform"
+                  className="w-9 h-9 rounded-full flex items-center justify-center active:scale-95 transition-transform"
+                  style={{ backgroundColor: 'rgba(16,185,129,0.12)', color: '#10B981' }}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1118,15 +1119,6 @@ export default function DashboardLayout() {
             paddingRight: 'env(safe-area-inset-right, 0px)',
           }}
         >
-          {/* Phone status-bar strip: the app now draws under the status bar, whose clock/icons are
-              white on iOS — so in light mode that strip stays dark to keep them readable. */}
-          {isLight && (
-            <div
-              aria-hidden
-              className="md:hidden absolute top-0 inset-x-0 pointer-events-none bg-[#0A1120]"
-              style={{ height: 'env(safe-area-inset-top, 0px)' }}
-            />
-          )}
           {/* Top row: title + icons */}
           <div className="h-14 flex items-center justify-between px-4 md:px-6 lg:px-8 relative min-w-0">
             <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0 mr-2">
