@@ -88,7 +88,20 @@ export default function Login() {
   useEffect(() => {
     const html = document.documentElement
     html.classList.add('login-shell')
+    // The login screen is always dark, so tint the phone's status bar / overscroll area to match
+    // it regardless of the app theme (the portal's own effect restores its color afterwards).
+    const LOGIN_BG = '#060B18'
+    const meta = document.querySelector('meta[name="theme-color"]')
+    const prevMeta = meta?.getAttribute('content') ?? null
+    const prevHtmlBg = html.style.backgroundColor
+    const prevBodyBg = document.body.style.backgroundColor
+    meta?.setAttribute('content', LOGIN_BG)
+    html.style.backgroundColor = LOGIN_BG
+    document.body.style.backgroundColor = LOGIN_BG
     return () => {
+      if (meta && prevMeta !== null) meta.setAttribute('content', prevMeta)
+      html.style.backgroundColor = prevHtmlBg
+      document.body.style.backgroundColor = prevBodyBg
       html.classList.remove('login-shell')
       // Clear any leftover inline locks from earlier experiments
       html.style.removeProperty('overflow')

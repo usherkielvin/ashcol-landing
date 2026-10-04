@@ -1,12 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import ReactDOM from 'react-dom'
 import {
-  Plus, Search, X, Edit3, AlertTriangle, CalendarDays,
-  Eye, Loader2, Pencil,
-  ArrowUp, ArrowDown, ArrowUpDown, Copy, MapPin, Maximize2,
-  UsersRound, ChevronDown, SlidersHorizontal, CalendarRange,
-  Download, MessageSquare,
+  AlertTriangle, CalendarDays, Copy, Loader2, Pencil, Plus,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -45,8 +40,7 @@ import { type RelayEditDraft } from '../components/relays/relayEditForm'
 import { parseStoreVendor } from '../utils/parseStoreVendor'
 import { mapRelayDraftToScheduleEditForm } from '../utils/ticketEditBridge'
 import {
-  FIELD_TICKET_CATEGORIES,
-  categoryDefaultServiceType,
+    categoryDefaultServiceType,
   inferCategoryFromTicket,
   isFieldCategory,
   type TicketCategoryValue,
@@ -54,11 +48,10 @@ import {
 import { SchedulesShowcase, type ScheduleShowcaseRow } from '../components/schedules/SchedulesShowcase'
 import { VehicleTripLabel } from '../components/tickets/VehicleTripLabel'
 import { fetchVehicles } from '../utils/vehicleApi'
-import { Field } from '../components/tickets/Field'
 import { TicketDetailsModal } from '../components/tickets/TicketDetailsModal'
 import { TicketStatusPickerPopover } from '../components/tickets/TicketStatusPickerPopover'
 import { CloseTicketDialog } from '../components/tickets/CloseTicketDialog'
-import { ColumnHeaderContextMenu, HiddenColumnsButton } from '../components/tickets/ColumnVisibilityControls'
+import { ColumnHeaderContextMenu } from '../components/tickets/ColumnVisibilityControls'
 import { TicketScheduleDetailsPopover } from '../components/tickets/TicketScheduleDetailsPopover'
 import { TicketFinalDatePickerPopover } from '../components/tickets/TicketFinalDatePickerPopover'
 import { TableCustomSelectDropdown, type DropdownOption } from '../components/tickets/TableCustomSelectDropdown'
@@ -67,20 +60,34 @@ import { ExcelImportResultsModal } from '../components/tickets/ExcelImportResult
 import { CustomDatePickerModal } from '../components/tickets/CustomDatePickerModal'
 import TicketHistoryGraphModal from '../components/TicketHistoryGraphModal'
 import { guessDistrict } from '../utils/districtGuesser'
+import { TicketContextMenu } from './tickets/popups/TicketContextMenu'
+import { ExpandedCellPopover } from './tickets/popups/ExpandedCellPopover'
+import { RescheduleDialog } from './tickets/modals/RescheduleDialog'
+import { ContinuationDialog } from './tickets/modals/ContinuationDialog'
+import { PaymentPromptModal } from './tickets/modals/PaymentPromptModal'
+import { MonthFilterModal } from './tickets/modals/MonthFilterModal'
+import { MyTicketsFilterModal } from './tickets/modals/MyTicketsFilterModal'
+import { AddTicketModal } from './tickets/modals/AddTicketModal'
+import { OverviewSearchView } from './tickets/overview/OverviewSearchView'
+import { MyTicketsToolbar } from './tickets/toolbars/MyTicketsToolbar'
+import { SchedulesToolbar } from './tickets/toolbars/SchedulesToolbar'
+import { MonthViewBanner } from './tickets/toolbars/MonthViewBanner'
+import { SortResetStrip } from './tickets/toolbars/SortResetStrip'
+import { TicketMobileCard } from './tickets/mobile/TicketMobileCard'
+import { TicketsTableHeader } from './tickets/table/TicketsTableHeader'
 import {
-  CLOSING_SCHEDULE_STATUSES, INLINE_EDIT_COLUMNS, SCHEDULES_ACTIVE_DATE_KEY, SCHEDULE_CLOSING_OPTS,
-  canEditClosedTicket, getClosedStamp, isTicketClosed, isTicketLockedFor, readCloseError, reopenTicketRequest,
-  SCHEDULE_PENDING_OPTS, SCHEDULE_PENDING_STATUS_VALUES, TABLE_ROW_HEIGHT,
+  CLOSING_SCHEDULE_STATUSES, INLINE_EDIT_COLUMNS, SCHEDULES_ACTIVE_DATE_KEY, canEditClosedTicket, getClosedStamp, isTicketClosed, isTicketLockedFor, readCloseError, reopenTicketRequest,
+  SCHEDULE_PENDING_STATUS_VALUES, TABLE_ROW_HEIGHT,
   applyImportFieldsFromRow, applyReturnToNegotiatorMyTicketsPatch, applyScheduleStatusPatch,
   buildArchiveServiceReportPayload, buildCellPatchBody, buildImportCreateRow, buildPatchImportBody,
   buildReschedulePatchBody, buildVehicleTripLabels, compareTicketsByColumn, computeSafePopoverPosition,
-  currentWeekMondayDateKey, defaultSortForSchedulesView, enrichCompletePatchBody, filterOverviewSearchResults,
+  defaultSortForSchedulesView, enrichCompletePatchBody, filterOverviewSearchResults,
   fetchTicketById, findTicketInListByRef, fmtPhone, formatAddress, formatDateKeyLabel, formatDateToKey,
-  formatDisplayDate, formatGhostRemarks, formatMonthFilterLabel, formatNegotiatorLabel, formatInstallerLabel, formatPaymentAmount,
+  formatDisplayDate, formatGhostRemarks, formatNegotiatorLabel, formatInstallerLabel, formatPaymentAmount,
   formatPaymentBreakdownText, formatRelayTicketTypeShort, formatServiceDriver, formatSimpleDateShort,
   buildRescheduleGhostAcUpdates, getArchivedScheduleDate, getBranchDisplayName, getCellRawValue, getContinuationDates, getCustomerDisplayName,
   getEmptyRequiredColumnsForClose, getF, getFinalDateKey, getInstalledDateKey,
-  getInstallerDisplay, getNextContinuationDate, getOverviewStatusBadge, getPaymentBreakdown, getPaymentMode,
+  getInstallerDisplay, getNextContinuationDate, getPaymentBreakdown, getPaymentMode,
   getPreferredDateKey, getPreviousScheduleDates, getScheduleGhostKind, getScheduleOutcome, getSchedulePaymentDisplay, getScheduleRowColors,
   getScheduleStatusBadgeStyle, getScheduleStatusDisplay, getScheduleStatusLabel, getScheduleStatusValue,
   getScheduleUpdateDisplay, getTicketCommitDisplay, getTicketDriverDisplay, getTicketDriverName,
@@ -88,7 +95,7 @@ import {
   isCancelledScheduleGhost, isCancelledTicket, isCompletedGhostOnDate, isInstalledRemarks, isInstalledWorkflowStatus,
   isMovedToRescheduleRemark, isNoPaymentMode, isOverduePendingScheduleTicket, isReschedulePending, isScheduleGhostOnDate, isTempTicketId,
   isTicketNotFoundError, isUnmatchedImportComplete, lookupTicketByNumberOnServer, mergeAcMeta, mergePatchBodies, mergeServerListWithLocalEdits,
-  mergeTicketPatch, namesMatchLoosely, normalizeCustomerKey, normalizeImportPaymentMode, parseAcMeta, parseBrand,
+  mergeTicketPatch, normalizeCustomerKey, normalizeImportPaymentMode, parseAcMeta, parseBrand,
   parseDistrict, parseImportMoney, parseNameSiteToken, parseServiceDriverValue,
   pathnameForSurface, postArchiveServiceReport, preserveLocalScheduleFields, promoteTempTicketState, qualifiesForInstallComplete,
   resolveFormScheduleDateKey, resolveInitialScheduleDate, resolveNegotiatorDisplayName, resolveNegotiatorName,
@@ -216,7 +223,6 @@ function AutoFitText({ text, style, title, minScale = 0.55, align = 'center' }: 
 
 /** Modes offered by the Payment Details popup. The popup's value must always be one of these, otherwise the <select> shows
  *  the first option (CASH) while the saved value is something else (e.g. "NO PAYMENT", which the backend treats as "clear"). */
-const PAYMENT_PROMPT_MODES = ['NO PAYMENT', 'CASH', 'BANK TRANSFER', 'GCASH', 'CHEQUE', 'FOR COLLECTION', 'HYBRID', 'FREE INSTALL', 'PENDING']
 /** What the popup starts on for a ticket whose payment is `mode`. A ticket with no payment starts on NO PAYMENT, which has no
  *  amount field and cannot be saved: the person has to pick a real mode (CASH, GCASH…) first, which is what reveals the amount. */
 function initialPaymentPromptMode(mode?: string | null): string {
@@ -354,17 +360,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     return () => clearTimeout(timer)
   }, [overviewSearchInput, activeTab, fetchOverviewTickets])
 
-  const highlightMatch = (text: string, query: string) => {
-    if (!query.trim()) return text
-    const parts = text.split(new RegExp(`(${query})`, 'gi'))
-    return parts.map((part, i) =>
-      part.toLowerCase() === query.toLowerCase() ? (
-        <mark key={i} style={{ backgroundColor: '#fef08a', color: '#000', fontWeight: 600 }}>{part}</mark>
-      ) : (
-        part
-      )
-    )
-  }
 
   const role = (user?.role || '').toLowerCase()
   const isCustomer = role === 'customer'
@@ -397,7 +392,6 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
     }
     return user?.branchId || ''
   })()
-  const isTaguig = isTaguigBranchRef(activeBranchId)
   const isTaguigServices = isTaguigServicesScope(activeBranchId, user?.email, user?.jobTitle)
   const isReadOnlySchedule = isBranchReadOnlyForUser(activeBranchId, user)
   const canEdit = (isAdmin || isManager || isEmployee) && !isReadOnlySchedule
@@ -580,60 +574,6 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
   const [searchQuery, setSearchQuery] = useState('')
   /** Admin My Tickets: filter pending/assigned rows to one negotiator (e.g. GLESEL). */
   const [myTicketsNegotiatorFilter, setMyTicketsNegotiatorFilter] = useState('')
-  const [negoDropdownOpen, setNegoDropdownOpen] = useState(false)
-  const [negoDropdownPos, setNegoDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null)
-  const negoDropdownRef = useRef<HTMLButtonElement>(null)
-  const negoDropdownPopRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!negoDropdownOpen) return
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as Node
-      if (negoDropdownRef.current && negoDropdownRef.current.contains(target)) return
-      if (negoDropdownPopRef.current && negoDropdownPopRef.current.contains(target)) return
-      setNegoDropdownOpen(false)
-    }
-    const handleScroll = (e: Event) => {
-      const target = e.target as Node
-      if (negoDropdownPopRef.current && negoDropdownPopRef.current.contains(target)) return
-      setNegoDropdownOpen(false)
-    }
-    window.addEventListener('mousedown', handleClickOutside)
-    window.addEventListener('scroll', handleScroll, true)
-    return () => {
-      window.removeEventListener('mousedown', handleClickOutside)
-      window.removeEventListener('scroll', handleScroll, true)
-    }
-  }, [negoDropdownOpen])
-
-  // My Tickets month picker — custom button + floating year/month grid popover,
-  // same mechanics as the negotiator dropdown above (position-tracked portal, outside-click close).
-  const [myTicketsMonthPickerOpen, setMyTicketsMonthPickerOpen] = useState(false)
-  const [myTicketsMonthPickerPos, setMyTicketsMonthPickerPos] = useState<{ top: number; left: number; width: number } | null>(null)
-  const [myTicketsMonthPickerYear, setMyTicketsMonthPickerYear] = useState(() => new Date().getFullYear())
-  const myTicketsMonthPickerRef = useRef<HTMLButtonElement>(null)
-  const myTicketsMonthPickerPopRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!myTicketsMonthPickerOpen) return
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as Node
-      if (myTicketsMonthPickerRef.current && myTicketsMonthPickerRef.current.contains(target)) return
-      if (myTicketsMonthPickerPopRef.current && myTicketsMonthPickerPopRef.current.contains(target)) return
-      setMyTicketsMonthPickerOpen(false)
-    }
-    const handleScroll = (e: Event) => {
-      const target = e.target as Node
-      if (myTicketsMonthPickerPopRef.current && myTicketsMonthPickerPopRef.current.contains(target)) return
-      setMyTicketsMonthPickerOpen(false)
-    }
-    window.addEventListener('mousedown', handleClickOutside)
-    window.addEventListener('scroll', handleScroll, true)
-    return () => {
-      window.removeEventListener('mousedown', handleClickOutside)
-      window.removeEventListener('scroll', handleScroll, true)
-    }
-  }, [myTicketsMonthPickerOpen])
 
   const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' }>(
     () => defaultSortForSchedulesView(isMyTickets),
@@ -830,16 +770,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
       setDateFilter('')
       return
     }
-    if (isTaguig) {
-      try {
-        const persisted = sessionStorage.getItem(SCHEDULES_ACTIVE_DATE_KEY)
-        if (persisted && /^\d{4}-\d{2}-\d{2}$/.test(persisted)) return
-      } catch {
-        // ignore
-      }
-      setDateFilter(currentWeekMondayDateKey())
-    }
-  }, [isMyTickets, isTaguig])
+  }, [isMyTickets])
 
   // ─────────────────────────────────────────────────────────────
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; ticket: Ticket } | null>(null)
@@ -6879,570 +6810,97 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
       />
 
       {/* ── Portal: My Tickets toolbar (Active Branch + negotiator filter) ── */}
-      {isMyTickets && ReactDOM.createPortal(
-        <div className="w-full px-3 md:px-5 pt-3 pb-2 flex flex-col md:flex-row gap-3 bg-white dark:bg-[#0A1120] border-b" style={{ borderColor: border }}>
-
-          {/* Top Row / Left: Search Bar */}
-          <div className="flex items-center gap-2.5 w-full md:w-[320px] h-10 px-3.5 rounded-lg border transition-all shrink-0 focus-within:border-emerald-500/60"
-            style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <Search className="w-4 h-4 shrink-0 text-slate-400" />
-            <input
-              type="search"
-              placeholder="Search names, phone, ticket..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="bg-transparent outline-none text-xs flex-1 min-w-0 font-medium placeholder:text-slate-400"
-              style={{ color: textPrimary }}
-              onClick={e => e.stopPropagation()}
-            />
-            {searchQuery && (
-              <button type="button" onClick={e => { e.stopPropagation(); setSearchQuery('') }}
-                className="shrink-0 p-1 rounded-full hover:bg-slate-500/10 transition-colors text-slate-400">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          {/* Bottom Row / Right: Horizontal Scrolling Filters (Guaranteed to scroll, no squishing) */}
-          <div
-            className="flex flex-nowrap items-center gap-2.5 overflow-x-auto no-scrollbar w-full pb-1 md:pb-0 flex-1 md:justify-end"
-            style={{ WebkitOverflowScrolling: 'touch' }}
-          >
-            {/* Negotiator */}
-            {!isAdmin && (
-              <div
-                className="shrink-0 whitespace-nowrap flex items-center justify-center h-9 px-3 rounded-md border text-[11px] font-bold shadow-sm"
-                style={{ backgroundColor: inputBg, borderColor: inputBorder, color: isLight ? '#15803d' : '#4ade80' }}
-              >
-                <span className="uppercase tracking-wide">
-                  {formatNegotiatorLabel({ name: user?.name, branchId: user?.branchId }, true) || 'ME'}
-                </span>
-              </div>
-            )}
-
-            {isAdmin && (
-              <div className="relative shrink-0 flex items-center">
-                <button
-                  ref={negoDropdownRef}
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    if (negoDropdownOpen) {
-                      setNegoDropdownOpen(false)
-                      return
-                    }
-                    const rect = e.currentTarget.getBoundingClientRect()
-                    setNegoDropdownPos({ top: rect.bottom + 6, left: rect.left, width: 220 })
-                    setNegoDropdownOpen(true)
-                  }}
-                  className="shrink-0 whitespace-nowrap flex items-center gap-1.5 h-9 px-3 rounded-md border text-[11px] font-bold shadow-sm transition-all"
-                  style={{
-                    backgroundColor: myTicketsNegotiatorFilter ? `${green}15` : inputBg,
-                    borderColor: myTicketsNegotiatorFilter ? green : inputBorder,
-                    color: myTicketsNegotiatorFilter ? green : (isLight ? '#15803d' : '#4ade80'),
-                  }}
-                >
-                  <span className="uppercase tracking-wide truncate max-w-[140px]">
-                    {myTicketsNegotiatorFilter
-                      ? formatNegotiatorLabel(myTicketsNegotiatorOptions.find(emp => emp.id === myTicketsNegotiatorFilter) || {}, true)
-                      : 'ALL NEGOTIATORS'}
-                  </span>
-                  <ChevronDown className="w-3.5 h-3.5 opacity-70 shrink-0" />
-                </button>
-
-                {negoDropdownOpen && negoDropdownPos && ReactDOM.createPortal(
-                  <div
-                    ref={negoDropdownPopRef}
-                    className="fixed z-[99999] overflow-y-auto rounded-xl border shadow-2xl py-1 animate-in fade-in duration-100 select-none"
-                    style={{
-                      top: negoDropdownPos.top, left: negoDropdownPos.left, width: negoDropdownPos.width, maxHeight: 210,
-                      backgroundColor: isLight ? '#ffffff' : '#0a1120', borderColor: isLight ? '#cbd5e1' : '#334155',
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => { setMyTicketsNegotiatorFilter(''); setNegoDropdownOpen(false) }}
-                      className="flex items-center justify-between w-full px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-left transition-colors"
-                      style={{ color: !myTicketsNegotiatorFilter ? green : textPrimary }}
-                    >
-                      <span>ALL NEGOTIATORS</span>
-                      {!myTicketsNegotiatorFilter && <span className="text-emerald-500">✓</span>}
-                    </button>
-                    <div className="my-1 border-t opacity-30" style={{ borderColor: inputBorder }} />
-                    {myTicketsNegotiatorOptions.map(emp => {
-                      const isSelected = myTicketsNegotiatorFilter === emp.id
-                      return (
-                        <button
-                          key={emp.id} type="button"
-                          onClick={() => { setMyTicketsNegotiatorFilter(emp.id); setNegoDropdownOpen(false) }}
-                          className="flex items-center justify-between w-full px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-left transition-colors"
-                          style={{ color: isSelected ? green : textPrimary }}
-                        >
-                          <span className="truncate">{formatNegotiatorLabel(emp, true)}</span>
-                          {isSelected && <span className="text-emerald-500">✓</span>}
-                        </button>
-                      )
-                    })}
-                  </div>,
-                  document.body,
-                )}
-              </div>
-            )}
-
-            {/* Status Filters (Pending/Closing) */}
-            {[{ value: 'PENDING_GROUP', label: 'Pending' }, { value: 'CLOSING_GROUP', label: 'Closing' }].map(opt => {
-              const active = myTicketsStatusFilter === opt.value
-              return (
-                <button
-                  key={opt.value} type="button"
-                  onClick={(e) => { e.stopPropagation(); setMyTicketsStatusFilter(active ? '' : opt.value) }}
-                  className="shrink-0 whitespace-nowrap h-9 px-3 rounded-md text-[11px] font-bold uppercase tracking-wide transition-all border shadow-sm"
-                  style={active
-                    ? { backgroundColor: green, borderColor: green, color: '#ffffff' }
-                    : { backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                >
-                  {opt.label}
-                </button>
-              )
-            })}
-
-            {/* Month Picker */}
-            <div className="relative shrink-0 flex items-center gap-1.5">
-              <button
-                ref={myTicketsMonthPickerRef} type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  if (myTicketsMonthPickerOpen) { setMyTicketsMonthPickerOpen(false); return; }
-                  setMyTicketsMonthPickerYear(myTicketsMonthFilter ? Number(myTicketsMonthFilter.split('-')[0]) : new Date().getFullYear())
-                  const rect = e.currentTarget.getBoundingClientRect()
-                  setMyTicketsMonthPickerPos({ top: rect.bottom + 6, left: Math.max(10, rect.right - 240), width: 240 })
-                  setMyTicketsMonthPickerOpen(true)
-                }}
-                className="shrink-0 whitespace-nowrap flex items-center gap-1.5 h-9 px-3 rounded-md border text-[11px] font-bold transition-all shadow-sm"
-                style={{
-                  backgroundColor: myTicketsMonthFilter ? `${green}15` : inputBg,
-                  borderColor: myTicketsMonthFilter ? green : inputBorder,
-                  color: myTicketsMonthFilter ? green : textPrimary,
-                }}
-              >
-                <CalendarDays className="w-3.5 h-3.5 shrink-0" />
-                <span>{myTicketsMonthFilter ? formatMonthFilterLabel(myTicketsMonthFilter) : 'Month'}</span>
-              </button>
-              {myTicketsMonthFilter && (
-                <button type="button" onClick={() => setMyTicketsMonthFilter('')} className="shrink-0 p-1 rounded-md text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-
-              {/* Calendar popover — not part of the reference snippet, but this is
-                  still the only way to actually pick a month, so it stays wired to
-                  the (repositioned) button above instead of being dropped. */}
-              {myTicketsMonthPickerOpen && myTicketsMonthPickerPos && ReactDOM.createPortal(
-                <div
-                  ref={myTicketsMonthPickerPopRef}
-                  className="fixed z-[99999] rounded-xl border shadow-2xl p-3 animate-in fade-in duration-100 select-none"
-                  style={{
-                    top: myTicketsMonthPickerPos.top,
-                    left: myTicketsMonthPickerPos.left,
-                    width: myTicketsMonthPickerPos.width,
-                    backgroundColor: isLight ? '#ffffff' : '#0a1120',
-                    borderColor: isLight ? '#cbd5e1' : '#334155',
-                    boxShadow: '0 12px 28px rgba(0, 0, 0, 0.5)',
-                  }}
-                  onMouseDown={e => e.stopPropagation()}
-                  onClick={e => e.stopPropagation()}
-                >
-                  {/* Year nav */}
-                  <div className="flex items-center justify-between mb-2">
-                    <button
-                      type="button"
-                      onClick={() => setMyTicketsMonthPickerYear(y => y - 1)}
-                      className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
-                      style={{ color: textMuted }}
-                    >
-                      {'<'}
-                    </button>
-                    <span className="text-sm font-bold" style={{ color: textPrimary }}>
-                      {myTicketsMonthPickerYear}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setMyTicketsMonthPickerYear(y => y + 1)}
-                      className="w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold transition-colors hover:bg-slate-500/10"
-                      style={{ color: textMuted }}
-                    >
-                      {'>'}
-                    </button>
-                  </div>
-
-                  {/* Month grid */}
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((label, idx) => {
-                      const key = `${myTicketsMonthPickerYear}-${String(idx + 1).padStart(2, '0')}`
-                      const isSelected = myTicketsMonthFilter === key
-                      const isCurrentMonth = key === todayDateKey().slice(0, 7)
-                      return (
-                        <button
-                          key={key}
-                          type="button"
-                          onClick={() => { setMyTicketsMonthFilter(key); setMyTicketsMonthPickerOpen(false) }}
-                          className="h-9 rounded-lg text-xs font-bold transition-all"
-                          style={{
-                            color: isSelected ? '#ffffff' : isCurrentMonth ? green : textPrimary,
-                            backgroundColor: isSelected ? green : 'transparent',
-                            border: `1px solid ${isSelected ? green : isCurrentMonth ? green : inputBorder}`,
-                          }}
-                        >
-                          {label}
-                        </button>
-                      )
-                    })}
-                  </div>
-
-                  {/* Footer — quick actions */}
-                  <div className="flex items-center gap-2 pt-3 mt-2 border-t" style={{ borderColor: inputBorder }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const key = todayDateKey().slice(0, 7)
-                        setMyTicketsMonthFilter(key)
-                        setMyTicketsMonthPickerYear(Number(key.split('-')[0]))
-                        setMyTicketsMonthPickerOpen(false)
-                      }}
-                      className="flex-1 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:opacity-90"
-                      style={{ backgroundColor: `${green}22`, color: green }}
-                    >
-                      This month
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setMyTicketsMonthFilter(''); setMyTicketsMonthPickerOpen(false) }}
-                      className="flex-1 py-1.5 rounded-lg text-[11px] font-bold border transition-all hover:opacity-90"
-                      style={{ borderColor: inputBorder, color: textMuted, backgroundColor: 'transparent' }}
-                    >
-                      All months
-                    </button>
-                  </div>
-                </div>,
-                document.body,
-              )}
-            </div>
-
-            {/* Extended Filters Button */}
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setMyTicketsFilterModalOpen(true) }}
-              className="shrink-0 whitespace-nowrap flex items-center gap-1.5 h-9 px-3 rounded-md border text-[11px] font-bold transition-all shadow-sm"
-              style={{
-                backgroundColor: (myTicketsStatusFilter && myTicketsStatusFilter !== 'PENDING_GROUP' && myTicketsStatusFilter !== 'CLOSING_GROUP') ? `${green}15` : inputBg,
-                borderColor: (myTicketsStatusFilter && myTicketsStatusFilter !== 'PENDING_GROUP' && myTicketsStatusFilter !== 'CLOSING_GROUP') ? green : inputBorder,
-                color: (myTicketsStatusFilter && myTicketsStatusFilter !== 'PENDING_GROUP' && myTicketsStatusFilter !== 'CLOSING_GROUP') ? green : textPrimary,
-              }}
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
-              <span>
-                {/* Prevent redundant "Closing" label when using the quick toggles */}
-                {myTicketsMonthFilter
-                  ? formatMonthFilterLabel(myTicketsMonthFilter)
-                  : (myTicketsStatusFilter && myTicketsStatusFilter !== 'PENDING_GROUP' && myTicketsStatusFilter !== 'CLOSING_GROUP')
-                    ? getScheduleStatusLabel(myTicketsStatusFilter)
-                    : 'Filters'
-                }
-              </span>
-            </button>
-
-            {/* Export to Excel — respects whatever's currently filtered/shown above */}
-            <button
-              type="button"
-              onClick={handleExportExcel}
-              disabled={visible.length === 0}
-              title="Export the currently filtered list to Excel"
-              className="shrink-0 whitespace-nowrap flex items-center gap-1.5 h-9 px-3 rounded-md border text-[11px] font-bold transition-all shadow-sm disabled:opacity-50"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-            >
-              <Download className="w-3.5 h-3.5 shrink-0" />
-              <span>Export</span>
-            </button>
-          </div>
-        </div>,
-        document.getElementById('header-toolbar-slot') ?? document.body,
+      {isMyTickets && (
+        <MyTicketsToolbar
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          isAdmin={isAdmin}
+          user={user}
+          formatNegotiatorLabel={formatNegotiatorLabel}
+          myTicketsNegotiatorFilter={myTicketsNegotiatorFilter}
+          setMyTicketsNegotiatorFilter={setMyTicketsNegotiatorFilter}
+          myTicketsNegotiatorOptions={myTicketsNegotiatorOptions}
+          myTicketsStatusFilter={myTicketsStatusFilter}
+          setMyTicketsStatusFilter={setMyTicketsStatusFilter}
+          myTicketsMonthFilter={myTicketsMonthFilter}
+          setMyTicketsMonthFilter={setMyTicketsMonthFilter}
+          onOpenFilterModal={() => setMyTicketsFilterModalOpen(true)}
+          onExportExcel={handleExportExcel}
+          canExport={visible.length > 0}
+          isLight={isLight}
+          border={border}
+          inputBg={inputBg}
+          inputBorder={inputBorder}
+          textPrimary={textPrimary}
+          textMuted={textMuted}
+          green={green}
+        />
       )}
 
       {/* Portal: Toolbar into header slot */}
-      {!isMyTickets && activeTab !== 'overview' && ReactDOM.createPortal(
-        <div className="w-full px-3 md:px-5 pt-3 pb-2 flex flex-col md:flex-row gap-3 bg-white dark:bg-[#0A1120] border-b"
-          style={{ borderColor: tableBorder }}>
-
-          {activeTab === 'schedules' && (
-            <>
-              {/* Mobile Native Date Picker — Whole Element is interactive button */}
-              <div className="flex md:hidden items-center gap-2 w-fit self-start order-2">
-                {/* Plain div, not <button>: iOS Safari (and many Android WebViews) only opens the
-                    native date-picker UI for a genuine, direct tap ON the <input type="date">
-                    itself — a synthetic .click()/.showPicker() call forwarded from a sibling
-                    button's onClick is silently ignored there, which is why this control used to
-                    be dead on mobile. The input now sits on top (pointer-events enabled, last in
-                    DOM + absolutely positioned) so the real tap lands on it directly; the visual
-                    chrome underneath is pointer-events-none so it never intercepts the tap. */}
-                <div
-                  className="relative inline-flex items-center gap-2 h-9 px-3 rounded-xl border font-bold text-xs shadow-xs transition-all active:scale-[0.98]"
-                  style={{
-                    backgroundColor: inputBg,
-                    borderColor: dateFilter && dateFilter !== todayDateKey() ? green : inputBorder,
-                    color: textPrimary,
-                  }}
-                >
-                  <CalendarDays className="w-3.5 h-3.5 shrink-0 pointer-events-none" style={{ color: green }} strokeWidth={2.2} />
-                  <span className="text-xs font-black uppercase tracking-wide whitespace-nowrap pointer-events-none">
-                    {dateFilter === todayDateKey()
-                      ? `Today · ${formatDisplayDate(dateFilter, '')}`
-                      : dateFilter
-                        ? new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', {
-                            weekday: 'short',
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          }).toUpperCase()
-                        : "TODAY'S SCHEDULE"}
-                  </span>
-                  <ChevronDown className="w-3.5 h-3.5 opacity-50 shrink-0 ml-0.5 pointer-events-none" style={{ color: textMuted }} />
-
-                  {/* Native Date Picker Input — receives the tap directly, see comment above */}
-                  <input
-                    id="mobile-native-date-picker-input"
-                    type="date"
-                    value={dateFilter || todayDateKey()}
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        handleDateFilterChange(e.target.value)
-                      }
-                    }}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    aria-label="Pick schedule date"
-                  />
-                </div>
-
-                {dateFilter && dateFilter !== todayDateKey() && (
-                  <button
-                    type="button"
-                    onClick={() => handleDateFilterChange(todayDateKey())}
-                    className="h-9 px-2.5 rounded-xl border text-[11px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/20 active:scale-95 transition-colors duration-150 cursor-pointer shrink-0"
-                    title="Reset to today"
-                  >
-                    Today
-                  </button>
-                )}
-              </div>
-
-              {/* Desktop Filters & Dates ribbon — hidden on mobile screens */}
-              <div className="hidden md:flex flex-nowrap items-center gap-2.5 overflow-x-auto no-scrollbar w-full pb-1 md:pb-0 flex-1 order-2 md:order-1">
-                {isReadOnlySchedule && (
-                  <div className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-xs font-black shrink-0">
-                    <Eye className="w-3.5 h-3.5 shrink-0" />
-                    <span>READ ONLY SCHEDULE</span>
-                  </div>
-                )}
-                {/* Segmented weekly date pills */}
-                <div className="flex items-center gap-1 bg-slate-100 dark:bg-[#030712] p-1 rounded-lg shrink-0">
-                  {weeklyTabs.map(tab => {
-                    const isActive = dateFilter === tab.key
-                    return (
-                      <button
-                        type="button"
-                        key={tab.key}
-                        onClick={() => handleDateFilterChange(tab.key)}
-                        className="h-8 px-3 rounded-md text-[12px] font-semibold whitespace-nowrap shrink-0 transition-colors duration-150 active:scale-95"
-                        style={{
-                          backgroundColor: isActive ? green : 'transparent',
-                          color: isActive ? '#ffffff' : textMuted,
-                        }}
-                      >
-                        {tab.dayName} {tab.dateLabel}
-                      </button>
-                    )
-                  })}
-                </div>
-
-                {/* Custom Date Picker Trigger */}
-                <div className="relative shrink-0 select-none">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      const now = dateFilter ? new Date(dateFilter + 'T00:00:00') : new Date()
-                      const validDate = !isNaN(now.getTime()) ? now : new Date()
-                      setCustomDateCalMonth({ year: validDate.getFullYear(), month: validDate.getMonth() })
-                      setCustomDatePickerOpen(true)
-                    }}
-                    className="relative flex items-center gap-2 h-10 min-w-[10.5rem] px-3 lg:px-4 rounded-full border shrink-0 cursor-pointer transition-[background-color,color,border-color] duration-150 hover:opacity-90 active:scale-[0.98] select-none"
-                    style={{
-                      backgroundColor: isCustomSelected ? green : inputBg,
-                      borderColor: isCustomSelected ? green : inputBorder,
-                      color: isCustomSelected ? '#ffffff' : textPrimary,
-                    }}
-                    title="Pick a custom schedule date"
-                  >
-                    <CalendarDays
-                      className="w-[18px] h-[18px] shrink-0 pointer-events-none select-none"
-                      style={{ color: isCustomSelected ? '#ffffff' : green }}
-                      strokeWidth={2.2}
-                    />
-                    <span className="text-[12px] lg:text-[13px] font-semibold whitespace-nowrap truncate flex-1 min-w-0 text-left select-none pointer-events-none">
-                      {isCustomSelected
-                        ? new Date(dateFilter + 'T00:00:00').toLocaleDateString('en-PH', {
-                          weekday: 'short',
-                          month: 'short',
-                          day: 'numeric',
-                        })
-                        : 'Custom date'}
-                    </span>
-                    <ChevronDown
-                      className="w-4 h-4 shrink-0 opacity-70 pointer-events-none select-none"
-                      style={{ color: isCustomSelected ? '#ffffff' : textMuted }}
-                    />
-                  </button>
-                </div>
-
-                {/* Filters button */}
-                {!isMyTickets && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setMonthFilterModalOpen(true) }}
-                    className="flex items-center gap-1.5 h-10 px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-[background-color,color,border-color] duration-150 hover:opacity-90 active:scale-95"
-                    style={{
-                      backgroundColor: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? green : inputBg,
-                      border: `1px solid ${(monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? green : inputBorder}`,
-                      color: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? '#ffffff' : textPrimary,
-                    }}
-                    title="Whole-month view for this branch, filterable by negotiator"
-                  >
-                    <SlidersHorizontal className="w-4 h-4 shrink-0" style={{ color: (monthViewActive || monthFilterStatus || monthFilterNegotiatorId) ? '#ffffff' : green }} strokeWidth={2.1} />
-                    <span>{monthViewActive ? `Month: ${formatMonthFilterLabel(monthFilterMonth)}` : 'Filters'}</span>
-                  </button>
-                )}
-
-                {/* Assign Drivers */}
-                {canEdit && !isMyTickets && (
-                  <button
-                    type="button"
-                    id="bulk-assign-driver-btn"
-                    onClick={(e) => { e.stopPropagation(); setBulkAssignOpen(true) }}
-                    className="flex items-center gap-1.5 h-10 px-3 rounded-full text-[12px] xl:text-[13px] font-semibold shrink-0 transition-[background-color,color,border-color] duration-150 hover:opacity-90 active:scale-95"
-                    style={{
-                      backgroundColor: inputBg,
-                      border: `1px solid ${inputBorder}`,
-                      color: textPrimary,
-                    }}
-                    title="Assign driver and vehicle to an installer's tickets"
-                  >
-                    <UsersRound className="w-4 h-4 shrink-0" style={{ color: green }} strokeWidth={2.1} />
-                    <span>Assign Drivers</span>
-                  </button>
-                )}
-
-                {/* Hidden columns */}
-                {!isMyTickets && (
-                  <HiddenColumnsButton
-                    hidden={hiddenColumnItems}
-                    isLight={isLight}
-                    green={green}
-                    inputBg={inputBg}
-                    inputBorder={inputBorder}
-                    textPrimary={textPrimary}
-                    onShow={(label) => updateHiddenCols(prev => prev.filter(l => l !== label))}
-                    onShowAll={() => updateHiddenCols(() => [])}
-                  />
-                )}
-
-              </div>
-
-              {/* Showcase — pinned to the far right corner (search field removed from this toolbar) */}
-              {!isMyTickets && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    persistSchedulesSnapshot()
-                    setShowcaseOpen(true)
-                  }}
-                  className="order-1 md:order-2 ml-auto flex items-center gap-1.5 h-10 px-3 rounded-full text-[12px] xl:text-[13px] font-bold transition-[background-color,color] duration-150 shrink-0 active:scale-95"
-                  style={{
-                    backgroundColor: showcaseOpen ? 'transparent' : green,
-                    border: `1.5px solid ${green}`,
-                    color: showcaseOpen ? green : '#ffffff',
-                  }}
-                  title="Open fullscreen schedule showcase for print / PDF"
-                >
-                  <Maximize2 className="w-4 h-4 shrink-0" />
-                  <span>{showcaseOpen ? 'Active' : 'Showcase'}</span>
-                </button>
-              )}
-            </>
-          )}
-        </div>,
-        document.getElementById('header-toolbar-slot') ?? document.body
-      )}
-
-      {!isMyTickets && showcaseOpen && ReactDOM.createPortal(
-        <div className="flex items-center justify-between gap-3 px-5 md:px-8 py-2 bg-red-500/10 border-b border-red-500/20">
-          <span className="text-xs font-semibold text-red-600 dark:text-red-400">
-            Full-screen view &mdash; click <em>Export PDF to Print</em>, then Exit Showcase.
-          </span>
-          <button
-            type="button"
-            onClick={() => setShowcaseOpen(false)}
-            className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 shadow-sm"
-            style={{
-              backgroundColor: 'transparent',
-              border: `2px solid ${green}`,
-              color: green,
-            }}
-          >
-            <Maximize2 className="w-3.5 h-3.5" />
-            Exit Showcase
-          </button>
-        </div>,
-        document.getElementById('header-toolbar-slot') ?? document.body
+      {!isMyTickets && activeTab !== 'overview' && (
+        <SchedulesToolbar
+          dateFilter={dateFilter}
+          handleDateFilterChange={handleDateFilterChange}
+          todayDateKeyStr={todayDateKey()}
+          isReadOnlySchedule={isReadOnlySchedule}
+          weeklyTabs={weeklyTabs}
+          isCustomSelected={isCustomSelected}
+          onOpenCustomDatePicker={() => {
+            // null = let the picker open on the selected date's month, not wherever it was last browsed
+            setCustomDateCalMonth(null)
+            setCustomDatePickerOpen(true)
+          }}
+          monthViewActive={monthViewActive}
+          monthFilterStatus={monthFilterStatus}
+          monthFilterNegotiatorId={monthFilterNegotiatorId}
+          monthFilterMonth={monthFilterMonth}
+          onOpenMonthFilterModal={() => setMonthFilterModalOpen(true)}
+          canEdit={canEdit}
+          onOpenBulkAssign={() => setBulkAssignOpen(true)}
+          hiddenColumnItems={hiddenColumnItems}
+          onShowColumn={(label) => updateHiddenCols(prev => prev.filter(c => c !== label))}
+          onShowAllColumns={() => updateHiddenCols(() => [])}
+          showcaseOpen={showcaseOpen}
+          onToggleShowcase={() => {
+            persistSchedulesSnapshot()
+            setShowcaseOpen(prev => !prev)
+          }}
+          onCloseShowcase={() => setShowcaseOpen(false)}
+          tableBorder={tableBorder}
+          inputBg={inputBg}
+          inputBorder={inputBorder}
+          textPrimary={textPrimary}
+          textMuted={textMuted}
+          green={green}
+          isLight={isLight}
+        />
       )}
 
       {/* Month view banner — lets the user see & explicitly exit the whole-month table view */}
       {!isMyTickets && monthViewActive && (
-        <div className="flex items-center justify-between gap-3 px-4 py-2 border-b shrink-0"
-          style={{ backgroundColor: 'rgba(16,185,129,0.08)', borderColor: border }}>
-          <span className="text-xs font-semibold" style={{ color: green }}>
-            Month view — {formatMonthFilterLabel(monthFilterMonth)} · {activeBranchLabel || 'All branches'}
-            {monthFilterNegotiatorId
-              ? ` · ${formatNegotiatorLabel(monthFilterNegotiatorOptions.find(n => n.id === monthFilterNegotiatorId) || {})}`
-              : ''}
-            {monthFilterStatus
-              ? ` · ${monthFilterStatus === 'PENDING_GROUP' ? 'All Pending' : monthFilterStatus === 'CLOSING_GROUP' ? 'All Closing' : getScheduleStatusLabel(monthFilterStatus)}`
-              : ''}
-            {' '}({visible.length} ticket{visible.length === 1 ? '' : 's'})
-          </span>
-          <button
-            type="button"
-            onClick={() => setMonthViewActive(false)}
-            className="text-[11px] font-bold uppercase tracking-wide hover:underline shrink-0"
-            style={{ color: green }}
-          >
-            Exit month view
-          </button>
-        </div>
+        <MonthViewBanner
+          monthFilterMonth={monthFilterMonth}
+          activeBranchLabel={activeBranchLabel}
+          monthFilterNegotiatorId={monthFilterNegotiatorId}
+          monthFilterNegotiatorOptions={monthFilterNegotiatorOptions}
+          formatNegotiatorLabel={formatNegotiatorLabel}
+          monthFilterStatus={monthFilterStatus}
+          visibleCount={visible.length}
+          onExitMonthView={() => setMonthViewActive(false)}
+          green={green}
+          border={border}
+        />
       )}
 
       {/* Sort reset strip — replaces the old stats bar */}
       {!isMyTickets && activeTab === 'schedules' && sortDiffersFromDefault && (
-        <div className="flex items-center justify-end px-4 py-1.5 border-b shrink-0"
-          style={{ backgroundColor: cardBg, borderColor: border }}>
-          <button
-            type="button"
-            onClick={() => setSortConfig(defaultSortForSchedulesView(isMyTickets))}
-            className="text-[10px] font-bold uppercase tracking-wide hover:underline"
-            style={{ color: green }}
-          >
-            Reset sort
-          </button>
-        </div>
+        <SortResetStrip
+          onResetSort={() => setSortConfig(defaultSortForSchedulesView(isMyTickets))}
+          cardBg={cardBg}
+          border={border}
+          green={green}
+        />
       )}
 
       {/* Error */}
@@ -7547,110 +7005,32 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                     borderCollapse: 'collapse',
                   }}
                 >
-                  <colgroup>
-                    {columns.map(col => (
-                      <col key={col.label} style={{ width: col.w }} />
-                    ))}
-                  </colgroup>
-                  <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
-                    <tr
-                      style={{
-                        backgroundColor: isMyTickets ? myTicketsTheadBg : schedTheadBg,
-                      }}
-                    >
-                      {columns.map((rawCol, colIdx) => {
-                        const col = rawCol as any
-                        const isLastCol = colIdx === columns.length - 1
-                        const canSort = 'sortable' in col && col.sortable
-                        const isSorted = canSort && sortConfig?.column === col.label
-                        const SortIcon = isSorted
-                          ? (sortConfig!.direction === 'asc' ? ArrowUp : ArrowDown)
-                          : ArrowUpDown
-                        return (
-                          <th key={col.label}
-                            onContextMenu={isMyTickets ? undefined : (e => {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              setColHeaderMenu({ x: e.clientX, y: e.clientY, label: col.label, display: String(col.display) })
-                            })}
-                            onClick={e => {
-                              const isExpanding = !expandedCols[col.label]
-                              toggleCol(col.label)
-                              if (isExpanding) {
-                                const th = e.currentTarget
-                                setTimeout(() => {
-                                  th.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
-                                }, 80)
-                              }
-                            }}
-                            title={canSort ? 'Click to widen column · Use arrow to sort' : 'Click to widen column'}
-                            style={{
-                              position: col.sticky ? ('sticky' as const) : ('relative' as const),
-                              padding: '13px 12px',
-                              color: (col.isExpanded || isSorted)
-                                ? (isLight ? '#16A34A' : '#4ADE80')
-                                : (isMyTickets ? myTicketsTheadText : schedTheadText),
-                              fontWeight: 700, whiteSpace: 'nowrap',
-                              borderBottom: isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`,
-                              borderRight: isLastCol ? 'none' : (isMyTickets ? `1px solid ${myTicketsTheadBorder}` : `1px solid ${schedTheadBorder}`),
-                              fontSize: '11px', letterSpacing: '0.06em',
-                              width: col.w, minWidth: col.w, maxWidth: col.w,
-                              overflow: 'hidden', textOverflow: 'clip',
-                              backgroundColor: isMyTickets ? myTicketsTheadBg : schedTheadBg,
-                              cursor: 'pointer',
-                              userSelect: 'none',
-                              transition: 'color 0.15s ease',
-                              textAlign: col.align || 'left',
-                              ...(col.sticky ? { position: 'sticky' as const, left: `${col.left}px`, zIndex: 15, boxShadow: `2px 0 0 ${isMyTickets ? myTicketsTheadBorder : schedTheadBorder}` } : {}),
-                            }}>
-                            <div className={`flex items-center gap-1 w-full ${col.align === 'center' ? 'justify-center text-center' :
-                              col.align === 'right' ? 'justify-end text-right' :
-                                'justify-start text-left'
-                              }`}>
-                              <span>{col.display as any}</span>
-                              {canSort && (
-                                <button
-                                  type="button"
-                                  data-sort-trigger
-                                  onClick={e => {
-                                    e.stopPropagation()
-                                    handleColumnSort(col.label)
-                                  }}
-                                  className="flex items-center justify-center rounded hover:bg-emerald-500/10"
-                                  title="Sort column"
-                                >
-                                  <SortIcon
-                                    className="w-3 h-3 shrink-0 opacity-70"
-                                    style={{ color: isSorted ? green : (isMyTickets ? myTicketsTheadText : schedTheadText) }}
-                                  />
-                                </button>
-                              )}
-                            </div>
-
-                            {/* Column resize drag handle */}
-                            <div
-                              className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize z-30 flex items-center justify-end select-none group"
-                              style={{ touchAction: 'none' }}
-                              onMouseDown={(e) => startColResize(e, col.label, col.pixelWidth)}
-                              onClick={(e) => e.stopPropagation()}
-                              onDoubleClick={(e) => {
-                                e.stopPropagation()
-                                const defW = DEFAULT_COL_WIDTHS[col.label] || 120
-                                setCustomColWidths(prev => {
-                                  const next = { ...prev, [col.label]: defW }
-                                  try { localStorage.setItem('ashcol_schedule_col_widths_v2', JSON.stringify(next)) } catch {}
-                                  return next
-                                })
-                              }}
-                              title="Drag to resize column · Double-click to reset width"
-                            >
-                              <div className="w-[3px] h-full bg-transparent group-hover:bg-emerald-500/80 active:bg-emerald-500 transition-colors" />
-                            </div>
-                          </th>
-                        )
-                      })}
-                    </tr>
-                  </thead>
+                  <TicketsTableHeader
+                    columns={columns}
+                    isMyTickets={isMyTickets}
+                    isLight={isLight}
+                    sortConfig={sortConfig}
+                    handleColumnSort={handleColumnSort}
+                    setColHeaderMenu={setColHeaderMenu}
+                    toggleCol={toggleCol}
+                    expandedCols={expandedCols}
+                    startColResize={startColResize}
+                    resetColWidth={(colLabel) => {
+                      const defW = DEFAULT_COL_WIDTHS[colLabel] || 120
+                      setCustomColWidths(prev => {
+                        const next = { ...prev, [colLabel]: defW }
+                        try { localStorage.setItem('ashcol_schedule_col_widths_v2', JSON.stringify(next)) } catch {}
+                        return next
+                      })
+                    }}
+                    myTicketsTheadBg={myTicketsTheadBg}
+                    schedTheadBg={schedTheadBg}
+                    myTicketsTheadText={myTicketsTheadText}
+                    schedTheadText={schedTheadText}
+                    myTicketsTheadBorder={myTicketsTheadBorder}
+                    schedTheadBorder={schedTheadBorder}
+                    green={green}
+                  />
                   <tbody
                     ref={vehicleDragTbodyRef}
                     onDragOver={e => {
@@ -8018,670 +7398,59 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                     );
                   })()}
                 </table>
-                {/* Mobile Card View — important fields only (no branch; header already shows it) */}
-                <div className="flex flex-col md:hidden px-4 py-4 gap-3 w-full">
-                  {visible.length === 0 ? (
-                    <div
-                      className="flex flex-col items-center justify-center gap-3 p-10 mx-2 my-10 min-h-[50vh] rounded-2xl border-2 border-dashed bg-slate-50/50 dark:bg-[#0F1A2E]/30"
-                      style={{ borderColor: isLight ? '#cbd5e1' : '#334155' }}
-                    >
-                      <CalendarDays className="w-8 h-8 opacity-25" style={{ color: textMuted }} />
-                      <p className="text-sm font-semibold text-center" style={{ color: textMuted }}>
-                        No records found
-                      </p>
-                    </div>
-                  ) : (
-                    visible.map((ticket, idx) => {
-                      const ghostKind = dateFilter ? getScheduleGhostKind(ticket, dateFilter) : null
-                      const isGhost = Boolean(ghostKind)
-                      const isPendingRow = isOverduePendingScheduleTicket(ticket, ghostKind, dateFilter)
-                      const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(getCustomerDisplayName(ticket)))
-                      const rowColors = getScheduleRowColors(ticket, ghostKind, isLight, idx, rowEven, rowOdd, isDuplicateName)
-                      const statusVal = getScheduleStatusValue(ticket)
-                      const statusStyle = getScheduleStatusBadgeStyle(statusVal, isLight)
-                      const statusDisplay = getScheduleStatusDisplay(ticket) || ticket.status || ''
-                      const ticketNo = ticket.ticketNumber || ticket.controlNumber || '—'
-                      const district = resolveTicketDistrict(ticket) || ticket.district || ''
-                      const fullAddress = ((ticket as any).address || (ticket as any).fullAddress || (ticket as any).full_address || (ticket as any).location || (ticket as any).siteAddress || (ticket as any).site_address || (ticket as any).streetAddress || (ticket as any).street_address || (ticket as any).city || (ticket as any).area || district || '').trim()
-                      const brand = parseBrand(ticket)
-                      const dealer = getF(ticket, 'dealer', 'sourceVendor', 'source_vendor')
-                      const installer = getInstallerDisplay(ticket, branchEmployees, activeBranchId)
-                      const driver = getTicketDriverDisplay(ticket)
-                      const vehicle = vehicleTripLabels.get(ticket.id || '') || getTicketVehicleDisplay(ticket)
-                      const payment = getSchedulePaymentDisplay(ticket, dateFilter, ghostKind)
-                      const commit = getTicketCommitDisplay(ticket)
-                      const phone = getF(ticket, 'contactPhone', 'contact_phone', 'customer_phone', 'phone')
-                      const remarks = sanitizeDisplayText(
-                        stripArchivedRemarkSuffix((ticket.remarksUpdate || ticket.remarks || '').trim()),
-                      )
-                      const negotiatorName = getTicketNegotiatorName(ticket, branchEmployees) || ''
-                      const cardNegId = ticket.negotiatorId || ticket.negotiator_id || ''
-                      const cardNegEmp = branchEmployees.find(e => {
-                        if (cardNegId && e.id === cardNegId) return true
-                        if (negotiatorName && e.name && namesMatchLoosely(e.name, negotiatorName)) return true
-                        const resolvedFull = resolveNegotiatorDisplayName(ticket, branchEmployees)
-                        if (resolvedFull && e.name && namesMatchLoosely(e.name, resolvedFull)) return true
-                        return false
-                      })
-                      const negotiatorPhone = (ticket as any).negotiatorPhone
-                        || (ticket as any).negotiator_phone
-                        || (ticket as any).negotiatorContact
-                        || (ticket as any).negotiator_contact
-                        || cardNegEmp?.phone
-                        || (cardNegId && user?.id === cardNegId ? (user?.phone || '') : '')
-                        || ''
-
-
-                      return (
-                        <div
-                          key={`${ticket.id}${isGhost ? `-ghost-${ghostKind}` : ''}`}
-                          onClick={() => setDetailTicket(ticket)}
-                          className="w-full rounded-2xl overflow-hidden border shadow-sm transition-all duration-200 hover:shadow-md active:scale-[0.99] cursor-pointer flex flex-col"
-                          style={{
-                            backgroundColor: rowColors.baseBg,
-                            borderColor: border,
-                            opacity: isGhost ? 0.72 : 1,
-                          }}
-                        >
-                          {/* ── Card Header: ticket no (left) / status badge (right) ── */}
-                          <div
-                            className="px-4 py-3 flex justify-between items-center border-b"
-                            style={{ backgroundColor: isLight ? 'rgba(248,250,252,0.85)' : 'rgba(15,26,46,0.6)', borderColor: border }}
-                          >
-                            <span className="text-[15px] sm:text-base font-black tracking-tight uppercase" style={{ color: isLight ? '#0f172a' : '#f8fafc' }}>
-                              {ticketNo}
-                            </span>
-                            {statusDisplay ? (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  openStatusPicker(ticket, 'inline', e.currentTarget as HTMLElement)
-                                }}
-                                className="h-8 px-3.5 rounded-md text-xs font-black uppercase shrink-0 tracking-wider border shadow-xs transition-all active:scale-95 hover:opacity-90 cursor-pointer flex items-center justify-center"
-                                style={{
-                                  color: statusStyle.color,
-                                  backgroundColor: statusStyle.backgroundColor,
-                                  borderColor: statusStyle.borderColor,
-                                }}
-                                title="Click to change status"
-                              >
-                                {statusDisplay === 'INSTALLATION' ? 'INSTALL' : statusDisplay}
-                              </button>
-                            ) : null}
-                          </div>
-
-                          {/* ── Card Body: customer name / phone, then brand/dealer + location ── */}
-                          <div className="px-4 py-3.5 space-y-1.5">
-                            <div className="flex items-baseline justify-between gap-2 flex-wrap">
-                              <h3
-                                className="text-base font-black uppercase tracking-tight leading-tight truncate"
-                                style={{ color: isDuplicateName ? (isLight ? '#9f1239' : '#f43f5e') : textPrimary }}
-                              >
-                                {getCustomerDisplayName(ticket)}
-                              </h3>
-                              {phone ? (
-                                <a
-                                  href={`tel:${phone.replace(/[^\d+]/g, '')}`}
-                                  onClick={e => e.stopPropagation()}
-                                  onContextMenu={e => {
-                                    e.preventDefault(); e.stopPropagation()
-                                    void copyTextToClipboard(phone)
-                                    showToast(`Copied ${fmtPhone(phone) || phone}`)
-                                  }}
-                                  className="text-xs font-bold tabular-nums hover:underline shrink-0"
-                                  style={{ color: isLight ? '#0369a1' : '#7dd3fc' }}
-                                >
-                                  {fmtPhone(phone) || phone}
-                                </a>
-                              ) : null}
-                            </div>
-                            {(brand || dealer) ? (
-                              <div className="text-xs font-semibold truncate" style={{ color: textMuted }}>
-                                {[brand, dealer].filter(Boolean).join(' · ')}
-                              </div>
-                            ) : null}
-                            {fullAddress ? (
-                              <div className="flex items-start gap-1.5 pt-0.5 w-full" style={{ color: textMuted }}>
-                                <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: green }} />
-                                <span className="text-xs font-medium line-clamp-2 leading-relaxed" title={fullAddress}>{fullAddress}</span>
-                              </div>
-                            ) : null}
-                          </div>
-
-                          {/* ── Card Crew: strict 2x2 grid — Negotiator, Installer, Vehicle, Driver ── */}
-                          <div
-                            className="grid grid-cols-2 gap-3 px-4 py-3 border-y"
-                            style={{ backgroundColor: isLight ? 'rgba(248,250,252,0.6)' : 'rgba(15,26,46,0.35)', borderColor: border }}
-                          >
-                            <div className="flex flex-col min-w-0 gap-0.5">
-                              <span className="text-[9.5px] font-black tracking-widest uppercase" style={{ color: textMuted }}>Negotiator</span>
-                              <span className="text-xs font-bold truncate uppercase" style={{ color: (negotiatorName && negotiatorName !== EMPTY_CELL) ? (isPendingRow ? '#ffffff' : textPrimary) : textMuted }}>
-                                {negotiatorName && negotiatorName !== EMPTY_CELL ? negotiatorName : '—'}
-                              </span>
-                              {negotiatorPhone ? (
-                                <a
-                                  href={`tel:${negotiatorPhone.replace(/[^\d+]/g, '')}`}
-                                  onClick={e => e.stopPropagation()}
-                                  onContextMenu={e => {
-                                    e.preventDefault(); e.stopPropagation()
-                                    void copyTextToClipboard(negotiatorPhone)
-                                    showToast(`Copied ${fmtPhone(negotiatorPhone) || negotiatorPhone}`)
-                                  }}
-                                  className="text-[10.5px] tabular-nums font-bold hover:underline truncate"
-                                  style={{ color: isLight ? '#0369a1' : '#7dd3fc' }}
-                                >
-                                  {fmtPhone(negotiatorPhone) || negotiatorPhone}
-                                </a>
-                              ) : null}
-                            </div>
-                            <div className="flex flex-col min-w-0 gap-0.5">
-                              <span className="text-[9.5px] font-black tracking-widest uppercase" style={{ color: textMuted }}>Installer</span>
-                              <span className="text-xs font-bold truncate uppercase" style={{ color: installer ? (isLight ? '#0369a1' : '#7dd3fc') : textMuted }}>
-                                {installer || '—'}
-                              </span>
-                            </div>
-                            <div className="flex flex-col min-w-0 gap-0.5">
-                              <span className="text-[9.5px] font-black tracking-widest uppercase" style={{ color: textMuted }}>Vehicle</span>
-                              <span className="text-xs font-bold truncate uppercase tabular-nums" style={{ color: vehicle ? textPrimary : textMuted }}>
-                                {vehicle || '—'}
-                              </span>
-                            </div>
-                            <div className="flex flex-col min-w-0 gap-0.5">
-                              <span className="text-[9.5px] font-black tracking-widest uppercase" style={{ color: textMuted }}>Driver</span>
-                              <span className="text-xs font-bold truncate uppercase" style={{ color: driver ? textPrimary : textMuted }}>
-                                {driver || '—'}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* ── Card Footer: commit/remarks (left) / final date (right) ── */}
-                          {(() => {
-                            const finalDateKey = getFinalDateKey(ticket)
-                            return (
-                              <div className="px-4 py-3.5 flex flex-col gap-3">
-                                <div className="flex justify-between items-center gap-2">
-                                  <div className="min-w-0 flex-1">
-                                    {(commit || payment) ? (
-                                      <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="text-xs font-bold truncate uppercase" style={{ color: textMuted }}>{commit || '—'}</span>
-                                        {payment ? (
-                                          <span className="text-xs shrink-0 font-black tabular-nums" style={{ color: textPrimary }}>{payment}</span>
-                                        ) : null}
-                                      </div>
-                                    ) : null}
-                                  </div>
-                                  {finalDateKey ? (
-                                    <span className="text-xs font-black tabular-nums shrink-0 uppercase tracking-wide" style={{ color: textPrimary }}>
-                                      {formatDisplayDate(finalDateKey, '')}
-                                    </span>
-                                  ) : canEdit && !isGhost && !isTicketClosed(ticket) ? (
-                                    <button
-                                      type="button"
-                                      onClick={e => { e.stopPropagation(); startCellEdit(ticket, 'FINAL DATE', e.currentTarget as HTMLElement, idx) }}
-                                      className="text-xs font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/30 shrink-0 transition-all hover:bg-emerald-500/20 active:scale-95"
-                                    >
-                                      + DATE
-                                    </button>
-                                  ) : null}
-                                </div>
-
-                                <div className="flex items-center justify-between gap-3 pt-2.5 border-t border-dashed" style={{ borderColor: isLight ? 'rgba(203,213,225,0.7)' : 'rgba(30,41,59,0.7)' }}>
-                                  <button
-                                    type="button"
-                                    onClick={e => {
-                                      e.stopPropagation()
-                                      setHistoryGraphModal({ ticket, isOpen: true })
-                                    }}
-                                    className="h-10 px-4 rounded-xl text-xs font-black uppercase flex items-center gap-2 border transition-all active:scale-95 shrink-0 shadow-xs cursor-pointer"
-                                    style={{
-                                      backgroundColor: remarks
-                                        ? (isLight ? '#dcfce7' : 'rgba(34, 197, 94, 0.18)')
-                                        : (isLight ? '#f1f5f9' : 'rgba(148, 163, 184, 0.12)'),
-                                      borderColor: remarks
-                                        ? (isLight ? '#86efac' : 'rgba(34, 197, 94, 0.4)')
-                                        : (isLight ? '#cbd5e1' : 'rgba(148, 163, 184, 0.28)'),
-                                      color: remarks
-                                        ? (isLight ? '#166534' : '#4ade80')
-                                        : textMuted,
-                                    }}
-                                    title="Open remarks chat view and history"
-                                  >
-                                    <MessageSquare className="w-4 h-4 shrink-0" />
-                                    <span>Update Remarks</span>
-                                  </button>
-                                  {remarks ? (
-                                    <p
-                                      className="text-xs truncate font-semibold flex-1 cursor-pointer hover:underline text-right leading-snug"
-                                      style={{ color: isLight ? '#15803d' : '#86efac' }}
-                                      title={remarks}
-                                      onClick={e => {
-                                        e.stopPropagation()
-                                        setHistoryGraphModal({ ticket, isOpen: true })
-                                      }}
-                                    >
-                                      {remarks}
-                                    </p>
-                                  ) : null}
-                                </div>
-                              </div>
-                            )
-                          })()}
-                        </div>
-                      )
-                    })
-                  )}
-                  {(() => {
-                    let totalCash = 0;
-                    let totalGcash = 0;
-                    let totalBankTransfer = 0;
-                    let totalForCollection = 0;
-                    let totalCheque = 0;
-                    let totalOther = 0;
-
-                    visible.forEach(ticket => {
-                      const ghostKind = dateFilter ? getScheduleGhostKind(ticket, dateFilter) : null;
-                      if (shouldBlankReschedGhostPayment(dateFilter, ghostKind)) return;
-
-                      const { mode: rawMode, amount } = resolveTicketPayment(ticket);
-
-                      const categorize = (mode: string, amt: number) => {
-                        const m = (mode || '').trim().toUpperCase();
-                        if (m === 'CASH') totalCash += amt;
-                        else if (m === 'GCASH') totalGcash += amt;
-                        else if (m === 'BANK TRANSFER' || m === 'BANK_TRANSFER' || m === 'BANK' || m === 'ONLINE') totalBankTransfer += amt;
-                        else if (m === 'FOR COLLECTION' || m === 'FOR_COLLECTION') totalForCollection += amt;
-                        else if (m === 'CHEQUE' || m === 'CHECK' || m === 'CHECK PAYMENT' || m === 'CHECK_PAYMENT') totalCheque += amt;
-                        else if (amt > 0) totalOther += amt;
-                      };
-
-                      if (rawMode === 'HYBRID') {
-                        const breakdown = getPaymentBreakdown(ticket);
-                        breakdown.forEach(entry => categorize(entry.mode, entry.amount || 0));
-                      } else {
-                        categorize(rawMode, amount);
-                      }
-                    });
-
-                    const totalEstimated = totalCash + totalGcash + totalBankTransfer + totalForCollection + totalCheque + totalOther;
-                    if (totalEstimated <= 0) return null;
-
-                    return (
-                      <div className="mt-3 p-3 rounded-xl border flex flex-col gap-2 shadow-sm" style={{ backgroundColor: cardBg, borderColor: border }}>
-                        <div className="flex items-center justify-between px-3 py-2 rounded-lg font-black" style={{ backgroundColor: '#15803d', color: '#fff' }}>
-                          <span className="text-[11px] uppercase tracking-wider">TOTAL COLLECTION</span>
-                          <span className="text-xs font-black tracking-wide">
-                            ₱{totalEstimated.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
-                        </div>
-                        {totalGcash > 0 && (
-                          <div className="flex items-center justify-between px-3 py-1.5 rounded-lg text-[11px] font-bold" style={{ backgroundColor: '#dbeafe', color: '#000' }}>
-                            <span>GCASH</span>
-                            <span>₱{totalGcash.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          </div>
-                        )}
-                        {totalCash > 0 && (
-                          <div className="flex items-center justify-between px-3 py-1.5 rounded-lg text-[11px] font-bold" style={{ backgroundColor: '#dcfce7', color: '#000' }}>
-                            <span>CASH</span>
-                            <span>₱{totalCash.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          </div>
-                        )}
-                        {totalBankTransfer > 0 && (
-                          <div className="flex items-center justify-between px-3 py-1.5 rounded-lg text-[11px] font-bold" style={{ backgroundColor: '#f3e8ff', color: '#000' }}>
-                            <span>BANK TRANSFER</span>
-                            <span>₱{totalBankTransfer.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          </div>
-                        )}
-                        {totalForCollection > 0 && (
-                          <tr>
-                            <td colSpan={columns.length - 2} style={{ border: 'none', background: 'transparent' }}></td>
-                            <td className="px-3 py-2 text-right font-bold" style={{ backgroundColor: '#fef3c7', color: '#000', border: `1px solid ${tableBorder}` }}>
-                              FOR COLLECTION
-                            </td>
-                            <td className="px-3 py-2 text-right font-bold tracking-wide" style={{ backgroundColor: '#fef3c7', color: '#000', border: `1px solid ${tableBorder}` }}>
-                              {totalForCollection.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </td>
-                          </tr>
-                        )}
-                        {totalCheque > 0 && (
-                          <tr>
-                            <td colSpan={columns.length - 2} style={{ border: 'none', background: 'transparent' }}></td>
-                            <td className="px-3 py-2 text-right font-bold" style={{ backgroundColor: '#e0e7ff', color: '#000', border: `1px solid ${tableBorder}` }}>
-                              CHEQUE
-                            </td>
-                            <td className="px-3 py-2 text-right font-bold tracking-wide" style={{ backgroundColor: '#e0e7ff', color: '#000', border: `1px solid ${tableBorder}` }}>
-                              {totalCheque.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </td>
-                          </tr>
-                        )}
-                        {totalOther > 0 && (
-                          <div className="flex items-center justify-between px-3 py-1.5 rounded-lg text-[11px] font-bold" style={{ backgroundColor: '#f3e8ff', color: '#000' }}>
-                            <span>OTHER</span>
-                            <span>₱{totalOther.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
+                <TicketMobileCard
+                  visible={visible}
+                  dateFilter={dateFilter}
+                  duplicateNameKeys={duplicateNameKeys}
+                  isLight={isLight}
+                  rowEven={rowEven}
+                  rowOdd={rowOdd}
+                  cardBg={cardBg}
+                  border={border}
+                  textPrimary={textPrimary}
+                  textMuted={textMuted}
+                  green={green}
+                  branchEmployees={branchEmployees}
+                  activeBranchId={activeBranchId}
+                  user={user}
+                  vehicleTripLabels={vehicleTripLabels}
+                  canEdit={canEdit}
+                  openStatusPicker={openStatusPicker}
+                  setDetailTicket={setDetailTicket}
+                  startCellEdit={startCellEdit}
+                  setHistoryGraphModal={setHistoryGraphModal}
+                  copyTextToClipboard={copyTextToClipboard}
+                  showToast={showToast}
+                />
               </div>
             </div>
           )) : (
-          /* Render Overview Search Panel */
-          <div className="flex-1 flex flex-col min-h-0 w-full h-full overflow-hidden relative" style={{ backgroundColor: isLight ? '#f1f5f9' : '#060B18' }}>
-            {/* Branches Showcase — live auto-scrolling marquee, same pattern as the login page */}
-            <div className="flex items-center justify-center py-2.5 w-full shrink-0 z-20 relative marquee-viewport" style={{ borderBottom: `1px solid ${border}` }}>
-              <div className="marquee-track" style={{ animationDuration: '32s' }}>
-                {[
-                  "BULACAN", "CANDELARIA", "DASMA, CAVITE",
-                  "LAGUNA", "PAMPANGA", "RIZAL",
-                  "SILANG, CAVITE", "TAGUIG",
-                ].concat([
-                  "BULACAN", "CANDELARIA", "DASMA, CAVITE",
-                  "LAGUNA", "PAMPANGA", "RIZAL",
-                  "SILANG, CAVITE", "TAGUIG",
-                ]).map((branch, idx) => (
-                  <div key={`${branch}-${idx}`} className="flex items-center gap-4 shrink-0">
-                    <span
-                      className="text-[12px] md:text-[14px] font-black uppercase tracking-[0.15em] whitespace-nowrap"
-                      style={{ color: idx % 2 === 0 ? green : textPrimary }}
-                    >
-                      {branch}
-                    </span>
-                    <span className="text-[10px] opacity-40" style={{ color: textMuted }}>&bull;</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div
-              className={`flex-1 min-h-0 px-3 md:px-8 bg-transparent relative flex flex-col ${
-                overviewSearchInput || overviewResults.length > 0
-                  ? 'overflow-y-auto'
-                  : 'overflow-hidden justify-center py-2 sm:py-4 md:py-6'
-              }`}
-              style={{
-                overscrollBehavior: overviewSearchInput || overviewResults.length > 0 ? 'auto' : 'none',
-                touchAction: overviewSearchInput || overviewResults.length > 0 ? 'pan-y' : 'none',
-              }}
-            >
-              <div
-                className={
-                  overviewSearchInput || overviewResults.length > 0
-                    ? 'max-w-4xl w-full mx-auto flex flex-col'
-                    : 'w-full max-w-4xl mx-auto px-2 md:px-0 flex flex-col items-center justify-center gap-3 sm:gap-4 md:gap-6 my-auto'
-                }
-              >
-
-                {/* Sticky Header: Logo + Search Input (opaque bg so results don't show through while scrolling) */}
-                <div
-                  className={overviewSearchInput || overviewResults.length > 0
-                    ? 'sticky top-0 z-10 -mx-3 px-3 md:mx-0 md:px-0 pt-4 pb-3 md:pt-6 md:pb-4 flex flex-col gap-3 md:gap-4'
-                    : 'w-full flex flex-col items-center gap-3 sm:gap-4 md:gap-6'}
-                  style={overviewSearchInput || overviewResults.length > 0 ? { backgroundColor: isLight ? '#f1f5f9' : '#060B18' } : undefined}
-                >
-                  {/* Big Logo / Name (Google Style) */}
-                  <div className="flex flex-col items-center justify-center text-center w-full">
-                    <h1
-                      className={`font-black tracking-tighter font-['Poppins',sans-serif] ${overviewSearchInput || overviewResults.length > 0 ? 'text-2xl md:text-3xl mb-0 opacity-80' : 'text-3xl sm:text-4xl md:text-6xl mb-0 sm:mb-1 opacity-100'}`}
-                    >
-                      <span style={{ color: green }}>ASHCOL</span>
-                      <span style={{ color: textPrimary }} className="ml-2 md:ml-3">PORTAL</span>
-                    </h1>
-                  </div>
-
-                  {/* Search Input Box */}
-                  <div
-                    className="w-full max-w-2xl mx-auto flex items-center gap-2.5 sm:gap-3 px-4 py-3 sm:px-6 sm:py-3.5 md:px-8 md:py-4.5 rounded-2xl shadow-md border-2 transition-[border-color,box-shadow] duration-150"
-                    style={{
-                      backgroundColor: cardBg,
-                      borderColor: overviewSearchFocused ? green : border,
-                      boxShadow: overviewSearchFocused ? `0 0 0 4px ${green}15` : 'none'
-                    }}
-                  >
-                    <Search className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" style={{ color: green }} />
-                    <input
-                      type="text"
-                      placeholder="Search tickets, customers, or contacts..."
-                      value={overviewSearchInput}
-                      onChange={e => setOverviewSearchInput(e.target.value)}
-                      onFocus={() => setOverviewSearchFocused(true)}
-                      onBlur={() => setOverviewSearchFocused(false)}
-                      enterKeyHint="search"
-                      autoComplete="off"
-                      className="bg-transparent outline-none text-sm sm:text-base flex-1 min-w-0 font-medium"
-                      style={{ color: textPrimary }}
-                    />
-                    {overviewSearchInput && (
-                      <button
-                        type="button"
-                        onClick={() => { setOverviewSearchInput(''); setOverviewResults([]); }}
-                        style={{ color: textMuted }}
-                        className="hover:scale-110 transition-transform p-1"
-                      >
-                        <X className="w-5 h-5" />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Quick Actions launcher — only shown before a search has been entered.
-                      Tap-target icon tiles (mobile-home-screen style) so staff can jump
-                      straight into any everyday section without opening the sidebar. */}
-                  {!overviewSearchInput && overviewResults.length === 0 && overviewQuickLinks.length > 0 && (
-                    <div className="w-full max-w-4xl mx-auto flex flex-col gap-2 sm:gap-2.5 md:gap-3">
-                      <div className="flex items-center gap-2 px-1">
-                        <span className="text-[9.5px] sm:text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>
-                          Quick Actions
-                        </span>
-                        <span className="flex-1 h-px" style={{ backgroundColor: border }} />
-                      </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2 sm:gap-2.5 md:gap-3">
-                        {overviewQuickLinks.map((link, idx) => (
-                          <button
-                            key={link.to}
-                            type="button"
-                            onClick={() => navigate(link.to)}
-                            className={`group flex flex-col items-center justify-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 md:py-4 px-2 rounded-xl sm:rounded-2xl border shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md active:scale-95 cursor-pointer ${idx === 6 ? 'col-span-2 sm:col-span-1' : ''}`}
-                            style={{ backgroundColor: cardBg, borderColor: border }}
-                          >
-                            <span
-                              className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-full shrink-0 transition-transform duration-200 group-hover:scale-110"
-                              style={{ backgroundColor: `${green}15` }}
-                            >
-                              <link.icon className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 transition-colors" style={{ color: green }} />
-                            </span>
-                            <span
-                              className="text-[10.5px] sm:text-[11px] md:text-xs font-bold text-center leading-tight line-clamp-2 transition-colors"
-                              style={{ color: textPrimary }}
-                            >
-                              {link.label}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Results Section */}
-                {overviewLoading ? (
-                  <div className="flex flex-col items-center justify-center py-12 gap-3">
-                    <Loader2 className="w-6 h-6 animate-spin" style={{ color: green }} />
-                    <span className="text-xs font-semibold" style={{ color: textMuted }}>Searching portal database...</span>
-                  </div>
-                ) : overviewResults.length > 0 ? (
-                  <div className="flex flex-col gap-4">
-                    <div className="flex justify-between items-center px-1">
-                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>
-                        Found {overviewResults.length} {overviewResults.length === 1 ? 'ticket' : 'tickets'}
-                      </span>
-                    </div>
-
-                    {/* Results Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-                      {overviewResults.map(ticket => {
-                        const ticketNum = ticket.ticketNumber || ticket.ticket_number || ticket.id;
-                        const customer = ticket.customerName || ticket.customer_name || 'No Customer Name';
-                        const { value: statusVal, label: statusLabel } = getOverviewStatusBadge(ticket);
-                        const statusStyle = getScheduleStatusBadgeStyle(statusVal, isLight);
-                        const rawBranch = ticket.branchId || ticket.branch_id || null;
-                        const branchLabel = formatAssignedBranchLabel(
-                          resolveScopedBranchId(rawBranch) || rawBranch,
-                        );
-                        const negotiatorLabel = getTicketNegotiatorName(ticket, branchEmployees) || EMPTY_CELL;
-                        const cardNegId = ticket.negotiatorId || ticket.negotiator_id || '';
-                        const cardNegEmp = branchEmployees.find(e => {
-                          if (cardNegId && e.id === cardNegId) return true;
-                          const resolvedFull = resolveNegotiatorDisplayName(ticket, branchEmployees);
-                          if (resolvedFull && e.name && namesMatchLoosely(e.name, resolvedFull)) return true;
-                          return false;
-                        });
-                        const negotiatorPhone = (ticket as any).negotiatorPhone
-                          || (ticket as any).negotiator_phone
-                          || cardNegEmp?.phone
-                          || (cardNegId && user?.id === cardNegId ? (user?.phone || '') : '')
-                          || '';
-                        const finalDateKey = getFinalDateKey(ticket);
-                        const scheduleDateLabel = finalDateKey
-                          ? `Scheduled: ${formatDisplayDate(finalDateKey, '')}`
-                          : getPreferredDateKey(ticket)
-                            ? `Preferred: ${formatDisplayDate(getPreferredDateKey(ticket), '')}`
-                            : 'No Date';
-
-                        const cleanBranch = branchLabel && branchLabel !== EMPTY_CELL ? branchLabel.replace(/^ASHCOL\s+/i, '') : '';
-                        const custPhone = ticket.contactPhone || ticket.contact_phone || ticket.customer_phone || ticket.phone || '';
-                        const formattedCustPhone = custPhone ? (fmtPhone(custPhone) || custPhone) : '';
-                        // Never read assignedEmployeeName for this — it's the negotiator/assigned
-                        // sales staff, not the installer/technician (see getInstallerDisplay).
-                        const cardTechnician = getInstallerDisplay(ticket, branchEmployees, activeBranchId);
-
-                        return (
-                          <div
-                            key={ticket.id}
-                            className="rounded-2xl p-4 border shadow-sm transition-all duration-200 hover:shadow-md flex flex-col justify-between"
-                            style={{ backgroundColor: cardBg, borderColor: border }}
-                          >
-                            <div className="space-y-2.5">
-                              {/* Card Header */}
-                              <div className="flex justify-between items-center gap-2">
-                                <span className="text-[11px] font-black font-mono tracking-wider text-slate-400 dark:text-slate-500 uppercase">
-                                  {ticketNum}
-                                </span>
-                                <div className="flex gap-1.5 items-center flex-wrap justify-end">
-                                  {cleanBranch && (
-                                    <span
-                                      className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider"
-                                      style={{ backgroundColor: isLight ? '#f1f5f9' : '#1e293b', color: textMuted }}
-                                    >
-                                      {cleanBranch}
-                                    </span>
-                                  )}
-                                  <span
-                                    className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wide shadow-sm"
-                                    style={{ backgroundColor: statusStyle.backgroundColor, color: statusStyle.color }}
-                                  >
-                                    {statusLabel}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Customer Name & Contact Phone */}
-                              <div className="flex items-baseline gap-2 flex-wrap">
-                                <h3 className="font-extrabold text-base leading-snug tracking-tight" style={{ color: textPrimary }}>
-                                  {highlightMatch(customer, overviewSearchInput)}
-                                </h3>
-                                {formattedCustPhone && (
-                                  <a
-                                    href={`tel:${custPhone.replace(/\D/g, '').replace(/^0/, '+63')}`}
-                                    className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline tracking-tight"
-                                  >
-                                    ({formattedCustPhone})
-                                  </a>
-                                )}
-                              </div>
-
-                              {/* Location */}
-                              {formatAddress(ticket.location) && (
-                                <div className="flex items-start gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-                                  <MapPin className="w-3.5 h-3.5 shrink-0 text-emerald-500 mt-0.5" />
-                                  <span className="line-clamp-2 leading-relaxed">{formatAddress(ticket.location)}</span>
-                                </div>
-                              )}
-
-                              {/* Details Grid Box */}
-                              <div
-                                className="rounded-xl p-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs"
-                                style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}
-                              >
-                                {(negotiatorLabel !== EMPTY_CELL || negotiatorPhone) && (
-                                  <div className="flex flex-col gap-0.5">
-                                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Negotiator</span>
-                                    <div className="flex items-center gap-1 flex-wrap">
-                                      {negotiatorLabel !== EMPTY_CELL && (
-                                        <span className="font-bold uppercase" style={{ color: textPrimary }}>{negotiatorLabel}</span>
-                                      )}
-                                      {negotiatorPhone && (
-                                        <span className="text-[11px] font-medium" style={{ color: textMuted }}>
-                                          ({negotiatorPhone ? (
-                                            <a href={`tel:${negotiatorPhone.replace(/\D/g, '').replace(/^0/, '+63')}`} className="text-emerald-600 dark:text-emerald-400 hover:underline font-semibold">
-                                              {fmtPhone(negotiatorPhone) || negotiatorPhone}
-                                            </a>
-                                          ) : null})
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {cardTechnician && (
-                                  <div className="flex flex-col gap-0.5 sm:col-span-2">
-                                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Technician</span>
-                                    <span className="font-semibold" style={{ color: textPrimary }}>{cardTechnician}</span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Card Footer */}
-                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 pt-3 mt-3 border-t border-dashed" style={{ borderColor: border }}>
-                              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide" style={{ color: textMuted }}>
-                                <CalendarDays className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
-                                <span>{scheduleDateLabel}</span>
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setDetailTicket(ticket);
-                                    setShowHistoryPanel(false);
-                                  }}
-                                  className="flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold text-white shadow-sm transition-all hover:opacity-90 active:scale-95"
-                                  style={{ backgroundColor: green }}
-                                >
-                                  <Eye className="w-3.5 h-3.5" />
-                                  View Details
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : overviewSearchInput.trim() ? (
-                  <div className="flex flex-col items-center justify-center py-16 text-center">
-                    <AlertTriangle className="w-10 h-10 mb-3" style={{ color: textMuted }} />
-                    <h3 className="font-black text-sm uppercase tracking-wider" style={{ color: textPrimary }}>No results found</h3>
-                    <p className="text-xs max-w-sm mt-2" style={{ color: textMuted }}>
-                      We couldn't find any tickets matching "{overviewSearchInput}". Try adjusting your search term.
-                    </p>
-                  </div>
-                ) : null}
-
-              </div>
-            </div>
-
-          </div>
+          <OverviewSearchView
+            isLight={isLight}
+            cardBg={cardBg}
+            border={border}
+            green={green}
+            textPrimary={textPrimary}
+            textMuted={textMuted}
+            inputBg={inputBg}
+            inputBorder={inputBorder}
+            overviewSearchInput={overviewSearchInput}
+            setOverviewSearchInput={setOverviewSearchInput}
+            overviewSearchFocused={overviewSearchFocused}
+            setOverviewSearchFocused={setOverviewSearchFocused}
+            overviewResults={overviewResults}
+            setOverviewResults={setOverviewResults}
+            overviewLoading={overviewLoading}
+            overviewQuickLinks={overviewQuickLinks}
+            navigate={navigate}
+            branchEmployees={branchEmployees}
+            activeBranchId={activeBranchId}
+            user={user}
+            formatAssignedBranchLabel={formatAssignedBranchLabel}
+            resolveScopedBranchId={resolveScopedBranchId}
+            setDetailTicket={setDetailTicket}
+            setShowHistoryPanel={setShowHistoryPanel}
+          />
         )}
       </div>
 
@@ -8699,63 +7468,18 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
         />
       )}
 
-      {contextMenu && (() => {
-        const menuW = 220
-        const menuH = 180
-        const leftPos = contextMenu.x + menuW > window.innerWidth ? Math.max(10, window.innerWidth - menuW - 10) : contextMenu.x
-        const topPos = contextMenu.y + menuH > window.innerHeight ? Math.max(10, window.innerHeight - menuH - 10) : contextMenu.y
-        return (
-          <div ref={contextMenuRef} className="fixed z-[99999] animate-in fade-in zoom-in-95 duration-100 select-none" style={{ top: topPos, left: leftPos }}
-            onClick={e => e.stopPropagation()}>
-            <div className="rounded-2xl shadow-2xl overflow-hidden backdrop-blur-md"
-              style={{ backgroundColor: isLight ? '#ffffff' : '#0a1120', border: `1px solid ${border}`, minWidth: 210 }}>
-
-              {/* Header: Ticket No & Customer Name (No SCH status code badge) */}
-              <div
-                className="px-4 py-2 border-b flex flex-col gap-0.5"
-                style={{ borderColor: isLight ? '#f1f5f9' : 'rgba(255,255,255,0.06)' }}
-              >
-                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-500">
-                  {getTicketNumberDisplay(contextMenu.ticket)}
-                </span>
-                <span
-                  className="text-xs font-black uppercase tracking-wide truncate"
-                  style={{ color: textPrimary }}
-                  title={getCustomerDisplayName(contextMenu.ticket)}
-                >
-                  {getCustomerDisplayName(contextMenu.ticket).toUpperCase() || 'TICKET ACTION'}
-                </span>
-              </div>
-
-              {/* View full details */}
-              <button onClick={() => { setDetailTicket(contextMenu.ticket); setContextMenu(null) }}
-                className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors"
-                style={{ color: textPrimary }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#f1f5f9' : '#0f1e36'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
-                <Eye className="w-3.5 h-3.5 shrink-0" style={{ color: green }} />
-                View Full Details
-              </button>
-
-              {/* Edit Details */}
-              {canEdit && !isTicketLockedFor(contextMenu.ticket, role) && (
-                <button onClick={() => { openEditModal(contextMenu.ticket); setContextMenu(null) }}
-                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-xs font-bold text-left transition-colors"
-                  style={{ color: textPrimary }}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = isLight ? '#f1f5f9' : '#0f1e36'}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = ''}>
-                  <Edit3 className="w-3.5 h-3.5 shrink-0" style={{ color: '#6366F1' }} />
-                  Edit Details
-                </button>
-              )}
-
-
-
-
-            </div>
-          </div>
-        )
-      })()}
+      <TicketContextMenu
+        contextMenu={contextMenu}
+        contextMenuRef={contextMenuRef}
+        isLight={isLight}
+        border={border}
+        textPrimary={textPrimary}
+        green={green}
+        canEdit={canEdit}
+        role={role}
+        onViewDetails={t => { setDetailTicket(t); setContextMenu(null) }}
+        onEditDetails={t => { openEditModal(t); setContextMenu(null) }}
+      />
 
       {/* Ã¢â€â‚¬Ã¢â€â‚¬ Full Details Modal Ã¢â€â‚¬Ã¢â€â‚¬ */}
       {detailTicket && (
@@ -8875,275 +7599,29 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
         />
       )}
 
-      {addModalOpen && ReactDOM.createPortal(
-        <div
-          className="fixed inset-0 z-[9999] flex items-start justify-center pt-4 sm:pt-8 px-3 sm:px-6 pb-4"
-          style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)' }}
-          onClick={e => e.stopPropagation()}
-        >
-          <div
-            className="flex flex-col w-full max-w-5xl rounded-2xl overflow-hidden shadow-2xl border animate-in zoom-in-95 duration-200"
-            style={{ backgroundColor: cardBg, borderColor: border, maxHeight: '92vh' }}
-            onClick={e => e.stopPropagation()}
-            onMouseDown={e => e.stopPropagation()}
-          >
-            <div className="shrink-0 border-b" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#111827' }}>
-              <div className="px-5 sm:px-6 py-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-emerald-500/10 text-emerald-500 shrink-0">
-                    <Plus className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <h2 className="font-black text-base leading-tight" style={{ color: textPrimary }}>Add Schedule Ticket</h2>
-                    <p className="text-[10px] mt-0.5 truncate" style={{ color: textMuted }}>
-                      Branch: {activeBranchLabel || 'Select branch'} Ã‚Â· Negotiators for this branch only
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={requestCloseAddModal}
-                  className="p-1.5 rounded-lg border transition-colors hover:bg-slate-500/10 shrink-0"
-                  style={{ borderColor: inputBorder, color: textMuted }}
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-4 flex flex-col gap-5">
-              <div>
-                <div className="pt-0.5 pb-1.5 border-b mb-3" style={{ borderColor: border }}>
-                  <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600">Customer Information</p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <Field label="Preferred Date" required>
-                    <input type="date" value={addForm.preferredDate || ''}
-                      onChange={e => setAddForm({ ...addForm, preferredDate: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                  </Field>
-                  <Field label="Customer Name" required>
-                    <input type="text" value={addForm.customerName || ''}
-                      onChange={e => setAddForm({ ...addForm, customerName: e.target.value.toUpperCase() })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                  </Field>
-                  <Field label="Contact No." required>
-                    <input type="text" value={addForm.contactPhone || ''}
-                      onChange={e => setAddForm({ ...addForm, contactPhone: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                  </Field>
-                  <Field label="District">
-                    <input type="text" value={addForm.district || ''}
-                      onChange={e => setAddForm({ ...addForm, district: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                  </Field>
-                  <Field label="Destination/Address" required full>
-                    <textarea value={addForm.location || ''}
-                      onChange={e => {
-                        const loc = e.target.value.toUpperCase()
-                        const guessed = guessDistrict(loc)
-                        setAddForm(prev => ({
-                          ...prev,
-                          location: loc,
-                          district: guessed || prev.district,
-                        }))
-                      }}
-                      rows={2}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 resize-none w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                  </Field>
-                  <Field label="Commit Terms" full>
-                    <input type="text" value={addForm.commitTerms || ''}
-                      onChange={e => setAddForm({ ...addForm, commitTerms: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                  </Field>
-                </div>
-              </div>
-
-              <div>
-                <div className="pt-0.5 pb-1.5 border-b mb-3" style={{ borderColor: border }}>
-                  <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600">Service & Assignment</p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <Field label="Ticket Type" required>
-                    <select
-                      value={addForm.ticketCategory || 'INSTALLATION'}
-                      onChange={e => setAddForm({ ...addForm, ticketCategory: e.target.value as TicketCategoryValue })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                    >
-                      {FIELD_TICKET_CATEGORIES.map(opt => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label="Brand / Unit Type">
-                    <input type="text" value={addForm.unitType || ''}
-                      onChange={e => setAddForm({ ...addForm, unitType: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                  </Field>
-                  <Field label="Dealer / Store">
-                    <input type="text" value={addForm.dealer || ''}
-                      list="add-ticket-dealer-list"
-                      onChange={e => setAddForm({ ...addForm, dealer: e.target.value })}
-                      onBlur={e => {
-                        const name = e.target.value.trim().toUpperCase()
-                        if (!name || name.includes(' - ')) return
-                        if (!relayCustomStores.some(d => d.toUpperCase() === name)) {
-                          handlePersistCustomStores([...relayCustomStores, name])
-                        }
-                      }}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    <datalist id="add-ticket-dealer-list">{relayCustomStores.map(d => <option key={d} value={d} />)}</datalist>
-                  </Field>
-                  <Field label="Service / Driver">
-                    <input type="text" value={addForm.serviceDriver || ''}
-                      list="add-ticket-driver-roster"
-                      placeholder={activeBranchRoster.drivers.length ? 'Select or type driver\u2026' : 'e.g. T3 (DOMINIC) - 1'}
-                      onChange={e => setAddForm({ ...addForm, serviceDriver: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                    <datalist id="add-ticket-driver-roster">
-                      {activeBranchRoster.drivers.map(name => (
-                        <option key={name} value={name} />
-                      ))}
-                    </datalist>
-                  </Field>
-                  <Field label={isTaguigServices ? 'Technician' : 'Installer / Technician'}>
-                    <select
-                      value={addForm.installerName || ''}
-                      onChange={e => setAddForm({ ...addForm, installerName: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
-                    >
-                      <option value="">
-                        {isTaguigServices ? 'Select technician…' : 'Select installer / technician…'}
-                      </option>
-                      {addModalTechnicians.length > 0 ? (
-                        addModalTechnicians.map(t => (
-                          <option key={t.id} value={t.name}>{t.label || (t.name || '').trim().split(/\s+/)[0]?.toUpperCase() || t.name}</option>
-                        ))
-                      ) : (
-                        activeBranchRoster.installers.map(name => (
-                          <option key={name} value={name}>{name}</option>
-                        ))
-                      )}
-                    </select>
-                  </Field>
-                  <Field label="Negotiator" required>
-                    <select
-                      value={addForm.negotiatorId || ''}
-                      onChange={e => setAddForm({ ...addForm, negotiatorId: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
-                    >
-                      <option value="">
-                        {addModalNegotiators.length ? 'Select negotiator' : 'No negotiators for this branch'}
-                      </option>
-                      {addModalNegotiators.map(emp => (
-                        <option key={emp.id} value={emp.id}>{formatNegotiatorLabel(emp)}</option>
-                      ))}
-                    </select>
-                    {addModalNegotiators.length === 0 && (
-                      <span className="text-[10px] font-semibold text-amber-600 mt-1">
-                        No negotiators assigned to {activeBranchLabel || 'this branch'}.
-                      </span>
-                    )}
-                  </Field>
-                  <Field label="Ticket No.">
-                    <input type="text" value={addForm.ticketNumber || ''}
-                      placeholder="Auto-generated if left blank (e.g. AC-001)"
-                      onChange={e => setAddForm({ ...addForm, ticketNumber: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                  </Field>
-                  <Field label="Control No. / SI (Aircon)">
-                    <input type="text" value={addForm.controlNumber || ''}
-                      placeholder={`From import only ${EMPTY_CELL} aircon papers / SI`}
-                      onChange={e => setAddForm({ ...addForm, controlNumber: e.target.value })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full normal-case"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                  </Field>
-                </div>
-              </div>
-
-              <div>
-                <div className="pt-0.5 pb-1.5 border-b mb-3" style={{ borderColor: border }}>
-                  <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600">Payment (optional)</p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <Field label="Mode of Payment">
-                    <select value={addForm.modeOfPayment || ''}
-                      onChange={e => {
-                        const nextMode = e.target.value
-                        setAddForm(prev => ({
-                          ...prev,
-                          modeOfPayment: nextMode,
-                          installationCharges: (nextMode === 'FREE' || nextMode === 'FREE INSTALL')
-                            ? 0
-                            : nextMode === 'PENDING'
-                              ? undefined
-                              : prev.installationCharges,
-                        }))
-                      }}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}>
-                      <option value="">-- Select --</option>
-                      <option value="CASH">CASH</option>
-                      <option value="BANK TRANSFER">BANK TRANSFER</option>
-                      <option value="GCASH">GCASH</option>
-                      <option value="CHEQUE">CHEQUE</option>
-                      <option value="FOR COLLECTION">FOR COLLECTION</option>
-                      <option value="FREE INSTALL">FREE INSTALL</option>
-                      <option value="PENDING">PENDING</option>
-                    </select>
-                  </Field>
-                  <Field label="Payment Amount (₱)">
-                    <input type="number" step="0.01" min="0"
-                      placeholder="0.00"
-                      value={addForm.installationCharges ?? ''}
-                      disabled={addForm.modeOfPayment === 'FREE' || addForm.modeOfPayment === 'FREE INSTALL' || addForm.modeOfPayment === 'PENDING'}
-                      onChange={e => setAddForm({ ...addForm, installationCharges: e.target.value ? Number(e.target.value) : undefined })}
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-full disabled:opacity-60"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }} />
-                  </Field>
-                </div>
-              </div>
-            </div>
-
-            <div
-              className="shrink-0 px-5 sm:px-6 py-3 flex items-center justify-end gap-2.5 border-t"
-              style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#111827' }}
-            >
-              <button
-                type="button"
-                onClick={requestCloseAddModal}
-                className="px-5 py-2 rounded-lg text-xs font-bold border transition-colors"
-                style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={promptSaveManualTicket}
-                disabled={!addForm.negotiatorId || addModalNegotiators.length === 0}
-                className="px-6 py-2 rounded-lg text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-50 shadow-md"
-                style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
-              >
-                Save Ticket
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )}
+      <AddTicketModal
+        open={addModalOpen}
+        onClose={requestCloseAddModal}
+        activeBranchLabel={activeBranchLabel}
+        addForm={addForm}
+        setAddForm={setAddForm}
+        guessDistrict={guessDistrict}
+        relayCustomStores={relayCustomStores}
+        handlePersistCustomStores={handlePersistCustomStores}
+        activeBranchRoster={activeBranchRoster}
+        isTaguigServices={isTaguigServices}
+        addModalTechnicians={addModalTechnicians}
+        addModalNegotiators={addModalNegotiators}
+        formatNegotiatorLabel={formatNegotiatorLabel}
+        promptSaveManualTicket={promptSaveManualTicket}
+        isLight={isLight}
+        cardBg={cardBg}
+        border={border}
+        textPrimary={textPrimary}
+        textMuted={textMuted}
+        inputBg={inputBg}
+        inputBorder={inputBorder}
+      />
 
       {editModalOpen && editTicket && activeTab === 'overview' && (
         <RelayEditTicketModal
@@ -9281,1001 +7759,128 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
         const idx = visible.findIndex(t => t.id === ticket.id)
         const ghostKind = dateFilter ? getScheduleGhostKind(ticket, dateFilter) : null
         const isGhost = Boolean(ghostKind)
-        return ReactDOM.createPortal(
-          <div
-            data-expanded-popover="true"
-            role="dialog"
-            aria-label={`${columnDisplayName(col.label)} details`}
-            className="rounded-xl border overflow-hidden flex flex-col"
-            style={{
-              position: 'fixed',
-              left: expandedPopoverPos.left,
-              top: expandedPopoverPos.top,
-              width: expandedPopoverPos.width,
-              maxWidth: 'calc(100vw - 1rem)',
-              maxHeight: 'min(360px, calc(100vh - 1rem))',
-              zIndex: 14000,
-              backgroundColor: cardBg,
-              borderColor: border,
-              boxShadow: isLight
-                ? '0 16px 32px -8px rgba(15,23,42,0.2), 0 6px 12px -6px rgba(15,23,42,0.1)'
-                : '0 16px 32px -8px rgba(0,0,0,0.6)',
-            }}
-            onClick={e => e.stopPropagation()}
-            onPointerDown={e => e.stopPropagation()}
-          >
-            <div
-              className="px-3.5 py-2.5 flex items-start justify-between gap-2 shrink-0 border-b"
-              style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}
-            >
-              <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>
-                  {columnDisplayName(col.label)}
-                </p>
-                <p className="text-xs font-extrabold uppercase truncate mt-0.5" style={{ color: textPrimary }}>
-                  {ticket.ticketNumber || ticket.ticket_number ? `${ticket.ticketNumber || ticket.ticket_number} · ` : ''}{getCustomerDisplayName(ticket)}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setExpandedCell(null)}
-                className="p-1 -mr-1 rounded-md hover:bg-slate-500/10 shrink-0 cursor-pointer"
-                style={{ color: textMuted }}
-                aria-label="Close"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            <div className="px-3.5 py-3 overflow-y-auto text-[13px] font-semibold leading-relaxed" style={{ color: textPrimary }}>
-              {renderCell(ticket, col, idx >= 0 ? idx : undefined, isGhost, ghostKind, true)}
-            </div>
-          </div>,
-          document.body,
-        )
-      })()}
-
-      {reschedDialog && (() => {
-        const todayKey = todayDateKey()
-        const currentSchedDate = getPreferredDateKey(reschedDialog.ticket) || dateFilter || todayKey
-        const fallback = new Date(`${currentSchedDate}T00:00:00`)
-        const validFallback = !isNaN(fallback.getTime()) ? fallback : new Date()
-        const calYear = reschedCalMonth?.year ?? validFallback.getFullYear()
-        const calMonth = reschedCalMonth?.month ?? validFallback.getMonth()
-        const calKey = `resched-cal-${reschedDialog.ticket.id}`
-        const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate()
-        const firstDow = new Date(calYear, calMonth, 1).getDay()
-        const selLabel = reschedToDate ? formatDateKeyLabel(reschedToDate) : ''
-        const currentSchedLabel = currentSchedDate ? formatDateKeyLabel(currentSchedDate) : ''
-        const ticketNo = reschedDialog.ticket.ticketNumber || reschedDialog.ticket.controlNumber || ''
-
-        const MONTH_NAMES_RESCHED = [
-          'January', 'February', 'March', 'April', 'May', 'June',
-          'July', 'August', 'September', 'October', 'November', 'December',
-        ]
-        const yearsList = Array.from({ length: 7 }, (_, i) => 2024 + i)
-
         return (
-          <div
-            key={calKey}
-            className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4"
-            style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)' }}
-            onClick={closeReschedDialog}
-          >
-            <div
-              className="w-full max-w-[440px] rounded-2xl shadow-2xl overflow-visible flex flex-col"
-              style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
-              onClick={e => e.stopPropagation()}
-            >
-              {/* Header */}
-              <div className="px-5 py-3.5 border-b flex items-center justify-between" style={{ borderColor: border }}>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-black tracking-tight" style={{ color: textPrimary }}>
-                      Reschedule Appointment
-                    </h3>
-                    {ticketNo && (
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-500/10 text-slate-400">
-                        {ticketNo}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs font-semibold mt-0.5 truncate max-w-[300px]" style={{ color: textMuted }}>
-                    {getCustomerDisplayName(reschedDialog.ticket)}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={closeReschedDialog}
-                  className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-slate-500/10 text-slate-400 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Status Bar */}
-              <div className="px-5 py-2.5 border-b flex items-center justify-between gap-2" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0a1120' }}>
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="text-[11px] font-semibold" style={{ color: textMuted }}>Currently:</span>
-                  <span className="font-bold text-[11px] px-2 py-0.5 rounded bg-slate-500/10 truncate" style={{ color: textPrimary }}>
-                    {currentSchedLabel || 'Unscheduled'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="text-[11px] font-semibold" style={{ color: textMuted }}>New:</span>
-                  {reschedPending ? (
-                    <span className="font-bold text-[11px] px-2 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400">
-                      Pending (No Slot)
-                    </span>
-                  ) : reschedToDate ? (
-                    <span className="font-black text-[11px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
-                      {selLabel}
-                    </span>
-                  ) : (
-                    <span className="text-[11px] italic" style={{ color: textMuted }}>Select a date →</span>
-                  )}
-                </div>
-              </div>
-
-              {/* Month & Year Dropdowns — no arrows, full-width */}
-              <div
-                className="px-5 py-3 border-b grid grid-cols-2 gap-3 relative"
-                style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0a1120' }}
-              >
-                {/* Month Custom Dropdown */}
-                <div className="relative" id={`resched-month-dd-${calKey}`}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const el = document.getElementById(`resched-month-menu-${calKey}`)
-                      if (el) el.style.display = el.style.display === 'none' ? 'flex' : 'none'
-                      const yr = document.getElementById(`resched-year-menu-${calKey}`)
-                      if (yr) yr.style.display = 'none'
-                    }}
-                    className="w-full flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl border text-sm font-bold transition-all hover:opacity-90 cursor-pointer"
-                    style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
-                  >
-                    <span>{MONTH_NAMES_RESCHED[calMonth]}</span>
-                    <ChevronDown className="w-4 h-4 opacity-50 shrink-0" />
-                  </button>
-                  <div
-                    id={`resched-month-menu-${calKey}`}
-                    className="absolute left-0 top-full mt-2 w-full max-h-56 overflow-y-auto rounded-xl border shadow-2xl z-[200] p-1.5 flex-col gap-0.5"
-                    style={{ display: 'none', backgroundColor: cardBg, borderColor: border }}
-                  >
-                    {MONTH_NAMES_RESCHED.map((m, idx) => {
-                      const isSel = idx === calMonth
-                      return (
-                        <button
-                          key={m}
-                          type="button"
-                          onClick={() => {
-                            setReschedCalMonth({ year: calYear, month: idx })
-                            const el = document.getElementById(`resched-month-menu-${calKey}`)
-                            if (el) el.style.display = 'none'
-                          }}
-                          className="flex items-center justify-between w-full px-3 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer text-left"
-                          style={{
-                            backgroundColor: isSel ? (isLight ? '#dcfce7' : 'rgba(16,185,129,0.18)') : 'transparent',
-                            color: isSel ? green : textPrimary,
-                          }}
-                        >
-                          <span>{m}</span>
-                          {isSel && <span className="text-emerald-500 text-sm leading-none">✓</span>}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                {/* Year Custom Dropdown */}
-                <div className="relative" id={`resched-year-dd-${calKey}`}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const el = document.getElementById(`resched-year-menu-${calKey}`)
-                      if (el) el.style.display = el.style.display === 'none' ? 'flex' : 'none'
-                      const mo = document.getElementById(`resched-month-menu-${calKey}`)
-                      if (mo) mo.style.display = 'none'
-                    }}
-                    className="w-full flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl border text-sm font-bold transition-all hover:opacity-90 cursor-pointer"
-                    style={{ backgroundColor: cardBg, borderColor: inputBorder, color: textPrimary }}
-                  >
-                    <span>{calYear}</span>
-                    <ChevronDown className="w-4 h-4 opacity-50 shrink-0" />
-                  </button>
-                  <div
-                    id={`resched-year-menu-${calKey}`}
-                    className="absolute left-0 top-full mt-2 w-full max-h-56 overflow-y-auto rounded-xl border shadow-2xl z-[200] p-1.5 flex-col gap-0.5"
-                    style={{ display: 'none', backgroundColor: cardBg, borderColor: border }}
-                  >
-                    {yearsList.map(y => {
-                      const isSel = y === calYear
-                      return (
-                        <button
-                          key={y}
-                          type="button"
-                          onClick={() => {
-                            setReschedCalMonth({ year: y, month: calMonth })
-                            const el = document.getElementById(`resched-year-menu-${calKey}`)
-                            if (el) el.style.display = 'none'
-                          }}
-                          className="flex items-center justify-between w-full px-3 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer text-left"
-                          style={{
-                            backgroundColor: isSel ? (isLight ? '#dcfce7' : 'rgba(16,185,129,0.18)') : 'transparent',
-                            color: isSel ? green : textPrimary,
-                          }}
-                        >
-                          <span>{y}</span>
-                          {isSel && <span className="text-emerald-500 text-sm leading-none">✓</span>}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {/* Calendar */}
-              <div className="px-5 pt-3.5 pb-2" style={{ opacity: reschedPending ? 0.35 : 1, pointerEvents: reschedPending ? 'none' : 'auto' }}>
-                {/* Day-of-week header */}
-                <div className="grid grid-cols-7 mb-1.5 text-center">
-                  {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d, i) => (
-                    <div key={d} className="text-xs font-black py-0.5 select-none uppercase tracking-wider" style={{ color: i === 0 || i === 6 ? `${green}cc` : textMuted }}>
-                      {d}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Days grid */}
-                <div className="grid grid-cols-7 gap-1.5 mb-2">
-                  {Array.from({ length: firstDow }).map((_, i) => <div key={`empty-${i}`} />)}
-                  {Array.from({ length: daysInMonth }).map((_, i) => {
-                    const day = i + 1
-                    const dKey = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-                    const isToday = dKey === todayKey
-                    const isSel = dKey === reschedToDate
-                    const isCurrent = dKey === currentSchedDate
-                    return (
-                      <button
-                        key={dKey}
-                        type="button"
-                        onClick={() => { setReschedToDate(dKey); setReschedPending(false) }}
-                        className="relative w-full aspect-square flex items-center justify-center text-sm font-bold rounded-xl transition-all hover:scale-105 active:scale-95 cursor-pointer"
-                        style={{
-                          color: isSel ? '#fff' : isCurrent ? green : isToday ? green : textPrimary,
-                          backgroundColor: isSel ? green : isCurrent ? (isLight ? 'rgba(16,185,129,0.1)' : 'rgba(16,185,129,0.15)') : isToday ? (isLight ? '#f0fdf4' : 'rgba(16,185,129,0.08)') : 'transparent',
-                          border: (isCurrent || isToday) && !isSel ? `1.5px solid ${green}` : '1.5px solid transparent',
-                          boxShadow: isSel ? '0 4px 12px rgba(16,185,129,0.4)' : undefined,
-                          fontWeight: isSel || isCurrent || isToday ? 900 : 700,
-                        }}
-                      >
-                        {day}
-                        {isToday && !isSel && (
-                          <span
-                            className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full"
-                            style={{ backgroundColor: green }}
-                          />
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Pending Slot Toggle */}
-              <div className="px-5 pb-2">
-                <label
-                  className="flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors"
-                  style={{
-                    backgroundColor: reschedPending ? (isLight ? '#fef3c7' : 'rgba(245,158,11,0.10)') : inputBg,
-                    borderColor: reschedPending ? '#f59e0b' : inputBorder,
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={reschedPending}
-                    onChange={e => {
-                      setReschedPending(e.target.checked)
-                      if (e.target.checked) setReschedToDate('')
-                    }}
-                    className="mt-0.5 rounded"
-                  />
-                  <div>
-                    <span className="text-xs font-bold block" style={{ color: textPrimary }}>
-                      No date slot available yet — Mark as Pending
-                    </span>
-                    <span className="text-[11px] block mt-0.5 leading-snug" style={{ color: textMuted }}>
-                      Ticket stays in queue until a new slot is confirmed.
-                    </span>
-                  </div>
-                </label>
-              </div>
-
-              {/* Remarks / Reason with Quick Chips */}
-              <div className="px-5 pb-3 pt-1">
-                <label className="block text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: textMuted }}>
-                  Reason for Reschedule <span className="text-amber-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={reschedRemarks}
-                  onChange={e => setReschedRemarks(e.target.value.toUpperCase())}
-                  placeholder="E.G. CLIENT REQUEST / HINDI MATAWAGAN"
-                  className="w-full px-3 py-2 text-xs font-bold rounded-xl border outline-none uppercase placeholder:normal-case placeholder:font-normal"
-                  style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                />
-              </div>
-
-              {/* Footer */}
-              <div className="px-5 py-3 flex items-center justify-end gap-2.5 border-t" style={{ borderColor: border }}>
-                <button
-                  type="button"
-                  onClick={closeReschedDialog}
-                  className="px-4 py-2 rounded-xl text-xs font-bold border transition-colors hover:bg-slate-500/10 cursor-pointer"
-                  style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void commitInlineReschedule()}
-                  disabled={!reschedPending && !reschedToDate.trim()}
-                  className="px-5 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 disabled:opacity-40 shadow-sm cursor-pointer"
-                  style={{ backgroundColor: green }}
-                >
-                  {reschedPending ? 'Mark as Pending' : 'Confirm Reschedule'}
-                </button>
-              </div>
-            </div>
-          </div>
+          <ExpandedCellPopover
+            expandedCell={expandedCell}
+            expandedPopoverPos={expandedPopoverPos}
+            ticket={ticket}
+            columns={columns}
+            idx={idx >= 0 ? idx : 0}
+            isGhost={isGhost}
+            ghostKind={ghostKind}
+            cardBg={cardBg}
+            border={border}
+            isLight={isLight}
+            textMuted={textMuted}
+            textPrimary={textPrimary}
+            columnDisplayName={columnDisplayName}
+            onClose={() => setExpandedCell(null)}
+            renderContent={(t, c, i, g, gk) => renderCell(t, c, i, g, gk, true)}
+          />
         )
       })()}
 
-      {continuationDialog && (() => {
-        const todayKey = todayDateKey()
-        const preferredKey = getPreferredDateKey(continuationDialog.ticket) || dateFilter || todayKey
-        const fallback = new Date(`${preferredKey}T00:00:00`)
-        const validFallback = !isNaN(fallback.getTime()) ? fallback : new Date()
-        const calYear = continuationCalMonth?.year ?? validFallback.getFullYear()
-        const calMonth = continuationCalMonth?.month ?? validFallback.getMonth()
-        const calKey = `continuation-cal-${continuationDialog.ticket.id}`
-        const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate()
-        const firstDow = new Date(calYear, calMonth, 1).getDay()
-        const monthLabel = new Date(calYear, calMonth, 1).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
+      <RescheduleDialog
+        reschedDialog={reschedDialog}
+        reschedToDate={reschedToDate}
+        setReschedToDate={setReschedToDate}
+        reschedPending={reschedPending}
+        setReschedPending={setReschedPending}
+        reschedRemarks={reschedRemarks}
+        setReschedRemarks={setReschedRemarks}
+        reschedCalMonth={reschedCalMonth}
+        setReschedCalMonth={setReschedCalMonth}
+        dateFilter={dateFilter}
+        cardBg={cardBg}
+        border={border}
+        inputBg={inputBg}
+        inputBorder={inputBorder}
+        isLight={isLight}
+        textPrimary={textPrimary}
+        textMuted={textMuted}
+        green={green}
+        onClose={closeReschedDialog}
+        onConfirm={() => void commitInlineReschedule()}
+      />
 
-        const goMonth = (delta: number) => {
-          const cur = new Date(calYear, calMonth, 1)
-          cur.setMonth(cur.getMonth() + delta)
-          setContinuationCalMonth({ year: cur.getFullYear(), month: cur.getMonth() })
-        }
+      <ContinuationDialog
+        continuationDialog={continuationDialog}
+        continuationSelectedDates={continuationSelectedDates}
+        setContinuationSelectedDates={setContinuationSelectedDates}
+        continuationCalMonth={continuationCalMonth}
+        setContinuationCalMonth={setContinuationCalMonth}
+        dateFilter={dateFilter}
+        cardBg={cardBg}
+        border={border}
+        inputBorder={inputBorder}
+        isLight={isLight}
+        textPrimary={textPrimary}
+        textMuted={textMuted}
+        green={green}
+        onClose={closeContinuationDialog}
+        onConfirm={() => void commitInlineContinuation()}
+      />
 
-        const toggleDate = (dKey: string) => {
-          setContinuationSelectedDates(prev => {
-            if (prev.includes(dKey)) {
-              return prev.filter(d => d !== dKey)
-            } else {
-              return [...prev, dKey].sort()
-            }
-          })
-        }
+      <PaymentPromptModal
+        paymentPrompt={paymentPrompt}
+        promptAmount={promptAmount}
+        setPromptAmount={setPromptAmount}
+        promptMode={promptMode}
+        setPromptMode={setPromptMode}
+        promptHybridCash={promptHybridCash}
+        setPromptHybridCash={setPromptHybridCash}
+        promptHybridGcash={promptHybridGcash}
+        setPromptHybridGcash={setPromptHybridGcash}
+        cardBg={cardBg}
+        border={border}
+        inputBg={inputBg}
+        inputBorder={inputBorder}
+        isLight={isLight}
+        textPrimary={textPrimary}
+        textMuted={textMuted}
+        onClose={() => setPaymentPrompt(null)}
+        onSave={(t, col, v, inj) => { void saveCellEdit(t, col, v, inj) }}
+      />
 
-        return (
-          <div
-            key={calKey}
-            className="fixed inset-0 z-[80] flex items-center justify-center p-4"
-            style={{ backgroundColor: 'rgba(0,0,0,0.60)', backdropFilter: 'blur(6px)' }}
-            onClick={closeContinuationDialog}
-          >
-            <div
-              className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden flex flex-col"
-              style={{ backgroundColor: cardBg, border: `1px solid ${border}`, maxHeight: '90vh' }}
-              onClick={e => e.stopPropagation()}
-            >
-              {/* Header */}
-              <div className="px-5 py-4 border-b" style={{ borderColor: border }}>
-                <h3 className="text-sm font-black" style={{ color: textPrimary }}>Set Continuation Dates</h3>
-                <p className="text-xs mt-1" style={{ color: textMuted }}>
-                  {getCustomerDisplayName(continuationDialog.ticket)}
-                </p>
-                <p className="text-[10px] mt-1 font-medium" style={{ color: textMuted }}>
-                  Past and future dates can be selected.
-                </p>
-              </div>
+      <MonthFilterModal
+        open={monthFilterModalOpen}
+        onClose={() => setMonthFilterModalOpen(false)}
+        activeBranchLabel={activeBranchLabel}
+        monthFilterMonth={monthFilterMonth}
+        setMonthFilterMonth={setMonthFilterMonth}
+        monthFilterNegotiatorId={monthFilterNegotiatorId}
+        setMonthFilterNegotiatorId={setMonthFilterNegotiatorId}
+        monthFilterNegotiatorOptions={monthFilterNegotiatorOptions}
+        formatNegotiatorLabel={formatNegotiatorLabel}
+        monthFilterStatus={monthFilterStatus}
+        setMonthFilterStatus={setMonthFilterStatus}
+        monthFilterError={monthFilterError}
+        monthFilterLoading={monthFilterLoading}
+        runMonthFilterQuery={runMonthFilterQuery}
+        isLight={isLight}
+        cardBg={cardBg}
+        border={border}
+        green={green}
+        textPrimary={textPrimary}
+        textMuted={textMuted}
+        inputBg={inputBg}
+        inputBorder={inputBorder}
+      />
 
-              {/* Selected Dates Badges */}
-              <div className="px-4 py-2 bg-slate-500/5 border-b flex flex-wrap gap-1.5 max-h-[80px] overflow-y-auto" style={{ borderColor: border }}>
-                {continuationSelectedDates.length === 0 ? (
-                  <span className="text-[11px] text-slate-400 font-medium py-0.5">No continuation dates selected. Click on the calendar below to toggle dates.</span>
-                ) : (
-                  continuationSelectedDates.map(d => {
-                    const label = formatSimpleDateShort(d)
-                    return (
-                      <span
-                        key={d}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase transition-colors"
-                        style={{
-                          color: isLight ? '#4f46e5' : '#a5b4fc',
-                          backgroundColor: isLight ? '#e0e7ff' : 'rgba(79,70,229,0.18)',
-                          border: `1px solid ${isLight ? '#c7d2fe' : 'rgba(79,70,229,0.35)'}`,
-                        }}
-                      >
-                        {label}
-                        <button
-                          type="button"
-                          onClick={() => toggleDate(d)}
-                          className="w-3.5 h-3.5 rounded-full flex items-center justify-center hover:bg-indigo-500/20 text-[9px] font-extrabold ml-1"
-                        >
-                          x
-                        </button>
-                      </span>
-                    )
-                  })
-                )}
-              </div>
-
-              {/* Calendar */}
-              <div className="px-4 pt-4 pb-4">
-                {/* Month nav */}
-                <div className="flex items-center justify-between mb-2 px-1">
-                  <button
-                    type="button"
-                    onClick={() => goMonth(-1)}
-                    className="w-7 h-7 rounded-full flex items-center justify-center transition-colors hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-bold"
-                    style={{ color: textMuted, backgroundColor: 'transparent', cursor: 'pointer' }}
-                  >
-                    &lt;
-                  </button>
-                  <span className="text-xs font-bold" style={{ color: textPrimary }}>{monthLabel}</span>
-                  <button
-                    type="button"
-                    onClick={() => goMonth(1)}
-                    className="w-7 h-7 rounded-full flex items-center justify-center transition-colors hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-bold"
-                    style={{ color: textMuted, backgroundColor: 'transparent' }}
-                  >
-                    &gt;
-                  </button>
-                </div>
-
-                {/* Day-of-week header */}
-                <div className="grid grid-cols-7 mb-1">
-                  {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
-                    <div key={d} className="text-center text-[10px] font-bold py-1" style={{ color: textMuted }}>{d}</div>
-                  ))}
-                </div>
-
-                {/* Days grid */}
-                <div className="grid grid-cols-7 gap-y-0.5 mb-1">
-                  {Array.from({ length: firstDow }).map((_, i) => <div key={`empty-${i}`} />)}
-                  {Array.from({ length: daysInMonth }).map((_, i) => {
-                    const day = i + 1
-                    const dKey = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-                    const isToday = dKey === todayKey
-                    const isSel = continuationSelectedDates.includes(dKey)
-                    return (
-                      <button
-                        key={dKey}
-                        type="button"
-                        onClick={() => toggleDate(dKey)}
-                        className="relative w-full aspect-square flex items-center justify-center text-xs font-semibold rounded-full transition-all"
-                        style={{
-                          color: isSel ? '#fff' : isToday ? green : textPrimary,
-                          backgroundColor: isSel ? '#4f46e5' : 'transparent',
-                          cursor: 'pointer',
-                          fontWeight: isToday && !isSel ? 800 : 600,
-                        }}
-                      >
-                        {day}
-                        {isToday && !isSel && (
-                          <span
-                            className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
-                            style={{ backgroundColor: green }}
-                          />
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="px-5 py-3 flex items-center justify-end gap-2 border-t" style={{ borderColor: border }}>
-                <button
-                  type="button"
-                  onClick={closeContinuationDialog}
-                  className="px-4 py-2 rounded-xl text-xs font-bold border transition-colors"
-                  style={{ backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void commitInlineContinuation()}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90"
-                  style={{ backgroundColor: '#4f46e5' }}
-                >
-                  Save Continuation
-                </button>
-              </div>
-            </div>
-          </div>
-        )
-      })()}
-
-      {paymentPrompt && (() => {
-        const { ticket, nextStatus, updateOnly } = paymentPrompt
-        // The mode the <select> really shows and the one that gets saved — always the same value.
-        const modeValue = initialPaymentPromptMode(promptMode)
-        const modeOptions = PAYMENT_PROMPT_MODES.includes(modeValue) ? PAYMENT_PROMPT_MODES : [modeValue, ...PAYMENT_PROMPT_MODES]
-        const isNoPayment = modeValue === 'NO PAYMENT'
-        const isFreeOrPending = modeValue === 'FREE' || modeValue === 'FREE INSTALL' || modeValue === 'PENDING'
-        const isHybrid = modeValue === 'HYBRID'
-        const hybridCashNum = parseFloat(promptHybridCash) || 0
-        const hybridGcashNum = parseFloat(promptHybridGcash) || 0
-        const hybridTotal = hybridCashNum + hybridGcashNum
-        const isDoneCleaning = nextStatus === 'DONE_CLEANING'
-        const isDoneDismantle = nextStatus === 'DONE_DISMANTLE'
-        const isDoneRelocated = nextStatus === 'DONE_RELOCATED'
-        const paymentPromptHint = updateOnly
-          ? 'Update the payment mode and amount for this ticket'
-          : isDoneCleaning
-          ? 'Set payment to mark this cleaning ticket done'
-          : isDoneDismantle
-            ? 'Set payment to mark this dismantle ticket done'
-            : isDoneRelocated
-              ? 'Set payment to mark this relocation ticket done'
-              : 'Set payment to complete and archive this ticket'
-        const paymentSubmitLabel = updateOnly
-          ? 'Update Payment'
-          : isDoneCleaning
-          ? 'Complete Cleaning'
-          : isDoneDismantle
-            ? 'Complete Dismantle'
-            : isDoneRelocated
-              ? 'Complete Relocation'
-              : 'Complete & Archive'
-        const handleSubmit = (e: React.FormEvent) => {
-          e.preventDefault()
-          if (isNoPayment) return
-          if (updateOnly) {
-            // Just update payment fields without changing status
-            const amt = isFreeOrPending ? 0 : (isHybrid ? hybridTotal : (parseFloat(promptAmount) || 0))
-            const mop = modeValue
-            let breakdown: PaymentBreakdownEntry[] | undefined
-            if (isHybrid) {
-              breakdown = []
-              if (hybridCashNum > 0) breakdown.push({ mode: 'CASH', amount: hybridCashNum })
-              if (hybridGcashNum > 0) breakdown.push({ mode: 'GCASH', amount: hybridGcashNum })
-            }
-            void saveCellEdit(ticket, 'PAYMENT', '', { amount: amt, modeOfPayment: mop, breakdown })
-            setPaymentPrompt(null)
-            return
-          }
-          if (isHybrid) {
-            if (hybridTotal <= 0) return
-            const breakdown: PaymentBreakdownEntry[] = []
-            if (hybridCashNum > 0) breakdown.push({ mode: 'CASH', amount: hybridCashNum })
-            if (hybridGcashNum > 0) breakdown.push({ mode: 'GCASH', amount: hybridGcashNum })
-            void saveCellEdit(ticket, 'STATUS', nextStatus, { amount: hybridTotal, modeOfPayment: 'HYBRID', breakdown })
-            setPaymentPrompt(null)
-            return
-          }
-          const amt = isFreeOrPending ? undefined : parseFloat(promptAmount) || 0
-          void saveCellEdit(ticket, 'STATUS', nextStatus, { amount: amt, modeOfPayment: modeValue })
-          setPaymentPrompt(null)
-        }
-        return ReactDOM.createPortal(
-          <div className="fixed inset-0 z-[12000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
-            onClick={() => setPaymentPrompt(null)}>
-            <div className="w-full max-w-md rounded-2xl overflow-hidden shadow-2xl flex flex-col"
-              style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}
-              onClick={e => e.stopPropagation()}>
-              <form onSubmit={handleSubmit}>
-                <div className="px-6 py-4 flex items-center justify-between border-b" style={{ borderColor: border }}>
-                  <div>
-                    <h3 className="text-sm font-black uppercase tracking-wider" style={{ color: textPrimary }}>
-                      Payment Details
-                    </h3>
-                    <p className="text-[11px] font-semibold mt-0.5" style={{ color: textMuted }}>
-                      {paymentPromptHint}
-                    </p>
-                  </div>
-                  <button type="button" onClick={() => setPaymentPrompt(null)} className="p-1 rounded-md hover:bg-slate-500/10" style={{ color: textMuted }}>
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="p-6 flex flex-col gap-4">
-                  <div className="p-3.5 rounded-xl border flex flex-col gap-1" style={{ backgroundColor: isLight ? '#f8fafc' : '#1a2537', borderColor: border }}>
-                    <span className="text-[10px] font-black uppercase tracking-wider opacity-60" style={{ color: textMuted }}>Customer</span>
-                    <span className="text-xs font-bold" style={{ color: textPrimary }}>{getCustomerDisplayName(ticket)}</span>
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Mode of Payment</label>
-                    <select
-                      value={modeValue}
-                      onChange={e => {
-                        const m = e.target.value
-                        setPromptMode(m)
-                        if (m === 'FREE' || m === 'FREE INSTALL') setPromptAmount('0')
-                        else if (m === 'PENDING' || m === 'NO PAYMENT') setPromptAmount('')
-                      }}
-                      required
-                      className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                      style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary, fontFamily: 'inherit' }}
-                    >
-                      {modeOptions.map(m => (
-                        <option key={m} value={m}>{m === 'HYBRID' ? 'HYBRID (SPLIT PAYMENT)' : m}</option>
-                      ))}
-                    </select>
-                    {isNoPayment && (
-                      <p className="text-[10.5px] font-semibold" style={{ color: textMuted }}>
-                        Choose how the customer paid (e.g. CASH) to enter the amount.
-                      </p>
-                    )}
-                  </div>
-
-                  {isNoPayment ? null : isHybrid ? (
-                    <div className="flex flex-col gap-3">
-                      <div className="flex flex-col gap-1.5">
-                        <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Cash Amount (&#8369;)</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          placeholder="0.00"
-                          value={promptHybridCash}
-                          onChange={e => setPromptHybridCash(e.target.value)}
-                          className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>GCash Amount (&#8369;)</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          placeholder="0.00"
-                          value={promptHybridGcash}
-                          onChange={e => setPromptHybridGcash(e.target.value)}
-                          className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full"
-                          style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                        />
-                      </div>
-                      <div className="p-2.5 rounded-lg flex items-center justify-between" style={{ backgroundColor: isLight ? '#f0fdf4' : '#0d2a1a' }}>
-                        <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Total</span>
-                        <span className="text-sm font-black" style={{ color: isLight ? '#047857' : '#6ee7b7', fontVariantNumeric: 'tabular-nums' }}>
-                          {`\u20B1${hybridTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`}
-                        </span>
-                      </div>
-                      {hybridTotal <= 0 ? (
-                        <p className="text-[10.5px] font-semibold" style={{ color: '#dc2626' }}>Enter at least one amount above zero.</p>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>Payment Amount (&#8369;)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        required={!isFreeOrPending}
-                        disabled={isFreeOrPending}
-                        placeholder="0.00"
-                        value={promptAmount}
-                        onChange={e => setPromptAmount(e.target.value)}
-                        className="rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#16A34A] w-full disabled:opacity-60"
-                        style={{ backgroundColor: inputBg, border: `1px solid ${inputBorder}`, color: textPrimary }}
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div className="px-6 py-4 flex justify-end gap-3 border-t" style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}>
-                  <button type="button" onClick={() => setPaymentPrompt(null)} className="px-4 py-2 rounded-xl text-xs font-bold border transition-all" style={{ borderColor: inputBorder, color: textMuted }}>
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isNoPayment || (isHybrid && hybridTotal <= 0)}
-                    className="px-5 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
-                  >
-                    {paymentSubmitLabel}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>,
-          document.body
-        )
-      })()}
-
-      {/* ── Schedules "more filters" popup: whole-month + branch-negotiator, populates the main table ──── */}
-      {monthFilterModalOpen && ReactDOM.createPortal(
-        <div
-          className="fixed inset-0 z-[9990] flex items-center justify-center p-4 sm:p-6"
-          style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}
-        >
-          <div
-            className="rounded-2xl shadow-2xl w-full max-w-2xl h-[90vh] sm:h-auto max-h-[90vh] flex flex-col border overflow-hidden shrink-0"
-            style={{ backgroundColor: cardBg, borderColor: border }}
-          >
-            {/* Header */}
-            <div
-              className="flex items-center justify-between px-5 py-4 border-b shrink-0"
-              style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}
-            >
-              <div className="flex items-center gap-2.5">
-                <div
-                  className="flex items-center justify-center w-8 h-8 rounded-full"
-                  style={{ backgroundColor: isLight ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.18)' }}
-                >
-                  <CalendarRange className="w-4 h-4" style={{ color: green }} strokeWidth={2.1} />
-                </div>
-                <div>
-                  <div className="text-sm font-bold tracking-wide" style={{ color: textPrimary }}>Schedule Filters</div>
-                  <div className="text-[10px] font-medium" style={{ color: textMuted }}>
-                    {activeBranchLabel || 'All branches'}
-                  </div>
-                </div>
-              </div>
-              <button type="button" onClick={() => setMonthFilterModalOpen(false)} style={{ color: textMuted }}>
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Filter controls */}
-            <div className="px-5 py-4 flex flex-col gap-4 overflow-y-auto">
-              <div className="flex flex-col sm:flex-row gap-3">
-                <div className="flex flex-col gap-1 sm:w-56 shrink-0">
-                  <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
-                    Month
-                  </label>
-                  <input
-                    type="month"
-                    value={monthFilterMonth}
-                    onChange={e => setMonthFilterMonth(e.target.value)}
-                    className="h-10 px-3 rounded-xl border text-sm font-semibold outline-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  />
-                </div>
-                <div className="flex flex-col gap-1 flex-1 min-w-0">
-                  <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
-                    Negotiator
-                  </label>
-                  <select
-                    value={monthFilterNegotiatorId}
-                    onChange={e => setMonthFilterNegotiatorId(e.target.value)}
-                    className="h-10 px-3 rounded-xl border text-sm font-semibold outline-none"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                    title={activeBranchLabel ? `Negotiators for ${activeBranchLabel}` : 'Filter by negotiator'}
-                  >
-                    <option value="">All negotiators</option>
-                    {monthFilterNegotiatorOptions.map(emp => (
-                      <option key={emp.id} value={emp.id}>{formatNegotiatorLabel(emp)}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Status — wide pill grid with colored dots, same visual language as the row STATUS picker */}
-              <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
-                  Status
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    { value: '', label: 'All statuses' },
-                    { value: 'PENDING_GROUP', label: 'All Pending' },
-                    { value: 'CLOSING_GROUP', label: 'All Closing' },
-                  ].map(opt => {
-                    const active = monthFilterStatus === opt.value
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => setMonthFilterStatus(opt.value)}
-                        className="px-3 h-8 rounded-full text-[11px] font-black uppercase tracking-wide transition-colors border"
-                        style={active
-                          ? { backgroundColor: green, borderColor: green, color: '#ffffff' }
-                          : { backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}
-                      >
-                        {opt.label}
-                      </button>
-                    )
-                  })}
-                </div>
-
-                {([
-                  { title: 'PENDING', opts: SCHEDULE_PENDING_OPTS },
-                  { title: 'CLOSING', opts: SCHEDULE_CLOSING_OPTS },
-                ] as const).map(section => (
-                  <div key={section.title} className="flex flex-col gap-1.5">
-                    <p className="text-[9px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>
-                      {section.title}
-                    </p>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                      {section.opts.map(opt => {
-                        const active = monthFilterStatus === opt.value
-                        const style = getScheduleStatusBadgeStyle(opt.value, isLight)
-                        return (
-                          <button
-                            key={opt.value}
-                            type="button"
-                            onClick={() => setMonthFilterStatus(active ? '' : opt.value)}
-                            className="flex items-center gap-2 px-2.5 h-9 rounded-lg text-left transition-colors border min-w-0"
-                            style={active
-                              ? { backgroundColor: green, borderColor: green }
-                              : { backgroundColor: 'transparent', borderColor: inputBorder }}
-                          >
-                            <span
-                              className="w-2 h-2 rounded-full shrink-0 border"
-                              style={active
-                                ? { backgroundColor: '#ffffff', borderColor: '#ffffff' }
-                                : { backgroundColor: style.color, borderColor: style.borderColor }}
-                            />
-                            <span
-                              className="text-[10.5px] font-bold uppercase tracking-wide truncate"
-                              style={{ color: active ? '#ffffff' : textPrimary }}
-                            >
-                              {opt.label}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {monthFilterError && (
-                <div className="text-xs font-semibold text-red-500">{monthFilterError}</div>
-              )}
-              <button
-                type="button"
-                onClick={runMonthFilterQuery}
-                disabled={monthFilterLoading || !monthFilterMonth}
-                className="h-10 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60 flex items-center justify-center gap-2 shrink-0"
-                style={{ backgroundColor: green }}
-              >
-                {monthFilterLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Loading…
-                  </>
-                ) : 'Apply'}
-              </button>
-              <p className="text-[11px] leading-relaxed" style={{ color: textMuted }}>
-                Loads every ticket scheduled that month for this branch straight into the table below —
-                narrow by negotiator and/or status. Click a day chip above (or pick a custom date) to go
-                back to the normal single-day view.
-              </p>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )}
-
-      {/* ── My Tickets status filter — same visual language as Schedule Filters, but instant
-          client-side status narrowing (SURVEY/INSTALL/RESCHED/etc.) for the negotiator's queue ── */}
-      {myTicketsFilterModalOpen && ReactDOM.createPortal(
-        <div
-          className="fixed inset-0 z-[9990] flex items-center justify-center p-4 sm:p-6"
-          style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}
-          onClick={() => setMyTicketsFilterModalOpen(false)}
-        >
-          <div
-            className="rounded-2xl shadow-2xl w-full max-w-2xl h-[90vh] sm:h-auto max-h-[90vh] flex flex-col border overflow-hidden shrink-0"
-            style={{ backgroundColor: cardBg, borderColor: border }}
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div
-              className="flex items-center justify-between px-5 py-4 border-b shrink-0"
-              style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#0d1b2e' }}
-            >
-              <div className="flex items-center gap-2.5">
-                <div
-                  className="flex items-center justify-center w-8 h-8 rounded-full"
-                  style={{ backgroundColor: isLight ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.18)' }}
-                >
-                  <SlidersHorizontal className="w-4 h-4" style={{ color: green }} strokeWidth={2.1} />
-                </div>
-                <div>
-                  <div className="text-sm font-bold tracking-wide" style={{ color: textPrimary }}>My Tickets Filters</div>
-                  <div className="text-[10px] font-medium" style={{ color: textMuted }}>
-                    {activeBranchLabel || 'All branches'}
-                  </div>
-                </div>
-              </div>
-              <button type="button" onClick={() => setMyTicketsFilterModalOpen(false)} style={{ color: textMuted }}>
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Filter controls — Month has its own custom picker button in the toolbar now
-                (before this Filters button); this modal only handles the finer sub-status pick. */}
-            <div className="px-5 py-4 flex flex-col gap-4 overflow-y-auto">
-              <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-black uppercase tracking-wider" style={{ color: textMuted }}>
-                  Status
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    { value: '', label: 'All statuses' },
-                    { value: 'PENDING_GROUP', label: 'All Pending' },
-                    { value: 'CLOSING_GROUP', label: 'All Closing' },
-                  ].map(opt => {
-                    const active = myTicketsStatusFilter === opt.value
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => setMyTicketsStatusFilter(opt.value)}
-                        className="px-3 h-8 rounded-full text-[11px] font-black uppercase tracking-wide transition-colors border"
-                        style={active
-                          ? { backgroundColor: green, borderColor: green, color: '#ffffff' }
-                          : { backgroundColor: 'transparent', borderColor: inputBorder, color: textMuted }}
-                      >
-                        {opt.label}
-                      </button>
-                    )
-                  })}
-                </div>
-
-                {([
-                  { title: 'PENDING', opts: SCHEDULE_PENDING_OPTS },
-                  { title: 'CLOSING', opts: SCHEDULE_CLOSING_OPTS },
-                ] as const).map(section => (
-                  <div key={section.title} className="flex flex-col gap-1.5">
-                    <p className="text-[9px] font-black uppercase tracking-[0.14em]" style={{ color: textMuted }}>
-                      {section.title}
-                    </p>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                      {section.opts.map(opt => {
-                        const active = myTicketsStatusFilter === opt.value
-                        const style = getScheduleStatusBadgeStyle(opt.value, isLight)
-                        return (
-                          <button
-                            key={opt.value}
-                            type="button"
-                            onClick={() => setMyTicketsStatusFilter(active ? '' : opt.value)}
-                            className="flex items-center gap-2 px-2.5 h-9 rounded-lg text-left transition-colors border min-w-0"
-                            style={active
-                              ? { backgroundColor: green, borderColor: green }
-                              : { backgroundColor: 'transparent', borderColor: inputBorder }}
-                          >
-                            <span
-                              className="w-2 h-2 rounded-full shrink-0 border"
-                              style={active
-                                ? { backgroundColor: '#ffffff', borderColor: '#ffffff' }
-                                : { backgroundColor: style.color, borderColor: style.borderColor }}
-                            />
-                            <span
-                              className="text-[10.5px] font-bold uppercase tracking-wide truncate"
-                              style={{ color: active ? '#ffffff' : textPrimary }}
-                            >
-                              {opt.label}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <p className="text-[11px] leading-relaxed" style={{ color: textMuted }}>
-                Narrows the queue to tickets matching this status — applies instantly, no need to click
-                Apply. Closed/scheduled tickets already leave this queue on their own once a final date
-                is set, so "All Closing" will usually be empty here; use it to double-check nothing lingers.
-              </p>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )}
+      <MyTicketsFilterModal
+        open={myTicketsFilterModalOpen}
+        onClose={() => setMyTicketsFilterModalOpen(false)}
+        activeBranchLabel={activeBranchLabel}
+        myTicketsStatusFilter={myTicketsStatusFilter}
+        setMyTicketsStatusFilter={setMyTicketsStatusFilter}
+        isLight={isLight}
+        cardBg={cardBg}
+        border={border}
+        green={green}
+        textPrimary={textPrimary}
+        textMuted={textMuted}
+        inputBorder={inputBorder}
+      />
 
       {bulkAssignOpen && (
         <AssignDriversModal

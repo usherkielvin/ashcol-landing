@@ -174,14 +174,15 @@ function buildCollapsedNavItems(navLinks: NavLinkDef[]) {
 }
 
 export default function DashboardLayout() {
-  const [sidebarOpen, setSidebarOpen]         = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [isHoverExpanded, setIsHoverExpanded] = useState(false)
-  const [broadcastOpen, setBroadcastOpen] = useState(false)
+  const isDesktop = typeof window !== 'undefined' ? window.innerWidth >= 768 : true
+  const [sidebarOpen, setSidebarOpen]           = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(isDesktop)
+  const [isHoverExpanded, setIsHoverExpanded]   = useState(false)
+  const [broadcastOpen, setBroadcastOpen]       = useState(false)
   // navVisible lags behind sidebarCollapsed so text never renders mid-transition
   // collapse → hide text immediately; expand → show text only after width finishes
-  const [navVisible, setNavVisible] = useState(true)
-  const [showCollapsedIcons, setShowCollapsedIcons] = useState(false)
+  const [navVisible, setNavVisible]             = useState(!isDesktop)
+  const [showCollapsedIcons, setShowCollapsedIcons] = useState(isDesktop)
   const [profileOpen, setProfileOpen]           = useState(false)
   const [headerBranchDropdownOpen, setHeaderBranchDropdownOpen] = useState(false)
   const [openAccordion, setOpenAccordion]       = useState<string | null>(null)
