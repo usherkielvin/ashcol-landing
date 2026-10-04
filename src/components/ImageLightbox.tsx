@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, ChevronLeft, ChevronRight, ExternalLink, ZoomIn, ZoomOut, Loader2 } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, ExternalLink, ZoomIn, ZoomOut, Loader2, Play, Pause } from 'lucide-react'
 
 export interface LightboxImage {
   src: string
@@ -15,16 +15,22 @@ interface ImageLightboxProps {
   index: number
   onIndexChange: (index: number) => void
   onClose: () => void
-  /** Override the stacking level when opened from a modal that sits above the default (11000). */
+  /** Override the stacking level (defaults to the top of the page). */
   zIndex?: number
 }
 
+const SLIDESHOW_INTERVAL_MS = 3500
+
 /**
- * Fullscreen image viewer: ←/→ or swipe to navigate, Esc to close, click/double-tap to zoom.
- * Sits above ticket modals (z 9999) but below ConfirmDialog (z 12000).
+ * Fullscreen image viewer: ←/→ or swipe to navigate, Esc to close, click/double-tap to zoom,
+ * Play to run through the list as a slideshow.
+ * Always the topmost layer: the ticket details modal it opens from already sits at the maximum
+ * z-index, so a lower value here opened the viewer underneath it. On a tie the viewer still wins
+ * because its portal is appended to <body> after the modal's.
  */
 export function ImageLightbox({ images, index, onIndexChange, onClose, zIndex }: ImageLightboxProps) {
   const [zoomed, setZoomed] = useState(false)
+  const [playing, setPlaying] = useState(false)
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
   const touchStart = useRef<{ x: number; y: number } | null>(null)
   const count = images.length
@@ -67,13 +73,20 @@ export function ImageLightbox({ images, index, onIndexChange, onClose, zIndex }:
     }
   }, [index, images, count])
 
+  // Slideshow: advance once the current image has loaded; any manual move restarts the wait.
+  useEffect(() => {
+    if (!playing || zoomed || !loaded || count < 2) return
+    const timer = window.setTimeout(() => onIndexChange((index + 1) % count), SLIDESHOW_INTERVAL_MS)
+    return () => window.clearTimeout(timer)
+  }, [playing, zoomed, loaded, index, count, onIndexChange])
+
   if (!current) return null
 
   const btn = 'w-10 h-10 rounded-full flex items-center justify-center text-white bg-white/15 hover:bg-white/25 active:scale-95 transition-all border border-white/20 shadow-xl focus:outline-none'
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[11000] flex flex-col bg-black/95 backdrop-blur-md select-none"
+      className="fixed inset-0 z-[2147483647] flex flex-col bg-black/95 backdrop-blur-md select-none"
       role="dialog"
       aria-modal="true"
       aria-label="Image viewer"
@@ -99,6 +112,11 @@ export function ImageLightbox({ images, index, onIndexChange, onClose, zIndex }:
           {count > 1 ? `${index + 1} / ${count}` : ''}
         </span>
         <div className="flex items-center gap-2">
+          {count > 1 && (
+            <button type="button" className={btn} onClick={() => { setZoomed(false); setPlaying(p => !p) }} title={playing ? 'Pause slideshow' : 'Play slideshow'} aria-label={playing ? 'Pause slideshow' : 'Play slideshow'}>
+              {playing ? <Pause size={19} /> : <Play size={19} />}
+            </button>
+          )}
           <button type="button" className={btn} onClick={() => setZoomed(z => !z)} title={zoomed ? 'Fit to screen' : 'Actual size'} aria-label={zoomed ? 'Fit to screen' : 'Zoom in'}>
             {zoomed ? <ZoomOut size={20} /> : <ZoomIn size={20} />}
           </button>
