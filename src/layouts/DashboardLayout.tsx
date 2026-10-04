@@ -691,18 +691,124 @@ export default function DashboardLayout() {
       className={`flex w-full max-w-full h-dvh max-h-dvh overflow-hidden font-['Inter',sans-serif] ${sidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}`}
       style={{ backgroundColor: bg, color: textPrimary }}
     >
-      {/* ── Mobile Backdrop ─────────────────────────────── */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 md:hidden"
-          style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+      {/* ── Mobile Menu ─────────────────────────────────
+          Phones get a full-screen launcher instead of the slide-in sidebar: every page is one
+          tap away as an icon tile (no accordions), and the brand band paints under the status
+          bar so nothing looks cropped at the top. The sidebar itself is desktop/tablet only. */}
+      {sidebarOpen && (() => {
+        const groupedPaths = new Set(navGroups.flatMap(g => g.subItems.map(s => s.path)))
+        const topLinks = navLinks.filter(l => !groupedPaths.has(l.path))
+        const isActivePath = (path: string) =>
+          location.pathname === path || (path.length > 1 && location.pathname.startsWith(path + '/'))
+        const tileBg = isLight ? '#ffffff' : '#0A1120'
+        const tile = (key: string, to: string, label: string, icon: React.ReactNode) => {
+          const active = isActivePath(to)
+          return (
+            <Link
+              key={key}
+              to={to}
+              onClick={() => setSidebarOpen(false)}
+              className="flex flex-col items-center justify-start gap-1.5 px-1 py-2.5 min-h-[82px] rounded-2xl border text-center active:scale-95 transition-transform"
+              style={{
+                backgroundColor: active ? 'rgba(16,185,129,0.12)' : tileBg,
+                borderColor: active ? '#10B981' : border,
+              }}
+            >
+              <span
+                className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                style={{ backgroundColor: active ? '#10B981' : 'rgba(16,185,129,0.12)', color: active ? '#ffffff' : '#10B981' }}
+              >
+                {icon}
+              </span>
+              <span className="text-[10.5px] font-bold leading-tight line-clamp-2" style={{ color: active ? '#10B981' : textPrimary }}>
+                {label}
+              </span>
+            </Link>
+          )
+        }
+        return (
+          <div
+            className="md:hidden fixed inset-0 z-50 flex flex-col animate-in fade-in duration-150"
+            style={{ backgroundColor: bg }}
+            role="dialog"
+            aria-label="Navigation menu"
+          >
+            {/* Brand band — dark in both themes so the status-bar clock/icons stay readable */}
+            <div
+              className="shrink-0 bg-gradient-to-br from-[#0a180f] via-[#14532d] to-[#1f7a3d] text-white"
+              style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+            >
+              <div className="h-14 flex items-center justify-between px-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <img src={logoImg} alt="ASHCOL" className="w-9 h-9 object-contain rounded-lg shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-[15px] font-black tracking-wide font-['Poppins',sans-serif] leading-tight">ASHCOL</div>
+                    <div className="text-[9px] font-bold tracking-[3px] text-green-400 uppercase">Portal</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSidebarOpen(false)}
+                  aria-label="Close menu"
+                  className="w-9 h-9 rounded-full flex items-center justify-center bg-white/10 active:scale-95 transition-transform"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
 
-      {/* ── Sidebar ─────────────────────────────────────── */}
+            <div
+              className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3.5 pt-3.5 flex flex-col gap-4"
+              style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))' }}
+            >
+              {topLinks.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {topLinks.map(l => {
+                    const Icon = l.icon
+                    const active = isActivePath(l.path)
+                    return (
+                      <Link
+                        key={l.name}
+                        to={l.path}
+                        onClick={() => setSidebarOpen(false)}
+                        className="flex items-center gap-3 h-11 px-3.5 rounded-2xl border active:scale-[0.98] transition-transform"
+                        style={{ backgroundColor: active ? 'rgba(16,185,129,0.12)' : tileBg, borderColor: active ? '#10B981' : border, color: active ? '#10B981' : textPrimary }}
+                      >
+                        <Icon className="w-[18px] h-[18px] shrink-0 text-emerald-500" strokeWidth={2} />
+                        <span className="flex-1 text-[13px] font-bold">{l.name}</span>
+                        <ChevronRight className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
+                      </Link>
+                    )
+                  })}
+                </div>
+              )}
+
+              {navGroups.map(group => (
+                <section key={group.title} className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2 px-0.5">
+                    <span className="text-[10px] font-black uppercase tracking-[2px]" style={{ color: textMuted }}>{group.title}</span>
+                    <span className="flex-1 h-px" style={{ backgroundColor: border }} />
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {group.subItems.map(sub =>
+                      tile(
+                        `${group.title}-${sub.name}`,
+                        sub.path,
+                        sub.name,
+                        isValidElement(sub.icon) ? cloneElement(sub.icon, { size: 18 }) : sub.icon,
+                      ),
+                    )}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── Sidebar (tablet/desktop only — phones use the menu above) ── */}
       <div
-        className="relative flex shrink-0 h-full max-h-full min-h-0"
+        className="relative hidden md:flex shrink-0 h-full max-h-full min-h-0"
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
