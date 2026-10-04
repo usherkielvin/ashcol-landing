@@ -179,6 +179,7 @@ export function TicketPhotoGallery({
   ticket,
   isLight,
   canManage,
+  addOnly = false,
   user,
   branchLabel,
   onPhotosChange,
@@ -189,6 +190,11 @@ export function TicketPhotoGallery({
   ticket: Ticket
   isLight: boolean
   canManage: boolean
+  /**
+   * Empty holders still take uploads, but photos already attached can't be renamed or deleted —
+   * the closed-ticket rule for non-admins (mirrors TicketService.onlyAddsPhotos on the backend).
+   */
+  addOnly?: boolean
   user: AuthUser | null
   branchLabel?: string
   onPhotosChange?: (photos: TicketPhoto[]) => void
@@ -670,6 +676,7 @@ export function TicketPhotoGallery({
               {isInstall
                 ? 'Attach images to the corresponding preset slots below or drag and drop anywhere.'
                 : 'Attach Job Order and Service Report to preset slots #1 and #2, or drag and drop anywhere.'}
+              {addOnly && ' This ticket is closed — you can add photos, but only the administrator can rename or remove them.'}
             </p>
           )}
 
@@ -685,7 +692,7 @@ export function TicketPhotoGallery({
                     key={`slot-${slotIdx}-${photo.id}`}
                     photo={photo}
                     index={Math.max(0, photos.indexOf(photo))}
-                    canManage={canManage}
+                    canManage={canManage && !addOnly}
                     deletingId={deletingId}
                     tileStyle={tileStyle}
                     presets={slotPresets}

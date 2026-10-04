@@ -11,6 +11,7 @@ import { buildRelayEditDraft, type RelayEditDraft } from './relayEditForm'
 import type { TicketEditSurface } from '../../utils/ticketEditBridge'
 import type { DealerOption } from '../DealerSelect'
 import { derivePaymentSummary } from '../../utils/ticketPayment'
+import { isTicketLockedFor } from '../../utils/ticketClose'
 import {
   StatusGrid,
   resolveEffectiveStatusForGrid,
@@ -529,6 +530,7 @@ function RelayEditTicketModalInner(props: RelayEditTicketModalProps) {
             ticket={ticket as unknown as Ticket}
             isLight={isLight}
             canManage
+            addOnly={isTicketLockedFor(ticket as unknown as Ticket, user?.role)}
             user={user}
             branchLabel={resolveBranch(draft.assignBranchId || undefined)?.name || undefined}
             onPhotosChange={(photos) => {
