@@ -1,9 +1,14 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 
 type Theme = 'light' | 'dark'
+export type ThemeMode = 'auto' | 'light' | 'dark'
 
 interface ThemeContextType {
+  /** The theme actually in effect (Auto resolves to the device setting). */
   theme: Theme
+  /** What the user picked: follow the device, or force light/dark. */
+  themeMode: ThemeMode
+  setThemeMode: (mode: ThemeMode) => void
   toggleTheme: () => void
 }
 
@@ -43,48 +48,59 @@ const applyTheme = (theme: Theme) => {
   }
 }
 
+const MODE_KEY = 'ashcol-theme-mode'
+
+const systemTheme = (): Theme =>
+  window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+
+const readMode = (): ThemeMode => {
+  try {
+    const saved = localStorage.getItem(MODE_KEY)
+    if (saved === 'auto' || saved === 'light' || saved === 'dark') return saved
+  } catch { /* storage unavailable */ }
+  // The old 'ashcol-theme' key was written on every load (so it froze whatever the device
+  // happened to be on), which makes it useless as a user choice — default everyone to Auto.
+  return 'auto'
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>(() => {
-    const saved = localStorage.getItem('ashcol-theme')
-    if (saved === 'light' || saved === 'dark') return saved
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-  })
+  const [themeMode, setThemeModeState] = useState<ThemeMode>(readMode)
+  const [systemMode, setSystemMode] = useState<Theme>(systemTheme)
+
+  const theme: Theme = themeMode === 'auto' ? systemMode : themeMode
 
   // Apply immediately on first render (before paint) to avoid flash
   applyTheme(theme)
 
   useEffect(() => {
     applyTheme(theme)
-    localStorage.setItem('ashcol-theme', theme)
   }, [theme])
 
-  // Listen to OS theme changes
+  // Follow the device's light/dark setting live (also when the app is reopened after it changed).
   useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    const handleChange = (e: MediaQueryListEvent) => {
-      if (localStorage.getItem('ashcol-theme')) return
-      const next = e.matches ? 'dark' : 'light'
-      applyTheme(next)
-      setTheme(next)
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const sync = () => setSystemMode(mq.matches ? 'dark' : 'light')
+    sync()
+    mq.addEventListener('change', sync)
+    document.addEventListener('visibilitychange', sync)
+    window.addEventListener('focus', sync)
+    return () => {
+      mq.removeEventListener('change', sync)
+      document.removeEventListener('visibilitychange', sync)
+      window.removeEventListener('focus', sync)
     }
-    mediaQuery.addEventListener('change', handleChange)
-    return () => mediaQuery.removeEventListener('change', handleChange)
   }, [])
 
-  const toggleTheme = () => {
-    setTheme(prev => {
-      const next = prev === 'dark' ? 'light' : 'dark'
-      // Immediately and synchronously update DOM class and CSS variables
-      applyTheme(next)
-      try {
-        localStorage.setItem('ashcol-theme', next)
-      } catch {}
-      return next
-    })
+  const setThemeMode = (mode: ThemeMode) => {
+    setThemeModeState(mode)
+    try { localStorage.setItem(MODE_KEY, mode) } catch { /* ignore */ }
   }
 
+  // Quick light/dark flip for the small toggle buttons — pins an explicit choice.
+  const toggleTheme = () => setThemeMode(theme === 'dark' ? 'light' : 'dark')
+
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+    <ThemeContext.Provider value={{ theme, themeMode, setThemeMode, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   )

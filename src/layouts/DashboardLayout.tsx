@@ -194,7 +194,7 @@ export default function DashboardLayout() {
   const hoverDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
-  const { theme, toggleTheme } = useTheme()
+  const { theme, themeMode, setThemeMode } = useTheme()
   const { user, logout } = useAuth()
   const { openNotificationDetail } = useNotifications()
   const getToken = () => localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
@@ -1012,6 +1012,15 @@ export default function DashboardLayout() {
             paddingRight: 'env(safe-area-inset-right, 0px)',
           }}
         >
+          {/* Phone status-bar strip: the app now draws under the status bar, whose clock/icons are
+              white on iOS — so in light mode that strip stays dark to keep them readable. */}
+          {isLight && (
+            <div
+              aria-hidden
+              className="md:hidden absolute top-0 inset-x-0 pointer-events-none bg-[#0A1120]"
+              style={{ height: 'env(safe-area-inset-top, 0px)' }}
+            />
+          )}
           {/* Top row: title + icons */}
           <div className="h-14 flex items-center justify-between px-4 md:px-6 lg:px-8 relative min-w-0">
             <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0 mr-2">
@@ -1242,26 +1251,28 @@ export default function DashboardLayout() {
 
                       <div className="mx-3 my-1.5" style={{ borderTop: `1px solid ${inputBorder}` }} />
 
-                      <button
-                        type="button"
-                        onClick={toggleTheme}
-                        className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60"
-                        style={{ color: textPrimary }}
-                      >
-                        <span className="flex items-center gap-3">
-                          {isLight ? <Moon className="w-4 h-4 text-green-500" /> : <Sun className="w-4 h-4" style={{ color: '#F59E0B' }} />}
-                          Dark Mode
-                        </span>
-                        <span
-                          className="relative w-9 h-5 rounded-full transition-colors shrink-0"
-                          style={{ backgroundColor: isLight ? inputBorder : '#10B981' }}
-                        >
-                          <span
-                            className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all duration-150"
-                            style={{ left: isLight ? '2px' : 'calc(100% - 18px)' }}
-                          />
-                        </span>
-                      </button>
+                      <div className="px-4 py-2.5">
+                        <div className="flex items-center gap-3 text-sm font-medium mb-2" style={{ color: textPrimary }}>
+                          {isLight ? <Sun className="w-4 h-4" style={{ color: '#F59E0B' }} /> : <Moon className="w-4 h-4 text-green-500" />}
+                          Appearance
+                        </div>
+                        <div className="grid grid-cols-3 gap-1 p-1 rounded-xl" style={{ backgroundColor: hoverBg, border: `1px solid ${inputBorder}` }}>
+                          {([['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']] as const).map(([mode, label]) => (
+                            <button
+                              key={mode}
+                              type="button"
+                              onClick={() => setThemeMode(mode)}
+                              className="py-1.5 rounded-lg text-xs font-bold transition-colors"
+                              style={themeMode === mode ? { backgroundColor: '#10B981', color: '#fff' } : { color: textMuted }}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        {themeMode === 'auto' && (
+                          <p className="text-[10px] mt-1.5" style={{ color: textMuted }}>Follows your device ({isLight ? 'light' : 'dark'} now)</p>
+                        )}
+                      </div>
 
                       <div className="mx-3 my-1.5" style={{ borderTop: `1px solid ${inputBorder}` }} />
 
