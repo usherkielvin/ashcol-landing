@@ -1,5 +1,5 @@
 import { formatBrandCapacityLabel } from '../../utils/warrantyTicketDisplay'
-import { ROBINSON_APPLIANCES_RE } from '../../utils/dealer'
+import { ROBINSON_APPLIANCES_RE, robinsonDealerBranch } from '../../utils/dealer'
 
 export type RelayEditDraft = {
   customerName: string
@@ -131,7 +131,13 @@ export function buildRelayEditDraft(
     }
   }
 
-  const parsedDealer = parseDealer(ticket.dealer || ticket.sourceVendor)
+  // Robinson Appliances is saved as "RA <BRANCH>" (no " - " separator), which the plain
+  // store/branch splitter used by Schedules/My Tickets/Search can't take apart — split it here so
+  // every surface opens with the branch in the Dealer Branch field instead of glued to the name.
+  const rawDealer = (ticket.dealer || ticket.sourceVendor || '').trim()
+  const parsedDealer: ParsedStore = ROBINSON_APPLIANCES_RE.test(rawDealer)
+    ? { store: 'Robinsons', branch: robinsonDealerBranch(rawDealer) }
+    : parseDealer(rawDealer)
   const openedDealerName = parsedDealer.store === 'Other' && parsedDealer.customStore
     ? parsedDealer.customStore
     : parsedDealer.store === 'Robinsons'

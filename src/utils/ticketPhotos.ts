@@ -106,7 +106,9 @@ export async function saveTicketPhotos(ticketId: string, photos: TicketPhoto[]):
       const body = await res.json()
       message = body?.message || body?.error || ''
     } catch { /* non-JSON error body */ }
-    if (res.status === 403 || /access denied/i.test(message)) {
+    // Only a real permission refusal gets the generic wording — a 403 also carries the
+    // closed-ticket lock, whose own message says what is actually stopping the save.
+    if (/access denied/i.test(message) || (res.status === 403 && !message)) {
       throw new Error("You don't have access to change photos on this ticket.")
     }
     throw new Error(message || `Failed to save photos (${res.status})`)

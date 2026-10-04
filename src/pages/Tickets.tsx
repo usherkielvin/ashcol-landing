@@ -1023,6 +1023,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
     referralDatePaid?: string; referralReferenceNo?: string
     rebatesClaim?: string; rebatesCompany?: string; rebatesAmountDue?: string; rebatesStatus?: string; rebatesReferenceNo?: string
     warrantyStatus?: string; warrantyRegisteredBy?: string
+    paymentBreakdown?: Array<{ mode: string; amount: number }>
   }>({})
   const [editOriginalDate, setEditOriginalDate] = useState('')
   const [editFormSnapshot, setEditFormSnapshot] = useState('')
@@ -2390,13 +2391,14 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
         acMetaExtras.paymentMode = ''
         acMetaExtras.paymentStatus = ''
         acMetaExtras.installationCharges = ''
+        acMetaExtras.paymentBreakdown = []
       } else {
         if (paymentCharges != null && !Number.isNaN(Number(paymentCharges))) {
           body.installationCharges = Number(paymentCharges)
         }
         if (paymentMode) body.modeOfPayment = paymentMode
-        if (Array.isArray((activeForm as any).paymentBreakdown) && (activeForm as any).paymentBreakdown.length > 0) {
-          acMetaExtras.paymentBreakdown = (activeForm as any).paymentBreakdown.filter((p: any) => p.amount > 0 || (p.mode && p.mode !== 'NO_PAYMENT'))
+        if (Array.isArray(activeForm.paymentBreakdown) && activeForm.paymentBreakdown.length > 0) {
+          acMetaExtras.paymentBreakdown = activeForm.paymentBreakdown.filter(p => p.amount > 0 || (p.mode && p.mode !== 'NO_PAYMENT'))
         }
       }
 

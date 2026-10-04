@@ -29,6 +29,7 @@ export type ScheduleEditFormShape = {
   status?: string
   installationCharges?: number
   modeOfPayment?: string
+  paymentBreakdown?: Array<{ mode: string; amount: number }>
   remarks?: string
   acDetails?: string
   reschedulePending?: boolean
@@ -92,6 +93,10 @@ export function mapRelayDraftToScheduleEditForm(
     actualCompletion: draft.actualCompletion !== undefined ? draft.actualCompletion : base.actualCompletion,
     installationCharges: draft.installationCharges ?? base.installationCharges,
     modeOfPayment: draft.modeOfPayment !== undefined ? draft.modeOfPayment : base.modeOfPayment,
+    // Only set once the user touches the payment rows. Without carrying it through, the save
+    // wrote the new amount but left the old per-row breakdown in acDetails, and the form
+    // re-opened showing that stale breakdown (e.g. ₱0) instead of what was just saved.
+    paymentBreakdown: draft.paymentBreakdown ?? base.paymentBreakdown,
     remarks: remarksCombined !== undefined ? remarksCombined : base.remarks,
     reschedulePending: draft.reschedulePending ?? base.reschedulePending,
     // Fields RelayEditTicketModal exposes (referral fee, rebates, warranty registration,

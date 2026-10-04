@@ -98,7 +98,17 @@ function seedPaymentRows(ticket: TicketLike, draftExtensions?: Partial<RelayEdit
     } catch { return null }
   })() : null
 
-  if (metaBreakdown && metaBreakdown.length > 0) {
+  const currentMode = String(draftExtensions?.modeOfPayment || (ticket as any)?.modeOfPayment || (ticket as any)?.mode_of_payment || 'NO_PAYMENT').toUpperCase()
+  const currentAmt = Number(draftExtensions?.installationCharges ?? (ticket as any)?.installationCharges ?? (ticket as any)?.installation_charges ?? 0) || 0
+
+  // The saved mode/amount are the source of truth. A breakdown that no longer adds up to the
+  // saved amount is a leftover from an earlier save — seeding the rows from it showed the old
+  // amount (often ₱0) every time the form re-opened, however often the payment was re-entered.
+  const breakdownTotal = (metaBreakdown || []).reduce((sum: number, p: any) => sum + (Number(p?.amount) || 0), 0)
+  const breakdownIsCurrent = Math.abs(breakdownTotal - currentAmt) < 0.005
+    && currentMode.replace(/\s+/g, '_') !== 'NO_PAYMENT'
+
+  if (metaBreakdown && metaBreakdown.length > 0 && breakdownIsCurrent) {
     return metaBreakdown.map((p: any) => {
       const m = String(p.mode || 'CASH').toUpperCase()
       const isStd = STANDARD_PAYMENT_MODES.has(m)
@@ -110,8 +120,6 @@ function seedPaymentRows(ticket: TicketLike, draftExtensions?: Partial<RelayEdit
     })
   }
 
-  const currentMode = String(draftExtensions?.modeOfPayment || (ticket as any)?.modeOfPayment || (ticket as any)?.mode_of_payment || 'NO_PAYMENT').toUpperCase()
-  const currentAmt = Number(draftExtensions?.installationCharges ?? (ticket as any)?.installationCharges ?? (ticket as any)?.installation_charges ?? 0)
   const isStd = STANDARD_PAYMENT_MODES.has(currentMode)
   return [{
     mode: isStd ? currentMode : 'CUSTOM',
