@@ -21,6 +21,8 @@ import {
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 import { fetchAndMapTickets, fetchAndMapOnlineTickets, fetchAndMapCheckTickets, fetchAndMapForCollTickets, fetchAndMapRebateTickets, fetchAndMapCommissionTickets, fetchAndCountUnitSummary, lookupRebateRate, type CommissionRow } from '../utils/schedulePrefill'
+import { addDaysToKey, fetchDtrCoverage, invalidateDtrCoverageCache, formatDayLabel, type DtrCoverage } from '../utils/dtrCoverage'
+import { DtrCoverageBanner } from '../components/DtrCoverageBanner'
 import { DtrHistoryModal } from '../components/DtrHistoryModal'
 import ReceiptScanDialog, { type ReceiptDialogResult, NO_RECEIPT_NO } from '../components/ReceiptScanDialog'
 import { upsertAuditExpense, deleteAuditExpense, loadAuditExpenses } from '../utils/auditExpenseStorage'
@@ -726,6 +728,10 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
   const [cashOnHand, setCashOnHand]     = useState('')
   // Ending balance of the most recent earlier DTR — cash on hand must chain from it.
   const [prevDayCoh, setPrevDayCoh]     = useState<{ amount: number; date: string } | null>(null)
+  // Schedule days this DTR covers (previous DTR through yesterday) and the no-DTR days in between that still need explaining.
+  const [coverage, setCoverage]         = useState<DtrCoverage | null>(null)
+  // Bumped after a day is declared/removed so the coverage is re-read.
+  const [coverageRefresh, setCoverageRefresh] = useState(0)
   // Admin acknowledgement that a cash-on-hand mismatch with the previous DTR is intentional.
   const [cohOverrideAck, setCohOverrideAck] = useState(false)
   const [fundFromHo, setFundFromHo]     = useState('')
@@ -851,23 +857,34 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     invalidateLookupCache()
   }, [selectedBranchId, selectedAuditLine])
 
-  // Reference balance for the cash-on-hand chain check (new and reopened reports alike).
+  // Coverage window + reference balance for the cash-on-hand chain check (new and reopened reports alike).
   useEffect(() => {
     setCohOverrideAck(false)
-    if (!selectedBranchId || !/^\d{4}-\d{2}-\d{2}$/.test(reportDate) || reportDate < DOCUMENTATION_REQUIRED_FROM) {
+  }, [selectedBranchId, selectedAuditLine, reportDate])
+
+  useEffect(() => {
+    setCoverage(null)
+    if (!selectedBranchId || !/^\d{4}-\d{2}-\d{2}$/.test(reportDate)) {
       setPrevDayCoh(null)
       return
     }
     let cancelled = false
-    findPreviousDayCoh(selectedBranchId, selectedAuditLine, reportDate)
-      .then(prev => { if (!cancelled) setPrevDayCoh(prev) })
+    fetchDtrCoverage(selectedBranchId, selectedAuditLine, reportDate, reportId)
+      .then(cov => {
+        if (cancelled) return
+        setCoverage(cov)
+        const prev = cov.previousReport
+        setPrevDayCoh(prev && reportDate >= DOCUMENTATION_REQUIRED_FROM ? { amount: prev.totalCohCfd, date: prev.reportDate } : null)
+      })
       .catch(err => {
-        console.error('[prevDayCoh] Failed to load previous DTR balance:', err)
-        if (!cancelled) setPrevDayCoh(null)
+        console.error('[coverage] Failed to load DTR coverage:', err)
+        if (cancelled) return
+        setCoverage(null)
+        setPrevDayCoh(null)
       })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBranchId, selectedAuditLine, reportDate])
+  }, [selectedBranchId, selectedAuditLine, reportDate, reportId, coverageRefresh])
 
   useEffect(() => {
     if (!selectedBranchId) return
@@ -959,47 +976,58 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 30_000)
 
-    const prefillOptions = {
-      branchId: scheduleBranchId,
-      dateKey: reportDate,
-      branchName: branchName,
-      signal: controller.signal,
+    // After a closed day the DTR pulls every schedule date since the previous DTR; if the coverage lookup
+    // fails the prefill falls back to just yesterday.
+    const fetchPrefill = async () => {
+      const scheduleDateKeys = await fetchDtrCoverage(selectedBranchId, selectedAuditLine, reportDate)
+        .then(cov => cov.scheduleDates)
+        .catch(() => undefined)
+      const prefillOptions = {
+        branchId: scheduleBranchId,
+        dateKey: reportDate,
+        scheduleDateKeys,
+        branchName: branchName,
+        signal: controller.signal,
+      }
+      return Promise.all([
+        fetchAndMapTickets(prefillOptions),
+        fetchAndMapOnlineTickets(prefillOptions),
+        fetchAndMapCheckTickets(prefillOptions),
+        fetchAndMapForCollTickets(prefillOptions),
+        fetchAndCountUnitSummary(prefillOptions),
+        fetchAndMapRebateTickets(prefillOptions),
+        fetchAndMapCommissionTickets(prefillOptions),
+      ])
     }
 
-    Promise.all([
-      fetchAndMapTickets(prefillOptions),
-      fetchAndMapOnlineTickets(prefillOptions),
-      fetchAndMapCheckTickets(prefillOptions),
-      fetchAndMapForCollTickets(prefillOptions),
-      fetchAndCountUnitSummary(prefillOptions),
-      fetchAndMapRebateTickets(prefillOptions),
-      fetchAndMapCommissionTickets(prefillOptions),
-    ]).then(([cashResult, onlineResult, checkResult, forCollResult, unitSummaryResult, rebateResult, commissionResult]) => {
-      clearTimeout(timeout)
-      if (!hasCashData) {
-        if (cashResult.ok && cashResult.rows.length > 0) setCashTx(cashResult.rows)
-        if (onlineResult.ok && onlineResult.rows.length > 0) setOnlineTx(onlineResult.rows)
-        if (checkResult.ok && checkResult.rows.length > 0) setCheckRem(checkResult.rows)
-        if (forCollResult.ok && forCollResult.rows.length > 0) setForColl(forCollResult.rows)
-        if (unitSummaryResult.ok) {
-          setScheduledUnits(String(unitSummaryResult.counts.scheduledUnits))
-          setRescheduledUnits(String(unitSummaryResult.counts.rescheduledUnits))
-          setInstalledUnits(String(unitSummaryResult.counts.installedUnits))
-          setServicedUnits(String(unitSummaryResult.counts.servicedUnits))
-          setCancelledUnits(String(unitSummaryResult.counts.cancelledUnits))
-          setFreeInstallUnits(String(unitSummaryResult.counts.freeInstallUnits))
-          setSurveyOnlyUnits(String(unitSummaryResult.counts.surveyOnlyUnits))
-        }
-      }
-      if (!hasRebateData && rebateResult.ok && rebateResult.rows.length > 0) {
-        setRebates(rebateResult.rows)
-      }
-      if (!hasCommissionData && commissionResult.ok && commissionResult.rows.length > 0) {
-        setCommissions(commissionResult.rows)
-      }
-    }).catch(() => {
-      clearTimeout(timeout)
-    })
+    fetchPrefill()
+      .then(([cashResult, onlineResult, checkResult, forCollResult, unitSummaryResult, rebateResult, commissionResult]) => {
+          clearTimeout(timeout)
+          if (!hasCashData) {
+            if (cashResult.ok && cashResult.rows.length > 0) setCashTx(cashResult.rows)
+            if (onlineResult.ok && onlineResult.rows.length > 0) setOnlineTx(onlineResult.rows)
+            if (checkResult.ok && checkResult.rows.length > 0) setCheckRem(checkResult.rows)
+            if (forCollResult.ok && forCollResult.rows.length > 0) setForColl(forCollResult.rows)
+            if (unitSummaryResult.ok) {
+              setScheduledUnits(String(unitSummaryResult.counts.scheduledUnits))
+              setRescheduledUnits(String(unitSummaryResult.counts.rescheduledUnits))
+              setInstalledUnits(String(unitSummaryResult.counts.installedUnits))
+              setServicedUnits(String(unitSummaryResult.counts.servicedUnits))
+              setCancelledUnits(String(unitSummaryResult.counts.cancelledUnits))
+              setFreeInstallUnits(String(unitSummaryResult.counts.freeInstallUnits))
+              setSurveyOnlyUnits(String(unitSummaryResult.counts.surveyOnlyUnits))
+            }
+          }
+          if (!hasRebateData && rebateResult.ok && rebateResult.rows.length > 0) {
+            setRebates(rebateResult.rows)
+          }
+          if (!hasCommissionData && commissionResult.ok && commissionResult.rows.length > 0) {
+            setCommissions(commissionResult.rows)
+          }
+      })
+      .catch(() => {
+        clearTimeout(timeout)
+      })
 
     return () => { controller.abort(); clearTimeout(timeout) }
   }, [reportDate, selectedBranchId, selectedAuditLine, reportId])
@@ -1537,27 +1565,22 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     setFreeInstallUnits('0')
   }
 
-  // Walks back from `date` (up to 7 days, so Mondays see Saturday's DTR) to the latest earlier DTR.
-  // Plain fetch on purpose: it must not touch existingReportLookupCache, which is keyed by the selected branch.
+  // Ending balance of the latest earlier DTR (up to two weeks back, so Mondays see Saturday's DTR).
+  // Goes through the coverage lookup, which never touches existingReportLookupCache (keyed by the selected branch).
   const findPreviousDayCoh = async (branchId: string, auditLine: string | null, date: string) => {
     if (!branchId || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null
-    const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
-    const { year, month, day } = getIsoDateParts(date)
-    for (let back = 1; back <= 7; back++) {
-      const d = new Date(year, month - 1, day - back)
-      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-      const params = new URLSearchParams({ branchId, date: dateStr })
-      if (auditLine) params.set('auditLine', auditLine)
-      const res = await fetch(`${API_BASE_URL}/v1/reports/branch-daily/lookup?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!res.ok) continue
-      const data = await res.json()
-      if (data?.found && data?.id && data.totalCohCfd != null) {
-        return { amount: Number(data.totalCohCfd), date: dateStr }
-      }
+    const prev = (await fetchDtrCoverage(branchId, auditLine, date)).previousReport
+    return prev ? { amount: prev.totalCohCfd, date: prev.reportDate } : null
+  }
+
+  // Schedule dates a sync pulls: the coverage window (previous DTR through yesterday). If it can't be read the
+  // prefill falls back to just yesterday.
+  const getCoverageScheduleDates = async (): Promise<string[] | undefined> => {
+    try {
+      return (await fetchDtrCoverage(selectedBranchId, selectedAuditLine, reportDate, reportId)).scheduleDates
+    } catch {
+      return undefined
     }
-    return null
   }
 
   const lookupExistingReport = async (date: string, options?: { skipCache?: boolean }) => {
@@ -1996,6 +2019,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       const prefillOptions = {
         branchId: scheduleBranchId,
         dateKey: reportDate,
+        scheduleDateKeys: await getCoverageScheduleDates(),
         branchName: branchName,
       }
 
@@ -2084,6 +2108,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       const result = await fetchAndMapRebateTickets({
         branchId: scheduleBranchId,
         dateKey: reportDate,
+        scheduleDateKeys: await getCoverageScheduleDates(),
         branchName: branchName,
       })
       console.log('[Sync Rebates] Result:', result)
@@ -2118,6 +2143,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       const result = await fetchAndMapCommissionTickets({
         branchId: scheduleBranchId,
         dateKey: reportDate,
+        scheduleDateKeys: await getCoverageScheduleDates(),
         branchName: branchName,
       })
       if (!result.ok) {
@@ -2390,6 +2416,9 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
         branchId: selectedBranchId,
         auditLine: selectedAuditLine,
         reportDate,
+        // Schedule days this DTR pulled in; lets the backend refuse a second DTR that claims the same days.
+        coversFrom: coverage?.coversFrom,
+        coversTo: coverage?.coversTo,
         receivedBy,
         trNo: trNo.trim() || trNoExample,
         branchName,
@@ -2424,6 +2453,7 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       }
       const saved = await res.json() as { id?: string; success?: boolean; message?: string }
       invalidateLookupCache(reportDate)
+      invalidateDtrCoverageCache()
 
       // Purchases whose unspent amount was returned on this DTR (picked under Cash Returns): close them now that the row is saved.
       const toClose = closeAfterSave.filter(c => cashRet.some(r => r.id === c.rowId))
@@ -2573,6 +2603,12 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       if (depNoSlip) issues.push(`${depNoSlip} COH deposit${depNoSlip === 1 ? '' : 's'} with no deposit slip photo`)
       if (cohMismatch && prevDayCoh && !(isAdmin && cohOverrideAck)) {
         issues.push(`Cash on hand does not match the ending balance of the ${prevDayCoh.date} DTR (${php(prevDayCoh.amount)})${isAdmin ? ' — confirm the admin override under Cash on Hand' : ''}`)
+      }
+      // A gap between the previous DTR and this one must be explained (closed, holiday) or filed, so a missed day
+      // cannot be silently absorbed into this report.
+      const unexplainedGaps = (coverage?.gapDates ?? []).filter(g => !g.declaration)
+      if (unexplainedGaps.length > 0) {
+        issues.push(`No DTR was filed on ${unexplainedGaps.map(g => formatDayLabel(g.date)).join(', ')} — mark ${unexplainedGaps.length === 1 ? 'it' : 'each'} Closed or Holiday, or file ${unexplainedGaps.length === 1 ? 'it' : 'them'} first (see the coverage notice at the top)`)
       }
       const expNoCategory = expRows.filter(r => !r.expenseCategory).length
       if (expNoCategory) issues.push(`${expNoCategory} expense${expNoCategory === 1 ? '' : 's'} with no category — open Scan on each to pick one`)
@@ -2973,6 +3009,15 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
             </button>
           </div>
         )}
+
+        <DtrCoverageBanner
+          coverage={coverage}
+          branchId={selectedBranchId}
+          auditLine={selectedAuditLine}
+          readOnly={!canSubmit || reviewMode}
+          onChanged={() => setCoverageRefresh(n => n + 1)}
+          onFileDate={date => { void handleReportDateChange(date) }}
+        />
       </div>
 
 
@@ -3050,9 +3095,12 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
             {!isFormDisabled && (() => {
               // Purchases from earlier days that are still waiting for a receipt: pick the ones whose unspent amount is handed back today.
               const lineOf = (p: any) => (p.auditLine || 'TAGUIG_SALES')
-              const { year, month, day } = getIsoDateParts(reportDate)
-              const y = new Date(year, month - 1, day - 1)
-              const yesterday = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`
+              // "Yesterday" is the previous filed DTR, not the calendar day: on a Monday that is Saturday's DTR.
+              const lastDtrDate = coverage?.previousReport?.reportDate
+              const yesterday = lastDtrDate ?? addDaysToKey(reportDate, -1)
+              const pendingLabel = lastDtrDate && lastDtrDate !== addDaysToKey(reportDate, -1)
+                ? `Pending purchases from the last DTR (${formatDayLabel(lastDtrDate)})`
+                : "Yesterday's pending purchases"
               const queued = new Set(closeAfterSave.filter(c => cashRet.some(r => r.id === c.rowId)).map(c => c.itemId))
               const earlier = branchPurchases
                 .filter((p: any) => (!p.type || p.type === 'PURCHASE') && !p.receiptReturned && p.reportDate && p.reportDate < reportDate
@@ -3064,15 +3112,15 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
               return (
                 <div className="mx-2 mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="font-bold uppercase tracking-wider">{showOlderPending ? 'Pending purchases (earlier days)' : "Yesterday's pending purchases"}</p>
+                    <p className="font-bold uppercase tracking-wider">{showOlderPending ? 'Pending purchases (earlier days)' : pendingLabel}</p>
                     {earlier.length > yesterdays.length || showOlderPending ? (
                       <button type="button" onClick={() => setShowOlderPending(v => !v)} className="font-bold underline">
-                        {showOlderPending ? "Only yesterday's" : `Show all earlier (${earlier.length})`}
+                        {showOlderPending ? (lastDtrDate ? 'Only the last DTR' : "Only yesterday's") : `Show all earlier (${earlier.length})`}
                       </button>
                     ) : null}
                   </div>
                   {shown.length === 0 ? (
-                    <p className="mt-1 opacity-80">Nothing from yesterday is pending.</p>
+                    <p className="mt-1 opacity-80">{lastDtrDate ? 'Nothing from the last DTR is pending.' : 'Nothing from yesterday is pending.'}</p>
                   ) : (
                     <div className="mt-1.5 flex max-h-56 flex-col gap-1 overflow-y-auto">
                       {shown.map((p: any) => {

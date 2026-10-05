@@ -525,7 +525,7 @@ export default function DashboardLayout() {
     { name: 'Schedules',       path: '/schedules',        icon: CalendarDays },
     { name: 'My Tickets',      path: '/my-tickets',       icon: ClipboardList,   roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Relays',          path: '/relays',           icon: Radio,           roles: canAccessRelays ? ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] : ['admin', 'management'] },
-    { name: 'Bookings',        path: '/bookings',         icon: CalendarPlus,    roles: canAccessRelays ? ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] : ['admin', 'management'] },
+    { name: 'Bookings',        path: '/bookings',         icon: CalendarPlus,    roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Search',          path: '/search',          icon: Search },
     { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
     { name: 'Registration',   path: '/registration',    icon: ClipboardCheck, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
@@ -551,8 +551,8 @@ export default function DashboardLayout() {
   const role = (user?.role || '').toLowerCase()
   const isAuthorizedRole = role === 'admin' || role === 'management' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic' || role === 'technician' || role === 'driver'
 
-  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'LINEUP', 'Request Forms', 'Members', 'Vehicles', 'Directory', 'Payouts', ...(canAccessRelays ? ['Relays', 'Bookings'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
-  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'LINEUP', 'Request Forms', 'Members', 'Vehicles', 'Directory', 'Payouts', ...(canAccessRelays ? ['Relays', 'Bookings'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
+  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'LINEUP', 'Request Forms', 'Members', 'Vehicles', 'Directory', 'Payouts', 'Bookings', ...(canAccessRelays ? ['Relays'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
+  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'LINEUP', 'Request Forms', 'Members', 'Vehicles', 'Directory', 'Payouts', 'Bookings', ...(canAccessRelays ? ['Relays'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
   const isSalesUser = isSalesWorkspaceUser(user)
   const isServiceUser = isServiceWorkspaceUser(user)
 
@@ -1144,9 +1144,9 @@ export default function DashboardLayout() {
                   <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-snug py-0.5 uppercase truncate" style={{ color: textPrimary }}>
                     Search
                   </h1>
-                ) : currentPage === 'Relays' || currentPage === 'Employees' || currentPage === 'Members' || currentPage === 'Registration' || currentPage === 'Request Forms' || currentPage === 'Request Forms Archive' || currentPage === 'Payouts' || currentPage === 'Payroll' || currentPage === 'For Collections' || currentPage === 'Cash Advance' || location.pathname.startsWith('/payouts') || location.pathname.startsWith('/payroll') || location.pathname === '/operations-forms' || location.pathname === '/request-forms-archive' || location.pathname === '/collections' || location.pathname === '/cash-advances' ? (
+                ) : currentPage === 'Relays' || currentPage === 'Employees' || currentPage === 'Members' || currentPage === 'Registration' || currentPage === 'Bookings' || location.pathname === '/bookings' || currentPage === 'Request Forms' || currentPage === 'Request Forms Archive' || currentPage === 'Payouts' || currentPage === 'Payroll' || currentPage === 'For Collections' || currentPage === 'Cash Advance' || location.pathname.startsWith('/payouts') || location.pathname.startsWith('/payroll') || location.pathname === '/operations-forms' || location.pathname === '/request-forms-archive' || location.pathname === '/collections' || location.pathname === '/cash-advances' ? (
                   <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-snug py-0.5 uppercase truncate" style={{ color: textPrimary }}>
-                    {currentPage}
+                    {currentPage === 'Bookings' || location.pathname === '/bookings' ? 'BOOKING' : currentPage}
                   </h1>
                 ) : (
                   <>
@@ -1403,7 +1403,7 @@ export default function DashboardLayout() {
               ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-2 md:p-3"
               : (currentPage === 'Payouts' || currentPage === 'Payroll')
                 ? "flex-1 flex flex-col min-h-0 overflow-hidden relative px-1.5 py-2 md:px-2 md:py-2.5"
-              : (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'Messages' || location.pathname.startsWith('/messages'))
+              : (currentPage === 'Relays' || currentPage === 'Bookings' || location.pathname === '/bookings' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'Messages' || location.pathname.startsWith('/messages'))
                 ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
                 : (currentPage === 'Request Forms' || currentPage === 'Operations Forms')
                   ? "flex-1 overflow-y-auto px-6 py-6 relative"
@@ -1414,7 +1414,7 @@ export default function DashboardLayout() {
             touchAction: 'pan-y',
             paddingLeft: 'env(safe-area-inset-left, 0px)',
             paddingRight: 'env(safe-area-inset-right, 0px)',
-            ...( (currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'Messages' || currentPage === 'DDRM' || currentPage === 'Payouts' || currentPage === 'Payroll' || location.pathname.startsWith('/messages'))
+            ...( (currentPage === 'Relays' || currentPage === 'Bookings' || location.pathname === '/bookings' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'Messages' || currentPage === 'DDRM' || currentPage === 'Payouts' || currentPage === 'Payroll' || location.pathname.startsWith('/messages'))
               ? { paddingBottom: 'env(safe-area-inset-bottom, 0px)' }
               : { paddingBottom: 'max(1.5rem, calc(1.5rem + env(safe-area-inset-bottom, 0px)))' }
             )
@@ -1429,7 +1429,7 @@ export default function DashboardLayout() {
                    zIndex: 0,
                  }} />
           )}
-          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'DDRM' || currentPage === 'Payouts' || currentPage === 'Payroll' || currentPage === 'Messages' || location.pathname.startsWith('/messages')) ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
+          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'Bookings' || location.pathname === '/bookings' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'DDRM' || currentPage === 'Payouts' || currentPage === 'Payroll' || currentPage === 'Messages' || location.pathname.startsWith('/messages')) ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
             {/* Do not key Outlet by pathname — that remounts Schedules on every nav and forces a reload spinner. */}
             <Suspense fallback={
               <div className="flex items-center justify-center min-h-[50vh] w-full transition-opacity duration-200">

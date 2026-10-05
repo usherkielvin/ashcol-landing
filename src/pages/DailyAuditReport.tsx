@@ -7,7 +7,7 @@ import {
   ArrowUp, ArrowDown,
   MoreVertical,
   Loader2,
-  Trash2, ClipboardList, Upload, Check, FileEdit,
+  Trash2, ClipboardList, Upload, Check, FileEdit, CalendarOff,
   History as HistoryIcon,
   BarChart2
 } from 'lucide-react'
@@ -18,6 +18,7 @@ import DTR_Form from './DTR_Form'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import { exportDtrReportToPdf } from '../utils/pdfExport'
 import { DtrHistoryModal } from '../components/DtrHistoryModal'
+import { BulkDayDeclarationDialog } from '../components/BulkDayDeclarationDialog'
 import { useArctic } from '../contexts/ArcticContext'
 import { UnitSummaryGrid } from '../components/UnitSummaryGrid'
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -143,6 +144,12 @@ const formatRemarksLabel = (remarks: string, compact: boolean = false) => {
   if (remarks === 'PENDING') return 'Pending'
   return remarks
 }
+
+// Days a branch declared closed / holiday / no operations (no DTR expected): neutral, not the red "no record".
+const DECLARED_DAY_LABEL: Record<string, string> = { CLOSED: 'Closed', HOLIDAY: 'Holiday', NO_OPERATIONS: 'No operations' }
+const isDeclaredDay = (status: string) => Object.prototype.hasOwnProperty.call(DECLARED_DAY_LABEL, status)
+const DECLARED_DAY_COLOR = '#94a3b8'
+const declaredBadgeStyle = (isLight: boolean) => ({ backgroundColor: 'rgba(148,163,184,0.18)', color: isLight ? '#475569' : '#cbd5e1' })
 
 const remarksBadgeStyle = (remarks: string, noRecord: boolean, isAbove: boolean, isLight: boolean) => {
   if (remarks === 'PENDING') {
@@ -474,6 +481,8 @@ export default function DailyAuditReport() {
 
 
 
+  const [bulkDeclareOpen, setBulkDeclareOpen] = useState(false)
+
   const fetchAudit = useCallback(async () => {
     if (viewMode === 'range' && (!rangeFrom || !rangeTo)) return
     setLoading(true)
@@ -703,6 +712,14 @@ export default function DailyAuditReport() {
 
 
 
+      {bulkDeclareOpen && (
+        <BulkDayDeclarationDialog
+          initialDate={viewMode === 'single' ? date : rangeFrom || date}
+          onClose={() => setBulkDeclareOpen(false)}
+          onSaved={() => { void fetchAudit() }}
+        />
+      )}
+
       {/* ── Submit Tab ──────────────────────────────────────────────────────── */}
       {activeTab === 'submit' && (
         <DTR_Form onSwitchToSummary={() => {
@@ -750,6 +767,12 @@ export default function DailyAuditReport() {
                         <button type="button" onClick={() => { setActiveTab('submit'); setMobileMenuOpen(false) }}
                           className="w-full flex items-center gap-2 px-3.5 py-2 text-left text-xs font-semibold" style={{ color: textPrimary }}>
                           <FileEdit className="w-3.5 h-3.5 text-emerald-500" /> Submit Daily Report
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button type="button" onClick={() => { setBulkDeclareOpen(true); setMobileMenuOpen(false) }}
+                          className="w-full flex items-center gap-2 px-3.5 py-2 text-left text-xs font-semibold" style={{ color: textPrimary }}>
+                          <CalendarOff className="w-3.5 h-3.5" style={{ color: textMuted }} /> Declare holiday
                         </button>
                       )}
 
@@ -1045,6 +1068,17 @@ export default function DailyAuditReport() {
               className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm text-white shadow-md transition-colors hover:opacity-90 focus:outline-none bg-[#047857]"
             >
               <FileEdit className="w-4 h-4" /> Submit Daily Report
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setBulkDeclareOpen(true)}
+              title="Declare a holiday or closure for every branch, so staff are not asked about those days"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm border transition-colors hover:opacity-90 focus:outline-none"
+              style={{ borderColor: inputBorder, color: textPrimary }}
+            >
+              <CalendarOff className="w-4 h-4" /> Declare holiday
             </button>
           )}
           {hiddenBranches.length > 0 && (
@@ -1388,7 +1422,8 @@ export default function DailyAuditReport() {
                   const isAbove    = row.remarks === 'ABOVE QUOTA'
                   const isPending  = row.remarks === 'PENDING'
                   const noRecord   = row.status === 'NO RECORD' || row.status === 'NO REPORT' || row.status === 'NO SCHED'
-                  const noTransaction = isNoTransactionRemarks(row.remarks) || noRecord
+                  const declaredDay = isDeclaredDay(row.status)
+                  const noTransaction = (isNoTransactionRemarks(row.remarks) || noRecord) && !declaredDay
                   const p          = compactView ? '6px 10px' : '9px 14px'
                   const isSelected = selectedRow && `${selectedRow.branchId}:${selectedRow.auditLine || ''}` === `${row.branchId}:${row.auditLine || ''}`
                   const isEven     = idx % 2 === 0
@@ -1448,10 +1483,10 @@ export default function DailyAuditReport() {
                                 width: '5px',
                                 height: '5px',
                                 borderRadius: '50%',
-                                backgroundColor: isPending ? '#f59e0b' : noRecord ? '#ef4444' : '#10b981'
+                                backgroundColor: isPending ? '#f59e0b' : declaredDay ? DECLARED_DAY_COLOR : noRecord ? '#ef4444' : '#10b981'
                               }} />
-                              <span style={{ color: noTransaction && !isPending ? '#ef4444' : isPending ? '#f59e0b' : '#10b981', fontWeight: 600 }}>
-                                {isPending ? 'Pending' : noTransaction ? (compactView ? 'No Trans' : 'No Transaction') : 'Checked'}
+                              <span style={{ color: declaredDay ? DECLARED_DAY_COLOR : noTransaction && !isPending ? '#ef4444' : isPending ? '#f59e0b' : '#10b981', fontWeight: 600 }}>
+                                {isPending ? 'Pending' : declaredDay ? DECLARED_DAY_LABEL[row.status] : noTransaction ? (compactView ? 'No Trans' : 'No Transaction') : 'Checked'}
                               </span>
                               {!noRecord && (row.createdAt || row.timeUploaded) && (
                                 <span style={{ color: isLight ? '#94a3b8' : '#64748b', fontWeight: 400 }}>• {formatLocalTime(row.createdAt, row.timeUploaded)}</span>
@@ -1488,11 +1523,11 @@ export default function DailyAuditReport() {
                             fontSize: compactView ? 9 : 11,
                             fontWeight: 700,
                             whiteSpace: 'nowrap',
-                            ...remarksBadgeStyle(row.remarks, noRecord, isAbove, isLight),
+                            ...(declaredDay ? declaredBadgeStyle(isLight) : remarksBadgeStyle(row.remarks, noRecord, isAbove, isLight)),
                           }}>
-                            {formatRemarksLabel(row.remarks, compactView)}
+                            {declaredDay ? (row.remarks || DECLARED_DAY_LABEL[row.status]) : formatRemarksLabel(row.remarks, compactView)}
                           </span>
-                          {!noRecord && (
+                          {!noRecord && !declaredDay && (
                             <span className="font-semibold text-xs tabular-nums" style={{ color: isAbove ? (isLight ? '#059669' : '#34d399') : (isLight ? '#dc2626' : '#f87171') }}>
                               {isAbove ? '+' : ''}{peso(row.difference)}
                             </span>
@@ -1682,10 +1717,11 @@ export default function DailyAuditReport() {
             const isAbove = row.remarks === 'ABOVE QUOTA'
             const isPending = row.remarks === 'PENDING'
             const noRecord = row.status === 'NO RECORD' || row.status === 'NO REPORT' || row.status === 'NO SCHED'
-            const noTransaction = isNoTransactionRemarks(row.remarks) || noRecord
+            const declaredDay = isDeclaredDay(row.status)
+            const noTransaction = (isNoTransactionRemarks(row.remarks) || noRecord) && !declaredDay
             const isExpanded = false
-            const statusColor = isPending ? '#F59E0B' : noTransaction ? '#EF4444' : '#10B981'
-            const diffColor = noRecord ? textMuted : isAbove ? '#10B981' : '#EF4444'
+            const statusColor = isPending ? '#F59E0B' : declaredDay ? DECLARED_DAY_COLOR : noTransaction ? '#EF4444' : '#10B981'
+            const diffColor = noRecord || declaredDay ? textMuted : isAbove ? '#10B981' : '#EF4444'
 
             return (
               <div key={idx} className="relative bg-white dark:bg-[#0A1120] rounded-xl border p-3 flex flex-col gap-2"
@@ -1709,14 +1745,14 @@ export default function DailyAuditReport() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="mobile-status-dot" style={{ backgroundColor: statusColor }} />
                     <span className="text-xs font-medium" style={{ color: statusColor }}>
-                      {isPending ? 'Pending' : noTransaction ? 'No transaction' : 'Checked'}
+                      {isPending ? 'Pending' : declaredDay ? DECLARED_DAY_LABEL[row.status] : noTransaction ? 'No transaction' : 'Checked'}
                     </span>
                     {!noRecord && (row.createdAt || row.timeUploaded) && (
                       <span className="text-xs" style={{ color: textMuted }}>{formatLocalTime(row.createdAt, row.timeUploaded)}</span>
                     )}
                     <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold"
-                      style={remarksBadgeStyle(row.remarks, noRecord, isAbove, isLight)}>
-                      {formatRemarksLabel(row.remarks, true)}
+                      style={declaredDay ? declaredBadgeStyle(isLight) : remarksBadgeStyle(row.remarks, noRecord, isAbove, isLight)}>
+                      {declaredDay ? (row.remarks || DECLARED_DAY_LABEL[row.status]) : formatRemarksLabel(row.remarks, true)}
                     </span>
                     {row.totalCohCfd >= CASH_DEPOSIT_THRESHOLD && (
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase"
@@ -1732,7 +1768,7 @@ export default function DailyAuditReport() {
                       { label: 'Sales', value: `₱${peso(row.grossSales)}`, color: '#3B82F6' },
                       { label: 'Net', value: `₱${peso(computeNetSales(row))}`, color: textPrimary },
                       { label: 'Quota', value: `₱${peso(row.targetDailyQuota)}`, color: textMuted },
-                      { label: 'Diff', value: noRecord ? '—' : `${isAbove ? '+' : ''}₱${peso(row.difference)}`, color: diffColor },
+                      { label: 'Diff', value: noRecord || declaredDay ? '—' : `${isAbove ? '+' : ''}₱${peso(row.difference)}`, color: diffColor },
                       { label: 'COH', value: `₱${peso(row.totalCohCfd)}`, color: row.totalCohCfd >= CASH_DEPOSIT_THRESHOLD ? (isLight ? '#DC2626' : '#F87171') : textPrimary },
                     ].map(m => (
                       <div key={m.label} className="flex flex-col gap-0.5 min-w-0">
@@ -1868,8 +1904,10 @@ export default function DailyAuditReport() {
                     className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide shrink-0"
                     style={{
                       backgroundColor: selectedRow.remarks === 'PENDING' ? 'rgba(245,158,11,0.12)'
+                        : isDeclaredDay(selectedRow.status) ? 'rgba(148,163,184,0.18)'
                         : (selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT' || selectedRow.status === 'NO SCHED' ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.12)'),
                       color: selectedRow.remarks === 'PENDING' ? '#F59E0B'
+                        : isDeclaredDay(selectedRow.status) ? DECLARED_DAY_COLOR
                         : (selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT' || selectedRow.status === 'NO SCHED' ? '#EF4444' : '#10B981')
                     }}
                   >
@@ -1878,6 +1916,7 @@ export default function DailyAuditReport() {
                       backgroundColor: 'currentColor'
                     }} />
                     {selectedRow.remarks === 'PENDING' ? 'PENDING'
+                      : isDeclaredDay(selectedRow.status) ? DECLARED_DAY_LABEL[selectedRow.status].toUpperCase()
                       : isNoTransactionRemarks(selectedRow.remarks) || selectedRow.status === 'NO RECORD' || selectedRow.status === 'NO REPORT'
                         ? 'NO TRANSACTION' : selectedRow.status}
                   </span>
@@ -2088,7 +2127,7 @@ export default function DailyAuditReport() {
                             { label: 'Net Sales', value: `₱${peso(computeNetSales(selectedRow))}`, color: '#2563EB', bold: true },
                             { label: 'Target Quota', value: `₱${peso(selectedRow.targetDailyQuota)}`, color: textMuted },
                             { label: 'Difference', value: `${selectedRow.remarks === 'ABOVE QUOTA' ? '+' : ''}₱${peso(selectedRow.difference)}`, color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : '#EF4444', bold: true },
-                            { label: 'Remarks', value: formatRemarksLabel(selectedRow.remarks, false), color: selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : selectedRow.remarks === 'PENDING' ? '#F59E0B' : isNoTransactionRemarks(selectedRow.remarks) ? textMuted : '#EF4444', bold: true },
+                            { label: 'Remarks', value: isDeclaredDay(selectedRow.status) ? (selectedRow.remarks || DECLARED_DAY_LABEL[selectedRow.status]) : formatRemarksLabel(selectedRow.remarks, false), color: isDeclaredDay(selectedRow.status) ? textMuted : selectedRow.remarks === 'ABOVE QUOTA' ? '#10B981' : selectedRow.remarks === 'PENDING' ? '#F59E0B' : isNoTransactionRemarks(selectedRow.remarks) ? textMuted : '#EF4444', bold: true },
                           ],
                         },
                         {

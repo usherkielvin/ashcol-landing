@@ -82,6 +82,40 @@ function formatDate(dateStr?: string): string {
   return `${monthName} ${parseInt(dayStr, 10)}, ${yearStr}`
 }
 
+function formatPhoneNumber(phone?: string | null): string {
+  if (!phone) return '—'
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length === 11 && digits.startsWith('09')) {
+    return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`
+  }
+  if (digits.length === 12 && digits.startsWith('639')) {
+    return `0${digits.slice(2, 5)} ${digits.slice(5, 8)} ${digits.slice(8)}`
+  }
+  if (digits.length === 10 && digits.startsWith('9')) {
+    return `0${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`
+  }
+  return phone
+}
+
+function formatSentDateTime(dateStr?: string): string {
+  if (!dateStr) return ''
+  try {
+    const d = new Date(dateStr)
+    if (!isNaN(d.getTime())) {
+      const timeStr = d.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      })
+      const datePart = formatDate(dateStr) || d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      return `Sent ${timeStr}, ${datePart}`
+    }
+  } catch {
+    // fallback
+  }
+  return `Sent ${formatDate(dateStr)}`
+}
+
 async function fetchBookings(token: string, status?: string): Promise<Booking[]> {
   const params = new URLSearchParams()
   if (status && status !== 'ALL') params.set('status', status)
@@ -522,10 +556,11 @@ export default function Bookings() {
                         type="button"
                         onClick={(e) => copyPhone(b.id, b.contactPhone, e)}
                         title="Click to copy"
-                        className="w-fit text-left text-sm font-semibold tracking-normal"
+                        className="w-fit inline-flex items-center gap-1.5 text-left text-xs font-semibold tracking-normal transition-colors hover:text-emerald-500"
                         style={{ color: copiedId === b.id ? green : textMuted }}
                       >
-                        {copiedId === b.id ? 'COPIED' : b.contactPhone}
+                        <Phone className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                        <span>{copiedId === b.id ? 'Copied' : formatPhoneNumber(b.contactPhone)}</span>
                       </button>
                     </td>
 
@@ -567,7 +602,7 @@ export default function Bookings() {
                           {formatDate(b.requestedDate) || 'Flexible'}
                         </span>
                         <span className="text-[11px]" style={{ color: textMuted }}>
-                          Sent {formatDate(b.createdAt)}
+                          {formatSentDateTime(b.createdAt)}
                         </span>
                       </div>
                     </td>
@@ -648,15 +683,17 @@ export default function Bookings() {
             >
               {/* Customer + Status */}
               <div className="flex items-start justify-between gap-3">
-                <div className="flex flex-col gap-0.5 min-w-0">
-                  <span className="font-bold text-sm" style={{ color: textPrimary }}>{b.customerName}</span>
+                <div className="flex flex-col gap-1 min-w-0">
+                  <span className="font-bold text-sm tracking-tight" style={{ color: textPrimary }}>{b.customerName}</span>
                   <button
                     type="button"
                     onClick={(e) => copyPhone(b.id, b.contactPhone, e)}
-                    className="w-fit text-left text-xs font-mono font-medium tracking-wide"
+                    className="w-fit inline-flex items-center gap-1.5 text-left text-xs font-semibold tracking-normal transition-colors hover:text-emerald-500 active:scale-95"
                     style={{ color: copiedId === b.id ? green : textMuted }}
+                    title="Click to copy"
                   >
-                    {copiedId === b.id ? 'COPIED' : b.contactPhone}
+                    <Phone className="w-3 h-3 shrink-0 opacity-70" />
+                    <span>{copiedId === b.id ? 'Copied' : formatPhoneNumber(b.contactPhone)}</span>
                   </button>
                 </div>
                 {isBusy ? (
@@ -696,7 +733,7 @@ export default function Bookings() {
                 <span className="font-bold uppercase tracking-wide" style={{ color: textPrimary }}>
                   {formatDate(b.requestedDate) || 'Flexible'}
                 </span>
-                <span style={{ color: textMuted }}>Sent {formatDate(b.createdAt)}</span>
+                <span className="text-[11px] sm:text-xs" style={{ color: textMuted }}>{formatSentDateTime(b.createdAt)}</span>
               </div>
 
               {/* Combined actions */}
@@ -795,7 +832,7 @@ export default function Bookings() {
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors"
                   >
                     <Phone className="w-3.5 h-3.5" />
-                    {selectedBooking.contactPhone}
+                    {formatPhoneNumber(selectedBooking.contactPhone)}
                   </a>
                   <a
                     href={smsHref(selectedBooking.contactPhone)}
@@ -951,7 +988,7 @@ export default function Bookings() {
                   <div>
                     <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: textMuted }}>Date Submitted</span>
                     <p className="text-xs font-bold" style={{ color: textPrimary }}>
-                      {formatDate(selectedBooking.createdAt) || 'Recent'}
+                      {formatSentDateTime(selectedBooking.createdAt).replace(/^Sent\s+/, '') || 'Recent'}
                     </p>
                   </div>
                 </div>

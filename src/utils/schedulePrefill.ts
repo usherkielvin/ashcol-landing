@@ -19,7 +19,13 @@ export type PrefillResult =
 
 export interface PrefillOptions {
   branchId: string
-  dateKey: string       // Report date (YYYY-MM-DD) — the service subtracts 1 day internally
+  dateKey: string       // Report date (YYYY-MM-DD)
+  /**
+   * Schedule dates (YYYY-MM-DD) this report pulls. Normally omitted: the service then uses just
+   * the day before `dateKey`. After a closed day it holds every date since the previous DTR
+   * (see `fetchDtrCoverage`), e.g. a Monday DTR pulls Saturday and Sunday.
+   */
+  scheduleDateKeys?: string[]
   branchName: string
   signal?: AbortSignal
 }
@@ -136,6 +142,34 @@ export async function fetchScheduleTickets(
   return tickets
 }
 
+/** The schedule dates a prefill pulls: the explicit coverage window, or just the day before the report date. */
+export function resolveScheduleDateKeys(options: Pick<PrefillOptions, 'dateKey' | 'scheduleDateKeys'>): string[] {
+  return options.scheduleDateKeys && options.scheduleDateKeys.length > 0
+    ? options.scheduleDateKeys
+    : [getPreviousDayKey(options.dateKey)]
+}
+
+/**
+ * Fetch the schedule tickets of every covered date and merge them (a ticket id seen on two days counts once).
+ * Throws like `fetchScheduleTickets` if any day fails, so a window is never half-synced.
+ */
+export async function fetchWindowTickets(options: PrefillOptions): Promise<Ticket[]> {
+  const days = await Promise.all(
+    resolveScheduleDateKeys(options).map((dateKey) => fetchScheduleTickets(options.branchId, dateKey, options.signal)),
+  )
+  const seen = new Set<string>()
+  const merged: Ticket[] = []
+  for (const ticket of days.flat()) {
+    const id = ticket.id != null ? String(ticket.id) : ''
+    if (id) {
+      if (seen.has(id)) continue
+      seen.add(id)
+    }
+    merged.push(ticket)
+  }
+  return merged
+}
+
 /**
  * Helper to check if a schedule ticket is closed/completed (DONE_INSTALLED, DONE_CLEANING, DONE_CHECKUP, etc.).
  */
@@ -217,18 +251,17 @@ export function mapTicketToCashRow(ticket: Ticket, branchName: string): CashTxRo
 }
 
 /**
- * Orchestrator: fetches schedule tickets for the PREVIOUS day (report date - 1),
+ * Orchestrator: fetches the schedule tickets of the covered dates (the day before the report date by default),
  * filters qualifying ones, and maps them to CashTxRows.
  * Never throws — returns a discriminated result union.
  */
 export async function fetchAndMapTickets(options: PrefillOptions): Promise<PrefillResult> {
   try {
-    // The report date refers to the day being reported ON.
-    // Schedule tickets to prefill are from the PREVIOUS day.
-    const scheduleDateKey = getPreviousDayKey(options.dateKey)
-    console.log('[schedulePrefill] Report date:', options.dateKey, '→ fetching schedule for:', scheduleDateKey, 'branch:', options.branchId)
+    // The report date refers to the day being reported ON; the tickets to prefill come from the
+    // schedule dates it covers (normally just the day before, more after a closed day).
+    console.log('[schedulePrefill] Report date:', options.dateKey, '→ fetching schedule for:', resolveScheduleDateKeys(options).join(', '), 'branch:', options.branchId)
 
-    const tickets = await fetchScheduleTickets(options.branchId, scheduleDateKey, options.signal)
+    const tickets = await fetchWindowTickets(options)
     console.log('[schedulePrefill] Fetched', tickets.length, 'tickets total')
 
     // Debug: log statuses and payment modes for first few tickets
@@ -377,10 +410,9 @@ export function mapTicketToOnlineRow(ticket: Ticket, branchName: string): Online
  */
 export async function fetchAndMapOnlineTickets(options: PrefillOptions): Promise<OnlinePrefillResult> {
   try {
-    const scheduleDateKey = getPreviousDayKey(options.dateKey)
-    console.log('[schedulePrefill:online] Report date:', options.dateKey, '→ fetching schedule for:', scheduleDateKey)
+    console.log('[schedulePrefill:online] Report date:', options.dateKey, '→ fetching schedule for:', resolveScheduleDateKeys(options).join(', '))
 
-    const tickets = await fetchScheduleTickets(options.branchId, scheduleDateKey, options.signal)
+    const tickets = await fetchWindowTickets(options)
     const qualifying = filterOnlineTickets(tickets)
     console.log('[schedulePrefill:online] Qualifying (INSTALLED + ONLINE/GCASH/BANK):', qualifying.length)
 
@@ -490,8 +522,7 @@ export function mapTicketToCheckRow(ticket: Ticket, branchName: string): CheckRo
  */
 export async function fetchAndMapCheckTickets(options: PrefillOptions): Promise<CheckPrefillResult> {
   try {
-    const scheduleDateKey = getPreviousDayKey(options.dateKey)
-    const tickets = await fetchScheduleTickets(options.branchId, scheduleDateKey, options.signal)
+    const tickets = await fetchWindowTickets(options)
     const qualifying = filterCheckTickets(tickets)
     console.log('[schedulePrefill:check] Qualifying (INSTALLED + CHEQUE):', qualifying.length)
     const rows = qualifying.map((t) => mapTicketToCheckRow(t, options.branchName))
@@ -594,8 +625,7 @@ export function mapTicketToForCollRow(ticket: Ticket, branchName: string): ForCo
  */
 export async function fetchAndMapForCollTickets(options: PrefillOptions): Promise<ForCollPrefillResult> {
   try {
-    const scheduleDateKey = getPreviousDayKey(options.dateKey)
-    const tickets = await fetchScheduleTickets(options.branchId, scheduleDateKey, options.signal)
+    const tickets = await fetchWindowTickets(options)
     const qualifying = filterForCollectionTickets(tickets)
     console.log('[schedulePrefill:forColl] Qualifying (INSTALLED + FOR COLLECTION):', qualifying.length)
     const rows = qualifying.map((t) => mapTicketToForCollRow(t, options.branchName))
@@ -772,8 +802,7 @@ export function mapTicketToRebateRow(ticket: Ticket): RebateRow {
  */
 export async function fetchAndMapRebateTickets(options: PrefillOptions): Promise<RebatePrefillResult> {
   try {
-    const scheduleDateKey = getPreviousDayKey(options.dateKey)
-    const tickets = await fetchScheduleTickets(options.branchId, scheduleDateKey, options.signal)
+    const tickets = await fetchWindowTickets(options)
     const qualifying = filterFreeCommitTickets(tickets)
     console.log('[schedulePrefill:rebate] Qualifying (INSTALLED + FREE commit):', qualifying.length)
     const rows = qualifying.map((t) => mapTicketToRebateRow(t))
@@ -876,8 +905,7 @@ export function mapTicketToCommissionRow(ticket: Ticket): CommissionRow {
  */
 export async function fetchAndMapCommissionTickets(options: PrefillOptions): Promise<CommissionPrefillResult> {
   try {
-    const scheduleDateKey = getPreviousDayKey(options.dateKey)
-    const tickets = await fetchScheduleTickets(options.branchId, scheduleDateKey, options.signal)
+    const tickets = await fetchWindowTickets(options)
     const qualifying = filterInstalledTickets(tickets)
     console.log('[schedulePrefill:commission] Qualifying (installed):', qualifying.length)
     const rows = qualifying.map((t) => mapTicketToCommissionRow(t))
@@ -1030,8 +1058,7 @@ export function computeUnitSummaryFromTickets(tickets: Ticket[]): UnitSummaryCou
  */
 export async function fetchAndCountUnitSummary(options: PrefillOptions): Promise<UnitSummaryPrefillResult> {
   try {
-    const scheduleDateKey = getPreviousDayKey(options.dateKey)
-    const tickets = await fetchScheduleTickets(options.branchId, scheduleDateKey, options.signal)
+    const tickets = await fetchWindowTickets(options)
     const counts = computeUnitSummaryFromTickets(tickets)
     return { ok: true, counts }
   } catch (err: any) {
