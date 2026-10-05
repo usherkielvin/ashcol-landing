@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
-import { AlertTriangle, CheckCircle2, Clock, Loader2, RefreshCw } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronRight, Clock, Loader2, RefreshCw, X } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import logoImg from '../assets/ash-logo.jpg'
 import { fetchSharedPayout, type SharedPayout, type SharedPayoutResult } from '../utils/payoutShareApi'
@@ -197,7 +197,7 @@ const stickyStyle = (left: number | undefined, bg: string, p: Palette, edge: boo
         boxShadow: edge ? `1px 0 0 ${p.border}, 6px 0 8px -6px rgba(0,0,0,0.25)` : undefined,
       }
 
-function PayoutTable({ rows, compact, p }: { rows: PayrollRow[]; compact: boolean; p: Palette }) {
+function PayoutTable({ rows, compact, p, onSelect }: { rows: PayrollRow[]; compact: boolean; p: Palette; onSelect: (r: PayrollRow) => void }) {
   const cols = useMemo(() => buildColumns(rows, compact, p), [rows, compact, p])
   const lastPinned = cols.reduce((acc, c, i) => (c.pinnedLeft !== undefined ? i : acc), -1)
   const tableWidth = cols.reduce((sum, c) => sum + c.width, 0)
@@ -220,7 +220,7 @@ function PayoutTable({ rows, compact, p }: { rows: PayrollRow[]; compact: boolea
         </thead>
         <tbody>
           {rows.map(r => (
-            <tr key={r.id}>
+            <tr key={r.id} onClick={() => onSelect(r)} className="cursor-pointer hover:brightness-[0.97]">
               {cols.map((c, i) => (
                 <td
                   key={c.key}
@@ -234,6 +234,160 @@ function PayoutTable({ rows, compact, p }: { rows: PayrollRow[]; compact: boolea
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+/** Every pay line a job earned (money columns + branch-defined custom columns), zero lines left out. */
+function payItems(r: PayrollRow): { label: string; amount: number }[] {
+  const items: { label: string; amount: number }[] = []
+  for (const def of COLUMN_DEFS) {
+    if (!def.isMoney) continue
+    const amount = num(r[def.key as keyof PayrollRow] as string)
+    if (amount !== 0) items.push({ label: def.label, amount })
+  }
+  for (const [k, v] of Object.entries(r.customFields || {})) {
+    if (RESERVED_PREFIXES.some(prefix => k.startsWith(prefix))) continue
+    const amount = num(v)
+    if (amount !== 0) items.push({ label: customLabel(k), amount })
+  }
+  return items
+}
+
+function Chip({ children, color }: { children: ReactNode; color: string }) {
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide whitespace-nowrap" style={{ color, background: `${color}1F` }}>
+      {children}
+    </span>
+  )
+}
+
+const isDoneStatus = (r: PayrollRow) => /^DONE\b/i.test((r.installationUpload || '').trim())
+
+function JobCards({ rows, p, onSelect }: { rows: PayrollRow[]; p: Palette; onSelect: (r: PayrollRow) => void }) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      {rows.map(r => {
+        const items = payItems(r)
+        const unpaid = paymentStatusOf(r) !== 'PAID'
+        return (
+          <button
+            key={r.id}
+            type="button"
+            onClick={() => onSelect(r)}
+            className="w-full text-left rounded-2xl border px-4 py-3.5 flex items-center gap-3 cursor-pointer active:scale-[0.99] transition-transform"
+            style={{ background: p.card, borderColor: p.border, color: p.text }}
+          >
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] font-semibold" style={{ color: p.muted }}>
+                {shortDate(r.workDate) || '—'} · {r.ticketNumber || 'No ticket no.'}
+                {isCarryOver(r) && <span style={{ color: p.amber }}> · Carry-over</span>}
+              </div>
+              <div className="mt-0.5 text-[15px] font-bold leading-snug break-words">{r.customerName || '—'}</div>
+              {r.brandCapacity && <div className="text-[12px] mt-0.5" style={{ color: p.muted }}>{r.brandCapacity}</div>}
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {r.installationUpload && <Chip color={isDoneStatus(r) ? p.accent : p.amber}>{r.installationUpload}</Chip>}
+                {unpaid && <Chip color={p.amber}>{paymentStatusLabel(r)}</Chip>}
+                {items.length > 0 && <span className="text-[11px]" style={{ color: p.muted }}>{items.length} pay item{items.length === 1 ? '' : 's'}</span>}
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              <div className="text-base font-extrabold tabular-nums">₱{peso(rowTotal(r))}</div>
+              {payFactor(r) !== 1 && <div className="text-[10px] font-semibold" style={{ color: p.amber }}>{Math.round(payFactor(r) * 100)}% paid</div>}
+            </div>
+            <ChevronRight className="w-4 h-4 shrink-0" style={{ color: p.muted }} />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function JobDetails({ row, p, onClose }: { row: PayrollRow; p: Palette; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prevOverflow }
+  }, [onClose])
+
+  const items = payItems(row)
+  const factor = payFactor(row)
+  const unpaid = paymentStatusOf(row) !== 'PAID'
+  const info: { label: string; value: string }[] = [
+    { label: 'Unit', value: row.brandCapacity },
+    { label: 'Status', value: row.installationUpload },
+    { label: 'Pipe length', value: row.totalPipeLength },
+    { label: 'Materials return', value: row.materialsReturn },
+    { label: 'Remarks', value: row.remarks },
+  ].filter(i => (i.value || '').trim() !== '')
+  const line = (label: string, value: ReactNode, strong = false) => (
+    <div className="flex items-baseline justify-between gap-4 py-2 border-b last:border-b-0" style={{ borderColor: p.border }}>
+      <span className="text-[13px]" style={{ color: p.muted }}>{label}</span>
+      <span className={`text-[13px] tabular-nums text-right ${strong ? 'font-bold' : 'font-semibold'}`}>{value}</span>
+    </div>
+  )
+  const section = (title: string) => (
+    <div className="mt-4 mb-1 text-[11px] font-bold uppercase tracking-wide" style={{ color: p.muted }}>{title}</div>
+  )
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-6"
+      style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)' }}
+      onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="w-full sm:max-w-md max-h-[88dvh] flex flex-col rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl"
+        style={{ background: p.card, color: p.text, border: `1px solid ${p.border}` }}
+      >
+        <div className="flex items-start justify-between gap-3 px-5 pt-5 pb-3 shrink-0">
+          <div className="min-w-0">
+            <div className="text-[11px] font-semibold" style={{ color: p.muted }}>
+              {longDate(row.workDate) || 'No date'} · {row.ticketNumber || 'No ticket no.'}
+            </div>
+            <h2 className="mt-0.5 text-lg font-extrabold leading-snug break-words">{row.customerName || '—'}</h2>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {row.installationUpload && <Chip color={isDoneStatus(row) ? p.accent : p.amber}>{row.installationUpload}</Chip>}
+              {unpaid && <Chip color={p.amber}>{paymentStatusLabel(row)}</Chip>}
+              {isCarryOver(row) && <Chip color={p.amber}>Carry-over</Chip>}
+            </div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="p-2 rounded-full border cursor-pointer shrink-0" style={{ borderColor: p.border, color: p.muted }}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-4 overscroll-contain">
+          {info.length > 0 && (
+            <>
+              {section('Job details')}
+              <div className="rounded-xl border px-3.5" style={{ borderColor: p.border }}>
+                {info.map(i => <div key={i.label}>{line(i.label, <span className="break-words">{i.value}</span>)}</div>)}
+              </div>
+            </>
+          )}
+          {section('Pay breakdown')}
+          <div className="rounded-xl border px-3.5" style={{ borderColor: p.border }}>
+            {items.length === 0
+              ? <div className="py-3 text-[13px]" style={{ color: p.muted }}>No pay items on this job.</div>
+              : items.map(i => <div key={i.label}>{line(i.label, `₱${peso(i.amount)}`)}</div>)}
+          </div>
+          {unpaid && (
+            <div className="mt-3 rounded-xl px-3.5 py-2.5 text-[12px]" style={{ color: p.amber, background: `${p.amber}14`, border: `1px solid ${p.amber}55` }}>
+              The customer hasn't fully paid yet, so {Math.round(factor * 100)}% of this job is paid now. The rest is released once the ticket is paid.
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-baseline justify-between gap-4 px-5 py-4 shrink-0 border-t" style={{ borderColor: p.border, background: p.head, paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
+          <span className="text-xs font-bold uppercase tracking-wide" style={{ color: p.muted }}>{factor !== 1 ? `Job total (${Math.round(factor * 100)}%)` : 'Job total'}</span>
+          <span className="text-2xl font-extrabold tabular-nums" style={{ color: p.accent }}>₱{peso(rowTotal(row))}</span>
+        </div>
+      </div>
     </div>
   )
 }
@@ -323,6 +477,7 @@ export default function PayoutShare() {
     return () => controller.abort()
   }, [token, requestKey])
   const reload = useCallback(() => setReloadKey(k => k + 1), [])
+  const [selectedRow, setSelectedRow] = useState<PayrollRow | null>(null)
 
   const payout: SharedPayout | null = result?.kind === 'ok' ? result.payout : null
   usePrivatePageMeta(payout ? `${payout.installerLabel} — Payout` : 'Payout')
@@ -386,7 +541,9 @@ export default function PayoutShare() {
               No jobs recorded for this week yet.
             </div>
           ) : (
-            <PayoutTable rows={counted} compact={compact} p={p} />
+            compact
+              ? <JobCards rows={counted} p={p} onSelect={setSelectedRow} />
+              : <PayoutTable rows={counted} compact={compact} p={p} onSelect={setSelectedRow} />
           )}
           {counted.length > 0 && <Summary counted={counted} p={p} />}
           {held.length > 0 && <HeldList rows={held} p={p} />}
@@ -419,6 +576,7 @@ export default function PayoutShare() {
         </div>
       </div>
       {body}
+      {selectedRow && <JobDetails row={selectedRow} p={p} onClose={() => setSelectedRow(null)} />}
     </div>
   )
 }
