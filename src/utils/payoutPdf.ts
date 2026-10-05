@@ -49,7 +49,7 @@ export const pdfSafe = (t: string): string =>
     .replace(/₱/g, 'PHP ')
     .replace(/[−–—]/g, '-')
     .replace(/[·•]/g, '|')
-    .replace(/[^\x20-\x7E -ÿ]/g, '')
+    .replace(/[^\x20-\x7E\xA1-\xFF]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
 

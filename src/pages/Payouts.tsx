@@ -68,6 +68,7 @@ import {
   type PayrollRow,
   type PayrollRates,
 } from '../utils/payrollDerive'
+import InstallerPayoutSheet, { type PayoutSheetSource } from '../components/InstallerPayoutSheet'
 import { num, peso, pesoSigned, shortDate, longDate, getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef } from './Payouts/payoutUtils';
 
 export default function Payouts() {
@@ -327,6 +328,7 @@ export default function Payouts() {
   const [showcaseOpen, setShowcaseOpen] = useState(false)
   const [showcaseCopying, setShowcaseCopying] = useState(false)
   const [showcasePdfing, setShowcasePdfing] = useState(false)
+  const [payoutSheetOpen, setPayoutSheetOpen] = useState(false)
   const showcaseRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -445,7 +447,7 @@ export default function Payouts() {
     setRatesModalOpen(true)
   }
   const saveRates = async () => {
-    if (!branchFilter) return
+    if (!branchFilter || viewOnly) return
     setSavingRates(true)
     try {
       const res = await fetch(`${API_BASE_URL}/branches/${branchFilter}/payroll-rates`, {
@@ -532,7 +534,7 @@ export default function Payouts() {
   // cleanInstallerName in schedulePrefill.ts — that's what payrollDerive.ts groups rows by),
   // so the payroll page has to resolve that short form back to the real technician account.
   // Fetches every employee/technician to map names back to their full account names.
-  const [branchTechnicians, setBranchTechnicians] = useState<{ id: string; name: string; nickname: string; jobTitle: string; inHouse: boolean; branchId?: string }[]>([])
+  const [branchTechnicians, setBranchTechnicians] = useState<{ id: string; name: string; nickname: string; jobTitle: string; inHouse: boolean; branchId?: string; phone: string }[]>([])
   useEffect(() => {
     let cancelled = false
     const loadUsers = async () => {
@@ -558,6 +560,7 @@ export default function Payouts() {
               jobTitle: u.jobTitle || '',
               inHouse: !!u.inHouse,
               branchId: u.branchId || '',
+              phone: String(u.phone || '').trim(),
             }))
           setBranchTechnicians(mapped)
         }
@@ -1019,7 +1022,7 @@ export default function Payouts() {
 
   // Core background save routine
   const savePayrollToBackend = useCallback(async (data: PayrollRow[], bId: string, mKey: string): Promise<boolean> => {
-    if (!bId || !mKey) return false
+    if (!bId || !mKey || viewOnly) return false
     // Guard against saving a locked week
     if (activeWeek && closures.some(c => c.branchId === bId && c.weekFrom === activeWeek.from && c.weekTo === activeWeek.to)) {
       return false
@@ -1047,7 +1050,7 @@ export default function Payouts() {
       setSaveStatus('error')
     }
     return false
-  }, [activeWeek, closures])
+  }, [activeWeek, closures, viewOnly])
 
   // Fetches exactly one branch+month's saved rows, applies `mutate`, and PUTs the result back —
   // used by hold/release/undo so they never touch a month that isn't already loaded into `rows`
@@ -1060,7 +1063,7 @@ export default function Payouts() {
     // drops it. When given, this must find proof of the write in the saved entries the PUT returns.
     expect?: string,
   ): Promise<boolean> => {
-    if (!bId || !monthKey) return false
+    if (!bId || !monthKey || viewOnly) return false
     try {
       const params = new URLSearchParams({ branchId: bId, month: monthKey })
       const getRes = await fetch(`${API_BASE_URL}/v1/payroll?${params.toString()}`, {
@@ -1087,7 +1090,7 @@ export default function Payouts() {
       console.error('Failed to mutate saved payroll month:', e)
       return false
     }
-  }, [])
+  }, [viewOnly])
 
   // Backend PUTs regenerate every row's id on each save (a full month replace, not a per-row
   // upsert — see PayrollService.replaceEntries) so an id captured from an earlier fetch can't be
@@ -1389,7 +1392,7 @@ export default function Payouts() {
   // the row sits in a frozen/closed week — flushSave sends the full month and fails isSameExcept
   // checks on frozen rows, causing the "Could Not Put on Hold" error and silent duplicates.
   const submitHold = async (reason: string) => {
-    if (!holdModalRow || !branchFilter || !activeWeek || !reason.trim() || isWeekClosed) return
+    if (!holdModalRow || !branchFilter || !activeWeek || !reason.trim() || isWeekClosed || viewOnly) return
     setHoldSubmitting(true)
     const heldFields = {
       ...(holdModalRow.customFields || {}),
@@ -1430,7 +1433,7 @@ export default function Payouts() {
   // still-held original can be un-held (a released one has a carry-over copy; use Undo release).
   const [unholdingKey, setUnholdingKey] = useState<string | null>(null)
   const submitUnhold = async (row: PayrollRow, month: string) => {
-    if (!branchFilter) return
+    if (!branchFilter || viewOnly) return
     const origKey = rowMatchKey(row)
     setUnholdingKey(origKey)
     try {
@@ -1499,7 +1502,7 @@ export default function Payouts() {
   // Change a split ticket's payment status from the balances list. Works in a closed week too
   // (backend allows pay: tag changes there) and always keeps the split so the payout can't jump.
   const setBalancePaymentStatus = async (row: PayrollRow, month: string, status: string) => {
-    if (!branchFilter) return
+    if (!branchFilter || viewOnly) return
     const key = rowMatchKey(row)
     const ok = await mutateSavedMonth(branchFilter, month, rowsIn => rowsIn.map(r => rowMatchKey(r) === key ? {
       ...r,
@@ -1555,7 +1558,7 @@ export default function Payouts() {
   // (per fee column, add OR deduct) lands as an adjustment row in the chosen open week, and the
   // change is logged on the original ticket. Inserted first; rolled back if logging fails.
   const submitAdjust = async (adjustEdits: Record<string, string>, adjustTargetWeek: PayrollWeek, adjustReason: string) => {
-    if (!adjustRow || !branchFilter || !adjustTargetWeek || !adjustReason.trim()) return
+    if (viewOnly || !adjustRow || !branchFilter || !adjustTargetWeek || !adjustReason.trim()) return
     const { row: origin, month: originMonth } = adjustRow
     const changes = getAdjustableCols().flatMap(col => {
       const raw = adjustEdits[col.key]
@@ -1650,7 +1653,7 @@ export default function Payouts() {
   // flow" in docs/payroll-hold-release-plan.md. The copy is inserted first; if marking the
   // original as released then fails, the copy is removed so the payout is never counted twice.
   const submitRelease = async () => {
-    if (!releaseFor || !branchFilter || !releaseTargetWeek) return
+    if (viewOnly || !releaseFor || !branchFilter || !releaseTargetWeek) return
     setReleaseSubmitting(true)
     try {
       const { row: heldRow, month: originMonth, kind } = releaseFor
@@ -1770,7 +1773,7 @@ export default function Payouts() {
 
   // Undo a release — removes the carry-over copy and puts the original back on hold.
   const submitUndoRelease = async (copy: PayrollRow) => {
-    if (!branchFilter) return
+    if (!branchFilter || viewOnly) return
     const marker = copy.customFields?.['hold:copyMarker']
     const copyMonth = copy.customFields?.['hold:saveMonth'] || copy.customFields?.['hold:targetWeekFrom']?.slice(0, 7) || ''
     const originMonth = copy.customFields?.['hold:originMonth'] || ''
@@ -1921,7 +1924,7 @@ export default function Payouts() {
   }, [])
   // Save-now for the Deductions modal — skips the debounce so "Save" persists immediately.
   const saveDeductionsNow = () => {
-    if (isWeekClosed) return
+    if (isWeekClosed || viewOnly) return
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     setSaveStatus('saving')
     void flushSave(pendingRowsRef.current ?? rows)
@@ -1930,7 +1933,7 @@ export default function Payouts() {
 
   // Debounced auto-save on row edits (supports functional patch so custom fields never read stale state)
   const updateRow = (id: string, patch: Partial<PayrollRow> | ((prevRow: PayrollRow) => Partial<PayrollRow>)) => {
-    if (isWeekClosed) return
+    if (isWeekClosed || viewOnly) return
     setRows(prev => {
       const updated = prev.map(r => {
         if (r.id !== id) return r
@@ -1958,7 +1961,7 @@ export default function Payouts() {
   // first job, adjusted so the sum across the range equals what was typed (see deductionValue);
   // a balance overwrites the latest row that holds one, else the latest job.
   const setDeduction = (installerRows: PayrollRow[], key: DeductionKey, value: string) => {
-    if (isWeekClosed || installerRows.length === 0) return
+    if (isWeekClosed || viewOnly || installerRows.length === 0) return
     // A carry-over copy sorts by its ORIGIN's (older) workDate, so it can land first/last in the
     // period — never let it hold a deduction, or undoing the release deletes it (see plan landmine 5).
     const eligible = installerRows.filter(r => !isCarryOver(r) && isActivePayRow(r))
@@ -1986,7 +1989,7 @@ export default function Payouts() {
   // a row Fully Paid while its week is still open just makes it a full payout again; the split is
   // only kept for a row whose week already closed (handled from the Held Tickets balances list).
   const setPaymentStatus = (id: string, status: string) => {
-    if (isWeekClosed) return
+    if (isWeekClosed || viewOnly) return
     updateRow(id, prevRow => {
       const cf = { ...(prevRow.customFields || {}) }
       cf['pay:status'] = status
@@ -1999,7 +2002,7 @@ export default function Payouts() {
   // Allowance / Earth Grounding are auto-stamped from the branch rate on every sync; a hand edit
   // (including clearing to zero) flags the row so re-syncs keep the user's value instead.
   const setAutoStampedFee = (id: string, field: AutoStampedFee, v: string) => {
-    if (isWeekClosed) return
+    if (isWeekClosed || viewOnly) return
     setRows(prev => {
       const updated = prev.map(r => r.id === id
         ? { ...r, [field]: v, customFields: { ...(r.customFields || {}), [MANUAL_FEE_PREFIX + field]: '1' } }
@@ -2693,6 +2696,20 @@ export default function Payouts() {
           )}
 
 
+
+          {/* Weekly installer payout sheet (print / PDF) — roster view only */}
+          {branchFilter && canManagePayroll && !selectedInstaller && activeWeek && (
+            <button
+              type="button"
+              onClick={() => setPayoutSheetOpen(true)}
+              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all hover:border-emerald-500/50 shadow-xs cursor-pointer active:scale-95"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+              title="Print or save the weekly installer payout sheet (completed payouts)"
+            >
+              <Receipt className="w-3.5 h-3.5 text-emerald-500" />
+              <span className="hidden sm:inline">Payout Sheet</span>
+            </button>
+          )}
 
           {/* Week Summary Showcase button — hidden on member table view */}
           {branchFilter && canManagePayroll && !selectedInstaller && (
@@ -3402,7 +3419,7 @@ export default function Payouts() {
                             key={row.id}
                             tabIndex={0}
                             data-sc-row="1"
-                            title="Right-click to view job details · Double-click cell to edit"
+                            title={viewOnly || isWeekClosed ? 'Right-click to view job details' : 'Right-click to view job details · Double-click cell to edit'}
                             onContextMenu={e => {
                               e.preventDefault()
                               setDetailRow(row)
@@ -3490,7 +3507,7 @@ export default function Payouts() {
                                   >
                                     <select
                                       value={paymentStatusOf(row)}
-                                      disabled={isWeekClosed}
+                                      disabled={isWeekClosed || viewOnly}
                                       onChange={e => acc.set(row.id, e.target.value)}
                                       title={unpaid ? 'Not fully paid — the tech is paid 50% until the ticket is paid' : 'Paid'}
                                       className="w-full text-[12px] font-black tracking-wide uppercase bg-transparent border-0 outline-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-70 appearance-none text-center"
@@ -6196,6 +6213,28 @@ export default function Payouts() {
       )}
 
       <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />
+
+      {payoutSheetOpen && activeWeek && (
+        <InstallerPayoutSheet
+          isOpen
+          onClose={() => setPayoutSheetOpen(false)}
+          isLight={isLight}
+          branchLabel={currentBranchDisplay || 'Branch'}
+          weekFrom={activeWeek.from}
+          weekTo={activeWeek.to}
+          weekClosed={isWeekClosed}
+          sources={grouped.map(([installerName, installerRows]): PayoutSheetSource => {
+            const account = branchTechnicians.find(t => t.name.trim().toUpperCase() === installerName.trim().toUpperCase())
+            return {
+              name: installerName,
+              net: installerNet(installerRows),
+              complete: installerRows.length > 0 && installerRows.every(r => r.status === 'COMPLETE'),
+              phone: account?.phone || '',
+              hasAccount: Boolean(account),
+            }
+          })}
+        />
+      )}
 
       <WeekSummaryModal
         isOpen={weekSummaryOpen}
