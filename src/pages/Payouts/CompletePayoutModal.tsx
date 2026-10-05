@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { CheckCircle2, ShieldCheck, Unlock, X, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, ShieldCheck, Unlock, X, AlertTriangle, Mail, MailWarning } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { peso, avatarColor, getInitials } from './payoutUtils';
+import { emailedDay, maskEmail } from './payoutEmail';
 
 interface CompletePayoutModalProps {
   installerName: string;
@@ -16,11 +17,18 @@ interface CompletePayoutModalProps {
   isWeekClosed?: boolean;
   canManagePayroll?: boolean;
   onClose: () => void;
-  onComplete: (remarks: string, validatorName: string) => void;
+  /** `sendEmail` is the state of the "Email payout to technician" checkbox (always false when no address is on file). */
+  onComplete: (remarks: string, validatorName: string, sendEmail: boolean) => void;
   onRevertToPending?: () => void;
   displayInstallerName: (name: string) => string;
   /** Remarks already on the installer's payout, offered as the starting text. */
   initialRemarks?: string;
+  /** Personal email saved on the technician's account; empty when there is none. */
+  recipientEmail?: string;
+  /** False when the installer on the sheet could not be matched to an account at all. */
+  hasAccount?: boolean;
+  /** An earlier successful payout email for this installer-week, if any (re-completed payouts). */
+  previousEmail?: { sentAt: string; net: number | null } | null;
 }
 
 export default function CompletePayoutModal({
@@ -39,7 +47,10 @@ export default function CompletePayoutModal({
   onComplete,
   onRevertToPending,
   displayInstallerName,
-  initialRemarks = ''
+  initialRemarks = '',
+  recipientEmail = '',
+  hasAccount = true,
+  previousEmail = null,
 }: CompletePayoutModalProps) {
   const { theme } = useTheme();
   const isLight = theme === 'light';
@@ -54,6 +65,12 @@ export default function CompletePayoutModal({
   const [remarks, setRemarks] = useState(initialRemarks);
   const [confirmed, setConfirmed] = useState(false);
   const [showRevertConfirm, setShowRevertConfirm] = useState(false);
+
+  // A first completion emails by default. A payout that was already emailed is not mailed again
+  // automatically — payroll opts in, and the box starts ticked only when the net changed since.
+  const canEmail = recipientEmail.trim() !== '';
+  const netChangedSinceEmail = previousEmail != null && previousEmail.net != null && Math.abs(previousEmail.net - totalAmount) >= 0.01;
+  const [sendEmail, setSendEmail] = useState(previousEmail ? netChangedSinceEmail : true);
 
   const formattedInstallerName = displayInstallerName(installerName).toUpperCase();
   const validatorName = (userDisplayName || userFirstName || 'ADMIN').toUpperCase();
@@ -258,6 +275,56 @@ export default function CompletePayoutModal({
             )}
           </div>
 
+          {/* 4. Payout email to the technician — recipient comes from the account, never typed here */}
+          {!isAlreadyComplete && (
+            canEmail ? (
+              <label
+                className="flex items-start gap-2.5 rounded-xl border p-3.5 cursor-pointer select-none"
+                style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+              >
+                <input
+                  type="checkbox"
+                  checked={sendEmail}
+                  onChange={e => setSendEmail(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded focus:ring-emerald-500 cursor-pointer accent-emerald-600 shrink-0"
+                />
+                <span className="flex flex-col gap-0.5 min-w-0">
+                  <span className="flex items-center gap-1.5 text-xs font-bold" style={{ color: textPrimary }}>
+                    <Mail className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
+                    {previousEmail ? 'Email updated payout to technician' : 'Email payout to technician'}
+                  </span>
+                  <span className="text-[11px] font-medium" style={{ color: textMuted }}>
+                    Payout email will be sent to <b className="font-bold" style={{ color: textPrimary }}>{maskEmail(recipientEmail)}</b>
+                  </span>
+                  {previousEmail && (
+                    <span className="text-[11px] font-medium" style={{ color: textMuted }}>
+                      Last emailed {emailedDay(previousEmail.sentAt)}
+                      {previousEmail.net != null ? ` for ₱${peso(previousEmail.net)}` : ''}
+                      {netChangedSinceEmail ? ' — the net has changed since.' : ' — the net is unchanged.'}
+                    </span>
+                  )}
+                </span>
+              </label>
+            ) : (
+              <div
+                className="flex items-start gap-2.5 rounded-xl border p-3.5 text-xs"
+                style={{
+                  backgroundColor: isLight ? '#fffbeb' : 'rgba(245, 158, 11, 0.1)',
+                  borderColor: isLight ? '#fcd34d' : 'rgba(245, 158, 11, 0.35)',
+                  color: isLight ? '#92400e' : '#fbbf24',
+                }}
+              >
+                <MailWarning className="w-4 h-4 shrink-0 mt-0.5" />
+                <span className="font-semibold leading-snug">
+                  {hasAccount
+                    ? 'No personal email on this account. Add one in Employees to send the payout email.'
+                    : 'This installer could not be matched to an account, so no payout email can be sent.'}
+                  {' '}Completing still works; nothing will be sent.
+                </span>
+              </div>
+            )
+          )}
+
           {/* Revert confirmation warning if reverting to pending */}
           {showRevertConfirm && (
             <div
@@ -339,7 +406,7 @@ export default function CompletePayoutModal({
               <button
                 type="button"
                 disabled={!confirmed}
-                onClick={() => onComplete(remarks, validatorName)}
+                onClick={() => onComplete(remarks, validatorName, canEmail && sendEmail)}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider text-white shadow-md active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 style={{ backgroundColor: '#10b981' }}
               >

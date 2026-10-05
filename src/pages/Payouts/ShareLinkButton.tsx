@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, ChevronDown, Link2, Loader2, RefreshCw, Trash2 } from 'lucide-react'
+import { Check, ChevronDown, Link2, Loader2, Mail, RefreshCw, Trash2 } from 'lucide-react'
 import { useTheme } from '../../contexts/ThemeContext'
 import { ACTION_BUTTON_BASE, actionColors } from './actionButtonStyles'
 import {
@@ -8,6 +8,7 @@ import {
   payoutShareUrl,
   revokeShareLink,
   rotateShareLink,
+  type PayoutEmailStatus,
   type PayoutShareLink,
 } from '../../utils/payoutShareApi'
 
@@ -30,6 +31,17 @@ interface Props {
   onLinkChange: (link: PayoutShareLink | null) => void
   /** Called when the panel opens, so the parent can refresh the open count. */
   onPanelOpen?: () => void
+  /** Email-to-technician controls in the options panel. Omit to hide them. */
+  email?: {
+    /** Latest attempt for this installer-week, if any. */
+    status: PayoutEmailStatus | undefined
+    /** Masked personal email on the technician's account; empty when there is none to send to. */
+    maskedRecipient: string
+    /** Every row is COMPLETE — the server refuses to email an unfinished payout. */
+    completed: boolean
+    /** Sends (or resends) the email; resolves to the message to show, rejects with the reason. */
+    onSend: (resend: boolean) => Promise<string>
+  }
   /** `full` = Copy link + options chevron (installer table); `icon` = a single icon button (roster rows). */
   variant: 'full' | 'icon'
 }
@@ -41,7 +53,7 @@ const dateTime = (iso: string) =>
 const PANEL_WIDTH = 320
 
 export default function ShareLinkButton({
-  branchId, weekFrom, weekTo, installerLabel, getInstallerNames, beforeCreate, link, onLinkChange, onPanelOpen, variant,
+  branchId, weekFrom, weekTo, installerLabel, getInstallerNames, beforeCreate, link, onLinkChange, onPanelOpen, email, variant,
 }: Props) {
   const { theme } = useTheme()
   const isLight = theme === 'light'
@@ -58,7 +70,7 @@ export default function ShareLinkButton({
   const panelRef = useRef<HTMLDivElement>(null)
   const urlInputRef = useRef<HTMLInputElement>(null)
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [busy, setBusy] = useState<'copy' | 'rotate' | 'revoke' | null>(null)
+  const [busy, setBusy] = useState<'copy' | 'rotate' | 'revoke' | 'email' | null>(null)
   const [copied, setCopied] = useState(false)
   const [open, setOpen] = useState(false)
   const [panelPos, setPanelPos] = useState<{ top: number; left: number } | null>(null)
@@ -184,6 +196,21 @@ export default function ShareLinkButton({
     }
   }
 
+  const sendEmail = async () => {
+    if (!email || busy) return
+    setBusy('email')
+    setMessage(null)
+    try {
+      // An installer-week that was already emailed is a deliberate resend.
+      const text = await email.onSend(Boolean(email.status?.lastSentAt))
+      setMessage({ kind: 'ok', text })
+    } catch (e) {
+      setMessage({ kind: 'error', text: e instanceof Error ? e.message : 'Could not send the email.' })
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const buttonBase: CSSProperties = actionColors(isLight, copied ? 'solid' : 'accent')
   const Icon = busy === 'copy' ? Loader2 : copied ? Check : Link2
   const iconClass = `w-4 h-4 shrink-0 ${busy === 'copy' ? 'animate-spin' : ''}`
@@ -263,6 +290,30 @@ export default function ShareLinkButton({
         <p className="text-xs" style={{ color: textMuted }}>
           No link for this week yet. Copy link creates one — a read-only page the installer can open without logging in.
         </p>
+      )}
+
+      {email && (
+        <div className="flex flex-col gap-1.5 pt-3 border-t" style={{ borderColor: border }}>
+          <div className="text-xs font-bold uppercase tracking-wider" style={{ color: textMuted }}>Email to technician</div>
+          <div className="text-xs flex flex-col gap-0.5" style={{ color: textMuted }}>
+            {email.maskedRecipient ? <span>Goes to {email.maskedRecipient}</span> : <span>No personal email on this account.</span>}
+            {email.status?.lastSentAt && <span>Last emailed {dateTime(email.status.lastSentAt)}</span>}
+            {email.status?.status === 'FAILED' && (
+              <span style={{ color: danger }}>Last attempt failed{email.status.error ? `: ${email.status.error}` : '.'}</span>
+            )}
+            {!email.completed && <span>Complete the payout first — only a finalized payout can be emailed.</span>}
+          </div>
+          <button
+            type="button"
+            disabled={busy !== null || !email.completed || !email.maskedRecipient}
+            onClick={() => void sendEmail()}
+            className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-lg px-3 py-1.5 border cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+          >
+            {busy === 'email' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
+            {email.status?.lastSentAt ? 'Resend email' : 'Email to technician'}
+          </button>
+        </div>
       )}
 
       {message && (

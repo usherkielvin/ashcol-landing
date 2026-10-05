@@ -182,8 +182,9 @@ Backend (portal has no test runner — verify there with `npm run build`, `npm r
   table header (full) and on each roster row (icon, dot = link already active). Saves unsaved edits first.
   Checked in a harness against a mock API; not yet exercised inside the real Payouts page with the real backend.
 - [ ] Check on a real phone (Android Chrome, iOS Safari): open, scroll, totals match the portal table.
-- [ ] Update `docs/ASHCOL_SYSTEM_SCOPE.md` (Payouts section) and the known-limits list in
-  `payouts-branch-readonly-plan.md`.
+- [x] Update `docs/ASHCOL_SYSTEM_SCOPE.md` (Payouts row added with the share link + completion email).
+- [ ] Known-limits list in `payouts-branch-readonly-plan.md`.
+- Emailing the link to the technician on completion is built: `docs/plans/payout-completion-email.md`.
 
 Rough size: backend about a day, public page about a day, payroll UI half a day.
 

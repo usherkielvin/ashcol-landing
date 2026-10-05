@@ -77,7 +77,7 @@ export const payoutShareUrl = (token: string) => `${window.location.origin}/payo
 const authToken = () => localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
 
 async function payrollRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}/v1/payroll/share-links${path}`, {
+  const res = await fetch(`${API_BASE_URL}/v1/payroll${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${authToken()}`, 'Content-Type': 'application/json' },
   })
@@ -90,14 +90,69 @@ async function payrollRequest<T>(path: string, init?: RequestInit): Promise<T> {
 
 /** The active link for this installer-week; created if there is none, so calling it twice is safe. */
 export const createShareLink = (req: CreatePayoutShareLinkRequest) =>
-  payrollRequest<PayoutShareLink>('', { method: 'POST', body: JSON.stringify(req) })
+  payrollRequest<PayoutShareLink>('/share-links', { method: 'POST', body: JSON.stringify(req) })
 
 export const listShareLinks = (branchId: string, weekFrom: string) =>
-  payrollRequest<PayoutShareLink[]>(`?${new URLSearchParams({ branchId, weekFrom })}`)
+  payrollRequest<PayoutShareLink[]>(`/share-links?${new URLSearchParams({ branchId, weekFrom })}`)
 
 export const revokeShareLink = (id: string) =>
-  payrollRequest<{ message: string }>(`/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  payrollRequest<{ message: string }>(`/share-links/${encodeURIComponent(id)}`, { method: 'DELETE' })
 
 /** Revokes the old token and returns a fresh link for the same installer-week. */
 export const rotateShareLink = (id: string) =>
-  payrollRequest<PayoutShareLink>(`/${encodeURIComponent(id)}/rotate`, { method: 'POST' })
+  payrollRequest<PayoutShareLink>(`/share-links/${encodeURIComponent(id)}/rotate`, { method: 'POST' })
+
+// ── Payout completion emails ────────────────────────────────────────────────
+// The server mails the technician at the personal email saved on their account; the address never travels
+// from the browser. `summary` is built here because the pay maths only exists in the browser.
+
+export interface PayoutEmailSummary {
+  jobCount: number
+  jobBreakdown: string
+  grossPay: number
+  deductions: { label: string; amount: number }[]
+  netPayout: number
+  verifiedBy: string
+  remarks: string
+}
+
+export interface SendPayoutEmailRequest {
+  branchId: string
+  weekFrom: string
+  weekTo: string
+  installerNames: string[]
+  installerLabel: string
+  /** The technician's account id — the server reads the address from that account. */
+  technicianUserId: string
+  summary: PayoutEmailSummary
+  /** Send again even though this installer-week was already emailed. */
+  resend: boolean
+}
+
+export type PayoutEmailOutcome = 'SENT' | 'ALREADY_SENT' | 'SKIPPED_NO_EMAIL' | 'FAILED'
+
+export interface PayoutEmailResult {
+  status: PayoutEmailOutcome
+  maskedEmail: string | null
+  sentAt: string | null
+  linkExpiresAt: string | null
+  error: string | null
+}
+
+/** Latest email attempt for one installer-week (what the roster shows). */
+export interface PayoutEmailStatus {
+  installerLabel: string
+  status: 'SENT' | 'FAILED' | 'SKIPPED_NO_EMAIL'
+  maskedEmail: string | null
+  attemptedAt: string
+  /** Most recent successful send, even when the latest attempt failed. */
+  lastSentAt: string | null
+  lastSentNet: number | null
+  error: string | null
+}
+
+export const sendPayoutEmail = (req: SendPayoutEmailRequest) =>
+  payrollRequest<PayoutEmailResult>('/payout-emails', { method: 'POST', body: JSON.stringify(req) })
+
+export const listPayoutEmails = (branchId: string, weekFrom: string) =>
+  payrollRequest<PayoutEmailStatus[]>(`/payout-emails?${new URLSearchParams({ branchId, weekFrom })}`)

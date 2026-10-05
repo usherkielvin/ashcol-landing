@@ -72,7 +72,9 @@ import InstallerPayoutSheet, { type PayoutSheetSource } from '../components/Inst
 import ShareLinkButton from './Payouts/ShareLinkButton';
 import TableActionButton from './Payouts/TableActionButton';
 import { Settings2, Columns3, FileDown } from 'lucide-react';
-import { listShareLinks, type PayoutShareLink } from '../utils/payoutShareApi';
+import { listShareLinks, listPayoutEmails, sendPayoutEmail, type PayoutShareLink, type PayoutEmailStatus, type PayoutEmailSummary, type PayoutEmailResult } from '../utils/payoutShareApi';
+import { PayoutEmailChip, PayoutEmailToast, type PayoutEmailToastState } from './Payouts/PayoutEmailParts';
+import { buildPayoutEmailSummary, emailedDay, maskEmail } from './Payouts/payoutEmail';
 import { num, peso, pesoSigned, shortDate, longDate, getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef, NET_COLUMN, columnLabelKey, findDuplicateColumnGroups } from './Payouts/payoutUtils';
 
 export default function Payouts() {
@@ -550,7 +552,7 @@ export default function Payouts() {
   // cleanInstallerName in schedulePrefill.ts — that's what payrollDerive.ts groups rows by),
   // so the payroll page has to resolve that short form back to the real technician account.
   // Fetches every employee/technician to map names back to their full account names.
-  const [branchTechnicians, setBranchTechnicians] = useState<{ id: string; name: string; nickname: string; jobTitle: string; inHouse: boolean; branchId?: string; phone: string }[]>([])
+  const [branchTechnicians, setBranchTechnicians] = useState<{ id: string; name: string; nickname: string; jobTitle: string; inHouse: boolean; branchId?: string; phone: string; personalEmail: string }[]>([])
   useEffect(() => {
     let cancelled = false
     const loadUsers = async () => {
@@ -577,6 +579,7 @@ export default function Payouts() {
               inHouse: !!u.inHouse,
               branchId: u.branchId || '',
               phone: String(u.phone || '').trim(),
+              personalEmail: String(u.personalEmail || '').trim(),
             }))
           setBranchTechnicians(mapped)
         }
@@ -1244,7 +1247,7 @@ export default function Payouts() {
         for (const r of combinedSavedRows) {
           if (r.customFields) {
             for (const k of Object.keys(r.customFields)) {
-              if (k.startsWith('ded:') || k.startsWith('xfer:') || k.startsWith(MANUAL_FEE_PREFIX) || k.startsWith(HOLD_PREFIX) || k.startsWith(TEXT_FIELD_PREFIX) || k.startsWith(PAY_PREFIX)) continue
+              if (k.startsWith('ded:') || k.startsWith('xfer:') || k.startsWith(MANUAL_FEE_PREFIX) || k.startsWith(HOLD_PREFIX) || k.startsWith(TEXT_FIELD_PREFIX) || k.startsWith(PAY_PREFIX) || k.startsWith('installer:')) continue
               if (!known.has(k)) {
                 known.add(k)
                 const label = k.replace(/^custom_/, '').replace(/_/g, ' ')
@@ -1954,9 +1957,117 @@ export default function Payouts() {
   // public page filters by an explicit list instead of loose name matching.
   const rawNamesFor = (installerName: string): string[] =>
     Array.from(new Set(rows.filter(r => resolveGroupKey(r.installerName) === installerName).map(r => r.installerName.trim()).filter(Boolean)))
+
+  // ── Payout completion emails ──
+  // The server mails the technician at the personal email saved on their ACCOUNT (the address never leaves
+  // the server); the browser only supplies the account id and the summary, since the pay maths lives here.
+  const [payoutEmails, setPayoutEmails] = useState<Record<string, PayoutEmailStatus>>({})
+  const [emailToast, setEmailToast] = useState<PayoutEmailToastState | null>(null)
+  const emailToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (emailToastTimer.current) clearTimeout(emailToastTimer.current) }, [])
+  const showEmailToast = (toast: PayoutEmailToastState | null) => {
+    if (emailToastTimer.current) clearTimeout(emailToastTimer.current)
+    setEmailToast(toast)
+    // A failure stays until dismissed (it carries Retry); a success fades.
+    if (toast?.kind === 'ok') emailToastTimer.current = setTimeout(() => setEmailToast(null), 7000)
+  }
+  const refreshPayoutEmails = useCallback(async () => {
+    if (!canManagePayroll || !branchFilter || !activeWeek) { setPayoutEmails({}); return }
+    try {
+      const list = await listPayoutEmails(branchFilter, activeWeek.from)
+      setPayoutEmails(Object.fromEntries(list.map(e => [shareKey(activeWeek.from, e.installerLabel), e])))
+    } catch {
+      // Not critical: the roster just can't show who was emailed.
+    }
+  }, [canManagePayroll, branchFilter, activeWeek])
+  useEffect(() => { void refreshPayoutEmails() }, [refreshPayoutEmails])
+
+  // The account behind a roster name — same exact-name match the payout sheet uses; the active branch wins a tie.
+  const technicianAccountFor = (installerName: string) => {
+    const upper = installerName.trim().toUpperCase()
+    const matches = branchTechnicians.filter(t => t.name.trim().toUpperCase() === upper)
+    return matches.find(t => t.branchId === branchFilter) ?? matches[0]
+  }
+  const payoutEmailStatusFor = (installerName: string): PayoutEmailStatus | undefined =>
+    activeWeek ? payoutEmails[shareKey(activeWeek.from, displayInstallerName(installerName))] : undefined
+
+  const emailPayout = async (installerName: string, summary: PayoutEmailSummary, resend: boolean): Promise<PayoutEmailResult> => {
+    const account = technicianAccountFor(installerName)
+    if (!account) throw new Error('This installer could not be matched to an account.')
+    if (!branchFilter || !activeWeek) throw new Error('No payout week selected.')
+    const names = rawNamesFor(installerName)
+    if (names.length === 0) throw new Error('No payout rows found for this installer.')
+    return sendPayoutEmail({
+      branchId: branchFilter,
+      weekFrom: activeWeek.from,
+      weekTo: activeWeek.to,
+      installerNames: names,
+      installerLabel: displayInstallerName(installerName),
+      technicianUserId: account.id,
+      summary,
+      resend,
+    })
+  }
+
+  // Sends right after a completion save and turns the outcome into a toast. A failed send never undoes the
+  // completion — the toast says so and offers Retry.
+  const emailAfterCompletion = async (installerName: string, summary: PayoutEmailSummary, resend: boolean) => {
+    const retry = () => { showEmailToast(null); void emailAfterCompletion(installerName, summary, resend) }
+    try {
+      const res = await emailPayout(installerName, summary, resend)
+      if (res.status === 'SENT') {
+        showEmailToast({ kind: 'ok', text: `Payout completed — emailed to ${res.maskedEmail || 'the technician'}.` })
+      } else if (res.status === 'ALREADY_SENT') {
+        showEmailToast({ kind: 'ok', text: `Payout completed. It was already emailed${res.sentAt ? ` on ${emailedDay(res.sentAt)}` : ''}.` })
+      } else if (res.status === 'SKIPPED_NO_EMAIL') {
+        showEmailToast({ kind: 'error', text: 'Payout completed, but this account has no personal email, so nothing was sent.' })
+      } else {
+        showEmailToast({ kind: 'error', text: `Payout completed, but the email failed${res.error ? `: ${res.error}` : '.'}`, retry })
+      }
+    } catch (e) {
+      showEmailToast({ kind: 'error', text: `Payout completed, but the email failed: ${e instanceof Error ? e.message : 'unknown error'}`, retry })
+    } finally {
+      void refreshPayoutEmails()
+    }
+  }
+
+  // "Verify and complete": apply COMPLETE, save NOW (not on the 1.5 s debounce — the server refuses to email
+  // a payout it cannot see as complete), then email. `summaryRows` is the same row set the modal's net shows.
+  const completeInstaller = async (
+    installerName: string,
+    summaryRows: PayrollRow[],
+    remarks: string,
+    validatorName: string,
+    sendEmail: boolean,
+    resend: boolean,
+  ) => {
+    if (isWeekClosed || viewOnly) return
+    const upperRemarks = remarks.trim().toUpperCase()
+    const audited = validatorName || userDisplayName || userFirstName
+    const updated = withInstallerStatus(pendingRowsRef.current ?? rows, installerName, {
+      status: 'COMPLETE',
+      audited,
+      installerRemarks: upperRemarks,
+    })
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    pendingRowsRef.current = updated
+    setRows(updated)
+    setSaveStatus('saving')
+    const ok = await flushSave(updated)
+    if (!ok) {
+      setSaveStatus('error')
+      showEmailToast({ kind: 'error', text: 'Could not save the completed payout. Your changes are still on screen — try Save again.' })
+      return
+    }
+    if (!sendEmail) return
+    await emailAfterCompletion(installerName, buildPayoutEmailSummary(summaryRows, audited, upperRemarks), resend)
+  }
+
   const renderShareLinkButton = (installerName: string, variant: 'full' | 'icon') => {
     if (!canManagePayroll || !branchFilter || !activeWeek) return null
     const label = displayInstallerName(installerName)
+    const account = technicianAccountFor(installerName)
+    const emailRows = grouped.find(([name]) => name === installerName)?.[1] ?? []
     return (
       <ShareLinkButton
         key={`share-${installerName}-${activeWeek.from}`}
@@ -1969,7 +2080,26 @@ export default function Payouts() {
         beforeCreate={saveBeforeShare}
         link={shareLinks[shareKey(activeWeek.from, label)] ?? null}
         onLinkChange={link => setShareLink(label, link)}
-        onPanelOpen={() => void refreshShareLinks()}
+        onPanelOpen={() => { void refreshShareLinks(); void refreshPayoutEmails() }}
+        email={{
+          status: payoutEmailStatusFor(installerName),
+          maskedRecipient: account?.personalEmail ? maskEmail(account.personalEmail) : '',
+          completed: emailRows.length > 0 && emailRows.every(r => r.status === 'COMPLETE'),
+          onSend: async resend => {
+            if (!(await saveBeforeShare())) throw new Error('Could not save the table first, so nothing was sent.')
+            const summaryRow = emailRows.find(r => !isCarryOver(r)) ?? emailRows[0]
+            const summary = buildPayoutEmailSummary(emailRows, summaryRow?.audited || userDisplayName || userFirstName, getInstallerNote(emailRows))
+            try {
+              const res = await emailPayout(installerName, summary, resend)
+              if (res.status === 'SENT') return `Emailed to ${res.maskedEmail || 'the technician'}.`
+              if (res.status === 'ALREADY_SENT') return 'Already emailed. Use Resend to send it again.'
+              if (res.status === 'SKIPPED_NO_EMAIL') throw new Error('No personal email on this account. Add one in Employees first.')
+              throw new Error(res.error || 'The email could not be sent.')
+            } finally {
+              void refreshPayoutEmails()
+            }
+          },
+        }}
       />
     )
   }
@@ -2076,13 +2206,62 @@ export default function Payouts() {
     })
   }
 
-  // Summary-row fields (Remarks/Audited/Payroll Status) apply to the installer's whole period,
-  // not one job — so editing them writes the same value across every row grouped under that
-  // installer's name, rather than a single row's field.
-  const updateInstallerRows = (installerName: string, patch: Partial<PayrollRow>) => {
+  // The outside-list remarks column is a note for that general installer (stored under
+  // customFields['installer:remarks']). Individual ticket rows retain and manage their own
+  // `row.remarks` independently, so per-ticket notes are NEVER overwritten by the general note.
+  const getInstallerNote = (installerRows: PayrollRow[]): string => {
+    for (const r of installerRows) {
+      const note = r.customFields?.['installer:remarks']
+      if (note !== undefined && note !== null) return note
+    }
+    // Fallback for legacy data before installer:remarks was separated:
+    // check if all rows have the exact same remarks (previously stamped by the modal)
+    const active = installerRows.filter(r => !isCarryOver(r) && isActivePayRow(r))
+    const pool = active.length > 0 ? active : installerRows
+    const first = pool[0]?.remarks?.trim() || ''
+    if (first && pool.every(r => (r.remarks?.trim() || '') === first)) return first
+    return ''
+  }
+
+  const updateInstallerNote = (installerName: string, note: string) => {
     if (isWeekClosed || viewOnly) return
     setRows(prev => {
-      const updated = prev.map(r => resolveGroupKey(r.installerName) === installerName ? { ...r, ...patch } : r)
+      const updated = prev.map(r => {
+        if (resolveGroupKey(r.installerName) !== installerName) return r
+        return {
+          ...r,
+          customFields: {
+            ...(r.customFields || {}),
+            'installer:remarks': note,
+          },
+        }
+      })
+      scheduleAutoSave(updated)
+      return updated
+    })
+  }
+
+  type InstallerStatusPatch = { status: string; audited?: string; installerRemarks?: string }
+  const withInstallerStatus = (list: PayrollRow[], installerName: string, patch: InstallerStatusPatch): PayrollRow[] =>
+    list.map(r => {
+      if (resolveGroupKey(r.installerName) !== installerName) return r
+      const next: PayrollRow = {
+        ...r,
+        status: patch.status,
+        audited: patch.audited !== undefined ? patch.audited : r.audited,
+      }
+      if (patch.installerRemarks !== undefined) {
+        next.customFields = {
+          ...(r.customFields || {}),
+          'installer:remarks': patch.installerRemarks,
+        }
+      }
+      return next
+    })
+  const updateInstallerStatus = (installerName: string, patch: InstallerStatusPatch) => {
+    if (isWeekClosed || viewOnly) return
+    setRows(prev => {
+      const updated = withInstallerStatus(prev, installerName, patch)
       scheduleAutoSave(updated)
       return updated
     })
@@ -3385,6 +3564,15 @@ export default function Payouts() {
                     <span className="text-base md:text-2xl font-black uppercase tracking-wide truncate" style={{ color: textPrimary }}>
                       {displayInstallerName(installerName).toUpperCase()}
                     </span>
+                    {canManagePayroll && selectedInstallerRows.length > 0 && selectedInstallerRows.every(r => r.status === 'COMPLETE') && (
+                      <span data-html2canvas-ignore="true">
+                        <PayoutEmailChip
+                          status={payoutEmailStatusFor(installerName)}
+                          noEmailOnFile={!technicianAccountFor(installerName)?.personalEmail}
+                          isLight={isLight}
+                        />
+                      </span>
+                    )}
                   </div>
 
                   {/* Actions: sync / save / share before the divider, view tools (icon-only until very wide screens) after it. */}
@@ -4177,7 +4365,7 @@ export default function Payouts() {
             // period — never read the period's own remarks/audited off of it (same landmine as
             // setDeduction above; see docs/payroll-hold-release-plan.md).
             const summaryRow = installerRows.find(r => !isCarryOver(r)) ?? installerRows[0]
-            const summaryRemarks = summaryRow?.remarks || ''
+            const summaryRemarks = getInstallerNote(installerRows)
             const summaryAudited = summaryRow?.audited || ''
             return (
               <div
@@ -4286,6 +4474,13 @@ export default function Payouts() {
                           by {summaryAudited}
                         </span>
                       )}
+                      {isComplete && canManagePayroll && (
+                        <PayoutEmailChip
+                          status={payoutEmailStatusFor(installerName)}
+                          noEmailOnFile={!technicianAccountFor(installerName)?.personalEmail}
+                          isLight={isLight}
+                        />
+                      )}
                     </div>
 
                     {/* 4. REMARKS — wide column, click to edit inline instead of a truncated
@@ -4298,7 +4493,7 @@ export default function Payouts() {
                           value={remarksDraft}
                           onChange={e => setRemarksDraft(e.target.value.toUpperCase())}
                           onBlur={() => {
-                            updateInstallerRows(installerName, { remarks: remarksDraft.trim() })
+                            updateInstallerNote(installerName, remarksDraft.trim())
                             setEditingRemarksFor(null)
                           }}
                           onKeyDown={e => {
@@ -5931,6 +6126,11 @@ export default function Payouts() {
         const modalJobBreakdown = modalRows.length > 0 ? completedJobsBreakdown(modalRows) : ''
         const modalIsComplete = modalRows.length > 0 && modalRows.every(r => r.status === 'COMPLETE')
         const modalAudited = modalRows.find(r => !isCarryOver(r))?.audited || modalRows[0]?.audited || ''
+        const modalAccount = technicianAccountFor(completeModalFor)
+        const modalEmailStatus = payoutEmailStatusFor(completeModalFor)
+        const modalPreviousEmail = modalEmailStatus?.lastSentAt
+          ? { sentAt: modalEmailStatus.lastSentAt, net: modalEmailStatus.lastSentNet }
+          : null
 
         return (
           <CompletePayoutModal
@@ -5946,17 +6146,12 @@ export default function Payouts() {
             isWeekClosed={isWeekClosed}
             canManagePayroll={canManagePayroll}
             onClose={() => setCompleteModalFor(null)}
-            onComplete={(remarks, validatorName) => {
-              const upperRemarks = remarks.trim().toUpperCase()
-              updateInstallerRows(completeModalFor, {
-                status: 'COMPLETE',
-                audited: validatorName || userDisplayName || userFirstName,
-                remarks: upperRemarks,
-              })
+            onComplete={(remarks, validatorName, sendEmail) => {
+              void completeInstaller(completeModalFor, modalRows, remarks, validatorName, sendEmail, modalPreviousEmail !== null)
               setCompleteModalFor(null)
             }}
             onRevertToPending={() => {
-              updateInstallerRows(completeModalFor, {
+              updateInstallerStatus(completeModalFor, {
                 status: 'PENDING',
                 audited: '',
               })
@@ -5964,6 +6159,9 @@ export default function Payouts() {
             }}
             displayInstallerName={displayInstallerName}
             initialRemarks={completeRemarks}
+            recipientEmail={modalAccount?.personalEmail || ''}
+            hasAccount={Boolean(modalAccount)}
+            previousEmail={modalPreviousEmail}
           />
         )
       })()}
@@ -6342,6 +6540,7 @@ export default function Payouts() {
       )}
 
       <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />
+      <PayoutEmailToast toast={emailToast} onDismiss={() => showEmailToast(null)} />
 
       {payoutSheetOpen && activeWeek && (
         <InstallerPayoutSheet

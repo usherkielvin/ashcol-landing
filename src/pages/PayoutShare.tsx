@@ -62,6 +62,9 @@ const DEDUCTION_LINES: { key: Parameters<typeof deductionValue>[1]; label: strin
 ]
 
 // Bookkeeping prefixes in customFields — anything else is a branch-defined pay column.
+// Page width: fills a laptop / desktop screen (capped on ultra-wide) with a little breathing room at each side.
+const PAGE_WIDTH = 'w-full max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-10'
+
 const RESERVED_PREFIXES = ['ded:', 'txt:', 'pay:', 'hold:', 'xfer:', 'manual:']
 
 interface Col {
@@ -112,6 +115,8 @@ function usePrivatePageMeta(title: string) {
   }, [title])
 }
 
+const distinctRemarks = (rows: PayrollRow[]) => Array.from(new Set(rows.map(r => (r.remarks || '').trim()).filter(Boolean)))
+
 const customLabel = (key: string) => titleCase(key.replace(/^custom_/i, '').replace(/_/g, ' '))
 
 function buildColumns(rows: PayrollRow[], compact: boolean, p: Palette): Col[] {
@@ -134,14 +139,14 @@ function buildColumns(rows: PayrollRow[], compact: boolean, p: Palette): Col[] {
     })
     cols.push({ key: 'customerName', label: 'Customer', align: 'left', width: 120, pinnedLeft: 88, render: customerCell })
   } else {
-    cols.push({ key: 'date', label: 'Date', align: 'left', width: 76, pinnedLeft: 0, render: r => shortDate(r.workDate) || '—' })
-    cols.push({ key: 'ticketNumber', label: 'Ticket', align: 'left', width: 108, pinnedLeft: 76, render: r => r.ticketNumber || '—' })
-    cols.push({ key: 'customerName', label: 'Customer', align: 'left', width: 180, pinnedLeft: 184, render: customerCell })
+    cols.push({ key: 'date', label: 'Date', align: 'left', width: 70, pinnedLeft: 0, render: r => shortDate(r.workDate) || '—' })
+    cols.push({ key: 'ticketNumber', label: 'Ticket', align: 'left', width: 100, pinnedLeft: 70, render: r => r.ticketNumber || '—' })
+    cols.push({ key: 'customerName', label: 'Customer', align: 'left', width: 140, pinnedLeft: 170, render: customerCell })
   }
 
   const anyText = (pick: (r: PayrollRow) => string) => rows.some(r => pick(r).trim() !== '')
-  if (anyText(r => r.brandCapacity)) cols.push({ key: 'brandCapacity', label: 'Unit', align: 'left', width: 150, render: r => r.brandCapacity || '—' })
-  if (anyText(r => r.installationUpload)) cols.push({ key: 'installationUpload', label: 'Status', align: 'left', width: 130, render: r => r.installationUpload || '—' })
+  if (anyText(r => r.brandCapacity)) cols.push({ key: 'brandCapacity', label: 'Unit', align: 'left', width: 120, render: r => r.brandCapacity || '—' })
+  if (anyText(r => r.installationUpload)) cols.push({ key: 'installationUpload', label: 'Status', align: 'left', width: 110, render: r => r.installationUpload || '—' })
   if (rows.some(r => paymentStatusOf(r) !== 'PAID')) {
     cols.push({
       key: 'paymentStatus', label: 'Payment', align: 'left', width: 130,
@@ -156,7 +161,7 @@ function buildColumns(rows: PayrollRow[], compact: boolean, p: Palette): Col[] {
     const key = def.key as keyof PayrollRow
     if (!rows.some(r => num(r[key] as string) !== 0)) continue
     cols.push({
-      key: def.key, label: def.label, align: 'right', width: Math.max(88, def.width),
+      key: def.key, label: def.label, align: 'right', width: 92,
       render: r => (num(r[key] as string) !== 0 ? peso(r[key] as string) : <span style={{ color: p.muted }}>—</span>),
     })
   }
@@ -178,7 +183,7 @@ function buildColumns(rows: PayrollRow[], compact: boolean, p: Palette): Col[] {
   if (anyText(r => r.remarks)) cols.push({ key: 'remarks', label: 'Remarks', align: 'left', width: 160, render: r => r.remarks || '—' })
 
   cols.push({
-    key: 'total', label: 'Total', align: 'right', width: 110,
+    key: 'total', label: 'Total', align: 'right', width: 100,
     render: r => (
       <span className="font-bold">
         ₱{peso(rowTotal(r))}
@@ -199,19 +204,21 @@ const stickyStyle = (left: number | undefined, bg: string, p: Palette, edge: boo
 
 function PayoutTable({ rows, compact, p, onSelect }: { rows: PayrollRow[]; compact: boolean; p: Palette; onSelect: (r: PayrollRow) => void }) {
   const cols = useMemo(() => buildColumns(rows, compact, p), [rows, compact, p])
+  // The pinned-column shadow only means something once the table has actually scrolled sideways.
+  const [scrolled, setScrolled] = useState(false)
   const lastPinned = cols.reduce((acc, c, i) => (c.pinnedLeft !== undefined ? i : acc), -1)
   const tableWidth = cols.reduce((sum, c) => sum + c.width, 0)
   return (
-    <div className="overflow-x-auto rounded-2xl border" style={{ background: p.card, borderColor: p.border }}>
-      <table className="text-[13px] border-separate border-spacing-0" style={{ minWidth: tableWidth, width: '100%', tableLayout: 'fixed', color: p.text }}>
+    <div className="overflow-x-auto rounded-2xl border" style={{ background: p.card, borderColor: p.border }} onScroll={e => setScrolled(e.currentTarget.scrollLeft > 0)}>
+      <table className="text-[13px] 2xl:text-sm border-separate border-spacing-0" style={{ minWidth: tableWidth, width: '100%', tableLayout: 'fixed', color: p.text }}>
         <colgroup>{cols.map(c => <col key={c.key} style={{ width: c.width }} />)}</colgroup>
         <thead>
           <tr>
             {cols.map((c, i) => (
               <th
                 key={c.key}
-                className="px-3 py-2.5 text-[11px] font-bold uppercase tracking-wide border-b whitespace-nowrap"
-                style={{ textAlign: c.align, background: p.head, borderColor: p.border, color: p.muted, ...stickyStyle(c.pinnedLeft, p.head, p, i === lastPinned), zIndex: c.pinnedLeft !== undefined ? 2 : undefined }}
+                className="px-3 py-3 text-[10px] 2xl:text-[11px] font-bold uppercase tracking-normal leading-tight border-b align-bottom"
+                style={{ textAlign: c.align, background: p.head, borderColor: p.border, color: p.muted, ...stickyStyle(c.pinnedLeft, p.head, p, scrolled && i === lastPinned), zIndex: c.pinnedLeft !== undefined ? 2 : undefined }}
               >
                 {c.label}
               </th>
@@ -224,8 +231,8 @@ function PayoutTable({ rows, compact, p, onSelect }: { rows: PayrollRow[]; compa
               {cols.map((c, i) => (
                 <td
                   key={c.key}
-                  className="px-3 py-2.5 border-b align-top"
-                  style={{ textAlign: c.align, borderColor: p.border, ...stickyStyle(c.pinnedLeft, p.card, p, i === lastPinned) }}
+                  className="px-3 py-3 border-b align-middle"
+                  style={{ textAlign: c.align, borderColor: p.border, ...stickyStyle(c.pinnedLeft, p.card, p, scrolled && i === lastPinned) }}
                 >
                   {c.render(r)}
                 </td>
@@ -512,7 +519,7 @@ export default function PayoutShare() {
     const complete = payout.status === 'COMPLETED'
     body = (
       <>
-        <main className="flex-1 w-full max-w-5xl mx-auto px-4 pt-5 pb-6 flex flex-col gap-4">
+        <main className={`flex-1 ${PAGE_WIDTH} pt-5 pb-6 flex flex-col gap-4`}>
           <header className="flex flex-col gap-1">
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-xl font-extrabold">{titleCase(payout.installerLabel)}</h1>
@@ -545,6 +552,17 @@ export default function PayoutShare() {
               ? <JobCards rows={counted} p={p} onSelect={setSelectedRow} />
               : <PayoutTable rows={counted} compact={compact} p={p} onSelect={setSelectedRow} />
           )}
+          {(() => {
+            const generalNote = counted.find(r => r.customFields?.['installer:remarks'])?.customFields?.['installer:remarks']
+              || (distinctRemarks(counted).length === 1 ? distinctRemarks(counted)[0] : '')
+            if (!generalNote) return null
+            return (
+              <div className="rounded-2xl border px-4 py-3 text-[13px]" style={{ background: p.card, borderColor: p.border }}>
+                <span className="block text-[11px] font-bold uppercase tracking-wide mb-0.5" style={{ color: p.muted }}>Remarks from payroll</span>
+                {generalNote}
+              </div>
+            )
+          })()}
           {counted.length > 0 && <Summary counted={counted} p={p} />}
           {held.length > 0 && <HeldList rows={held} p={p} />}
 
@@ -558,7 +576,7 @@ export default function PayoutShare() {
 
         {/* Net payout stays in view while the table scrolls. */}
         <footer className="sticky bottom-0 border-t" style={{ background: p.card, borderColor: p.border, paddingBottom: 'env(safe-area-inset-bottom)' }}>
-          <div className="max-w-5xl mx-auto px-4 py-3 flex items-baseline justify-between gap-4">
+          <div className={`${PAGE_WIDTH} py-3 flex items-baseline justify-between gap-4`}>
             <span className="text-xs font-bold uppercase tracking-wide" style={{ color: p.muted }}>Net payout</span>
             <span className="text-2xl font-extrabold tabular-nums" style={{ color: net < 0 ? p.red : p.accent }}>{pesoSigned(net)}</span>
           </div>
@@ -570,7 +588,7 @@ export default function PayoutShare() {
   return (
     <div className="min-h-screen flex flex-col" style={{ background: p.bg, color: p.text }}>
       <div className="border-b" style={{ background: p.card, borderColor: p.border }}>
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
+        <div className={`${PAGE_WIDTH} py-3 flex items-center gap-3`}>
           <img src={logoImg} alt="" className="w-8 h-8 rounded-lg object-cover" />
           <span className="text-sm font-bold">ASHCOL · Installer payout</span>
         </div>

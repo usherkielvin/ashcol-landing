@@ -365,7 +365,7 @@ export function mapTicketToPayrollRows(ticket: Ticket, branchName: string, rates
     materialsReturn: '',
     installationChecklist: '',
     videoUpload: '',
-    remarks: '',
+    remarks: (ticket.remarksUpdate || ticket.remarks || '').trim(),
     audited: '',
     status: 'PENDING',
     customFields: (payStatus ? { 'pay:status': payStatus } : {}) as Record<string, string>,
@@ -492,6 +492,7 @@ export function deduplicateAndMergePayroll(existing: PayrollRow[], incoming: Pay
         actualCollected: row.actualCollected?.trim() ? row.actualCollected : (fresh.actualCollected || ''),
         amountCollected: row.amountCollected?.trim() ? row.amountCollected : (fresh.amountCollected || ''),
         sifQuotation: row.sifQuotation?.trim() ? row.sifQuotation : (fresh.sifQuotation || ''),
+        remarks: row.remarks?.trim() ? row.remarks : (fresh.remarks || ''),
       }
     }
     return {

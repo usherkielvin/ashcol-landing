@@ -171,6 +171,7 @@ The sidebar is organized into **four groups** (`buildNavGroups` in `src/layouts/
 | **Commissions** | `/commissions` | Sales/negotiator commission computation & records. |
 | **Cash Advance** | `/cash-advances` | Employee cash advances + repayment tracking. |
 | **Payroll** | `/payroll` | Payroll entries derived from attendance/DTR, advances, overtime and commissions. |
+| **Payouts** | `/payouts` | Weekly installer payout sheets (`Payouts.tsx`, per-branch week cycle). Payroll finalizes each installer-week ("Completed"); branch staff see only completed payouts. **Read-only share links** (`/payout/<token>`, no login, 14-day expiry, revocable — `PayoutShareService`) and a **completion email**: finalizing emails the technician a summary + link at the personal email on their account (`PayoutEmailService`, `POST /api/v1/payroll/payout-emails`, audit in `payout_email_log`; recipient is read server-side, never from the request). See `docs/plans/payout-completion-email.md`. |
 | **Bills** | `/admin-bills` | Monthly bills & dues, bill payments per branch. |
 | **Telecoms** | `/admin-telecom` | Telecom account monitoring (lines, plans, payments). |
 
