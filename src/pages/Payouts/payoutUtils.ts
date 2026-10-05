@@ -267,4 +267,22 @@ export const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = COLUMN_DEFS.redu
 export interface CustomColumnDef {
   key: string
   label: string
-}
+}
+
+/** Same label ignoring case, spacing and punctuation: "General Cleaning" == "GENERAL_CLEANING". */
+export const columnLabelKey = (label: string) => label.toUpperCase().replace(/[^A-Z0-9]+/g, '')
+
+/** Custom columns that share a label. The first of each group is the one to keep. */
+export function findDuplicateColumnGroups(defs: CustomColumnDef[]): CustomColumnDef[][] {
+  const byLabel = new Map<string, CustomColumnDef[]>()
+  for (const d of defs) {
+    const k = columnLabelKey(d.label)
+    if (!k) continue
+    byLabel.set(k, [...(byLabel.get(k) ?? []), d])
+  }
+  return Array.from(byLabel.values()).filter(g => g.length > 1)
+}
+
+/** Last column of every installer table: what this ticket pays (all fees, scaled by payment share).
+ *  Read-only and always shown — its value comes from rowTotal(), not from a stored field. */
+export const NET_COLUMN: ColumnDef = { key: 'net', label: 'Net', width: 110, align: 'right', pinned: true, isMoney: true }

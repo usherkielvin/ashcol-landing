@@ -245,7 +245,7 @@ export function CloseTicketDialog({
                           ))}
                           {kind === 'document' && (
                             <li className="text-[10.5px] font-semibold list-none mt-1" style={{ color: textMuted }}>
-                              Photos count by their label — add them in the named holders (e.g. JOB ORDER, SERVICE REPORT, INDOOR UNIT), or rename a photo with the pencil.
+                              Photos count by their label — add them in the named holders (e.g. {outcome === 'DONE_INSTALLED' ? 'PR/SALES INVOICE, INDOOR UNIT' : 'JOB ORDER, SERVICE REPORT, INDOOR UNIT'}), or rename a photo with the pencil.
                             </li>
                           )}
                         </ul>
@@ -260,7 +260,7 @@ export function CloseTicketDialog({
                         {fix}
                       </button>
                     )}
-                    {passed && kind === 'payment' && (
+                    {passed && (kind === 'payment' || kind === 'document') && (
                       <button
                         type="button"
                         onClick={() => onFix(kind, full)}

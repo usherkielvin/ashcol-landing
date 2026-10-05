@@ -71,7 +71,7 @@ import {
 import InstallerPayoutSheet, { type PayoutSheetSource } from '../components/InstallerPayoutSheet'
 import ShareLinkButton from './Payouts/ShareLinkButton';
 import { listShareLinks, type PayoutShareLink } from '../utils/payoutShareApi';
-import { num, peso, pesoSigned, shortDate, longDate, getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef } from './Payouts/payoutUtils';
+import { num, peso, pesoSigned, shortDate, longDate, getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef, NET_COLUMN, columnLabelKey, findDuplicateColumnGroups } from './Payouts/payoutUtils';
 
 export default function Payouts() {
   const { theme } = useTheme()
@@ -516,6 +516,18 @@ export default function Payouts() {
   const addCustomColumn = () => {
     const label = newColumnName.trim()
     if (!label) return
+    // Two columns with the same name would each hold their own amounts and both count toward the payout.
+    const existing = customColumnDefs.find(c => columnLabelKey(c.label) === columnLabelKey(label))
+    if (existing) {
+      setConfirmDialog({
+        title: 'Column already exists',
+        message: `"${existing.label}" is already a column. Enter amounts in that column instead of adding another one.`,
+        confirmText: 'OK',
+        variant: 'info',
+        onConfirm: () => {},
+      })
+      return
+    }
     const slug = label.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
     let key = `custom_${slug || 'column'}`
     // Guarantee uniqueness even if two columns slugify to the same thing.
@@ -2003,6 +2015,65 @@ export default function Payouts() {
     })
   }
 
+  // ── Duplicate custom columns ──
+  // Two custom columns with the same name (e.g. "General Cleaning" twice) each hold their own amounts and BOTH
+  // count toward a ticket's payout. Merging moves the duplicate's amount into the first column when that one is
+  // empty, drops it when it matches, and refuses to guess when the two columns disagree on a ticket.
+  const duplicateColumnGroups = findDuplicateColumnGroups(customColumnDefs)
+  const mergeDuplicateColumns = () => {
+    const showInfo = (title: string, message: string) => setConfirmDialog({ title, message, confirmText: 'OK', variant: 'info', onConfirm: () => {} })
+    if (viewOnly || !canManagePayroll) return
+    const dupToKeep = new Map<string, string>()
+    for (const g of duplicateColumnGroups) for (const d of g.slice(1)) dupToKeep.set(d.key, g[0].key)
+    if (dupToKeep.size === 0) return
+    const isFrozenRow = (r: PayrollRow) => Boolean(r.workDate) && closures.some(c => c.branchId === branchFilter && r.workDate >= c.weekFrom && r.workDate <= c.weekTo)
+    const filled = (v: string | undefined) => v !== undefined && v !== '' && num(v) !== 0
+
+    let conflicts = 0
+    let frozen = 0
+    let touched = 0
+    const merged = rows.map(r => {
+      const cf = r.customFields
+      if (!cf || ![...dupToKeep.keys()].some(k => k in cf)) return r
+      if (isFrozenRow(r)) {
+        if ([...dupToKeep.keys()].some(k => filled(cf[k]))) frozen++
+        return r
+      }
+      const next = { ...cf }
+      for (const [dupKey, keepKey] of dupToKeep) {
+        if (!(dupKey in next)) continue
+        const dupVal = next[dupKey]
+        if (filled(dupVal)) {
+          if (!filled(next[keepKey])) next[keepKey] = dupVal
+          else if (num(next[keepKey]) !== num(dupVal)) { conflicts++; continue }
+        }
+        delete next[dupKey]
+      }
+      touched++
+      return { ...r, customFields: next }
+    })
+
+    if (conflicts > 0) {
+      showInfo('Columns disagree', `${conflicts} ${conflicts === 1 ? 'ticket has' : 'tickets have'} different amounts in the duplicate columns, so nothing was merged. Make the amounts match (or clear the wrong one) on those tickets, then merge again.`)
+      return
+    }
+    const names = duplicateColumnGroups.map(g => `"${g[0].label}"`).join(', ')
+    setConfirmDialog({
+      title: 'Merge duplicate columns',
+      message: `Merge ${names} into one column?`,
+      detail: `${touched} ${touched === 1 ? 'ticket' : 'tickets'} will be updated: matching amounts are counted once, so those payouts can go down.${frozen > 0 ? ` ${frozen} ${frozen === 1 ? 'ticket' : 'tickets'} in closed weeks are locked and keep both columns until the week is reopened.` : ''} Only the months currently loaded are changed.`,
+      confirmText: 'Merge',
+      cancelText: 'Cancel',
+      variant: 'discard',
+      onConfirm: () => {
+        setRows(merged)
+        scheduleAutoSave(merged)
+        // Drop a duplicate definition only once no loaded ticket still stores amounts under it.
+        setCustomColumnDefs(prev => prev.filter(c => !dupToKeep.has(c.key) || merged.some(r => r.customFields && c.key in r.customFields)))
+      },
+    })
+  }
+
   // Summary-row fields (Remarks/Audited/Payroll Status) apply to the installer's whole period,
   // not one job — so editing them writes the same value across every row grouped under that
   // installer's name, rather than a single row's field.
@@ -2106,6 +2177,8 @@ export default function Payouts() {
     videoUpload: { get: r => r.videoUpload, set: (id, v) => updateRow(id, { videoUpload: v }) },
     remarks: { get: r => r.remarks, set: (id, v) => updateRow(id, { remarks: v }) },
     audited: { get: r => r.audited, set: (id, v) => updateRow(id, { audited: v }) },
+    // Computed, read-only: the ticket's payout (see NET_COLUMN).
+    net: { get: r => String(rowTotal(r)), set: () => {} },
   }
   // Custom columns read/write row.customFields[key], merging safely via functional update
   for (const cc of customColumnDefs) {
@@ -2368,7 +2441,7 @@ export default function Payouts() {
     const trailing: ColumnDef[] = COLUMN_DEFS.filter(
       c => (c.key === 'remarks' || c.key === 'audited') && (c.pinned || !hidden.has(c.key))
     )
-    return [...fixedMiddle, ...custom, ...trailing]
+    return [...fixedMiddle, ...custom, ...trailing, NET_COLUMN]
   }
   const zebraBg = isLight ? '#f8fafc' : '#0c1420'
   const headerBg = isLight ? '#f8fafc' : '#0d1520'
@@ -3497,7 +3570,7 @@ export default function Payouts() {
                               const empty = !text || text === '—'
                               const isStatus = col.key === 'installationUpload'
                               const isDone = isStatus && /^DONE\b/i.test(text)
-                              const isReadOnly = viewOnly || isWeekClosed || Boolean(col.readOnlyWhenSynced && row.ticketId)
+                              const isReadOnly = viewOnly || isWeekClosed || col.key === 'net' || Boolean(col.readOnlyWhenSynced && row.ticketId)
                               const isEditing = editingCell?.rowId === row.id && editingCell?.colKey === col.key
                               const acc = getColAccessor(col.key)
 
@@ -3507,7 +3580,7 @@ export default function Payouts() {
                                   setEditingCell(null)
                                 } else if (e.key === 'Tab') {
                                   e.preventDefault()
-                                  const editableCols = (isWeekClosed || viewOnly) ? [] : groupVisibleColumns.filter(c => !(c.readOnlyWhenSynced && Boolean(row.ticketId)))
+                                  const editableCols = (isWeekClosed || viewOnly) ? [] : groupVisibleColumns.filter(c => c.key !== 'net' && !(c.readOnlyWhenSynced && Boolean(row.ticketId)))
                                   const curIdx = editableCols.findIndex(c => c.key === col.key)
                                   if (curIdx !== -1) {
                                     const step = e.shiftKey ? -1 : 1
@@ -3674,7 +3747,7 @@ export default function Payouts() {
                                           ? (isDone ? (isLight ? '#047857' : '#34D399') : (isLight ? '#b45309' : '#fbbf24'))
                                           : textPrimary,
                                       opacity: empty ? 0.45 : 1,
-                                      fontWeight: col.key === 'date' ? 700 : undefined,
+                                      fontWeight: col.key === 'date' || col.key === 'net' ? 700 : undefined,
                                     }}
                                   >
                                     {text}
@@ -4662,6 +4735,23 @@ export default function Payouts() {
                     </span>
                   )}
                 </div>
+
+                {duplicateColumnGroups.length > 0 && (
+                  <div className="flex items-center gap-3 px-4 py-2.5" style={{ borderBottom: `1px solid ${border}`, backgroundColor: isLight ? '#FFFBEB' : 'rgba(217,119,6,0.12)' }}>
+                    <p className="flex-1 text-[11px] font-semibold" style={{ color: isLight ? '#92400E' : '#FBBF24' }}>
+                      {duplicateColumnGroups.map(g => `${g[0].label} ×${g.length}`).join(', ')} — same name twice, so both amounts are added to the payout.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={mergeDuplicateColumns}
+                      disabled={viewOnly || isWeekClosed}
+                      className="shrink-0 px-3 py-1.5 rounded-lg text-[11px] font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                      style={{ background: '#D97706' }}
+                    >
+                      Merge duplicates
+                    </button>
+                  </div>
+                )}
 
                 {/* Add input */}
                 <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: customColumnDefs.length > 0 ? `1px solid ${border}` : 'none', backgroundColor: cardBg }}>
