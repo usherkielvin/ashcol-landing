@@ -70,6 +70,8 @@ import {
 } from '../utils/payrollDerive'
 import InstallerPayoutSheet, { type PayoutSheetSource } from '../components/InstallerPayoutSheet'
 import ShareLinkButton from './Payouts/ShareLinkButton';
+import TableActionButton from './Payouts/TableActionButton';
+import { Settings2, Columns3, FileDown } from 'lucide-react';
 import { listShareLinks, type PayoutShareLink } from '../utils/payoutShareApi';
 import { num, peso, pesoSigned, shortDate, longDate, getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef, NET_COLUMN, columnLabelKey, findDuplicateColumnGroups } from './Payouts/payoutUtils';
 
@@ -3372,101 +3374,78 @@ export default function Payouts() {
             return (
               <div key={installerName} data-main-table={installerName} className="rounded-2xl shadow-sm overflow-hidden" style={{ backgroundColor: cardBg, border: `2px solid ${gridLine}` }}>
                 <div
-                  className="flex items-center justify-between gap-2 md:grid md:grid-cols-[1fr_auto_1fr] md:gap-3 px-3 md:px-6 py-2.5 md:py-4"
+                  className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 md:px-6 py-3 md:py-4"
                   style={{ backgroundColor: headerBg, borderBottom: `2px solid ${gridLine}` }}
                 >
-                  <div className="hidden md:flex items-center gap-2 min-w-0" title="Branch">
-                    <Building2 className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0 text-emerald-500" />
-                    <span className="text-[11px] md:text-sm font-extrabold uppercase tracking-wider truncate" style={{ color: textMuted }}>
-                      {currentBranchDisplay || 'Branch'}
+                  <div className="min-w-0 flex flex-col gap-0.5">
+                    <span className="hidden md:flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider" style={{ color: textMuted }} title="Branch">
+                      <Building2 className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
+                      <span className="truncate">{currentBranchDisplay || 'Branch'}</span>
+                    </span>
+                    <span className="text-base md:text-2xl font-black uppercase tracking-wide truncate" style={{ color: textPrimary }}>
+                      {displayInstallerName(installerName).toUpperCase()}
                     </span>
                   </div>
-                  <span className="order-1 md:order-none flex-1 min-w-0 text-[13px] md:text-2xl font-black uppercase tracking-wide text-left md:text-center truncate md:whitespace-nowrap" style={{ color: textPrimary }}>
-                    {displayInstallerName(installerName).toUpperCase()}
-                  </span>
-                  <div data-html2canvas-ignore="true" className="order-2 md:order-none flex items-center gap-1.5 md:gap-2 justify-end shrink-0">
-                    {/* Kept on the installer view even though the filter bar is hidden here */}
-                    {canManagePayroll && (<button
-                      type="button"
-                      onClick={() => void loadAndSync(true)}
-                      disabled={syncing || initialLoading || isWeekClosed}
-                      title={isWeekClosed ? 'This payout week is closed and locked — syncing is disabled' : 'Sync latest completed job orders from Schedules'}
-                      className="flex items-center justify-center gap-1.5 w-8 h-8 md:w-auto md:h-auto md:px-3 md:py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50 cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{ color: '#10B981', backgroundColor: isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)', borderColor: '#10B98150' }}
-                    >
-                      {isWeekClosed ? <Lock className="w-3.5 h-3.5 text-amber-500" /> : <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />}
-                      <span className="hidden lg:inline">{isWeekClosed ? 'Week Locked' : syncing ? 'Syncing…' : 'Sync Latest'}</span>
-                    </button>)}
+
+                  {/* Actions: sync / save / share before the divider, view tools (icon-only until very wide screens) after it. */}
+                  <div data-html2canvas-ignore="true" className="flex flex-wrap items-center justify-end gap-2">
+                    {canManagePayroll && (
+                      <TableActionButton
+                        Icon={isWeekClosed ? Lock : RefreshCw}
+                        label={isWeekClosed ? 'Week Locked' : syncing ? 'Syncing…' : 'Sync Latest'}
+                        title={isWeekClosed ? 'This payout week is closed and locked — syncing is disabled' : 'Sync latest completed job orders from Schedules'}
+                        tone="accent"
+                        spin={syncing}
+                        disabled={syncing || initialLoading || isWeekClosed}
+                        onClick={() => void loadAndSync(true)}
+                      />
+                    )}
                     {canManagePayroll && !isWeekClosed && (
-                      <button
-                        type="button"
-                        onClick={() => void saveTableNow()}
-                        disabled={saveStatus === 'saving'}
+                      <TableActionButton
+                        Icon={saveStatus === 'saving' ? Loader2 : saveStatus === 'saved' ? CheckCircle2 : Save}
+                        label={saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved' : saveStatus === 'error' ? 'Retry Save' : saveStatus === 'dirty' ? 'Save Changes' : 'Save'}
                         title={saveStatus === 'dirty' ? 'You have unsaved changes — click to save the whole table' : saveStatus === 'error' ? 'Last save failed — click to retry' : 'Save all table changes'}
-                        className="flex items-center justify-center gap-1.5 w-8 h-8 md:w-auto md:h-auto md:px-3 md:py-1.5 rounded-xl text-xs font-bold transition-colors border cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-wait"
-                        style={saveStatus === 'dirty' || saveStatus === 'error'
-                          ? { color: '#fff', backgroundColor: saveStatus === 'error' ? '#DC2626' : '#D97706', borderColor: 'transparent' }
-                          : { color: '#10B981', backgroundColor: isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)', borderColor: '#10B98150' }}
-                      >
-                        {saveStatus === 'saving' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : saveStatus === 'saved' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
-                        <span className="hidden lg:inline">{saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved' : saveStatus === 'error' ? 'Retry Save' : saveStatus === 'dirty' ? 'Save Changes' : 'Save'}</span>
-                      </button>
+                        tone={saveStatus === 'error' ? 'danger' : saveStatus === 'dirty' ? 'attention' : 'accent'}
+                        spin={saveStatus === 'saving'}
+                        disabled={saveStatus === 'saving'}
+                        onClick={() => void saveTableNow()}
+                      />
                     )}
                     {renderShareLinkButton(installerName, 'full')}
+
+                    <span className="hidden md:block w-px h-6 mx-1" style={{ backgroundColor: border }} aria-hidden />
+
                     {canManagePayroll && (
-                      <button
-                        type="button"
-                        onClick={openRatesModal}
-                        title="Set this branch's payout rates"
-                        className="flex items-center justify-center gap-1.5 w-8 h-8 md:w-auto md:h-auto md:px-3 md:py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50 cursor-pointer shadow-xs"
-                        style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
-                      >
-                        <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-500" />
-                        <span className="hidden lg:inline">Payout Settings</span>
-                      </button>
+                      <TableActionButton Icon={Settings2} label="Payout Settings" title="Set this branch's payout rates" labelFrom="2xl" onClick={openRatesModal} />
                     )}
-                    <button
-                      type="button"
-                      onClick={() => hideEmptyColumnsFor(installerName)}
+                    <TableActionButton
+                      Icon={EyeOff}
+                      label="Hide Empty Columns"
                       title="Hide all columns that have no values across all tickets for this technician"
-                      className="hidden md:flex items-center justify-center gap-1.5 w-8 h-8 md:w-auto md:h-auto md:px-3 md:py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50 cursor-pointer shadow-xs"
-                      style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
-                    >
-                      <EyeOff className="w-3.5 h-3.5 text-slate-400" />
-                      <span className="hidden md:inline">Hide Empty Columns</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openColumnManager(installerName)}
-                      title="Show/hide columns"
-                      className="flex items-center justify-center gap-1.5 w-8 h-8 md:w-auto md:h-auto md:px-3 md:py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/50 cursor-pointer shadow-xs"
-                      style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
-                    >
-                      <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-500" />
-                      <span className="hidden md:inline">Columns</span>
-                    </button>
-                    <button
-                      type="button"
+                      labelFrom="2xl"
+                      hideBelowMd
+                      onClick={() => hideEmptyColumnsFor(installerName)}
+                    />
+                    <TableActionButton Icon={Columns3} label="Columns" title="Show/hide columns" labelFrom="2xl" onClick={() => openColumnManager(installerName)} />
+                    <TableActionButton
+                      Icon={showcasePdfing ? Loader2 : FileDown}
+                      label={showcasePdfing ? 'Creating PDF…' : 'Export PDF'}
+                      title="Export this table (the columns currently shown) as a landscape PDF"
+                      labelFrom="2xl"
+                      hideBelowMd
+                      spin={showcasePdfing}
                       disabled={showcasePdfing}
                       onClick={() => void runPayoutPdf(installerName, false)}
-                      title="Export this table (the columns currently shown) as a landscape PDF"
-                      className="hidden md:flex items-center justify-center gap-1.5 w-8 h-8 md:w-auto md:h-auto md:px-3 md:py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/60 cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-wait"
-                      style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
-                    >
-                      {showcasePdfing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />}
-                      <span className="hidden lg:inline">{showcasePdfing ? 'Creating PDF…' : 'Export PDF'}</span>
-                    </button>
-                    {/* Showcase — full-view with copy-as-image */}
-                    <button
-                      type="button"
-                      onClick={() => setShowcaseOpen(true)}
+                    />
+                    <TableActionButton
+                      Icon={Maximize2}
+                      label="Showcase"
                       title="Showcase full tab view — copy as image"
-                      className="hidden md:flex items-center justify-center gap-1.5 w-8 h-8 md:w-auto md:h-auto md:px-3 md:py-1.5 rounded-xl text-xs font-semibold transition-colors border hover:border-emerald-500/60 cursor-pointer shadow-xs"
-                      style={{ color: '#10B981', backgroundColor: isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)', borderColor: 'rgba(16,185,129,0.35)' }}
-                    >
-                      <Maximize2 className="w-3.5 h-3.5" />
-                      <span className="hidden lg:inline">Showcase</span>
-                    </button>
+                      tone="accent"
+                      labelFrom="2xl"
+                      hideBelowMd
+                      onClick={() => setShowcaseOpen(true)}
+                    />
                   </div>
                 </div>
 

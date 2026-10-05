@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import { createPortal } from 'react-dom'
 import { Check, ChevronDown, Link2, Loader2, RefreshCw, Trash2 } from 'lucide-react'
 import { useTheme } from '../../contexts/ThemeContext'
+import { ACTION_BUTTON_BASE, actionColors } from './actionButtonStyles'
 import {
   createShareLink,
   payoutShareUrl,
@@ -183,13 +184,9 @@ export default function ShareLinkButton({
     }
   }
 
-  const buttonBase: CSSProperties = {
-    color: copied ? '#fff' : accent,
-    backgroundColor: copied ? accent : isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)',
-    borderColor: '#10B98150',
-  }
+  const buttonBase: CSSProperties = actionColors(isLight, copied ? 'solid' : 'accent')
   const Icon = busy === 'copy' ? Loader2 : copied ? Check : Link2
-  const iconClass = `w-3.5 h-3.5 ${busy === 'copy' ? 'animate-spin' : ''}`
+  const iconClass = `w-4 h-4 shrink-0 ${busy === 'copy' ? 'animate-spin' : ''}`
   const title = copied
     ? 'Link copied'
     : link
@@ -285,7 +282,7 @@ export default function ShareLinkButton({
             disabled={busy !== null}
             title={title}
             aria-label={`Copy payout link for ${installerLabel}`}
-            className="relative flex items-center justify-center w-8 h-8 rounded-xl border cursor-pointer transition-colors hover:border-emerald-500/60 disabled:cursor-wait"
+            className={`${ACTION_BUTTON_BASE} relative w-9 rounded-lg`}
             style={buttonBase}
           >
             <Icon className={iconClass} />
@@ -299,13 +296,13 @@ export default function ShareLinkButton({
 
   return (
     <>
-      <div ref={anchorRef} className="flex items-stretch shrink-0">
+      <div ref={anchorRef} className="flex items-center shrink-0">
         <button
           type="button"
           onClick={() => void copyLink()}
           disabled={busy !== null}
           title={title}
-          className="flex items-center justify-center gap-1.5 w-8 h-8 md:w-auto md:h-auto md:px-3 md:py-1.5 rounded-l-xl text-xs font-semibold border cursor-pointer shadow-xs transition-colors hover:border-emerald-500/60 disabled:cursor-wait"
+          className={`${ACTION_BUTTON_BASE} w-9 lg:w-auto lg:px-3 rounded-l-lg rounded-r-none`}
           style={buttonBase}
         >
           <Icon className={iconClass} />
@@ -317,10 +314,10 @@ export default function ShareLinkButton({
           title="Link options"
           aria-label="Link options"
           aria-expanded={open}
-          className="flex items-center justify-center w-6 md:w-7 rounded-r-xl border border-l-0 cursor-pointer shadow-xs transition-colors hover:border-emerald-500/60"
+          className={`${ACTION_BUTTON_BASE} w-7 rounded-r-lg rounded-l-none border-l-0`}
           style={buttonBase}
         >
-          <ChevronDown className="w-3.5 h-3.5" />
+          <ChevronDown className="w-4 h-4" />
         </button>
       </div>
       {panel}
