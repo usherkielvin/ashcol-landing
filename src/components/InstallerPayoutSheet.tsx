@@ -82,13 +82,13 @@ export default function InstallerPayoutSheet({ isOpen, onClose, isLight, branchL
         body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         table { width: 100%; border-collapse: collapse; }
         td, th { border: 1px solid #1e293b; padding: 6px 8px; font-size: 12px; }
-        .h1 { color: #c2410c; font-weight: 700; font-size: 14px; text-align: center; }
-        .h2 { background: #fff2cc; font-weight: 700; font-size: 13px; text-align: center; }
-        .h3 { background: #fffae6; font-size: 12px; text-align: center; }
-        th { background: #fff2cc; font-weight: 700; text-align: center; }
+        .h1 { color: #15803d; font-weight: 700; font-size: 14px; text-align: center; }
+        .h2 { background: #dcfce7; font-weight: 700; font-size: 13px; text-align: center; }
+        .h3 { background: #f0fdf4; font-size: 12px; text-align: center; }
+        th { background: #dcfce7; font-weight: 700; text-align: center; }
         .c { text-align: center; } .b { font-weight: 700; } .n { width: 28px; }
         .sig { width: 150px; } tr.row td { height: 46px; }
-        tfoot td { background: #fff2cc; font-weight: 700; text-align: center; }
+        tfoot td { background: #dcfce7; font-weight: 700; text-align: center; }
         tr { page-break-inside: avoid; }
       </style></head><body>
       <table>
@@ -155,11 +155,11 @@ export default function InstallerPayoutSheet({ isOpen, onClose, isLight, branchL
           <div style={{ backgroundColor: '#ffffff', padding: 16, maxWidth: 720, margin: '0 auto', boxShadow: '0 1px 8px rgba(15,23,42,0.18)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <tbody>
-                <tr><td colSpan={6} style={{ ...cell, color: '#c2410c', fontWeight: 700, fontSize: 15 }}>ASHCOL AIRCONDITIONING CORP</td></tr>
-                <tr><td colSpan={6} style={{ ...cell, background: '#fff2cc', fontWeight: 700 }}>{sheetBranchTitle(branchLabel)}</td></tr>
-                <tr><td colSpan={6} style={{ ...cell, background: '#fffae6' }}>CUT-OFF DATE: {sheetDate(weekFrom)} - {sheetDate(weekTo)}</td></tr>
-                <tr><td colSpan={6} style={{ ...cell, background: '#fffae6' }}>PAYROLL DATE: {sheetDate(weekTo, 2)}{weekClosed ? '  |  FINAL' : ''}</td></tr>
-                <tr style={{ background: '#fff2cc', fontWeight: 700 }}>
+                <tr><td colSpan={6} style={{ ...cell, color: '#15803d', fontWeight: 700, fontSize: 15 }}>ASHCOL AIRCONDITIONING CORP</td></tr>
+                <tr><td colSpan={6} style={{ ...cell, background: '#dcfce7', fontWeight: 700 }}>{sheetBranchTitle(branchLabel)}</td></tr>
+                <tr><td colSpan={6} style={{ ...cell, background: '#f0fdf4' }}>CUT-OFF DATE: {sheetDate(weekFrom)} - {sheetDate(weekTo)}</td></tr>
+                <tr><td colSpan={6} style={{ ...cell, background: '#f0fdf4' }}>PAYROLL DATE: {sheetDate(weekTo, 2)}{weekClosed ? '  |  FINAL' : ''}</td></tr>
+                <tr style={{ background: '#dcfce7', fontWeight: 700 }}>
                   <td style={{ ...cell, width: 34 }} />
                   <td style={cell}>LAST NAME</td><td style={cell}>FIRST NAME</td>
                   <td style={cell}>NET LABOR<br />COST</td><td style={cell}>G-CASH/BANK<br />ACCOUNT</td><td style={{ ...cell, width: 150 }}>SIGNATURE</td>
@@ -180,7 +180,7 @@ export default function InstallerPayoutSheet({ isOpen, onClose, isLight, branchL
                     <td style={cell} />
                   </tr>
                 ))}
-                <tr style={{ background: '#fff2cc', fontWeight: 700 }}>
+                <tr style={{ background: '#dcfce7', fontWeight: 700 }}>
                   <td colSpan={3} style={cell}>TOTAL</td>
                   <td style={cell}>{sheetPeso(total).replace('PHP ', '₱')}</td>
                   <td colSpan={2} style={cell} />

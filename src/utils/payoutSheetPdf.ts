@@ -64,8 +64,8 @@ export function exportPayoutSheetPdf(data: PayoutSheetData, filename: string): v
   const pageH = pdf.internal.pageSize.getHeight()
   const margin = 14
   const tableW = pageW - margin * 2
-  const TINT: [number, number, number] = [255, 242, 204]
-  const TINT_SOFT: [number, number, number] = [255, 250, 230]
+  const TINT: [number, number, number] = [220, 252, 231]
+  const TINT_SOFT: [number, number, number] = [240, 253, 244]
   const INK: [number, number, number] = [15, 23, 42]
   const LINE: [number, number, number] = [30, 41, 59]
   const total = data.entries.reduce((s, e) => s + e.net, 0)
@@ -78,7 +78,7 @@ export function exportPayoutSheetPdf(data: PayoutSheetData, filename: string): v
     theme: 'grid',
     styles: { font: 'helvetica', halign: 'center', valign: 'middle', textColor: INK, lineColor: LINE, lineWidth: 0.25, cellPadding: 1.6, fontSize: 8.5 },
     body: [
-      [{ content: 'ASHCOL AIRCONDITIONING CORP', styles: { textColor: [194, 65, 12], fontStyle: 'bold', fontSize: 10, fillColor: [255, 255, 255] } }],
+      [{ content: 'ASHCOL AIRCONDITIONING CORP', styles: { textColor: [21, 128, 61], fontStyle: 'bold', fontSize: 10, fillColor: [255, 255, 255] } }],
       [{ content: pdfSafe(sheetBranchTitle(data.branchLabel)), styles: { fontStyle: 'bold', fillColor: TINT, fontSize: 9.5 } }],
       [{ content: `CUT-OFF DATE: ${sheetDate(data.weekFrom)} - ${sheetDate(data.weekTo)}`, styles: { fillColor: TINT_SOFT, fontSize: 8.5 } }],
       [{ content: `PAYROLL DATE: ${sheetDate(data.weekTo, 2)}${data.isFinal ? '   |   FINAL' : ''}`, styles: { fillColor: TINT_SOFT, fontSize: 8.5 } }],
