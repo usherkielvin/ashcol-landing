@@ -1,0 +1,424 @@
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { useParams } from 'react-router-dom'
+import { AlertTriangle, CheckCircle2, Clock, Loader2, RefreshCw } from 'lucide-react'
+import { useTheme } from '../contexts/ThemeContext'
+import logoImg from '../assets/ash-logo.jpg'
+import { fetchSharedPayout, type SharedPayout, type SharedPayoutResult } from '../utils/payoutShareApi'
+import {
+  mapSavedPayrollEntry,
+  rowTotal,
+  payFactor,
+  paymentStatusOf,
+  paymentStatusLabel,
+  installerTotal,
+  deductionTotal,
+  deductionValue,
+  lateDeduction,
+  isHeldRow,
+  isActivePayRow,
+  isCarryOver,
+  LATE_RATE_PER_MINUTE,
+  type PayrollRow,
+} from '../utils/payrollDerive'
+import { COLUMN_DEFS, num, peso, pesoSigned, shortDate, longDate, titleCase } from './Payouts/payoutUtils'
+
+// Public, read-only view of ONE installer's payout table for ONE week, opened from a link payroll sends
+// (/payout/<token>). No login and no portal chrome: it renders outside DashboardLayout and fetches with
+// no credentials. It deliberately does not import Payouts.tsx (huge, and tied to auth) — only the pure
+// helpers that already define how a payout is computed, so these numbers match the portal table.
+
+interface Palette {
+  bg: string
+  card: string
+  border: string
+  text: string
+  muted: string
+  head: string
+  accent: string
+  red: string
+  amber: string
+}
+
+const paletteFor = (isLight: boolean): Palette => ({
+  bg: isLight ? '#f1f5f9' : '#060B18',
+  card: isLight ? '#ffffff' : '#0A1120',
+  border: isLight ? '#e2e8f0' : '#1E2D48',
+  text: isLight ? '#0f172a' : '#E2E8F0',
+  muted: isLight ? '#64748b' : '#7A95B8',
+  head: isLight ? '#f8fafc' : '#0F1A2E',
+  accent: isLight ? '#059669' : '#34D399',
+  red: isLight ? '#DC2626' : '#F87171',
+  amber: isLight ? '#B45309' : '#FBBF24',
+})
+
+const DEDUCTION_LINES: { key: Parameters<typeof deductionValue>[1]; label: string }[] = [
+  { key: 'loan', label: 'AC Loan / CA' },
+  { key: 'incompleteUpload', label: 'Incomplete Upload' },
+  { key: 'losses', label: 'Losses / Material Checklist' },
+  { key: 'remitPenalty', label: 'Remit' },
+  { key: 'uniform', label: 'Uniform' },
+  { key: 'grooming', label: 'Grooming' },
+  { key: 'backjob', label: 'Backjob' },
+]
+
+// Bookkeeping prefixes in customFields — anything else is a branch-defined pay column.
+const RESERVED_PREFIXES = ['ded:', 'txt:', 'pay:', 'hold:', 'xfer:', 'manual:']
+
+interface Col {
+  key: string
+  label: string
+  align: 'left' | 'right'
+  width: number
+  /** Left offset when pinned while scrolling sideways. */
+  pinnedLeft?: number
+  render: (row: PayrollRow) => ReactNode
+}
+
+function useIsCompact(): boolean {
+  const query = '(max-width: 639px)'
+  const [compact, setCompact] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(query)
+    const onChange = () => setCompact(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  return compact
+}
+
+// The link is a bearer secret and the page shows pay data: keep it out of search engines and never send it
+// onward as a Referer.
+function usePrivatePageMeta(title: string) {
+  useEffect(() => {
+    const previousTitle = document.title
+    document.title = title
+    const added: HTMLMetaElement[] = []
+    for (const [name, content] of [['robots', 'noindex, nofollow'], ['referrer', 'no-referrer']]) {
+      const meta = document.createElement('meta')
+      meta.name = name
+      meta.content = content
+      document.head.appendChild(meta)
+      added.push(meta)
+    }
+    // index.html ships a "robots: index, follow" tag; the later, stricter one must win, so disable the original.
+    const originals = Array.from(document.head.querySelectorAll<HTMLMetaElement>('meta[name="robots"]')).filter(m => !added.includes(m))
+    const saved = originals.map(m => m.content)
+    originals.forEach(m => { m.content = 'noindex, nofollow' })
+    return () => {
+      document.title = previousTitle
+      added.forEach(m => m.remove())
+      originals.forEach((m, i) => { m.content = saved[i] })
+    }
+  }, [title])
+}
+
+const customLabel = (key: string) => titleCase(key.replace(/^custom_/i, '').replace(/_/g, ' '))
+
+function buildColumns(rows: PayrollRow[], compact: boolean, p: Palette): Col[] {
+  const cols: Col[] = []
+  const customerCell = (r: PayrollRow) => (
+    <>
+      <span className="block truncate" title={r.customerName}>{r.customerName || '—'}</span>
+      {isCarryOver(r) && <span className="block text-[10px] font-bold uppercase" style={{ color: p.amber }}>Carry-over</span>}
+    </>
+  )
+  if (compact) {
+    cols.push({
+      key: 'job', label: 'Job', align: 'left', width: 88, pinnedLeft: 0,
+      render: r => (
+        <>
+          <span className="block font-semibold">{shortDate(r.workDate) || '—'}</span>
+          <span className="block text-[11px]" style={{ color: p.muted }}>{r.ticketNumber || '—'}</span>
+        </>
+      ),
+    })
+    cols.push({ key: 'customerName', label: 'Customer', align: 'left', width: 120, pinnedLeft: 88, render: customerCell })
+  } else {
+    cols.push({ key: 'date', label: 'Date', align: 'left', width: 76, pinnedLeft: 0, render: r => shortDate(r.workDate) || '—' })
+    cols.push({ key: 'ticketNumber', label: 'Ticket', align: 'left', width: 108, pinnedLeft: 76, render: r => r.ticketNumber || '—' })
+    cols.push({ key: 'customerName', label: 'Customer', align: 'left', width: 180, pinnedLeft: 184, render: customerCell })
+  }
+
+  const anyText = (pick: (r: PayrollRow) => string) => rows.some(r => pick(r).trim() !== '')
+  if (anyText(r => r.brandCapacity)) cols.push({ key: 'brandCapacity', label: 'Unit', align: 'left', width: 150, render: r => r.brandCapacity || '—' })
+  if (anyText(r => r.installationUpload)) cols.push({ key: 'installationUpload', label: 'Status', align: 'left', width: 130, render: r => r.installationUpload || '—' })
+  if (rows.some(r => paymentStatusOf(r) !== 'PAID')) {
+    cols.push({
+      key: 'paymentStatus', label: 'Payment', align: 'left', width: 130,
+      render: r => (paymentStatusOf(r) === 'PAID' ? 'PAID' : <span style={{ color: p.amber }}>{paymentStatusLabel(r)}</span>),
+    })
+  }
+
+  // Money columns, in the same order as the portal table; a column nobody earned anything in stays hidden
+  // so the phone table stays narrow.
+  for (const def of COLUMN_DEFS) {
+    if (!def.isMoney) continue
+    const key = def.key as keyof PayrollRow
+    if (!rows.some(r => num(r[key] as string) !== 0)) continue
+    cols.push({
+      key: def.key, label: def.label, align: 'right', width: Math.max(88, def.width),
+      render: r => (num(r[key] as string) !== 0 ? peso(r[key] as string) : <span style={{ color: p.muted }}>—</span>),
+    })
+  }
+  const customKeys = new Set<string>()
+  for (const r of rows) {
+    for (const [k, v] of Object.entries(r.customFields || {})) {
+      if (!RESERVED_PREFIXES.some(prefix => k.startsWith(prefix)) && num(v) !== 0) customKeys.add(k)
+    }
+  }
+  for (const k of customKeys) {
+    cols.push({
+      key: k, label: customLabel(k), align: 'right', width: 100,
+      render: r => (num(r.customFields?.[k]) !== 0 ? peso(r.customFields[k]) : <span style={{ color: p.muted }}>—</span>),
+    })
+  }
+
+  if (anyText(r => r.totalPipeLength)) cols.push({ key: 'totalPipeLength', label: 'Pipe Length', align: 'right', width: 90, render: r => r.totalPipeLength || '—' })
+  if (anyText(r => r.materialsReturn)) cols.push({ key: 'materialsReturn', label: 'Materials Return', align: 'left', width: 130, render: r => r.materialsReturn || '—' })
+  if (anyText(r => r.remarks)) cols.push({ key: 'remarks', label: 'Remarks', align: 'left', width: 160, render: r => r.remarks || '—' })
+
+  cols.push({
+    key: 'total', label: 'Total', align: 'right', width: 110,
+    render: r => (
+      <span className="font-bold">
+        ₱{peso(rowTotal(r))}
+        {payFactor(r) !== 1 && <span className="block text-[10px] font-semibold" style={{ color: p.amber }}>{Math.round(payFactor(r) * 100)}% paid</span>}
+      </span>
+    ),
+  })
+  return cols
+}
+
+const stickyStyle = (left: number | undefined, bg: string, p: Palette, edge: boolean): CSSProperties =>
+  left === undefined
+    ? {}
+    : {
+        position: 'sticky', left, zIndex: 1, background: bg,
+        boxShadow: edge ? `1px 0 0 ${p.border}, 6px 0 8px -6px rgba(0,0,0,0.25)` : undefined,
+      }
+
+function PayoutTable({ rows, compact, p }: { rows: PayrollRow[]; compact: boolean; p: Palette }) {
+  const cols = useMemo(() => buildColumns(rows, compact, p), [rows, compact, p])
+  const lastPinned = cols.reduce((acc, c, i) => (c.pinnedLeft !== undefined ? i : acc), -1)
+  const tableWidth = cols.reduce((sum, c) => sum + c.width, 0)
+  return (
+    <div className="overflow-x-auto rounded-2xl border" style={{ background: p.card, borderColor: p.border }}>
+      <table className="text-[13px] border-separate border-spacing-0" style={{ minWidth: tableWidth, width: '100%', tableLayout: 'fixed', color: p.text }}>
+        <colgroup>{cols.map(c => <col key={c.key} style={{ width: c.width }} />)}</colgroup>
+        <thead>
+          <tr>
+            {cols.map((c, i) => (
+              <th
+                key={c.key}
+                className="px-3 py-2.5 text-[11px] font-bold uppercase tracking-wide border-b whitespace-nowrap"
+                style={{ textAlign: c.align, background: p.head, borderColor: p.border, color: p.muted, ...stickyStyle(c.pinnedLeft, p.head, p, i === lastPinned), zIndex: c.pinnedLeft !== undefined ? 2 : undefined }}
+              >
+                {c.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(r => (
+            <tr key={r.id}>
+              {cols.map((c, i) => (
+                <td
+                  key={c.key}
+                  className="px-3 py-2.5 border-b align-top"
+                  style={{ textAlign: c.align, borderColor: p.border, ...stickyStyle(c.pinnedLeft, p.card, p, i === lastPinned) }}
+                >
+                  {c.render(r)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function HeldList({ rows, p }: { rows: PayrollRow[]; p: Palette }) {
+  return (
+    <section className="rounded-2xl border p-4" style={{ background: p.card, borderColor: p.border }}>
+      <h2 className="text-sm font-bold mb-1" style={{ color: p.amber }}>On hold — not counted in this week's total</h2>
+      <ul className="divide-y" style={{ borderColor: p.border }}>
+        {rows.map(r => (
+          <li key={r.id} className="py-2.5 text-[13px]" style={{ borderColor: p.border }}>
+            <div className="font-semibold">
+              {shortDate(r.workDate)} · {r.ticketNumber || 'No ticket no.'} · {r.customerName || '—'}
+            </div>
+            <div style={{ color: p.muted }}>{r.customFields?.['hold:reason'] || 'Waiting on payroll review'}</div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+function Summary({ counted, p }: { counted: PayrollRow[]; p: Palette }) {
+  const gross = installerTotal(counted)
+  const lateMinutes = deductionValue(counted, 'lateMinutes')
+  const lines = [
+    ...(lateMinutes > 0 ? [{ label: `Late (${lateMinutes} min × ₱${LATE_RATE_PER_MINUTE.toFixed(2)})`, amount: lateDeduction(counted) }] : []),
+    ...DEDUCTION_LINES.map(l => ({ label: l.label, amount: deductionValue(counted, l.key) })).filter(l => l.amount > 0),
+  ]
+  const loanBalance = deductionValue(counted, 'loanBalance')
+  const uniformBalance = deductionValue(counted, 'uniformBalance')
+  const row = (label: string, value: ReactNode, color?: string) => (
+    <div className="flex items-baseline justify-between gap-4 py-1.5 text-[13px]">
+      <span style={{ color: color ?? p.muted }}>{label}</span>
+      <span className="font-semibold tabular-nums" style={{ color: color ?? p.text }}>{value}</span>
+    </div>
+  )
+  return (
+    <section className="rounded-2xl border p-4" style={{ background: p.card, borderColor: p.border }}>
+      {row('Gross payout', `₱${peso(gross)}`, p.text)}
+      {lines.length > 0 && (
+        <>
+          <div className="mt-2 mb-0.5 text-[11px] font-bold uppercase tracking-wide" style={{ color: p.muted }}>Deductions</div>
+          {lines.map(l => <div key={l.label}>{row(l.label, `− ₱${peso(l.amount)}`, p.red)}</div>)}
+          {row('Total deductions', `− ₱${peso(deductionTotal(counted))}`, p.red)}
+        </>
+      )}
+      {(loanBalance > 0 || uniformBalance > 0) && (
+        <div className="mt-2 pt-2 border-t" style={{ borderColor: p.border }}>
+          {loanBalance > 0 && row('Loan balance remaining', `₱${peso(loanBalance)}`)}
+          {uniformBalance > 0 && row('Uniform balance remaining', `₱${peso(uniformBalance)}`)}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function Notice({ icon, title, body, p, action }: { icon: ReactNode; title: string; body: string; p: Palette; action?: ReactNode }) {
+  return (
+    <div className="flex flex-col items-center text-center gap-3 px-6 py-16 max-w-md mx-auto" style={{ color: p.text }}>
+      {icon}
+      <h1 className="text-lg font-bold">{title}</h1>
+      <p className="text-sm" style={{ color: p.muted }}>{body}</p>
+      {action}
+    </div>
+  )
+}
+
+export default function PayoutShare() {
+  const { token = '' } = useParams<{ token: string }>()
+  const { theme } = useTheme()
+  const p = useMemo(() => paletteFor(theme === 'light'), [theme])
+  const compact = useIsCompact()
+
+  // The last answer stays on screen while a refresh is in flight; `loading` is derived, not stored.
+  const [loaded, setLoaded] = useState<{ key: string; result: SharedPayoutResult } | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
+  const requestKey = `${token}|${reloadKey}`
+  const result = loaded?.result ?? null
+  const loading = loaded?.key !== requestKey
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchSharedPayout(token, controller.signal)
+      .then(r => setLoaded({ key: requestKey, result: r }))
+      .catch(() => { /* aborted on unmount / token change */ })
+    return () => controller.abort()
+  }, [token, requestKey])
+  const reload = useCallback(() => setReloadKey(k => k + 1), [])
+
+  const payout: SharedPayout | null = result?.kind === 'ok' ? result.payout : null
+  usePrivatePageMeta(payout ? `${payout.installerLabel} — Payout` : 'Payout')
+
+  const { counted, held } = useMemo(() => {
+    const rows = (payout?.rows ?? []).map(mapSavedPayrollEntry)
+    return { counted: rows.filter(isActivePayRow), held: rows.filter(isHeldRow) }
+  }, [payout])
+
+  const refreshButton = (
+    <button
+      type="button"
+      onClick={reload}
+      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border cursor-pointer"
+      style={{ borderColor: p.border, color: p.text, background: p.card }}
+    >
+      <RefreshCw className="w-3.5 h-3.5" /> Try again
+    </button>
+  )
+
+  let body: ReactNode
+  if (loading && !payout) {
+    body = <div className="flex justify-center py-24"><Loader2 className="w-6 h-6 animate-spin" style={{ color: p.muted }} /></div>
+  } else if (result?.kind === 'inactive') {
+    body = <Notice p={p} icon={<AlertTriangle className="w-8 h-8" style={{ color: p.amber }} />} title="This link is no longer active" body="Ask payroll for a new one." />
+  } else if (result?.kind === 'rate-limited') {
+    body = <Notice p={p} icon={<Clock className="w-8 h-8" style={{ color: p.amber }} />} title="Too many requests" body="Please wait a minute and try again." action={refreshButton} />
+  } else if (!payout) {
+    body = <Notice p={p} icon={<AlertTriangle className="w-8 h-8" style={{ color: p.red }} />} title="Couldn't load your payout" body="Check your connection and try again." action={refreshButton} />
+  } else {
+    const net = installerTotal(counted) - deductionTotal(counted)
+    const complete = payout.status === 'COMPLETED'
+    body = (
+      <>
+        <main className="flex-1 w-full max-w-5xl mx-auto px-4 pt-5 pb-6 flex flex-col gap-4">
+          <header className="flex flex-col gap-1">
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="text-xl font-extrabold">{titleCase(payout.installerLabel)}</h1>
+              <span
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide"
+                style={{ color: complete ? p.accent : p.amber, background: complete ? `${p.accent}1F` : `${p.amber}1F` }}
+              >
+                {complete ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
+                {complete ? 'Completed' : 'Not final yet'}
+              </span>
+            </div>
+            <p className="text-[13px]" style={{ color: p.muted }}>
+              {payout.branchName && <>{payout.branchName} · </>}
+              {longDate(payout.weekFrom)} – {longDate(payout.weekTo)}
+            </p>
+          </header>
+
+          {!complete && (
+            <div className="rounded-xl border px-4 py-3 text-[13px]" style={{ borderColor: p.amber, color: p.amber, background: `${p.amber}14` }}>
+              Payroll is still reviewing this week. The amounts below may change before payout.
+            </div>
+          )}
+
+          {counted.length === 0 ? (
+            <div className="rounded-2xl border px-4 py-10 text-center text-sm" style={{ background: p.card, borderColor: p.border, color: p.muted }}>
+              No jobs recorded for this week yet.
+            </div>
+          ) : (
+            <PayoutTable rows={counted} compact={compact} p={p} />
+          )}
+          {counted.length > 0 && <Summary counted={counted} p={p} />}
+          {held.length > 0 && <HeldList rows={held} p={p} />}
+
+          <p className="text-[11px] text-center flex items-center justify-center gap-2" style={{ color: p.muted }}>
+            Read-only · shows the latest saved figures
+            <button type="button" onClick={reload} disabled={loading} className="inline-flex items-center gap-1 font-bold cursor-pointer disabled:opacity-50" style={{ color: p.text }}>
+              <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} /> Refresh
+            </button>
+          </p>
+        </main>
+
+        {/* Net payout stays in view while the table scrolls. */}
+        <footer className="sticky bottom-0 border-t" style={{ background: p.card, borderColor: p.border, paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          <div className="max-w-5xl mx-auto px-4 py-3 flex items-baseline justify-between gap-4">
+            <span className="text-xs font-bold uppercase tracking-wide" style={{ color: p.muted }}>Net payout</span>
+            <span className="text-2xl font-extrabold tabular-nums" style={{ color: net < 0 ? p.red : p.accent }}>{pesoSigned(net)}</span>
+          </div>
+        </footer>
+      </>
+    )
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col" style={{ background: p.bg, color: p.text }}>
+      <div className="border-b" style={{ background: p.card, borderColor: p.border }}>
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
+          <img src={logoImg} alt="" className="w-8 h-8 rounded-lg object-cover" />
+          <span className="text-sm font-bold">ASHCOL · Installer payout</span>
+        </div>
+      </div>
+      {body}
+    </div>
+  )
+}

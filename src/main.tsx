@@ -61,8 +61,9 @@ window.fetch = async (...args) => {
               (args[0] instanceof Request ? args[0].url : 
                (args[0] instanceof URL ? args[0].href : String(args[0])));
 
-  // Only check and intercept for non-auth requests
-  if (!url.includes('/auth/')) {
+  // Only check and intercept for non-auth, non-public requests (public endpoints take no JWT, so a
+  // stale staff token must not bounce someone opening a shared payout link to /login)
+  if (!url.includes('/auth/') && !url.includes('/api/public/')) {
     const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token')
     if (token) {
       // Decode JWT token and check expiration client-side before sending

@@ -10,6 +10,7 @@ const PublicBooking = lazyWithPreload(() => import('./pages/PublicBooking'))
 const Login = lazyWithPreload(() => import('./pages/Login'))
 const ForgotPassword = lazyWithPreload(() => import('./pages/ForgotPassword'))
 const CreateAccount = lazyWithPreload(() => import('./pages/CreateAccount'))
+const PayoutShare = lazyWithPreload(() => import('./pages/PayoutShare'))
 
 // Lazy-loaded layout & portal pages
 const DashboardLayout = lazyWithPreload(() => import('./layouts/DashboardLayout'))
@@ -119,6 +120,8 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/create-account" element={<CreateAccount />} />
+          {/* Public, read-only payout link — token in the path is the credential; no login. */}
+          <Route path="/payout/:token" element={<PayoutShare />} />
           {/* Portal Routes */}
           <Route element={<DashboardLayout />}>
             <Route path="/dashboard" element={<DashboardRedirect />} />

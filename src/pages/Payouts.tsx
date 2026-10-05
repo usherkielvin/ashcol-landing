@@ -69,6 +69,8 @@ import {
   type PayrollRates,
 } from '../utils/payrollDerive'
 import InstallerPayoutSheet, { type PayoutSheetSource } from '../components/InstallerPayoutSheet'
+import ShareLinkButton from './Payouts/ShareLinkButton';
+import { listShareLinks, type PayoutShareLink } from '../utils/payoutShareApi';
 import { num, peso, pesoSigned, shortDate, longDate, getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef } from './Payouts/payoutUtils';
 
 export default function Payouts() {
@@ -1901,6 +1903,62 @@ export default function Payouts() {
       })
     }
   }
+  // ── Read-only payout share links (installer opens /payout/<token> without logging in) ──
+  // Active links for the selected week, keyed by week + installer label, so the roster can mark who already has one.
+  const [shareLinks, setShareLinks] = useState<Record<string, PayoutShareLink>>({})
+  const shareKey = (weekFrom: string, label: string) => `${weekFrom}|${label.trim().toLowerCase()}`
+  const refreshShareLinks = useCallback(async () => {
+    if (!canManagePayroll || !branchFilter || !activeWeek) { setShareLinks({}); return }
+    try {
+      const links = await listShareLinks(branchFilter, activeWeek.from)
+      setShareLinks(Object.fromEntries(links.map(l => [shareKey(l.weekFrom, l.installerLabel), l])))
+    } catch {
+      // Not critical: the buttons still create / copy links, they just can't show an existing one.
+    }
+  }, [canManagePayroll, branchFilter, activeWeek])
+  useEffect(() => { void refreshShareLinks() }, [refreshShareLinks])
+  const setShareLink = (label: string, link: PayoutShareLink | null) => {
+    if (!activeWeek) return
+    const key = shareKey(activeWeek.from, label)
+    setShareLinks(prev => {
+      const next = { ...prev }
+      if (link) next[key] = link
+      else delete next[key]
+      return next
+    })
+  }
+  // Saves unsaved edits first so the link shows exactly what payroll sees. False aborts link creation.
+  const saveBeforeShare = async (): Promise<boolean> => {
+    if (isWeekClosed || !pendingRowsRef.current) return true
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    setSaveStatus('saving')
+    const ok = await flushSave(pendingRowsRef.current)
+    if (!ok) setSaveStatus('error')
+    return ok
+  }
+  // Every raw name on the sheet that resolves to this installer (aliases like "MARK" / "MARK A."), so the
+  // public page filters by an explicit list instead of loose name matching.
+  const rawNamesFor = (installerName: string): string[] =>
+    Array.from(new Set(rows.filter(r => resolveGroupKey(r.installerName) === installerName).map(r => r.installerName.trim()).filter(Boolean)))
+  const renderShareLinkButton = (installerName: string, variant: 'full' | 'icon') => {
+    if (!canManagePayroll || !branchFilter || !activeWeek) return null
+    const label = displayInstallerName(installerName)
+    return (
+      <ShareLinkButton
+        key={`share-${installerName}-${activeWeek.from}`}
+        variant={variant}
+        branchId={branchFilter}
+        weekFrom={activeWeek.from}
+        weekTo={activeWeek.to}
+        installerLabel={label}
+        getInstallerNames={() => rawNamesFor(installerName)}
+        beforeCreate={saveBeforeShare}
+        link={shareLinks[shareKey(activeWeek.from, label)] ?? null}
+        onLinkChange={link => setShareLink(label, link)}
+        onPanelOpen={() => void refreshShareLinks()}
+      />
+    )
+  }
   // Never lose pending edits: warn on reload/close, and flush when the tab is hidden or the page unmounts.
   const flushRef = useRef(flushSave)
   flushRef.current = flushSave
@@ -3281,6 +3339,7 @@ export default function Payouts() {
                         <span className="hidden lg:inline">{saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved' : saveStatus === 'error' ? 'Retry Save' : saveStatus === 'dirty' ? 'Save Changes' : 'Save'}</span>
                       </button>
                     )}
+                    {renderShareLinkButton(installerName, 'full')}
                     {canManagePayroll && (
                       <button
                         type="button"
@@ -4106,6 +4165,7 @@ export default function Payouts() {
                           {completedJobsBreakdown(installerRows) ? ` · ${completedJobsBreakdown(installerRows)}` : ''}
                         </span>
                       </div>
+                      {renderShareLinkButton(installerName, 'icon')}
                     </div>
 
                     {/* 2. PAYROLL AMOUNT — negative when deductions outweigh the period's gross

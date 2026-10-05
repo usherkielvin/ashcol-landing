@@ -37,11 +37,11 @@ import ConfirmDialog, { type ConfirmDialogState } from '../ConfirmDialog'
 // ─── types & constants ────────────────────────────────────────────────────────
 
 export const INSTALL_PHOTO_PRESETS = [
+  'PR/SALES INVOICE',
   'SCHEMATIC',
   'QUOTATION FORM',
   'COCA',
   'NOA',
-  'PR/SALES INVOICE',
   'START UP',
   'STICKER',
   'INDOOR UNIT',
@@ -170,7 +170,7 @@ function formatUploadedAt(iso?: string): string {
 /**
  * Unified 10-slot photo grid for ticket attachments.
  * - For INSTALL tickets, slots are preset with standard required documentation:
- *   1. SCHEMATIC, 2. QUOTATION FORM, 3. COCA, 4. NOA, 5. PR/SALES INVOICE,
+ *   1. PR/SALES INVOICE, 2. SCHEMATIC, 3. QUOTATION FORM, 4. COCA, 5. NOA,
  *   6. START UP, 7. STICKER, 8. INDOOR UNIT, 9. OUTDOOR UNIT, 10. SERVICE REPORT.
  * - For SERVICES tickets (cleaning, checkup, repair, dismantle), slots #1 and #2 are pre-encoded
  *   as: 1. JOB ORDER, 2. SERVICE REPORT. Additional slots are available for extra job photos.
@@ -421,7 +421,7 @@ export function TicketPhotoGallery({
       const slotIndex = slots[i]
       claimedSlotsRef.current.add(slotIndex)
       const presetDesc = slotPresets?.[slotIndex] || ''
-      const defaultDesc = presetDesc || file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim().toUpperCase() || 'PHOTO'
+      const defaultDesc = presetDesc || (isInstall ? 'PR/SALES INVOICE' : 'PHOTO')
       return {
         key: `up-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
         slotIndex,
@@ -540,7 +540,7 @@ export function TicketPhotoGallery({
 
   const startEditDescription = (photo: TicketPhoto) => {
     setEditingPhoto(photo)
-    setEditDescDraft(photo.description || '')
+    setEditDescDraft(photo.description || (isInstall ? 'PR/SALES INVOICE' : (slotPresets?.[0] || '')))
   }
 
   /** Preset titles already on a different photo — each preset may only label one photo. */
@@ -908,7 +908,7 @@ export function TicketPhotoGallery({
                   value={editDescDraft}
                   onChange={setEditDescDraft}
                   onEnter={() => void saveEditedDescription()}
-                  placeholder={isInstall ? 'e.g. SCHEMATIC, INDOOR UNIT…' : 'e.g. JOB ORDER, SERVICE REPORT…'}
+                  placeholder={isInstall ? 'e.g. PR/SALES INVOICE, SCHEMATIC, INDOOR UNIT…' : 'e.g. JOB ORDER, SERVICE REPORT…'}
                   className="w-full min-h-[2.75rem] text-base font-semibold p-2.5 rounded-xl border outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 uppercase break-words"
                   style={{ backgroundColor: inputBg, borderColor: border, color: textPrimary }}
                 />
@@ -917,7 +917,7 @@ export function TicketPhotoGallery({
                   type="text"
                   autoFocus
                   autoComplete="off"
-                  placeholder={isInstall ? "e.g. SCHEMATIC, INDOOR UNIT…" : "e.g. JOB ORDER, SERVICE REPORT…"}
+                  placeholder={isInstall ? "e.g. PR/SALES INVOICE, SCHEMATIC, INDOOR UNIT…" : "e.g. JOB ORDER, SERVICE REPORT…"}
                   value={editDescDraft}
                   onChange={(e) => setEditDescDraft(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void saveEditedDescription() } }}

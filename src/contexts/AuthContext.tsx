@@ -93,14 +93,20 @@ function wipeAuthCredentials({ keepRememberedEmail = false } = {}) {
   clearAshcolStorage(localStorage, { keepRememberedEmail })
 }
 
+/** Tokenized payout share links (/payout/<token>) are opened by installers with no account. */
+const isPayoutSharePath = (pathname: string) => pathname.startsWith('/payout/')
+
 function isAuthPublicPath(pathname: string): boolean {
   if (AUTH_PUBLIC_PATHS.has(pathname)) return true
+  if (isPayoutSharePath(pathname)) return true
   // Public marketing site routes only — portal paths are never public.
   return false
 }
 
 function redirectToLogin(expired = false) {
   const pathname = window.location.pathname
+  // A stale staff token on this device must never bounce someone off a shared payout link.
+  if (isPayoutSharePath(pathname)) return
   if (isAuthPublicPath(pathname) && pathname === '/login') {
     if (expired && !window.location.search.includes('expired')) {
       window.location.replace('/login?expired=true')
