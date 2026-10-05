@@ -1062,23 +1062,23 @@ function UploadedPhotoCell({
 
       {/* Action buttons */}
       {canManage && (
-        <div className="absolute top-1 right-1 flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200 z-10">
+        <div className="absolute top-1 right-1 flex items-center gap-1 z-10">
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onEdit() }}
-            className="w-6 h-6 rounded-full flex items-center justify-center bg-black/70 text-white hover:bg-emerald-600 active:scale-95 transition-all shadow-md"
-            title={photo.description ? 'Edit description' : 'Add description'}
+            className="w-7 h-7 rounded-full flex items-center justify-center bg-black/75 text-white hover:bg-emerald-600 active:scale-95 transition-all shadow-md ring-1 ring-white/20"
+            title={photo.description ? "Edit photo title" : "Add photo title"} aria-label="Edit photo title"
           >
-            <Pencil className="w-3 h-3" />
+            <Pencil className="w-3.5 h-3.5" />
           </button>
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onDelete() }}
             disabled={deletingId === photo.id}
-            className="w-6 h-6 rounded-full flex items-center justify-center bg-black/70 text-white hover:bg-red-600 active:scale-95 transition-all shadow-md"
-            title="Delete"
+            className="w-7 h-7 rounded-full flex items-center justify-center bg-black/75 text-white hover:bg-red-600 active:scale-95 transition-all shadow-md ring-1 ring-white/20"
+            title="Remove photo" aria-label="Remove photo"
           >
-            {deletingId === photo.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+            {deletingId === photo.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
           </button>
         </div>
       )}
