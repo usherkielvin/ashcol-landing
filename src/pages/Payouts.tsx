@@ -2223,11 +2223,17 @@ export default function Payouts() {
     return ''
   }
 
+  // A remark or a status belongs to ONE payout week. `rows` holds the whole loaded month, so every writer
+  // below must also restrict itself to the selected week (rowInActiveWindow) — matching the installer alone
+  // used to rewrite the remark / revert the status of that installer's other weeks too.
+  const isInstallerWeekRow = (r: PayrollRow, installerName: string): boolean =>
+    resolveGroupKey(r.installerName) === installerName && rowInActiveWindow(r)
+
   const updateInstallerNote = (installerName: string, note: string) => {
     if (isWeekClosed || viewOnly) return
     setRows(prev => {
       const updated = prev.map(r => {
-        if (resolveGroupKey(r.installerName) !== installerName) return r
+        if (!isInstallerWeekRow(r, installerName)) return r
         return {
           ...r,
           customFields: {
@@ -2244,7 +2250,7 @@ export default function Payouts() {
   type InstallerStatusPatch = { status: string; audited?: string; installerRemarks?: string }
   const withInstallerStatus = (list: PayrollRow[], installerName: string, patch: InstallerStatusPatch): PayrollRow[] =>
     list.map(r => {
-      if (resolveGroupKey(r.installerName) !== installerName) return r
+      if (!isInstallerWeekRow(r, installerName)) return r
       const next: PayrollRow = {
         ...r,
         status: patch.status,
