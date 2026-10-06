@@ -4300,8 +4300,23 @@ export default function Payouts() {
 
                         {/* Net payroll — compact single counter summary, avoids duplicate counters if identical */}
                         <div className="lg:w-72 shrink-0 px-4 py-3 flex flex-col gap-2 border-t lg:border-t-0 lg:border-l" style={{ borderColor: border }}>
-                          {(totalDeduction > 0 || awaitingPayment > 0 || (gross !== net && totalDeduction > 0)) && (
+                          {(totalDeduction > 0 || awaitingPayment > 0 || (gross !== net && totalDeduction > 0) || carryRows.length > 0) && (
                             <div className="flex flex-col gap-1 text-xs">
+                              {carryRows.length > 0 && (() => {
+                                const previousPayout = carryRows.reduce((sum, r) => sum + rowTotal(r), 0)
+                                return (
+                                  <>
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="font-semibold uppercase tracking-wide text-[10px]" style={{ color: textMuted }}>This Week's Jobs</span>
+                                      <span className="font-bold tabular-nums" style={{ color: textPrimary }}>₱{peso(gross - previousPayout)}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="font-semibold uppercase tracking-wide text-[10px]" style={{ color: '#7C3AED' }}>Released Hold Tickets</span>
+                                      <span className="font-bold tabular-nums" style={{ color: '#7C3AED' }}>+₱{peso(previousPayout)}</span>
+                                    </div>
+                                  </>
+                                )
+                              })()}
                               <div className="flex items-center justify-between gap-3">
                                 <span className="font-semibold uppercase tracking-wide text-[10px]" style={{ color: textMuted }}>Gross Labor</span>
                                 <span className="font-bold tabular-nums" style={{ color: textPrimary }}>₱{peso(gross)}</span>
