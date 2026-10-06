@@ -4104,29 +4104,50 @@ export default function Payouts() {
                             </div>
                           </div>
 
-                          {expanded && (
-                            <div className="px-3 pb-2 flex flex-col" style={{ borderTop: `1px solid ${border}` }}>
-                              {groupVisibleColumns
-                                .filter(col => !['date', 'ticketNumber', 'customerName'].includes(col.key))
-                                .map(col => (
-                                  <div
-                                    key={col.key}
-                                    className="flex items-center justify-between gap-2 py-1.5"
-                                    style={{ borderBottom: `1px solid ${border}` }}
-                                  >
-                                    <span
-                                      className="text-[10px] font-bold uppercase tracking-wide shrink-0"
-                                      style={{ color: col.key === 'remit' ? remitAccent : textMuted }}
+                          {expanded && (() => {
+                            const cols = groupVisibleColumns.filter(col => !['date', 'ticketNumber', 'customerName'].includes(col.key))
+                            const moneyCols = cols.filter(c => c.isMoney)
+                            const detailCols = cols.filter(c => !c.isMoney)
+                            const renderSection = (title: string, list: ColumnDef[]) => list.length === 0 ? null : (
+                              <div className="flex flex-col gap-1.5">
+                                <div className="text-[10px] font-extrabold uppercase tracking-[0.12em] px-0.5" style={{ color: textMuted }}>{title}</div>
+                                <div className="rounded-xl border overflow-hidden" style={{ borderColor: border, backgroundColor: cardBg }}>
+                                  {list.map((col, i) => (
+                                    <div
+                                      key={col.key}
+                                      className="flex items-center justify-between gap-3 px-3 py-2"
+                                      style={i > 0 ? { borderTop: `1px solid ${border}` } : undefined}
                                     >
-                                      {col.label}
-                                    </span>
-                                    <div className="max-w-[55%] flex-1">
-                                      {renderMobileCellValue(col, row)}
+                                      <span
+                                        className="text-[12px] font-semibold shrink-0"
+                                        style={{ color: col.key === 'remit' ? remitAccent : textMuted }}
+                                      >
+                                        {col.label}
+                                      </span>
+                                      <div className="max-w-[58%] flex-1 text-right font-bold text-[13px]">
+                                        {renderMobileCellValue(col, row)}
+                                      </div>
                                     </div>
-                                  </div>
-                                ))}
-                            </div>
-                          )}
+                                  ))}
+                                </div>
+                              </div>
+                            )
+                            return (
+                              <div style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#f8fafc' : 'rgba(255,255,255,0.02)' }}>
+                                <div className="px-3 pt-3 pb-3 flex flex-col gap-3">
+                                  {renderSection('Job details', detailCols)}
+                                  {renderSection('Pay breakdown', moneyCols)}
+                                </div>
+                                <div
+                                  className="flex items-center justify-between px-3 py-2.5"
+                                  style={{ borderTop: `1px solid ${border}`, backgroundColor: isLight ? '#ecfdf5' : 'rgba(16,185,129,0.08)' }}
+                                >
+                                  <span className="text-[10px] font-extrabold uppercase tracking-[0.12em]" style={{ color: textMuted }}>Job total</span>
+                                  <span className="text-base font-black tabular-nums" style={{ color: '#10B981' }}>₱{peso(rowTotal(row))}</span>
+                                </div>
+                              </div>
+                            )
+                          })()}
                         </div>
                       )
                     })}
