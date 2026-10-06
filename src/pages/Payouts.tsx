@@ -106,7 +106,7 @@ export default function Payouts() {
   // own branch: only payouts payroll has marked COMPLETED, no syncing, no editing, no remittance.
   // The backend enforces the same scope — see PayrollService.getEntriesFor.
   const viewOnly = !canManagePayroll
-  const canManageClosures = canManagePayroll && (isPortalAdmin(role) || role === 'manager')
+  const canManageClosures = canManagePayroll
 
   const userFirstName = useMemo(() => {
     const raw = (user as any)?.firstName || user?.name || (user as any)?.username || 'ADMIN'
