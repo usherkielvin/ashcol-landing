@@ -704,6 +704,82 @@ export const rowTotal = (r: PayrollRow): number => {
 export const installerTotal = (installerRows: PayrollRow[]) =>
   installerRows.reduce((sum, r) => sum + rowTotal(r), 0)
 
+// ── Daily pay items ─────────────────────────────────────────────────────────
+// Allowance and Driving are paid per DAY worked, not per ticket (allowance is stamped on a day's first ticket;
+// driving is a custom column such as "Driving 500 Day"). The shared payout page shows them once in its summary
+// ("Driving · 5 days × ₱500") instead of inside each ticket, so a ticket's own total leaves them out.
+// Held and carry-over tickets are not days worked this week, so they keep everything on the ticket.
+
+export interface DailyItem {
+  key: string
+  label: string
+  /** Distinct work dates that carry this item. */
+  days: number
+  /** The per-day amount when every day is the same, otherwise null. */
+  rate: number | null
+  /** What it adds to the payout: Σ amount × the ticket's payFactor, so a 50%-paid ticket counts 50%. */
+  amount: number
+}
+
+const DAILY_ALLOWANCE_KEY = 'dailyAllowance'
+const isDrivingKey = (k: string) => /driving/i.test(k) && !/^(ded|txt|pay|hold|xfer|manual|installer):/.test(k)
+const dailyLabel = (key: string) =>
+  key === DAILY_ALLOWANCE_KEY
+    ? 'Allowance'
+    : key.replace(/^custom_/i, '').replace(/_/g, ' ').trim().toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase())
+
+/** True for the customFields / row keys that are paid per day (Allowance, any "driving" column). */
+export const isDailyPayKey = (key: string) => key === DAILY_ALLOWANCE_KEY || isDrivingKey(key)
+
+/** False for held and carry-over tickets, which keep their allowance / driving on the ticket itself. */
+export const movesDailyItemsToSummary = (r: PayrollRow) => !isCarryOver(r) && isActivePayRow(r)
+
+/** The day-based amounts a single ticket carries (before payFactor), empty for held / carry-over tickets. */
+const dailyAmountsOf = (r: PayrollRow): { key: string; value: number }[] => {
+  if (isCarryOver(r) || !isActivePayRow(r)) return []
+  const out: { key: string; value: number }[] = []
+  const allowance = toNum(r.dailyAllowance)
+  if (allowance !== 0) out.push({ key: DAILY_ALLOWANCE_KEY, value: allowance })
+  for (const [k, v] of Object.entries(r.customFields || {})) {
+    if (!isDrivingKey(k)) continue
+    const n = toNum(v)
+    if (n !== 0) out.push({ key: k, value: n })
+  }
+  return out
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100
+
+/** Day-based items across an installer's tickets, one entry per item (Allowance first, then each driving column). */
+export const dailyItems = (rows: PayrollRow[]): DailyItem[] => {
+  const byKey = new Map<string, { dates: Set<string>; values: number[]; amount: number }>()
+  rows.forEach((r, i) => {
+    for (const { key, value } of dailyAmountsOf(r)) {
+      const e = byKey.get(key) ?? { dates: new Set<string>(), values: [], amount: 0 }
+      // A ticket with no date still counts as its own day rather than vanishing.
+      e.dates.add(r.workDate || `undated-${i}`)
+      e.values.push(value)
+      e.amount += value * payFactor(r)
+      byKey.set(key, e)
+    }
+  })
+  const items: DailyItem[] = Array.from(byKey, ([key, e]) => ({
+    key,
+    label: dailyLabel(key),
+    days: e.dates.size,
+    rate: e.values.every(v => v === e.values[0]) ? e.values[0] : null,
+    amount: round2(e.amount),
+  }))
+  return items.sort((a, b) => (a.key === DAILY_ALLOWANCE_KEY ? -1 : b.key === DAILY_ALLOWANCE_KEY ? 1 : a.label.localeCompare(b.label)))
+}
+
+/** A ticket's own total: everything on it except its day-based items (same payFactor scaling as rowTotal). */
+export const ticketTotal = (r: PayrollRow): number => {
+  const factor = payFactor(r)
+  const daily = dailyAmountsOf(r).reduce((sum, d) => sum + d.value, 0)
+  return round2(rowTotal(r) - daily * factor)
+}
+
 export const rawDeduction = (r: PayrollRow, key: DeductionKey) => r.customFields?.[DEDUCTION_PREFIX + key] || ''
 /** Amounts sum across every row in range (each week's value sits on that week's first job);
  *  balances take the latest row that has one. */

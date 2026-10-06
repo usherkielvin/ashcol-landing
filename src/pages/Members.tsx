@@ -434,7 +434,7 @@ const Field = ({ label, children, labelColor }: FieldProps) => (
 )
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export default function Employees() {
+export default function Members() {
   const { theme } = useTheme()
   const { user } = useAuth()
   const isLight  = theme === 'light'

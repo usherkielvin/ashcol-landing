@@ -5331,7 +5331,12 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
       if (existing.name === baseName && existing.site === i + 1) return
       const nextLabel = `${baseName} - ${i + 1}`
       const body = buildCellPatchBody(t, 'VEHICLE', nextLabel, branchEmployees)
-      if (Object.keys(body).length > 0) queueTicketPatch(t, body)
+      // buildCellPatchBody strips the "- N" suffix (a typed vehicle is auto-numbered), but a reorder
+      // must persist it — the explicit trip number is what pins this ticket's position, so without
+      // it the order silently reverts to the default as soon as the drag ends.
+      body.serviceVehicle = nextLabel
+      body.acDetails = mergeAcMeta(t, { serviceVehicle: nextLabel, service_vehicle: nextLabel })
+      queueTicketPatch(t, body)
     })
   }, [branchEmployees, queueTicketPatch])
 
@@ -7142,7 +7147,10 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                               // another row slides onto it (that's what caused the overlap).
                               opacity: isDragSourceRow ? 0.65 : undefined,
                               transform: vehicleDragOffsetPx ? `translateY(${vehicleDragOffsetPx}px)` : undefined,
-                              transition: 'transform 150ms ease, opacity 150ms ease',
+                              // Only animate while a drag is live; on drop the rows re-sort in the DOM and
+                              // the preview offsets clear in the same render, so a lingering transition
+                              // would replay the offset on top of the new position (jump, then slide back).
+                              transition: draggedVehicleTicketId ? 'transform 200ms cubic-bezier(0.2, 0, 0, 1), opacity 150ms ease' : 'none',
                             }}
                             onMouseEnter={() => setHoveredRow(ticket.id)}
                             onMouseLeave={() => setHoveredRow(null)}

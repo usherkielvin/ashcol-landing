@@ -19,7 +19,7 @@ const Schedules = lazyWithPreload(() => import('./pages/Schedules'))
 const SearchTickets = lazyWithPreload(() => import('./pages/SearchTickets'))
 const CreateTicket = lazyWithPreload(() => import('./pages/CreateTicket'))
 const OfficeTasks = lazyWithPreload(() => import('./pages/OfficeTasks'))
-const Employees = lazyWithPreload(() => import('./pages/Employees'))
+const Members = lazyWithPreload(() => import('./pages/Members'))
 const Vehicles = lazyWithPreload(() => import('./pages/Vehicles'))
 const Profile = lazyWithPreload(() => import('./pages/Profile'))
 const Branches = lazyWithPreload(() => import('./pages/Branches'))
@@ -136,8 +136,8 @@ export default function App() {
             <Route path="/office-tasks" element={<OfficeTasks />} />
             <Route path="/branches" element={<Branches />} />
             <Route path="/assigned-tickets" element={<Navigate to="/search" replace />} />
-            <Route path="/members" element={<Employees />} />
-            <Route path="/members/:id" element={<Employees />} />
+            <Route path="/members" element={<Members />} />
+            <Route path="/members/:id" element={<Members />} />
             <Route path="/vehicles" element={<Vehicles />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/messages" element={<Messages />} />

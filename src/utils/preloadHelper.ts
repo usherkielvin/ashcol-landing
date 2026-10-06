@@ -37,7 +37,8 @@ export const portalPagePreloaders = {
   lineUp: () => import('../pages/LineUp'),
   dailyAuditReport: () => import('../pages/DailyAuditReport'),
   expenseRecords: () => import('../pages/ExpenseRecords'),
-  employees: () => import('../pages/Employees'),
+  members: () => import('../pages/Members'),
+  employees: () => import('../pages/Members'),
   hris: () => import('../pages/Hris'),
   ddrm: () => import('../pages/Ddrm'),
   forCollections: () => import('../pages/ForCollections'),
@@ -102,7 +103,7 @@ export function preloadPath(path: string) {
       case '/audit-report': portalPagePreloaders.dailyAuditReport(); break
       case '/expenses':
       case '/audit-expenses': portalPagePreloaders.expenseRecords(); break
-      case '/members': portalPagePreloaders.employees(); break
+      case '/members': portalPagePreloaders.members(); break
       case '/admin-hris': portalPagePreloaders.hris(); break
       case '/ddrm': portalPagePreloaders.ddrm(); break
       case '/collections': portalPagePreloaders.forCollections(); break

@@ -12,7 +12,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext'
 import { fetchCachedEmployees, readSavedBranches } from '../utils/portalDirectoryCache'
 import { useAuth } from '../contexts/AuthContext'
-import { API_BASE_URL, formatBranchName, isPortalAdmin, isPayrollMember, resolvePortalWriteBranchId, isFranchiseBranch, formatPersonName, fetchTicketByNumber } from '../utils/api'
+import { API_BASE_URL, formatBranchName, isPortalAdmin, isPayrollMember, resolvePortalWriteBranchId, isFranchiseBranch, formatPersonName, fetchTicketByNumber, branchScopesMatch } from '../utils/api'
 import {
   branchWeekCycle,
   weeksOfMonth,
@@ -75,7 +75,14 @@ import { Settings2, Columns3, FileDown } from 'lucide-react';
 import { listShareLinks, listPayoutEmails, sendPayoutEmail, type PayoutShareLink, type PayoutEmailStatus, type PayoutEmailSummary, type PayoutEmailResult } from '../utils/payoutShareApi';
 import { PayoutEmailChip, PayoutEmailToast, type PayoutEmailToastState } from './Payouts/PayoutEmailParts';
 import { buildPayoutEmailSummary, emailedDay, maskEmail } from './Payouts/payoutEmail';
-import { num, peso, pesoSigned, shortDate, longDate, getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, PAYOUT_NOTE_KEY, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef, NET_COLUMN, columnLabelKey, findDuplicateColumnGroups } from './Payouts/payoutUtils';
+import { num, peso, pesoSigned, shortDate, longDate, getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, PAYOUT_NOTE_KEY, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef, NET_COLUMN, duplicateLabelKey, findDuplicateColumnGroups } from './Payouts/payoutUtils';
+
+/** Orders member accounts for name matching: active members of the selected branch first, then other active
+ *  members, then inactive ones. A first name that several accounts share must resolve to the branch's own member. */
+function rankTechnicians<T extends { branchId?: string; isActive: boolean }>(list: T[], branchFilter?: string | null): T[] {
+  const score = (t: T) => (t.isActive ? 2 : 0) + (branchFilter && branchScopesMatch(t.branchId, branchFilter) ? 1 : 0)
+  return [...list].sort((a, b) => score(b) - score(a))
+}
 
 export default function Payouts() {
   const { theme } = useTheme()
@@ -508,7 +515,7 @@ export default function Payouts() {
     try {
       const raw = localStorage.getItem(CUSTOM_COLUMNS_KEY)
       const saved: CustomColumnDef[] = raw ? JSON.parse(raw) : []
-      return saved.filter(c => !/^(ded:|xfer:|manual:|hold:|txt:|pay:)/.test(c.key))
+      return saved.filter(c => !/^(ded:|xfer:|manual:|hold:|txt:|pay:|installer:)/.test(c.key))
     } catch {
       return []
     }
@@ -521,7 +528,7 @@ export default function Payouts() {
     const label = newColumnName.trim()
     if (!label) return
     // Two columns with the same name would each hold their own amounts and both count toward the payout.
-    const existing = customColumnDefs.find(c => columnLabelKey(c.label) === columnLabelKey(label))
+    const existing = customColumnDefs.find(c => duplicateLabelKey(c.label) === duplicateLabelKey(label))
     if (existing) {
       setConfirmDialog({
         title: 'Column already exists',
@@ -552,7 +559,7 @@ export default function Payouts() {
   // cleanInstallerName in schedulePrefill.ts — that's what payrollDerive.ts groups rows by),
   // so the payroll page has to resolve that short form back to the real technician account.
   // Fetches every employee/technician to map names back to their full account names.
-  const [branchTechnicians, setBranchTechnicians] = useState<{ id: string; name: string; nickname: string; jobTitle: string; inHouse: boolean; branchId?: string; phone: string; personalEmail: string }[]>([])
+  const [branchTechnicians, setBranchTechnicians] = useState<{ id: string; name: string; nickname: string; jobTitle: string; inHouse: boolean; isActive: boolean; branchId?: string; phone: string; personalEmail: string }[]>([])
   useEffect(() => {
     let cancelled = false
     const loadUsers = async () => {
@@ -577,6 +584,7 @@ export default function Payouts() {
               nickname: String(u.nickname || '').trim(),
               jobTitle: u.jobTitle || '',
               inHouse: !!u.inHouse,
+              isActive: u.isActive !== false,
               branchId: u.branchId || '',
               phone: String(u.phone || '').trim(),
               personalEmail: String(u.personalEmail || '').trim(),
@@ -608,12 +616,8 @@ export default function Payouts() {
   const installerAliases = useMemo(() => {
     const map: Record<string, string> = {}
     
-    // Sort so technicians in the active branch have highest priority on name collision
-    const sorted = [...branchTechnicians].sort((a, b) => {
-      const aMatch = branchFilter && a.branchId === branchFilter ? 1 : 0
-      const bMatch = branchFilter && b.branchId === branchFilter ? 1 : 0
-      return bMatch - aMatch
-    })
+    // Active members of the selected branch win a name collision; inactive and other-branch accounts come last.
+    const sorted = rankTechnicians(branchTechnicians, branchFilter)
 
     for (const t of sorted) {
       const fullName = t.name.trim()
@@ -629,8 +633,9 @@ export default function Payouts() {
         if (nickUpper && !map[nickUpper]) map[nickUpper] = fullUpper
       }
 
-      // Every word in their full name (e.g. "JHON", "MARIANO", "PRIZA")
-      for (const word of fullName.split(/[\s-]+/)) {
+      // Every word in their full name (e.g. "JHON", "MARIANO", "PRIZA") — active members only, so an inactive account
+      // never claims a first name that a current member of the branch also goes by.
+      if (t.isActive) for (const word of fullName.split(/[s-]+/)) {
         const key = word.trim().toUpperCase()
         if (key && key.length >= 2 && !map[key]) {
           map[key] = fullUpper
@@ -670,11 +675,7 @@ export default function Payouts() {
       return justin?.name?.trim().toUpperCase() || 'JUSTIN ROI BIEN'
     }
 
-    const sorted = [...branchTechnicians].sort((a, b) => {
-      const aMatch = branchFilter && a.branchId === branchFilter ? 1 : 0
-      const bMatch = branchFilter && b.branchId === branchFilter ? 1 : 0
-      return bMatch - aMatch
-    })
+    const sorted = rankTechnicians(branchTechnicians, branchFilter).filter(t => t.isActive)
 
     for (const t of sorted) {
       const fullUpper = (t.name || '').trim().toUpperCase()
@@ -5069,7 +5070,7 @@ export default function Payouts() {
                         )}
                         <button
                           type="button"
-                          onClick={() => handleDeleteCustomCol(cc)}
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteCustomCol(cc) }}
                           className="p-1.5 rounded-lg hover:bg-red-500/15 transition-colors shrink-0 cursor-pointer"
                           title={`Delete "${cc.label}" from all installer tables`}
                         >

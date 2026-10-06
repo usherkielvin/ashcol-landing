@@ -274,11 +274,15 @@ export interface CustomColumnDef {
 /** Same label ignoring case, spacing and punctuation: "General Cleaning" == "GENERAL_CLEANING". */
 export const columnLabelKey = (label: string) => label.toUpperCase().replace(/[^A-Z0-9]+/g, '')
 
+/** Identity used to spot the same column entered twice: also ignores a trailing counter, so "Check Up 2" (what people type
+ *  to get around the exists check) counts as "Check Up". */
+export const duplicateLabelKey = (label: string) => columnLabelKey(label.trim().replace(/[\s_-]+\(?\d{1,2}\)?$/, ""))
+
 /** Custom columns that share a label. The first of each group is the one to keep. */
 export function findDuplicateColumnGroups(defs: CustomColumnDef[]): CustomColumnDef[][] {
   const byLabel = new Map<string, CustomColumnDef[]>()
   for (const d of defs) {
-    const k = columnLabelKey(d.label)
+    const k = duplicateLabelKey(d.label)
     if (!k) continue
     byLabel.set(k, [...(byLabel.get(k) ?? []), d])
   }

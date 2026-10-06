@@ -35,6 +35,9 @@ export interface WeekSummaryModalProps {
   activeMonth: string
 }
 
+/** The employee fields the summary matches ticket names against. */
+interface EmployeeRef { name?: string; nickname?: string; branchId?: string; isActive?: boolean; inHouse?: boolean }
+
 interface InstallerSummaryRow {
   branchId: string
   branchName: string
@@ -344,14 +347,25 @@ export default function WeekSummaryModal({
           rawName = 'JUSTIN ROI BIEN'
         }
 
-        // Try to find the canonical employee record for this raw name
-        const matchesRaw = (e: any) => {
-          const n = (e.name || '').trim().toUpperCase()
-          const nick = (e.nickname || '').trim().toUpperCase()
-          return n === rawName || (nick && nick === rawName) || n.includes(rawName) || rawName.includes(n)
+        // Find the member account this ticket name belongs to. A short name ("ROMMEL") must resolve to the
+        // active member of THIS branch, never to an inactive or other-branch account that merely shares the
+        // first name — those are only used when the whole name (or nickname) matches exactly.
+        const nameOf = (e: EmployeeRef): string => (e.name || '').trim().toUpperCase()
+        const nickOf = (e: EmployeeRef): string => (e.nickname || '').trim().toUpperCase()
+        const rawWords = rawName.split(/[\s-]+/).filter(Boolean)
+        const isExact = (e: EmployeeRef) => nameOf(e) === rawName || (!!nickOf(e) && nickOf(e) === rawName)
+        const isLoose = (e: EmployeeRef) => {
+          if (isExact(e)) return true
+          const words = nameOf(e).split(/[\s-]+/).filter(Boolean)
+          if (words.length === 0 || rawWords.length === 0) return false
+          return rawWords.every(w => words.includes(w)) || words.every(w => rawWords.includes(w))
         }
-        const emp = employees.find(e => matchesRaw(e) && branchScopesMatch(e.branchId, b.id))
-          || employees.find(matchesRaw)
+        const inBranch = (e: EmployeeRef) => branchScopesMatch(e.branchId, b.id)
+        const active = (e: EmployeeRef) => e.isActive !== false
+        const pick = (list: EmployeeRef[]) => list.find(isExact) || list[0]
+        const emp = pick(employees.filter(e => active(e) && inBranch(e) && isLoose(e)))
+          || employees.find(e => !active(e) && inBranch(e) && isExact(e))
+          || employees.find(e => active(e) && isExact(e))
 
         // Skip in-house salaried workers
         if (emp?.inHouse) continue

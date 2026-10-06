@@ -6,6 +6,10 @@ import { fetchSharedPayout, type SharedPayout, type SharedPayoutResult } from '.
 import {
   mapSavedPayrollEntry,
   rowTotal,
+  ticketTotal,
+  dailyItems,
+  isDailyPayKey,
+  movesDailyItemsToSummary,
   payFactor,
   paymentStatusOf,
   paymentStatusLabel,
@@ -64,7 +68,7 @@ const DEDUCTION_LINES: { key: Parameters<typeof deductionValue>[1]; label: strin
 // Page width: fills a laptop / desktop screen (capped on ultra-wide) with a little breathing room at each side.
 const PAGE_WIDTH = 'w-full max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-10'
 
-const RESERVED_PREFIXES = ['ded:', 'txt:', 'pay:', 'hold:', 'xfer:', 'manual:']
+const RESERVED_PREFIXES = ['ded:', 'txt:', 'pay:', 'hold:', 'xfer:', 'manual:', 'installer:']
 
 interface Col {
   key: string
@@ -155,10 +159,14 @@ function buildColumns(rows: PayrollRow[], compact: boolean, p: Palette): Col[] {
 
   // Money columns, in the same order as the portal table; a column nobody earned anything in stays hidden
   // so the phone table stays narrow.
+  // Allowance and driving are paid per day and shown once in the summary, so they are not table columns —
+  // unless a ticket that keeps them (carry-over / held) has a value there.
+  const keeps = (r: PayrollRow) => !movesDailyItemsToSummary(r)
   for (const def of COLUMN_DEFS) {
     if (!def.isMoney) continue
     const key = def.key as keyof PayrollRow
-    if (!rows.some(r => num(r[key] as string) !== 0)) continue
+    const only = isDailyPayKey(def.key) ? keeps : () => true
+    if (!rows.some(r => only(r) && num(r[key] as string) !== 0)) continue
     cols.push({
       key: def.key, label: def.label, align: 'right', width: 92,
       render: r => (num(r[key] as string) !== 0 ? peso(r[key] as string) : <span style={{ color: p.muted }}>—</span>),
@@ -167,7 +175,7 @@ function buildColumns(rows: PayrollRow[], compact: boolean, p: Palette): Col[] {
   const customKeys = new Set<string>()
   for (const r of rows) {
     for (const [k, v] of Object.entries(r.customFields || {})) {
-      if (!RESERVED_PREFIXES.some(prefix => k.startsWith(prefix)) && num(v) !== 0) customKeys.add(k)
+      if (!RESERVED_PREFIXES.some(prefix => k.startsWith(prefix)) && num(v) !== 0 && (!isDailyPayKey(k) || keeps(r))) customKeys.add(k)
     }
   }
   for (const k of customKeys) {
@@ -185,7 +193,7 @@ function buildColumns(rows: PayrollRow[], compact: boolean, p: Palette): Col[] {
     key: 'total', label: 'Total', align: 'right', width: 100,
     render: r => (
       <span className="font-bold">
-        ₱{peso(rowTotal(r))}
+        ₱{peso(ticketTotal(r))}
         {payFactor(r) !== 1 && <span className="block text-[10px] font-semibold" style={{ color: p.amber }}>{Math.round(payFactor(r) * 100)}% paid</span>}
       </span>
     ),
@@ -247,13 +255,15 @@ function PayoutTable({ rows, compact, p, onSelect }: { rows: PayrollRow[]; compa
 /** Every pay line a job earned (money columns + branch-defined custom columns), zero lines left out. */
 function payItems(r: PayrollRow): { label: string; amount: number }[] {
   const items: { label: string; amount: number }[] = []
+  // Per-day items (allowance, driving) are listed once in the summary, not on each ticket.
+  const skipDaily = movesDailyItemsToSummary(r)
   for (const def of COLUMN_DEFS) {
-    if (!def.isMoney) continue
+    if (!def.isMoney || (skipDaily && isDailyPayKey(def.key))) continue
     const amount = num(r[def.key as keyof PayrollRow] as string)
     if (amount !== 0) items.push({ label: def.label, amount })
   }
   for (const [k, v] of Object.entries(r.customFields || {})) {
-    if (RESERVED_PREFIXES.some(prefix => k.startsWith(prefix))) continue
+    if (RESERVED_PREFIXES.some(prefix => k.startsWith(prefix)) || (skipDaily && isDailyPayKey(k))) continue
     const amount = num(v)
     if (amount !== 0) items.push({ label: customLabel(k), amount })
   }
@@ -298,7 +308,7 @@ function JobCards({ rows, p, onSelect }: { rows: PayrollRow[]; p: Palette; onSel
               </div>
             </div>
             <div className="text-right shrink-0">
-              <div className="text-base font-extrabold tabular-nums">₱{peso(rowTotal(r))}</div>
+              <div className="text-base font-extrabold tabular-nums">₱{peso(ticketTotal(r))}</div>
               {payFactor(r) !== 1 && <div className="text-[10px] font-semibold" style={{ color: p.amber }}>{Math.round(payFactor(r) * 100)}% paid</div>}
             </div>
             <ChevronRight className="w-4 h-4 shrink-0" style={{ color: p.muted }} />
@@ -391,7 +401,7 @@ function JobDetails({ row, p, onClose }: { row: PayrollRow; p: Palette; onClose:
 
         <div className="flex items-baseline justify-between gap-4 px-5 py-4 shrink-0 border-t" style={{ borderColor: p.border, background: p.head, paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
           <span className="text-xs font-bold uppercase tracking-wide" style={{ color: p.muted }}>{factor !== 1 ? `Job total (${Math.round(factor * 100)}%)` : 'Job total'}</span>
-          <span className="text-2xl font-extrabold tabular-nums" style={{ color: p.accent }}>₱{peso(rowTotal(row))}</span>
+          <span className="text-2xl font-extrabold tabular-nums" style={{ color: p.accent }}>₱{peso(ticketTotal(row))}</span>
         </div>
       </div>
     </div>
@@ -420,6 +430,9 @@ function Summary({ counted, p }: { counted: PayrollRow[]; p: Palette }) {
   const gross = installerTotal(counted)
   // Released hold tickets carried into this week: already inside `gross`, listed so the total adds up for the reader.
   const previousPayout = counted.filter(isCarryOver).reduce((sum, r) => sum + rowTotal(r), 0)
+  // Per-day pay (allowance, driving) leaves the tickets and is listed here; gross is unchanged.
+  const daily = dailyItems(counted)
+  const dailyTotal = daily.reduce((sum, d) => sum + d.amount, 0)
   const lateMinutes = deductionValue(counted, 'lateMinutes')
   const lines = [
     ...(lateMinutes > 0 ? [{ label: `Late (${lateMinutes} min × ₱${LATE_RATE_PER_MINUTE.toFixed(2)})`, amount: lateDeduction(counted) }] : []),
@@ -427,7 +440,7 @@ function Summary({ counted, p }: { counted: PayrollRow[]; p: Palette }) {
   ]
   const loanBalance = deductionValue(counted, 'loanBalance')
   const uniformBalance = deductionValue(counted, 'uniformBalance')
-  const row = (label: string, value: ReactNode, color?: string) => (
+  const row = (label: ReactNode, value: ReactNode, color?: string) => (
     <div className="flex items-baseline justify-between gap-4 py-1.5 text-[13px]">
       <span style={{ color: color ?? p.muted }}>{label}</span>
       <span className="font-semibold tabular-nums" style={{ color: color ?? p.text }}>{value}</span>
@@ -435,10 +448,23 @@ function Summary({ counted, p }: { counted: PayrollRow[]; p: Palette }) {
   )
   return (
     <section className="rounded-2xl border p-4" style={{ background: p.card, borderColor: p.border }}>
-      {previousPayout > 0 && (
+      {(previousPayout > 0 || daily.length > 0) && (
         <>
-          {row("This week's jobs", `₱${peso(gross - previousPayout)}`)}
-          {row('Released hold tickets', `+₱${peso(previousPayout)}`, p.accent)}
+          {row(daily.length > 0 ? 'Jobs' : "This week's jobs", `₱${peso(gross - previousPayout - dailyTotal)}`)}
+          {daily.map(d => {
+            const exact = d.rate !== null && Math.abs(d.days * d.rate - d.amount) < 0.005
+            const sub = d.rate === null
+              ? `${d.days} ${d.days === 1 ? 'day' : 'days'}`
+              : exact
+                ? `${d.days} ${d.days === 1 ? 'day' : 'days'} × ₱${peso(d.rate)}`
+                : `${d.days} ${d.days === 1 ? 'day' : 'days'} × ₱${peso(d.rate)}, incl. a part-paid day`
+            return (
+              <div key={d.key}>
+                {row(<>{d.label} <span className="text-[11px]" style={{ color: p.muted }}>· {sub}</span></>, `₱${peso(d.amount)}`, p.text)}
+              </div>
+            )
+          })}
+          {previousPayout > 0 && row('Released hold tickets', `+₱${peso(previousPayout)}`, p.accent)}
         </>
       )}
       {row('Gross payout', `₱${peso(gross)}`, p.text)}
