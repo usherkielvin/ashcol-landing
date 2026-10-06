@@ -240,7 +240,16 @@ export function formatRelayTicketTypeShort(ticket: Ticket): string {
 }
 
 export function getTicketNumberDisplay(ticket: Ticket): string {
-  return String(ticket.ticketNumber || ticket.ticket_number || '').trim()
+  const anyT = ticket as any
+  return String(
+    ticket.ticketNumber ||
+    ticket.ticket_number ||
+    anyT?.controlNumber ||
+    anyT?.control_number ||
+    anyT?.ticketNo ||
+    anyT?.ticket_no ||
+    ''
+  ).trim()
 }
 
 export function isTempTicketId(id: string | undefined | null): boolean {

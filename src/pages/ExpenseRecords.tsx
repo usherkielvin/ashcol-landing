@@ -1238,14 +1238,6 @@ export default function ExpenseRecords() {
       return t >= from && t <= to;
     });
   }, [branchExpenses, dtrPeriod]);
-  const recordsForDtr = useMemo(
-    () => periodRecords.filter((e) => !isDepositRecord(e)),
-    [periodRecords],
-  );
-  const recordsTotalForDtr = recordsForDtr.reduce(
-    (sum, e) => sum + e.amount,
-    0,
-  );
   const depositsForDtr = periodRecords
     .filter(isDepositRecord)
     .reduce((sum, e) => sum + e.amount, 0);
@@ -1366,6 +1358,30 @@ export default function ExpenseRecords() {
       rows,
     };
   }, [purchasesFeed, dtrFrom, dtrTo]);
+
+  // Records dated today (or later) that no DTR has picked up yet are not a difference: today's DTR is filed
+  // after the day, so they show from the next day. Anything already linked to a DTR line still counts.
+  const recordsForDtr = useMemo(() => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const onDtr = new Set<string>();
+    for (const l of dtrLines.rows) {
+      (l.resolvedExpenseId || "")
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean)
+        .forEach((x) => onDtr.add(x));
+    }
+    return periodRecords.filter(
+      (e) =>
+        !isDepositRecord(e) &&
+        !(dateToTime(e.date) >= startOfToday.getTime() && !onDtr.has(e.id)),
+    );
+  }, [periodRecords, dtrLines.rows]);
+  const recordsTotalForDtr = recordsForDtr.reduce(
+    (sum, e) => sum + e.amount,
+    0,
+  );
 
   const dtrKey =
     branchId && dtrFrom ? `${branchId}|${branchName}|${dtrFrom}|${dtrTo}` : "";
