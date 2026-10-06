@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties, type Rea
 import { useParams } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, ChevronRight, Clock, Loader2, RefreshCw, X } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
-import logoImg from '../assets/ash-logo.jpg'
 import { fetchSharedPayout, type SharedPayout, type SharedPayoutResult } from '../utils/payoutShareApi'
 import {
   mapSavedPayrollEntry,
@@ -589,8 +588,8 @@ export default function PayoutShare() {
     <div className="min-h-screen flex flex-col" style={{ background: p.bg, color: p.text }}>
       <div className="border-b" style={{ background: p.card, borderColor: p.border }}>
         <div className={`${PAGE_WIDTH} py-3 flex items-center gap-3`}>
-          <img src={logoImg} alt="" className="w-8 h-8 rounded-lg object-cover" />
-          <span className="text-sm font-bold">ASHCOL · Installer payout</span>
+          <img src="/ashcol-icon.png" alt="ASHCOL" className="w-9 h-9 rounded-lg object-cover" />
+          <span className="text-base font-bold tracking-tight">Weekly Payout Statement</span>
         </div>
       </div>
       {body}
