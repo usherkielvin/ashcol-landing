@@ -1,5 +1,5 @@
 import { API_BASE_URL } from './api'
-import { getScheduleStatusValue, resolveTicketPayment, parseAcMeta, parseBrand, getTicketCommitDisplay, getTicketNumberDisplay, getInstalledDateKey, getF, CLOSING_SCHEDULE_STATUSES, type Ticket } from './ticketHelpers'
+import { getScheduleStatusValue, resolveTicketPayment, getPaymentBreakdown, parseAcMeta, parseBrand, getTicketCommitDisplay, getTicketNumberDisplay, getInstalledDateKey, getF, CLOSING_SCHEDULE_STATUSES, type Ticket } from './ticketHelpers'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -187,26 +187,45 @@ export function isCompletedScheduleTicket(ticket: Ticket): boolean {
   )
 }
 
+export interface PaymentPart {
+  mode: string
+  amount: number
+}
+
+/**
+ * The money a ticket took, split by mode. A HYBRID (split) payment yields one part per saved
+ * breakdown entry (e.g. CASH 6,500 + GCASH 7,000); anything else is a single part. A hybrid ticket
+ * with no readable breakdown yields no parts rather than being booked wholesale as one mode.
+ */
+export function getPaymentParts(ticket: Ticket): PaymentPart[] {
+  const payment = resolveTicketPayment(ticket)
+  if (payment.mode === 'HYBRID') {
+    return getPaymentBreakdown(ticket).map((e) => ({ mode: e.mode, amount: e.amount }))
+  }
+  return [{ mode: payment.mode, amount: payment.amount }]
+}
+
+const isUsableAmount = (amount: number) => !!amount && amount > 0 && !isNaN(amount)
+
+/** Parts of this ticket whose mode is accepted by `modeOk`, with a usable amount. */
+function partsForModes(ticket: Ticket, modeOk: (mode: string) => boolean): PaymentPart[] {
+  return getPaymentParts(ticket).filter((p) => modeOk(p.mode) && isUsableAmount(p.amount))
+}
+
+const isCashMode = (mode: string) => mode === 'CASH'
+
 /**
  * Filter tickets to only those qualifying for cash prefill:
- * - Status = Any completed outcome (DONE_INSTALLED, DONE_CLEANING, DONE_CHECKUP, etc.) or raw INSTALLED/COMPLETED
- * - Payment mode = CASH
- * - Amount > 0
+ * - Not cancelled
+ * - Has a CASH payment (a whole CASH ticket, or the cash part of a HYBRID split)
+ * - Cash amount > 0
  */
 export function filterQualifyingTickets(tickets: Ticket[]): Ticket[] {
   return tickets.filter((ticket) => {
     const status = getScheduleStatusValue(ticket)
     const rawStatus = (ticket.status || '').toUpperCase()
     if (status === 'CANCELLED' || rawStatus === 'CANCELLED') return false
-
-    // 2. Payment mode check
-    const payment = resolveTicketPayment(ticket)
-    if (payment.mode !== 'CASH') return false
-
-    // 3. Amount check
-    if (!payment.amount || payment.amount <= 0 || isNaN(payment.amount)) return false
-
-    return true
+    return partsForModes(ticket, isCashMode).length > 0
   })
 }
 
@@ -237,7 +256,8 @@ export function mapTicketToCashRow(ticket: Ticket, branchName: string): CashTxRo
     || ''
   const customer = (ticket.customerName || ticket.customer_name || '').trim().toUpperCase()
   const installer = stripInstallerCounter(cleanInstallerName(rawInstaller, branchName)).toUpperCase()
-  const amount = String(resolveTicketPayment(ticket).amount)
+  // Only the cash share: a hybrid ticket's GCASH/bank part goes to Online Transactions instead.
+  const amount = String(partsForModes(ticket, isCashMode).reduce((sum, p) => sum + p.amount, 0))
 
   const ticketNumber = getTicketNumberDisplay(ticket)
 
@@ -362,24 +382,27 @@ const ONLINE_PAYMENT_MODES = new Set([
  * - Payment mode = BANK TRANSFER, GCASH, ONLINE, or CHEQUE
  * - Amount > 0
  */
+const isOnlineMode = (mode: string) => ONLINE_PAYMENT_MODES.has(mode)
+
+/** The online parts of a ticket: its whole payment, or the GCASH / bank share of a HYBRID split. */
+export function getOnlineParts(ticket: Ticket): PaymentPart[] {
+  return partsForModes(ticket, isOnlineMode)
+}
+
 export function filterOnlineTickets(tickets: Ticket[]): Ticket[] {
   return tickets.filter((ticket) => {
     const status = getScheduleStatusValue(ticket)
     const rawStatus = (ticket.status || '').toUpperCase()
     if (status === 'CANCELLED' || rawStatus === 'CANCELLED') return false
-
-    const payment = resolveTicketPayment(ticket)
-    if (!ONLINE_PAYMENT_MODES.has(payment.mode)) return false
-    if (!payment.amount || payment.amount <= 0 || isNaN(payment.amount)) return false
-
-    return true
+    return getOnlineParts(ticket).length > 0
   })
 }
 
 /**
- * Map a qualifying online ticket to an OnlineTxRow.
+ * Map one online part of a qualifying ticket to an OnlineTxRow (`part` defaults to the ticket's
+ * first online part; a hybrid ticket with GCASH and a bank transfer produces one row per part).
  */
-export function mapTicketToOnlineRow(ticket: Ticket, branchName: string): OnlineTxRow {
+export function mapTicketToOnlineRow(ticket: Ticket, branchName: string, part?: PaymentPart): OnlineTxRow {
   const meta = parseAcMeta(ticket)
   const rawInstaller =
     ticket.installerName
@@ -388,9 +411,9 @@ export function mapTicketToOnlineRow(ticket: Ticket, branchName: string): Online
     || ''
   const customer = (ticket.customerName || ticket.customer_name || '').trim().toUpperCase()
   const installer = stripInstallerCounter(cleanInstallerName(rawInstaller, branchName)).toUpperCase()
-  const payment = resolveTicketPayment(ticket)
-  const amount = String(payment.amount)
-  const bank = payment.mode || ''
+  const online = part ?? getOnlineParts(ticket)[0]
+  const amount = String(online?.amount ?? 0)
+  const bank = online?.mode || ''
 
   const ticketNumber = getTicketNumberDisplay(ticket)
 
@@ -416,7 +439,7 @@ export async function fetchAndMapOnlineTickets(options: PrefillOptions): Promise
     const qualifying = filterOnlineTickets(tickets)
     console.log('[schedulePrefill:online] Qualifying (INSTALLED + ONLINE/GCASH/BANK):', qualifying.length)
 
-    const rows = qualifying.map((t) => mapTicketToOnlineRow(t, options.branchName))
+    const rows = qualifying.flatMap((t) => getOnlineParts(t).map((part) => mapTicketToOnlineRow(t, options.branchName, part)))
     return { ok: true, rows }
   } catch (err: any) {
     if (err?.name === 'AbortError') return { ok: false, error: 'timeout' }

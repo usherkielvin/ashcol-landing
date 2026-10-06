@@ -6,6 +6,7 @@ import { API_BASE_URL } from '../utils/api'
 import { useOutletContext } from 'react-router-dom'
 import { TicketDetailsModal } from '../components/tickets/TicketDetailsModal'
 import { getInstallerDisplay, formatSpecificDoneStatus, getScheduleStatusBadgeStyle } from '../utils/ticketHelpers'
+import { reopenTicketRequest } from '../utils/ticketClose'
 import type { Ticket } from '../utils/ticketTypes'
 
 export default function SearchTab() {
@@ -525,6 +526,12 @@ export default function SearchTab() {
           onUpdateTicket={(updated) => {
             setSelectedTicket(updated)
             setOverviewResults(prev => prev.map(t => t.id === updated.id ? { ...t, ...updated } : t))
+          }}
+          onReopenTicket={async (t, reason) => {
+            const updated = await reopenTicketRequest(t.id, reason)
+            setSelectedTicket(updated)
+            setOverviewResults(prev => prev.map(item => item.id === updated.id ? { ...item, ...updated } : item))
+            return updated
           }}
         />
       )}

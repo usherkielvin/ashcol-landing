@@ -1454,12 +1454,28 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       // re-save. Re-attach each unlinked row to the record already made for it (same amount and slip no. / member).
       const unlinkedDeposits = depositsList.filter(d => !d.resolvedExpenseId && (d.description || d.referenceNo || d.amount))
       const unlinkedAdvances = cashAdvancesList.filter(c => !c.resolvedExpenseId && (c.memberName || c.amount))
-      if (unlinkedDeposits.length > 0 || unlinkedAdvances.length > 0) {
+      // Same for "Expenses with Receipts": the record id is built from the row's random id, so an unlinked row
+      // saved again got a brand-new id and the Expense Records showed the one entry twice.
+      const unlinkedExpenses = expReceiptList.filter(r => !r.resolvedExpenseId && (r.name || r.amount || r.receiptNo))
+      if (unlinkedDeposits.length > 0 || unlinkedAdvances.length > 0 || unlinkedExpenses.length > 0) {
         const dayTag = `-${data.reportDate}-`
         linkedExpenseLoad.current = linkedExpenseLoad.current.then(() => loadAuditExpenses()).then(all => {
           const toAmt = (v: string | number) => parseFloat(String(v).replace(/,/g, '')) || 0
           const upper = (v?: string) => (v || '').trim().toUpperCase()
-          const claimed = new Set<string>([...depositsList, ...cashAdvancesList].map(r => r.resolvedExpenseId).filter(Boolean) as string[])
+          const claimed = new Set<string>([...depositsList, ...cashAdvancesList, ...expReceiptList].map(r => r.resolvedExpenseId).filter(Boolean) as string[])
+          const expLinks = new Map<string, string>()
+          for (const x of unlinkedExpenses) {
+            const hasReceiptNo = !!x.receiptNo && x.receiptNo !== NO_RECEIPT_NO
+            const rec = all.find(e => e.id.startsWith('dtr-') && e.id.includes(`${dayTag}exp-`) && !claimed.has(e.id)
+              && Math.abs(e.amount - toAmt(x.amount)) < 0.01
+              && (hasReceiptNo ? upper(e.receiptNo) === upper(x.receiptNo) : upper(e.incurredBy) === upper(x.name)))
+            if (rec) {
+              claimed.add(rec.id)
+              expLinks.set(x.id, rec.id)
+              linkedExpenseCache.current.set(rec.id, rec)
+            }
+          }
+          if (expLinks.size > 0) setExpReceipt(p => p.map(r => expLinks.has(r.id) ? { ...r, resolvedExpenseId: expLinks.get(r.id)! } : r))
           const depLinks = new Map<string, string>()
           const advLinks = new Map<string, string>()
           for (const d of unlinkedDeposits) {

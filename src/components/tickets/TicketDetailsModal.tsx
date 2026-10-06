@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import ReactDOM from 'react-dom'
-import { X, Edit3, Clock, ChevronDown, Loader2, ClipboardList, Trash2 } from 'lucide-react'
+import { X, Edit3, Clock, ChevronDown, Loader2, ClipboardList, Trash2, RotateCcw, AlertTriangle } from 'lucide-react'
 import { ConfirmationChecklistModal, isChecklistFilled } from './ConfirmationChecklistModal'
 import { TicketPhotoGallery } from './TicketPhotoGallery'
 import { EmployeeNameLink } from '../EmployeeNameLink'
@@ -8,7 +8,7 @@ import { EMPTY_CELL } from '../../utils/textSanitize'
 import { ROBINSON_APPLIANCES_RE } from '../../utils/dealer'
 import type { AuthUser } from '../../contexts/AuthContext'
 import { isPortalAdmin, type BranchStaffOption } from '../../utils/api'
-import { isTicketLockedFor } from '../../utils/ticketClose'
+import { isTicketLockedFor, isTicketClosed, canEditClosedTicket, reopenTicketRequest } from '../../utils/ticketClose'
 import {
   type Ticket,
   getScheduleStatusValue,
@@ -30,6 +30,7 @@ import {
   isInstalledWorkflowStatus,
   formatPaymentAmount,
   getPaymentMode,
+  getPaymentBreakdown,
   formatDateKeyLabel,
   formatDisplayDate,
   getArchivedScheduleDate,
@@ -88,6 +89,7 @@ export function TicketDetailsModal({
   onDelete,
   onUpdateTicket,
   onOpenStatusPicker,
+  onReopenTicket,
 }: {
   ticket: Ticket
   isLight: boolean
@@ -110,9 +112,14 @@ export function TicketDetailsModal({
   onDelete?: () => void
   onUpdateTicket?: (updatedTicket: Ticket) => void
   onOpenStatusPicker?: (ticket: Ticket, anchorEl?: HTMLElement | null) => void
+  onReopenTicket?: (ticket: Ticket, reason: string) => Promise<Ticket | void> | void
 }) {
   const [currentTicket, setCurrentTicket] = useState<Ticket>(ticket)
   const [showChecklist, setShowChecklist] = useState(false)
+  const [showReopenDialog, setShowReopenDialog] = useState(false)
+  const [reopenReason, setReopenReason] = useState('')
+  const [reopening, setReopening] = useState(false)
+  const [reopenError, setReopenError] = useState<string | null>(null)
   const isAdmin = isPortalAdmin(user?.role)
 
   useEffect(() => {
@@ -121,6 +128,40 @@ export function TicketDetailsModal({
   const t = currentTicket
   // Closed tickets are read-only for everyone except admin/management/manager.
   const locked = isTicketLockedFor(t, user?.role)
+  const rawStatus = String((t as any).scheduleStatus || (t as any).schedule_status || t.status || '').toUpperCase().trim().replace(/\s+/g, '_')
+  const isClosed = isTicketClosed(t) || rawStatus.startsWith('DONE_') || rawStatus === 'COMPLETED' || rawStatus === 'INSTALLED' || rawStatus === 'CANCELLED'
+  const canReopen = (isAdmin || canEditClosedTicket(user?.role)) && isClosed
+
+  const handleConfirmReopen = async () => {
+    const reasonText = reopenReason.trim()
+    if (!reasonText) return
+    setReopening(true)
+    setReopenError(null)
+    try {
+      let updated: Ticket | null = null
+      if (onReopenTicket) {
+        const res = await onReopenTicket(t, reasonText)
+        if (res && typeof res === 'object' && 'id' in res) {
+          updated = res as Ticket
+        }
+      }
+      if (!updated) {
+        updated = await reopenTicketRequest(t.id, reasonText)
+      }
+      if (updated) {
+        setCurrentTicket(updated)
+        onUpdateTicket?.(updated)
+      }
+      setShowReopenDialog(false)
+      setReopenReason('')
+    } catch (err: any) {
+      console.error('Failed to reopen ticket:', err)
+      setReopenError(err?.message || 'Could not reopen ticket. Please try again.')
+    } finally {
+      setReopening(false)
+    }
+  }
+
   const hasChecklist = isChecklistFilled(t.confirmationChecklist || t.confirmation_checklist)
   const cardBg = isLight ? '#ffffff' : '#0f172a'
   const border = isLight ? '#cbd5e1' : '#1e293b'
@@ -170,6 +211,7 @@ export function TicketDetailsModal({
     || ['DONE_DISMANTLE', 'DONE_SYSTEM_REPROCESS', 'DONE_MOUNTING', 'DONE_RELOCATED'].includes((t.status || '').toUpperCase())
   const paymentAmt = formatPaymentAmount(t)
   const paymentMode = getPaymentMode(t)
+  const paymentSplit = getPaymentBreakdown(t)
   const archivedSched = formatDateKeyLabel(getArchivedScheduleDate(t))
   const installedDate = formatDateKeyLabel(getInstalledDateKey(t))
   const isDuplicateName = duplicateNameKeys.has(normalizeCustomerKey(custName))
@@ -226,6 +268,25 @@ export function TicketDetailsModal({
                   >
                     {scheduleStatusDisplay}
                   </button>
+                ) : canReopen ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReopenReason('')
+                      setReopenError(null)
+                      setShowReopenDialog(true)
+                    }}
+                    className="h-8 px-3.5 rounded-md text-xs font-black shrink-0 uppercase tracking-wide border transition-all active:scale-95 hover:opacity-85 cursor-pointer shadow-xs flex items-center justify-center gap-1.5"
+                    style={{
+                      color: scheduleBadgeStyle.color,
+                      backgroundColor: scheduleBadgeStyle.backgroundColor,
+                      borderColor: scheduleBadgeStyle.borderColor,
+                    }}
+                    title="Click to reopen this ticket"
+                  >
+                    <span>{scheduleStatusDisplay}</span>
+                    <RotateCcw className="w-3 h-3 opacity-75" />
+                  </button>
                 ) : (
                   <span
                     className="h-8 px-3.5 rounded-md text-xs font-bold shrink-0 uppercase tracking-wide border flex items-center justify-center"
@@ -272,6 +333,22 @@ export function TicketDetailsModal({
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 )}
               </button>
+              {canReopen && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReopenReason('')
+                    setReopenError(null)
+                    setShowReopenDialog(true)
+                  }}
+                  className="p-2 shrink-0 rounded-xl border transition-colors hover:bg-emerald-500/10 hover:border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
+                  style={{ borderColor: border, backgroundColor: inputBg }}
+                  aria-label="Reopen ticket"
+                  title="Reopen ticket"
+                >
+                  <RotateCcw className="w-4.5 h-4.5 text-emerald-500" />
+                </button>
+              )}
               {onEdit && !locked && (
                 <button
                   type="button"
@@ -395,6 +472,15 @@ export function TicketDetailsModal({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <DField isLight={isLight} label="Mode of Payment" value={paymentMode || 'NO PAYMENT'} />
                   <DField isLight={isLight} label="Payment Amount" value={paymentAmt || '₱0'} green={paymentAmt !== '₱0' && paymentAmt !== 'FREE ₱0'} />
+                  {paymentMode === 'HYBRID' && paymentSplit.map((entry, i) => (
+                    <DField
+                      key={`${entry.mode}-${i}`}
+                      isLight={isLight}
+                      label={`${entry.mode} (split)`}
+                      value={`₱${entry.amount.toLocaleString('en-PH')}`}
+                      green
+                    />
+                  ))}
                 </div>
               </div>
 
@@ -460,6 +546,22 @@ export function TicketDetailsModal({
                   >
                     <Edit3 className="w-3.5 h-3.5" style={{ color: '#6366F1' }} />
                     Edit Details
+                  </button>
+                )}
+                {canReopen && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReopenReason('')
+                      setReopenError(null)
+                      setShowReopenDialog(true)
+                    }}
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold border transition-all hover:bg-emerald-500/10 hover:border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
+                    style={{ borderColor: inputBorder, backgroundColor: inputBg }}
+                    title="Reopen this closed ticket"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-emerald-500" />
+                    Reopen Ticket
                   </button>
                 )}
                 {isAdmin && onDelete && (
@@ -677,6 +779,147 @@ export function TicketDetailsModal({
               onUpdateTicket?.(updated)
             }}
           />
+        )}
+        {showReopenDialog && (
+          <div
+            className="fixed inset-0 z-[2147483648] flex items-center justify-center p-4"
+            style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)' }}
+            onClick={() => {
+              if (!reopening) {
+                setShowReopenDialog(false)
+                setReopenReason('')
+                setReopenError(null)
+              }
+            }}
+          >
+            <div
+              className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border animate-in zoom-in-95 duration-150"
+              style={{ backgroundColor: cardBg, borderColor: border }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div
+                className="px-5 py-4 flex items-center justify-between border-b"
+                style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#111827' }}
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
+                    <RotateCcw className="w-4 h-4 text-emerald-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-wide" style={{ color: textPrimary }}>
+                      Reopen Ticket
+                    </h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      {t.ticketNumber || t.ticket_number || EMPTY_CELL} · {custName}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={reopening}
+                  onClick={() => {
+                    setShowReopenDialog(false)
+                    setReopenReason('')
+                    setReopenError(null)
+                  }}
+                  className="p-1.5 rounded-lg hover:bg-slate-500/10 transition-colors disabled:opacity-40"
+                  style={{ color: textMuted }}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="p-5 space-y-4">
+                <div
+                  className="p-3 rounded-xl border flex items-center justify-between text-xs"
+                  style={{ borderColor: border, backgroundColor: inputBg }}
+                >
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Current Status</span>
+                  <span
+                    className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider"
+                    style={{
+                      backgroundColor: scheduleBadgeStyle.backgroundColor,
+                      color: scheduleBadgeStyle.color,
+                      border: `1px solid ${scheduleBadgeStyle.borderColor}`,
+                    }}
+                  >
+                    {scheduleStatusDisplay}
+                  </span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider block" style={{ color: textPrimary }}>
+                    Reason for Reopening <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    rows={3}
+                    autoFocus
+                    value={reopenReason}
+                    onChange={e => setReopenReason(e.target.value)}
+                    placeholder="Please specify why this ticket is being reopened (required)..."
+                    disabled={reopening}
+                    className="w-full rounded-xl px-3.5 py-2.5 text-xs font-medium outline-none focus:ring-2 focus:ring-emerald-500/40 transition-all resize-none"
+                    style={{
+                      backgroundColor: inputBg,
+                      border: `1px solid ${inputBorder}`,
+                      color: textPrimary,
+                    }}
+                  />
+                  <p className="text-[10px] text-slate-400">
+                    This ticket will be restored to active schedule status and unlocked for edits.
+                  </p>
+                </div>
+
+                {reopenError && (
+                  <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-semibold flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>{reopenError}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer Buttons */}
+              <div
+                className="px-5 py-3.5 border-t flex items-center justify-end gap-2.5"
+                style={{ borderColor: border, backgroundColor: isLight ? '#f8fafc' : '#111827' }}
+              >
+                <button
+                  type="button"
+                  disabled={reopening}
+                  onClick={() => {
+                    setShowReopenDialog(false)
+                    setReopenReason('')
+                    setReopenError(null)
+                  }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border transition-colors hover:bg-slate-500/10 disabled:opacity-40"
+                  style={{ borderColor: inputBorder, color: textMuted }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!reopenReason.trim() || reopening}
+                  onClick={handleConfirmReopen}
+                  className="px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider text-white flex items-center gap-2 shadow-md transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-105"
+                  style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
+                >
+                  {reopening ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Reopening...
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      Reopen Ticket
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

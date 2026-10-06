@@ -17,7 +17,7 @@ import {
   normalizeTicketNumberKey,
   writeScheduleDateTicketNumbers,
 } from '../utils/ticketNumberStore'
-import { EMPTY_CELL, sanitizeDisplayText, formatPesoPrefix } from '../utils/textSanitize'
+import { EMPTY_CELL, sanitizeDisplayText } from '../utils/textSanitize'
 import { readSchedulesTabCache, schedulesCacheKey, writeSchedulesTabCache, getInitialSchedulesFromCache, isSchedulesSessionLoaded, clearRelaysCache, clearWarrantyCache, TAB_CACHE_UPDATED, SCHEDULES_PERSIST_LOCAL, syncTicketAcrossTabCaches, persistSchedulesMemoryToDisk } from '../utils/ticketTabCache'
 import { beginActiveScheduleFetch, endActiveScheduleFetch } from '../utils/schedulesPrefetch'
 import { normalizeRelayScheduleTicket, normalizeRelayScheduleTicketList } from '../utils/relayScheduleSync'
@@ -5132,9 +5132,11 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
       body.modeOfPayment = injectedPayment.modeOfPayment
       body.installationCharges = injectedPayment.amount
       body.acDetails = mergeAcMeta(liveTicket, {
+        // [] (not undefined) when there is no split: undefined is dropped from the JSON and the
+        // previous split would stay on the ticket.
         paymentBreakdown: injectedPayment.breakdown && injectedPayment.breakdown.length
           ? injectedPayment.breakdown
-          : undefined,
+          : [],
       })
     }
 
@@ -5278,16 +5280,30 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
     setStatusPicker(null)
   }
 
-  const reopenClosedTicket = async (ticket: Ticket, reason: string) => {
+  const reopenClosedTicket = async (ticket: Ticket, reason: string): Promise<Ticket | void> => {
     try {
       const updated = await reopenTicketRequest(ticket.id, reason)
       optimisticTicketsRef.current.delete(updated.id)
       applyTicketLocally(updated.id, updated)
       cacheTicketByNumber(updated as unknown as Record<string, unknown>)
+      setDetailTicket(prev => (prev && prev.id === updated.id ? updated : prev))
       showToast('Ticket reopened')
+      return updated
     } catch (err: unknown) {
       alert(`Could not reopen ticket: ${formatFetchError(err)}`)
     }
+  }
+
+  /** Opens the Update Payment prompt on a ticket, starting from what is saved (including a cash/GCash split). */
+  const openUpdatePaymentPrompt = (ticket: Ticket) => {
+    const payment = resolveTicketPayment(ticket)
+    setPaymentPrompt({ ticket, nextStatus: getScheduleStatusValue(ticket) || 'DONE_INSTALLED', updateOnly: true })
+    setPromptMode(initialPaymentPromptMode(payment.mode))
+    setPromptAmount(payment.amount > 0 ? String(payment.amount) : '')
+    const split = getPaymentBreakdown(ticket)
+    const splitAmount = (mode: string) => split.find(e => e.mode === mode)?.amount
+    setPromptHybridCash(splitAmount('CASH') ? String(splitAmount('CASH')) : '')
+    setPromptHybridGcash(splitAmount('GCASH') ? String(splitAmount('GCASH')) : '')
   }
 
   /** "Fix" on a failed checklist line: jump to the place that resolves it. */
@@ -5299,15 +5315,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
       return
     }
     if (kind === 'payment') {
-      const payment = resolveTicketPayment(full)
-      setPaymentPrompt({ ticket: full, nextStatus: getScheduleStatusValue(full) || 'DONE_INSTALLED', updateOnly: true })
-      setPromptMode(initialPaymentPromptMode(payment.mode))
-      setPromptAmount(payment.amount > 0 ? String(payment.amount) : '')
-      // Editing an existing split payment: start from what is saved, not from empty fields.
-      const split = getPaymentBreakdown(full)
-      const splitAmount = (mode: string) => split.find(e => e.mode === mode)?.amount
-      setPromptHybridCash(splitAmount('CASH') ? String(splitAmount('CASH')) : '')
-      setPromptHybridGcash(splitAmount('GCASH') ? String(splitAmount('GCASH')) : '')
+      openUpdatePaymentPrompt(full)
       return
     }
     if (!editModalOpen) openEditModal(full)
@@ -6519,14 +6527,14 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                 {amountStr ? (
                   <div>
                     <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: isPendingRow ? 'rgba(255,255,255,0.8)' : textMuted }}>Amount </span>
-                    <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: isPendingRow ? '#ffffff' : textPrimary }}>{formatPesoPrefix(amountStr)}</span>
+                    <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: isPendingRow ? '#ffffff' : textPrimary }}>{amountStr}</span>
                   </div>
                 ) : null}
                 {isHybrid && breakdown.length ? (
                   <div className="flex flex-col gap-0.5">
                     {breakdown.map((entry, i) => (
                       <div key={`${entry.mode}-${i}`} className="text-[10.5px]" style={{ color: isPendingRow ? 'rgba(255,255,255,0.8)' : textMuted }}>
-                        {entry.mode} <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: isPendingRow ? '#ffffff' : textPrimary }}>{Math.round(entry.amount).toLocaleString('en-PH')}</span>
+                        {entry.mode} <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: isPendingRow ? '#ffffff' : textPrimary }}>₱{Math.round(entry.amount).toLocaleString('en-PH')}</span>
                       </div>
                     ))}
                   </div>
@@ -6539,10 +6547,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
                 onClick={(e) => {
                   e.stopPropagation()
                   setExpandedCell(null)
-                  const payment = resolveTicketPayment(ticket)
-                  setPaymentPrompt({ ticket, nextStatus: getScheduleStatusValue(ticket) || 'DONE_INSTALLED', updateOnly: true })
-                  setPromptMode(initialPaymentPromptMode(payment.mode))
-                  setPromptAmount(payment.amount > 0 ? String(payment.amount) : '')
+                  openUpdatePaymentPrompt(ticket)
                 }}
                 className="mt-2 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:scale-105"
                 style={{ backgroundColor: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', color: '#10B981' }}
@@ -7526,6 +7531,7 @@ const QuickRequestFormsIcon = ({ className, style }: { className?: string; style
             setDetailTicket(updated)
             setTickets(prev => prev.map(t => (t.id === updated.id ? { ...t, ...updated } : t)))
           }}
+          onReopenTicket={reopenClosedTicket}
         />
       )}
 

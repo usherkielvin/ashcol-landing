@@ -7,9 +7,12 @@ import {
   MapPin,
   Search,
   X,
+  RotateCcw,
 } from 'lucide-react'
 import type { Employee, User } from '../types'
 import { EMPTY_CELL } from '../../../utils/textSanitize'
+import { isPortalAdmin } from '../../../utils/api'
+import { isTicketClosed, canEditClosedTicket } from '../../../utils/ticketClose'
 import {
   fmtPhone,
   formatAddress,
@@ -386,6 +389,23 @@ export const OverviewSearchView: React.FC<OverviewSearchViewProps> = ({
                           <span>{scheduleDateLabel}</span>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
+                          {((isPortalAdmin(user?.role) || canEditClosedTicket(user?.role)) && (
+                            isTicketClosed(ticket) || String(statusVal).toUpperCase().startsWith('DONE_') || String(statusVal).toUpperCase() === 'CANCELLED'
+                          )) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDetailTicket(ticket)
+                                setShowHistoryPanel(false)
+                              }}
+                              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all hover:bg-emerald-500/10 hover:border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
+                              style={{ borderColor: inputBorder, backgroundColor: inputBg }}
+                              title="Reopen this closed ticket"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5 text-emerald-500" />
+                              Reopen
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => {
