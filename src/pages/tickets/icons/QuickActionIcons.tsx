@@ -3,11 +3,11 @@ import {
   FiCalendar,
   FiCheckSquare,
   FiClipboard,
-  FiDollarSign,
   FiFilePlus,
   FiFileText,
   FiUsers,
 } from 'react-icons/fi'
+import { PiMoney } from 'react-icons/pi'
 
 // Feather glyphs (react-icons/fi) — the same icon set the ASHCOL mobile app
 // pulls from @expo/vector-icons, so the portal and app share one clean look.
@@ -30,7 +30,7 @@ export const QuickExpensesIcon = ({ className, style }: QuickIconProps) => (
 )
 
 export const QuickPesoPayoutIcon = ({ className, style }: QuickIconProps) => (
-  <FiDollarSign className={className} style={style} strokeWidth={2} />
+  <PiMoney className={className} style={style} />
 )
 
 export const QuickLineupIcon = ({ className, style }: QuickIconProps) => (
