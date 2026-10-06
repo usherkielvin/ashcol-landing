@@ -631,7 +631,7 @@ export const customFieldsFeeTotal = (r: PayrollRow): number => {
   if (!r.customFields) return 0
   let sum = 0
   for (const [k, v] of Object.entries(r.customFields)) {
-    if (k.startsWith(DEDUCTION_PREFIX) || k.startsWith('xfer:') || k.startsWith(MANUAL_FEE_PREFIX) || k.startsWith(HOLD_PREFIX) || k.startsWith(TEXT_FIELD_PREFIX) || k.startsWith(PAY_PREFIX)) continue
+    if (k.startsWith(DEDUCTION_PREFIX) || k.startsWith('xfer:') || k.startsWith(MANUAL_FEE_PREFIX) || k.startsWith(HOLD_PREFIX) || k.startsWith(TEXT_FIELD_PREFIX) || k.startsWith(PAY_PREFIX) || k.startsWith('installer:')) continue
     sum += toNum(v)
   }
   return sum

@@ -75,7 +75,7 @@ import { Settings2, Columns3, FileDown } from 'lucide-react';
 import { listShareLinks, listPayoutEmails, sendPayoutEmail, type PayoutShareLink, type PayoutEmailStatus, type PayoutEmailSummary, type PayoutEmailResult } from '../utils/payoutShareApi';
 import { PayoutEmailChip, PayoutEmailToast, type PayoutEmailToastState } from './Payouts/PayoutEmailParts';
 import { buildPayoutEmailSummary, emailedDay, maskEmail } from './Payouts/payoutEmail';
-import { num, peso, pesoSigned, shortDate, longDate, getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef, NET_COLUMN, columnLabelKey, findDuplicateColumnGroups } from './Payouts/payoutUtils';
+import { num, peso, pesoSigned, shortDate, longDate, getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, PAYOUT_NOTE_KEY, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef, NET_COLUMN, columnLabelKey, findDuplicateColumnGroups } from './Payouts/payoutUtils';
 
 export default function Payouts() {
   const { theme } = useTheme()
@@ -2206,22 +2206,18 @@ export default function Payouts() {
     })
   }
 
-  // The outside-list remarks column is a note for that general installer (stored under
-  // customFields['installer:remarks']). Individual ticket rows retain and manage their own
-  // `row.remarks` independently, so per-ticket notes are NEVER overwritten by the general note.
-  const getInstallerNote = (installerRows: PayrollRow[]): string => {
+  // Two separate notes per installer-week, neither ever read from the ticket rows' own `row.remarks`:
+  //  - audit remarks ('installer:remarks'): typed in the Finalize dialog, shown on the public page / email;
+  //  - payout remarks (PAYOUT_NOTE_KEY): the roster's Remarks column, internal to payroll.
+  const readNote = (installerRows: PayrollRow[], key: string): string => {
     for (const r of installerRows) {
-      const note = r.customFields?.['installer:remarks']
+      const note = r.customFields?.[key]
       if (note !== undefined && note !== null) return note
     }
-    // Fallback for legacy data before installer:remarks was separated:
-    // check if all rows have the exact same remarks (previously stamped by the modal)
-    const active = installerRows.filter(r => !isCarryOver(r) && isActivePayRow(r))
-    const pool = active.length > 0 ? active : installerRows
-    const first = pool[0]?.remarks?.trim() || ''
-    if (first && pool.every(r => (r.remarks?.trim() || '') === first)) return first
     return ''
   }
+  const getInstallerNote = (installerRows: PayrollRow[]): string => readNote(installerRows, 'installer:remarks')
+  const getPayoutNote = (installerRows: PayrollRow[]): string => readNote(installerRows, PAYOUT_NOTE_KEY)
 
   // A remark or a status belongs to ONE payout week. `rows` holds the whole loaded month, so every writer
   // below must also restrict itself to the selected week (rowInActiveWindow) — matching the installer alone
@@ -2229,7 +2225,7 @@ export default function Payouts() {
   const isInstallerWeekRow = (r: PayrollRow, installerName: string): boolean =>
     resolveGroupKey(r.installerName) === installerName && rowInActiveWindow(r)
 
-  const updateInstallerNote = (installerName: string, note: string) => {
+  const updatePayoutNote = (installerName: string, note: string) => {
     if (isWeekClosed || viewOnly) return
     setRows(prev => {
       const updated = prev.map(r => {
@@ -2238,7 +2234,7 @@ export default function Payouts() {
           ...r,
           customFields: {
             ...(r.customFields || {}),
-            'installer:remarks': note,
+            [PAYOUT_NOTE_KEY]: note,
           },
         }
       })
@@ -4371,7 +4367,8 @@ export default function Payouts() {
             // period — never read the period's own remarks/audited off of it (same landmine as
             // setDeduction above; see docs/payroll-hold-release-plan.md).
             const summaryRow = installerRows.find(r => !isCarryOver(r)) ?? installerRows[0]
-            const summaryRemarks = getInstallerNote(installerRows)
+            const summaryRemarks = getPayoutNote(installerRows)
+            const auditRemarks = getInstallerNote(installerRows)
             const summaryAudited = summaryRow?.audited || ''
             return (
               <div
@@ -4436,7 +4433,7 @@ export default function Payouts() {
                           onClick={e => {
                             e.stopPropagation()
                             setCompleteModalFor(installerName)
-                            setCompleteRemarks(summaryRemarks)
+                            setCompleteRemarks(auditRemarks)
                           }}
                           title={`Completed & finalized by ${titleCase(summaryAudited || userDisplayName || userFirstName)}. Click to view validation details.`}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all duration-150 shadow-xs cursor-pointer active:scale-95 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
@@ -4457,7 +4454,7 @@ export default function Payouts() {
                           onClick={e => {
                             e.stopPropagation()
                             setCompleteModalFor(installerName)
-                            setCompleteRemarks(summaryRemarks)
+                            setCompleteRemarks(auditRemarks)
                           }}
                           title="Click to validate and finalize payout as Completed"
                           className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all duration-150 shadow-xs cursor-pointer active:scale-95 hover:scale-102 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
@@ -4499,7 +4496,7 @@ export default function Payouts() {
                           value={remarksDraft}
                           onChange={e => setRemarksDraft(e.target.value.toUpperCase())}
                           onBlur={() => {
-                            updateInstallerNote(installerName, remarksDraft.trim())
+                            updatePayoutNote(installerName, remarksDraft.trim())
                             setEditingRemarksFor(null)
                           }}
                           onKeyDown={e => {
@@ -4640,6 +4637,41 @@ export default function Payouts() {
         ]
         const totalVisible = allToggleableCols.filter(c => !hidden.has(c.key)).length
         const totalToggleable = allToggleableCols.length
+        const emptyCustomCols = customColumnDefs.filter(cc => isColumnEmpty(cc.key, rows))
+
+        const handleCleanupUnused = () => {
+          if (emptyCustomCols.length === 0) return
+          setConfirmDialog({
+            title: 'Clean up unused custom columns',
+            message: `Remove ${emptyCustomCols.length} unused custom column${emptyCustomCols.length === 1 ? '' : 's'}?`,
+            detail: `These columns have no recorded amounts on any tickets:\n${emptyCustomCols.map(c => `• ${c.label}`).join('\n')}`,
+            confirmText: 'Remove',
+            cancelText: 'Cancel',
+            variant: 'discard',
+            onConfirm: () => {
+              const removeKeys = new Set(emptyCustomCols.map(c => c.key))
+              setCustomColumnDefs(prev => prev.filter(c => !removeKeys.has(c.key)))
+            },
+          })
+        }
+
+        const handleDeleteCustomCol = (cc: CustomColumnDef) => {
+          const hasData = !isColumnEmpty(cc.key, rows)
+          if (hasData) {
+            setConfirmDialog({
+              title: `Delete "${cc.label}"?`,
+              message: `This column currently has recorded amounts on installer tickets. Deleting it will remove the column from tables.`,
+              confirmText: 'Delete',
+              cancelText: 'Cancel',
+              variant: 'discard',
+              onConfirm: () => {
+                removeCustomColumn(cc.key)
+              },
+            })
+          } else {
+            removeCustomColumn(cc.key)
+          }
+        }
 
         /* Category accent palette */
         const CAT_ACCENT: Record<ColumnCategory, { color: string; bg: string }> = {

@@ -165,6 +165,8 @@ export const COLUMN_DEFS: ColumnDef[] = [
 
 // Roster columns: Installer (completed-jobs count folded into its subtitle) | Payroll Amount |
 // Payroll Status | Remarks. There's no action column — the whole row opens that installer's payroll.
+/** customFields key of the roster's own Remarks note (per installer-week; not the ticket remarks). */
+export const PAYOUT_NOTE_KEY = 'installer:payoutRemarks'
 export const ROSTER_GRID_TEMPLATE = 'minmax(260px, 2fr) 160px 200px minmax(220px, 1.6fr)'
 
 export const COLUMN_PRESETS: { label: string; cats: ColumnCategory[] }[] = [
