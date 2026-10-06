@@ -70,6 +70,8 @@ export interface PayrollRow {
   installationChecklist: string
   videoUpload: string
   remarks: string
+  /** The ticket's own remarks, carried only so the one-time clear can recognise old auto-filled text. Never saved. */
+  ticketRemarks?: string
   audited: string
   /** PENDING until the payroll officer reviews and finalizes the row, then COMPLETE. */
   status: string
@@ -367,6 +369,7 @@ export function mapTicketToPayrollRows(ticket: Ticket, branchName: string, rates
     videoUpload: '',
     // Payroll's own per-ticket note: starts blank and is typed by payroll — never pulled from the ticket's remarks.
     remarks: '',
+    ticketRemarks: (ticket.remarksUpdate || ticket.remarks || '').trim(),
     audited: '',
     status: 'PENDING',
     customFields: (payStatus ? { 'pay:status': payStatus } : {}) as Record<string, string>,
@@ -397,6 +400,20 @@ export function applyDailyAllowance(rows: PayrollRow[], rates: PayrollRates): Pa
 }
 
 // ── Fetch + orchestrate ─────────────────────────────────────────────────────
+
+const REMARKS_CHECKED_KEY = 'installer:remarksChecked'
+const normRemark = (t: string | undefined) => (t || '').replace(/\s+/g, ' ').trim().toLowerCase()
+
+/**
+ * Payroll's per-ticket Remarks used to be auto-filled from the ticket. Each saved row is checked once: if its
+ * remark is exactly the ticket's remarks it is cleared, then the row is stamped so anything payroll types later
+ * (even the same words) is kept.
+ */
+const clearOldAutoFilledRemarks = (row: PayrollRow, fresh: PayrollRow): Pick<PayrollRow, 'remarks' | 'customFields'> => {
+  if (row.customFields?.[REMARKS_CHECKED_KEY] === '1') return { remarks: row.remarks || '', customFields: row.customFields }
+  const remarks = row.remarks && normRemark(row.remarks) === normRemark(fresh.ticketRemarks) ? '' : (row.remarks || '')
+  return { remarks, customFields: { ...(row.customFields || {}), [REMARKS_CHECKED_KEY]: '1' } }
+}
 
 export async function fetchAndMapPayroll(
   branchId: string,
@@ -494,7 +511,8 @@ export function deduplicateAndMergePayroll(existing: PayrollRow[], incoming: Pay
         amountCollected: row.amountCollected?.trim() ? row.amountCollected : (fresh.amountCollected || ''),
         sifQuotation: row.sifQuotation?.trim() ? row.sifQuotation : (fresh.sifQuotation || ''),
         // Whatever payroll saved stays as saved (including blank); a sync never fills it from the ticket.
-        remarks: row.remarks || '',
+        // One time per row, text identical to the ticket's own remarks is the OLD auto-fill, so it is cleared.
+        ...clearOldAutoFilledRemarks(row, fresh),
       }
     }
     return {
