@@ -435,8 +435,13 @@ function Summary({ counted, p }: { counted: PayrollRow[]; p: Palette }) {
   )
   return (
     <section className="rounded-2xl border p-4" style={{ background: p.card, borderColor: p.border }}>
+      {previousPayout > 0 && (
+        <>
+          {row("This week's jobs", `₱${peso(gross - previousPayout)}`)}
+          {row('Released hold tickets', `+₱${peso(previousPayout)}`, p.accent)}
+        </>
+      )}
       {row('Gross payout', `₱${peso(gross)}`, p.text)}
-      {previousPayout > 0 && row('Includes previous payout (released hold)', `₱${peso(previousPayout)}`)}
       {lines.length > 0 && (
         <>
           <div className="mt-2 mb-0.5 text-[11px] font-bold uppercase tracking-wide" style={{ color: p.muted }}>Deductions</div>

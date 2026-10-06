@@ -2721,8 +2721,11 @@ export default function Payouts() {
         chips: [
           { label: weekLabel },
           { label: `${regular.length} ${regular.length === 1 ? 'ticket' : 'tickets'}` },
+          ...(previousPayout > 0 ? [
+            { label: "This week's jobs", value: `₱${peso(gross - previousPayout)}` },
+            { label: 'Released hold tickets', value: `+₱${peso(previousPayout)}` },
+          ] : []),
           { label: 'Gross', value: `₱${peso(gross)}` },
-          ...(previousPayout > 0 ? [{ label: 'Incl. previous payout (released hold)', value: `₱${peso(previousPayout)}` }] : []),
           ...(awaiting > 0 ? [{ label: 'Awaiting payment', value: `₱${peso(awaiting)}`, tone: 'warn' as const }] : []),
           ...(ded > 0 ? [{ label: 'Deductions', value: `-₱${peso(ded)}`, tone: 'bad' as const }] : []),
           { label: 'Net payout', value: `${net < 0 ? '-' : ''}₱${peso(Math.abs(net))}`, tone: 'good' as const },
