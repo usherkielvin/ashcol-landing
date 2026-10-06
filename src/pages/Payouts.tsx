@@ -2568,6 +2568,8 @@ export default function Payouts() {
   const globalBaseInstallTotal = useMemo(() => baseInstallTotal(filteredRows), [filteredRows])
   const globalRemittanceTotal = useMemo(() => remittanceTotal(filteredRows), [filteredRows])
   const globalAddOnTotal = grandTotal - globalBaseInstallTotal
+  // Released hold tickets carried into this week — already part of the add-on total, listed so it reads like the Week Summary.
+  const globalPreviousPayout = useMemo(() => grouped.reduce((sum, [, r]) => sum + r.filter(isCarryOver).reduce((s2, x) => s2 + rowTotal(x), 0), 0), [grouped])
 
   const currentBranchDisplay = branchFilter
     ? formatBranchName(branches.find(b => b.id === branchFilter)?.name || user?.branchId || '')
@@ -4618,15 +4620,16 @@ export default function Payouts() {
             </div>
             <div className="grid grid-cols-2 w-full gap-x-4 gap-y-3 md:flex md:flex-wrap md:items-center md:justify-end md:gap-x-9 md:gap-y-2 md:ml-auto md:w-auto">
               {([
-                { label: 'Remittance Collected', value: globalRemittanceTotal, color: remitAccent },
-                { label: 'Base Install Total', value: globalBaseInstallTotal, color: textPrimary },
-                { label: 'Total Add-on Pay', value: globalAddOnTotal, color: textPrimary },
-                { label: 'Total Deductions', value: globalDeductionTotal, color: globalDeductionTotal > 0 ? (isLight ? '#DC2626' : '#F87171') : textPrimary },
-                { label: 'Net Payout Due', value: grandTotal - globalDeductionTotal, color: '#10B981' },
+                { label: 'Remittance Collected', value: globalRemittanceTotal, color: remitAccent, sub: '' },
+                { label: 'Base Install Total', value: globalBaseInstallTotal, color: textPrimary, sub: '' },
+                { label: 'Total Add-on Pay', value: globalAddOnTotal, color: textPrimary, sub: globalPreviousPayout > 0 ? `incl. ₱${peso(globalPreviousPayout)} previous payout` : '' },
+                { label: 'Total Deductions', value: globalDeductionTotal, color: globalDeductionTotal > 0 ? (isLight ? '#DC2626' : '#F87171') : textPrimary, sub: '' },
+                { label: 'Net Payout Due', value: grandTotal - globalDeductionTotal, color: '#10B981', sub: globalPreviousPayout > 0 ? 'incl. previous payout' : '' },
               ] as const).filter(tile => canManagePayroll || tile.label !== 'Remittance Collected').map(tile => (
                 <div key={tile.label} className="flex flex-col items-start md:items-end">
                   <span className="text-[10px] font-medium uppercase tracking-wider opacity-60" style={{ color: textMuted }}>{tile.label}</span>
                   <span className="text-sm font-bold tabular-nums" style={{ color: tile.color }}>₱{peso(tile.value)}</span>
+                  {tile.sub && <span className="text-[9px] font-semibold opacity-70" style={{ color: textMuted }}>{tile.sub}</span>}
                 </div>
               ))}
             </div>

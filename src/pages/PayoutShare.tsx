@@ -518,6 +518,7 @@ export default function PayoutShare() {
     body = <Notice p={p} icon={<AlertTriangle className="w-8 h-8" style={{ color: p.red }} />} title="Couldn't load your payout" body="Check your connection and try again." action={refreshButton} />
   } else {
     const net = installerTotal(counted) - deductionTotal(counted)
+    const previousPayout = counted.filter(isCarryOver).reduce((sum, r) => sum + rowTotal(r), 0)
     const complete = payout.status === 'COMPLETED'
     body = (
       <>
@@ -577,7 +578,12 @@ export default function PayoutShare() {
         <footer className="sticky bottom-0 border-t" style={{ background: p.card, borderColor: p.border, paddingBottom: 'env(safe-area-inset-bottom)' }}>
           <div className={`${PAGE_WIDTH} py-3 flex items-baseline justify-between gap-4`}>
             <span className="text-xs font-bold uppercase tracking-wide" style={{ color: p.muted }}>Net payout</span>
-            <span className="text-2xl font-extrabold tabular-nums" style={{ color: net < 0 ? p.red : p.accent }}>{pesoSigned(net)}</span>
+            <span className="flex flex-col items-end">
+              <span className="text-2xl font-extrabold tabular-nums" style={{ color: net < 0 ? p.red : p.accent }}>{pesoSigned(net)}</span>
+              {previousPayout > 0 && (
+                <span className="text-[11px] font-semibold tabular-nums" style={{ color: p.muted }}>incl. ₱{peso(previousPayout)} previous payout</span>
+              )}
+            </span>
           </div>
         </footer>
       </>
