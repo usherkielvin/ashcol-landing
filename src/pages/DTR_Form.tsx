@@ -20,7 +20,8 @@ import {
 } from '../utils/api'
 import { EmployeeNameLink } from '../components/EmployeeNameLink'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
-import { fetchAndMapTickets, fetchAndMapOnlineTickets, fetchAndMapCheckTickets, fetchAndMapForCollTickets, fetchAndMapRebateTickets, fetchAndMapCommissionTickets, fetchAndCountUnitSummary, lookupRebateRate, type CommissionRow } from '../utils/schedulePrefill'
+import { fetchAndMapTickets, fetchAndMapOnlineTickets, fetchAndMapCheckTickets, fetchAndMapForCollTickets, fetchAndMapRebateTickets, fetchAndMapCommissionTickets, fetchAndCountUnitSummary, lookupRebateRate, fetchWindowTickets, type CommissionRow } from '../utils/schedulePrefill'
+import { getTicketNumberDisplay } from '../utils/ticketHelpers'
 import { addDaysToKey, fetchDtrCoverage, invalidateDtrCoverageCache, formatDayLabel, type DtrCoverage } from '../utils/dtrCoverage'
 import { DtrCoverageBanner } from '../components/DtrCoverageBanner'
 import { DtrHistoryModal } from '../components/DtrHistoryModal'
@@ -1238,7 +1239,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                 id: uid(),
                 customer: item.customer || '',
                 installer: formatDisplayUserLabel(desc),
-                amount: amt
+                amount: amt,
+                ticketNumber: item.ticketNumber || ''
               })
             }
           } else if (type === 'ONLINE_SALE') {
@@ -1257,7 +1259,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                 installer: formatDisplayUserLabel(desc.replace('CHECK|', '')),
                 customer: item.customer || '',
                 bank: item.bank || '',
-                amount: amt
+                amount: amt,
+                ticketNumber: item.ticketNumber || ''
               })
             } else {
               onlineTxList.push({
@@ -1265,7 +1268,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
                 installer: formatDisplayUserLabel(desc),
                 customer: item.customer || '',
                 bank: item.bank || '',
-                amount: amt
+                amount: amt,
+                ticketNumber: item.ticketNumber || ''
               })
             }
           } else if (type === 'EXPENSE') {
@@ -1342,7 +1346,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
               installer: desc ? formatDisplayUserLabel(desc) : '',
               customer: item.customer || '',
               amount: amt,
-              collectionResolved: item.collectionResolved || false
+              collectionResolved: item.collectionResolved || false,
+              ticketNumber: item.ticketNumber || ''
             })
           } else if (type === 'PAYABLE') {
             const parts = desc.split('|')
@@ -1516,6 +1521,50 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       setOrders(ordersList.length > 0 ? ordersList : [mkOrd()])
       setPayables(payablesList.length > 0 ? payablesList : [mkPay()])
       setForColl(forCollList.length > 0 ? forCollList : [mkColl()])
+
+      // Backfill missing ticket numbers for historical reports saved before ticketNumber persistence
+      const missingAnyTicketNo = cashSales.some(r => !r.ticketNumber && r.customer && r.customer !== 'Imported Total')
+        || onlineTxList.some(r => !r.ticketNumber && r.customer && r.customer !== 'Imported Total')
+        || checkRemList.some(r => !r.ticketNumber && r.customer)
+        || forCollList.some(r => !r.ticketNumber && r.customer)
+
+      if (missingAnyTicketNo && data.reportDate && data.branchId) {
+        void (async () => {
+          try {
+            const reportAuditLine = data.auditLine || selectedAuditLine
+            const scheduleBranchId = reportAuditLine
+              ? `${data.branchId.replace(/-(sales|services)$/i, '')}-${reportAuditLine === 'TAGUIG_SERVICE' ? 'services' : 'sales'}`
+              : data.branchId.replace(/-(sales|services)$/i, '')
+            const covDates = await fetchDtrCoverage(data.branchId, reportAuditLine, data.reportDate)
+              .then(cov => cov.scheduleDates)
+              .catch(() => undefined)
+            const windowTickets = await fetchWindowTickets({
+              branchId: scheduleBranchId,
+              dateKey: data.reportDate,
+              scheduleDateKeys: covDates,
+              branchName: branchName || '',
+            })
+            if (!windowTickets || windowTickets.length === 0) return
+
+            const matchTicketNo = (cust: string) => {
+              if (!cust) return ''
+              const normCust = cust.trim().toUpperCase()
+              const found = windowTickets.find(t => {
+                const tc = (t.customerName || t.customer_name || '').trim().toUpperCase()
+                return tc && (tc === normCust || tc.includes(normCust) || normCust.includes(tc))
+              })
+              return found ? getTicketNumberDisplay(found) : ''
+            }
+
+            setCashTx(prev => prev.map(r => (!r.ticketNumber && r.customer ? { ...r, ticketNumber: matchTicketNo(r.customer) || r.ticketNumber } : r)))
+            setOnlineTx(prev => prev.map(r => (!r.ticketNumber && r.customer ? { ...r, ticketNumber: matchTicketNo(r.customer) || r.ticketNumber } : r)))
+            setCheckRem(prev => prev.map(r => (!r.ticketNumber && r.customer ? { ...r, ticketNumber: matchTicketNo(r.customer) || r.ticketNumber } : r)))
+            setForColl(prev => prev.map(r => (!r.ticketNumber && r.customer ? { ...r, ticketNumber: matchTicketNo(r.customer) || r.ticketNumber } : r)))
+          } catch (err) {
+            console.warn('[fetchReportDetails] Async ticketNumber backfill failed:', err)
+          }
+        })()
+      }
 
       if (options?.enterEditMode) {
         const canEdit = resolveCanEditExistingReport(
@@ -2306,17 +2355,20 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
       // Build unified items array from all DTR sections
       const dtrItems: object[] = [
         ...cashTx.filter(r => r.customer || r.installer || r.amount).map(r => ({
-          type: 'CASH_SALE', description: r.installer, customer: r.customer, amount: parseFloat(r.amount) || 0
+          type: 'CASH_SALE', description: r.installer, customer: r.customer, amount: parseFloat(r.amount) || 0,
+          ticketNumber: r.ticketNumber || null
         })),
         ...cashRet.filter(r => r.name || r.description || r.amount).map(r => ({
           type: 'CASH_SALE', description: `RETURN|${r.name}|${(r.description || '').replace(/\|/g, '/')}`, amount: parseFloat(r.amount) || 0,
           ticketNumber: cashReturnRefs.get(r.id) || null
         })),
         ...onlineTx.filter(r => r.installer || r.amount).map(r => ({
-          type: 'ONLINE_SALE', description: r.installer, customer: r.customer, bank: r.bank, amount: parseFloat(r.amount) || 0
+          type: 'ONLINE_SALE', description: r.installer, customer: r.customer, bank: r.bank, amount: parseFloat(r.amount) || 0,
+          ticketNumber: r.ticketNumber || null
         })),
         ...checkRem.filter(r => r.installer || r.amount).map(r => ({
-          type: 'ONLINE_SALE', description: `CHECK|${r.installer}`, customer: r.customer, bank: r.bank, amount: parseFloat(r.amount) || 0
+          type: 'ONLINE_SALE', description: `CHECK|${r.installer}`, customer: r.customer, bank: r.bank, amount: parseFloat(r.amount) || 0,
+          ticketNumber: r.ticketNumber || null
         })),
         ...partsSales.filter(r => r.customer || r.amount).map(r => ({
           type: r.paymentMethod === 'ONLINE' ? 'ONLINE_SALE' : 'CASH_SALE',
@@ -2413,7 +2465,8 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
           description: r.installer,
           customer: r.customer,
           amount: parseFloat(r.amount) || 0,
-          collectionResolved: r.collectionResolved || false
+          collectionResolved: r.collectionResolved || false,
+          ticketNumber: r.ticketNumber || null
         })),
         ...(INCENTIVES_ENABLED ? incentives.filter(r => r.customer || r.promodiser || r.amount).map(r => ({
           type: 'INCENTIVE',
