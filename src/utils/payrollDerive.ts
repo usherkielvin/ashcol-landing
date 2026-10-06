@@ -365,7 +365,8 @@ export function mapTicketToPayrollRows(ticket: Ticket, branchName: string, rates
     materialsReturn: '',
     installationChecklist: '',
     videoUpload: '',
-    remarks: (ticket.remarksUpdate || ticket.remarks || '').trim(),
+    // Payroll's own per-ticket note: starts blank and is typed by payroll — never pulled from the ticket's remarks.
+    remarks: '',
     audited: '',
     status: 'PENDING',
     customFields: (payStatus ? { 'pay:status': payStatus } : {}) as Record<string, string>,
@@ -492,7 +493,8 @@ export function deduplicateAndMergePayroll(existing: PayrollRow[], incoming: Pay
         actualCollected: row.actualCollected?.trim() ? row.actualCollected : (fresh.actualCollected || ''),
         amountCollected: row.amountCollected?.trim() ? row.amountCollected : (fresh.amountCollected || ''),
         sifQuotation: row.sifQuotation?.trim() ? row.sifQuotation : (fresh.sifQuotation || ''),
-        remarks: row.remarks?.trim() ? row.remarks : (fresh.remarks || ''),
+        // Whatever payroll saved stays as saved (including blank); a sync never fills it from the ticket.
+        remarks: row.remarks || '',
       }
     }
     return {
