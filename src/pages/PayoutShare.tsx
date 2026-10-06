@@ -565,11 +565,8 @@ export default function PayoutShare() {
           {counted.length > 0 && <Summary counted={counted} p={p} />}
           {held.length > 0 && <HeldList rows={held} p={p} />}
 
-          <p className="text-[11px] text-center flex items-center justify-center gap-2" style={{ color: p.muted }}>
-            Read-only · shows the latest saved figures
-            <button type="button" onClick={reload} disabled={loading} className="inline-flex items-center gap-1 font-bold cursor-pointer disabled:opacity-50" style={{ color: p.text }}>
-              <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} /> Refresh
-            </button>
+          <p className="text-xs text-center leading-relaxed px-2" style={{ color: p.muted }}>
+            Have a concern about this payout? Please contact payroll or your branch office.
           </p>
         </main>
 
