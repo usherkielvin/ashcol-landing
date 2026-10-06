@@ -2709,6 +2709,7 @@ export default function Payouts() {
       const ded = deductionTotal(allRows)
       const awaiting = allRows.filter(hasPendingBalance).reduce((sum, r) => sum + rowTotal(r), 0)
       const net = gross - ded
+      const previousPayout = allRows.filter(isCarryOver).reduce((sum, r) => sum + rowTotal(r), 0)
       const weekLabel = activeWeek ? `Week ${activeWeek.weekNumber} (${activeWeek.label})` : formatMonth(activeMonth)
       const safe = (t: string) => t.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '')
       exportPayoutPdf({
@@ -2719,6 +2720,7 @@ export default function Payouts() {
           { label: weekLabel },
           { label: `${regular.length} ${regular.length === 1 ? 'ticket' : 'tickets'}` },
           { label: 'Gross', value: `₱${peso(gross)}` },
+          ...(previousPayout > 0 ? [{ label: 'Incl. previous payout (released hold)', value: `₱${peso(previousPayout)}` }] : []),
           ...(awaiting > 0 ? [{ label: 'Awaiting payment', value: `₱${peso(awaiting)}`, tone: 'warn' as const }] : []),
           ...(ded > 0 ? [{ label: 'Deductions', value: `-₱${peso(ded)}`, tone: 'bad' as const }] : []),
           { label: 'Net payout', value: `${net < 0 ? '-' : ''}₱${peso(Math.abs(net))}`, tone: 'good' as const },
@@ -4362,6 +4364,8 @@ export default function Payouts() {
           {grouped.map(([installerName, installerRows], rowIndex) => {
             // Net of this period's deductions (Late / Loan / Uniform …) — what the installer takes home.
             const total = installerNet(installerRows)
+            // Released hold tickets carried into this week: already inside `total`, shown so the roster matches the Week Summary.
+            const previousPayout = installerRows.filter(isCarryOver).reduce((sum, r) => sum + rowTotal(r), 0)
             const isComplete = installerRows.length > 0 && installerRows.every(r => r.status === 'COMPLETE')
             // A carry-over copy keeps its ORIGIN's (older) workDate, so it can sort first in the
             // period — never read the period's own remarks/audited off of it (same landmine as
@@ -4414,13 +4418,18 @@ export default function Payouts() {
                     {/* 2. PAYROLL AMOUNT — negative when deductions outweigh the period's gross
                         (e.g. an unpaid loan balance), so this needs the same sign-then-peso
                         formatting and red/green split as the Net Payroll tiles below. */}
-                    <div className="flex items-center justify-end">
+                    <div className="flex flex-col items-end justify-center">
                       <span
                         className="text-base md:text-lg font-bold tabular-nums text-right tracking-tight"
                         style={{ color: total < 0 ? (isLight ? '#DC2626' : '#F87171') : '#10B981' }}
                       >
                         {total < 0 ? '−' : ''}₱{peso(Math.abs(total))}
                       </span>
+                      {previousPayout > 0 && (
+                        <span className="text-[10px] font-semibold tabular-nums text-right" style={{ color: textMuted }} title="Released hold ticket(s) carried into this week — already included in the amount">
+                          incl. ₱{peso(previousPayout)} previous payout
+                        </span>
+                      )}
                     </div>
 
                     {/* 3. STATUS — A clean confirmation button instead of a dropdown.
