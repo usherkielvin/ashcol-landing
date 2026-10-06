@@ -469,7 +469,7 @@ export default function Employees() {
 
   // UI Filters
   const [search,    setSearch]    = useState('')
-  const [tabFilter] = useState<'all' | 'active' | 'inactive'>('all')
+  const [tabFilter, setTabFilter] = useState<'all' | 'active' | 'not_activated' | 'inactive'>('all')
   const [roleFilter, setRoleFilter] = useState<string>('all')
   const [selectedBranchId, setSelectedBranchId] = useState<string>('')
 
@@ -1173,10 +1173,32 @@ export default function Employees() {
     return ['all', ...list]
   }, [employees])
 
+  // ── Tab Counts ─────────────────────────────────────────────────────────────
+  const counts = useMemo(() => {
+    let all = 0
+    let active = 0
+    let notActivated = 0
+    let inactive = 0
+
+    employees.forEach(e => {
+      all++
+      if (!e.isActive) {
+        inactive++
+      } else if (!e.lastLoginAt && !e.lastActiveAt) {
+        notActivated++
+      } else {
+        active++
+      }
+    })
+
+    return { all, active, notActivated, inactive }
+  }, [employees])
+
   // ── Filtered List ───────────────────────────────────────────────────────────
   const filtered = employees.filter(e => {
-    if (tabFilter === 'active'   && !e.isActive) return false
-    if (tabFilter === 'inactive' && e.isActive)  return false
+    if (tabFilter === 'active' && (!e.isActive || (!e.lastLoginAt && !e.lastActiveAt))) return false
+    if (tabFilter === 'not_activated' && (!e.isActive || e.lastLoginAt || e.lastActiveAt)) return false
+    if (tabFilter === 'inactive' && e.isActive) return false
     if (roleFilter !== 'all') {
       const target = roleFilter.toUpperCase()
       const empRole = (e.role || '').toUpperCase()
@@ -1257,6 +1279,43 @@ export default function Employees() {
       {/* ── Main Table Card (hidden while an employee's detail tab is open) ── */}
       {!isDrawerOpen && (
       <div className="rounded-2xl flex flex-col shadow-sm" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+
+        {/* Directory Tabs */}
+        <div className="flex items-center gap-1 sm:gap-2 px-3 sm:px-6 pt-3 border-b overflow-x-auto" style={{ borderColor: border }}>
+          {[
+            { id: 'all', label: 'All Members', count: counts.all },
+            { id: 'active', label: 'Active', count: counts.active },
+            { id: 'not_activated', label: 'Not Activated Yet', count: counts.notActivated },
+            { id: 'inactive', label: 'Inactive', count: counts.inactive },
+          ].map(tab => {
+            const isSelected = tabFilter === tab.id
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setTabFilter(tab.id as any)}
+                className="flex items-center gap-2 pb-3 px-3 text-xs font-bold transition-all border-b-2 whitespace-nowrap cursor-pointer hover:opacity-90"
+                style={{
+                  color: isSelected ? '#10B981' : textMuted,
+                  borderBottomColor: isSelected ? '#10B981' : 'transparent',
+                }}
+              >
+                <span>{tab.label}</span>
+                <span
+                  className="text-[10px] font-black px-1.5 py-0.5 rounded-full transition-colors"
+                  style={{
+                    backgroundColor: isSelected
+                      ? 'rgba(16,185,129,0.15)'
+                      : isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)',
+                    color: isSelected ? '#10B981' : textMuted,
+                  }}
+                >
+                  {tab.count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
 
         {/* Search, Filter, & Action Bar */}
         <div className="flex flex-col gap-2 p-3 sm:px-6 sm:py-4 border-b" style={{ borderColor: border }}>
@@ -1408,35 +1467,43 @@ export default function Employees() {
                     </div>
 
                     {/* Status Badge / Toggle */}
-                    {isAdmin ? (
-                      <button
-                        type="button"
-                        onClick={evt => {
-                          evt.stopPropagation()
-                          requestToggleActive(e)
-                        }}
-                        className="shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider transition-all border hover:opacity-80"
-                        style={{
-                          backgroundColor: e.isActive ? 'rgba(16,185,129,0.1)' : 'rgba(148,163,184,0.1)',
-                          borderColor: e.isActive ? 'rgba(16,185,129,0.3)' : 'rgba(148,163,184,0.3)',
-                          color: e.isActive ? '#10B981' : '#94a3b8',
-                        }}
-                        title="Toggle active status"
-                      >
-                        {e.isActive ? 'ACTIVE' : 'INACTIVE'}
-                      </button>
-                    ) : (
-                      <span
-                        className="shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider border"
-                        style={{
-                          backgroundColor: e.isActive ? 'rgba(16,185,129,0.1)' : 'rgba(148,163,184,0.1)',
-                          borderColor: e.isActive ? 'rgba(16,185,129,0.3)' : 'rgba(148,163,184,0.3)',
-                          color: e.isActive ? '#10B981' : '#94a3b8',
-                        }}
-                      >
-                        {e.isActive ? 'ACTIVE' : 'INACTIVE'}
-                      </span>
-                    )}
+                    {(() => {
+                      const isNotActivated = e.isActive && !e.lastLoginAt && !e.lastActiveAt
+                      const statusColor = !e.isActive ? '#94a3b8' : isNotActivated ? '#F59E0B' : '#10B981'
+                      const statusBg = !e.isActive ? 'rgba(148,163,184,0.1)' : isNotActivated ? 'rgba(245,158,11,0.1)' : 'rgba(16,185,129,0.1)'
+                      const statusBorder = !e.isActive ? 'rgba(148,163,184,0.3)' : isNotActivated ? 'rgba(245,158,11,0.3)' : 'rgba(16,185,129,0.3)'
+                      const statusText = !e.isActive ? 'INACTIVE' : isNotActivated ? 'NOT ACTIVATED' : 'ACTIVE'
+
+                      return isAdmin ? (
+                        <button
+                          type="button"
+                          onClick={evt => {
+                            evt.stopPropagation()
+                            requestToggleActive(e)
+                          }}
+                          className="shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider transition-all border hover:opacity-80"
+                          style={{
+                            backgroundColor: statusBg,
+                            borderColor: statusBorder,
+                            color: statusColor,
+                          }}
+                          title="Toggle active status"
+                        >
+                          {statusText}
+                        </button>
+                      ) : (
+                        <span
+                          className="shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider border"
+                          style={{
+                            backgroundColor: statusBg,
+                            borderColor: statusBorder,
+                            color: statusColor,
+                          }}
+                        >
+                          {statusText}
+                        </span>
+                      )
+                    })()}
                   </div>
 
                   {/* Metadata Chips: Role, Branch, Contact */}
@@ -1640,23 +1707,29 @@ export default function Employees() {
 
                     {/* Status */}
                     <td className="px-6 py-5 text-center">
-                      {isAdmin ? (
-                        <button
-                          onClick={evt => { evt.stopPropagation(); requestToggleActive(e) }}
-                          className="inline-flex items-center gap-1 text-xs font-bold tracking-wider transition-all hover:opacity-85"
-                          style={{ color: e.isActive ? '#10B981' : '#94a3b8' }}
-                          title="Toggle status"
-                        >
-                          {e.isActive ? 'ACTIVE' : 'INACTIVE'}
-                        </button>
-                      ) : (
-                        <span
-                          className="inline-flex items-center gap-1 text-xs font-bold tracking-wider"
-                          style={{ color: e.isActive ? '#10B981' : '#94a3b8' }}
-                        >
-                          {e.isActive ? 'ACTIVE' : 'INACTIVE'}
-                        </span>
-                      )}
+                      {(() => {
+                        const isNotActivated = e.isActive && !e.lastLoginAt && !e.lastActiveAt
+                        const statusColor = !e.isActive ? '#94a3b8' : isNotActivated ? '#F59E0B' : '#10B981'
+                        const statusText = !e.isActive ? 'INACTIVE' : isNotActivated ? 'NOT ACTIVATED' : 'ACTIVE'
+
+                        return isAdmin ? (
+                          <button
+                            onClick={evt => { evt.stopPropagation(); requestToggleActive(e) }}
+                            className="inline-flex items-center gap-1 text-xs font-bold tracking-wider transition-all hover:opacity-85"
+                            style={{ color: statusColor }}
+                            title="Toggle status"
+                          >
+                            {statusText}
+                          </button>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1 text-xs font-bold tracking-wider"
+                            style={{ color: statusColor }}
+                          >
+                            {statusText}
+                          </span>
+                        )
+                      })()}
                     </td>
 
                   </tr>
