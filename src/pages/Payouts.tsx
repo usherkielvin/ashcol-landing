@@ -5010,9 +5010,9 @@ export default function Payouts() {
                     const on = !hidden.has(cc.key)
                     const empty = isColumnEmpty(cc.key, activeInstallerRows)
                     return (
-                      <div
+                      <label
                         key={cc.key}
-                        className="flex items-center gap-3 px-4 py-2.5 transition-colors col-mgr-row"
+                        className="flex items-center gap-3 px-4 py-2.5 transition-colors col-mgr-row cursor-pointer"
                         style={{ borderTop: idx > 0 ? `1px solid ${border}` : 'none', backgroundColor: cardBg }}
                       >
                         <span className="col-toggle">
@@ -5045,7 +5045,7 @@ export default function Payouts() {
                         >
                           <Trash2 className="w-3.5 h-3.5 text-red-400" />
                         </button>
-                      </div>
+                      </label>
                     )
                   })
                 ) : (
