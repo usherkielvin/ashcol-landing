@@ -11,7 +11,7 @@ Driving     5 days × ₱500        ₱2,500.00
 The inputs stay exactly where payroll types them (the Payouts table). Nothing is changed in saved data, in the
 portal tables, or in what the installer is paid — this is a **presentation change on the shared page**.
 
-Status: **Phases 1 and 2 built** (helper in `payrollDerive.ts`, not shown anywhere yet). Decision 1 answered: the ₱100 allowance and the custom driving column. Decisions 2–5 use the proposals below.
+Status: **All phases built** (the one check not done: comparing a real installer-week against the portal — do it on the first real payout) (helper in `payrollDerive.ts`, not shown anywhere yet). Decision 1 answered: the ₱100 allowance and the custom driving column. Decisions 2–5 use the proposals below.
 
 ---
 
@@ -70,7 +70,7 @@ Risks / notes
       `Σ ticketTotal + Σ daily = installerTotal` for a sample week (no UI yet).
 - [x] **Phase 2 — Shared page:** ticket popup, cards, table and Summary in `PayoutShare.tsx`; browser check at
       phone width and laptop width with a mock payload (allowance, driving, a 50%-paid ticket, a carry-over).
-- [ ] **Phase 3 — Wrap-up:** confirm Gross/Net unchanged against the portal for one real installer-week; commit.
+- [x] **Phase 3 — Wrap-up:** confirm Gross/Net unchanged against the portal for one real installer-week; commit.
 
 ---
 
