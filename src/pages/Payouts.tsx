@@ -4929,22 +4929,38 @@ export default function Payouts() {
               >
                 {/* Custom section header */}
                 <div
-                  className="flex items-center gap-3 px-4 py-3"
+                  className="flex items-center justify-between gap-3 px-4 py-3"
                   style={{
                     backgroundColor: isLight ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.08)',
                     borderBottom: `1px solid ${border}`,
                   }}
                 >
-                  <div className="flex-1">
+                  <div className="flex items-center gap-2">
                     <div className="text-[12px] font-extrabold uppercase tracking-wide" style={{ color: textPrimary }}>Custom Columns</div>
+                    {customColumnDefs.length > 0 && (
+                      <span
+                        className="text-[10px] font-black px-2 py-0.5 rounded-full"
+                        style={{ backgroundColor: '#10B981', color: 'white' }}
+                      >
+                        {customColumnDefs.length}
+                      </span>
+                    )}
                   </div>
-                  {customColumnDefs.length > 0 && (
-                    <span
-                      className="text-[10px] font-black px-2 py-0.5 rounded-full"
-                      style={{ backgroundColor: '#10B981', color: 'white' }}
+                  {emptyCustomCols.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleCleanupUnused}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border hover:bg-red-500/10 cursor-pointer"
+                      style={{
+                        color: '#EF4444',
+                        borderColor: isLight ? '#FCA5A5' : 'rgba(239,68,68,0.35)',
+                        backgroundColor: isLight ? '#FEF2F2' : 'rgba(239,68,68,0.08)',
+                      }}
+                      title={`Remove ${emptyCustomCols.length} custom columns that have no recorded amounts`}
                     >
-                      {customColumnDefs.length}
-                    </span>
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Clean up unused ({emptyCustomCols.length})</span>
+                    </button>
                   )}
                 </div>
 
@@ -5008,25 +5024,22 @@ export default function Payouts() {
                           <span className="col-toggle-track" />
                           <span className="col-toggle-thumb" />
                         </span>
-                        <span className="text-xs font-bold flex-1 truncate" style={{ color: on ? textPrimary : textMuted }}>{cc.label}</span>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-xs font-bold truncate block" style={{ color: on ? textPrimary : textMuted }}>
+                            {cc.label}
+                          </span>
+                        </div>
                         {empty && (
                           <span
-                            className="text-[9px] font-bold px-1.5 py-0.5 rounded tracking-wider uppercase opacity-60 shrink-0"
+                            className="text-[9px] font-bold px-2 py-0.5 rounded-md tracking-wider uppercase opacity-70 shrink-0"
                             style={{ backgroundColor: isLight ? '#f1f5f9' : '#0d1520', color: textMuted }}
                           >
                             No inputs
                           </span>
                         )}
-                        <span
-                          className="text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 truncate max-w-[120px]"
-                          title={cc.key}
-                          style={{ backgroundColor: isLight ? '#f1f5f9' : '#0d1520', color: textMuted }}
-                        >
-                          {cc.key}
-                        </span>
                         <button
                           type="button"
-                          onClick={() => removeCustomColumn(cc.key)}
+                          onClick={() => handleDeleteCustomCol(cc)}
                           className="p-1.5 rounded-lg hover:bg-red-500/15 transition-colors shrink-0 cursor-pointer"
                           title={`Delete "${cc.label}" from all installer tables`}
                         >
