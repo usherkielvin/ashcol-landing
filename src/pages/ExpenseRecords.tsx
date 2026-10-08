@@ -1259,6 +1259,8 @@ export default function ExpenseRecords() {
     returnedAll?: boolean;
     reimburseDue?: number;
     reimburseFound?: boolean;
+    /** Marked receipted, but its receipt record is gone: the backend reports it as pending again */
+    receiptRecordMissing?: boolean;
     ref?: string;
       receiptNo?: string;
     receiptImage?: string;
@@ -1529,6 +1531,14 @@ export default function ExpenseRecords() {
         amount: l.amount,
       };
       const rid = l.resolvedExpenseId || "";
+      // Its receipt record is gone: still pending, not a reimbursement or a "deleted" record.
+      if (l.type === "PURCHASE" && l.receiptRecordMissing) {
+        buckets.pendingPurchase.push({
+          ...item,
+          note: `receipt record missing${l.receiptNo ? ` (OR ${l.receiptNo})` : ""} — add the receipt again`,
+        });
+        continue;
+      }
       // Before the DTR had a COH Deposit section, deposits to HO were logged as expense rows. They count in
       // DTR Expenses, while the matching record is a DEPOSIT (left out of the records total).
       const linkedRec = rid ? byId.get(rid) : undefined;
@@ -4673,6 +4683,11 @@ export default function ExpenseRecords() {
                         ),
                       };
                     });
+                  const recordMissingIds = new Set(
+                    dtrLines.rows
+                      .filter((l) => l.receiptRecordMissing)
+                      .map((l) => l.id),
+                  );
                   const purchaseItems: Pending[] = [
                     ...agingPurchases,
                     ...fromLines,
@@ -4680,8 +4695,9 @@ export default function ExpenseRecords() {
                     key: `p-${p.id}`,
                     kind: "purchase",
                     date: p.date,
-                    label:
-                      p.received > 0
+                    label: recordMissingIds.has(p.id)
+                      ? `${p.label} — receipt record missing, add the receipt again`
+                      : p.received > 0
                         ? `${p.label} — ${fmt(p.received)} receipted of ${fmt(p.given)}, remaining`
                         : p.label,
                     amount: p.amount,
