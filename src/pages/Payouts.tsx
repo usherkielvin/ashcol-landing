@@ -28,7 +28,7 @@ import CorrectionHistoryModal from './Payouts/CorrectionHistoryModal'
 import BulkCorrectionModal, { type BulkCorrectionItem } from './Payouts/BulkCorrectionModal'
 import PendingItemFormModal, { type PendingItemInput } from './Payouts/PendingItemFormModal'
 import PendingItemsModal, { type PostPendingExtra } from './Payouts/PendingItemsModal'
-import { listCorrections, createCorrections, postCorrection, voidCorrection, voidCorrectionBatch, parseCorrectionChanges, CorrectionError, type CorrectionItemInput, type PayrollCorrection } from '../utils/payrollCorrectionsApi'
+import { listCorrections, createCorrections, postCorrection, voidCorrection, voidCorrectionBatch, parseCorrectionChanges, CorrectionError, type PayrollCorrection } from '../utils/payrollCorrectionsApi'
 import HoldModal from './Payouts/HoldModal'
 import CompletePayoutModal from './Payouts/CompletePayoutModal'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
@@ -284,8 +284,8 @@ export default function Payouts() {
   const [pendingOpen, setPendingOpen] = useState(false)
   const [pendingBusyId, setPendingBusyId] = useState<string | null>(null)
   const [pendingError, setPendingError] = useState<string | null>(null)
-  // The flag form: a ticket to flag, or {} for an installer-level item with no ticket (null = closed).
-  const [flagTarget, setFlagTarget] = useState<{ ticket?: PayrollRow } | null>(null)
+  // The flag form: the closed-week ticket being flagged for review (null = closed). Every pending item has a ticket as its basis.
+  const [flagTarget, setFlagTarget] = useState<{ ticket: PayrollRow } | null>(null)
   const [flagSubmitting, setFlagSubmitting] = useState(false)
   const [flagError, setFlagError] = useState<string | null>(null)
   const [selectedTicketForModal, setSelectedTicketForModal] = useState<Ticket | null>(null)
@@ -1803,47 +1803,29 @@ export default function Payouts() {
     })
   }
 
-  // Installers on the week on screen, for an item that belongs to no ticket (value = the name the ledger stores).
-  const flagInstallerOptions = (): { value: string; label: string }[] => {
-    const seen = new Map<string, { value: string; label: string }>()
-    for (const r of rows) {
-      if (!rowInActiveWindow(r) || isCarryOver(r)) continue
-      const key = resolveGroupKey(r.installerName)
-      if (inHouseTechnicianNames.has(key) || seen.has(key)) continue
-      seen.set(key, { value: r.installerName, label: displayInstallerName(r.installerName) })
-    }
-    return Array.from(seen.values()).sort((a, b) => a.label.localeCompare(b.label))
-  }
-
-  const openFlagModal = (ticket?: PayrollRow) => {
+  const openFlagModal = (ticket: PayrollRow) => {
     setFlagError(null)
-    setFlagTarget(ticket ? { ticket } : {})
+    setFlagTarget({ ticket })
   }
 
-  // Records a ticket to review, or an installer-level amount, as PENDING. Nothing is paid or deducted yet.
+  // Records a ticket to review as PENDING. Nothing is paid or deducted until it is posted to an open week.
   const submitFlag = async (input: PendingItemInput) => {
     if (viewOnly || !branchFilter || !activeWeek || !flagTarget) return
     setFlagSubmitting(true)
     setFlagError(null)
     try {
       const ticket = flagTarget.ticket
-      let item: CorrectionItemInput
-      if (ticket) {
-        const id = (await resolveSavedEntryIds([{ row: ticket, month: saveMonthOf(ticket) }])).get(ticket.id)
-        if (!id) {
-          setFlagError('Could not find this ticket in the saved payroll. Reload the page and try again.')
-          return
-        }
-        item = { originEntryId: id }
-      } else {
-        item = { installerName: input.installerName, amount: input.amount, originWeekFrom: activeWeek.from }
+      const id = (await resolveSavedEntryIds([{ row: ticket, month: saveMonthOf(ticket) }])).get(ticket.id)
+      if (!id) {
+        setFlagError('Could not find this ticket in the saved payroll. Reload the page and try again.')
+        return
       }
-      await createCorrections({ branchId: branchFilter, reason: input.reason, items: [item] })
+      await createCorrections({ branchId: branchFilter, reason: input.reason, items: [{ originEntryId: id }] })
       setFlagTarget(null)
       void refreshCorrections()
       setConfirmDialog({
         title: 'Saved as Pending',
-        message: ticket ? `${ticket.ticketNumber || 'This ticket'} is flagged for review.` : 'The item is saved as pending.',
+        message: `${ticket.ticketNumber || 'This ticket'} is flagged for review.`,
         detail: 'It changes no one\u2019s pay until you post it to an open week from Pending Items.',
         confirmText: 'OK',
         variant: 'info',
@@ -4900,19 +4882,6 @@ export default function Payouts() {
                 </button>
               )}
 
-              {canManagePayroll && isWeekClosed && (
-                <button
-                  type="button"
-                  onClick={() => openFlagModal()}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border transition-all shadow-xs active:scale-95 cursor-pointer"
-                  style={{ color: '#D97706', borderColor: isLight ? '#fde68a' : 'rgba(217,119,6,0.35)', backgroundColor: isLight ? '#fffbeb' : 'rgba(217,119,6,0.08)' }}
-                  title="Record something to settle later against this closed week — a shortage, or an amount not known yet"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add Pending Item</span>
-                </button>
-              )}
-
               {canManagePayroll && branchFilter && pendingItems.length > 0 && (
                 <button
                   type="button"
@@ -6874,7 +6843,6 @@ export default function Payouts() {
           ticket={flagTarget.ticket}
           weekFrom={activeWeek.from}
           weekTo={activeWeek.to}
-          installerOptions={flagInstallerOptions()}
           onClose={() => { setFlagTarget(null); setFlagError(null) }}
           onSubmit={submitFlag}
           submitting={flagSubmitting}

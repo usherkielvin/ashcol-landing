@@ -110,7 +110,7 @@ the **backend does it in one transaction** behind one endpoint, instead of the b
 
 ### Phase 4 — Pending items and installer-level corrections — DONE (uncommitted; not yet tried in a browser against a running backend)
 - [x] **Flag for Review** on a closed-week ticket (reason required): recorded PENDING with no amount, changes no pay. Button in the ticket's detail popup.
-- [x] **Add Pending Item** on a closed week: an installer-level item with no ticket (installer, optional signed amount, reason), tied to the closed week on screen
+- [x] ~~**Add Pending Item** (installer-level, no ticket)~~ — **removed from the portal by decision**: every correction needs a basis (a ticket). The ₱350 items are corrected with Adjust Balance on their tickets. The backend can still store a no-ticket item; nothing in the portal creates one.
 - [x] **Pending Items (N)** list for the branch (any week), grouped by installer, with age (amber after 7 days). Each item: **Post to week** (open week; a flagged ticket adds a column + corrected amount, an installer-level item an amount) or **Dismiss** (reason required, kept in history as Voided)
 - [x] Roster badge "N pending" next to the installer's name (opens the list)
 - [x] Closing a week now notes how many pending items from earlier weeks are still unsettled (a note in the confirm dialog, not a block)
