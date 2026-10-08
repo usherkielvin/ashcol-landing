@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Loader2 } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
-import type { PayrollRow } from '../../utils/payrollDerive';
+import { parseAdjustmentLog, type PayrollRow } from '../../utils/payrollDerive';
 import { weeksOfMonth, nextMonth, formatMonth, todayYMD, type PayrollWeek, type WeekCycle } from '../../utils/payrollWeeks';
 import type { PayrollWeekClosure } from './payoutUtils';
-import { num, peso, pesoSigned } from './payoutUtils';
+import { num, peso, pesoSigned, paidColumnAmount } from './payoutUtils';
 
 interface AdjustBalanceModalProps {
   adjustRow: { row: PayrollRow; month: string };
@@ -60,13 +60,17 @@ export default function AdjustBalanceModal({
 
   const cols = getAdjustableCols();
   const rowsView = cols.map(col => {
-    const from = num(getColAccessor(col.key).get(adjustRow.row));
+    const from = paidColumnAmount(adjustRow.row, col.key, getColAccessor(col.key).get(adjustRow.row));
     const raw = adjustEdits[col.key];
     const to = raw === undefined || raw === '' ? from : num(raw);
     return { ...col, from, to, delta: Math.round((to - from) * 100) / 100 };
   });
   const net = Math.round(rowsView.reduce((sum, r) => sum + r.delta, 0) * 100) / 100;
   const canSubmit = net !== 0 || rowsView.some(r => r.delta !== 0);
+  const paidTotal = Math.round(rowsView.reduce((sum, r) => sum + r.from, 0) * 100) / 100;
+  const correctedTotal = Math.round((paidTotal + net) * 100) / 100;
+  const isReleased = adjustRow.row.status === 'COMPLETE';
+  const priorAdjustments = parseAdjustmentLog(adjustRow.row);
 
   return createPortal(
     <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-150">
@@ -77,7 +81,12 @@ export default function AdjustBalanceModal({
             <div className="text-xs font-semibold mt-1 truncate" style={{ color: textMuted }}>
               {adjustRow.row.customerName || 'No customer'} · {adjustRow.row.ticketNumber || 'No ticket'} · <span className="text-emerald-500">{displayInstallerName(adjustRow.row.installerName)}</span>
             </div>
-            <div className="text-[11px] mt-1" style={{ color: textMuted }}>This week is closed and stays as paid. Enter the corrected amount per column — the difference is added or deducted in the open week you pick.</div>
+            <div className="text-[11px] mt-1" style={{ color: textMuted }}>This week is closed and stays as paid. <b>Paid</b> is what was released to the tech{isReleased ? ' (payout completed)' : ''}{priorAdjustments.length > 0 ? `, including ${priorAdjustments.length} earlier adjustment${priorAdjustments.length === 1 ? '' : 's'}` : ''}. Enter the corrected amount per column — the difference is added or deducted in the open week you pick.</div>
+            <div className="mt-2 flex items-center gap-2 flex-wrap text-[11px] font-bold">
+              <span className="px-2 py-1 rounded-lg" style={{ color: isReleased ? '#059669' : '#D97706', backgroundColor: isReleased ? (isLight ? '#ecfdf5' : 'rgba(16,185,129,0.12)') : (isLight ? '#fffbeb' : 'rgba(217,119,6,0.12)') }}>{isReleased ? 'Payout completed' : 'Payout not completed'}</span>
+              <span className="px-2 py-1 rounded-lg tabular-nums" style={{ color: textPrimary, backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>Paid ₱{peso(paidTotal)}</span>
+              <span className="px-2 py-1 rounded-lg tabular-nums" style={{ color: '#8B5CF6', backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.10)' }}>Corrected ₱{peso(correctedTotal)}</span>
+            </div>
           </div>
           <button type="button" onClick={onClose} className="p-2 rounded-full shrink-0 border cursor-pointer hover:bg-red-500 hover:border-red-500 hover:text-white transition-all" style={{ color: textMuted, backgroundColor: inputBg, borderColor: inputBorder }} aria-label="Close">
             <X className="w-4 h-4" strokeWidth={2.5} />

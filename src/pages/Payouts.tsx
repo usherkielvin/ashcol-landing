@@ -75,7 +75,7 @@ import { Settings2, Columns3, FileDown } from 'lucide-react';
 import { listShareLinks, listPayoutEmails, sendPayoutEmail, type PayoutShareLink, type PayoutEmailStatus, type PayoutEmailSummary, type PayoutEmailResult } from '../utils/payoutShareApi';
 import { PayoutEmailChip, PayoutEmailToast, type PayoutEmailToastState } from './Payouts/PayoutEmailParts';
 import { buildPayoutEmailSummary, emailedDay, maskEmail } from './Payouts/payoutEmail';
-import { num, peso, pesoSigned, shortDate, longDate, getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, PAYOUT_NOTE_KEY, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef, NET_COLUMN, duplicateLabelKey, findDuplicateColumnGroups } from './Payouts/payoutUtils';
+import { num, peso, pesoSigned, paidColumnAmount, shortDate, longDate,getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, PAYOUT_NOTE_KEY, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef, NET_COLUMN, duplicateLabelKey, findDuplicateColumnGroups } from './Payouts/payoutUtils';
 
 /** Orders member accounts for name matching: active members of the selected branch first, then other active
  *  members, then inactive ones. A first name that several accounts share must resolve to the branch's own member. */
@@ -1583,7 +1583,7 @@ export default function Payouts() {
     const changes = getAdjustableCols().flatMap(col => {
       const raw = adjustEdits[col.key]
       if (raw === undefined || raw === '') return []
-      const from = num(getColAccessor(col.key).get(origin))
+      const from = paidColumnAmount(origin, col.key, getColAccessor(col.key).get(origin))
       const to = num(raw)
       const delta = Math.round((to - from) * 100) / 100
       return delta === 0 ? [] : [{ key: col.key, label: col.label, from, to, delta }]

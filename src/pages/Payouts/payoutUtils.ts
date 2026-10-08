@@ -1,4 +1,4 @@
-import { rowTotal, payFactor, isCarryOver, type PayrollRow } from '../../utils/payrollDerive'
+import { rowTotal, payFactor, isCarryOver, parseAdjustmentLog, type PayrollRow } from '../../utils/payrollDerive'
 
 
 export const num = (v: number | string | null | undefined): number => {
@@ -48,7 +48,18 @@ export const avatarColor = (name: string) => {
 
 // Legacy date helpers removed — week logic now lives in payrollWeeks.ts
 
-export const rowAddOns = (r: PayrollRow): number => Math.max(0, rowTotal(r) - num(r.installationFee) * payFactor(r))
+const round2 = (n: number) => Math.round(n * 100) / 100
+
+/** What was actually released for one column of a ticket: the cell value scaled by the share paid
+ *  (50% until the balance is released), plus every adjustment already posted on that column. */
+export const paidColumnAmount = (r: PayrollRow, key: string, raw: number | string | null | undefined): number => {
+  const factor = r.customFields?.['pay:balanceReleased'] === '1' ? 1 : payFactor(r)
+  const adjusted = parseAdjustmentLog(r).reduce(
+    (sum, e) => sum + e.changes.filter(c => c.key === key).reduce((a, c) => a + c.delta, 0), 0)
+  return round2(num(raw) * factor + adjusted)
+}
+
+export const rowAddOns =(r: PayrollRow): number => Math.max(0, rowTotal(r) - num(r.installationFee) * payFactor(r))
 
 // A job counts once its schedule status is a DONE outcome — install, cleaning, checkup, service,
 // etc. — so service branches (mostly cleanings) don't read as zero work. installerRows is already
