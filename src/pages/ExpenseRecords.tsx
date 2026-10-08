@@ -1634,6 +1634,12 @@ export default function ExpenseRecords() {
       hasTypes && dtrExpenses.total != null
         ? Math.max(0, dtrExpenses.total - expenseLinesTotal - recordedAdvances)
         : 0;
+    // Today's purchases are not "waiting for receipt" yet: the receipt is chased from the next day.
+    const now = new Date();
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    buckets.pendingPurchase = buckets.pendingPurchase.filter(
+      (i) => !i.date || i.date < todayKey,
+    );
     const sum = (list: Item[]) => list.reduce((acc, i) => acc + i.amount, 0);
     return { buckets, cashAdvance, sum };
   }, [
@@ -2076,20 +2082,23 @@ export default function ExpenseRecords() {
       complete?: boolean;
       remaining?: number;
     };
+    // Saved: close the dialog right away and refresh in the background instead of keeping the spinner up for the reload.
     setReceiptTarget(null);
     setDataVersion((v) => v + 1);
-    await reload();
+    void reload();
     const over = Math.round((parseFloat(r.amount) - target.amount) * 100) / 100;
+    // Deferred so the dialog is gone before the (blocking) alert opens.
+    const notify = (msg: string) => setTimeout(() => alert(msg), 60);
     if (out.complete === false && (out.remaining || 0) > 0.005) {
-      alert(
+      notify(
         `Receipt saved to the DTR and Expense Records.\n\n₱${(out.remaining || 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })} of this purchase is still pending. Add the next receipt when you have it — it stays in Pending receipts until the receipts cover the cash given.`,
       );
     } else if (over > 0.005) {
-      alert(
+      notify(
         `Receipt saved to the DTR and Expense Records (₱${target.amount.toLocaleString("en-PH", { minimumFractionDigits: 2 })}, the cash given).\n\nThe receipt is ₱${over.toLocaleString("en-PH", { minimumFractionDigits: 2 })} higher than that. ${target.worker || "The member"} paid the extra, so add a REIMBURSE row for ₱${over.toLocaleString("en-PH", { minimumFractionDigits: 2 })} under Expenses with Receipts on the DTR — it is offered there ready-filled.`,
       );
     } else if ((out.refundDue || 0) > 0.005 && !out.cashReturnFound) {
-      alert(
+      notify(
         `Receipt saved to the DTR and Expense Records.\n\nThe receipt is ₱${(out.refundDue || 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })} lower than the cash given. Make sure that cash return is entered under Cash Returns on the DTR (pick the REFUND entry for this purchase).`,
       );
     }
@@ -4145,8 +4154,15 @@ export default function ExpenseRecords() {
                   : l.actualAmount || 0),
             0,
           );
+          const todayKey = (() => {
+            const n = new Date();
+            return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
+          })();
           const pendingPurchases = purchaseLines
-            .filter((l) => !l.receiptReturned)
+            .filter(
+              (l) =>
+                !l.receiptReturned && (!l.reportDate || l.reportDate < todayKey),
+            )
             .reduce(
               (acc, l) => acc + Math.max(0, l.amount - (l.actualAmount || 0)),
               0,
