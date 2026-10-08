@@ -4,6 +4,7 @@ import {
   formatFetchError,
   parseCreatedTicketResponse,
   isNegotiatorCandidate,
+  branchAliasKey,
   isTaguigBranchRef,
   parseGlobalBranchScope,
   type BranchStaffOption,
@@ -650,6 +651,10 @@ export function getBranchDisplayName(id: string | null): string {
   if (!id || id === 'ALL_BRANCHES') return 'All branches'
   if (isTaguigBranchRef(id)) {
     return parseGlobalBranchScope(id).branchName
+  }
+  // Legacy branch records use UUID ids — never show the raw id; fall back to the known alias, else blank.
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim())) {
+    return (branchAliasKey(id) || '').toUpperCase()
   }
   const upper = id.toUpperCase()
   let name = upper.replace(/^BR-/i, '').replace(/-(sales|services|service)$/i, '').replace(/-/g, ' ').trim()

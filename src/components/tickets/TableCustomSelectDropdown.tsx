@@ -285,7 +285,7 @@ export function TableCustomSelectDropdown({
                       color: isHighlighted || isSelected ? undefined : textPrimary,
                     }}
                   >
-                    <div className="flex flex-col min-w-0 pr-2">
+                    <div className="flex flex-col min-w-0 flex-1 pr-2">
                       <div className="flex items-center gap-1.5">
                         <span className="text-xs font-bold uppercase tracking-wide truncate">
                           {opt.label}
@@ -301,7 +301,7 @@ export function TableCustomSelectDropdown({
                     <div className="flex items-center gap-2 shrink-0">
                       {opt.badge && (
                         <span
-                          className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border shrink-0"
+                          className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border shrink-0 max-w-[90px] truncate"
                           style={{
                             backgroundColor: isLight ? '#f1f5f9' : 'rgba(30, 41, 59, 0.8)',
                             borderColor: isLight ? '#cbd5e1' : '#334155',
