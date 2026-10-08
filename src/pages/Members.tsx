@@ -1546,6 +1546,21 @@ export default function Members() {
                       </span>
                     )}
 
+                    {/* Personal Email Chip */}
+                    {e.personalEmail && (
+                      <span
+                        className="text-[11px] font-semibold px-2.5 py-1 rounded-lg flex items-center gap-1.5 border"
+                        style={{
+                          backgroundColor: inputBg,
+                          borderColor: inputBorder,
+                          color: textMuted,
+                        }}
+                      >
+                        <Mail className="w-3 h-3 text-emerald-500 shrink-0" />
+                        <span className="truncate max-w-[150px]">{e.personalEmail.toLowerCase()}</span>
+                      </span>
+                    )}
+
                     {/* Contact Phone Chip */}
                     {e.phone && (
                       <a
@@ -1574,7 +1589,7 @@ export default function Members() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr style={{ backgroundColor: isLight ? '#f8fafc' : '#080f1c', borderBottom: `1px solid ${border}` }}>
-                {['Member', 'Role', 'Branch', 'Contact', 'Status'].map((h, idx, arr) => (
+                {['Member', 'Role', 'Branch', 'Personal Email', 'Contact', 'Status'].map((h, idx, arr) => (
                   <th
                     key={h}
                     className={`px-6 py-3.5 text-xs font-semibold uppercase tracking-wider whitespace-nowrap border-r ${idx === 0 ? 'text-left' : 'text-center'}`}
@@ -1598,11 +1613,11 @@ export default function Members() {
                         </div>
                       </div>
                     </td>
-                    {[2, 3, 4, 5].map((j, idx) => (
+                    {[2, 3, 4, 5, 6].map((j, idx) => (
                       <td
                         key={j}
                         className="px-6 py-4 border-r text-center"
-                        style={{ borderColor: border, borderRight: idx === 3 ? 'none' : `1px solid ${border}` }}
+                        style={{ borderColor: border, borderRight: idx === 4 ? 'none' : `1px solid ${border}` }}
                       >
                         <div className="h-4 rounded animate-pulse mx-auto" style={{ backgroundColor: inputBg, width: '60%' }} />
                       </td>
@@ -1611,7 +1626,7 @@ export default function Members() {
                 ))
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-16 text-center">
+                  <td colSpan={6} className="px-6 py-16 text-center">
                     <p className="text-sm font-medium" style={{ color: textMuted }}>No members found</p>
                     <p className="text-xs mt-1" style={{ color: textMuted }}>Try a different search or filter.</p>
                   </td>
@@ -1689,6 +1704,17 @@ export default function Members() {
                         <div className="flex items-center justify-center gap-1.5 text-sm whitespace-nowrap" style={{ color: textMuted }}>
                           <span className="font-semibold" style={{ color: textPrimary }}>{e.branchName.toUpperCase()}</span>
                         </div>
+                      ) : (
+                        <span className="text-xs italic" style={{ color: textMuted }}>—</span>
+                      )}
+                    </td>
+
+                    {/* Personal Email */}
+                    <td className="px-6 py-5 border-r text-center" style={{ borderColor: border }}>
+                      {e.personalEmail ? (
+                        <span className="text-sm font-semibold truncate max-w-[200px] inline-block" style={{ color: textPrimary }}>
+                          {e.personalEmail.toLowerCase()}
+                        </span>
                       ) : (
                         <span className="text-xs italic" style={{ color: textMuted }}>—</span>
                       )}

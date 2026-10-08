@@ -5637,13 +5637,16 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
       const options = negotiatorsForBranch(ticketBranchId)
       const current = editingCell.value
       const currentLower = current.trim().toLowerCase()
-      const matchedOption = currentLower
-        ? options.find(emp => {
-            const nameLower = emp.name.toLowerCase()
-            return nameLower === currentLower || nameLower.includes(currentLower) || currentLower.includes(nameLower)
-          })
-        : undefined
-      const selectValue = matchedOption ? matchedOption.name : current
+      // Match the saved account by id first — two staff can share a first name (display is first-name only).
+      const ticketNegoId = (ticket.negotiatorId || ticket.negotiator_id || '').trim()
+      const matchedOption = (ticketNegoId ? options.find(emp => emp.id === ticketNegoId) : undefined)
+        ?? (currentLower
+          ? options.find(emp => {
+              const nameLower = emp.name.toLowerCase()
+              return nameLower === currentLower || nameLower.includes(currentLower) || currentLower.includes(nameLower)
+            })
+          : undefined)
+      const selectValue = matchedOption ? matchedOption.id : current
 
       const dropdownOptions: DropdownOption[] = options.map(emp => {
         const fullName = (emp.name || '').trim()
@@ -5653,7 +5656,8 @@ export default function Tickets({ surface }: { surface: TicketsSurface }) {
         const branchName = getBranchDisplayName(emp.branchId || null)
         return {
           id: emp.id,
-          value: emp.name,
+          // The account id is the value so the saved negotiator is never resolved from a name.
+          value: emp.id,
           label: cleanLabel,
           subLabel: fullName !== cleanLabel ? fullName : undefined,
           badge: branchName ? branchName.toUpperCase() : undefined,

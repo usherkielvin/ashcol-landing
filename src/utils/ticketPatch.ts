@@ -976,13 +976,18 @@ export function buildCellPatchBody(
     }
     case 'NEGOTIATOR': {
       if (!v) break
+      // Account id is authoritative. A name is only accepted when it identifies exactly one account —
+      // never "first match", since staff can share a first name (e.g. two Angies on different accounts).
       const needle = v.toLowerCase()
-      const emp = employees.find(e =>
-        e.id === v
-        || (e.name || '').trim().toLowerCase() === needle
-        || (e.name || '').toLowerCase().includes(needle),
-      )
-      if (emp?.id) body.negotiatorId = emp.id
+      const byId = employees.find(e => e.id === v)
+      if (byId?.id) {
+        body.negotiatorId = byId.id
+        break
+      }
+      const exact = employees.filter(e => (e.name || '').trim().toLowerCase() === needle)
+      if (exact.length === 1) {
+        body.negotiatorId = exact[0].id
+      }
       break
     }
     default:
