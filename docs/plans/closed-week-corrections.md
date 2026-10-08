@@ -11,7 +11,7 @@ Repos touched: `ashcol-web-portal` and `ashcol-service-api`. **Has a schema chan
 | Area | Behaviour | Where |
 |---|---|---|
 | Close week | Inserts a `payroll_week_closures` row. Rows whose work date is inside the week are frozen. | `PayrollService.closeWeek`, `replaceEntries` |
-| Reopen week | **Deletes** the closure row. No reason, no record of who reopened or what changed after. | `PayrollService.reopenWeek`, `Payouts.tsx` `handleReopenWeek` |
+| Reopen week | **Deletes** the closure row. No reason, no record of who reopened or what changed after. (To be removed — see Phase 5.) | `PayrollService.reopenWeek`, `Payouts.tsx` `handleReopenWeek` |
 | Adjust Balance | One closed-week ticket at a time. Posts the difference as an adjustment row in an open week and logs it on the ticket in `customFields['pay:adjLog']`. | `Payouts.tsx` `submitAdjust`, `AdjustBalanceModal.tsx` |
 | Correction History | Rebuilt in the browser by downloading 3 whole months and parsing each row's JSON log. | `Payouts.tsx` `refreshCorrections`, `CorrectionHistoryModal.tsx` |
 | Earth Grounding | Stamped automatically from the branch rate (default ₱100) on the first ticket of every installer-day, whether grounding was done or not. | `payrollDerive.ts` `applyDailyAllowance` |
@@ -38,11 +38,10 @@ Repos touched: `ashcol-web-portal` and `ashcol-service-api`. **Has a schema chan
 **Rule: a closed week is what was paid. It never changes. Every later change is a correction that points back to it
 and lands in an open week.**
 
-Two clear paths, chosen by the system, not by habit:
-
-- **Not paid out yet** (no payout in the week is marked Completed) → *Reopen with reason*. Logged, and the week's
-  totals at close are kept so the difference after re-closing is visible.
-- **Already paid** → *Correction*. Reopen is blocked (admin override with a typed reason).
+**Lifecycle (confirmed by the user):** a tech set to *Completed* = payout released. Once every tech in the week is
+Completed and their payouts are sent, the week is closed. **A closed week is never reopened and never edited.** The
+only way to change money after close is a correction, which is added or deducted in the open week you pick (usually
+the next one) and shows there.
 
 ### Corrections ledger (new backend table `payroll_corrections`)
 
@@ -69,22 +68,24 @@ the **backend does it in one transaction** behind one endpoint, instead of the b
 
 ## 4. Decisions needed before coding
 
-- [ ] **D1. Block Reopen once any payout in the week is Completed?** Recommended: yes, admin/management override with reason.
-- [ ] **D2. Who may reopen?** Recommended: admin/management only. Posting corrections and closing: anyone with payroll access.
+- [x] **D1. Reopen?** Decided: a closed week is never reopened. No override.
+- [x] **D2. Who may reopen?** Decided: nobody. Posting corrections and closing: anyone with payroll access.
+- [x] **D6. Closing a week while some techs are not Completed** — Decided: block. A week cannot be closed until every tech with payroll rows in it is Completed; the message lists who is not.
 - [ ] **D3. Deduction bigger than the next payout** — allow a negative net with a warning (recommended for v1), or split across cutoffs?
 - [ ] **D4. Grounding rule** — stop auto-stamping Earth Grounding and pay it only when typed in (recommended), or keep auto-stamp and add a "c/o customer" flag per ticket? (Quick stop-gap with no code: set the branch's Earth Grounding rate to 0 in Payroll Settings.)
 - [ ] **D5. Confirm reading of PAYROLL.md:** Glyza Cruz, Mikko Librado, Raquel Baynosa, Juliet Rondola and Teodora San Jose are *customers* on tickets under installer Mariano.
 
 ## 5. Phases (one per command)
 
-### Phase 1 — Backend: ledger + atomic endpoints (schema)
-- [ ] `PayrollCorrection` entity + repository; migration `V163__create_payroll_corrections.sql`
-- [ ] Matching manual script in `scripts/postgres/` (RLS deny policy like `create_payroll_week_closures.sql`) and add to `prod-schema-patch.sql`. **Prod has Flyway off and `ddl-auto=validate`: the SQL must be run before deploy or the backend will not boot.**
-- [ ] `POST /v1/payroll/corrections` — one or many items; creates ledger rows + adjustment rows in one transaction, under the existing branch+month lock; rejects a closed target week with a real error
-- [ ] `POST /v1/payroll/corrections/{id}/post` (pending → posted), `/{id}/void` (removes the adjustment row; only while the target week is open), `GET /v1/payroll/corrections?branchId&status&installer&weekFrom`
-- [ ] One-time idempotent backfill of existing `pay:adjLog` entries into the ledger (same pattern as `TicketCategoryBackfill`)
-- [ ] Tests next to `PayrollBranchViewIntegrationTest`: post, bulk, void, closed-target rejection, non-payroll user denied
-- [ ] Gate: `mvn test` (or the repo's wrapper) passes
+### Phase 1 — Backend: ledger + atomic endpoints (schema) — DONE (ashcol-service-api, uncommitted)
+- [x] `PayrollCorrection` entity + repository; migration `V163__create_payroll_corrections.sql`
+- [x] Manual script `scripts/postgres/create_payroll_corrections.sql` (with RLS deny policy) and a block added to `prod-schema-patch.sql`. **Prod has Flyway off and `ddl-auto=validate`: run the SQL before deploying or the backend will not boot.**
+- [x] `POST /api/v1/payroll/corrections` — one or many tickets; with a target week they post at once, without one they are recorded PENDING. One transaction, under the existing branch+month lock. Paid amounts are computed on the server (cell × 50% share + earlier posted corrections), never taken from the client.
+- [x] `POST /corrections/{id}/post`, `POST /corrections/{id}/void` (a posted one is voidable only while its week is open), `GET /corrections?branchId&status&installer&weekFrom` (payroll only)
+- [x] Idempotent startup backfill of existing `pay:adjLog` entries into the ledger (`PayrollCorrectionBackfill`)
+- [x] Tests: `PayrollCorrectionIntegrationTest` (11) — post, repeat correction, 50% ticket, open-week origin rejected, closed target rejected and nothing written, pending→post + bulk batch, void, void after close blocked, reserved keys / missing reason, non-payroll denied, backfill
+- [x] Gate: the 11 new tests and the existing payroll tests (branch view, release filter, share link, email) pass. The full `mvn test` suite was not run.
+- Notes: (1) the adjustment row is created `PENDING` (the old portal flow copied the origin's `COMPLETE`), so a tech's target week has to be completed again once a correction lands in it. (2) The corrected ticket's `pay:adjLog` is still written so today's portal screens keep working; remove it in Phase 2 once the portal reads the ledger.
 
 ### Phase 2 — Portal: move Adjust Balance and History onto the ledger
 - [ ] `src/utils/payrollCorrectionsApi.ts` (feature API helper, like `vehicleApi.ts`)
@@ -107,12 +108,13 @@ the **backend does it in one transaction** behind one endpoint, instead of the b
 - [ ] Warn when closing a week while the branch still has pending items older than one cutoff
 - [ ] Gate: as Phase 2
 
-### Phase 5 — Reopen and lock hardening (schema)
-- [ ] `payroll_week_closures`: add `close_snapshot` (per-installer gross / deductions / net at close), `reopened_by`, `reopened_at`, `reopen_reason`; reopen keeps the row as history instead of deleting it (migration + manual script)
-- [ ] Reopen requires a reason; blocked per D1; permissions per D2, and backend + portal use the same rule
-- [ ] On re-close, show what changed against the previous snapshot
+### Phase 5 — Closed means closed (schema)
+- [ ] Remove the Reopen button and `DELETE /v1/payroll/closures` (backend returns 405/410); `reopenWeek` removed from the service
+- [ ] `payroll_week_closures`: add `close_snapshot` (per-installer gross / deductions / net at close) so what each tech was paid is stored at close (migration + manual script)
+- [ ] Close guard per D6: backend rejects closing (409 + list of techs not Completed) and the portal disables Close with the same list. Enforced server-side, not just in the UI
 - [ ] Frozen rows accept only an explicit whitelist of `hold:` / `pay:` keys (no `pay:factor`, `pay:status`, `pay:split`) unless the request is the balance-release flow
 - [ ] A save that had frozen rows dropped reports them in the response, and the portal shows it instead of a silent "saved"
+- [ ] Close/Post permissions identical in backend and portal (portal shows buttons to payroll job titles, backend allows only ADMIN/MANAGEMENT/MANAGER for closing)
 - [ ] Gate: backend tests + portal typecheck/lint
 
 ### Phase 6 — Stop the grounding overpayment at the source
