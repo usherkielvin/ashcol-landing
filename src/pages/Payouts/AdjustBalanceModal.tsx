@@ -2,13 +2,18 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Loader2 } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
-import { parseAdjustmentLog, type PayrollRow } from '../../utils/payrollDerive';
+import type { PayrollRow } from '../../utils/payrollDerive';
+import type { PayrollCorrection } from '../../utils/payrollCorrectionsApi';
 import { weeksOfMonth, nextMonth, formatMonth, todayYMD, type PayrollWeek, type WeekCycle } from '../../utils/payrollWeeks';
 import type { PayrollWeekClosure } from './payoutUtils';
 import { num, peso, pesoSigned, paidColumnAmount } from './payoutUtils';
 
 interface AdjustBalanceModalProps {
   adjustRow: { row: PayrollRow; month: string };
+  /** Corrections already posted on this ticket — they are part of what was paid. */
+  priorPosted: PayrollCorrection[];
+  /** Server's explanation when the last attempt was rejected; cleared by the parent on the next try. */
+  submitError?: string | null;
   closures: PayrollWeekClosure[];
   activeMonth: string;
   cycle: WeekCycle;
@@ -27,6 +32,8 @@ interface AdjustBalanceModalProps {
  */
 export default function AdjustBalanceModal({
   adjustRow,
+  priorPosted,
+  submitError,
   closures,
   activeMonth,
   cycle,
@@ -60,7 +67,7 @@ export default function AdjustBalanceModal({
 
   const cols = getAdjustableCols();
   const rowsView = cols.map(col => {
-    const from = paidColumnAmount(adjustRow.row, col.key, getColAccessor(col.key).get(adjustRow.row));
+    const from = paidColumnAmount(adjustRow.row, col.key, getColAccessor(col.key).get(adjustRow.row), priorPosted);
     const raw = adjustEdits[col.key];
     const to = raw === undefined || raw === '' ? from : num(raw);
     return { ...col, from, to, delta: Math.round((to - from) * 100) / 100 };
@@ -70,7 +77,7 @@ export default function AdjustBalanceModal({
   const paidTotal = Math.round(rowsView.reduce((sum, r) => sum + r.from, 0) * 100) / 100;
   const correctedTotal = Math.round((paidTotal + net) * 100) / 100;
   const isReleased = adjustRow.row.status === 'COMPLETE';
-  const priorAdjustments = parseAdjustmentLog(adjustRow.row);
+  const priorAdjustments = priorPosted;
 
   return createPortal(
     <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-150">
@@ -145,6 +152,9 @@ export default function AdjustBalanceModal({
               />
             </label>
           </div>
+          {submitError && (
+            <div className="rounded-xl px-3 py-2 text-xs font-semibold" style={{ color: isLight ? '#B91C1C' : '#FCA5A5', backgroundColor: isLight ? '#fef2f2' : 'rgba(248,113,113,0.12)', border: `1px solid ${isLight ? '#fecaca' : 'rgba(248,113,113,0.3)'}` }}>{submitError}</div>
+          )}
           <div className="flex items-center justify-end gap-3">
             {!(!canSubmit || !adjustTargetWeek || !adjustReason.trim()) ? null : (
               <span className="mr-auto text-[11px] font-semibold" style={{ color: '#D97706' }}>

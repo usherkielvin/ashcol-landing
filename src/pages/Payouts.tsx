@@ -25,6 +25,7 @@ import {
 } from '../utils/payrollWeeks'
 import AdjustBalanceModal from './Payouts/AdjustBalanceModal'
 import CorrectionHistoryModal from './Payouts/CorrectionHistoryModal'
+import { listCorrections, createCorrections, voidCorrection, parseCorrectionChanges, CorrectionError, type PayrollCorrection } from '../utils/payrollCorrectionsApi'
 import HoldModal from './Payouts/HoldModal'
 import CompletePayoutModal from './Payouts/CompletePayoutModal'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
@@ -57,8 +58,6 @@ import {
   paymentStatusOf,
   paymentStatusLabel,
   hasPendingBalance,
-  parseAdjustmentLog,
-  type AdjustmentLogEntry,
   customFieldsForSave,
   isHeldRow,
   isCarryOver,
@@ -75,7 +74,7 @@ import { Settings2, Columns3, FileDown } from 'lucide-react';
 import { listShareLinks, listPayoutEmails, sendPayoutEmail, type PayoutShareLink, type PayoutEmailStatus, type PayoutEmailSummary, type PayoutEmailResult } from '../utils/payoutShareApi';
 import { PayoutEmailChip, PayoutEmailToast, type PayoutEmailToastState } from './Payouts/PayoutEmailParts';
 import { buildPayoutEmailSummary, emailedDay, maskEmail } from './Payouts/payoutEmail';
-import { num, peso, pesoSigned, paidColumnAmount, shortDate, longDate,getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, PAYOUT_NOTE_KEY, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef, NET_COLUMN, duplicateLabelKey, findDuplicateColumnGroups } from './Payouts/payoutUtils';
+import { num, peso, pesoSigned, postedCorrectionsFor, shortDate, longDate,getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, PAYOUT_NOTE_KEY, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef, NET_COLUMN, duplicateLabelKey, findDuplicateColumnGroups } from './Payouts/payoutUtils';
 
 /** Orders member accounts for name matching: active members of the selected branch first, then other active
  *  members, then inactive ones. A first name that several accounts share must resolve to the branch's own member. */
@@ -263,7 +262,10 @@ export default function Payouts() {
   const [correctionsOpen, setCorrectionsOpen] = useState(false)
   // What the Correction History search box starts with (a ticket number when opened from that ticket).
   const [correctionsSearch, setCorrectionsSearch] = useState('')
-  const [corrections, setCorrections] = useState<{ row: PayrollRow; month: string }[]>([])
+  // The corrections ledger for this branch (payroll users only; empty for everyone else).
+  const [corrections, setCorrections] = useState<PayrollCorrection[]>([])
+  const [adjustError, setAdjustError] = useState<string | null>(null)
+  const [voidingCorrectionId, setVoidingCorrectionId] = useState<string | null>(null)
   const [selectedTicketForModal, setSelectedTicketForModal] = useState<Ticket | null>(null)
   const [loadingTicketModal, setLoadingTicketModal] = useState(false)
 
@@ -405,6 +407,12 @@ export default function Payouts() {
   }, [closures, branchFilter, activeWeek])
 
   const isWeekClosed = Boolean(activeWeekClosure)
+  // Corrections made against tickets of the week on screen: what this closed week's payout was adjusted by,
+  // paid out (or deducted) in later weeks. The closed week itself never changes.
+  const weekCorrections = activeWeek
+    ? corrections.filter(c => c.status === 'POSTED' && c.originWeekFrom === activeWeek.from)
+    : []
+  const weekCorrectionsNet = weekCorrections.reduce((sum, c) => sum + c.netAmount, 0)
 
   // Per-branch override of the standard rates (e.g. SILANG's cleaning fee differs from other
   // branches) — parsed from Branch.payrollRates (see "Payroll Settings" modal below), falling
@@ -1536,31 +1544,16 @@ export default function Payouts() {
     void refreshBalances()
   }
 
-  // Every ticket with at least one logged correction (same 3-month scan as the held/balance lists).
+  // The branch's corrections ledger — every correction ever made to a closed week, any month.
+  // Payroll-only on the server, so anyone else just gets an empty list.
   const refreshCorrections = useCallback(async () => {
-    if (!branchFilter) { setCorrections([]); return }
+    if (!branchFilter || !canManagePayroll) { setCorrections([]); return }
     try {
-      const months = [activeMonth, prevMonth(activeMonth), prevMonth(prevMonth(activeMonth))]
-      const collected: { row: PayrollRow; month: string }[] = []
-      const seen = new Set<string>()
-      for (const m of months) {
-        const params = new URLSearchParams({ branchId: branchFilter, month: m })
-        const res = await fetch(`${API_BASE_URL}/v1/payroll?${params.toString()}`, { headers: { Authorization: `Bearer ${getToken()}` } })
-        if (!res.ok) continue
-        const list = await res.json()
-        for (const r of (Array.isArray(list) ? list : []).map(mapSavedPayrollEntry)) {
-          if (isCarryOver(r) || parseAdjustmentLog(r).length === 0) continue
-          const k = rowMatchKey(r)
-          if (seen.has(k)) continue
-          seen.add(k)
-          collected.push({ row: r, month: m })
-        }
-      }
-      setCorrections(collected)
+      setCorrections(await listCorrections(branchFilter))
     } catch (e) {
-      console.error('Failed to load correction history:', e)
+      console.error('Failed to load corrections:', e)
     }
-  }, [branchFilter, activeMonth])
+  }, [branchFilter, canManagePayroll])
 
   useEffect(() => { void refreshCorrections() }, [refreshCorrections])
 
@@ -1571,77 +1564,53 @@ export default function Payouts() {
   ]
 
   const openAdjustModal = (row: PayrollRow) => {
+    setAdjustError(null)
     setAdjustRow({ row, month: saveMonthOf(row) })
   }
 
-  // Post a balance correction for a closed-week ticket: the closed row stays frozen, the difference
-  // (per fee column, add OR deduct) lands as an adjustment row in the chosen open week, and the
-  // change is logged on the original ticket. Inserted first; rolled back if logging fails.
+  // Resolves the saved payroll row behind a table row — the correction endpoint works on the saved
+  // entry's id, and a row rebuilt from a schedule sync may carry a different local id.
+  const resolveSavedEntryId = async (row: PayrollRow, month: string): Promise<string | null> => {
+    const params = new URLSearchParams({ branchId: branchFilter, month })
+    const res = await fetch(`${API_BASE_URL}/v1/payroll?${params.toString()}`, { headers: { Authorization: `Bearer ${getToken()}` } })
+    if (!res.ok) return null
+    const list = await res.json()
+    const key = rowMatchKey(row)
+    const match = (Array.isArray(list) ? list : []).map(mapSavedPayrollEntry).find(r => rowMatchKey(r) === key)
+    return match ? match.id : null
+  }
+
+  // Post a correction for a closed-week ticket: the closed row stays frozen and the server records the
+  // difference from what was paid in the corrections ledger, adding or deducting it as an adjustment row
+  // in the chosen open week — one request, one transaction, nothing to roll back here.
   const submitAdjust = async (adjustEdits: Record<string, string>, adjustTargetWeek: PayrollWeek, adjustReason: string) => {
     if (viewOnly || !adjustRow || !branchFilter || !adjustTargetWeek || !adjustReason.trim()) return
     const { row: origin, month: originMonth } = adjustRow
     const changes = getAdjustableCols().flatMap(col => {
       const raw = adjustEdits[col.key]
-      if (raw === undefined || raw === '') return []
-      const from = paidColumnAmount(origin, col.key, getColAccessor(col.key).get(origin))
-      const to = num(raw)
-      const delta = Math.round((to - from) * 100) / 100
-      return delta === 0 ? [] : [{ key: col.key, label: col.label, from, to, delta }]
+      return raw === undefined || raw === '' ? [] : [{ key: col.key, label: col.label, to: num(raw) }]
     })
     if (changes.length === 0) return
     setAdjustSubmitting(true)
+    setAdjustError(null)
     try {
+      const originEntryId = await resolveSavedEntryId(origin, originMonth)
+      if (!originEntryId) {
+        setAdjustError('Could not find this ticket in the saved payroll. Reload the page and try again.')
+        return
+      }
       const targetWeek = adjustTargetWeek
-      const copyMonth = targetWeek.from.slice(0, 7)
-      const marker = `adj-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-      const at = new Date().toISOString()
-      const by = userDisplayName
-      const reason = adjustReason.trim()
-      const net = Math.round(changes.reduce((sum, c) => sum + c.delta, 0) * 100) / 100
-      const summary = changes.map(c => `${c.label} ${c.delta > 0 ? '+' : '−'}₱${peso(Math.abs(c.delta))}`).join(' · ')
-      const fixedMoney = new Set(COLUMN_DEFS.filter(c => c.isMoney).map(c => c.key))
-      const originWeek = origin.workDate ? weekContaining(origin.workDate, cycle) : null
-
-      const adj: Record<string, unknown> = { ...origin, id: marker, ticketId: undefined, installationUpload: 'ADJUSTMENT', amountCollected: '', actualCollected: '', remarks: '', audited: '' }
-      fixedMoney.forEach(k => { adj[k] = '' })
-      const cf: Record<string, string> = {}
-      for (const c of changes) {
-        if (fixedMoney.has(c.key)) adj[c.key] = String(c.delta)
-        else cf[c.key] = String(c.delta)
-      }
-      cf['hold:carryOver'] = '1'
-      cf['hold:originMonth'] = originMonth
-      cf['hold:originWeekFrom'] = originWeek?.from || ''
-      cf['hold:originWeekTo'] = originWeek?.to || ''
-      cf['hold:originTicketId'] = origin.ticketId || ''
-      cf['hold:targetWeekFrom'] = targetWeek.from
-      cf['hold:targetWeekTo'] = targetWeek.to
-      cf['hold:saveMonth'] = copyMonth
-      cf['hold:approvalNote'] = reason
-      cf['hold:releasedBy'] = by
-      cf['hold:releasedAt'] = at
-      cf['hold:copyMarker'] = marker
-      cf['pay:adjust'] = '1'
-      cf['pay:factor'] = '1'
-      cf['pay:adjSummary'] = summary
-      adj.customFields = cf
-
-      const insertOk = await mutateSavedMonth(branchFilter, copyMonth, rowsIn => [...rowsIn, adj as unknown as PayrollRow], marker)
-      if (!insertOk) {
-        setConfirmDialog({ title: 'Adjustment Failed', message: 'Could not post the adjustment into the target week. No changes were made.', confirmText: 'OK', variant: 'info', onConfirm: () => {} })
-        return
-      }
-      const entry: AdjustmentLogEntry = { id: marker, at, by, reason, targetWeekFrom: targetWeek.from, targetWeekTo: targetWeek.to, net, changes }
-      const origKey = rowMatchKey(origin)
-      const logOk = await mutateSavedMonth(branchFilter, originMonth, rowsIn => rowsIn.map(r => rowMatchKey(r) === origKey ? {
-        ...r,
-        customFields: { ...(r.customFields || {}), 'pay:adjLog': JSON.stringify([...parseAdjustmentLog(r), entry]) },
-      } : r), marker)
-      if (!logOk) {
-        await mutateSavedMonth(branchFilter, copyMonth, rowsIn => rowsIn.filter(r => r.customFields?.['hold:copyMarker'] !== marker))
-        setConfirmDialog({ title: 'Adjustment Failed', message: 'Could not record the correction on the original ticket, so it was rolled back. No changes were made.', confirmText: 'OK', variant: 'info', onConfirm: () => {} })
-        return
-      }
+      const [made] = await createCorrections({
+        branchId: branchFilter,
+        reason: adjustReason.trim(),
+        targetWeekFrom: targetWeek.from,
+        targetWeekTo: targetWeek.to,
+        items: [{ originEntryId, changes }],
+      })
+      const net = made.netAmount
+      const summary = parseCorrectionChanges(made).map(c => `${c.label} ${c.delta > 0 ? '+' : '\u2212'}\u20B1${peso(Math.abs(c.delta))}`).join(' \u00B7 ')
+      // The target month's cached rows predate this adjustment row.
+      delete monthCache.current[`${branchFilter}:${targetWeek.from.slice(0, 7)}`]
       setAdjustRow(null)
       void refreshCorrections()
       // Jump to the week the adjustment landed in so the new row (and the updated payout) is visible
@@ -1656,9 +1625,52 @@ export default function Payouts() {
         variant: 'info',
         onConfirm: () => {},
       })
+    } catch (e) {
+      setAdjustError(e instanceof CorrectionError ? e.message : 'Could not post the adjustment. Nothing was changed.')
     } finally {
       setAdjustSubmitting(false)
     }
+  }
+
+  // A posted correction can be withdrawn only while the week it was applied in is still open.
+  const canVoidCorrection = (c: PayrollCorrection) =>
+    canManagePayroll && c.status === 'POSTED' && Boolean(c.targetWeekFrom && c.targetWeekTo)
+    && !closures.some(cl => cl.branchId === branchFilter && cl.weekFrom <= (c.targetWeekTo as string) && cl.weekTo >= (c.targetWeekFrom as string))
+
+  // Voids a correction on the server (removes its adjustment row) and drops that row from what is on screen.
+  const doVoidCorrection = async (c: PayrollCorrection, reason: string): Promise<boolean> => {
+    setVoidingCorrectionId(c.id)
+    try {
+      await voidCorrection(c.id, reason)
+      const marker = c.adjustmentMarker
+      if (marker) setRows(prev => prev.filter(r => r.customFields?.['hold:copyMarker'] !== marker))
+      if (c.targetWeekFrom) delete monthCache.current[`${branchFilter}:${c.targetWeekFrom.slice(0, 7)}`]
+      void refreshCorrections()
+      return true
+    } catch (e) {
+      setConfirmDialog({
+        title: 'Could Not Void',
+        message: e instanceof CorrectionError ? e.message : 'Could not void the correction. Nothing was changed.',
+        confirmText: 'OK',
+        variant: 'info',
+        onConfirm: () => {},
+      })
+      return false
+    } finally {
+      setVoidingCorrectionId(null)
+    }
+  }
+
+  const submitVoidCorrection = (c: PayrollCorrection) => {
+    setConfirmDialog({
+      title: 'Void Correction',
+      message: `Void the ${pesoSigned(c.netAmount)} correction on ${c.originTicketNumber || 'this ticket'}?`,
+      detail: 'The adjustment is removed from the week it was applied in. The closed week itself is not touched.',
+      confirmText: 'Void Correction',
+      cancelText: 'Keep It',
+      variant: 'discard',
+      onConfirm: () => { void doVoidCorrection(c, 'Voided from Correction History') },
+    })
   }
 
   const openReleaseModal = (row: PayrollRow, month: string, kind?: 'balance') => {
@@ -1801,6 +1813,16 @@ export default function Payouts() {
     const undoKey = marker
     setUndoingRowKey(undoKey)
     try {
+      if (copy.customFields?.['pay:adjust'] === '1') {
+        // An adjustment is a correction — the ledger owns it, so voiding it is the one way to undo it.
+        const owner = corrections.find(c => c.adjustmentMarker === marker && c.status === 'POSTED')
+        if (!owner) {
+          setConfirmDialog({ title: 'Undo Failed', message: 'Could not find this adjustment in the corrections ledger. Reload the page and try again.', confirmText: 'OK', variant: 'info', onConfirm: () => {} })
+          return
+        }
+        await doVoidCorrection(owner, 'Undone from the carry-over table')
+        return
+      }
       const removeOk = await mutateSavedMonth(branchFilter, copyMonth, rowsIn => rowsIn.filter(r => r.customFields?.['hold:copyMarker'] !== marker))
       if (!removeOk) {
         setConfirmDialog({
@@ -1817,13 +1839,6 @@ export default function Payouts() {
       const restoreOk = await mutateSavedMonth(branchFilter, originMonth, rowsIn => rowsIn.map(r => {
         if (rowMatchKey(r) !== origKey) return r
         const cf = { ...(r.customFields || {}) }
-        if (copy.customFields?.['pay:adjust'] === '1') {
-          // Adjustment: the original was never held — just drop this correction from its history.
-          const left = parseAdjustmentLog(r).filter(e => e.id !== marker)
-          if (left.length > 0) cf['pay:adjLog'] = JSON.stringify(left)
-          else delete cf['pay:adjLog']
-          return { ...r, customFields: cf }
-        }
         if (copy.customFields?.['pay:balance'] === '1') {
           // Balance release: the original was never held — just make its withheld half pending again.
           delete cf['pay:balanceReleased']
@@ -1871,7 +1886,6 @@ export default function Payouts() {
         }))
       void refreshHeldTickets()
       void refreshBalances()
-      void refreshCorrections()
     } finally {
       setUndoingRowKey(null)
     }
@@ -3453,6 +3467,17 @@ export default function Payouts() {
                     Locked
                   </span>
                 )}
+                {isWeekClosed && weekCorrections.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setCorrectionsSearch(''); setCorrectionsOpen(true) }}
+                    className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md ml-1 cursor-pointer hover:opacity-80"
+                    style={{ color: '#8B5CF6', backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.14)', border: `1px solid ${isLight ? '#ddd6fe' : 'rgba(139,92,246,0.35)'}` }}
+                    title="Corrections made to this closed week's tickets, applied in later weeks"
+                  >
+                    {weekCorrections.length} correction{weekCorrections.length === 1 ? '' : 's'} · net {pesoSigned(weekCorrectionsNet)} in later weeks
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -3728,7 +3753,9 @@ export default function Payouts() {
                             key={row.id}
                             tabIndex={0}
                             data-sc-row="1"
-                            title={viewOnly || isWeekClosed ? 'Right-click to view job details' : 'Right-click to view job details · Double-click cell to edit'}
+                            title={postedCorrectionsFor(row, corrections).length > 0
+                              ? 'Corrected after this week closed — right-click to view details and the correction history'
+                              : viewOnly || isWeekClosed ? 'Right-click to view job details' : 'Right-click to view job details · Double-click cell to edit'}
                             onContextMenu={e => {
                               e.preventDefault()
                               setDetailRow(row)
@@ -3740,6 +3767,7 @@ export default function Payouts() {
                               fontSize: '13px',
                               color: textPrimary,
                               backgroundColor: rowBg,
+                              ...(postedCorrectionsFor(row, corrections).length > 0 ? { boxShadow: 'inset 3px 0 0 #8B5CF6' } : {}),
                             } as React.CSSProperties}
                           >
                             {groupVisibleColumns.map((col, i) => {
@@ -4617,7 +4645,7 @@ export default function Payouts() {
                   style={{ color: isLight ? '#475569' : '#94A3B8', borderColor: isLight ? '#CBD5E1' : '#334155', backgroundColor: isLight ? '#F1F5F9' : '#1E293B' }}
                   title="Who corrected which ticket amounts after a week closed"
                 >
-                  <span>Corrections ({corrections.reduce((n, c) => n + parseAdjustmentLog(c.row).length, 0)})</span>
+                  <span>Corrections ({corrections.filter(c => c.status === 'POSTED').length})</span>
                 </button>
               )}
 
@@ -5498,14 +5526,14 @@ export default function Payouts() {
                           <span>Adjust Balance</span>
                         </button>
                       )}
-                      {parseAdjustmentLog(liveRow).length > 0 && (
+                      {postedCorrectionsFor(liveRow, corrections).length > 0 && (
                         <button
                           type="button"
                           onClick={() => { setDetailRow(null); setCorrectionsSearch(liveRow.ticketNumber || ''); setCorrectionsOpen(true) }}
                           className={`${actionBtn} hover:bg-violet-500/10`}
                           style={{ color: '#8B5CF6', borderColor: isLight ? '#ddd6fe' : 'rgba(139,92,246,0.35)', backgroundColor: 'transparent' }}
                         >
-                          <span>Correction history ({parseAdjustmentLog(liveRow).length})</span>
+                          <span>Correction history ({postedCorrectionsFor(liveRow, corrections).length})</span>
                         </button>
                       )}
                       {(liveRow.ticketId || liveRow.ticketNumber) && (
@@ -6518,13 +6546,15 @@ export default function Payouts() {
       {adjustRow && (
         <AdjustBalanceModal
           adjustRow={adjustRow}
+          priorPosted={postedCorrectionsFor(adjustRow.row, corrections)}
+          submitError={adjustError}
           closures={closures}
           activeMonth={activeMonth}
           cycle={cycle}
           branchFilter={branchFilter}
           getAdjustableCols={getAdjustableCols}
           getColAccessor={getColAccessor}
-          onClose={() => setAdjustRow(null)}
+          onClose={() => { setAdjustRow(null); setAdjustError(null) }}
           onSubmit={submitAdjust}
           adjustSubmitting={adjustSubmitting}
           displayInstallerName={displayInstallerName}
@@ -6539,6 +6569,9 @@ export default function Payouts() {
           onClose={() => setCorrectionsOpen(false)}
           displayInstallerName={displayInstallerName}
           initialSearch={correctionsSearch}
+          canVoid={canVoidCorrection}
+          onVoid={submitVoidCorrection}
+          voidingId={voidingCorrectionId}
         />
       )}
 

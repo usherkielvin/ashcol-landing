@@ -87,13 +87,17 @@ the **backend does it in one transaction** behind one endpoint, instead of the b
 - [x] Gate: the 11 new tests and the existing payroll tests (branch view, release filter, share link, email) pass. The full `mvn test` suite was not run.
 - Notes: (1) the adjustment row is created `PENDING` (the old portal flow copied the origin's `COMPLETE`), so a tech's target week has to be completed again once a correction lands in it. (2) The corrected ticket's `pay:adjLog` is still written so today's portal screens keep working; remove it in Phase 2 once the portal reads the ledger.
 
-### Phase 2 — Portal: move Adjust Balance and History onto the ledger
-- [ ] `src/utils/payrollCorrectionsApi.ts` (feature API helper, like `vehicleApi.ts`)
-- [ ] `submitAdjust` calls the new endpoint; delete the two-step `mutateSavedMonth` + rollback path for adjustments
-- [ ] "Undo adjustment" calls void
-- [ ] `CorrectionHistoryModal` reads the ledger (no 3-month scan); add status and installer filters
-- [ ] Closed-week view: banner "N corrections posted from this week, net ₱X" and a marker on corrected tickets
-- [ ] Gate: `npx tsc -p tsconfig.app.json --noEmit`, `npm run lint` vs baseline, manual check in the browser
+### Phase 2 — Portal: move Adjust Balance and History onto the ledger — DONE (uncommitted; not yet tried in a browser against a running backend)
+- [x] `src/utils/payrollCorrectionsApi.ts` (types, list / create / post / void, `CorrectionError` carrying the server's message)
+- [x] `submitAdjust` makes one `POST /corrections` call; the two-step `mutateSavedMonth` + manual rollback for adjustments is gone. The saved row's id is resolved from the saved month, not the on-screen row id.
+- [x] "Undo adjustment" (carry-over table) and a new Void button in Correction History both call void; a voided adjustment row is dropped from the screen at once
+- [x] `CorrectionHistoryModal` reads the ledger (no 3-month scan, any month); status and installer filters; posted / pending / voided badge; net counts posted only
+- [x] Closed-week view: header chip "N corrections · net ₱X in later weeks" (opens the history) and a violet marker on corrected rows in the desktop list
+- [x] Adjust Balance's Paid figure and "earlier adjustments" count come from the ledger; the server's rejection message shows in the modal
+- [x] Backend no longer writes `pay:adjLog` on the closed row (it is now never touched); `parseAdjustmentLog` removed from the portal. Legacy logs are still imported once by the backfill.
+- [x] Gate: `npx tsc -p tsconfig.app.json --noEmit` clean; lint on the changed files equals the baseline; backend payroll tests pass (11 correction tests, updated)
+- Notes: the marker is desktop list only (not the mobile cards). Correction History is payroll-only because the list endpoint is. **Deploy order: run the Phase 1 SQL, deploy the backend, then the portal** — the new portal calls `/v1/payroll/corrections`.
+- Still to check by hand: post an adjustment on a closed ticket, see it in the next week, open Correction History, void it, and confirm the next week's total returns.
 
 ### Phase 3 — Bulk correction
 - [ ] In a closed week: "Bulk correct" → pick one column → tick tickets (across installers) → new value or ₱ difference → one reason, one target week

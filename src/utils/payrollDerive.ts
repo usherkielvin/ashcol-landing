@@ -800,23 +800,5 @@ export const deductionTotal = (rowsIn: PayrollRow[]) =>
   + deductionValue(rowsIn, 'grooming') + deductionValue(rowsIn, 'backjob')
 export const installerNet = (installerRows: PayrollRow[]) => installerTotal(installerRows) - deductionTotal(installerRows)
 
-// Balance adjustments on a closed week's ticket: the closed row stays frozen; each correction is
-// posted as a separate adjustment row in an open week and logged here (JSON in customFields
-// "pay:adjLog") so the ticket carries its own correction history — who, when, which columns.
-export interface AdjustmentChange { key: string; label: string; from: number; to: number; delta: number }
-export interface AdjustmentLogEntry {
-  id: string
-  at: string
-  by: string
-  reason: string
-  targetWeekFrom: string
-  targetWeekTo: string
-  net: number
-  changes: AdjustmentChange[]
-}
-export const parseAdjustmentLog = (r: PayrollRow): AdjustmentLogEntry[] => {
-  try {
-    const parsed = JSON.parse(r.customFields?.['pay:adjLog'] || '[]')
-    return Array.isArray(parsed) ? parsed : []
-  } catch { return [] }
-}
+// Corrections to a closed week's tickets live in the corrections ledger on the server, not on the row — see
+// src/utils/payrollCorrectionsApi.ts and docs/plans/closed-week-corrections.md.

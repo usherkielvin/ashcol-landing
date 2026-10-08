@@ -1,4 +1,5 @@
-import { rowTotal, payFactor, isCarryOver, parseAdjustmentLog, type PayrollRow } from '../../utils/payrollDerive'
+import { rowTotal, payFactor, isCarryOver, type PayrollRow } from '../../utils/payrollDerive'
+import { parseCorrectionChanges, type PayrollCorrection } from '../../utils/payrollCorrectionsApi'
 
 
 export const num = (v: number | string | null | undefined): number => {
@@ -50,12 +51,20 @@ export const avatarColor = (name: string) => {
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 
+/** Posted corrections that belong to this ticket row. Matched by the saved row id, falling back to the
+ *  ticket + installer when the row was rebuilt from a schedule sync under a different id. */
+export const postedCorrectionsFor = (r: PayrollRow, all: PayrollCorrection[]): PayrollCorrection[] =>
+  all.filter(c => c.status === 'POSTED' && (
+    c.originEntryId === r.id
+    || (Boolean(r.ticketId) && c.originTicketId === r.ticketId && c.installerName.trim().toLowerCase() === r.installerName.trim().toLowerCase())
+  ))
+
 /** What was actually released for one column of a ticket: the cell value scaled by the share paid
- *  (50% until the balance is released), plus every adjustment already posted on that column. */
-export const paidColumnAmount = (r: PayrollRow, key: string, raw: number | string | null | undefined): number => {
+ *  (50% until the balance is released), plus every correction already posted on that column. */
+export const paidColumnAmount = (r: PayrollRow, key: string, raw: number | string | null | undefined, posted: PayrollCorrection[]): number => {
   const factor = r.customFields?.['pay:balanceReleased'] === '1' ? 1 : payFactor(r)
-  const adjusted = parseAdjustmentLog(r).reduce(
-    (sum, e) => sum + e.changes.filter(c => c.key === key).reduce((a, c) => a + c.delta, 0), 0)
+  const adjusted = posted.reduce(
+    (sum, c) => sum + parseCorrectionChanges(c).filter(ch => ch.key === key).reduce((a, ch) => a + ch.delta, 0), 0)
   return round2(num(raw) * factor + adjusted)
 }
 
