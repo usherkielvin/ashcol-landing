@@ -12,7 +12,8 @@ export interface PayrollCorrection {
   branchId: string
   batchId: string
   installerName: string
-  originEntryId: string
+  /** Null for an installer-level correction (no ticket). */
+  originEntryId: string | null
   originTicketId: string | null
   originTicketNumber: string | null
   originCustomer: string | null
@@ -55,10 +56,18 @@ export const parseCorrectionChanges = (c: Pick<PayrollCorrection, 'changesJson'>
   }
 }
 
+/**
+ * A ticket correction (`originEntryId` + `changes`), a ticket flagged for review (`originEntryId`, no `changes`,
+ * PENDING only), or an installer-level correction with no ticket (`installerName`, a signed `amount` — optional
+ * while PENDING — and `originWeekFrom`, any date inside the closed week it relates to).
+ */
 export interface CorrectionItemInput {
-  originEntryId: string
+  originEntryId?: string
   reason?: string
-  changes: { key: string; label: string; to: number }[]
+  changes?: { key: string; label: string; to: number }[]
+  installerName?: string
+  amount?: number | null
+  originWeekFrom?: string
 }
 
 export interface CreateCorrectionsInput {
@@ -115,11 +124,17 @@ export async function createCorrections(input: CreateCorrectionsInput): Promise<
   return res.json()
 }
 
-export async function postCorrection(id: string, targetWeekFrom: string, targetWeekTo: string): Promise<PayrollCorrection> {
+/** Applies a PENDING item to an open week. A flagged item supplies what it lacked: `changes` (ticket) or `amount` (installer-level). */
+export async function postCorrection(
+  id: string,
+  targetWeekFrom: string,
+  targetWeekTo: string,
+  extra: { changes?: { key: string; label: string; to: number }[]; amount?: number } = {},
+): Promise<PayrollCorrection> {
   const res = await fetch(`${API_BASE_URL}/v1/payroll/corrections/${encodeURIComponent(id)}/post`, {
     method: 'POST',
     headers: authHeaders(true),
-    body: JSON.stringify({ targetWeekFrom, targetWeekTo }),
+    body: JSON.stringify({ targetWeekFrom, targetWeekTo, ...extra }),
   })
   if (!res.ok) throw await failure(res, 'Could not post the correction.')
   return res.json()
@@ -132,5 +147,16 @@ export async function voidCorrection(id: string, reason?: string): Promise<Payro
     body: JSON.stringify({ reason: reason ?? null }),
   })
   if (!res.ok) throw await failure(res, 'Could not void the correction.')
+  return res.json()
+}
+
+/** Voids every active item of a bulk request — all or none (the server refuses if any item's week has closed). */
+export async function voidCorrectionBatch(batchId: string, reason?: string): Promise<PayrollCorrection[]> {
+  const res = await fetch(`${API_BASE_URL}/v1/payroll/corrections/batches/${encodeURIComponent(batchId)}/void`, {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify({ reason: reason ?? null }),
+  })
+  if (!res.ok) throw await failure(res, 'Could not void the batch.')
   return res.json()
 }

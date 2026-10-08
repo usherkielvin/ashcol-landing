@@ -6,7 +6,7 @@ import {
   Search, Building2, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   SlidersHorizontal, Plus, X, RotateCcw, RefreshCw, Save, Loader2, EyeOff, Trash2,
   Stethoscope, Lightbulb, HardHat, PiggyBank, Wind, Recycle, ArrowBigDownDash, Snowflake,
-  Users, Receipt, ArrowRightLeft, ExternalLink, Lock, Unlock, FileSpreadsheet,
+  Users, Receipt, ArrowRightLeft, ExternalLink, Lock, FileSpreadsheet,
   Archive, PauseCircle, Send, Undo2, MoreVertical, Maximize2, Copy, Clock,
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
@@ -25,7 +25,10 @@ import {
 } from '../utils/payrollWeeks'
 import AdjustBalanceModal from './Payouts/AdjustBalanceModal'
 import CorrectionHistoryModal from './Payouts/CorrectionHistoryModal'
-import { listCorrections, createCorrections, voidCorrection, parseCorrectionChanges, CorrectionError, type PayrollCorrection } from '../utils/payrollCorrectionsApi'
+import BulkCorrectionModal, { type BulkCorrectionItem } from './Payouts/BulkCorrectionModal'
+import PendingItemFormModal, { type PendingItemInput } from './Payouts/PendingItemFormModal'
+import PendingItemsModal, { type PostPendingExtra } from './Payouts/PendingItemsModal'
+import { listCorrections, createCorrections, postCorrection, voidCorrection, voidCorrectionBatch, parseCorrectionChanges, CorrectionError, type CorrectionItemInput, type PayrollCorrection } from '../utils/payrollCorrectionsApi'
 import HoldModal from './Payouts/HoldModal'
 import CompletePayoutModal from './Payouts/CompletePayoutModal'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
@@ -81,6 +84,12 @@ import { num, peso, pesoSigned, postedCorrectionsFor, shortDate, longDate,getIni
 function rankTechnicians<T extends { branchId?: string; isActive: boolean }>(list: T[], branchFilter?: string | null): T[] {
   const score = (t: T) => (t.isActive ? 2 : 0) + (branchFilter && branchScopesMatch(t.branchId, branchFilter) ? 1 : 0)
   return [...list].sort((a, b) => score(b) - score(a))
+}
+
+/** Edits to a closed week's rows the server refused (it answers 200 and keeps the saved rows). */
+function readRefusedEdits(res: Response): { count: number; which: string } {
+  const count = Number(res.headers.get('X-Payroll-Rejected-Count') || 0)
+  return { count: Number.isFinite(count) ? count : 0, which: res.headers.get('X-Payroll-Rejected') || '' }
 }
 
 export default function Payouts() {
@@ -266,6 +275,19 @@ export default function Payouts() {
   const [corrections, setCorrections] = useState<PayrollCorrection[]>([])
   const [adjustError, setAdjustError] = useState<string | null>(null)
   const [voidingCorrectionId, setVoidingCorrectionId] = useState<string | null>(null)
+  // Bulk correction of one column across a closed week's tickets (null = closed).
+  const [bulkRows, setBulkRows] = useState<PayrollRow[] | null>(null)
+  const [bulkSubmitting, setBulkSubmitting] = useState(false)
+  const [bulkError, setBulkError] = useState<string | null>(null)
+  // Pending items: things flagged against a closed week to settle later (see docs/plans/closed-week-corrections.md).
+  const pendingItems = corrections.filter(c => c.status === 'PENDING')
+  const [pendingOpen, setPendingOpen] = useState(false)
+  const [pendingBusyId, setPendingBusyId] = useState<string | null>(null)
+  const [pendingError, setPendingError] = useState<string | null>(null)
+  // The flag form: a ticket to flag, or {} for an installer-level item with no ticket (null = closed).
+  const [flagTarget, setFlagTarget] = useState<{ ticket?: PayrollRow } | null>(null)
+  const [flagSubmitting, setFlagSubmitting] = useState(false)
+  const [flagError, setFlagError] = useState<string | null>(null)
   const [selectedTicketForModal, setSelectedTicketForModal] = useState<Ticket | null>(null)
   const [loadingTicketModal, setLoadingTicketModal] = useState(false)
 
@@ -399,7 +421,6 @@ export default function Payouts() {
   // Week closure / locking state (Phase 2 backend integration)
   const [closures, setClosures] = useState<PayrollWeekClosure[]>([])
   const [closingWeek, setClosingWeek] = useState(false)
-  const [reopeningWeek, setReopeningWeek] = useState(false)
 
   const activeWeekClosure = useMemo(() => {
     if (!activeWeek || !branchFilter) return null
@@ -915,12 +936,45 @@ export default function Payouts() {
     void fetchClosures()
   }, [fetchClosures])
 
+  // Every payout row of the week on screen that the close check looks at: not held, not a released original,
+  // and not salaried crew (they're off this per-job sheet) — the same rows the roster counts.
+  const getWeekPayoutRows = () => rows.filter(r =>
+    rowInActiveWindow(r) && isActivePayRow(r) && !inHouseTechnicianNames.has(resolveGroupKey(r.installerName))
+  )
+
+  // Technicians in the week whose payout is not Completed yet — a week can't be closed until this is empty.
+  const getIncompleteInstallerNames = (): string[] => Array.from(new Set(
+    getWeekPayoutRows().filter(r => r.status !== 'COMPLETE').map(r => displayInstallerName(r.installerName).toUpperCase())
+  )).sort((a, b) => a.localeCompare(b))
+
+  // What the screen shows for the week at the moment it closes — per installer gross / deductions / net — so what
+  // each tech was paid stays on record after the week is locked.
+  const buildCloseSnapshot = () => {
+    const byInstaller = new Map<string, PayrollRow[]>()
+    for (const r of getWeekPayoutRows()) {
+      const key = resolveGroupKey(r.installerName)
+      byInstaller.set(key, [...(byInstaller.get(key) ?? []), r])
+    }
+    const r2 = (n: number) => Math.round(n * 100) / 100
+    const installers = Array.from(byInstaller.values()).map(list => ({
+      name: displayInstallerName(list[0].installerName),
+      gross: r2(installerTotal(list)),
+      deductions: r2(deductionTotal(list)),
+      net: r2(installerNet(list)),
+    })).sort((a, b) => a.name.localeCompare(b.name))
+    return { version: 1, installers, totalNet: r2(installers.reduce((sum, i) => sum + i.net, 0)) }
+  }
+
   const handleCloseWeek = () => {
     if (!activeWeek || !branchFilter || !canManageClosures) return
     setConfirmDialog({
       title: 'Close & Lock Payroll Week',
       message: `Are you sure you want to close Week ${activeWeek.weekNumber} (${activeWeek.label})?`,
-      detail: 'Once closed, this payroll week will be locked. No further job synchronizations, manual additions, or edits can be made until the week is reopened by an administrator.',
+      detail: 'A closed week is final: it is locked and never reopened. Anything found wrong afterwards is fixed with a correction (Adjust Balance), applied in an open week.'
+        + (() => {
+          const stale = pendingItems.filter(c => c.originWeekTo && c.originWeekTo < activeWeek.from).length
+          return stale > 0 ? ` Note: ${stale} pending item${stale === 1 ? '' : 's'} from earlier weeks ${stale === 1 ? 'is' : 'are'} still unsettled \u2014 see Pending Items.` : ''
+        })(),
       confirmText: 'Close & Lock Week',
       cancelText: 'Cancel',
       variant: 'discard',
@@ -937,11 +991,13 @@ export default function Payouts() {
               branchId: branchFilter,
               weekFrom: activeWeek.from,
               weekTo: activeWeek.to,
+              snapshot: buildCloseSnapshot(),
             }),
           })
           if (res.ok) {
             await fetchClosures()
           } else {
+            // A 409 means somebody is not Completed yet — the server's message names them.
             const err = await res.json().catch(() => ({}))
             alert(err.message || err.error || 'Failed to close payroll week.')
           }
@@ -949,44 +1005,6 @@ export default function Payouts() {
           console.error('Failed to close week:', e)
         } finally {
           setClosingWeek(false)
-        }
-      },
-    })
-  }
-
-  const handleReopenWeek = () => {
-    if (!activeWeek || !branchFilter || !canManageClosures) return
-    setConfirmDialog({
-      title: 'Reopen Payroll Week',
-      message: `Are you sure you want to reopen Week ${activeWeek.weekNumber} (${activeWeek.label})?`,
-      detail: 'This will unlock the payroll week, allowing new job orders to be synced and existing entries to be edited.',
-      confirmText: 'Reopen Week',
-      cancelText: 'Keep Locked',
-      variant: 'info',
-      onConfirm: async () => {
-        setReopeningWeek(true)
-        try {
-          const params = new URLSearchParams({
-            branchId: branchFilter,
-            weekFrom: activeWeek.from,
-            weekTo: activeWeek.to,
-          })
-          const res = await fetch(`${API_BASE_URL}/v1/payroll/closures?${params.toString()}`, {
-            method: 'DELETE',
-            headers: {
-              Authorization: `Bearer ${getToken()}`,
-            },
-          })
-          if (res.ok) {
-            await fetchClosures()
-          } else {
-            const err = await res.json().catch(() => ({}))
-            alert(err.message || err.error || 'Failed to reopen payroll week.')
-          }
-        } catch (e) {
-          console.error('Failed to reopen week:', e)
-        } finally {
-          setReopeningWeek(false)
         }
       },
     })
@@ -1063,6 +1081,17 @@ export default function Payouts() {
         body: JSON.stringify({ branchId: bId, periodMonth: mKey, entries: buildPayrollEntries(data) }),
       })
       if (res.ok) {
+        const refused = readRefusedEdits(res)
+        if (refused.count > 0) {
+          setConfirmDialog({
+            title: 'Some Changes Were Not Saved',
+            message: `${refused.count} change${refused.count === 1 ? '' : 's'} to a closed week ${refused.count === 1 ? 'was' : 'were'} refused${refused.which ? `: ${refused.which}` : ''}.`,
+            detail: 'A closed week is final. To change what was paid, use Adjust Balance on the ticket \u2014 the difference is applied in an open week.',
+            confirmText: 'OK',
+            variant: 'info',
+            onConfirm: () => {},
+          })
+        }
         setSaveStatus('saved')
       // Keep cache in sync: the saved data is now the ground truth for this month
         monthCache.current[`${bId}:${mKey}`] = { rows: data, fetchedAt: Date.now() }
@@ -1109,6 +1138,17 @@ export default function Payouts() {
         body: JSON.stringify({ branchId: bId, periodMonth: monthKey, entries: buildPayrollEntries(mutated) }),
       })
       if (!putRes.ok) return false
+      const refused = readRefusedEdits(putRes)
+      if (refused.count > 0) {
+        setConfirmDialog({
+          title: 'Some Changes Were Not Saved',
+          message: `${refused.count} change${refused.count === 1 ? '' : 's'} to a closed week ${refused.count === 1 ? 'was' : 'were'} refused${refused.which ? `: ${refused.which}` : ''}.`,
+          detail: 'A closed week is final. To change what was paid, use Adjust Balance on the ticket \u2014 the difference is applied in an open week.',
+          confirmText: 'OK',
+          variant: 'info',
+          onConfirm: () => {},
+        })
+      }
       if (expect) {
         const saved = await putRes.json().catch(() => null)
         return JSON.stringify(saved ?? '').includes(expect)
@@ -1238,7 +1278,7 @@ export default function Payouts() {
         monthCache.current[`${branchFilter}:${mKey}`] = { rows: merged, fetchedAt: Date.now() }
 
         // Auto-save when the sync added rows or changed existing ones (e.g. a Payroll Settings
-        // rate change re-stamping Allowance / Earth Grounding), so the saved sheet matches.
+        // rate change re-stamping Allowance), so the saved sheet matches.
         if (canManagePayroll && JSON.stringify(merged) !== JSON.stringify(savedRows)) {
           void savePayrollToBackend(merged, branchFilter, mKey)
         }
@@ -1568,16 +1608,24 @@ export default function Payouts() {
     setAdjustRow({ row, month: saveMonthOf(row) })
   }
 
-  // Resolves the saved payroll row behind a table row — the correction endpoint works on the saved
-  // entry's id, and a row rebuilt from a schedule sync may carry a different local id.
-  const resolveSavedEntryId = async (row: PayrollRow, month: string): Promise<string | null> => {
-    const params = new URLSearchParams({ branchId: branchFilter, month })
-    const res = await fetch(`${API_BASE_URL}/v1/payroll?${params.toString()}`, { headers: { Authorization: `Bearer ${getToken()}` } })
-    if (!res.ok) return null
-    const list = await res.json()
-    const key = rowMatchKey(row)
-    const match = (Array.isArray(list) ? list : []).map(mapSavedPayrollEntry).find(r => rowMatchKey(r) === key)
-    return match ? match.id : null
+  // Resolves the saved payroll rows behind table rows (row.id -> saved entry id) — the correction endpoint
+  // works on the saved entry's id, and a row rebuilt from a schedule sync may carry a different local id.
+  // Each month is fetched once, however many rows belong to it.
+  const resolveSavedEntryIds = async (targets: { row: PayrollRow; month: string }[]): Promise<Map<string, string>> => {
+    const byKey = new Map<string, string>()
+    for (const month of new Set(targets.map(t => t.month))) {
+      const params = new URLSearchParams({ branchId: branchFilter, month })
+      const res = await fetch(`${API_BASE_URL}/v1/payroll?${params.toString()}`, { headers: { Authorization: `Bearer ${getToken()}` } })
+      if (!res.ok) continue
+      const list = await res.json()
+      for (const saved of (Array.isArray(list) ? list : []).map(mapSavedPayrollEntry)) byKey.set(rowMatchKey(saved), saved.id)
+    }
+    const out = new Map<string, string>()
+    for (const { row } of targets) {
+      const id = byKey.get(rowMatchKey(row))
+      if (id) out.set(row.id, id)
+    }
+    return out
   }
 
   // Post a correction for a closed-week ticket: the closed row stays frozen and the server records the
@@ -1594,7 +1642,7 @@ export default function Payouts() {
     setAdjustSubmitting(true)
     setAdjustError(null)
     try {
-      const originEntryId = await resolveSavedEntryId(origin, originMonth)
+      const originEntryId = (await resolveSavedEntryIds([{ row: origin, month: originMonth }])).get(origin.id)
       if (!originEntryId) {
         setAdjustError('Could not find this ticket in the saved payroll. Reload the page and try again.')
         return
@@ -1671,6 +1719,183 @@ export default function Payouts() {
       variant: 'discard',
       onConfirm: () => { void doVoidCorrection(c, 'Voided from Correction History') },
     })
+  }
+
+  // Every correctable ticket of the closed week on screen, across all installers (the roster's search and
+  // technician filters don't apply here — a bulk fix is about the whole week).
+  const openBulkModal = () => {
+    setBulkError(null)
+    setBulkRows(rows.filter(r =>
+      rowInActiveWindow(r) && !isCarryOver(r) && isActivePayRow(r) && !inHouseTechnicianNames.has(resolveGroupKey(r.installerName))
+    ))
+  }
+
+  // One column across many tickets, posted as a single batch: all of it lands or none of it does.
+  const submitBulk = async (items: BulkCorrectionItem[], col: { key: string; label: string }, targetWeek: PayrollWeek, reason: string) => {
+    if (viewOnly || !branchFilter || items.length === 0) return
+    setBulkSubmitting(true)
+    setBulkError(null)
+    try {
+      const ids = await resolveSavedEntryIds(items.map(i => ({ row: i.row, month: saveMonthOf(i.row) })))
+      const missing = items.filter(i => !ids.has(i.row.id))
+      if (missing.length > 0) {
+        setBulkError(`Could not find ${missing.length} of the selected tickets in the saved payroll (${missing.slice(0, 3).map(m => m.row.ticketNumber || 'No ticket').join(', ')}${missing.length > 3 ? '…' : ''}). Reload the page and try again.`)
+        return
+      }
+      const made = await createCorrections({
+        branchId: branchFilter,
+        reason: reason.trim(),
+        targetWeekFrom: targetWeek.from,
+        targetWeekTo: targetWeek.to,
+        items: items.map(i => ({ originEntryId: ids.get(i.row.id) as string, changes: [{ key: col.key, label: col.label, to: i.to }] })),
+      })
+      const net = made.reduce((sum, c) => sum + c.netAmount, 0)
+      delete monthCache.current[`${branchFilter}:${targetWeek.from.slice(0, 7)}`]
+      setBulkRows(null)
+      void refreshCorrections()
+      setActiveMonth(targetWeek.owningMonth)
+      setActiveWeek(targetWeek)
+      setConfirmDialog({
+        title: 'Corrections Posted',
+        message: `${made.length} ticket${made.length === 1 ? '' : 's'} corrected \u2014 ${net < 0 ? 'deducted' : 'added'} ${pesoSigned(net)} in Week ${targetWeek.weekNumber} (${targetWeek.label}).`,
+        detail: `${col.label} \u00B7 ${reason.trim()}`,
+        confirmText: 'OK',
+        variant: 'info',
+        onConfirm: () => {},
+      })
+    } catch (e) {
+      setBulkError(e instanceof CorrectionError ? e.message : 'Could not post the corrections. Nothing was changed.')
+    } finally {
+      setBulkSubmitting(false)
+    }
+  }
+
+  const submitVoidBatch = (batchId: string, items: PayrollCorrection[]) => {
+    const active = items.filter(c => c.status !== 'VOID')
+    const net = active.filter(c => c.status === 'POSTED').reduce((sum, c) => sum + c.netAmount, 0)
+    setConfirmDialog({
+      title: 'Void Whole Batch',
+      message: `Void all ${active.length} corrections in this bulk request (${pesoSigned(net)})?`,
+      detail: 'Every adjustment is removed from the week it was applied in. If any of them can no longer be removed, none are. The closed week itself is not touched.',
+      confirmText: 'Void Batch',
+      cancelText: 'Keep Them',
+      variant: 'discard',
+      onConfirm: async () => {
+        setVoidingCorrectionId(batchId)
+        try {
+          await voidCorrectionBatch(batchId, 'Voided from Correction History')
+          const markers = new Set(active.map(c => c.adjustmentMarker).filter((m): m is string => Boolean(m)))
+          if (markers.size > 0) setRows(prev => prev.filter(r => !markers.has(r.customFields?.['hold:copyMarker'] ?? '')))
+          for (const c of active) if (c.targetWeekFrom) delete monthCache.current[`${branchFilter}:${c.targetWeekFrom.slice(0, 7)}`]
+          void refreshCorrections()
+        } catch (e) {
+          setConfirmDialog({
+            title: 'Could Not Void',
+            message: e instanceof CorrectionError ? e.message : 'Could not void the batch. Nothing was changed.',
+            confirmText: 'OK',
+            variant: 'info',
+            onConfirm: () => {},
+          })
+        } finally {
+          setVoidingCorrectionId(null)
+        }
+      },
+    })
+  }
+
+  // Installers on the week on screen, for an item that belongs to no ticket (value = the name the ledger stores).
+  const flagInstallerOptions = (): { value: string; label: string }[] => {
+    const seen = new Map<string, { value: string; label: string }>()
+    for (const r of rows) {
+      if (!rowInActiveWindow(r) || isCarryOver(r)) continue
+      const key = resolveGroupKey(r.installerName)
+      if (inHouseTechnicianNames.has(key) || seen.has(key)) continue
+      seen.set(key, { value: r.installerName, label: displayInstallerName(r.installerName) })
+    }
+    return Array.from(seen.values()).sort((a, b) => a.label.localeCompare(b.label))
+  }
+
+  const openFlagModal = (ticket?: PayrollRow) => {
+    setFlagError(null)
+    setFlagTarget(ticket ? { ticket } : {})
+  }
+
+  // Records a ticket to review, or an installer-level amount, as PENDING. Nothing is paid or deducted yet.
+  const submitFlag = async (input: PendingItemInput) => {
+    if (viewOnly || !branchFilter || !activeWeek || !flagTarget) return
+    setFlagSubmitting(true)
+    setFlagError(null)
+    try {
+      const ticket = flagTarget.ticket
+      let item: CorrectionItemInput
+      if (ticket) {
+        const id = (await resolveSavedEntryIds([{ row: ticket, month: saveMonthOf(ticket) }])).get(ticket.id)
+        if (!id) {
+          setFlagError('Could not find this ticket in the saved payroll. Reload the page and try again.')
+          return
+        }
+        item = { originEntryId: id }
+      } else {
+        item = { installerName: input.installerName, amount: input.amount, originWeekFrom: activeWeek.from }
+      }
+      await createCorrections({ branchId: branchFilter, reason: input.reason, items: [item] })
+      setFlagTarget(null)
+      void refreshCorrections()
+      setConfirmDialog({
+        title: 'Saved as Pending',
+        message: ticket ? `${ticket.ticketNumber || 'This ticket'} is flagged for review.` : 'The item is saved as pending.',
+        detail: 'It changes no one\u2019s pay until you post it to an open week from Pending Items.',
+        confirmText: 'OK',
+        variant: 'info',
+        onConfirm: () => {},
+      })
+    } catch (e) {
+      setFlagError(e instanceof CorrectionError ? e.message : 'Could not save the item. Nothing was changed.')
+    } finally {
+      setFlagSubmitting(false)
+    }
+  }
+
+  // Applies a pending item to an open week, then shows that week.
+  const postPending = async (item: PayrollCorrection, targetWeek: PayrollWeek, extra: PostPendingExtra) => {
+    setPendingBusyId(item.id)
+    setPendingError(null)
+    try {
+      const posted = await postCorrection(item.id, targetWeek.from, targetWeek.to, extra)
+      delete monthCache.current[`${branchFilter}:${targetWeek.from.slice(0, 7)}`]
+      void refreshCorrections()
+      setPendingOpen(false)
+      setActiveMonth(targetWeek.owningMonth)
+      setActiveWeek(targetWeek)
+      void loadAndSync(true)
+      setConfirmDialog({
+        title: 'Posted',
+        message: `${posted.netAmount < 0 ? 'Deducted' : 'Added'} ${pesoSigned(posted.netAmount)} for ${displayInstallerName(item.installerName)} in Week ${targetWeek.weekNumber} (${targetWeek.label}).`,
+        detail: item.reason,
+        confirmText: 'OK',
+        variant: 'info',
+        onConfirm: () => {},
+      })
+    } catch (e) {
+      setPendingError(e instanceof CorrectionError ? e.message : 'Could not post the item. Nothing was changed.')
+      throw e
+    } finally {
+      setPendingBusyId(null)
+    }
+  }
+
+  const dismissPending = async (item: PayrollCorrection, reason: string) => {
+    setPendingBusyId(item.id)
+    setPendingError(null)
+    try {
+      await voidCorrection(item.id, reason)
+      void refreshCorrections()
+    } catch (e) {
+      setPendingError(e instanceof CorrectionError ? e.message : 'Could not dismiss the item. Nothing was changed.')
+      throw e
+    } finally {
+      setPendingBusyId(null)
+    }
   }
 
   const openReleaseModal = (row: PayrollRow, month: string, kind?: 'balance') => {
@@ -2326,7 +2551,7 @@ export default function Payouts() {
     })
   }
 
-  // Allowance / Earth Grounding are auto-stamped from the branch rate on every sync; a hand edit
+  // Daily Allowance is auto-stamped from the branch rate on every sync (Earth Grounding never is — hand-typed only); a hand edit
   // (including clearing to zero) flags the row so re-syncs keep the user's value instead.
   const setAutoStampedFee = (id: string, field: AutoStampedFee, v: string) => {
     if (isWeekClosed || viewOnly) return
@@ -2857,6 +3082,20 @@ export default function Payouts() {
       />
     )
   }
+
+  // Who still has to be Completed before this week can be closed, and what a closed week says about itself.
+  const incompleteNames = isWeekClosed ? [] : getIncompleteInstallerNames()
+  const closedWeekTitle = (() => {
+    if (!activeWeekClosure) return 'Week is closed & final'
+    const by = activeWeekClosure.closedBy ? `Closed by ${activeWeekClosure.closedBy}` : 'Closed'
+    const on = activeWeekClosure.closedAt ? ` on ${new Date(activeWeekClosure.closedAt).toLocaleDateString()}` : ''
+    let paid = ''
+    try {
+      const snap = activeWeekClosure.closeSnapshot ? JSON.parse(activeWeekClosure.closeSnapshot) : null
+      if (snap && typeof snap.totalNet === 'number') paid = ` \u00B7 paid \u20B1${peso(snap.totalNet)} net at close`
+    } catch { /* an unreadable snapshot just isn't shown */ }
+    return `${by}${on}${paid}. A closed week is never reopened \u2014 use Adjust Balance for a correction.`
+  })()
 
   return (
     <div className="flex flex-col gap-4 pb-4 md:pb-4 h-full min-h-0 overflow-y-auto overflow-x-hidden overscroll-none touch-pan-y [&>*]:shrink-0">
@@ -4476,6 +4715,17 @@ export default function Payouts() {
                       <div className="min-w-0 flex flex-col gap-0.5">
                         <span className="text-sm md:text-base font-bold truncate uppercase tracking-tight" style={{ color: textPrimary }}>
                           {displayInstallerName(installerName).toUpperCase()}
+                          {pendingItems.some(c => resolveGroupKey(c.installerName) === installerName) && (
+                            <button
+                              type="button"
+                              onClick={e => { e.stopPropagation(); setPendingError(null); setPendingOpen(true) }}
+                              className="ml-2 align-middle px-2 py-0.5 rounded-full text-[10px] font-black normal-case tracking-normal cursor-pointer"
+                              style={{ color: '#D97706', backgroundColor: isLight ? '#fffbeb' : 'rgba(217,119,6,0.14)', border: `1px solid ${isLight ? '#fde68a' : 'rgba(217,119,6,0.35)'}` }}
+                              title="Items waiting to be settled for this installer"
+                            >
+                              {pendingItems.filter(c => resolveGroupKey(c.installerName) === installerName).length} pending
+                            </button>
+                          )}
                         </span>
                         <span className="text-[11px] font-semibold truncate" style={{ color: textMuted }} title={completedJobsBreakdown(installerRows) || undefined}>
                           <span className="tabular-nums" style={{ color: textPrimary }}>{completedJobsCount(installerRows)}</span> completed
@@ -4637,6 +4887,44 @@ export default function Payouts() {
                 </button>
               )}
 
+              {canManagePayroll && isWeekClosed && (
+                <button
+                  type="button"
+                  onClick={openBulkModal}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border transition-all shadow-xs active:scale-95 cursor-pointer"
+                  style={{ color: '#8B5CF6', borderColor: isLight ? '#ddd6fe' : 'rgba(139,92,246,0.35)', backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.10)' }}
+                  title="Correct one column across many tickets of this closed week at once"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span>Bulk Correct</span>
+                </button>
+              )}
+
+              {canManagePayroll && isWeekClosed && (
+                <button
+                  type="button"
+                  onClick={() => openFlagModal()}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border transition-all shadow-xs active:scale-95 cursor-pointer"
+                  style={{ color: '#D97706', borderColor: isLight ? '#fde68a' : 'rgba(217,119,6,0.35)', backgroundColor: isLight ? '#fffbeb' : 'rgba(217,119,6,0.08)' }}
+                  title="Record something to settle later against this closed week — a shortage, or an amount not known yet"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Pending Item</span>
+                </button>
+              )}
+
+              {canManagePayroll && branchFilter && pendingItems.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { setPendingError(null); setPendingOpen(true); void refreshCorrections() }}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+                  style={{ backgroundColor: isLight ? '#D97706' : '#B45309', color: '#FFFFFF', border: '1px solid #B45309' }}
+                  title="Flagged tickets and amounts waiting to be settled against a closed week"
+                >
+                  <span>Pending Items ({pendingItems.length})</span>
+                </button>
+              )}
+
               {branchFilter && (
                 <button
                   type="button"
@@ -4649,41 +4937,35 @@ export default function Payouts() {
                 </button>
               )}
 
-              {/* Close/Reopen this week — moved down here, out of the week-tab strip, and
-                  labeled with the branch so it's unambiguous which payout period it locks. */}
+              {/* Close this week — a closed week is final (never reopened); anything wrong afterwards is a correction. */}
               {canManageClosures && activeWeek && (
                 isWeekClosed ? (
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border shrink-0 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
-                      title={activeWeekClosure?.closedBy ? `Closed by ${activeWeekClosure.closedBy}${activeWeekClosure.closedAt ? ` on ${new Date(activeWeekClosure.closedAt).toLocaleDateString()}` : ''}` : 'Week is closed & locked'}
-                    >
-                      <Lock className="w-3.5 h-3.5" />
-                      <span>Week Closed</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleReopenWeek}
-                      disabled={reopeningWeek}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-emerald-500/10 hover:border-emerald-500/40 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 active:scale-95 cursor-pointer disabled:opacity-50 shadow-xs"
-                      title="Reopen this week for edits"
-                    >
-                      <Unlock className="w-3.5 h-3.5" />
-                      <span>{reopeningWeek ? 'Reopening…' : `Reopen This Week — ${currentBranchDisplay || 'Branch'} Payouts`}</span>
-                    </button>
-                  </div>
+                  <span
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border shrink-0 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                    title={closedWeekTitle}
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>Week Closed</span>
+                  </span>
                 ) : (
                   <button
                     type="button"
                     onClick={handleCloseWeek}
-                    disabled={closingWeek}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-amber-500/10 hover:border-amber-500/40 text-amber-600 dark:text-amber-400 border-amber-500/30 active:scale-95 cursor-pointer disabled:opacity-50 shadow-xs"
-                    title="Close and lock this payout week"
+                    disabled={closingWeek || incompleteNames.length > 0}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border transition-all hover:bg-amber-500/10 hover:border-amber-500/40 text-amber-600 dark:text-amber-400 border-amber-500/30 active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
+                    title={incompleteNames.length > 0
+                      ? `Can't close yet \u2014 not Completed: ${incompleteNames.join(', ')}`
+                      : 'Close and lock this payout week for good'}
                   >
                     <Lock className="w-3.5 h-3.5" />
                     <span>{closingWeek ? 'Closing…' : `Close This Week — ${currentBranchDisplay || 'Branch'} Payouts`}</span>
                   </button>
                 )
+              )}
+              {canManageClosures && activeWeek && !isWeekClosed && incompleteNames.length > 0 && (
+                <span className="text-[11px] font-semibold max-w-xs" style={{ color: '#D97706' }}>
+                  {incompleteNames.length} not Completed: {incompleteNames.slice(0, 4).join(', ')}{incompleteNames.length > 4 ? '…' : ''}
+                </span>
               )}
             </div>
             <div className="grid grid-cols-2 w-full gap-x-4 gap-y-3 md:flex md:flex-wrap md:items-center md:justify-end md:gap-x-9 md:gap-y-2 md:ml-auto md:w-auto">
@@ -5526,6 +5808,18 @@ export default function Payouts() {
                           <span>Adjust Balance</span>
                         </button>
                       )}
+                      {canManagePayroll && isWeekClosed && !isCarryOver(liveRow) && (
+                        <button
+                          type="button"
+                          onClick={() => { setDetailRow(null); openFlagModal(liveRow) }}
+                          className={`${actionBtn} hover:bg-amber-500/10 hover:border-amber-500/50`}
+                          style={{ color: '#D97706', borderColor: isLight ? '#fde68a' : 'rgba(217,119,6,0.35)', backgroundColor: isLight ? '#fffbeb' : 'rgba(217,119,6,0.08)' }}
+                          title="Record that this ticket needs checking — no pay changes until you settle it"
+                        >
+                          <Clock className="w-4 h-4" />
+                          <span>Flag for Review</span>
+                        </button>
+                      )}
                       {postedCorrectionsFor(liveRow, corrections).length > 0 && (
                         <button
                           type="button"
@@ -5644,7 +5938,6 @@ export default function Payouts() {
             return std ? v !== std.defaultRate : false
           }).length + (
             (draftRates.dailyAllowance !== DEFAULT_PAYROLL_RATES.dailyAllowance ? 1 : 0) +
-            (draftRates.earthGrounding !== DEFAULT_PAYROLL_RATES.earthGrounding ? 1 : 0) +
             (draftRates.survey !== DEFAULT_PAYROLL_RATES.survey ? 1 : 0) +
             (draftRates.rescheduled !== DEFAULT_PAYROLL_RATES.rescheduled ? 1 : 0)
           )
@@ -5853,11 +6146,10 @@ export default function Payouts() {
                         )
                       })()}
 
-                      {/* Other Rates Card (Survey, Rescheduled, Earth Grounding, Daily Allowance) */}
+                      {/* Other Rates Card (Survey, Rescheduled, Daily Allowance) — Earth Grounding has no rate: it is paid only when typed in */}
                       {(() => {
                         const otherRatesList = [
                           { key: 'dailyAllowance', label: 'Daily Allowance', defaultVal: DEFAULT_PAYROLL_RATES.dailyAllowance },
-                          { key: 'earthGrounding', label: 'Earth Grounding', defaultVal: DEFAULT_PAYROLL_RATES.earthGrounding },
                           { key: 'survey', label: 'Survey Standard Fee', defaultVal: DEFAULT_PAYROLL_RATES.survey },
                           { key: 'rescheduled', label: 'Rescheduled Fee', defaultVal: DEFAULT_PAYROLL_RATES.rescheduled },
                         ] as const
@@ -6571,7 +6863,60 @@ export default function Payouts() {
           initialSearch={correctionsSearch}
           canVoid={canVoidCorrection}
           onVoid={submitVoidCorrection}
+          onVoidBatch={submitVoidBatch}
           voidingId={voidingCorrectionId}
+        />
+      )}
+
+      {/* Flag form (ticket for review / installer-level item) */}
+      {flagTarget && activeWeek && (
+        <PendingItemFormModal
+          ticket={flagTarget.ticket}
+          weekFrom={activeWeek.from}
+          weekTo={activeWeek.to}
+          installerOptions={flagInstallerOptions()}
+          onClose={() => { setFlagTarget(null); setFlagError(null) }}
+          onSubmit={submitFlag}
+          submitting={flagSubmitting}
+          submitError={flagError}
+        />
+      )}
+
+      {/* Pending items list */}
+      {pendingOpen && (
+        <PendingItemsModal
+          items={pendingItems}
+          closures={closures}
+          activeMonth={activeMonth}
+          cycle={cycle}
+          branchFilter={branchFilter}
+          currentBranchDisplay={currentBranchDisplay}
+          getAdjustableCols={getAdjustableCols}
+          displayInstallerName={displayInstallerName}
+          onClose={() => setPendingOpen(false)}
+          onPost={postPending}
+          onDismiss={dismissPending}
+          busyId={pendingBusyId}
+          error={pendingError}
+        />
+      )}
+
+      {/* Bulk correction modal */}
+      {bulkRows && (
+        <BulkCorrectionModal
+          rows={bulkRows}
+          corrections={corrections}
+          closures={closures}
+          activeMonth={activeMonth}
+          cycle={cycle}
+          branchFilter={branchFilter}
+          getAdjustableCols={getAdjustableCols}
+          getColAccessor={getColAccessor}
+          displayInstallerName={displayInstallerName}
+          onClose={() => { setBulkRows(null); setBulkError(null) }}
+          onSubmit={submitBulk}
+          submitting={bulkSubmitting}
+          submitError={bulkError}
         />
       )}
 

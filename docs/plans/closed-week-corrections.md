@@ -99,40 +99,50 @@ the **backend does it in one transaction** behind one endpoint, instead of the b
 - Notes: the marker is desktop list only (not the mobile cards). Correction History is payroll-only because the list endpoint is. **Deploy order: run the Phase 1 SQL, deploy the backend, then the portal** — the new portal calls `/v1/payroll/corrections`.
 - Still to check by hand: post an adjustment on a closed ticket, see it in the next week, open Correction History, void it, and confirm the next week's total returns.
 
-### Phase 3 — Bulk correction
-- [ ] In a closed week: "Bulk correct" → pick one column → tick tickets (across installers) → new value or ₱ difference → one reason, one target week
-- [ ] Preview grouped by installer with the net each one will get before posting
-- [ ] Posts as one batch (`batch_id`); history groups by batch; void whole batch
-- [ ] Gate: as Phase 2
+### Phase 3 — Bulk correction — DONE (uncommitted; not yet tried in a browser against a running backend)
+- [x] "Bulk Correct" button in the toolbar of a closed week → `BulkCorrectionModal`: pick one column, "Set to" an amount or "Add / deduct" a difference, tick tickets across every installer, one reason, one open target week
+- [x] Each ticket shows paid → new amount and its difference; tickets with no change are dimmed and never sent. Installer sections show the net each tech will get, plus a grand total, before posting. Defaults to Earth Grounding, with every ticket that has a value selected.
+- [x] One `POST /corrections` with all items = one batch: it lands whole or not at all (server transaction)
+- [x] Correction History groups a bulk request under one header ("Bulk correction · N tickets · net ₱X") with **Void whole batch**
+- [x] Backend `POST /corrections/batches/{batchId}/void` — all or none: if any posted item's week has since closed, nothing is voided. 2 new tests (13 in the class, all passing).
+- [x] Gate: portal typecheck clean; lint on changed files equals the baseline; backend correction tests pass
+- Notes: the list shows tickets that have a value in the chosen column (tick "Also show tickets with no …" to include empty ones). "Add / deduct" is computed from each ticket's own paid amount, so tickets with different amounts all move by the same difference. The server recomputes what was paid, so a stale screen can't post a wrong difference. Still to try by hand: bulk-correct Earth Grounding to 0 on a closed week, see the per-installer totals in the next week, then void the batch.
 
-### Phase 4 — Pending items and installer-level corrections
-- [ ] "Flag for review" on a closed-week ticket (reason required, amount optional) → `PENDING`
-- [ ] Installer-level correction with no ticket (amount + reason + origin week)
-- [ ] Roster badge "N pending" per installer; a Pending Items list for the branch; actions: Post to week / Dismiss with reason
-- [ ] Warn when closing a week while the branch still has pending items older than one cutoff
-- [ ] Gate: as Phase 2
+### Phase 4 — Pending items and installer-level corrections — DONE (uncommitted; not yet tried in a browser against a running backend)
+- [x] **Flag for Review** on a closed-week ticket (reason required): recorded PENDING with no amount, changes no pay. Button in the ticket's detail popup.
+- [x] **Add Pending Item** on a closed week: an installer-level item with no ticket (installer, optional signed amount, reason), tied to the closed week on screen
+- [x] **Pending Items (N)** list for the branch (any week), grouped by installer, with age (amber after 7 days). Each item: **Post to week** (open week; a flagged ticket adds a column + corrected amount, an installer-level item an amount) or **Dismiss** (reason required, kept in history as Voided)
+- [x] Roster badge "N pending" next to the installer's name (opens the list)
+- [x] Closing a week now notes how many pending items from earlier weeks are still unsettled (a note in the confirm dialog, not a block)
+- [x] Backend: `origin_entry_id` is nullable; a ticket item may have no `changes` (PENDING only); `PostRequest` can carry `changes` / `amount`; an installer-level amount is stored in the custom column `custom_correction` ("Correction") and counts toward the payout like any fee; the origin week must be closed
+- [x] Tests: 6 new (19 in the class, all passing) — flag then post, flag + target week rejected, installer-level post, installer-level flag then post, closed-week / installer / amount rules, dismiss
+- [x] Gate: portal typecheck clean; lint on changed files equals the baseline; backend correction tests pass
+- **SQL to run before deploying this backend:** `scripts/postgres/payroll_corrections_origin_nullable.sql` (drops NOT NULL on `origin_entry_id`; without it, saving an installer-level item fails). Also appended to `prod-schema-patch.sql` and added as `V164`.
+- Notes: flagging a ticket is recorded per ticket, not per column; posting it from the Pending list corrects one column — for several columns use Adjust Balance, then dismiss the flag. An installer-level amount shows in the target week as an "Adjustment" row (no ticket number) under that installer.
+- Still to try by hand: flag a ticket, add a −₱350 item, see the roster badge, post one to the next week and confirm the installer's total, dismiss another.
+- For PAYROLL.md: Raquel Baynosa (hauling), Juliet Rondola (cleaning), Teodora San Jose (parts) → Flag for Review on each ticket; the ₱350 shortage → Add Pending Item (−350) for Mikko Librado / Glyza Cruz's installer, or post it straight away.
 
-### Phase 5 — Closed means closed (schema)
-- [ ] Remove the Reopen button and `DELETE /v1/payroll/closures` (backend returns 405/410); `reopenWeek` removed from the service
-- [ ] `payroll_week_closures`: add `close_snapshot` (per-installer gross / deductions / net at close) so what each tech was paid is stored at close (migration + manual script)
-- [ ] Close guard per D6: backend rejects closing (409 + list of techs not Completed) and the portal disables Close with the same list. Enforced server-side, not just in the UI
-- [ ] Frozen rows accept only an explicit whitelist of `hold:` / `pay:` keys (no `pay:factor`, `pay:status`, `pay:split`) unless the request is the balance-release flow
-- [ ] A save that had frozen rows dropped reports them in the response, and the portal shows it instead of a silent "saved"
-- [ ] Close/Post permissions identical in backend and portal (portal shows buttons to payroll job titles, backend allows only ADMIN/MANAGEMENT/MANAGER for closing)
-- [ ] Gate: backend tests + portal typecheck/lint
+### Phase 5 — Closed means closed (schema) — DONE (uncommitted; not yet tried in a browser against a running backend)
+- [x] Reopen removed: the portal button/handler are gone, and `DELETE /v1/payroll/closures` and `reopenWeek` no longer exist (the endpoint now answers 405). The closed chip says a closed week is never reopened.
+- [x] **Close guard, enforced on the server** (D6): closing a week is refused with 409 and the names of the technicians not Completed. Held tickets, released originals and in-house (salaried) crew are ignored; a carry-over or adjustment counts in the week it was released into. The portal disables Close with the same list and shows who is missing.
+- [x] `payroll_week_closures.close_snapshot` (migration `V165`, script, patch): per-installer gross / deductions / net as the screen showed them at close. The portal builds it and sends it with the close request, so it is **informational (client-supplied)**, not a server calculation. The closed chip's tooltip shows the net paid at close.
+- [x] Frozen rows: only `hold:` tags and the balance flow's `pay:status` / `pay:split` / `pay:balanceReleased` / `pay:copyId` may change on a closed row, **and only if its payout share stays the same** (so `pay:factor`, or a status change that would turn 100% into 50%, is refused)
+- [x] A save that touches a closed week and is refused (an edited value, a refused tag, a new row dated in a closed week) is reported in `X-Payroll-Rejected-Count` / `X-Payroll-Rejected` response headers (the body is unchanged for other clients); the portal shows "Some Changes Were Not Saved". An identical resubmission of a closed week is not reported. CORS now exposes those two headers.
+- [x] Close permissions: close/check/reopen already required payroll access on the server (changed earlier by someone else); the portal button uses the same rule
+- [x] Tests: 9 new in `PayrollWeekCloseIntegrationTest` (guard, in-house/held/released, carry-over, snapshot + idempotence, identical resubmission, refused edit, refused payout-share tags, hold + balance tags still work, new row refused); correction tests updated to complete rows before closing
+- [x] Gate: portal typecheck clean; lint on changed files equals the baseline; payroll backend tests pass. Full backend suite: 161 tests, 29 failing in ticket / booking / relay / import classes — the same classes fail on the last committed code (before Phases 3–5), so they are not from this work.
+- **SQL to run BEFORE deploying this backend:** `scripts/postgres/add_close_snapshot_to_payroll_week_closures.sql`. Prod validates the schema at boot, so without this column the backend will not start.
+- Notes: the in-house match uses the same loose name matching as the technician payout filter; if a salaried tech's row is matched to someone else it is skipped from the check (it can only make the check more lenient, never stuck). A week with no payout rows at all can be closed.
+- Still to try by hand: Close is disabled with a list while a tech is pending; completing everyone enables it; the chip tooltip shows the paid total; try to edit a closed ticket's amount and confirm it is refused with a message.
 
-### Phase 6 — Stop the grounding overpayment at the source
-- [ ] Implement D4 in `payrollDerive.ts` (`applyDailyAllowance` / re-sync merge)
-- [ ] Gate: typecheck/lint; sync an open week and confirm grounding is no longer added on its own
+### Phase 6 — Stop the grounding overpayment at the source — DONE (uncommitted; portal only, no backend or SQL)
+- [x] **D4 decided: Earth Grounding is not paid by default; it is paid only when someone types it in.** `applyDailyAllowance` no longer stamps it; Daily Allowance is unchanged.
+- [x] A hand-typed grounding value (the cell is still editable and is flagged manual) survives every sync, as before.
+- [x] The "Earth Grounding" rate is removed from Payroll Settings (it would do nothing); the default rate is 0 and an already-saved branch rate is ignored.
+- [x] Gate: `npx tsc -p tsconfig.app.json --noEmit` clean; lint on the two changed files equals the baseline.
+- **Effect on open weeks:** the next **Sync Latest** clears any grounding amount in an open week that was auto-added and never hand-edited. Closed weeks are untouched (fix those with a correction). Anyone who typed grounding by hand keeps it. Check an open week after its first sync.
+- Not done: nothing marks a ticket "grounding done / c/o customer"; staff simply enter the fee on the tickets where the company really pays it.
 
-## 6. Not in this plan
+## Status
 
-- PAYROLL.md §1 (expense pending receipt).
-- Automatic instalments for large deductions (see D3).
-- Rewriting the whole-month save for normal open-week editing.
-
-## 7. This cutoff, with what exists today
-
-Nothing needs to wait for the build. In the closed week, open each affected ticket → **Adjust Balance** → set the
-corrected amount (Earth Grounding → 0 for the 7 grounding tickets; Dismantling / Power Supply for §3) → target the
-next open week → reason. The §4 items have to stay on a manual list until Phase 4.
+All six phases are built. Phases 3–6 are uncommitted, and none of this has been exercised in a browser against a running backend. SQL to run before the matching backend deploy: `payroll_corrections_origin_nullable.sql` (Phase 4) and `add_close_snapshot_to_payroll_week_closures.sql` (Phase 5, required — prod will not boot without it).

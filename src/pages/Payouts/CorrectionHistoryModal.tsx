@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Search, Undo2 } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -16,6 +16,9 @@ interface CorrectionHistoryModalProps {
   /** Whether the Void button shows for this correction (payroll user, posted, target week still open). */
   canVoid: (c: PayrollCorrection) => boolean;
   onVoid: (c: PayrollCorrection) => void;
+  /** Voids every active item of a bulk request at once. */
+  onVoidBatch: (batchId: string, items: PayrollCorrection[]) => void;
+  /** The id of the correction, or the batch id, being voided right now. */
   voidingId: string | null;
 }
 
@@ -30,6 +33,7 @@ export default function CorrectionHistoryModal({
   initialSearch = '',
   canVoid,
   onVoid,
+  onVoidBatch,
   voidingId
 }: CorrectionHistoryModalProps) {
   const { theme } = useTheme();
@@ -49,7 +53,7 @@ export default function CorrectionHistoryModal({
 
   const installers = Array.from(new Set(corrections.map(c => c.installerName))).sort((a, b) => a.localeCompare(b));
   const term = search.trim().toLowerCase();
-  const shown = corrections
+  const filtered = corrections
     .filter(c => status === 'ALL' || c.status === status)
     .filter(c => !installer || c.installerName === installer)
     .filter(c => !term
@@ -58,6 +62,9 @@ export default function CorrectionHistoryModal({
       || c.installerName.toLowerCase().includes(term)
       || c.reason.toLowerCase().includes(term))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  // Keep the items of one bulk request together, newest request first.
+  const batchOrder = Array.from(new Set(filtered.map(c => c.batchId)));
+  const shown = batchOrder.flatMap(id => filtered.filter(c => c.batchId === id));
   // A voided correction no longer affects anyone's pay, so it stays out of the net.
   const net = shown.filter(c => c.status === 'POSTED').reduce((sum, c) => sum + c.netAmount, 0);
 
@@ -114,12 +121,38 @@ export default function CorrectionHistoryModal({
           {shown.length === 0 ? (
             <div className="py-16 text-center text-sm font-semibold" style={{ color: textMuted }}>No corrections found.</div>
           ) : (
-            shown.map(c => {
+            shown.map((c, idx) => {
               const st = statusStyle(c.status);
+              const batchAll = corrections.filter(x => x.batchId === c.batchId);
+              const batchPosted = batchAll.filter(x => x.status === 'POSTED');
+              const startsBatch = idx === 0 || shown[idx - 1].batchId !== c.batchId;
+              const batchNet = batchPosted.reduce((sum, x) => sum + x.netAmount, 0);
+              const batchVoidable = batchPosted.length > 0 && batchPosted.every(canVoid);
               const dimmed = c.status === 'VOID';
               const when = new Date(c.createdAt);
               return (
-                <div key={c.id} className="rounded-2xl border overflow-hidden" style={{ backgroundColor: cardBg, borderColor: border, opacity: dimmed ? 0.65 : 1 }}>
+                <Fragment key={c.id}>
+                {startsBatch && batchAll.length > 1 && (
+                  <div className="flex items-center justify-between gap-3 flex-wrap rounded-xl px-4 py-2 text-xs font-bold" style={{ color: '#8B5CF6', backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.14)', border: `1px solid ${isLight ? '#ddd6fe' : 'rgba(139,92,246,0.35)'}` }}>
+                    <span>
+                      Bulk correction · {batchAll.length} tickets
+                      {batchPosted.length > 0 && <> · net posted <span className="tabular-nums">{pesoSigned(batchNet)}</span></>}
+                    </span>
+                    {batchVoidable && (
+                      <button
+                        type="button"
+                        onClick={() => onVoidBatch(c.batchId, batchAll)}
+                        disabled={voidingId === c.batchId}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors hover:border-rose-500/50 hover:text-rose-500 disabled:opacity-50 cursor-pointer"
+                        style={{ borderColor: inputBorder, color: textMuted, backgroundColor: inputBg }}
+                      >
+                        <Undo2 className="w-3 h-3" />
+                        {voidingId === c.batchId ? 'Voiding…' : 'Void whole batch'}
+                      </button>
+                    )}
+                  </div>
+                )}
+                <div className="rounded-2xl border overflow-hidden" style={{ backgroundColor: cardBg, borderColor: border, opacity: dimmed ? 0.65 : 1 }}>
                   <div className="flex items-start justify-between gap-4 px-4 pt-4 pb-3">
                     <div className="min-w-0">
                       <div className="flex items-baseline gap-2 flex-wrap">
@@ -193,6 +226,7 @@ export default function CorrectionHistoryModal({
                     </div>
                   </div>
                 </div>
+                </Fragment>
               );
             })
           )}

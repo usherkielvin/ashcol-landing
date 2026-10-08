@@ -153,6 +153,8 @@ export function effectiveRate(key: string, overrides: RateOverrides): number {
 export interface PayrollRates {
   survey: number
   rescheduled: number
+  /** No longer applied: Earth Grounding is customer-shouldered, so it is never stamped onto a row — it is paid
+   *  only when someone types it in. Kept so a branch's already-saved rates still load. */
   earthGrounding: number
   dailyAllowance: number
   lineItemOverrides: RateOverrides
@@ -161,7 +163,7 @@ export interface PayrollRates {
 export const DEFAULT_PAYROLL_RATES: PayrollRates = {
   survey: 100,
   rescheduled: 0,
-  earthGrounding: 100,
+  earthGrounding: 0,
   dailyAllowance: 100,
   lineItemOverrides: {},
 }
@@ -385,17 +387,17 @@ const isManualFee = (row: PayrollRow, field: AutoStampedFee) =>
   row.customFields?.[MANUAL_FEE_PREFIX + field] === '1'
 
 /** Stamps Daily Allowance once per (installer, workDate) — onto that day's first row only.
- *  A zero rate stamps blank rather than "0" so the column reads empty, not ₱0.00. */
+ *  A zero rate stamps blank rather than "0" so the column reads empty, not ₱0.00.
+ *  Earth Grounding is deliberately NOT stamped: the customer carries it, so it is paid only when typed in by hand. */
 export function applyDailyAllowance(rows: PayrollRow[], rates: PayrollRates): PayrollRow[] {
   const seen = new Set<string>()
   const allowance = rates.dailyAllowance > 0 ? String(rates.dailyAllowance) : ''
-  const grounding = rates.earthGrounding > 0 ? String(rates.earthGrounding) : ''
   return rows.map((row) => {
     if (!row.workDate) return row
     const key = `${row.installerName}|${row.workDate}`
     if (seen.has(key)) return row
     seen.add(key)
-    return { ...row, dailyAllowance: allowance, earthGrounding: grounding }
+    return { ...row, dailyAllowance: allowance }
   })
 }
 
@@ -503,9 +505,11 @@ export function deduplicateAndMergePayroll(existing: PayrollRow[], incoming: Pay
         installationUpload: (!isRowDone && isFreshDone) ? fresh.installationUpload : (row.installationUpload || fresh.installationUpload || ''),
         // A hand-edited fee (survey, or cleared to zero) is kept as typed; otherwise a blank/zero fee follows the ticket's rate.
         installationFee: isManualFee(row, 'installationFee') ? row.installationFee : rowInstallFeeNum > 0 ? row.installationFee : (freshInstallFeeNum > 0 ? fresh.installationFee : (row.installationFee || '')),
-        // Auto-stamped from the branch rate: follow the current rate (so a Payroll Settings change,
+        // Daily Allowance is stamped from the branch rate: follow the current rate (so a Payroll Settings change,
         // including to zero, reaches existing rows) unless the user edited this row's value by hand.
         dailyAllowance: isManualFee(row, 'dailyAllowance') ? row.dailyAllowance : fresh.dailyAllowance,
+        // Earth Grounding is never stamped — only a hand-typed value (flagged manual) survives a sync, so a
+        // grounding fee auto-added before this rule is cleared from open weeks the next time they sync.
         earthGrounding: isManualFee(row, 'earthGrounding') ? row.earthGrounding : fresh.earthGrounding,
         actualCollected: row.actualCollected?.trim() ? row.actualCollected : (fresh.actualCollected || ''),
         amountCollected: row.amountCollected?.trim() ? row.amountCollected : (fresh.amountCollected || ''),

@@ -234,6 +234,8 @@ export interface PayrollWeekClosure {
   closedAt?: string
   closedBy?: string
   notes?: string | null
+  /** JSON: per-installer gross / deductions / net as shown when the week was closed. */
+  closeSnapshot?: string | null
 }
 
 export function getSavedPayrollSelection(branchId?: string): SavedPayrollSelection | null {
