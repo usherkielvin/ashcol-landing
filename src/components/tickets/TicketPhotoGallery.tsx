@@ -207,6 +207,7 @@ export function TicketPhotoGallery({
 
   const [photos, setPhotos] = useState<TicketPhoto[]>(() => parseTicketPhotos(rawPhotos))
   const [loading, setLoading] = useState(rawPhotos == null)
+  const [loadFailed, setLoadFailed] = useState(false)
   const [staged, setStaged] = useState<StagedSlot[]>([])
   const [pending, setPending] = useState<PendingUpload[]>([])
   const [editingPhoto, setEditingPhoto] = useState<TicketPhoto | null>(null)
@@ -248,8 +249,14 @@ export function TicketPhotoGallery({
     if (!ticketId || isTempTicketId(ticketId)) { setLoading(false); return }
     let cancelled = false
     setLoading(photosRef.current.length === 0)
+    setLoadFailed(false)
     fetchLatestTicketPhotos(ticketId)
-      .then(latest => { if (!cancelled && latest) setPhotos(latest) })
+      .then(latest => {
+        if (cancelled) return
+        if (latest) setPhotos(latest)
+        // The list payload omits photos, so a failed fetch would otherwise look like "no photos".
+        else if (photosRef.current.length === 0 && rawPhotos == null) setLoadFailed(true)
+      })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [ticketId])
@@ -670,6 +677,11 @@ export function TicketPhotoGallery({
         </div>
       ) : (
         <>
+          {loadFailed && (
+            <p className="text-[11px] font-semibold mb-2 rounded-lg px-3 py-2" style={{ color: '#b45309', backgroundColor: isLight ? '#fffbeb' : 'rgba(245,158,11,0.1)' }}>
+              Couldn't load this ticket's photos (access denied or network error). The empty slots below may not reflect what's attached.
+            </p>
+          )}
           {/* drag-hint strip */}
           {canUpload && (
             <p className="text-[10px] mb-2" style={{ color: textMuted }}>

@@ -2661,13 +2661,18 @@ export default function DTR_Form({ onSwitchToSummary }: { onSwitchToSummary?: ()
     // needs its photo, and deposits to HO belong in COH Deposit, not in Expenses.
     if (reportDate >= DOCUMENTATION_REQUIRED_FROM) {
       const issues: string[] = []
-      const looksLikeDeposit = (t: string) => /deposit|\bcoh\b|\bho\b|head\s*office/i.test(t)
       const expRows = expReceipt.filter(r => num(r.amount) > 0)
       // A row recorded as NO RECEIPT (with its reason) is accepted without a photo.
       const noPhoto = expRows.filter(r => !r.receiptImage && r.receiptNo !== NO_RECEIPT_NO).length
       if (noPhoto) issues.push(`${noPhoto} expense${noPhoto === 1 ? '' : 's'} with no receipt photo — use Scan on each row`)
-      const depositAsExpense = expRows.filter(r => looksLikeDeposit(`${r.name} ${r.description}`)).length
-      if (depositAsExpense) issues.push(`${depositAsExpense} deposit${depositAsExpense === 1 ? '' : 's'} entered under Expenses — move ${depositAsExpense === 1 ? 'it' : 'them'} to COH Deposit`)
+      // Expense rows are never inferred to be deposits from their wording (bank fees, fares to the bank,
+      // etc. all mention "deposit"). Only rows the user explicitly categorised as DEPOSIT are rejected.
+      const depositRows = expRows.filter(r => (r.expenseCategory || '').trim().toUpperCase() === 'DEPOSIT')
+      const depositAsExpense = depositRows.length
+      if (depositAsExpense) {
+        const labels = depositRows.map(r => `"${(r.name || r.description).trim().slice(0, 40)}"`).join(', ')
+        issues.push(`${depositAsExpense} expense${depositAsExpense === 1 ? '' : 's'} categorised as DEPOSIT (${labels}) — move ${depositAsExpense === 1 ? 'it' : 'them'} to COH Deposit`)
+      }
       const depNoSlip = deposits.filter(r => num(r.amount) > 0 && !r.receiptImage).length
       if (depNoSlip) issues.push(`${depNoSlip} COH deposit${depNoSlip === 1 ? '' : 's'} with no deposit slip photo`)
       if (cohMismatch && prevDayCoh && !(isAdmin && cohOverrideAck)) {

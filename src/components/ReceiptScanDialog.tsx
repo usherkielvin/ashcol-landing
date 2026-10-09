@@ -197,7 +197,8 @@ export default function ReceiptScanDialog({
         if (data.receiptNo) { next.receiptNo = String(data.receiptNo); filled.add('receiptNo') }
         const amt = cleanAmount(data.amount)
         if (amt) { next.amount = amt; filled.add('amount') }
-        const cat = data.expenseCategory ? String(data.expenseCategory).toUpperCase() : ''
+        let cat = data.expenseCategory ? String(data.expenseCategory).toUpperCase() : ''
+        if (cat === 'DEPOSIT') cat = '' // reserved for the COH Deposit section; never auto-assigned to an expense
         if (isExpense && cat) { next.expenseCategory = cat; filled.add('expenseCategory') }
         const rawDesc = String(data.description || data.company || '')
         if (rawDesc) { next.description = isExpense ? prefixDescription(rawDesc, cat || next.expenseCategory) : rawDesc; filled.add('description') }
@@ -264,6 +265,8 @@ export default function ReceiptScanDialog({
   const sortedCategories = useMemo(() => {
     const names = new Set(categories)
     if (f.expenseCategory) names.add(f.expenseCategory)
+    // DEPOSIT is reserved for the DTR's COH Deposit section, so it is never offered on an expense.
+    names.delete('DEPOSIT')
     return Array.from(names).sort((a, b) => a.localeCompare(b))
   }, [categories, f.expenseCategory])
 
@@ -486,6 +489,13 @@ export default function ReceiptScanDialog({
                   <div className="flex items-center justify-between"><span className={label}>{isExpense ? 'Receipt / OR no.' : 'Reference no.'}</span>{badge('receiptNo')}</div>
                   <input type="text" value={f.receiptNo} onChange={e => set('receiptNo', e.target.value)} className={`${inputBase} ${duplicate ? 'border-red-400' : fieldBox('receiptNo')}`} />
                 </div>
+
+                {!isExpense && (
+                  <div className="flex flex-col gap-1">
+                    <span className={label}>Category</span>
+                    <span className="self-start px-2.5 py-1 rounded-md text-[11px] font-bold border bg-emerald-500 border-emerald-500 text-white">DEPOSIT</span>
+                  </div>
+                )}
 
                 {isExpense && (
                   <>

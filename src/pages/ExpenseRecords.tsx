@@ -1542,11 +1542,9 @@ export default function ExpenseRecords() {
       // Before the DTR had a COH Deposit section, deposits to HO were logged as expense rows. They count in
       // DTR Expenses, while the matching record is a DEPOSIT (left out of the records total).
       const linkedRec = rid ? byId.get(rid) : undefined;
-      const looksLikeDeposit =
-        /deposit|\bcoh\b|\bho\b|head\s*office|fund\s*transfer/i.test(
-          l.description,
-        ) ||
-        (!!linkedRec && isDepositRecord(linkedRec));
+      // Decided by the linked record's category only, never by the line's wording (a fare "to BPI (deposit
+      // payment)" or a bank fee is a normal expense).
+      const looksLikeDeposit = !!linkedRec && isDepositRecord(linkedRec);
       if (l.type !== "PURCHASE" && looksLikeDeposit) {
         if (rid) linked.add(rid);
         buckets.depositAsExpense.push({
