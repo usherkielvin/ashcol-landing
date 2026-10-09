@@ -77,7 +77,7 @@ import { Settings2, Columns3, FileDown } from 'lucide-react';
 import { listShareLinks, listPayoutEmails, sendPayoutEmail, type PayoutShareLink, type PayoutEmailStatus, type PayoutEmailSummary, type PayoutEmailResult } from '../utils/payoutShareApi';
 import { PayoutEmailChip, PayoutEmailToast, type PayoutEmailToastState } from './Payouts/PayoutEmailParts';
 import { buildPayoutEmailSummary, emailedDay, maskEmail } from './Payouts/payoutEmail';
-import { num, peso, pesoSigned, postedCorrectionsFor, shortDate, longDate,getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, PAYOUT_NOTE_KEY, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef, NET_COLUMN, duplicateLabelKey, findDuplicateColumnGroups } from './Payouts/payoutUtils';
+import { isClosedWeekRow, freezeClosedWeekRows, num, peso, pesoSigned, postedCorrectionsFor, shortDate, longDate,getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, PAYOUT_NOTE_KEY, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef, NET_COLUMN, duplicateLabelKey, findDuplicateColumnGroups } from './Payouts/payoutUtils';
 
 /** Orders member accounts for name matching: active members of the selected branch first, then other active
  *  members, then inactive ones. A first name that several accounts share must resolve to the branch's own member. */
@@ -1078,7 +1078,7 @@ export default function Payouts() {
       const res = await fetch(`${API_BASE_URL}/v1/payroll`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ branchId: bId, periodMonth: mKey, entries: buildPayrollEntries(data) }),
+        body: JSON.stringify({ branchId: bId, periodMonth: mKey, entries: buildPayrollEntries(data.filter(r => !isClosedWeekRow(r, closures, bId))) }),
       })
       if (res.ok) {
         const refused = readRefusedEdits(res)
@@ -1131,11 +1131,15 @@ export default function Payouts() {
       if (!getRes.ok) return false
       const list = await getRes.json()
       const monthRows: PayrollRow[] = (Array.isArray(list) ? list : []).map(mapSavedPayrollEntry)
+      const originalJson = new Map(monthRows.map(r => [r.id, JSON.stringify(r)]))
       const mutated = mutate(monthRows)
+      // A closed week's row is only sent when this change touched it (a hold/release tag); the rest of the closed
+      // week stays exactly as the server has it instead of being re-sent and re-checked.
+      const toSend = mutated.filter(r => !(isClosedWeekRow(r, closures, bId) && originalJson.get(r.id) === JSON.stringify(r)))
       const putRes = await fetch(`${API_BASE_URL}/v1/payroll`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ branchId: bId, periodMonth: monthKey, entries: buildPayrollEntries(mutated) }),
+        body: JSON.stringify({ branchId: bId, periodMonth: monthKey, entries: buildPayrollEntries(toSend) }),
       })
       if (!putRes.ok) return false
       const refused = readRefusedEdits(putRes)
@@ -1158,7 +1162,7 @@ export default function Payouts() {
       console.error('Failed to mutate saved payroll month:', e)
       return false
     }
-  }, [viewOnly])
+  }, [viewOnly, closures])
 
   // Backend PUTs regenerate every row's id on each save (a full month replace, not a per-row
   // upsert — see PayrollService.replaceEntries) so an id captured from an earlier fetch can't be
@@ -1271,7 +1275,7 @@ export default function Payouts() {
         }
         let merged = savedRows
         if (scheduleResult.ok && scheduleResult.rows.length > 0) {
-          merged = deduplicateAndMergePayroll(savedRows, scheduleResult.rows)
+          merged = freezeClosedWeekRows(deduplicateAndMergePayroll(savedRows, scheduleResult.rows), savedRows, closures, branchFilter)
         }
 
         // Update the month cache with fully-merged rows so week switches within this month are instant

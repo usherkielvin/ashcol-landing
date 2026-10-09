@@ -218,6 +218,42 @@ export const normalizeSlug = (str: string) =>
 export const compactSlug = (str: string) =>
   str.toLowerCase().replace(/[^a-z0-9]/g, '')
 
+/** The date that decides which week a row belongs to: a carry-over / adjustment is paid in the week it was released
+ *  into, everything else in the week it was worked. */
+const weekDateOf = (r: PayrollRow): string =>
+  isCarryOver(r) ? (r.customFields?.['hold:targetWeekFrom'] ?? '') : r.workDate
+
+/** True if the row sits in a week that has been closed. A closed week is final: it is never changed or re-sent. */
+export const isClosedWeekRow = (r: PayrollRow, closures: PayrollWeekClosure[], branchId: string): boolean => {
+  const d = weekDateOf(r)
+  return Boolean(d) && closures.some(c => c.branchId === branchId && d >= c.weekFrom && d <= c.weekTo)
+}
+
+const identityKey = (r: PayrollRow): string => r.ticketId
+  ? `tk:${r.ticketId}|${r.installerName.trim().toLowerCase()}`
+  : `nt:${(r.ticketNumber || '').trim().toLowerCase()}|${r.installerName.trim().toLowerCase()}|${r.workDate || ''}|${r.customFields?.['hold:copyMarker'] ?? ''}`
+
+/**
+ * After merging fresh Schedules data into a month, put every closed-week row back exactly as it was saved: a sync
+ * must not re-stamp fees, change a status or add late rows to a week that is already paid. (Anything found wrong in
+ * a closed week is fixed with a correction in an open week.) A row new to a closed week is not added.
+ */
+export const freezeClosedWeekRows = (merged: PayrollRow[], saved: PayrollRow[], closures: PayrollWeekClosure[], branchId: string): PayrollRow[] => {
+  const savedByKey = new Map(saved.map(r => [identityKey(r), r]))
+  const out: PayrollRow[] = []
+  const kept = new Set<string>()
+  for (const r of merged) {
+    if (!isClosedWeekRow(r, closures, branchId)) { out.push(r); continue }
+    const original = savedByKey.get(identityKey(r))
+    if (original) { out.push(original); kept.add(identityKey(r)) }
+  }
+  // Never lose a saved closed row the merge happened to drop.
+  for (const r of saved) {
+    if (isClosedWeekRow(r, closures, branchId) && !kept.has(identityKey(r))) out.push(r)
+  }
+  return out
+}
+
 export interface SavedPayrollSelection {
   month: string
   weekFrom: string
