@@ -336,7 +336,7 @@ export default function Payouts() {
   const [bulkRows, setBulkRows] = useState<PayrollRow[] | null>(null)
   const [bulkSubmitting, setBulkSubmitting] = useState(false)
   const [bulkError, setBulkError] = useState<string | null>(null)
-  // Reassigned tickets still listed under their previous tech after the last sync, with the reason for each.
+  // Reassigned tickets from the last sync that the user should know about, with what happened to each.
   const [reassignedKept, setReassignedKept] = useState<ReassignKept[]>([])
   const [reassignedOpen, setReassignedOpen] = useState(false)
   // Pending items: things flagged against a closed week to settle later (see docs/plans/closed-week-corrections.md).
@@ -1380,8 +1380,8 @@ export default function Payouts() {
       })
 
       setRows(combinedSavedRows)
-      // Reassigned tickets the sync could not take off their previous tech — kept for the toolbar notice, and shown
-      // straight away after a manual Sync Latest so it is never a silent "why is it still there?".
+      // What the sync has to say about reassigned tickets (one in a closed week, a Completed payout that changed,
+      // deductions with nowhere to go) — kept for the toolbar notice and shown straight away after a manual Sync Latest.
       setReassignedKept(keptReassigned)
       if (isManualRefresh && keptReassigned.length > 0) setReassignedOpen(true)
     } catch (e) {
@@ -5004,9 +5004,9 @@ export default function Payouts() {
                   onClick={() => setReassignedOpen(true)}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border transition-all shadow-xs active:scale-95 cursor-pointer"
                   style={{ color: '#D97706', borderColor: isLight ? '#fde68a' : 'rgba(217,119,6,0.35)', backgroundColor: isLight ? '#fffbeb' : 'rgba(217,119,6,0.08)' }}
-                  title="Tickets reassigned to another tech that are still listed under the previous one, and why"
+                  title="Reassigned tickets from the last sync that need a look"
                 >
-                  <span>Reassigned, Not Removed ({reassignedKept.length})</span>
+                  <span>Reassigned Tickets ({reassignedKept.length})</span>
                 </button>
               )}
 
@@ -6958,14 +6958,14 @@ export default function Payouts() {
         />
       )}
 
-      {/* Reassigned tickets the sync left under their previous tech, and why */}
+      {/* Reassigned tickets from the last sync that need a look, and why */}
       {reassignedOpen && reassignedKept.length > 0 && createPortal(
         <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-150">
           <div className="w-full max-w-xl rounded-2xl border shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: '85vh', backgroundColor: cardBg, borderColor: border }}>
             <div className="px-6 py-4" style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}>
-              <div className="text-sm font-extrabold uppercase tracking-wide" style={{ color: textPrimary }}>Reassigned, Not Removed</div>
+              <div className="text-sm font-extrabold uppercase tracking-wide" style={{ color: textPrimary }}>Reassigned Tickets</div>
               <div className="text-[11px] mt-1" style={{ color: textMuted }}>
-                These tickets were moved to another tech, but the sync left them under the previous one for the reason shown. Every other reassigned ticket was removed from its old tech.
+                A ticket moved to another tech is removed from the previous tech in an open week. These are the ones from the last sync that need a look; every other reassigned ticket was simply removed.
               </div>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto px-6 py-3 flex flex-col gap-2">

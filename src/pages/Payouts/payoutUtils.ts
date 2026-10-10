@@ -254,36 +254,42 @@ export const freezeClosedWeekRows = (merged: PayrollRow[], saved: PayrollRow[], 
   return out
 }
 
-/** Why a reassigned ticket's old row was left in place instead of being removed by a sync. */
-export type ReassignKeptReason = 'closed' | 'completed' | 'held' | 'deductions'
+/**
+ * What a sync has to tell the user about a reassigned ticket:
+ *  - 'closed': left under the previous tech because that week is closed (a closed week keeps whoever it paid);
+ *  - 'reopened': removed, and it was part of a Completed payout that paid money — that tech's week is back to Pending;
+ *  - 'deductionsLost': removed, and it held the tech's deductions / remarks for a week they now have no job in.
+ */
+export type ReassignNoteReason = 'closed' | 'reopened' | 'deductionsLost'
 
-/** A reassigned ticket still listed under its previous tech, and why. */
+/** A reassigned ticket the user should know about (see ReassignNoteReason). */
 export interface ReassignKept {
   ticketNumber: string
   customerName: string
-  /** The previous tech, whose row was kept. */
+  /** The previous tech. */
   installerName: string
   /** Who the ticket is under now. */
   nowUnder: string[]
-  reason: ReassignKeptReason
+  reason: ReassignNoteReason
 }
 
 /**
- * Removes a saved row whose ticket has since been reassigned to someone else.
+ * Removes the previous tech's row when a ticket has been reassigned to someone else.
  *
  * The sync matches rows by ticket + installer, so when a ticket moves from tech A to tech B it adds a row for B
- * but nothing ever took A's row away — the job was then paid twice. `fresh` is what Schedules reports right now:
+ * but nothing ever took A's row away — the job then showed under both. `fresh` is what Schedules reports right now:
  * a saved row is stale when its ticket IS in `fresh` but no longer under that row's installer.
  *
- * Deliberately narrow, so a sync can't wipe pay by accident — and every row it leaves is reported in `kept`
- * with the reason, so the user is never left wondering why a reassigned ticket still shows under the old tech:
- *  - only when the ticket is still in `fresh` under another name (a ticket merely missing from `fresh` is left alone);
- *  - 'closed': the row's week is closed — a closed week keeps whoever it paid;
- *  - 'completed': the payout was already Completed (released) and the row pays something (a ₱0 row is removed anyway);
- *  - 'held': the row is on hold / released into another week;
- *  - 'deductions': the installer's weekly deductions and remarks ride on one of their rows; they are moved to another
- *    of that installer's rows in the same week first, and only if there is none is the row kept rather than lose them.
- * `weekKeyOf` maps a work date to its payout week (e.g. the week's start date).
+ * In an OPEN week a stale row is always removed — Completed, on hold or not — together with any carry-over of that
+ * ticket for that tech (but never a correction row, which belongs to a closed week). A CLOSED week is never changed.
+ * A ticket merely missing from `fresh` is left alone, so a failed or partial sync can't wipe pay.
+ *
+ * Two side effects, both reported in `notes`:
+ *  - the tech's weekly deductions and remarks ride on one of their rows; they move to another of that tech's rows in
+ *    the same week, and are lost only if the tech has no other job that week ('deductionsLost');
+ *  - if the removed row was part of a Completed payout and paid money, the rest of that tech's week goes back to
+ *    Pending, because the amount that was finalized is no longer the amount on the sheet ('reopened').
+ * `weekKeyOf` maps a work date to its payout week's start date.
  */
 export const dropReassignedRows = (
   merged: PayrollRow[],
@@ -299,62 +305,82 @@ export const dropReassignedRows = (
     freshNames.set(r.ticketId, [...(freshNames.get(r.ticketId) ?? []), r.installerName])
     freshPairs.add(`${r.ticketId}|${who(r)}`)
   }
-  const reassigned = (r: PayrollRow) =>
-    Boolean(r.ticketId) && freshNames.has(r.ticketId as string) && !freshPairs.has(`${r.ticketId}|${who(r)}`) && !isCarryOver(r)
+  // The ticket a row is paid for: its own, or — for a carry-over of a held / split ticket — the one it came from.
+  // A correction row (pay:adjust) is tied to a closed week's payout and is never removed here.
+  const ticketOf = (r: PayrollRow): string =>
+    r.ticketId || (isCarryOver(r) && r.customFields?.['pay:adjust'] !== '1' ? r.customFields?.['hold:originTicketId'] ?? '' : '')
+  const reassigned = (r: PayrollRow) => {
+    const t = ticketOf(r)
+    return Boolean(t) && freshNames.has(t) && !freshPairs.has(`${t}|${who(r)}`)
+  }
+  // The week a row is paid in (a carry-over is paid in the week it was released into).
+  const weekOf = (r: PayrollRow): string =>
+    isCarryOver(r) ? (r.customFields?.['hold:targetWeekFrom'] ?? '') : (r.workDate ? weekKeyOf(r.workDate) : '')
   const carriesWeekly = (k: string) => k.startsWith('ded:') || k.startsWith('installer:')
 
-  const kept: ReassignKept[] = []
-  const note = (r: PayrollRow, reason: ReassignKeptReason) => kept.push({
+  const notes: ReassignKept[] = []
+  const note = (r: PayrollRow, reason: ReassignNoteReason) => notes.push({
     ticketNumber: r.ticketNumber || '', customerName: r.customerName || '', installerName: r.installerName,
-    nowUnder: freshNames.get(r.ticketId as string) ?? [], reason,
+    nowUnder: freshNames.get(ticketOf(r)) ?? [], reason,
   })
 
   const stale: PayrollRow[] = []
   for (const r of merged) {
     if (!reassigned(r)) continue
     if (isClosed(r)) note(r, 'closed')
-    // A Completed payout was released, so its rows stay — unless the row pays nothing, in which case taking it
-    // away changes no one's money.
-    else if (r.status === 'COMPLETE' && rowTotal(r) !== 0) note(r, 'completed')
-    else if (!isActivePayRow(r) || r.customFields?.['pay:balanceReleased'] === '1') note(r, 'held')
     else stale.push(r)
   }
-  if (stale.length === 0) return { rows: merged, kept }
+  if (stale.length === 0) return { rows: merged, kept: notes }
   const staleIds = new Set(stale.map(r => r.id))
   const moved = new Map<string, Record<string, string>>()   // surviving row id -> weekly keys handed to it
-  const keep = new Set<string>()                             // stale rows kept because their weekly keys have nowhere to go
+  const reopen = new Set<string>()                           // "installer|week" whose Completed payout changed
 
   for (const r of stale) {
     const weekly = Object.entries(r.customFields || {}).filter(([k, v]) => carriesWeekly(k) && v !== '')
-    if (weekly.length === 0) continue
-    const heir = merged.find(o =>
-      !staleIds.has(o.id) && who(o) === who(r) && !isCarryOver(o) && isActivePayRow(o)
-      && Boolean(o.workDate) && Boolean(r.workDate) && weekKeyOf(o.workDate) === weekKeyOf(r.workDate))
-    if (!heir) { keep.add(r.id); note(r, 'deductions'); continue }
-    const given = moved.get(heir.id) ?? {}
-    for (const [k, v] of weekly) {
-      if ((heir.customFields?.[k] ?? '') === '' && given[k] === undefined) given[k] = v
+    if (weekly.length > 0) {
+      const heir = merged.find(o =>
+        !staleIds.has(o.id) && who(o) === who(r) && !isCarryOver(o) && isActivePayRow(o) && !isClosed(o)
+        && weekOf(o) !== '' && weekOf(o) === weekOf(r))
+      if (!heir) note(r, 'deductionsLost')
+      else {
+        const given = moved.get(heir.id) ?? {}
+        for (const [k, v] of weekly) {
+          if ((heir.customFields?.[k] ?? '') === '' && given[k] === undefined) given[k] = v
+        }
+        moved.set(heir.id, given)
+      }
     }
-    moved.set(heir.id, given)
+    if (r.status === 'COMPLETE' && isActivePayRow(r) && rowTotal(r) !== 0) {
+      reopen.add(`${who(r)}|${weekOf(r)}`)
+      note(r, 'reopened')
+    }
   }
 
   return {
     rows: merged
-      .filter(r => !staleIds.has(r.id) || keep.has(r.id))
-      .map(r => moved.has(r.id) ? { ...r, customFields: { ...(r.customFields || {}), ...moved.get(r.id) } } : r),
-    kept,
+      .filter(r => !staleIds.has(r.id))
+      .map(r => {
+        let next = r
+        if (moved.has(r.id)) next = { ...next, customFields: { ...(next.customFields || {}), ...moved.get(r.id) } }
+        if (next.status === 'COMPLETE' && !isClosed(next) && reopen.has(`${who(next)}|${weekOf(next)}`)) next = { ...next, status: 'PENDING' }
+        return next
+      }),
+    kept: notes,
   }
 }
 
-/** One line per kept row: what it is, who has it now, why it stayed and what to do about it. */
+/** One line per note: the ticket, who has it now, and what happened / what to do. */
 export const describeReassignKept = (k: ReassignKept, displayName: (name: string) => string): string => {
   const what = `${k.ticketNumber || 'No ticket no.'}${k.customerName ? ` (${k.customerName})` : ''}`
-  const now = k.nowUnder.length ? ` now under ${k.nowUnder.map(displayName).join(' / ')}` : ''
-  const why = k.reason === 'closed' ? 'that week is closed, so it stays as paid — post a correction (Adjust Balance) to take it back'
-    : k.reason === 'completed' ? 'the payout is already Completed — set it back to Pending and sync again, or post a correction if it was paid'
-    : k.reason === 'held' ? 'the ticket is on hold or was released into another week'
-    : 'it holds this tech\u2019s deductions or remarks for the week and they have no other job to move them to — clear or move them, then sync again'
-  return `${what}: still under ${displayName(k.installerName)}${now} because ${why}.`
+  const now = k.nowUnder.length ? `, now under ${k.nowUnder.map(displayName).join(' / ')}` : ''
+  const old = displayName(k.installerName)
+  if (k.reason === 'closed') {
+    return `${what}${now}: still listed under ${old} because that week is closed and stays as paid. Use Adjust Balance on the ticket to take it back in an open week.`
+  }
+  if (k.reason === 'reopened') {
+    return `${what}${now}: removed from ${old}. It was part of a Completed payout, so ${old}'s week is back to Pending \u2014 check the new amount and complete it again.`
+  }
+  return `${what}${now}: removed from ${old}. It held ${old}'s deductions or remarks for that week and they have no other job in it, so those were dropped \u2014 re-enter them on another week if they still apply.`
 }
 
 export interface SavedPayrollSelection {
