@@ -1,4 +1,4 @@
-import { rowTotal, payFactor, isCarryOver, type PayrollRow } from '../../utils/payrollDerive'
+import { rowTotal, payFactor, isCarryOver, isActivePayRow, normalizeInstallerName, type PayrollRow } from '../../utils/payrollDerive'
 import { parseCorrectionChanges, type PayrollCorrection } from '../../utils/payrollCorrectionsApi'
 
 
@@ -252,6 +252,59 @@ export const freezeClosedWeekRows = (merged: PayrollRow[], saved: PayrollRow[], 
     if (isClosedWeekRow(r, closures, branchId) && !kept.has(identityKey(r))) out.push(r)
   }
   return out
+}
+
+/**
+ * Removes a saved row whose ticket has since been reassigned to someone else.
+ *
+ * The sync matches rows by ticket + installer, so when a ticket moves from tech A to tech B it adds a row for B
+ * but nothing ever took A's row away — the job was then paid twice. `fresh` is what Schedules reports right now:
+ * a saved row is stale when its ticket IS in `fresh` but no longer under that row's installer.
+ *
+ * Deliberately narrow, so a sync can't wipe pay by accident:
+ *  - only when the ticket is still in `fresh` under another name (a ticket merely missing from `fresh` is left alone);
+ *  - never a row already Completed (that payout was released) or one on hold / released / carried over;
+ *  - the installer's weekly deductions and remarks ride on one of their rows, so they are moved to another of that
+ *    installer's rows in the same week first; if there is none, the row is kept rather than lose them.
+ * `weekKeyOf` maps a work date to its payout week (e.g. the week's start date).
+ */
+export const dropReassignedRows = (merged: PayrollRow[], fresh: PayrollRow[], weekKeyOf: (workDate: string) => string): PayrollRow[] => {
+  const who = (r: PayrollRow) => normalizeInstallerName(r.installerName).toLowerCase()
+  const freshTickets = new Set<string>()
+  const freshPairs = new Set<string>()
+  for (const r of fresh) {
+    if (!r.ticketId) continue
+    freshTickets.add(r.ticketId)
+    freshPairs.add(`${r.ticketId}|${who(r)}`)
+  }
+  const isStale = (r: PayrollRow) =>
+    Boolean(r.ticketId) && freshTickets.has(r.ticketId as string) && !freshPairs.has(`${r.ticketId}|${who(r)}`)
+    && r.status !== 'COMPLETE' && !isCarryOver(r) && isActivePayRow(r) && r.customFields?.['pay:balanceReleased'] !== '1'
+  const carriesWeekly = (k: string) => k.startsWith('ded:') || k.startsWith('installer:')
+
+  const stale = merged.filter(isStale)
+  if (stale.length === 0) return merged
+  const staleIds = new Set(stale.map(r => r.id))
+  const moved = new Map<string, Record<string, string>>()   // surviving row id -> weekly keys handed to it
+  const keep = new Set<string>()                             // stale rows kept because their weekly keys have nowhere to go
+
+  for (const r of stale) {
+    const weekly = Object.entries(r.customFields || {}).filter(([k, v]) => carriesWeekly(k) && v !== '')
+    if (weekly.length === 0) continue
+    const heir = merged.find(o =>
+      !staleIds.has(o.id) && who(o) === who(r) && !isCarryOver(o) && isActivePayRow(o)
+      && Boolean(o.workDate) && Boolean(r.workDate) && weekKeyOf(o.workDate) === weekKeyOf(r.workDate))
+    if (!heir) { keep.add(r.id); continue }
+    const given = moved.get(heir.id) ?? {}
+    for (const [k, v] of weekly) {
+      if ((heir.customFields?.[k] ?? '') === '' && given[k] === undefined) given[k] = v
+    }
+    moved.set(heir.id, given)
+  }
+
+  return merged
+    .filter(r => !staleIds.has(r.id) || keep.has(r.id))
+    .map(r => moved.has(r.id) ? { ...r, customFields: { ...(r.customFields || {}), ...moved.get(r.id) } } : r)
 }
 
 export interface SavedPayrollSelection {

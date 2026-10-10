@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useSearchParams, useParams, useLocation } from 'react-router-dom'
+import { motion, AnimatePresence } from 'framer-motion'
 import { NumericFormat } from 'react-number-format'
 import {
   Search, Building2, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
@@ -77,7 +78,7 @@ import { Settings2, Columns3, FileDown } from 'lucide-react';
 import { listShareLinks, listPayoutEmails, sendPayoutEmail, type PayoutShareLink, type PayoutEmailStatus, type PayoutEmailSummary, type PayoutEmailResult } from '../utils/payoutShareApi';
 import { PayoutEmailChip, PayoutEmailToast, type PayoutEmailToastState } from './Payouts/PayoutEmailParts';
 import { buildPayoutEmailSummary, emailedDay, maskEmail } from './Payouts/payoutEmail';
-import { isClosedWeekRow, freezeClosedWeekRows, num, peso, pesoSigned, postedCorrectionsFor, shortDate, longDate,getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, PAYOUT_NOTE_KEY, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef, NET_COLUMN, duplicateLabelKey, findDuplicateColumnGroups } from './Payouts/payoutUtils';
+import { isClosedWeekRow, freezeClosedWeekRows, dropReassignedRows, num, peso, pesoSigned, postedCorrectionsFor, shortDate, longDate,getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, PAYOUT_NOTE_KEY, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef, NET_COLUMN, duplicateLabelKey, findDuplicateColumnGroups } from './Payouts/payoutUtils';
 
 /** Orders member accounts for name matching: active members of the selected branch first, then other active
  *  members, then inactive ones. A first name that several accounts share must resolve to the branch's own member. */
@@ -90,6 +91,27 @@ function rankTechnicians<T extends { branchId?: string; isActive: boolean }>(lis
 function readRefusedEdits(res: Response): { count: number; which: string } {
   const count = Number(res.headers.get('X-Payroll-Rejected-Count') || 0)
   return { count: Number.isFinite(count) ? count : 0, which: res.headers.get('X-Payroll-Rejected') || '' }
+}
+
+/** Smooth directional slide and fade variants for transitions between the roster view and technician detail view */
+const viewTransitionVariants = {
+  enter: (direction: 'forward' | 'backward') => ({
+    opacity: 0,
+    x: direction === 'forward' ? 24 : -24,
+  }),
+  center: {
+    opacity: 1,
+    x: 0,
+  },
+  exit: (direction: 'forward' | 'backward') => ({
+    opacity: 0,
+    x: direction === 'forward' ? -24 : 24,
+  }),
+}
+
+const viewTransitionConfig = {
+  duration: 0.22,
+  ease: [0.22, 1, 0.36, 1] as const,
 }
 
 export default function Payouts() {
@@ -163,6 +185,10 @@ export default function Payouts() {
 
   // null = the roster (list of installers); a name = that installer's own table.
   const [selectedInstaller, setSelectedInstaller] = useState<string | null>(installerFromUrl || null)
+  // Direction of the view transition ('forward' = opening tech table, 'backward' = returning to roster)
+  const [transitionDirection, setTransitionDirection] = useState<'forward' | 'backward'>('forward')
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null)
+  const rosterScrollPosRef = useRef<number>(0)
 
   // Seamlessly redirect legacy /payroll paths to clean /payouts URLs
   useEffect(() => {
@@ -214,6 +240,15 @@ export default function Payouts() {
       }
       if (matched) {
         if (matched !== selectedInstaller) {
+          if (!selectedInstaller) {
+            if (scrollContainerRef.current) {
+              rosterScrollPosRef.current = scrollContainerRef.current.scrollTop
+            }
+            setTransitionDirection('forward')
+            requestAnimationFrame(() => {
+              scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'instant' })
+            })
+          }
           setSelectedInstaller(matched)
         }
         return
@@ -225,22 +260,44 @@ export default function Payouts() {
     if (urlInstaller && urlInstaller !== selectedInstaller) {
       setSelectedInstaller(urlInstaller)
     } else if (!installerSlug && !urlInstaller && selectedInstaller) {
+      setTransitionDirection('backward')
       setSelectedInstaller(null)
+      requestAnimationFrame(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTo({ top: rosterScrollPosRef.current, behavior: 'instant' })
+        }
+      })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [installerSlug, searchParams, rows, selectedInstaller])
 
   const handleSelectInstaller = useCallback((name: string | null) => {
-    setSelectedInstaller(name)
-    const currentBranch = branches.find(b => b.id === branchFilter)
-    const bSlug = currentBranch ? normalizeSlug(currentBranch.name) : (branchFilter ? normalizeSlug(branchFilter) : '')
     if (name) {
+      if (scrollContainerRef.current) {
+        rosterScrollPosRef.current = scrollContainerRef.current.scrollTop
+      }
+      setTransitionDirection('forward')
+      setSelectedInstaller(name)
+      const currentBranch = branches.find(b => b.id === branchFilter)
+      const bSlug = currentBranch ? normalizeSlug(currentBranch.name) : (branchFilter ? normalizeSlug(branchFilter) : '')
       const iSlug = normalizeSlug(name)
       const targetPath = bSlug ? `/payouts/${bSlug}/${iSlug}` : `/payouts/all/${iSlug}`
       navigate(targetPath, { replace: false })
+      requestAnimationFrame(() => {
+        scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'instant' })
+      })
     } else {
+      setTransitionDirection('backward')
+      setSelectedInstaller(null)
+      const currentBranch = branches.find(b => b.id === branchFilter)
+      const bSlug = currentBranch ? normalizeSlug(currentBranch.name) : (branchFilter ? normalizeSlug(branchFilter) : '')
       const targetPath = bSlug ? `/payouts/${bSlug}` : '/payouts'
       navigate(targetPath, { replace: false })
+      requestAnimationFrame(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTo({ top: rosterScrollPosRef.current, behavior: 'instant' })
+        }
+      })
     }
   }, [branches, branchFilter, navigate])
   // The job row whose full fee breakdown is open in the popup (desktop list view).
@@ -1275,7 +1332,11 @@ export default function Payouts() {
         }
         let merged = savedRows
         if (scheduleResult.ok && scheduleResult.rows.length > 0) {
-          merged = freezeClosedWeekRows(deduplicateAndMergePayroll(savedRows, scheduleResult.rows), savedRows, closures, branchFilter)
+          // A ticket reassigned to another tech leaves its old row behind (rows match on ticket + installer) — drop it,
+          // then put closed weeks back exactly as saved (a closed week keeps whoever it paid).
+          const current = dropReassignedRows(
+            deduplicateAndMergePayroll(savedRows, scheduleResult.rows), scheduleResult.rows, d => weekContaining(d, cycle).from)
+          merged = freezeClosedWeekRows(current, savedRows, closures, branchFilter)
         }
 
         // Update the month cache with fully-merged rows so week switches within this month are instant
@@ -1324,7 +1385,7 @@ export default function Payouts() {
         setEarlyView(false)
       }
     }
-  }, [branchFilter, monthsToFetch, branches, rates, canManagePayroll, savePayrollToBackend, activeWeek, closures])
+  }, [branchFilter, monthsToFetch, branches, rates, canManagePayroll, savePayrollToBackend, activeWeek, closures, cycle])
 
   useEffect(() => {
     const token = getToken()
@@ -3083,664 +3144,30 @@ export default function Payouts() {
     return `${by}${on}${paid}. A closed week is never reopened \u2014 use Adjust Balance for a correction.`
   })()
 
-  return (
-    <div className="flex flex-col gap-4 pb-4 md:pb-4 h-full min-h-0 overflow-y-auto overflow-x-hidden overscroll-none touch-pan-y [&>*]:shrink-0">
-      {/* Toolbar — branch, date, range, and search filters plus a sync action. */}
-      <div
-        className={`relative z-30 -mx-1.5 md:mx-0 rounded-none md:rounded-2xl p-2.5 md:p-3.5 overflow-visible shadow-none md:shadow-xs border border-transparent md:border-[var(--tb-border)] bg-[var(--tb-page-bg)] md:bg-[var(--tb-card-bg)] ${selectedInstaller ? 'hidden' : ''}`}
-        style={{
-          ['--tb-card-bg' as string]: cardBg,
-          ['--tb-border' as string]: border,
-          ['--tb-page-bg' as string]: isLight ? '#f1f5f9' : '#060B18',
-        }}
+  const renderInstallerDetail = () => {
+    if (!selectedInstaller) return null
+    return (
+      <motion.div
+        key={`payouts-detail-view-${selectedInstaller}`}
+        custom={transitionDirection}
+        variants={viewTransitionVariants}
+        initial="enter"
+        animate="center"
+        exit="exit"
+        transition={viewTransitionConfig}
+        className="flex flex-col gap-4 w-full"
       >
-        {/* Desktop/tablet — full inline controls, unchanged */}
-        <div className="hidden md:flex items-center gap-2.5">
-          {/* Branch filter */}
-          {canManagePayroll ? (
-            <div className="relative flex-1 min-w-[130px] md:flex-none md:w-48 lg:w-52 shrink-0">
-              <Building2 className="absolute left-3 w-4 h-4 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
-              <select
-                value={branchFilter}
-                onChange={e => {
-                  const newBranchId = e.target.value
-                  setBranchFilter(newBranchId)
-                  setSelectedInstaller(null)
-                  const b = branches.find(x => x.id === newBranchId)
-                  if (b) {
-                    navigate(`/payouts/${normalizeSlug(b.name)}`)
-                  } else {
-                    navigate('/payouts')
-                  }
-                }}
-                className="w-full pl-9 pr-8 py-1.5 md:py-2 rounded-xl text-xs font-bold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#10B981]/50 border transition-all truncate"
-                style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
-                aria-label="Filter by Branch"
-              >
-                <option value="">Select branch…</option>
-                {branches.filter(b => !(Boolean((b as any).isFranchise) || isFranchiseBranch(b.id) || isFranchiseBranch(b.name))).map(b => {
-                  return (
-                    <option key={b.id} value={b.id}>
-                      {formatBranchName(b.name)}
-                    </option>
-                  )
-                })}
-              </select>
-              <ChevronDown className="absolute right-3 w-3.5 h-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 px-3 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 whitespace-nowrap" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
-              <Building2 className="w-4 h-4 shrink-0 text-emerald-500" />
-              <span className="truncate max-w-[120px]">
-                {branches.find(b => b.id === branchFilter)?.name
-                  ? formatBranchName(branches.find(b => b.id === branchFilter)!.name)
-                  : formatBranchName(user?.branchId || 'My Branch')}
-              </span>
-            </div>
-          )}
-
-          {/* Month navigator — compact pill with prev/next arrows */}
-          <div className="flex items-center gap-0.5 rounded-xl border px-1 py-0.5 shrink-0" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
-            <button
-              type="button"
-              onClick={() => setActiveMonth(m => prevMonth(m))}
-              className="p-1 rounded-lg transition-colors hover:bg-emerald-500/15 active:scale-90"
-              title="Previous month"
-              style={{ color: textMuted }}
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
-            <span className="px-1.5 text-xs font-bold tracking-tight whitespace-nowrap" style={{ color: textPrimary }}>
-              {formatMonth(activeMonth)}
-            </span>
-            <button
-              type="button"
-              onClick={() => setActiveMonth(m => nextMonth(m))}
-              className="p-1 rounded-lg transition-colors hover:bg-emerald-500/15 active:scale-90"
-              title="Next month"
-              style={{ color: textMuted }}
-            >
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {/* Technician filter — narrows the roster below to one installer */}
-          {branchFilter && (
-            <div className="relative flex-1 min-w-[120px] md:flex-none md:w-44 lg:w-48 shrink-0">
-              <Users className="absolute left-3 w-4 h-4 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
-              <select
-                value={technicianFilter}
-                onChange={e => setTechnicianFilter(e.target.value)}
-                className="w-full pl-9 pr-8 py-1.5 md:py-2 rounded-xl text-xs font-bold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#10B981]/50 border transition-all truncate"
-                style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
-                aria-label="Filter by Technician"
-              >
-                <option value="">ALL TECHNICIANS</option>
-                {technicianOptions.map(name => (
-                  <option key={name} value={name}>{displayInstallerName(name).toUpperCase()}</option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-3 w-3.5 h-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
-            </div>
-          )}
-
-          {/* Search */}
-          <div className="relative flex-1 min-w-[120px] md:flex-none md:w-60 lg:w-64 shrink-0">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: textMuted }} />
-            <input
-              type="text"
-              placeholder="Search..."
-              value={rawSearch}
-              onChange={e => handleSearchChange(e.target.value)}
-              className="w-full pl-10 pr-3 py-1.5 md:py-2 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all border"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-            />
-          </div>
-
-          {/* Sync Latest Button */}
-          {branchFilter && canManagePayroll && (
-            <button
-              type="button"
-              onClick={() => void loadAndSync(true)}
-              disabled={syncing || initialLoading || isWeekClosed}
-              className="hidden md:flex items-center gap-2 px-3.5 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all shadow-xs disabled:opacity-50 cursor-pointer hover:border-emerald-500/50 active:scale-95"
-              style={
-                isWeekClosed
-                  ? {
-                      backgroundColor: inputBg,
-                      borderColor: inputBorder,
-                      color: textMuted,
-                      cursor: 'not-allowed',
-                    }
-                  : syncFailed && !syncing
-                  ? {
-                      backgroundColor: isLight ? 'rgba(220,38,38,0.08)' : 'rgba(248,113,113,0.14)',
-                      borderColor: isLight ? '#DC262660' : '#F8717160',
-                      color: isLight ? '#DC2626' : '#F87171',
-                    }
-                  : {
-                      backgroundColor: isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)',
-                      borderColor: '#10B98150',
-                      color: '#10B981',
-                    }
-              }
-              title={
-                isWeekClosed
-                  ? 'This payout week is closed and locked — syncing is disabled'
-                  : syncFailed
-                  ? "Couldn't pull the latest jobs from Schedules — showing only previously saved rows, which may stop partway through the period. Click to retry."
-                  : 'Sync latest completed job orders from Schedules (DONE INSTALL, DONE CLEANING, DONE CHECKUP, DONE SERVICE, etc.)'
-              }
-            >
-              {isWeekClosed ? (
-                <Lock className="w-3.5 h-3.5 text-amber-500" />
-              ) : (
-                <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-              )}
-              <span>{isWeekClosed ? 'Week Locked' : syncing ? 'Syncing…' : syncFailed ? 'Sync failed — Retry' : 'Sync Latest'}</span>
-            </button>
-          )}
-
-          {/* Payroll Settings — per-branch rate presets (e.g. SILANG's cleaning fee differs
-              from other branches). Only meaningful once a branch is selected. */}
-          {canManagePayroll && branchFilter && (
-            <button
-              type="button"
-              onClick={openRatesModal}
-              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all hover:border-emerald-500/50"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-              title="Set this branch's payout rates"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-500" />
-              <span className="hidden md:inline">Payout Settings</span>
-            </button>
-          )}
-
-
-
-          {/* Weekly installer payout sheet (print / PDF) — roster view only */}
-          {branchFilter && canManagePayroll && !selectedInstaller && activeWeek && (
-            <button
-              type="button"
-              onClick={() => setPayoutSheetOpen(true)}
-              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all hover:border-emerald-500/50 shadow-xs cursor-pointer active:scale-95"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-              title="Print or save the weekly installer payout sheet (completed payouts)"
-            >
-              <Receipt className="w-3.5 h-3.5 text-emerald-500" />
-              <span className="hidden sm:inline">Payout Sheet</span>
-            </button>
-          )}
-
-          {/* Week Summary Showcase button — hidden on member table view */}
-          {branchFilter && canManagePayroll && !selectedInstaller && (
-            <button
-              type="button"
-              onClick={() => setWeekSummaryOpen(true)}
-              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all hover:border-emerald-500/50 shadow-xs cursor-pointer active:scale-95"
-              style={{
-                backgroundColor: isLight ? 'rgba(5,150,105,0.08)' : 'rgba(5,150,105,0.18)',
-                borderColor: '#05966950',
-                color: isLight ? '#059669' : '#34D399',
-              }}
-              title="Showcase weekly payouts summary breakdown for North or South branches"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
-              <span className="hidden sm:inline font-black">Week Summary</span>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
-                North / South
-              </span>
-            </button>
-          )}
-        </div>
-
-        {/* Mobile — one compact row of icon buttons, each opening its own popover.
-            Replaces the text-heavy selects/pills above, which don't fit a phone header. */}
-        <div className="flex md:hidden items-center gap-2" ref={mobileToolbarRef}>
-          {/* Branch */}
-          {canManagePayroll ? (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => toggleMobilePopover('branch')}
-                className="flex items-center justify-center w-9 h-9 rounded-xl border transition-all active:scale-95 shrink-0"
-                style={{ backgroundColor: inputBg, borderColor: mobilePopover === 'branch' ? '#10B981' : inputBorder }}
-                title="Filter by branch"
-                aria-label="Filter by branch"
-                aria-expanded={mobilePopover === 'branch'}
-              >
-                <Building2 className="w-4 h-4" style={{ color: branchFilter ? '#10B981' : textMuted }} />
-              </button>
-              {mobilePopover === 'branch' && (
-                <div
-                  className="absolute left-0 top-full mt-1.5 z-40 w-64 max-h-80 overflow-y-auto rounded-xl border shadow-lg py-1"
-                  style={{ backgroundColor: cardBg, borderColor: border }}
-                >
-                  {branches.filter(b => !(Boolean((b as any).isFranchise) || isFranchiseBranch(b.id) || isFranchiseBranch(b.name))).map(b => (
-                    <button
-                      key={b.id}
-                      type="button"
-                      onClick={() => {
-                        setBranchFilter(b.id)
-                        setSelectedInstaller(null)
-                        navigate(`/payouts/${normalizeSlug(b.name)}`)
-                        setMobilePopover(null)
-                      }}
-                      className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-xs font-bold text-left"
-                      style={{ color: b.id === branchFilter ? '#10B981' : textPrimary, backgroundColor: b.id === branchFilter ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)') : 'transparent' }}
-                    >
-                      <span className="truncate">{formatBranchName(b.name)}</span>
-                      {b.id === branchFilter && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#10B981' }} />}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div
-              className="flex items-center justify-center w-9 h-9 rounded-xl border shrink-0"
-              style={{ backgroundColor: inputBg, borderColor: inputBorder }}
-              title={branches.find(b => b.id === branchFilter)?.name ? formatBranchName(branches.find(b => b.id === branchFilter)!.name) : formatBranchName(user?.branchId || 'My Branch')}
-            >
-              <Building2 className="w-4 h-4 text-emerald-500" />
-            </div>
-          )}
-
-          {/* Period — month nav + week list combined into one popover */}
-          {branchFilter && branchWeeks.length > 0 && !selectedInstaller && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => toggleMobilePopover('period')}
-                className="flex items-center justify-center w-9 h-9 rounded-xl border transition-all active:scale-95 shrink-0"
-                style={{ backgroundColor: inputBg, borderColor: mobilePopover === 'period' ? '#10B981' : inputBorder }}
-                title="Select payout period"
-                aria-label="Select payout period"
-                aria-expanded={mobilePopover === 'period'}
-              >
-                <Calendar className="w-4 h-4 text-emerald-500" />
-              </button>
-              {mobilePopover === 'period' && (
-                <div
-                  className="absolute left-0 top-full mt-1.5 z-40 w-72 rounded-xl border shadow-lg overflow-hidden"
-                  style={{ backgroundColor: cardBg, borderColor: border }}
-                >
-                  <div className="flex items-center justify-between px-2 py-2 border-b" style={{ borderColor: border }}>
-                    <button
-                      type="button"
-                      onClick={() => setActiveMonth(m => prevMonth(m))}
-                      className="p-1.5 rounded-lg transition-colors hover:bg-emerald-500/15 active:scale-90"
-                      title="Previous month"
-                      style={{ color: textMuted }}
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <span className="text-xs font-black tracking-tight" style={{ color: textPrimary }}>
-                      {formatMonth(activeMonth)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setActiveMonth(m => nextMonth(m))}
-                      className="p-1.5 rounded-lg transition-colors hover:bg-emerald-500/15 active:scale-90"
-                      title="Next month"
-                      style={{ color: textMuted }}
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <div className="max-h-64 overflow-y-auto py-1">
-                    {branchWeeks.map(w => {
-                      const isActive = activeWeek?.from === w.from && activeWeek?.to === w.to
-                      const today = todayYMD()
-                      const isCurrent = w.from <= today && today <= w.to
-                      const isClosed = closures.some(c => c.branchId === branchFilter && c.weekFrom === w.from && c.weekTo === w.to)
-                      return (
-                        <button
-                          key={w.from}
-                          type="button"
-                          onClick={() => { setActiveWeek(w); setMobilePopover(null) }}
-                          className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-xs font-bold text-left"
-                          style={{ color: isActive ? '#10B981' : textPrimary, backgroundColor: isActive ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)') : 'transparent' }}
-                        >
-                          <span className="flex items-center gap-1.5 min-w-0">
-                            {isClosed && <Lock className="w-3 h-3 text-amber-500 shrink-0" />}
-                            <span className="truncate">Week {w.weekNumber} · {w.label}</span>
-                          </span>
-                          {isCurrent && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#10B981' }} />}
-                        </button>
-                      )
-                    })}
-                  </div>
-                  <div
-                    className="px-3.5 py-2 border-t text-[10px] font-bold uppercase tracking-widest text-center"
-                    style={{ borderColor: border, color: textMuted }}
-                  >
-                    {cycle === 'friday' ? 'Fri - Thu cycle' : 'Mon - Sun cycle'}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Technician */}
-          {branchFilter && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => toggleMobilePopover('technician')}
-                className="flex items-center justify-center w-9 h-9 rounded-xl border transition-all active:scale-95 shrink-0"
-                style={{ backgroundColor: inputBg, borderColor: mobilePopover === 'technician' ? '#10B981' : (technicianFilter ? '#10B981' : inputBorder) }}
-                title="Filter by technician"
-                aria-label="Filter by technician"
-                aria-expanded={mobilePopover === 'technician'}
-              >
-                <Users className="w-4 h-4" style={{ color: technicianFilter ? '#10B981' : textMuted }} />
-              </button>
-              {mobilePopover === 'technician' && (
-                <div
-                  className="absolute left-0 top-full mt-1.5 z-40 w-64 max-h-80 overflow-y-auto rounded-xl border shadow-lg py-1"
-                  style={{ backgroundColor: cardBg, borderColor: border }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => { setTechnicianFilter(''); setMobilePopover(null) }}
-                    className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-xs font-bold text-left"
-                    style={{ color: !technicianFilter ? '#10B981' : textPrimary, backgroundColor: !technicianFilter ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)') : 'transparent' }}
-                  >
-                    ALL TECHNICIANS
-                  </button>
-                  {technicianOptions.map(name => (
-                    <button
-                      key={name}
-                      type="button"
-                      onClick={() => { setTechnicianFilter(name); setMobilePopover(null) }}
-                      className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-xs font-bold text-left"
-                      style={{ color: technicianFilter === name ? '#10B981' : textPrimary, backgroundColor: technicianFilter === name ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)') : 'transparent' }}
-                    >
-                      <span className="truncate">{displayInstallerName(name).toUpperCase()}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Search */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => toggleMobilePopover('search')}
-              className="flex items-center justify-center w-9 h-9 rounded-xl border transition-all active:scale-95 shrink-0"
-              style={{ backgroundColor: inputBg, borderColor: mobilePopover === 'search' ? '#10B981' : (rawSearch ? '#10B981' : inputBorder) }}
-              title="Search"
-              aria-label="Search"
-              aria-expanded={mobilePopover === 'search'}
-            >
-              <Search className="w-4 h-4" style={{ color: rawSearch ? '#10B981' : textMuted }} />
-            </button>
-            {mobilePopover === 'search' && (
-              <div
-                className="absolute left-0 top-full mt-1.5 z-40 w-64 rounded-xl border shadow-lg p-2"
-                style={{ backgroundColor: cardBg, borderColor: border }}
-              >
-                <div className="relative">
-                  <Search className="absolute left-3 w-3.5 h-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
-                  <input
-                    type="text"
-                    autoFocus
-                    placeholder="Search installer..."
-                    value={rawSearch}
-                    onChange={e => handleSearchChange(e.target.value)}
-                    className="w-full pl-8 pr-2.5 py-2 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all border"
-                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* More actions — Sync/Payout Settings/Week Summary */}
-          {branchFilter && canManagePayroll && (
-            <div className="relative ml-auto">
-              <button
-                type="button"
-                onClick={() => toggleMobilePopover('more')}
-                className="flex items-center justify-center w-9 h-9 rounded-xl border transition-all active:scale-95 shrink-0"
-                style={{
-                  backgroundColor: syncFailed && !syncing ? (isLight ? 'rgba(220,38,38,0.08)' : 'rgba(248,113,113,0.14)') : inputBg,
-                  borderColor: syncFailed && !syncing ? (isLight ? '#DC262660' : '#F8717160') : inputBorder,
-                  color: syncFailed && !syncing ? (isLight ? '#DC2626' : '#F87171') : textPrimary,
-                }}
-                title="More actions"
-                aria-label="More actions"
-                aria-expanded={mobilePopover === 'more'}
-              >
-                <MoreVertical className="w-4 h-4" />
-              </button>
-              {mobilePopover === 'more' && (
-                <div
-                  className="absolute right-0 top-full mt-1.5 z-40 w-60 rounded-xl border shadow-lg overflow-hidden py-1"
-                  style={{ backgroundColor: cardBg, borderColor: border }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => { void loadAndSync(true); setMobilePopover(null) }}
-                    disabled={syncing || initialLoading || isWeekClosed}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-bold text-left disabled:opacity-50"
-                    style={{
-                      color: isWeekClosed
-                        ? textMuted
-                        : syncFailed && !syncing
-                          ? (isLight ? '#DC2626' : '#F87171')
-                          : '#10B981',
-                    }}
-                  >
-                    {isWeekClosed ? (
-                      <Lock className="w-4 h-4 text-amber-500 shrink-0" />
-                    ) : (
-                      <RefreshCw className={`w-4 h-4 shrink-0 ${syncing ? 'animate-spin' : ''}`} />
-                    )}
-                    <span>{isWeekClosed ? 'Week Locked' : syncing ? 'Syncing…' : syncFailed ? 'Sync failed — Retry' : 'Sync Latest'}</span>
-                  </button>
-
-                  {canManagePayroll && (
-                    <button
-                      type="button"
-                      onClick={() => { openRatesModal(); setMobilePopover(null) }}
-                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-bold text-left"
-                      style={{ color: textPrimary }}
-                    >
-                      <SlidersHorizontal className="w-4 h-4 text-emerald-500 shrink-0" />
-                      <span>Payout Settings</span>
-                    </button>
-                  )}
-
-                  {!selectedInstaller && (
-                    <button
-                      type="button"
-                      onClick={() => { setWeekSummaryOpen(true); setMobilePopover(null) }}
-                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-bold text-left"
-                      style={{ color: isLight ? '#059669' : '#34D399' }}
-                    >
-                      <FileSpreadsheet className="w-4 h-4 shrink-0" />
-                      <span>Week Summary (North / South)</span>
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Week selector — desktop/tablet pill strip. Mobile handles this inside the Period
-          popover above instead (a horizontally-scrolling strip doesn't fit a phone header). */}
-      {branchFilter && branchWeeks.length > 0 && !selectedInstaller && (
-        <div
-          className="hidden md:block px-0 py-2.5"
-          style={{ borderBottom: `1px solid ${border}` }}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-              {branchWeeks.map(w => {
-                const isActive = activeWeek?.from === w.from && activeWeek?.to === w.to
-                const today = todayYMD()
-                const isCurrent = w.from <= today && today <= w.to
-                const isClosed = closures.some(c => c.branchId === branchFilter && c.weekFrom === w.from && c.weekTo === w.to)
-                return (
-                  <button
-                    key={w.from}
-                    type="button"
-                    onClick={() => setActiveWeek(w)}
-                    className={`flex items-center gap-2 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all active:scale-95 whitespace-nowrap border ${isClosed ? 'pl-1.5 pr-3' : 'px-3'}`}
-                    style={isClosed ? {
-                      // Sealed look: diagonal hatch over a cool slate tint, amber edge when selected.
-                      backgroundColor: isActive ? (isLight ? '#fffbeb' : 'rgba(245,158,11,0.14)') : (isLight ? '#eef2f7' : '#0f1a2e'),
-                      backgroundImage: `repeating-linear-gradient(135deg, ${isLight ? 'rgba(100,116,139,0.09)' : 'rgba(148,163,184,0.07)'} 0 6px, transparent 6px 12px)`,
-                      borderColor: isActive ? '#F59E0B' : (isLight ? '#cbd5e1' : '#2a3a58'),
-                      color: isActive ? '#B45309' : textMuted,
-                      boxShadow: isActive ? '0 0 0 1px #F59E0B40' : 'none',
-                    } : {
-                      backgroundColor: isActive ? (isLight ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.2)') : inputBg,
-                      borderColor: isActive ? '#10B981' : inputBorder,
-                      color: isActive ? '#10B981' : textMuted,
-                      boxShadow: isActive ? '0 0 0 1px #10B98140' : 'none',
-                    }}
-                  >
-                    {isClosed && (
-                      <span
-                        title="Week closed & locked"
-                        className="inline-flex items-center justify-center shrink-0 w-5 h-5 rounded-full"
-                        style={{ backgroundColor: isActive ? '#F59E0B' : (isLight ? '#94a3b8' : '#475569') }}
-                      >
-                        <Lock className="w-3 h-3 text-white" strokeWidth={2.5} />
-                      </span>
-                    )}
-                    <span className="font-black" style={{ color: isClosed ? (isActive ? '#B45309' : textPrimary) : (isActive ? '#10B981' : textPrimary) }}>
-                      Week {w.weekNumber}
-                    </span>
-                    <span className="opacity-70">{w.label}</span>
-                    {isClosed && (
-                      <span
-                        className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded"
-                        style={{ backgroundColor: isActive ? 'rgba(245,158,11,0.2)' : (isLight ? 'rgba(100,116,139,0.14)' : 'rgba(148,163,184,0.14)'), color: isActive ? '#B45309' : textMuted }}
-                      >
-                        Closed
-                      </span>
-                    )}
-                    {isCurrent && (
-                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#10B981' }} title="Current week" />
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-
-            {/* Week cycle — a plain label, not a badge. Close/Reopen controls live at the bottom
-                of the installer list now (see the roster footer below). */}
-            <span
-              className="text-[10px] font-bold uppercase tracking-widest shrink-0"
-              style={{ color: textMuted }}
-              title={cycle === 'friday' ? 'North branch cycle: Fri-Thu' : 'South branch cycle: Mon-Sun'}
-            >
-              {cycle === 'friday' ? 'Fri - Thu' : 'Mon - Sun'}
-            </span>
-          </div>
-        </div>
-      )}
-      {/* The letterhead and the roster below it read as one continuous payroll ledger — same
-          document metaphor as the branch's own printed weekly sheet — so they're fused with a
-          shared border/no gap whenever the roster table is actually what's rendered below. */}
-      {(() => {
-        const showRosterLedger = !initialLoading && !!branchFilter && grouped.length > 0 && !selectedInstaller
-        return (
-      <div
-        className={`flex flex-col ${showRosterLedger ? 'rounded-2xl shadow-sm' : ''}`}
-        style={{ gap: showRosterLedger ? 0 : '1rem', opacity: earlyView ? 0.7 : 1, transition: 'opacity 150ms' }}
-        inert={earlyView}
-        aria-busy={earlyView}
-      >
-      {branchFilter && !selectedInstaller && (
-        <div
-          className={`${showRosterLedger ? 'rounded-t-2xl border border-b-0' : 'rounded-2xl border shadow-sm'}`}
-          style={{
-            borderColor: border,
-            backgroundColor: cardBg,
-          }}
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 sm:px-7 py-5">
-            <div className="min-w-0">
-              <div className="text-base font-bold tracking-tight truncate uppercase" style={{ color: textPrimary }}>
-                {currentBranchDisplay ? `${currentBranchDisplay.toUpperCase()} WEEKLY PAYOUTS` : 'WEEKLY PAYOUTS'}
-              </div>
-            </div>
-
-            {(dateFrom || dateTo) && (
-              <div
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold shrink-0 self-start sm:self-auto"
-                style={{
-                  backgroundColor: inputBg,
-                  border: `1px solid ${border}`,
-                  color: textPrimary,
-                }}
-              >
-                <Calendar className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                <span>{dateFrom ? longDate(dateFrom) : '—'} – {dateTo ? longDate(dateTo) : '—'}</span>
-                {isWeekClosed && (
-                  <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-md ml-1">
-                    <Lock className="w-3 h-3" />
-                    Locked
-                  </span>
-                )}
-                {isWeekClosed && weekCorrections.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => { setCorrectionsSearch(''); setCorrectionsOpen(true) }}
-                    className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md ml-1 cursor-pointer hover:opacity-80"
-                    style={{ color: '#8B5CF6', backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.14)', border: `1px solid ${isLight ? '#ddd6fe' : 'rgba(139,92,246,0.35)'}` }}
-                    title="Corrections made to this closed week's tickets, applied in later weeks"
-                  >
-                    {weekCorrections.length} correction{weekCorrections.length === 1 ? '' : 's'} · net {pesoSigned(weekCorrectionsNet)} in later weeks
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {initialLoading ? (
-        <div className="rounded-2xl p-6 flex flex-col gap-2" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-          {[1, 2, 3].map(i => (
-            <div key={i} style={{
-              height: '40px', borderRadius: '8px',
-              background: isLight ? '#f1f5f9' : '#0d1520',
-            }} />
-          ))}
-        </div>
-      ) : !branchFilter ? (
-        <div className="rounded-2xl p-10 flex flex-col items-center justify-center gap-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-          <Building2 className="w-10 h-10 opacity-25" />
-          <p className="text-sm font-semibold" style={{ color: textMuted }}>Select a branch to view payouts.</p>
-        </div>
-      ) : grouped.length === 0 ? (
-        <div className="rounded-2xl p-10 flex flex-col items-center justify-center gap-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
-          <CheckCircle2 className="w-10 h-10 opacity-25 text-emerald-500" />
-          <p className="text-sm font-semibold" style={{ color: textMuted }}>{viewOnly ? 'No payouts released for this week yet.' : 'No payout entries yet — try "Sync Latest".'}</p>
-        </div>
-      ) : selectedInstaller ? (
-        // Detail view — just the selected installer's own table for the selected week.
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between gap-2 md:gap-3">
             <button
               type="button"
               onClick={() => handleSelectInstaller(null)}
               aria-label="Back to all installers"
-              className="flex items-center justify-center gap-2 w-8 h-8 md:w-auto md:h-auto md:px-3.5 md:py-2 rounded-xl text-xs font-bold transition-all border shadow-2xs hover:border-emerald-500/50 cursor-pointer active:scale-95"
+              className="group flex items-center justify-center gap-2 w-8 h-8 md:w-auto md:h-auto md:px-3.5 md:py-2 rounded-xl text-xs font-bold transition-all border shadow-2xs hover:border-emerald-500/50 cursor-pointer active:scale-95"
               style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
               title="Return to installers list"
             >
-              <ChevronLeft className="w-4 h-4 text-emerald-500" />
+              <ChevronLeft className="w-4 h-4 text-emerald-500 transition-transform duration-150 group-hover:-translate-x-0.5" />
               <span className="hidden md:inline">Back to All Installers</span>
             </button>
             <div className="flex items-center gap-1.5 md:gap-2 px-2.5 md:px-3.5 h-8 md:h-auto md:py-2 rounded-xl border text-[11px] md:text-xs font-bold shadow-2xs" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textMuted }}>
@@ -4639,6 +4066,670 @@ export default function Payouts() {
             )
           })()}
         </div>
+      </motion.div>
+    )
+  }
+
+  return (
+    <div
+      ref={scrollContainerRef}
+      className="flex flex-col gap-4 pb-4 md:pb-4 h-full min-h-0 overflow-y-auto overflow-x-hidden overscroll-none touch-pan-y [&>*]:shrink-0"
+    >
+      <AnimatePresence mode="wait" initial={false} custom={transitionDirection}>
+        {!selectedInstaller ? (
+          <motion.div
+            key="payouts-roster-view"
+            custom={transitionDirection}
+            variants={viewTransitionVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={viewTransitionConfig}
+            className="flex flex-col gap-4 w-full"
+          >
+      {/* Toolbar — branch, date, range, and search filters plus a sync action. */}
+      <div
+        className={`relative z-30 -mx-1.5 md:mx-0 rounded-none md:rounded-2xl p-2.5 md:p-3.5 overflow-visible shadow-none md:shadow-xs border border-transparent md:border-[var(--tb-border)] bg-[var(--tb-page-bg)] md:bg-[var(--tb-card-bg)]`}
+        style={{
+          ['--tb-card-bg' as string]: cardBg,
+          ['--tb-border' as string]: border,
+          ['--tb-page-bg' as string]: isLight ? '#f1f5f9' : '#060B18',
+        }}
+      >
+        {/* Desktop/tablet — full inline controls, unchanged */}
+        <div className="hidden md:flex items-center gap-2.5">
+          {/* Branch filter */}
+          {canManagePayroll ? (
+            <div className="relative flex-1 min-w-[130px] md:flex-none md:w-48 lg:w-52 shrink-0">
+              <Building2 className="absolute left-3 w-4 h-4 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
+              <select
+                value={branchFilter}
+                onChange={e => {
+                  const newBranchId = e.target.value
+                  setBranchFilter(newBranchId)
+                  setSelectedInstaller(null)
+                  const b = branches.find(x => x.id === newBranchId)
+                  if (b) {
+                    navigate(`/payouts/${normalizeSlug(b.name)}`)
+                  } else {
+                    navigate('/payouts')
+                  }
+                }}
+                className="w-full pl-9 pr-8 py-1.5 md:py-2 rounded-xl text-xs font-bold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#10B981]/50 border transition-all truncate"
+                style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
+                aria-label="Filter by Branch"
+              >
+                <option value="">Select branch…</option>
+                {branches.filter(b => !(Boolean((b as any).isFranchise) || isFranchiseBranch(b.id) || isFranchiseBranch(b.name))).map(b => {
+                  return (
+                    <option key={b.id} value={b.id}>
+                      {formatBranchName(b.name)}
+                    </option>
+                  )
+                })}
+              </select>
+              <ChevronDown className="absolute right-3 w-3.5 h-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 whitespace-nowrap" style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}>
+              <Building2 className="w-4 h-4 shrink-0 text-emerald-500" />
+              <span className="truncate max-w-[120px]">
+                {branches.find(b => b.id === branchFilter)?.name
+                  ? formatBranchName(branches.find(b => b.id === branchFilter)!.name)
+                  : formatBranchName(user?.branchId || 'My Branch')}
+              </span>
+            </div>
+          )}
+
+          {/* Month navigator — compact pill with prev/next arrows */}
+          <div className="flex items-center gap-0.5 rounded-xl border px-1 py-0.5 shrink-0" style={{ backgroundColor: inputBg, borderColor: inputBorder }}>
+            <button
+              type="button"
+              onClick={() => setActiveMonth(m => prevMonth(m))}
+              className="p-1 rounded-lg transition-colors hover:bg-emerald-500/15 active:scale-90"
+              title="Previous month"
+              style={{ color: textMuted }}
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+            <span className="px-1.5 text-xs font-bold tracking-tight whitespace-nowrap" style={{ color: textPrimary }}>
+              {formatMonth(activeMonth)}
+            </span>
+            <button
+              type="button"
+              onClick={() => setActiveMonth(m => nextMonth(m))}
+              className="p-1 rounded-lg transition-colors hover:bg-emerald-500/15 active:scale-90"
+              title="Next month"
+              style={{ color: textMuted }}
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Technician filter — narrows the roster below to one installer */}
+          {branchFilter && (
+            <div className="relative flex-1 min-w-[120px] md:flex-none md:w-44 lg:w-48 shrink-0">
+              <Users className="absolute left-3 w-4 h-4 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
+              <select
+                value={technicianFilter}
+                onChange={e => setTechnicianFilter(e.target.value)}
+                className="w-full pl-9 pr-8 py-1.5 md:py-2 rounded-xl text-xs font-bold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#10B981]/50 border transition-all truncate"
+                style={{ color: textPrimary, backgroundColor: inputBg, borderColor: inputBorder }}
+                aria-label="Filter by Technician"
+              >
+                <option value="">ALL TECHNICIANS</option>
+                {technicianOptions.map(name => (
+                  <option key={name} value={name}>{displayInstallerName(name).toUpperCase()}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 w-3.5 h-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
+            </div>
+          )}
+
+          {/* Search */}
+          <div className="relative flex-1 min-w-[120px] md:flex-none md:w-60 lg:w-64 shrink-0">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: textMuted }} />
+            <input
+              type="text"
+              placeholder="Search..."
+              value={rawSearch}
+              onChange={e => handleSearchChange(e.target.value)}
+              className="w-full pl-10 pr-3 py-1.5 md:py-2 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all border"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+            />
+          </div>
+
+          {/* Sync Latest Button */}
+          {branchFilter && canManagePayroll && (
+            <button
+              type="button"
+              onClick={() => void loadAndSync(true)}
+              disabled={syncing || initialLoading || isWeekClosed}
+              className="hidden md:flex items-center gap-2 px-3.5 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all shadow-xs disabled:opacity-50 cursor-pointer hover:border-emerald-500/50 active:scale-95"
+              style={
+                isWeekClosed
+                  ? {
+                      backgroundColor: inputBg,
+                      borderColor: inputBorder,
+                      color: textMuted,
+                      cursor: 'not-allowed',
+                    }
+                  : syncFailed && !syncing
+                  ? {
+                      backgroundColor: isLight ? 'rgba(220,38,38,0.08)' : 'rgba(248,113,113,0.14)',
+                      borderColor: isLight ? '#DC262660' : '#F8717160',
+                      color: isLight ? '#DC2626' : '#F87171',
+                    }
+                  : {
+                      backgroundColor: isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)',
+                      borderColor: '#10B98150',
+                      color: '#10B981',
+                    }
+              }
+              title={
+                isWeekClosed
+                  ? 'This payout week is closed and locked — syncing is disabled'
+                  : syncFailed
+                  ? "Couldn't pull the latest jobs from Schedules — showing only previously saved rows, which may stop partway through the period. Click to retry."
+                  : 'Sync latest completed job orders from Schedules (DONE INSTALL, DONE CLEANING, DONE CHECKUP, DONE SERVICE, etc.)'
+              }
+            >
+              {isWeekClosed ? (
+                <Lock className="w-3.5 h-3.5 text-amber-500" />
+              ) : (
+                <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+              )}
+              <span>{isWeekClosed ? 'Week Locked' : syncing ? 'Syncing…' : syncFailed ? 'Sync failed — Retry' : 'Sync Latest'}</span>
+            </button>
+          )}
+
+          {/* Payroll Settings — per-branch rate presets (e.g. SILANG's cleaning fee differs
+              from other branches). Only meaningful once a branch is selected. */}
+          {canManagePayroll && branchFilter && (
+            <button
+              type="button"
+              onClick={openRatesModal}
+              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all hover:border-emerald-500/50"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+              title="Set this branch's payout rates"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-500" />
+              <span className="hidden md:inline">Payout Settings</span>
+            </button>
+          )}
+
+
+
+          {/* Weekly installer payout sheet (print / PDF) — roster view only */}
+          {branchFilter && canManagePayroll && !selectedInstaller && activeWeek && (
+            <button
+              type="button"
+              onClick={() => setPayoutSheetOpen(true)}
+              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all hover:border-emerald-500/50 shadow-xs cursor-pointer active:scale-95"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+              title="Print or save the weekly installer payout sheet (completed payouts)"
+            >
+              <Receipt className="w-3.5 h-3.5 text-emerald-500" />
+              <span className="hidden sm:inline">Payout Sheet</span>
+            </button>
+          )}
+
+          {/* Week Summary Showcase button — hidden on member table view */}
+          {branchFilter && canManagePayroll && !selectedInstaller && (
+            <button
+              type="button"
+              onClick={() => setWeekSummaryOpen(true)}
+              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 md:py-2 rounded-xl border text-xs font-bold shrink-0 transition-all hover:border-emerald-500/50 shadow-xs cursor-pointer active:scale-95"
+              style={{
+                backgroundColor: isLight ? 'rgba(5,150,105,0.08)' : 'rgba(5,150,105,0.18)',
+                borderColor: '#05966950',
+                color: isLight ? '#059669' : '#34D399',
+              }}
+              title="Showcase weekly payouts summary breakdown for North or South branches"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
+              <span className="hidden sm:inline font-black">Week Summary</span>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                North / South
+              </span>
+            </button>
+          )}
+        </div>
+
+        {/* Mobile — one compact row of icon buttons, each opening its own popover.
+            Replaces the text-heavy selects/pills above, which don't fit a phone header. */}
+        <div className="flex md:hidden items-center gap-2" ref={mobileToolbarRef}>
+          {/* Branch */}
+          {canManagePayroll ? (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => toggleMobilePopover('branch')}
+                className="flex items-center justify-center w-9 h-9 rounded-xl border transition-all active:scale-95 shrink-0"
+                style={{ backgroundColor: inputBg, borderColor: mobilePopover === 'branch' ? '#10B981' : inputBorder }}
+                title="Filter by branch"
+                aria-label="Filter by branch"
+                aria-expanded={mobilePopover === 'branch'}
+              >
+                <Building2 className="w-4 h-4" style={{ color: branchFilter ? '#10B981' : textMuted }} />
+              </button>
+              {mobilePopover === 'branch' && (
+                <div
+                  className="absolute left-0 top-full mt-1.5 z-40 w-64 max-h-80 overflow-y-auto rounded-xl border shadow-lg py-1"
+                  style={{ backgroundColor: cardBg, borderColor: border }}
+                >
+                  {branches.filter(b => !(Boolean((b as any).isFranchise) || isFranchiseBranch(b.id) || isFranchiseBranch(b.name))).map(b => (
+                    <button
+                      key={b.id}
+                      type="button"
+                      onClick={() => {
+                        setBranchFilter(b.id)
+                        setSelectedInstaller(null)
+                        navigate(`/payouts/${normalizeSlug(b.name)}`)
+                        setMobilePopover(null)
+                      }}
+                      className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-xs font-bold text-left"
+                      style={{ color: b.id === branchFilter ? '#10B981' : textPrimary, backgroundColor: b.id === branchFilter ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)') : 'transparent' }}
+                    >
+                      <span className="truncate">{formatBranchName(b.name)}</span>
+                      {b.id === branchFilter && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#10B981' }} />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div
+              className="flex items-center justify-center w-9 h-9 rounded-xl border shrink-0"
+              style={{ backgroundColor: inputBg, borderColor: inputBorder }}
+              title={branches.find(b => b.id === branchFilter)?.name ? formatBranchName(branches.find(b => b.id === branchFilter)!.name) : formatBranchName(user?.branchId || 'My Branch')}
+            >
+              <Building2 className="w-4 h-4 text-emerald-500" />
+            </div>
+          )}
+
+          {/* Period — month nav + week list combined into one popover */}
+          {branchFilter && branchWeeks.length > 0 && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => toggleMobilePopover('period')}
+                className="flex items-center justify-center w-9 h-9 rounded-xl border transition-all active:scale-95 shrink-0"
+                style={{ backgroundColor: inputBg, borderColor: mobilePopover === 'period' ? '#10B981' : inputBorder }}
+                title="Select payout period"
+                aria-label="Select payout period"
+                aria-expanded={mobilePopover === 'period'}
+              >
+                <Calendar className="w-4 h-4 text-emerald-500" />
+              </button>
+              {mobilePopover === 'period' && (
+                <div
+                  className="absolute left-0 top-full mt-1.5 z-40 w-72 rounded-xl border shadow-lg overflow-hidden"
+                  style={{ backgroundColor: cardBg, borderColor: border }}
+                >
+                  <div className="flex items-center justify-between px-2 py-2 border-b" style={{ borderColor: border }}>
+                    <button
+                      type="button"
+                      onClick={() => setActiveMonth(m => prevMonth(m))}
+                      className="p-1.5 rounded-lg transition-colors hover:bg-emerald-500/15 active:scale-90"
+                      title="Previous month"
+                      style={{ color: textMuted }}
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <span className="text-xs font-black tracking-tight" style={{ color: textPrimary }}>
+                      {formatMonth(activeMonth)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveMonth(m => nextMonth(m))}
+                      className="p-1.5 rounded-lg transition-colors hover:bg-emerald-500/15 active:scale-90"
+                      title="Next month"
+                      style={{ color: textMuted }}
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto py-1">
+                    {branchWeeks.map(w => {
+                      const isActive = activeWeek?.from === w.from && activeWeek?.to === w.to
+                      const today = todayYMD()
+                      const isCurrent = w.from <= today && today <= w.to
+                      const isClosed = closures.some(c => c.branchId === branchFilter && c.weekFrom === w.from && c.weekTo === w.to)
+                      return (
+                        <button
+                          key={w.from}
+                          type="button"
+                          onClick={() => { setActiveWeek(w); setMobilePopover(null) }}
+                          className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-xs font-bold text-left"
+                          style={{ color: isActive ? '#10B981' : textPrimary, backgroundColor: isActive ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)') : 'transparent' }}
+                        >
+                          <span className="flex items-center gap-1.5 min-w-0">
+                            {isClosed && <Lock className="w-3 h-3 text-amber-500 shrink-0" />}
+                            <span className="truncate">Week {w.weekNumber} · {w.label}</span>
+                          </span>
+                          {isCurrent && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#10B981' }} />}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div
+                    className="px-3.5 py-2 border-t text-[10px] font-bold uppercase tracking-widest text-center"
+                    style={{ borderColor: border, color: textMuted }}
+                  >
+                    {cycle === 'friday' ? 'Fri - Thu cycle' : 'Mon - Sun cycle'}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Technician */}
+          {branchFilter && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => toggleMobilePopover('technician')}
+                className="flex items-center justify-center w-9 h-9 rounded-xl border transition-all active:scale-95 shrink-0"
+                style={{ backgroundColor: inputBg, borderColor: mobilePopover === 'technician' ? '#10B981' : (technicianFilter ? '#10B981' : inputBorder) }}
+                title="Filter by technician"
+                aria-label="Filter by technician"
+                aria-expanded={mobilePopover === 'technician'}
+              >
+                <Users className="w-4 h-4" style={{ color: technicianFilter ? '#10B981' : textMuted }} />
+              </button>
+              {mobilePopover === 'technician' && (
+                <div
+                  className="absolute left-0 top-full mt-1.5 z-40 w-64 max-h-80 overflow-y-auto rounded-xl border shadow-lg py-1"
+                  style={{ backgroundColor: cardBg, borderColor: border }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => { setTechnicianFilter(''); setMobilePopover(null) }}
+                    className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-xs font-bold text-left"
+                    style={{ color: !technicianFilter ? '#10B981' : textPrimary, backgroundColor: !technicianFilter ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)') : 'transparent' }}
+                  >
+                    ALL TECHNICIANS
+                  </button>
+                  {technicianOptions.map(name => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => { setTechnicianFilter(name); setMobilePopover(null) }}
+                      className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-xs font-bold text-left"
+                      style={{ color: technicianFilter === name ? '#10B981' : textPrimary, backgroundColor: technicianFilter === name ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.14)') : 'transparent' }}
+                    >
+                      <span className="truncate">{displayInstallerName(name).toUpperCase()}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Search */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => toggleMobilePopover('search')}
+              className="flex items-center justify-center w-9 h-9 rounded-xl border transition-all active:scale-95 shrink-0"
+              style={{ backgroundColor: inputBg, borderColor: mobilePopover === 'search' ? '#10B981' : (rawSearch ? '#10B981' : inputBorder) }}
+              title="Search"
+              aria-label="Search"
+              aria-expanded={mobilePopover === 'search'}
+            >
+              <Search className="w-4 h-4" style={{ color: rawSearch ? '#10B981' : textMuted }} />
+            </button>
+            {mobilePopover === 'search' && (
+              <div
+                className="absolute left-0 top-full mt-1.5 z-40 w-64 rounded-xl border shadow-lg p-2"
+                style={{ backgroundColor: cardBg, borderColor: border }}
+              >
+                <div className="relative">
+                  <Search className="absolute left-3 w-3.5 h-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: textMuted }} />
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="Search installer..."
+                    value={rawSearch}
+                    onChange={e => handleSearchChange(e.target.value)}
+                    className="w-full pl-8 pr-2.5 py-2 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all border"
+                    style={{ backgroundColor: inputBg, borderColor: inputBorder, color: textPrimary }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* More actions — Sync/Payout Settings/Week Summary */}
+          {branchFilter && canManagePayroll && (
+            <div className="relative ml-auto">
+              <button
+                type="button"
+                onClick={() => toggleMobilePopover('more')}
+                className="flex items-center justify-center w-9 h-9 rounded-xl border transition-all active:scale-95 shrink-0"
+                style={{
+                  backgroundColor: syncFailed && !syncing ? (isLight ? 'rgba(220,38,38,0.08)' : 'rgba(248,113,113,0.14)') : inputBg,
+                  borderColor: syncFailed && !syncing ? (isLight ? '#DC262660' : '#F8717160') : inputBorder,
+                  color: syncFailed && !syncing ? (isLight ? '#DC2626' : '#F87171') : textPrimary,
+                }}
+                title="More actions"
+                aria-label="More actions"
+                aria-expanded={mobilePopover === 'more'}
+              >
+                <MoreVertical className="w-4 h-4" />
+              </button>
+              {mobilePopover === 'more' && (
+                <div
+                  className="absolute right-0 top-full mt-1.5 z-40 w-60 rounded-xl border shadow-lg overflow-hidden py-1"
+                  style={{ backgroundColor: cardBg, borderColor: border }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => { void loadAndSync(true); setMobilePopover(null) }}
+                    disabled={syncing || initialLoading || isWeekClosed}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-bold text-left disabled:opacity-50"
+                    style={{
+                      color: isWeekClosed
+                        ? textMuted
+                        : syncFailed && !syncing
+                          ? (isLight ? '#DC2626' : '#F87171')
+                          : '#10B981',
+                    }}
+                  >
+                    {isWeekClosed ? (
+                      <Lock className="w-4 h-4 text-amber-500 shrink-0" />
+                    ) : (
+                      <RefreshCw className={`w-4 h-4 shrink-0 ${syncing ? 'animate-spin' : ''}`} />
+                    )}
+                    <span>{isWeekClosed ? 'Week Locked' : syncing ? 'Syncing…' : syncFailed ? 'Sync failed — Retry' : 'Sync Latest'}</span>
+                  </button>
+
+                  {canManagePayroll && (
+                    <button
+                      type="button"
+                      onClick={() => { openRatesModal(); setMobilePopover(null) }}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-bold text-left"
+                      style={{ color: textPrimary }}
+                    >
+                      <SlidersHorizontal className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <span>Payout Settings</span>
+                    </button>
+                  )}
+
+                  {!selectedInstaller && (
+                    <button
+                      type="button"
+                      onClick={() => { setWeekSummaryOpen(true); setMobilePopover(null) }}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-bold text-left"
+                      style={{ color: isLight ? '#059669' : '#34D399' }}
+                    >
+                      <FileSpreadsheet className="w-4 h-4 shrink-0" />
+                      <span>Week Summary (North / South)</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Week selector — desktop/tablet pill strip. Mobile handles this inside the Period
+          popover above instead (a horizontally-scrolling strip doesn't fit a phone header). */}
+      {branchFilter && branchWeeks.length > 0 && !selectedInstaller && (
+        <div
+          className="hidden md:block px-0 py-2.5"
+          style={{ borderBottom: `1px solid ${border}` }}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+              {branchWeeks.map(w => {
+                const isActive = activeWeek?.from === w.from && activeWeek?.to === w.to
+                const today = todayYMD()
+                const isCurrent = w.from <= today && today <= w.to
+                const isClosed = closures.some(c => c.branchId === branchFilter && c.weekFrom === w.from && c.weekTo === w.to)
+                return (
+                  <button
+                    key={w.from}
+                    type="button"
+                    onClick={() => setActiveWeek(w)}
+                    className={`flex items-center gap-2 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all active:scale-95 whitespace-nowrap border ${isClosed ? 'pl-1.5 pr-3' : 'px-3'}`}
+                    style={isClosed ? {
+                      // Sealed look: diagonal hatch over a cool slate tint, amber edge when selected.
+                      backgroundColor: isActive ? (isLight ? '#fffbeb' : 'rgba(245,158,11,0.14)') : (isLight ? '#eef2f7' : '#0f1a2e'),
+                      backgroundImage: `repeating-linear-gradient(135deg, ${isLight ? 'rgba(100,116,139,0.09)' : 'rgba(148,163,184,0.07)'} 0 6px, transparent 6px 12px)`,
+                      borderColor: isActive ? '#F59E0B' : (isLight ? '#cbd5e1' : '#2a3a58'),
+                      color: isActive ? '#B45309' : textMuted,
+                      boxShadow: isActive ? '0 0 0 1px #F59E0B40' : 'none',
+                    } : {
+                      backgroundColor: isActive ? (isLight ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.2)') : inputBg,
+                      borderColor: isActive ? '#10B981' : inputBorder,
+                      color: isActive ? '#10B981' : textMuted,
+                      boxShadow: isActive ? '0 0 0 1px #10B98140' : 'none',
+                    }}
+                  >
+                    {isClosed && (
+                      <span
+                        title="Week closed & locked"
+                        className="inline-flex items-center justify-center shrink-0 w-5 h-5 rounded-full"
+                        style={{ backgroundColor: isActive ? '#F59E0B' : (isLight ? '#94a3b8' : '#475569') }}
+                      >
+                        <Lock className="w-3 h-3 text-white" strokeWidth={2.5} />
+                      </span>
+                    )}
+                    <span className="font-black" style={{ color: isClosed ? (isActive ? '#B45309' : textPrimary) : (isActive ? '#10B981' : textPrimary) }}>
+                      Week {w.weekNumber}
+                    </span>
+                    <span className="opacity-70">{w.label}</span>
+                    {isClosed && (
+                      <span
+                        className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded"
+                        style={{ backgroundColor: isActive ? 'rgba(245,158,11,0.2)' : (isLight ? 'rgba(100,116,139,0.14)' : 'rgba(148,163,184,0.14)'), color: isActive ? '#B45309' : textMuted }}
+                      >
+                        Closed
+                      </span>
+                    )}
+                    {isCurrent && (
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#10B981' }} title="Current week" />
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Week cycle — a plain label, not a badge. Close/Reopen controls live at the bottom
+                of the installer list now (see the roster footer below). */}
+            <span
+              className="text-[10px] font-bold uppercase tracking-widest shrink-0"
+              style={{ color: textMuted }}
+              title={cycle === 'friday' ? 'North branch cycle: Fri-Thu' : 'South branch cycle: Mon-Sun'}
+            >
+              {cycle === 'friday' ? 'Fri - Thu' : 'Mon - Sun'}
+            </span>
+          </div>
+        </div>
+      )}
+      {/* The letterhead and the roster below it read as one continuous payroll ledger — same
+          document metaphor as the branch's own printed weekly sheet — so they're fused with a
+          shared border/no gap whenever the roster table is actually what's rendered below. */}
+      {(() => {
+        const showRosterLedger = !initialLoading && !!branchFilter && grouped.length > 0
+        return (
+      <div
+        className={`flex flex-col ${showRosterLedger ? 'rounded-2xl shadow-sm' : ''}`}
+        style={{ gap: showRosterLedger ? 0 : '1rem', opacity: earlyView ? 0.7 : 1, transition: 'opacity 150ms' }}
+        inert={earlyView}
+        aria-busy={earlyView}
+      >
+      {branchFilter && (
+        <div
+          className={`${showRosterLedger ? 'rounded-t-2xl border border-b-0' : 'rounded-2xl border shadow-sm'}`}
+          style={{
+            borderColor: border,
+            backgroundColor: cardBg,
+          }}
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 sm:px-7 py-5">
+            <div className="min-w-0">
+              <div className="text-base font-bold tracking-tight truncate uppercase" style={{ color: textPrimary }}>
+                {currentBranchDisplay ? `${currentBranchDisplay.toUpperCase()} WEEKLY PAYOUTS` : 'WEEKLY PAYOUTS'}
+              </div>
+            </div>
+
+            {(dateFrom || dateTo) && (
+              <div
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold shrink-0 self-start sm:self-auto"
+                style={{
+                  backgroundColor: inputBg,
+                  border: `1px solid ${border}`,
+                  color: textPrimary,
+                }}
+              >
+                <Calendar className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                <span>{dateFrom ? longDate(dateFrom) : '—'} – {dateTo ? longDate(dateTo) : '—'}</span>
+                {isWeekClosed && (
+                  <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-md ml-1">
+                    <Lock className="w-3 h-3" />
+                    Locked
+                  </span>
+                )}
+                {isWeekClosed && weekCorrections.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setCorrectionsSearch(''); setCorrectionsOpen(true) }}
+                    className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md ml-1 cursor-pointer hover:opacity-80"
+                    style={{ color: '#8B5CF6', backgroundColor: isLight ? '#f5f3ff' : 'rgba(139,92,246,0.14)', border: `1px solid ${isLight ? '#ddd6fe' : 'rgba(139,92,246,0.35)'}` }}
+                    title="Corrections made to this closed week's tickets, applied in later weeks"
+                  >
+                    {weekCorrections.length} correction{weekCorrections.length === 1 ? '' : 's'} · net {pesoSigned(weekCorrectionsNet)} in later weeks
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {initialLoading ? (
+        <div className="rounded-2xl p-6 flex flex-col gap-2" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+          {[1, 2, 3].map(i => (
+            <div key={i} style={{
+              height: '40px', borderRadius: '8px',
+              background: isLight ? '#f1f5f9' : '#0d1520',
+            }} />
+          ))}
+        </div>
+      ) : !branchFilter ? (
+        <div className="rounded-2xl p-10 flex flex-col items-center justify-center gap-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+          <Building2 className="w-10 h-10 opacity-25" />
+          <p className="text-sm font-semibold" style={{ color: textMuted }}>Select a branch to view payouts.</p>
+        </div>
+      ) : grouped.length === 0 ? (
+        <div className="rounded-2xl p-10 flex flex-col items-center justify-center gap-3" style={{ backgroundColor: cardBg, border: `1px solid ${border}` }}>
+          <CheckCircle2 className="w-10 h-10 opacity-25 text-emerald-500" />
+          <p className="text-sm font-semibold" style={{ color: textMuted }}>{viewOnly ? 'No payouts released for this week yet.' : 'No payout entries yet — try "Sync Latest".'}</p>
+        </div>
       ) : (
         // Roster / summary — one continuous ledger table covering the whole selected period (not
         // a single job). Remarks/Payroll Due/Audited/Status live here, not in an installer's own
@@ -4682,13 +4773,12 @@ export default function Payouts() {
                     handleSelectInstaller(installerName)
                   }
                 }}
-                className="grid grid-cols-[minmax(0,1fr)_auto] md:[grid-template-columns:var(--roster-cols)] items-center gap-x-3 md:gap-x-4 gap-y-2 md:gap-y-3 px-4 md:px-7 py-3.5 md:py-6 transition-colors cursor-pointer"
+                className="grid grid-cols-[minmax(0,1fr)_auto] md:[grid-template-columns:var(--roster-cols)] items-center gap-x-3 md:gap-x-4 gap-y-2 md:gap-y-3 px-4 md:px-7 py-3.5 md:py-6 transition-all duration-150 cursor-pointer hover:bg-slate-500/5 active:scale-[0.997]"
                 style={{
                   ['--roster-cols' as string]: ROSTER_GRID_TEMPLATE,
                   borderTop: rowIndex === 0 ? 'none' : `1px solid ${border}`,
                 }}
-                onMouseEnter={e => { e.currentTarget.style.backgroundColor = isLight ? '#f8fafc' : '#0d1520' }}
-                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}
+                
               >
                     {/* 1. INSTALLER — name, with completed-jobs count/breakdown folded into a subtitle */}
                     <div className="flex items-center gap-3 md:gap-3.5 min-w-0">
@@ -4962,6 +5052,11 @@ export default function Payouts() {
       </div>
         )
       })()}
+          </motion.div>
+        ) : (
+          renderInstallerDetail()
+        )}
+      </AnimatePresence>
 
       {columnManagerFor && (() => {
         const hidden = hiddenColumnsFor(columnManagerFor)
