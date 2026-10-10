@@ -59,13 +59,45 @@ const LEGACY_EDITABLE_MONTH = '2026-10'
 
 const dayKey = (raw: unknown) => String(raw ?? '').split('T')[0].split(' ')[0].trim()
 
+// The signed-in member, read from the saved session (same keys as AuthContext). Cached on the raw string, because
+// the closed check runs for every row and cell of the ticket tables.
+let sessionRaw: string | null = null
+let sessionIsCreateTicketsMember = false
+
+/**
+ * True when the signed-in member's access comes from the "Create Tickets" / "Ticket Creator" tag and they are not
+ * an administrator. Such a member creates tickets; a closed ticket is always locked for them, with no legacy-month
+ * grace. Mirrors TicketService.isCreateTicketsMember on the backend, which enforces it.
+ */
+function isCreateTicketsMemberSignedIn(): boolean {
+  let raw: string | null = null
+  try {
+    raw = sessionStorage.getItem('ashcol-user') || localStorage.getItem('ashcol-user')
+  } catch {
+    return false
+  }
+  if (raw === sessionRaw) return sessionIsCreateTicketsMember
+  sessionRaw = raw
+  sessionIsCreateTicketsMember = false
+  try {
+    const user = raw ? JSON.parse(raw) : null
+    const title = String(user?.jobTitle || user?.job_title || '').toLowerCase()
+    sessionIsCreateTicketsMember = !isPortalAdmin(user?.role) && (title.includes('create ticket') || title.includes('ticket creator'))
+  } catch {
+    // An unreadable session is treated as "not that kind of member"; the server still enforces the lock.
+  }
+  return sessionIsCreateTicketsMember
+}
+
 /**
  * Closed tickets from the legacy month (scheduled, installed or closed in it) that have no photo
  * attached yet stay editable like open tickets, so crews can still finish documenting them.
  * Attaching a photo ends the exemption and the normal admin-only lock applies.
+ * The exemption never applies to a Create Tickets member: they create tickets, they don't change closed ones.
  */
 export function isLegacyEditableClosedTicket(ticket: Partial<Ticket> | null | undefined): boolean {
   if (!ticket) return false
+  if (isCreateTicketsMemberSignedIn()) return false
   const t = ticket as any
   if (t.hasPhotoAttachments === true) return false
   const rawPhotos = t.photoAttachments !== undefined ? t.photoAttachments : t.photo_attachments
