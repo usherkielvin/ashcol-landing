@@ -7,7 +7,7 @@ import {
   Check, Eye, EyeOff,
   Camera, User,
   Loader2, Filter, Edit3, Shield,
-  Briefcase
+  Briefcase, Link2
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -18,6 +18,8 @@ import WarrantyRegistrationHistoryTable from '../components/WarrantyRegistration
 import { API_BASE_URL, resolveImageUrl, isSystemAdmin, readApiError, formatPersonName, notifyEmployeesDirectoryUpdated, isWarrantyRegistrar } from '../utils/api'
 import { fetchCachedBranches } from '../utils/portalDirectoryCache'
 import FilterChipMenu from '../components/directory/FilterChipMenu'
+import RegistrationLinkModal from '../components/directory/RegistrationLinkModal'
+import { approveMember } from '../utils/memberInviteApi'
 import ConfirmDialog, { type ConfirmDialogState } from '../components/ConfirmDialog'
 import { uploadReceiptImage } from '../services/supabaseStorage'
 
@@ -71,6 +73,8 @@ interface Employee {
   branchId: string
   branchName: string
   isActive: boolean
+  /** Self-registered through a registration link and waiting for an admin to approve the account. */
+  pendingApproval?: boolean
   profileImage?: string
   personalEmail?: string
   region?: string
@@ -469,7 +473,8 @@ export default function Members() {
 
   // UI Filters
   const [search,    setSearch]    = useState('')
-  const [tabFilter, setTabFilter] = useState<'all' | 'active' | 'not_activated' | 'inactive'>('all')
+  const [tabFilter, setTabFilter] = useState<'all' | 'active' | 'not_activated' | 'inactive' | 'pending'>('all')
+  const [showRegLink, setShowRegLink] = useState(false)
   const [roleFilter, setRoleFilter] = useState<string>('all')
   const [selectedBranchId, setSelectedBranchId] = useState<string>('')
 
@@ -656,6 +661,7 @@ export default function Members() {
           branchId:    s.branchId    || '',
           branchName:  isMgmtOrAdmin ? 'ALL BRANCHES' : (s.branchId ? (branchMap[s.branchId] || s.branchId) : ''),
           isActive:    s.isActive !== false,
+          pendingApproval: !!s.pendingApproval && s.isActive === false,
           profileImage: s.profileImage,
           personalEmail: s.personalEmail || '',
           region:      s.region      || '',
@@ -833,6 +839,7 @@ export default function Members() {
       branchId: s.branchId || '',
       branchName: isMgmtOrAdmin ? 'ALL BRANCHES' : (s.branchId ? (branchMap[s.branchId] || s.branchId) : ''),
       isActive: s.isActive !== false,
+      pendingApproval: !!s.pendingApproval && s.isActive === false,
       profileImage: s.profileImage,
       personalEmail: s.personalEmail || '',
       region: s.region || '',
@@ -998,7 +1005,34 @@ export default function Members() {
     executeSaveEdit()
   }
 
+  const requestApprove = (emp: Employee) => {
+    setConfirmDialog({
+      title: 'Approve member',
+      message: `Approve ${emp.name}?`,
+      detail: 'They will be able to sign in right away and get an email letting them know. Set their access tags from Edit.',
+      variant: 'save',
+      confirmText: 'Approve',
+      onConfirm: async () => {
+        setConfirmDialog(null)
+        try {
+          await approveMember(emp.id)
+          const updated = { ...emp, isActive: true, pendingApproval: false }
+          upsertEmployeeInList(updated)
+          if (selectedEmployee?.id === emp.id) setSelectedEmployee(updated)
+          notifyEmployeesDirectoryUpdated()
+          showToast('success', `${emp.name} approved.`)
+        } catch (err) {
+          showToast('error', err instanceof Error ? err.message : 'Could not approve this member.')
+        }
+      },
+    })
+  }
+
   const requestToggleActive = (emp: Employee) => {
+    if (emp.pendingApproval) {
+      requestApprove(emp)
+      return
+    }
     if (isProtectedFromEdit(emp.role)) {
       showToast('error', 'System admin accounts cannot be deactivated.')
       return
@@ -1179,10 +1213,13 @@ export default function Members() {
     let active = 0
     let notActivated = 0
     let inactive = 0
+    let pending = 0
 
     employees.forEach(e => {
       all++
-      if (!e.isActive) {
+      if (e.pendingApproval) {
+        pending++
+      } else if (!e.isActive) {
         inactive++
       } else if (!e.lastLoginAt && !e.lastActiveAt) {
         notActivated++
@@ -1191,14 +1228,15 @@ export default function Members() {
       }
     })
 
-    return { all, active, notActivated, inactive }
+    return { all, active, notActivated, inactive, pending }
   }, [employees])
 
   // ── Filtered List ───────────────────────────────────────────────────────────
   const filtered = employees.filter(e => {
     if (tabFilter === 'active' && (!e.isActive || (!e.lastLoginAt && !e.lastActiveAt))) return false
     if (tabFilter === 'not_activated' && (!e.isActive || e.lastLoginAt || e.lastActiveAt)) return false
-    if (tabFilter === 'inactive' && e.isActive) return false
+    if (tabFilter === 'inactive' && (e.isActive || e.pendingApproval)) return false
+    if (tabFilter === 'pending' && !e.pendingApproval) return false
     if (roleFilter !== 'all') {
       const target = roleFilter.toUpperCase()
       const empRole = (e.role || '').toUpperCase()
@@ -1233,6 +1271,8 @@ export default function Members() {
       e.phone.toLowerCase().includes(q)
     )
   }).sort((a, b) => {
+    // Members waiting for approval float to the top so they are not missed.
+    if (!!a.pendingApproval !== !!b.pendingApproval) return a.pendingApproval ? -1 : 1
     // Inactive or never-logged-in ("not yet activated") members sink to the bottom.
     const aBelow = !a.isActive || !a.lastLoginAt
     const bBelow = !b.isActive || !b.lastLoginAt
@@ -1287,6 +1327,7 @@ export default function Members() {
             { id: 'active', label: 'Active', count: counts.active },
             { id: 'not_activated', label: 'Not Activated Yet', count: counts.notActivated },
             { id: 'inactive', label: 'Inactive', count: counts.inactive },
+            ...(counts.pending > 0 ? [{ id: 'pending', label: 'Pending Approval', count: counts.pending }] : []),
           ].map(tab => {
             const isSelected = tabFilter === tab.id
             return (
@@ -1356,8 +1397,20 @@ export default function Members() {
 
             {isAdmin && (
               <button
+                onClick={() => setShowRegLink(true)}
+                className="ml-auto flex items-center gap-1.5 h-9 px-3.5 rounded-full text-xs font-bold transition-all active:scale-95 hover:opacity-90 shrink-0 border"
+                style={{ borderColor: '#10B981', color: '#10B981', backgroundColor: 'transparent' }}
+                aria-label="Registration link"
+              >
+                <Link2 className="w-4 h-4" />
+                <span>Registration<span className="hidden sm:inline"> link</span></span>
+              </button>
+            )}
+
+            {isAdmin && (
+              <button
                 onClick={openCreateFlow}
-                className="ml-auto flex items-center gap-1.5 h-9 px-3.5 rounded-full text-xs font-bold text-white transition-all active:scale-95 hover:opacity-90 shadow-sm shrink-0"
+                className="flex items-center gap-1.5 h-9 px-3.5 rounded-full text-xs font-bold text-white transition-all active:scale-95 hover:opacity-90 shadow-sm shrink-0"
                 style={{ backgroundColor: '#10B981' }}
                 aria-label="Add member"
               >
@@ -1469,10 +1522,11 @@ export default function Members() {
                     {/* Status Badge / Toggle */}
                     {(() => {
                       const isNotActivated = e.isActive && !e.lastLoginAt && !e.lastActiveAt
-                      const statusColor = !e.isActive ? '#94a3b8' : isNotActivated ? '#F59E0B' : '#10B981'
-                      const statusBg = !e.isActive ? 'rgba(148,163,184,0.1)' : isNotActivated ? 'rgba(245,158,11,0.1)' : 'rgba(16,185,129,0.1)'
-                      const statusBorder = !e.isActive ? 'rgba(148,163,184,0.3)' : isNotActivated ? 'rgba(245,158,11,0.3)' : 'rgba(16,185,129,0.3)'
-                      const statusText = !e.isActive ? 'INACTIVE' : isNotActivated ? 'NOT ACTIVATED' : 'ACTIVE'
+                      const pend = !!e.pendingApproval
+                      const statusColor = pend ? '#3B82F6' : !e.isActive ? '#94a3b8' : isNotActivated ? '#F59E0B' : '#10B981'
+                      const statusBg = pend ? 'rgba(59,130,246,0.1)' : !e.isActive ? 'rgba(148,163,184,0.1)' : isNotActivated ? 'rgba(245,158,11,0.1)' : 'rgba(16,185,129,0.1)'
+                      const statusBorder = pend ? 'rgba(59,130,246,0.3)' : !e.isActive ? 'rgba(148,163,184,0.3)' : isNotActivated ? 'rgba(245,158,11,0.3)' : 'rgba(16,185,129,0.3)'
+                      const statusText = pend ? 'PENDING — APPROVE' : !e.isActive ? 'INACTIVE' : isNotActivated ? 'NOT ACTIVATED' : 'ACTIVE'
 
                       return isAdmin ? (
                         <button
@@ -1735,8 +1789,9 @@ export default function Members() {
                     <td className="px-6 py-5 text-center">
                       {(() => {
                         const isNotActivated = e.isActive && !e.lastLoginAt && !e.lastActiveAt
-                        const statusColor = !e.isActive ? '#94a3b8' : isNotActivated ? '#F59E0B' : '#10B981'
-                        const statusText = !e.isActive ? 'INACTIVE' : isNotActivated ? 'NOT ACTIVATED' : 'ACTIVE'
+                        const pend = !!e.pendingApproval
+                        const statusColor = pend ? '#3B82F6' : !e.isActive ? '#94a3b8' : isNotActivated ? '#F59E0B' : '#10B981'
+                        const statusText = pend ? 'PENDING — APPROVE' : !e.isActive ? 'INACTIVE' : isNotActivated ? 'NOT ACTIVATED' : 'ACTIVE'
 
                         return isAdmin ? (
                           <button
@@ -2299,6 +2354,16 @@ export default function Members() {
 
           </div>
         </div>
+      )}
+
+      {isAdmin && (
+        <RegistrationLinkModal
+          open={showRegLink}
+          onClose={() => setShowRegLink(false)}
+          branches={branches}
+          onToast={showToast}
+          tokens={{ isLight, cardBg, border, textPrimary, textMuted, inputBg, inputBorder }}
+        />
       )}
 
       {/* ── Create Modal ── */}

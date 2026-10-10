@@ -11,6 +11,7 @@ const Login = lazyWithPreload(() => import('./pages/Login'))
 const ForgotPassword = lazyWithPreload(() => import('./pages/ForgotPassword'))
 const CreateAccount = lazyWithPreload(() => import('./pages/CreateAccount'))
 const PayoutShare = lazyWithPreload(() => import('./pages/PayoutShare'))
+const JoinTeam = lazyWithPreload(() => import('./pages/JoinTeam'))
 
 // Lazy-loaded layout & portal pages
 const DashboardLayout = lazyWithPreload(() => import('./layouts/DashboardLayout'))
@@ -122,6 +123,8 @@ export default function App() {
           <Route path="/create-account" element={<CreateAccount />} />
           {/* Public, read-only payout link — token in the path is the credential; no login. */}
           <Route path="/payout/:token" element={<PayoutShare />} />
+          {/* Public member registration — the admin-issued token in the path is the credential; no login. */}
+          <Route path="/join/:token" element={<JoinTeam />} />
           {/* Portal Routes */}
           <Route element={<DashboardLayout />}>
             <Route path="/dashboard" element={<DashboardRedirect />} />

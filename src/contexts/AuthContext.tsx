@@ -95,10 +95,12 @@ function wipeAuthCredentials({ keepRememberedEmail = false } = {}) {
 
 /** Tokenized payout share links (/payout/<token>) are opened by installers with no account. */
 const isPayoutSharePath = (pathname: string) => pathname.startsWith('/payout/')
+/** Member registration links (/join/<token>) are opened by new hires with no account yet. */
+const isJoinPath = (pathname: string) => pathname.startsWith('/join/')
 
 function isAuthPublicPath(pathname: string): boolean {
   if (AUTH_PUBLIC_PATHS.has(pathname)) return true
-  if (isPayoutSharePath(pathname)) return true
+  if (isPayoutSharePath(pathname) || isJoinPath(pathname)) return true
   // Public marketing site routes only — portal paths are never public.
   return false
 }
@@ -106,7 +108,7 @@ function isAuthPublicPath(pathname: string): boolean {
 function redirectToLogin(expired = false) {
   const pathname = window.location.pathname
   // A stale staff token on this device must never bounce someone off a shared payout link.
-  if (isPayoutSharePath(pathname)) return
+  if (isPayoutSharePath(pathname) || isJoinPath(pathname)) return
   if (isAuthPublicPath(pathname) && pathname === '/login') {
     if (expired && !window.location.search.includes('expired')) {
       window.location.replace('/login?expired=true')
