@@ -78,7 +78,7 @@ import { Settings2, Columns3, FileDown } from 'lucide-react';
 import { listShareLinks, listPayoutEmails, sendPayoutEmail, type PayoutShareLink, type PayoutEmailStatus, type PayoutEmailSummary, type PayoutEmailResult } from '../utils/payoutShareApi';
 import { PayoutEmailChip, PayoutEmailToast, type PayoutEmailToastState } from './Payouts/PayoutEmailParts';
 import { buildPayoutEmailSummary, emailedDay, maskEmail } from './Payouts/payoutEmail';
-import { isClosedWeekRow, freezeClosedWeekRows, dropReassignedRows, num, peso, pesoSigned, postedCorrectionsFor, shortDate, longDate,getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, PAYOUT_NOTE_KEY, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef, NET_COLUMN, duplicateLabelKey, findDuplicateColumnGroups } from './Payouts/payoutUtils';
+import { isClosedWeekRow, freezeClosedWeekRows, dropReassignedRows, describeReassignKept, type ReassignKept, num, peso, pesoSigned, postedCorrectionsFor, shortDate, longDate,getInitials, titleCase, avatarColor, rowAddOns, completedJobsCount, completedJobsBreakdown, remittanceTotal, baseInstallTotal, type ColumnKey, type ColumnCategory, CATEGORY_META, type ColumnDef, COLUMN_DEFS, ROSTER_GRID_TEMPLATE, COLUMN_PRESETS, DEFAULT_HIDDEN_COLUMNS, HIDDEN_COLUMNS_KEY, COLUMN_WIDTHS_KEY, CUSTOM_COLUMNS_KEY, PAYROLL_BRANCH_KEY, PAYROLL_WEEK_KEY, PAYROLL_LAST_SELECTION_KEY, MIN_COLUMN_WIDTH, normalizeSlug, compactSlug, PAYOUT_NOTE_KEY, type PayrollWeekClosure, getSavedPayrollSelection, LIST_PINNED_KEYS, LIST_CELL_FONT, LIST_CELL_BOLD_FONT, LIST_HEAD_FONT, LIST_HEAD_TRACKING, measureText, DEFAULT_COLUMN_WIDTHS, type CustomColumnDef, NET_COLUMN, duplicateLabelKey, findDuplicateColumnGroups } from './Payouts/payoutUtils';
 
 /** Orders member accounts for name matching: active members of the selected branch first, then other active
  *  members, then inactive ones. A first name that several accounts share must resolve to the branch's own member. */
@@ -336,6 +336,9 @@ export default function Payouts() {
   const [bulkRows, setBulkRows] = useState<PayrollRow[] | null>(null)
   const [bulkSubmitting, setBulkSubmitting] = useState(false)
   const [bulkError, setBulkError] = useState<string | null>(null)
+  // Reassigned tickets still listed under their previous tech after the last sync, with the reason for each.
+  const [reassignedKept, setReassignedKept] = useState<ReassignKept[]>([])
+  const [reassignedOpen, setReassignedOpen] = useState(false)
   // Pending items: things flagged against a closed week to settle later (see docs/plans/closed-week-corrections.md).
   const pendingItems = corrections.filter(c => c.status === 'PENDING')
   const [pendingOpen, setPendingOpen] = useState(false)
@@ -1270,6 +1273,7 @@ export default function Payouts() {
     else setInitialLoading(true)
 
     let anySyncFailed = false
+    const keptReassigned: ReassignKept[] = []
     try {
       const currentBranchName = branches.find(b => b.id === branchFilter)?.name || ''
       // If the active week is closed, use saved rows only and skip schedule sync & auto-save
@@ -1335,8 +1339,10 @@ export default function Payouts() {
           // A ticket reassigned to another tech leaves its old row behind (rows match on ticket + installer) — drop it,
           // then put closed weeks back exactly as saved (a closed week keeps whoever it paid).
           const current = dropReassignedRows(
-            deduplicateAndMergePayroll(savedRows, scheduleResult.rows), scheduleResult.rows, d => weekContaining(d, cycle).from)
-          merged = freezeClosedWeekRows(current, savedRows, closures, branchFilter)
+            deduplicateAndMergePayroll(savedRows, scheduleResult.rows), scheduleResult.rows,
+            d => weekContaining(d, cycle).from, r => isClosedWeekRow(r, closures, branchFilter))
+          keptReassigned.push(...current.kept)
+          merged = freezeClosedWeekRows(current.rows, savedRows, closures, branchFilter)
         }
 
         // Update the month cache with fully-merged rows so week switches within this month are instant
@@ -1374,6 +1380,10 @@ export default function Payouts() {
       })
 
       setRows(combinedSavedRows)
+      // Reassigned tickets the sync could not take off their previous tech — kept for the toolbar notice, and shown
+      // straight away after a manual Sync Latest so it is never a silent "why is it still there?".
+      setReassignedKept(keptReassigned)
+      if (isManualRefresh && keptReassigned.length > 0) setReassignedOpen(true)
     } catch (e) {
       anySyncFailed = true
       console.error('Failed to auto-fetch payroll and schedules:', e)
@@ -4988,6 +4998,18 @@ export default function Payouts() {
                 </button>
               )}
 
+              {canManagePayroll && reassignedKept.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setReassignedOpen(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border transition-all shadow-xs active:scale-95 cursor-pointer"
+                  style={{ color: '#D97706', borderColor: isLight ? '#fde68a' : 'rgba(217,119,6,0.35)', backgroundColor: isLight ? '#fffbeb' : 'rgba(217,119,6,0.08)' }}
+                  title="Tickets reassigned to another tech that are still listed under the previous one, and why"
+                >
+                  <span>Reassigned, Not Removed ({reassignedKept.length})</span>
+                </button>
+              )}
+
               {branchFilter && (
                 <button
                   type="button"
@@ -6934,6 +6956,31 @@ export default function Payouts() {
           onVoidBatch={submitVoidBatch}
           voidingId={voidingCorrectionId}
         />
+      )}
+
+      {/* Reassigned tickets the sync left under their previous tech, and why */}
+      {reassignedOpen && reassignedKept.length > 0 && createPortal(
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-md animate-in fade-in duration-150">
+          <div className="w-full max-w-xl rounded-2xl border shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: '85vh', backgroundColor: cardBg, borderColor: border }}>
+            <div className="px-6 py-4" style={{ backgroundColor: headerBg, borderBottom: `1px solid ${border}` }}>
+              <div className="text-sm font-extrabold uppercase tracking-wide" style={{ color: textPrimary }}>Reassigned, Not Removed</div>
+              <div className="text-[11px] mt-1" style={{ color: textMuted }}>
+                These tickets were moved to another tech, but the sync left them under the previous one for the reason shown. Every other reassigned ticket was removed from its old tech.
+              </div>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-3 flex flex-col gap-2">
+              {reassignedKept.map((k, i) => (
+                <div key={`${k.ticketNumber}|${k.installerName}|${i}`} className="text-xs rounded-xl px-3 py-2" style={{ color: textPrimary, backgroundColor: inputBg, border: `1px solid ${inputBorder}` }}>
+                  {describeReassignKept(k, displayInstallerName)}
+                </div>
+              ))}
+            </div>
+            <div className="px-6 py-3 flex justify-end" style={{ borderTop: `1px solid ${border}`, backgroundColor: headerBg }}>
+              <button type="button" onClick={() => setReassignedOpen(false)} className="px-6 py-2.5 rounded-xl text-xs font-black text-white cursor-pointer" style={{ background: '#D97706' }}>OK</button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* Flag form (ticket for review / installer-level item) */}
