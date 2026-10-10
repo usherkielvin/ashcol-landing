@@ -54,8 +54,8 @@ function readToken(): string {
 
 // ─── closed state / lock ──────────────────────────────────────────────────────
 
-/** Mirrors ashcol.tickets.close-lock-legacy-month on the backend. */
-const LEGACY_EDITABLE_MONTH = '2026-10'
+/** Mirrors ashcol.tickets.close-lock-legacy-month on the backend. Blank = no grace month: closed means closed. */
+const LEGACY_EDITABLE_MONTH: string = ''
 
 const dayKey = (raw: unknown) => String(raw ?? '').split('T')[0].split(' ')[0].trim()
 
@@ -96,7 +96,7 @@ function isCreateTicketsMemberSignedIn(): boolean {
  * The exemption never applies to a Create Tickets member: they create tickets, they don't change closed ones.
  */
 export function isLegacyEditableClosedTicket(ticket: Partial<Ticket> | null | undefined): boolean {
-  if (!ticket) return false
+  if (!ticket || !LEGACY_EDITABLE_MONTH) return false
   if (isCreateTicketsMemberSignedIn()) return false
   const t = ticket as any
   if (t.hasPhotoAttachments === true) return false
