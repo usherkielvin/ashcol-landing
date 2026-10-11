@@ -4,6 +4,7 @@ import { Copy, Check, Link2, Loader2, RefreshCw, Trash2, X } from 'lucide-react'
 import {
   buildMemberInviteUrl,
   createMemberInvite,
+  formatBranchLabel,
   listMemberInvites,
   OPEN_REGISTER_URL,
   revokeMemberInvite,
@@ -154,7 +155,7 @@ export default function RegistrationLinkModal({ open, onClose, branches, tokens,
                 style={fieldStyle}
               >
                 <option value="">Any branch — member picks</option>
-                {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                {branches.map(b => <option key={b.id} value={b.id}>{formatBranchLabel(b.name)}</option>)}
               </select>
             </label>
             <label className="flex flex-col gap-1.5">

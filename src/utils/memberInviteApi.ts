@@ -104,11 +104,34 @@ export async function isOpenSignupAvailable(): Promise<boolean> {
   return true
 }
 
+/** Consistent branch labels: Taguig is two scopes, shown as "ASHCOL TAGUIG SALES" / "ASHCOL TAGUIG SERVICES". */
+export function formatBranchLabel(name: string): string {
+  const upper = (name || '').replace(/[–—]/g, '-').trim().toUpperCase()
+  if (upper.includes('TAGUIG')) {
+    if (upper.includes('SALES')) return 'ASHCOL TAGUIG SALES'
+    if (upper.includes('SERVICE')) return 'ASHCOL TAGUIG SERVICES'
+  }
+  return upper
+}
+
+/** Sales sorts directly before Services; everything else keeps its server order. */
+function branchSortKey(label: string): number {
+  return label === 'ASHCOL TAGUIG SALES' ? 0 : label === 'ASHCOL TAGUIG SERVICES' ? 1 : 2
+}
+
 export async function fetchPublicBranches(): Promise<{ id: string; name: string }[]> {
   const res = await fetch(`${API_BASE_URL}/public/branches`)
   if (!res.ok) return []
   const data = (await res.json())?.data
-  return Array.isArray(data) ? data.map((b: { id: string; name: string }) => ({ id: b.id, name: b.name })) : []
+  if (!Array.isArray(data)) return []
+  const list = data.map((b: { id: string; name: string }) => ({ id: b.id, name: formatBranchLabel(b.name) }))
+  // Keep the server order, but pull the two Taguig scopes together (Sales first) at the Taguig position.
+  const firstTaguig = list.findIndex(b => branchSortKey(b.name) < 2)
+  if (firstTaguig === -1) return list
+  const taguig = list.filter(b => branchSortKey(b.name) < 2).sort((a, b) => branchSortKey(a.name) - branchSortKey(b.name))
+  const rest = list.filter(b => branchSortKey(b.name) === 2)
+  rest.splice(firstTaguig, 0, ...taguig)
+  return rest
 }
 
 export async function sendMemberSignupCode(email: string): Promise<void> {
